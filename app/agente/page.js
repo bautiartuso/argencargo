@@ -99,6 +99,8 @@ const I18N={
     client_not_found:"Código no encontrado",
     consolidation_info:"Tiene op abierta. El bulto se agregará a ella:",
     new_op_info:"Se creará una operación nueva para este cliente",
+    deposit_info:"El bulto queda en el depósito del cliente. Él elige desde su portal qué bultos viajan juntos y arma la importación.",
+    in_deposit:"Depósito",
     tracking:"Tracking",
     tracking_ph:"Ej: ECZEN31902219401",
     weight:"Peso (kg)",
@@ -369,6 +371,8 @@ const I18N={
     client_not_found:"未找到代码",
     consolidation_info:"该客户有开放的操作。此包裹将添加到:",
     new_op_info:"将为该客户创建新操作",
+    deposit_info:"包裹进入客户的仓库。客户在其门户中选择哪些包裹一起运输并创建进口。",
+    in_deposit:"仓库",
     tracking:"物流单号",
     tracking_ph:"例如：ECZEN31902219401",
     weight:"重量 (公斤)",
@@ -747,7 +751,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc,rp]=await Promise.all([
-      dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name))&operations.channel=eq.aereo_blanco&operations.created_by_agent_id=not.is.null&order=created_at.desc&limit=100"}),
+      dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)&registered_by_agent_id=eq.${userId}&order=created_at.desc&limit=150`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
@@ -818,7 +822,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const depositPkgs=depositPkgsAll.filter(p=>{
     if(!depositSearch)return true;
     const q=depositSearch.toLowerCase();
-    const fields=[p.operations?.operation_code,p.operations?.clients?.client_code,p.national_tracking];
+    const fields=[p.operations?.operation_code,p.operations?.clients?.client_code,p.clients?.client_code,p.national_tracking];
     if(fields.some(v=>(v||"").toLowerCase().includes(q)))return true;
     // También permitir buscar por trackings originales si fue un repack.
     if(Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.some(tr=>(tr||"").toLowerCase().includes(q)))return true;
@@ -932,7 +936,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
-      {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
+      {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} origin={/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China"} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
       {/* Banner: paquetes pendientes de foto */}
       {(()=>{const pendientes=depositPkgsAll.filter(p=>!p.photo_url);if(pendientes.length===0)return null;
         return <div style={{padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.1),rgba(251,191,36,0.02))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,margin:"16px 0 0",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -955,8 +959,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
             const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
             const volDiv=Number(signup?.volumetric_divisor)||5000;const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/volDiv)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
             return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
+            <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:p.operations?.operation_code?"#fff":"#fbbf24"}}>{p.operations?.operation_code||(t.in_deposit||"Depósito")}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.clients?.client_code||p.operations?.clients?.client_code||"—"}</td>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
               {p.national_tracking||"—"}
               {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={`Trackings originales consolidados: ${p.consolidated_from_trackings.join(", ")}`}>
@@ -971,7 +975,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
             <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}>
               <button onClick={()=>setEditPkg(p)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",marginRight:6}}>{t.edit}</button>
-              <button onClick={async()=>{if(!confirm(`${t.confirm_delete_pkg} ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>{t.delete}</button>
+              <button onClick={async()=>{if(!confirm(`${t.confirm_delete_pkg} ${p.operations?.operation_code||p.clients?.client_code||""}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>{t.delete}</button>
             </td>
           </tr>;})}</tbody>
         </table></div>}
@@ -1642,7 +1646,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
       for(const b of newBultos){
         nn++;
         await dq("operation_packages",{method:"POST",token,body:{
-          operation_id:opId,package_number:nn,quantity:1,
+          operation_id:opId,package_number:nn,quantity:1,client_id:packages[0]?.client_id||null,registered_by_agent_id:userId,origin:packages[0]?.origin||null,
           gross_weight_kg:Number(b.weight),length_cm:Number(b.length),width_cm:Number(b.width),height_cm:Number(b.height),
           national_tracking:mergedTracking||null,
           consolidated_from_trackings:origTrackingsList.length>0?origTrackingsList:null,
@@ -2061,7 +2065,7 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
   </>;
 }
 
-function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
+function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCancel,onSaved}){
   const [allClients,setAllClients]=useState([]);
   const [clientSearch,setClientSearch]=useState("");
   const [clientId,setClientId]=useState("");// "" = no seleccionado, "unregistered" = no registrado, uuid = cliente
@@ -2097,21 +2101,8 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   // Regla: si hay una op del mismo cliente en estado pre-vuelo (depósito o preparación),
   // se reutiliza — los nuevos bultos se agregan a ella aunque ya esté consolidada
   // (mientras no haya despachado, podemos seguir sumando paquetes).
-  useEffect(()=>{if(!clientId||clientId==="unregistered"){setExistingOp(null);return;}(async()=>{
-    // Buscar ops abiertas del cliente. Incluye 'pendiente' para capturar GI sin paquetes todavía.
-    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(pendiente,en_deposito_origen,en_preparacion)&select=id,operation_code,status,service_type&order=created_at.desc`});
-    if(!Array.isArray(ops)||ops.length===0){setExistingOp(null);return;}
-    // Filtrar las que YA están en un vuelo activo (preparando/despachado/recibido) — esas no aceptan más bultos
-    const opIds=ops.map(o=>o.id);
-    const fos=await dq("flight_operations",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,flights(status)`});
-    const inFlightIds=new Set((Array.isArray(fos)?fos:[]).filter(fo=>fo.flights&&["preparando","despachado","recibido"].includes(fo.flights.status)).map(fo=>fo.operation_id));
-    const trulyOpen=ops.filter(o=>!inFlightIds.has(o.id));
-    // Priorizar GI sobre courier: si el cliente tiene una GI abierta, los paquetes van ahí (es la intención del cliente, no una op suelta).
-    const gi=trulyOpen.find(o=>o.service_type==="gestion_integral");
-    setExistingOp(gi||trulyOpen[0]||null);
-  })();},[clientId,token]);
-
-
+  // Desde el 13/09/2026 el bulto no se ata a ninguna operación: queda en el depósito del cliente
+  // (client_id, sin operation_id) y el cliente arma la importación desde su portal.
   const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
   const rmBulto=(i)=>setBultos(p=>p.filter((_,j)=>j!==i));
   const chBulto=(i,f,v)=>setBultos(p=>p.map((b,j)=>j===i?{...b,[f]:v}:b));
@@ -2133,10 +2124,6 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     try {
       const validBultos=bultos.filter(b=>b.weight||b.length||b.width||b.height||true);
       if(isOffline){
-        if(clientId!=="unregistered"&&!existingOp){
-          setErr("Sin conexión: no se pueden crear operaciones nuevas. Conectate o seleccioná un cliente con op abierta.");
-          setSaving(false);return;
-        }
         // Encolar bultos en IndexedDB
         for(let i=0;i<validBultos.length;i++){const b=validBultos[i];
           let body, table;
@@ -2145,7 +2132,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
             body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
           } else {
             table="operation_packages";
-            body={operation_id:existingOp.id,package_number:Date.now()+i,quantity:1,national_tracking:tracking.trim()};
+            body={client_id:clientId,registered_by_agent_id:agentId,origin:originAgente,package_number:Date.now()+i,quantity:1,national_tracking:tracking.trim()};
           }
           if(b.weight)body.gross_weight_kg=Number(b.weight);
           if(b.length)body.length_cm=Number(b.length);
@@ -2173,35 +2160,13 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         }catch(e){console.error("notif error",e);}
         onSaved();return;
       }
-      // Cliente registrado
-      let opId;
-      // PRIORIDAD 1: si hay op abierta del cliente (consolidación normal), usarla
-      if(existingOp){opId=existingOp.id;
-        // GI en pendiente recibe su primer paquete físico → avanza a en_deposito_origen + asigna agente si no tenía.
-        if(existingOp.status==="pendiente"){
-          const fresh=await dq("operations",{token,filters:`?id=eq.${opId}&select=created_by_agent_id`});
-          const hadAgent=Array.isArray(fresh)&&fresh[0]?.created_by_agent_id;
-          const patch={status:"en_deposito_origen"};
-          if(!hadAgent)patch.created_by_agent_id=agentId;
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:patch});
-        }
-      }
-      // PRIORIDAD 2: crear op nueva
-      let opCreadaAhora=false; // para rollback si despues no se pudo insertar ningun bulto
-      if(!existingOp){
-        const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
-        const newCode=typeof rpc==="string"?rpc:null;
-        if(!newCode){setErr(t.err_generic);setSaving(false);return;}
-        const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:clientId,channel:"aereo_blanco",status:"en_deposito_origen",origin:"China",created_by_agent_id:agentId}});
-        const created=Array.isArray(r)?r[0]:r;
-        if(!created?.id){setErr(t.err_generic);setSaving(false);return;}
-        opId=created.id;opCreadaAhora=true;
-      }
-      const pkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=package_number&order=package_number.desc&limit=1`});
-      const lastNum=Array.isArray(pkgs)&&pkgs[0]?Number(pkgs[0].package_number)||0:0;
+      // Cliente registrado: los bultos van al depósito del cliente, sin operación.
+      const ult=await dq("operation_packages",{token,filters:`?client_id=eq.${clientId}&operation_id=is.null&select=package_number&order=package_number.desc&limit=1`});
+      const lastNum=Array.isArray(ult)&&ult[0]?Number(ult[0].package_number)||0:0;
+      const opCreadaAhora=false;const opId=null;
       let bultosInsertados=0;
       try{
-        for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={operation_id:opId,package_number:lastNum+i+1,quantity:1,national_tracking:tracking.trim()};
+        for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={client_id:clientId,registered_by_agent_id:agentId,origin:originAgente,package_number:lastNum+i+1,quantity:1,national_tracking:tracking.trim()};
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
           // La foto NO puede voltear el alta del bulto: si falla la subida (conexion del deposito),
           // el bulto entra sin foto y el agente la puede reintentar despues.
@@ -2255,18 +2220,15 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     {clientId==="unregistered"&&<div style={{padding:"10px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ {t.unregistered_info}</p>
     </div>}
-    {selectedClient&&existingOp&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.consolidation_info} <strong>{existingOp.operation_code}</strong></p>
-    </div>}
-    {selectedClient&&!existingOp&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.new_op_info}</p>
+    {selectedClient&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
+      <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.deposit_info}</p>
     </div>}
 
     <div style={{display:"flex",gap:8,alignItems:"end",marginBottom:12}}>
       <div style={{flex:1}}><Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/></div>
       <TrackingScanButton onDetected={setTracking} t={t}/>
     </div>
-    <TrackingDuplicateWarning trackingCode={tracking} excludeOpId={existingOp?.id} token={token} lang={lang}/>
+    <TrackingDuplicateWarning trackingCode={tracking} excludeOpId={null} token={token} lang={lang}/>
 
 
     <div style={{marginTop:8,marginBottom:14}}>

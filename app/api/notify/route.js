@@ -1,6 +1,6 @@
 // POST /api/notify
 // Body: { op_id, trigger, force }
-// Triggers soportados: 'deposito' | 'arribo' | 'cerrada'
+// Triggers soportados: 'deposito' | 'arribo' | 'cerrada' | 'retiro' (por op) y 'bulto_deposito' (por cliente, sin op)
 //
 // Envía email al cliente usando Resend (free tier: 3k/mes).
 // Marca en operations.sent_notifications para evitar doble envío (a menos que force=true).
@@ -211,7 +211,35 @@ export async function POST(req) {
     if (!isAdmin) return Response.json({ error: "unauthorized" }, { status: 401 });
     if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 });
 
-    const { op_id, trigger, force, allow_zero } = await req.json();
+    const { op_id, trigger, force, allow_zero, client_id, package_id } = await req.json();
+    // Bulto en depósito (13/09/2026): llega sin operación, así que el aviso es por cliente. Se agrupa:
+    // si al cliente ya se le avisó en la última hora (llegaron varios bultos juntos), no se repite.
+    if (trigger === "bulto_deposito") {
+      if (!client_id) return Response.json({ error: "client_id requerido" }, { status: 400 });
+      const clArr = await sb(`/rest/v1/clients?id=eq.${client_id}&select=id,first_name,email,deposit_email_last_at`);
+      const cl = Array.isArray(clArr) ? clArr[0] : null;
+      if (!cl?.email) return Response.json({ skipped: "sin_email" });
+      const last = cl.deposit_email_last_at ? Date.parse(cl.deposit_email_last_at) : 0;
+      if (!force && Date.now() - last < 60 * 60 * 1000) return Response.json({ skipped: "agrupado", last_at: cl.deposit_email_last_at });
+      const pk = await sb(`/rest/v1/operation_packages?client_id=eq.${client_id}&operation_id=is.null&select=id,national_tracking,origin`);
+      const n = Array.isArray(pk) ? pk.length : 1;
+      const origen = (Array.isArray(pk) && pk.find((x) => x.id === package_id)?.origin) || "China";
+      const NAVY = "#152D54", AC = "#3B7DD8";
+      const subject = n > 1 ? `Tenés ${n} bultos en nuestro depósito de ${origen}` : `Llegó un bulto tuyo a nuestro depósito de ${origen}`;
+      const greeting = `¡Hola ${cl.first_name || ""}!`;
+      const body = mdToHtml(`${n > 1 ? `Ya tenés **${n} bultos** esperando en nuestro depósito de ${origen}.` : `Recibimos **un bulto tuyo** en nuestro depósito de ${origen}.`}\n\nCuando estén todos los que esperás, entrá al portal, elegí cuáles viajan juntos y creá tu importación. Ahí cargás la mercadería y ves el costo estimado al instante.`);
+      const extraHtml = `<div style="text-align:center;margin:24px 0"><a href="${BASE_URL}/portal" style="display:inline-block;padding:14px 32px;background:${AC};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">Ver mis bultos en el portal</a></div>`;
+      const html = renderEmailShell({ subject, greeting, body, extraHtml, opCode: null, NAVY, AC });
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: RESEND_FROM, to: [cl.email], subject, html }),
+      });
+      const resp = await r.json();
+      if (!r.ok) return Response.json({ error: "resend_failed", detail: resp }, { status: 500 });
+      await sb(`/rest/v1/clients?id=eq.${client_id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ deposit_email_last_at: new Date().toISOString() }) });
+      return Response.json({ ok: true, resend_id: resp.id, bultos: n });
+    }
     if (!op_id || !trigger) return Response.json({ error: "op_id y trigger requeridos" }, { status: 400 });
     if (!["deposito", "arribo", "retiro", "cerrada"].includes(trigger))
       return Response.json({ error: "trigger inválido" }, { status: 400 });

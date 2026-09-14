@@ -9342,7 +9342,7 @@ function AgentsPanel({token}){
   const [profiles,setProfiles]=useState({});
   const [unassigned,setUnassigned]=useState([]);
   const [allOps,setAllOps]=useState([]);
-  const [depositOps,setDepositOps]=useState([]);
+  const [depositOps,setDepositOps]=useState([]);const [depSueltos,setDepSueltos]=useState([]);
   const [depositPkgs,setDepositPkgs]=useState([]);
   const [flights,setFlights]=useState([]);
   const [flightOps,setFlightOps]=useState([]);
@@ -9371,7 +9371,7 @@ function AgentsPanel({token}){
   const [flightProgress,setFlightProgress]=useState(null); // overlay de progreso de createFlight {label,current,total}
   const load=async()=>{setLo(true);
     // Ola 1: lo liviano + lo que define qué ops nos importan (depósito y vuelos).
-    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs]=await Promise.all([
+    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
@@ -9379,7 +9379,8 @@ function AgentsPanel({token}){
       dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,budget_taxes,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
-      dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"})
+      dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"}),
+      dq("operation_packages",{token,filters:"?select=*,clients(id,client_code,first_name,last_name,whatsapp)&operation_id=is.null&order=created_at.asc"})
     ]);
     // Ola 2: bultos e items SOLO de las ops en depósito — antes bajaba el histórico completo
     // de toda la empresa en cada entrada al panel. Los bultos de un vuelo los carga el
@@ -9395,7 +9396,7 @@ function AgentsPanel({token}){
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);
     // allOps (ops sin consolidar, para asignar huérfanos) sale de depOps: era una query casi duplicada.
     setAllOps((Array.isArray(depOps)?depOps:[]).filter(o=>!o.consolidation_confirmed));
-    setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);
+    setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);setDepSueltos(Array.isArray(sueltos)?sueltos:[]);
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
     setDepositItems(Array.isArray(depItems)?depItems:[]);
     setRepackReqs(Array.isArray(rpkReqs)?rpkReqs:[]);
@@ -9881,7 +9882,41 @@ function AgentsPanel({token}){
       });
       // Selección guiada: un vuelo es de UN solo agente — al tildar la primera op, las de otros agentes se bloquean
       const selAgentId=(()=>{const first=depositOps.find(o=>selectedOps.includes(o.id));return first?first.created_by_agent_id:null;})();
+      // Bultos sin importación: llegaron al depósito y el cliente todavía no armó la importación
+      // desde su portal (modelo 13/09/2026). Agrupados por cliente.
+      const porCliente={};depSueltos.forEach(p=>{const k=p.client_id||"?";(porCliente[k]||(porCliente[k]={cl:p.clients||{},pk:[]})).pk.push(p);});
+      const gruposSueltos=Object.entries(porCliente).sort((a,b)=>String(a[1].pk[0]?.created_at||"").localeCompare(String(b[1].pk[0]?.created_at||"")));
+      const crearPorCliente=async(clientId,pk)=>{
+        if(!await confirmDialog(`¿Crear una importación con los ${pk.length} bulto${pk.length!==1?"s":""} de ${pk[0]?.clients?.client_code||"este cliente"}? Es lo mismo que haría el cliente desde su portal.`,{confirmText:"Crear importación"}))return;
+        try{
+          const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});const code=typeof rpc==="string"?rpc:null;if(!code)throw new Error("sin código");
+          const cnt={};pk.forEach(p=>{const o=p.origin||"China";cnt[o]=(cnt[o]||0)+1;});const origin=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||"China";
+          const now=new Date().toISOString();
+          const r=await dq("operations",{method:"POST",token,headers:{Prefer:"return=representation"},body:{operation_code:code,client_id:clientId,channel:"aereo_blanco",status:"en_preparacion",origin,service_type:"courier",consolidation_confirmed:true,consolidation_confirmed_at:now,created_by_agent_id:pk.find(p=>p.registered_by_agent_id)?.registered_by_agent_id||null}});
+          const op=Array.isArray(r)?r[0]:r;if(!op?.id)throw new Error(op?.message||"no se creó");
+          for(let i=0;i<pk.length;i++)await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pk[i].id}`,body:{operation_id:op.id,package_number:i+1}});
+          await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:`Importación creada por Argencargo con ${pk.length} bulto${pk.length!==1?"s":""}`,occurred_at:now,source:"internal",status_code:"en_preparacion",is_visible_to_client:true}});
+          toast(`${code} creada`,"success");load();
+        }catch(e){alertDialog("No se pudo crear: "+e.message);}
+      };
       return <div>
+        {gruposSueltos.length>0&&<div style={{marginBottom:18}}>
+          <p style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#8CC8F5",margin:"0 0 8px"}}>Bultos sin importación · esperando que el cliente la arme ({depSueltos.length})</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:10}}>
+            {gruposSueltos.map(([cid,g])=>{const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const dias=Math.floor((Date.now()-new Date(g.pk[0].created_at))/864e5);const wa=String(g.cl.whatsapp||"").replace(/[^0-9]/g,"");
+              const msg=encodeURIComponent(`Hola ${g.cl.first_name||""}! Tenés ${g.pk.length} bulto${g.pk.length!==1?"s":""} en nuestro depósito (${kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg). Cuando estén todos los que esperás, entrá al portal, elegí cuáles viajan juntos y creá tu importación: https://argencargo.com.ar/portal\n\nSi te falta algo o tenés dudas, me escribís por acá.`);
+              return <div key={cid} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${dias>=7?"rgba(251,191,36,0.45)":"rgba(255,255,255,0.1)"}`,background:"rgba(255,255,255,0.03)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <div><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,color:IC,fontSize:13}}>{g.cl.client_code||"—"}</span><span style={{fontSize:12,color:"rgba(255,255,255,0.65)",marginLeft:8}}>{[g.cl.first_name,g.cl.last_name].filter(Boolean).join(" ")}</span></div>
+                  <span style={{fontSize:11,fontWeight:700,color:dias>=7?"#fbbf24":"rgba(255,255,255,0.5)"}}>{g.pk.length} bulto{g.pk.length!==1?"s":""} · {kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg · hace {dias} d</span>
+                </div>
+                <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+                  {wa&&<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"6px 11px",fontSize:11,fontWeight:700,borderRadius:7,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>Recordarle por WhatsApp</a>}
+                  <button onClick={()=>crearPorCliente(cid,g.pk)} style={{padding:"6px 11px",fontSize:11,fontWeight:700,borderRadius:7,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>Crear importación por él</button>
+                </div>
+              </div>;})}
+          </div>
+        </div>}
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
           {[0,1,2].map(sc=>{const on=depFilter===sc;const m=SCORE_META[sc];return <button key={sc} onClick={()=>setDepFilter(on?null:sc)} style={{padding:"6px 12px",fontSize:10.5,fontWeight:800,borderRadius:99,border:`1px solid ${on?m.c:`${m.c}44`}`,background:on?`${m.c}26`:`${m.c}0D`,color:m.c,cursor:"pointer",letterSpacing:"0.05em",transition:"all 150ms",opacity:countsByScore[sc]===0&&!on?0.45:1}}>{m.l} <span style={{fontVariantNumeric:"tabular-nums"}}>({countsByScore[sc]})</span></button>;})}
           <input value={depSearch} onChange={e=>setDepSearch(e.target.value)} placeholder="🔍 Op, cliente o tracking…" style={{flex:"1 1 200px",maxWidth:280,padding:"7px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.1)",borderRadius:99,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
