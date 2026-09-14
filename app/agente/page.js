@@ -816,9 +816,12 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
 
-  // Computed: paquetes en depósito (op no asignada a ningún vuelo)
-  const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id));
-  const depositPkgsAll=packages.filter(p=>!flightOpIds.has(p.operation_id));
+  // Computed: paquetes en depósito = los que todavía no viajan, con o sin operación asignada.
+  // OJO con el filter(Boolean): si una fila de flight_operations quedó sin operation_id (paso:
+  // FL-0052 tenía una huérfana), ese null entraba al Set y `has(null)` daba true, con lo cual
+  // TODOS los bultos sin operación desaparecían del depósito. 49 bultos invisibles por una fila.
+  const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean));
+  const depositPkgsAll=packages.filter(p=>!p.operation_id||!flightOpIds.has(p.operation_id));
   const depositPkgs=depositPkgsAll.filter(p=>{
     if(!depositSearch)return true;
     const q=depositSearch.toLowerCase();

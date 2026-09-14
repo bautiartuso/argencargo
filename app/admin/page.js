@@ -9465,7 +9465,9 @@ function AgentsPanel({token}){
   useEffect(()=>{if(!lo&&selFlight&&!flights.some(f=>f.id===selFlight))setSelFlight(null);},[lo,selFlight,flights.length]);
   // Helpers
   const approvedAgents=signups.filter(s=>s.status==="approved");
-  const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
+  // filter(Boolean) por las mismas razones que en el panel del agente: una fila de
+  // flight_operations sin operation_id mete un null en el Set y rompe cualquier has(null).
+  const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
   // Exportar presupuesto en PDF (como la calculadora) para una op del depósito:

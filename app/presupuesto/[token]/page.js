@@ -87,13 +87,13 @@ const CSS = `
 .pz-price span{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(26,26,26,.5);padding-bottom:3px}
 .pz-price b{font-size:23px;font-weight:800;letter-spacing:-.035em;line-height:1;white-space:nowrap}
 .pz-price b i{font-style:normal;font-size:12px;font-weight:700;color:rgba(26,26,26,.5);margin-right:4px}
-.pz-ver{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;padding:10px 12px;border:none;border-radius:9px;background:#15803d;color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
-.pz-ver:hover{background:#12692f}
-.pz-ver.on{background:rgba(21,128,61,.1);color:#15803d}
-.pz-ver.on:hover{background:rgba(21,128,61,.17)}
+.pz-ver{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;padding:10px 12px;border:none;border-radius:9px;background:#1A3D6E;color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
+.pz-ver:hover{background:#14315A}
+.pz-ver.on{background:rgba(26,61,110,.1);color:#1A3D6E}
+.pz-ver.on:hover{background:rgba(26,61,110,.17)}
 .pz-ver span{font-size:8.5px;line-height:1}
 .pz-ver:focus{outline:none}
-.pz-ver:focus-visible{outline:2px solid #15803d;outline-offset:2px}
+.pz-ver:focus-visible{outline:2px solid #1A3D6E;outline-offset:2px}
 .pz-desg{margin-top:12px;padding-top:10px;border-top:1px dashed #eae4d6}
 .pz-desg div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;font-size:12.5px}
 .pz-desg div span{color:rgba(26,26,26,.6)}
