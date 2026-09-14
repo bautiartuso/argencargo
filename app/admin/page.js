@@ -1597,6 +1597,19 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         </div>
       </div>;
     })()}
+    {/* Antidumping a nivel op: el badge por producto vive dentro de la solapa Productos y quedaba
+        enterrado — la alerta llegaba por Telegram y en la op no se veía. Esto lo sube a la cabecera. */}
+    {!isGI&&(()=>{const ad=items.filter(it=>it.antidumping_note);if(ad.length===0)return null;
+      const notas=[...new Set(ad.map(it=>it.antidumping_note))];
+      return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(248,113,113,0.16),rgba(248,113,113,0.05))",border:"1.5px solid rgba(248,113,113,0.45)",borderRadius:10,display:"flex",gap:12,alignItems:"start",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:220}}>
+          <p style={{fontSize:12.5,fontWeight:800,color:"#f87171",margin:0}}>⚠ Antidumping · {ad.length===1?"1 producto":`${ad.length} productos`} · {notas.join(" · ")}</p>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"4px 0 0",lineHeight:1.5}}>Revisá derechos específicos y valores criterio antes de presupuestar. El costo calculado puede quedar corto.</p>
+          <div style={{marginTop:7}}>{ad.slice(0,4).map(it=><p key={it.id} style={{fontSize:11.5,color:"#fecaca",margin:"0 0 2px"}}>• {it.description} · NCM {it.ncm_code}</p>)}{ad.length>4&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0",fontStyle:"italic"}}>+{ad.length-4} más</p>}</div>
+        </div>
+        {tab!=="items"&&<button onClick={()=>setTab("items")} style={{padding:"9px 16px",fontSize:12.5,fontWeight:800,borderRadius:9,border:"1px solid rgba(248,113,113,0.6)",background:"rgba(248,113,113,0.2)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>→ Ir a Productos</button>}
+      </div>;
+    })()}
     {tab!=="finance"&&(()=>{const bal=Number(opClient?.account_balance_usd||0);if(Math.abs(bal)<0.01)return null;const isCredit=bal>0;return <div style={{marginBottom:16,padding:"10px 16px",background:isCredit?"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))":"linear-gradient(90deg,rgba(239,68,68,0.10),rgba(239,68,68,0.02))",border:`1.5px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <div>
         <p style={{fontSize:12.5,fontWeight:700,color:isCredit?"#22c55e":"#ef4444",margin:0}}>{isCredit?"★":"⚠"} {opClient?.first_name||"Cliente"} {isCredit?"tiene saldo a favor":"tiene deuda anterior"}: USD {Math.abs(bal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>

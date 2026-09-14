@@ -622,7 +622,10 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const SMALL_GOLD={...SMALL_GHOST,border:"1px solid rgba(232,208,152,0.55)",background:"rgba(184,149,106,0.16)",color:GOLD_LIGHT};
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const numIn=({value,onChange,placeholder})=><input type="text" inputMode="decimal" value={value??""} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))onChange(v);}} placeholder={placeholder} style={INP} onFocus={onF} onBlur={onB}/>;
-  const fromItem=it=>({id:it.id,description:it.description||"",unit_price:it.unit_price_usd!=null?String(it.unit_price_usd).replace(".",","):"",quantity:it.quantity!=null?String(it.quantity):"1",ncm_hint:"",ncm:it.ncm_code||it.import_duty_rate!=null?{ncm_code:it.ncm_code||"MANUAL",import_duty_rate:Number(it.import_duty_rate??0),statistics_rate:Number(it.statistics_rate??0),iva_rate:Number(it.iva_rate??21)}:null,ncmLoading:false,ncmError:false,package_ids:Array.isArray(it.package_ids)?it.package_ids:[]});
+  const fromItem=it=>({id:it.id,description:it.description||"",unit_price:it.unit_price_usd!=null?String(it.unit_price_usd).replace(".",","):"",quantity:it.quantity!=null?String(it.quantity):"1",ncm_hint:"",ncm:it.ncm_code||it.import_duty_rate!=null?{ncm_code:it.ncm_code||"MANUAL",import_duty_rate:Number(it.import_duty_rate??0),statistics_rate:Number(it.statistics_rate??0),iva_rate:Number(it.iva_rate??21),
+    // Reconstruir el aviso de antidumping desde lo guardado: si no, el ⚠ y el texto
+    // solo se veían en la sesión en la que se clasificó el producto y desaparecían al recargar.
+    ...(it.antidumping_note?{antidumping:{producto:String(it.antidumping_note).split(" — ")[0],nota:String(it.antidumping_note).split(" — ")[1]||""}}:{})}:null,ncmLoading:false,ncmError:false,package_ids:Array.isArray(it.package_ids)?it.package_ids:[]});
   const empty=()=>({description:"",unit_price:"",quantity:"1",ncm_hint:"",ncm:null,ncmLoading:false,ncmError:false,package_ids:[]});
   const [rows,setRows]=useState(()=>items.length?items.map(fromItem):[empty()]);
   const [mode,setMode]=useState(items.length?"manual":null);
