@@ -727,7 +727,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
   const {t}=useT();
   // La op se refresca sola después de cada guardado (descripción, baterías, confirmación).
   const [opFresh,setOpFresh]=useState(null);const op=opFresh||opProp;
-  const [tabDet,setTabDet]=useState(null);
+  const [tabDet,setTabDet]=useState(null);const [pkOpenDet,setPkOpenDet]=useState(null);
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó "Esperando más bultos": ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
@@ -839,7 +839,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
     {!loading&&(()=>{const def=isEditable?"merc":"resumen";const tabCur=tabDet||def;
       const tabs=[["resumen","Resumen"],["merc","Mercadería"],["bultos",`Bultos${pkgs.length?` · ${pkgs.length}`:""}`],["seg","Seguimiento"],...(!isGI&&items.length>0?[["costos","Costo por producto"]]:[])];
       // Asignar mercadería a bultos se puede en cualquier etapa: no cambia valores, solo el reparto del costo.
-      const canAsig=!isGI&&op.channel==="aereo_blanco"&&items.length>0&&pkgs.length>0;
+      const canAsig=!isGI&&op.channel==="aereo_blanco"&&items.length>1&&pkgs.length>0;
       const toggleAsig=async(it,pkId)=>{const cur=Array.isArray(it.package_ids)?it.package_ids:[];const next=cur.includes(pkId)?cur.filter(x=>x!==pkId):[...cur,pkId];
         setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:next.length?next:null}:x));
         try{const r=await fetch("/api/portal/asignar-bulto",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({item_id:it.id,package_ids:next,client_id:client?.id})});if(!r.ok)throw new Error("x");}
@@ -943,12 +943,16 @@ function OperationDetail({op:opProp,token,client,onBack}){
                 <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{p.cbm>0?p.cbm.toFixed(3):"—"}</span>
                 <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>Ver escaneo</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Sin foto</span>}</span>
               </div>
-              {items.length>0&&(canAsig||enEste.length>0)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"0 12px 11px"}}>
-                <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>Mercadería</span>
-                {canAsig?items.map(it=>{const on=Array.isArray(it.package_ids)&&it.package_ids.includes(p.id);return <button key={it.id} onClick={()=>toggleAsig(it,p.id)} style={{height:28,padding:"0 11px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${on?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.18)"}`,background:on?"rgba(184,149,106,0.18)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.6)",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{on?"✓ ":""}{it.description||"Producto"}</button>;})
-                :enEste.map(it=><span key={it.id} style={{height:26,display:"inline-flex",alignItems:"center",padding:"0 10px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT}}>{it.description}</span>)}
-                {canAsig&&enEste.length===0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· sin asignar (se reparte por FOB)</span>}
-              </div>}
+              {canAsig&&(()=>{const open=pkOpenDet===p.id;const label=enEste.length===0?"Varios / sin asignar":enEste.map(it=>it.description||"Producto").join(", ");
+                return <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 11px",flexWrap:"wrap"}}>
+                  <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>Mercadería</span>
+                  <div style={{position:"relative",flex:"1 1 260px",maxWidth:460,minWidth:0}}>
+                    <button onClick={()=>setPkOpenDet(open?null:p.id)} style={{width:"100%",boxSizing:"border-box",height:38,padding:"0 12px",fontSize:13,borderRadius:9,background:"rgba(255,255,255,0.07)",textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,cursor:"pointer",color:enEste.length?GOLD_LIGHT:"rgba(255,255,255,0.65)",fontWeight:enEste.length?700:500,border:`1px solid ${open?"rgba(232,208,152,0.85)":"rgba(255,255,255,0.2)"}`}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span><span style={{fontSize:10,color:SKY,flexShrink:0}}>{open?"▲":"▼"}</span></button>
+                    {open&&<><div onClick={()=>setPkOpenDet(null)} style={{position:"fixed",inset:0,zIndex:40}}/><div style={{position:"absolute",left:0,top:42,zIndex:41,minWidth:"100%",width:"max-content",maxWidth:420,maxHeight:320,overflowY:"auto",padding:6,borderRadius:12,background:"#0E1B30",border:"1px solid rgba(232,208,152,0.5)",boxShadow:"0 16px 40px rgba(0,0,0,0.55)"}}>
+                      {items.map(it=>{const on=Array.isArray(it.package_ids)&&it.package_ids.includes(p.id);return <button key={it.id} onClick={()=>toggleAsig(it,p.id)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 10px",borderRadius:8,border:"none",background:on?"rgba(184,149,106,0.16)":"transparent",color:on?GOLD_LIGHT:"#fff",fontSize:13,fontWeight:on?700:500,cursor:"pointer",textAlign:"left"}}><span style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.45)"}`,background:on?GOLD_GRADIENT:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:11,color:"#0A1628",fontWeight:900}}>{on?"✓":""}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.description||"Producto"}</span></button>;})}
+                    </div></>}
+                  </div>
+                </div>;})()}
             </div>;})}
           <div style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:10}}>
             {isAer?<>{kpi("Peso bruto total",`${f2(totGW)} kg`,totGW>=totVW&&totGW>0)}{kpi("Volumétrico total",`${f2(totVW)} kg`,totVW>totGW)}{kpi("Facturable",`${f2(pf)} kg`,true)}{kpi("Volumen",`${totCBM.toFixed(3)} m³`)}</>:<>{kpi("Volumen total",`${totCBM.toFixed(3)} m³`,true)}{kpi("Peso bruto",`${f2(totGW)} kg`)}</>}
