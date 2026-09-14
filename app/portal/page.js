@@ -95,7 +95,12 @@ const PR=["Buenos Aires","CABA","Catamarca","Chaco","Chubut","Córdoba","Corrien
 const TX=[{value:"responsable_inscripto",label:"Responsable Inscripto"},{value:"monotributista",label:"Monotributista"},{value:"ninguna",label:"Consumidor final"}];
 const INIT={first_name:"",last_name:"",whatsapp:"",dni:"",email:"",password:"",confirm_password:"",street:"",floor_apt:"",postal_code:"",city:"",province:"",tax_condition:"ninguna",company_name:"",cuit:""};
 const SP={proveedor:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"],warehouse:["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z","M9 22V12h6v10"],documentacion:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"],en_transito_aereo:["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.5-.6.4-1.1z"],en_transito_maritimo:["M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.5 0 2.5 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1","M4 18l-1-5h18l-1 5","M5 13V7h14v6","M9 7V4h6v3"],arribo:["M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z","M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],aduana:["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z","M9 12l2 2 4-4"],liberacion:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],entrega:["M1 3h15v13H1z","M16 8h4l3 3v5h-7V8z","M5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z","M18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"],cerrada:["M22 11.08V12a10 10 0 1 1-5.93-9.14","M22 4 12 14.01l-3-3"]};
-const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Depósito"},{k:"documentacion",l:"Documentación"},{k:"en_transito",l:"En tránsito"},{k:"arribo",l:"Arribo"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"A retirar"},{k:"cerrada",l:"Cerrada"}];
+const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Depósito"},{k:"documentacion",l:"Mercadería"},{k:"preparacion",l:"Preparación"},{k:"en_transito",l:"En tránsito"},{k:"arribo",l:"Arribo"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"A retirar"},{k:"cerrada",l:"Cerrada"}];
+// Etapas visibles según la vía: el courier aéreo pasa por Mercadería (el cliente la carga) y Preparación
+// (la confirmó, Argencargo presupuesta y arma el vuelo); el resto no tiene esos dos pasos.
+const stageSteps=(showDoc)=>showDoc?OS:OS.filter(s=>s.k!=="documentacion"&&s.k!=="preparacion");
+const stageKeyOf=(status,showDoc,docsConfirmed,lost)=>{if(lost)return "aduana";const m={pendiente:"proveedor",en_deposito_origen:"warehouse",en_preparacion:showDoc?(docsConfirmed?"preparacion":"documentacion"):"warehouse",en_transito:"en_transito",arribo_argentina:"arribo",en_aduana:"aduana",entregada:"entrega",operacion_cerrada:"cerrada"};return m[status]||"proveedor";};
+const stLabelOf=(op)=>op.status==="en_preparacion"&&op.docs_confirmed_at?"EN PREPARACIÓN":(SM[op.status]||{l:op.status}).l;
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
@@ -176,21 +181,18 @@ function SI({k,a,cur,isA,sz=20,alert}){let key=k;if(k==="en_transito")key=isA?"e
 function NI({p,a,sz=17}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?GOLD_LIGHT:"rgba(255,255,255,0.4)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 // Progress steps estilo mockup: dots limpios (sin íconos), líneas conectoras gold cuando done,
 // dot relleno gold para done, dot pulsante gold gradient para current, dot vacío para pending.
-function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCustoms}){
+function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCustoms,docsConfirmed}){
   const showDoc=!isGI&&channel==="aereo_blanco";
-  const STEPS=showDoc?OS:OS.filter(s=>s.k!=="documentacion");
-  const statusToKey={pendiente:"proveedor",en_deposito_origen:"warehouse",en_preparacion:showDoc?"documentacion":"warehouse",en_transito:"en_transito",arribo_argentina:"arribo",en_aduana:"aduana",entregada:"entrega",operacion_cerrada:"cerrada"};
-  // Si la op fue retenida/abandonada en aduana, el progreso queda fijo en "Aduana" aunque el status
-  // técnico sea "cancelada" (terminal). Así el cliente ve dónde se trabó.
-  const key=lostInCustoms?"aduana":(statusToKey[status]||"proveedor");
+  const STEPS=stageSteps(showDoc);
+  const key=stageKeyOf(status,showDoc,!!docsConfirmed,!!lostInCustoms);
   const si=STEPS.findIndex(s=>s.k===key);
-  const isDoc=status==="en_preparacion"&&showDoc&&!hasItems;
+  const isDoc=status==="en_preparacion"&&showDoc&&!docsConfirmed;
   const n=STEPS.length;
   const pct=n>1?(si/(n-1))*100:0;
   const cur=STEPS[si]||STEPS[0];
   const next=STEPS[si+1]||null;
   const done=si>=n-1;
-  const curLabel=isDoc?"Completar documentación":cur.l;
+  const curLabel=isDoc?(hasItems?"Confirmar la mercadería":"Cargar la mercadería"):cur.l;
   return <div style={{padding:"16px 0 12px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:12}}>
       <span onClick={isDoc&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:undefined} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"5px 13px",borderRadius:999,background:isDoc?"rgba(251,191,36,0.12)":"rgba(184,149,106,0.10)",border:`1px solid ${isDoc?"rgba(251,191,36,0.4)":"rgba(184,149,106,0.35)"}`,cursor:isDoc&&onActionClick?"pointer":"default"}}>
@@ -301,139 +303,60 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const stats=[{l:t("home.totalImports"),v:ops.length,c:"#fff"},{l:t("home.inProgress"),v:act.length,c:GOLD_LIGHT},{l:t("home.completed"),v:past.length,c:"#22c55e"},{l:t("home.reports"),v:null,btn:true}];
   const gd=(o)=>{const d=(o.description||"").trim();if(!d)return o.channel?.includes("maritimo")?"Carga marítima":o.channel?.includes("aereo")?"Carga aérea":"Importación";return d.length>60?(t("imports.consolidated")||"Consolidado"):d;};
   // renderOp con clases .ac-cli-* del mockup (cards alargadas, espaciosas)
-  const renderOp=(op)=>{
-    const isA=op.channel?.includes("aereo");
-    const pillVariant=(()=>{
-      if(["entregada","operacion_cerrada"].includes(op.status))return"good";
-      if(op.status==="en_aduana")return"orange";
-      if(["en_transito","arribo_argentina"].includes(op.status))return"info";
-      if(["en_preparacion","en_deposito_origen"].includes(op.status))return"warn";
-      return"muted";
-    })();
-    const ps={good:{c:"#22c55e",bg:"rgba(34,197,94,0.10)",bd:"rgba(34,197,94,0.4)"},orange:{c:"#fb923c",bg:"rgba(251,146,60,0.10)",bd:"rgba(251,146,60,0.4)"},info:{c:"#60a5fa",bg:"rgba(96,165,250,0.10)",bd:"rgba(96,165,250,0.4)"},warn:{c:"#fbbf24",bg:"rgba(251,191,36,0.10)",bd:"rgba(251,191,36,0.4)"},muted:{c:"#94a3b8",bg:"rgba(148,163,184,0.10)",bd:"rgba(148,163,184,0.4)"}}[pillVariant];
-    const saldoTxt=(()=>{
-      const fmt=(n)=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-      const bt=Number(op.budget_total||0);
-      // Op retenida en aduana: el cliente no debe pagar nada.
-      if(op.lost_in_customs_at)return{txt:"USD 0,00",isPaid:true,label:"Abonado"};
-      // Op saldada / cerrada → mostramos el total como "Abonado", NO "Falta abonar".
-      if(op.is_collected||op.status==="operacion_cerrada")return{txt:bt>0?fmt(bt):"—",isPaid:true,label:"Abonado"};
-      if(bt<=0)return{txt:t("common.pending"),isPending:true,label:t("imports.remaining")};
-      const pmtTot=Number(pmtsByOp[op.id]||0);
-      const ant=Number(op.total_anticipos||0);
-      const cliPaid=Number(cliPmtsByOp[op.id]||0);
-      const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTot-ant));
-      if(saldo<0.01)return{txt:fmt(bt),isPaid:true,label:"Abonado"};
-      return{txt:fmt(saldo),label:t("imports.remaining")};
-    })();
-    return <div key={op.id} className="ac-cli-op-card" onClick={()=>onSelect(op)}>
-    <div className="ac-cli-op-head">
-      <div className="ac-cli-op-head-left">
-        <span className="ac-cli-op-code">{op.operation_code}</span>
-        <span className="ac-cli-pill" style={{color:ps.c,background:ps.bg,borderColor:ps.bd}}>
-          <span className="pdot" style={{background:ps.c,boxShadow:`0 0 6px ${ps.c}`}}/>
-          {op.lost_in_customs_at?"Retenida en aduana":t("opStatus."+op.status)}
-        </span>
-        {op.service_type==="gestion_integral"&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
+  // ── Lista de importaciones (rediseño 13/09/2026): una línea por importación, sin tarjetas ──
+  const HAIR="1px solid rgba(255,255,255,0.13)";const SKY="#8CC8F5";
+  const LBL={fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:SKY,margin:0};
+  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const fShort=d=>{if(!d)return "—";const x=new Date(String(d).length<=10?d+"T12:00:00":d);return `${String(x.getDate()).padStart(2,"0")}/${String(x.getMonth()+1).padStart(2,"0")}/${String(x.getFullYear()).slice(2)}`;};
+  const saldoDe=(op)=>{const bt=Number(op.budget_total||0);
+    if(op.lost_in_customs_at)return{txt:"USD 0,00",tone:"ok",l:"Sin saldo"};
+    if(op.is_collected||op.status==="operacion_cerrada")return{txt:bt>0?usd(bt):"—",tone:"ok",l:"Abonado"};
+    if(bt<=0)return{txt:"Pendiente",tone:"muted",l:"A abonar"};
+    const pmtTot=Number(pmtsByOp[op.id]||0);const ant=Number(op.total_anticipos||0);const cliPaid=Number(cliPmtsByOp[op.id]||0);
+    const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTot-ant));
+    if(saldo<0.01)return{txt:usd(bt),tone:"ok",l:"Abonado"};
+    return{txt:usd(saldo),tone:"due",l:"Falta abonar"};};
+  const accionDe=(op)=>{const isGI=op.service_type==="gestion_integral";const hasItems=(itemsByOp[op.id]||0)>0;
+    if(op.lost_in_customs_at)return{c:"#f87171",t:"Retenida en aduana"};
+    if(!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!op.docs_confirmed_at)return{c:GOLD_LIGHT,t:hasItems?"Confirmá la mercadería":"Cargá la mercadería",strong:true};
+    if(op.status==="en_preparacion"&&Number(op.budget_total||0)<=0)return{c:SKY,t:"En preparación"};
+    if(op.status==="entregada")return{c:"#4ade80",t:"Lista para retirar"};
+    const s=saldoDe(op);if(s.tone==="due"&&!["operacion_cerrada","cancelada"].includes(op.status))return{c:GOLD_LIGHT,t:"Saldo pendiente"};
+    return null;};
+  const COLS="150px minmax(0,1.5fr) 200px 88px 150px 34px";
+  const head=<div className="ol-head" style={{display:"grid",gridTemplateColumns:COLS,gap:12,padding:"0 16px 8px"}}>{["Importación","Mercadería","Etapa","ETA","A abonar",""].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>;
+  const renderRow=(op)=>{const isGI=op.service_type==="gestion_integral";const showDoc=!isGI&&op.channel==="aereo_blanco";const steps=stageSteps(showDoc);const key=stageKeyOf(op.status,showDoc,!!op.docs_confirmed_at,!!op.lost_in_customs_at);const si=Math.max(0,steps.findIndex(s=>s.k===key));const cur=steps[si]||steps[0];
+    const done=["operacion_cerrada","cancelada"].includes(op.status);const s=saldoDe(op);const ac=accionDe(op);
+    return <div key={op.id} onClick={()=>onSelect(op)} className="ol-row" style={{display:"grid",gridTemplateColumns:COLS,gap:12,alignItems:"center",padding:"14px 16px",marginBottom:8,borderRadius:13,border:ac?.strong?"1px solid rgba(232,208,152,0.5)":HAIR,background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",boxShadow:"0 10px 26px rgba(0,0,0,0.25)",cursor:"pointer",opacity:done?0.75:1,transition:"border-color 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(140,200,245,0.55)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=ac?.strong?"rgba(232,208,152,0.5)":"rgba(255,255,255,0.13)";}}>
+      <div style={{minWidth:0}}>
+        <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</p>
+        <p style={{margin:"4px 0 0",fontSize:11,color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{op.origin==="USA"?"🇺🇸":"🇨🇳"} {op.channel?t("channel."+op.channel).replace(" Comercial","").replace(" Carga LCL/FCL",""):"—"}{isGI?" · GI":""}</p>
       </div>
-      {op.eta&&op.status!=="entregada"&&<span className="ac-cli-op-eta">ETA · <b>{formatDate(op.eta)}</b></span>}
-    </div>
-    <p className="ac-cli-op-desc">{gd(op)}</p>
-    {/* Descuento por categoría removido (11/06/2026): los tiers ya no aplican beneficio. */}
-    <OpProgress status={op.status} isAereo={isA} onActionClick={(e)=>{e?.stopPropagation?.();onSelect(op);}} isGI={op.service_type==="gestion_integral"} channel={op.channel} hasItems={(itemsByOp[op.id]||0)>0} lostInCustoms={!!op.lost_in_customs_at}/>
-    <div className="ac-cli-op-foot">
-      {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
-        <span className="l">{t("imports.origin")}</span>
-        <span className="v">{op.origin==="China"?"🇨🇳":op.origin==="USA"?"🇺🇸":op.origin==="España"?"🇪🇸":"🌍"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}</span>
-      </div>}
-      {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
-        <span className="l">{t("imports.channel")}</span>
-        <span className="v">{op.channel?t("channel."+op.channel).replace(" Comercial","").replace(" Carga LCL/FCL",""):"—"}</span>
-      </div>}
-      {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
-        <span className="l">{saldoTxt.label||t("imports.remaining")}</span>
-        <span className={`v${saldoTxt.isPaid||saldoTxt.isPending?"":" gold"}`} style={saldoTxt.isPaid?{color:"#22c55e"}:saldoTxt.isPending?{color:"rgba(255,255,255,0.5)",fontWeight:500}:{}}>{saldoTxt.txt}</span>
-      </div>}
-      <button onClick={(e)=>{e.stopPropagation();onSelect(op);}}>{t("common.viewDetail")} →</button>
-    </div>
-    {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{marginTop:14,background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      <span style={{fontSize:12.5,fontWeight:500,color:"#fbbf24"}}>{t("home.consolidation.q")}</span>
-      <button onClick={async(e)=>{e.stopPropagation();const btn=e.currentTarget;btn.disabled=true;btn.textContent=t("home.confirming");try{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>avisarAdmin(token,{title:`📦 Carga completa · ${op.operation_code}`,body:`${client?.client_code?client.client_code+" · ":""}El cliente confirmo que llegaron todos los bultos`}));onReload&&await onReload();}catch(err){btn.disabled=false;btn.textContent=t("home.consolidation.btn");}}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.02em"}}>{t("home.consolidation.btn")}</button>
-    </div>}
-    {op.service_type!=="gestion_integral"&&op.channel==="aereo_blanco"&&(op.status==="en_preparacion"||(op.status==="en_deposito_origen"&&op.consolidation_confirmed))&&(itemsByOp[op.id]||0)===0&&<div style={{marginTop:14,background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      <span style={{fontSize:12.5,fontWeight:500,color:GOLD_LIGHT}}>{t("home.docMissing")}</span>
-      <button onClick={(e)=>{e.stopPropagation();onSelect(op);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628"}}>{t("home.addProducts")}</button>
-    </div>}
-  </div>;};
+      <div className="ol-desc" style={{minWidth:0}}>
+        <p style={{margin:0,fontSize:14,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.45)",fontStyle:op.description?"normal":"italic",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{gd(op)}</p>
+        {ac&&<span style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:5,fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:ac.c,background:`${ac.c}1c`,border:`1px solid ${ac.c}66`}}>{ac.strong&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:ac.c,display:"inline-block"}}/>}{ac.t}{ac.strong?" →":""}</span>}
+      </div>
+      <div className="ol-stage" style={{textAlign:"center"}}>
+        <div style={{display:"flex",justifyContent:"center",gap:4,marginBottom:5}}>{steps.map((st,i)=><span key={st.k} title={st.l} style={{width:i===si?18:9,height:5,borderRadius:999,background:i<si?GOLD:i===si?GOLD_LIGHT:"rgba(255,255,255,0.14)",boxShadow:i===si?"0 0 8px rgba(232,208,152,0.55)":"none",transition:"width 200ms"}}/>)}</div>
+        <p style={{margin:0,fontSize:11.5,fontWeight:700,color:op.lost_in_customs_at?"#f87171":GOLD_LIGHT,whiteSpace:"nowrap"}}>{op.lost_in_customs_at?"Retenida en aduana":cur.l}<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}> · {si+1}/{steps.length}</span></p>
+      </div>
+      <p className="ol-eta" style={{margin:0,textAlign:"center",fontSize:12.5,fontWeight:700,color:op.eta?SKY:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{fShort(op.eta)}</p>
+      <div className="ol-saldo" style={{textAlign:"center"}}>
+        <p style={{margin:0,fontSize:14,fontWeight:800,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",color:s.tone==="ok"?"#4ade80":s.tone==="due"?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{s.txt}</p>
+        <p style={{margin:"2px 0 0",fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>{s.l}</p>
+      </div>
+      <span className="ol-arrow" style={{textAlign:"right",color:SKY,fontSize:18,fontWeight:700}}>→</span>
+    </div>;};
+  const secTitle=(l,n,muted)=><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,margin:"6px 0 12px"}}><h2 style={{fontSize:14,fontWeight:800,color:muted?"rgba(255,255,255,0.7)":"#fff",margin:0,letterSpacing:"0.14em",textTransform:"uppercase"}}>{l}</h2><span style={{fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,color:muted?"rgba(255,255,255,0.55)":SKY,background:muted?"rgba(255,255,255,0.06)":"rgba(140,200,245,0.14)"}}>{n}</span></div>;
   return <div>
-    {/* Saludo + hero (categoría / saldo a favor / en curso) ocultos por pedido del cliente:
-        el portal arranca directo en la carga marítima / operaciones. Se deja el bloque
-        desactivado con `false&&` por si se quiere reactivar. */}
-    {false&&(()=>{
-      const tier=client?.tier||"standard";
-      const ti=getTierInfo(tier);
-      const lifetime=Number(client?.lifetime_points_earned||0);
-      const nextTier=ti.next?Object.values(TIERS).find(t=>t.min===ti.next):null;
-      const ptsToNext=nextTier?Math.max(0,nextTier.min-lifetime):0;
-      const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
-      const isStandard=tier==="standard";
-      const ccBalance=Number(client?.account_balance_usd||0);
-      const nextTierIcon=Object.values(TIERS).find(t=>t.min===ti.next)?.icon||"";
-      return <div className="ac-cli-hero-grid">
-        {/* TIER HERO CARD */}
-        <div className={`ac-cli-hero-card${isStandard?" standard":""}`}>
-          {!isStandard&&<div className="glow"/>}
-          <div className="ac-cli-hero-tier">
-            <span className="icon">{ti.icon}</span>
-            <div>
-              <p className="label">Tu categoría</p>
-              <p className="name">{ti.label}</p>
-            </div>
-          </div>
-          {!isStandard&&<p className="desc">Tenés <b>+{ti.bonus}% bonus</b> en puntos siempre{ti.discount?<> · <b>USD {ti.discount} de bonificación</b> al alcanzar {ti.label} (se aplica una vez)</>:""}</p>}
-          {nextTier?<div className="bar-wrap">
-            <div className="bar-info">
-              <span>En <b>{ptsToNext} pts</b> llegás a <b>{nextTier.label}</b> {nextTierIcon}</span>
-              <span style={{color:"rgba(255,255,255,0.4)"}}>{Math.round(progressPct)}%</span>
-            </div>
-            <div className="bar-track"><div className="bar-fill" style={{width:`${progressPct}%`}}/></div>
-          </div>:<p className="max">★ Nivel máximo alcanzado</p>}
-        </div>
-
-        {/* SALDO A FAVOR */}
-        <div className="ac-cli-stat-card">
-          <div>
-            <p className="label"><span className="ico">💳</span>Saldo a favor</p>
-            <p className="value gold">USD {Math.abs(ccBalance).toLocaleString("es-AR",{maximumFractionDigits:0})}</p>
-          </div>
-          <p className="sub">{ccBalance>0?"Se aplica a tu próxima op":ccBalance<0?"Saldo pendiente de pago":"Sin movimientos pendientes"}</p>
-        </div>
-
-        {/* EN CURSO */}
-        <div className="ac-cli-stat-card">
-          <div>
-            <p className="label"><span className="ico">📦</span>En curso</p>
-            <p className="value">{act.length}</p>
-          </div>
-          <p className="sub">de <b>{ops.length}</b> totales · {past.length} cerradas</p>
-        </div>
-      </div>;
-    })()}
-
-    {/* Carga marítima en camino (pre-operación) — debajo del saludo/cards, arriba de "En curso" */}
     <MaritimeCargoSection cargo={mCargo}/>
-
-    {/* Sección "En curso" con header */}
-    <div className="ac-cli-section-h">
-      <h2>{t("home.inProgress")} <span className="count">({act.length})</span></h2>
-      {past.length>0&&<button onClick={()=>{const el=document.getElementById("ac-historico");if(el)el.scrollIntoView({behavior:"smooth"});}}>Ver histórico →</button>}
-    </div>
-    {act.length>0?act.map(renderOp):<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"2rem 0",fontStyle:"italic"}}>No tenés operaciones en curso.</p>}
-
-    {past.length>0&&<><div className="ac-cli-section-h" id="ac-historico"><h2>{t("home.completed")} <span className="count">({past.length})</span></h2></div>{past.map(renderOp)}</>}
-    {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No tenés importaciones todavía.</p>}
+    {secTitle("En curso",act.length)}
+    {act.length>0?<>{head}{act.map(renderRow)}</>:<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"1.6rem 0",fontSize:13}}>No tenés importaciones en curso.</p>}
+    {past.length>0&&<div style={{marginTop:30}}>{secTitle("Finalizadas",past.length,true)}{head}{past.map(renderRow)}</div>}
+    {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"2rem 0",fontSize:13}}>Cuando armes tu primera importación desde el depósito, aparece acá.</p>}
   </div>;
 }
+
 // === PDF INVOICE READER === (compartido entre cotización y declaración)
 // Carga pdf.js desde CDN (no agrega al bundle), renderiza páginas a imagen,
 // llama /api/parse-invoice-pdf, devuelve items detectados para confirmar.
@@ -704,28 +627,40 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const [rows,setRows]=useState(()=>items.length?items.map(fromItem):[empty()]);
   const [mode,setMode]=useState(items.length?"manual":null);
   const [batt,setBatt]=useState(!!op.has_battery);
-  const [classifyingAll,setClassifyingAll]=useState(false);const [saving,setSaving]=useState(false);
-  const ch=(i,f,v)=>setRows(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
-  const add=()=>setRows(p=>[...p,empty()]);const rm=i=>setRows(p=>p.filter((_,j)=>j!==i));
+  const [classifyingAll,setClassifyingAll]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
+  const dirtyRef=useRef(false);const timerRef=useRef(null);const lastSavedRef=useRef(null);
+  const ch=(i,f,v)=>{dirtyRef.current=true;setRows(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));};
+  const add=()=>setRows(p=>[...p,empty()]);const rm=i=>{dirtyRef.current=true;setRows(p=>p.filter((_,j)=>j!==i));};
   const classifyOne=async(i)=>{const p=rows[i];if(!p?.description?.trim())return;
     setRows(pr=>pr.map((x,j)=>j===i?{...x,ncmLoading:true,ncmError:false}:x));
     try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description,hint:p.ncm_hint||undefined})});const d=await r.json();
       if(d.fallback||d.error)setRows(pr=>pr.map((x,j)=>j===i?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));
-      else setRows(pr=>pr.map((x,j)=>j===i?{...x,ncmLoading:false,ncmError:false,ncm:d}:x));
+      else{dirtyRef.current=true;setRows(pr=>pr.map((x,j)=>j===i?{...x,ncmLoading:false,ncmError:false,ncm:d}:x));}
     }catch{setRows(pr=>pr.map((x,j)=>j===i?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}};
   const classifyAll=async()=>{const idxs=rows.map((p,i)=>(!p.ncm&&p.description?.trim())?i:-1).filter(i=>i>=0);if(!idxs.length)return;setClassifyingAll(true);try{await Promise.all(idxs.map(classifyOne));}finally{setClassifyingAll(false);}};
   const valid=rows.filter(r=>r.description.trim()&&toN(r.unit_price)>0&&toN(r.quantity)>0);
   const totalFob=valid.reduce((s,r)=>s+toN(r.unit_price)*toN(r.quantity),0);
   const sinNcm=rows.filter(p=>p.description?.trim()&&!p.ncm&&!p.ncmLoading);
   const pendingClass=valid.some(r=>!r.ncm);
-  const canSave=valid.length>0&&!pendingClass&&!saving;
-  const save=async()=>{if(!canSave)return;setSaving(true);
-    try{const r=await fetch("/api/portal/guardar-mercaderia",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,client_id:client?.id,has_battery:batt,items:valid.map(x=>({description:x.description.trim(),quantity:toN(x.quantity),unit_price_usd:toN(x.unit_price),ncm_code:x.ncm?.ncm_code||null,import_duty_rate:x.ncm?.import_duty_rate??0,statistics_rate:x.ncm?.statistics_rate??0,iva_rate:x.ncm?.iva_rate??21,package_ids:x.package_ids?.length?x.package_ids:null,antidumping_note:x.ncm?.antidumping?`${x.ncm.antidumping.producto}${x.ncm.antidumping.nota?" — "+x.ncm.antidumping.nota:""}`:null}))})});
+  // Filas a medias (con descripción pero sin precio o cantidad) frenan la confirmación, no el borrador.
+  const aMedias=rows.filter(r=>r.description.trim()&&!(toN(r.unit_price)>0&&toN(r.quantity)>0));
+  const payload=()=>({op_id:op.id,client_id:client?.id,has_battery:batt,items:valid.map(x=>({description:x.description.trim(),quantity:toN(x.quantity),unit_price_usd:toN(x.unit_price),ncm_code:x.ncm?.ncm_code||null,import_duty_rate:x.ncm?.import_duty_rate??0,statistics_rate:x.ncm?.statistics_rate??0,iva_rate:x.ncm?.iva_rate??21,package_ids:x.package_ids?.length?x.package_ids:null,antidumping_note:x.ncm?.antidumping?`${x.ncm.antidumping.producto}${x.ncm.antidumping.nota?" — "+x.ncm.antidumping.nota:""}`:null}))});
+  const persist=async(confirm)=>{const body=payload();const ser=JSON.stringify(body);
+    if(!confirm&&ser===lastSavedRef.current)return true;
+    setSaving(true);
+    try{const r=await fetch("/api/portal/guardar-mercaderia",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({...body,confirm:!!confirm})});
       const d=await r.json().catch(()=>null);
-      if(!r.ok){toast(d?.error==="ya_en_vuelo"?"Esta importación ya está asignada a un vuelo: la mercadería quedó congelada.":"No se pudo guardar la mercadería","error");setSaving(false);return;}
-      toast("Mercadería guardada","success");onSaved?.();
-    }catch(e){toast("No se pudo guardar la mercadería","error");}
-    setSaving(false);};
+      if(!r.ok){toast(d?.error==="ya_en_vuelo"?"Esta importación ya está asignada a un vuelo: la mercadería quedó congelada.":d?.error==="mercaderia_confirmada"?"La mercadería ya está confirmada. Escribinos por WhatsApp si necesitás cambiarla.":"No se pudo guardar la mercadería","error");setSaving(false);return false;}
+      lastSavedRef.current=ser;dirtyRef.current=false;setSavedAt(new Date());
+      if(confirm)toast("Mercadería confirmada. Argencargo ya puede presupuestar y armar el vuelo.","success");
+      onSaved?.();setSaving(false);return true;
+    }catch(e){toast("No se pudo guardar la mercadería","error");setSaving(false);return false;}};
+  // Borrador automático: en cuanto hay productos válidos y clasificados, se guarda solo (sin botón).
+  useEffect(()=>{if(!dirtyRef.current)return;if(!(valid.length>0&&!pendingClass))return;clearTimeout(timerRef.current);timerRef.current=setTimeout(()=>{persist(false);},900);return()=>clearTimeout(timerRef.current);},[rows,batt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const canConfirm=valid.length>0&&!pendingClass&&aMedias.length===0&&!saving&&!classifyingAll;
+  const confirmar=async()=>{if(!canConfirm)return;
+    if(!await confirmDialog(`¿Confirmamos la mercadería? ${valid.length} producto${valid.length!==1?"s":""} por ${usd(totalFob)} FOB. Después de esto no vas a poder editarla: Argencargo presupuesta y arma el vuelo con estos datos.`,{confirmText:"Sí, está completa"}))return;
+    clearTimeout(timerRef.current);await persist(true);};
   const PROD_COLS="1fr 110px 90px 150px 170px";
   const ncmCell=(p)=>p.ncmLoading?<span style={{fontSize:11.5,color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>Clasificando…</span>
     :p.ncm?.ncm_code?<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,background:"rgba(184,149,106,0.16)",border:"1px solid rgba(232,208,152,0.5)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{p.ncm.ncm_code==="MANUAL"?"Estimado":p.ncm.ncm_code}{p.ncm.antidumping&&<span title="Antidumping" style={{marginLeft:6,color:"#f87171"}}>⚠</span>}</span>
@@ -733,14 +668,13 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const delBtn=(onClick,disabled)=><button onClick={onClick} disabled={disabled} title="Quitar" style={{width:32,height:32,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.35:1,fontSize:13,flexShrink:0}}>✕</button>;
   const multiPk=pkgs.length>1;
   return <div>
-    {/* Baterías + modo de carga */}
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{...LBL,fontSize:11.5}}>¿Tu mercadería contiene baterías?</span>
-        {[[true,"⚡ Sí"],[false,"✓ No"]].map(([v,l])=><button key={l} onClick={()=>setBatt(v)} style={{height:32,padding:"0 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${batt===v?(v?"rgba(251,146,60,0.6)":"rgba(74,222,128,0.5)"):"rgba(255,255,255,0.18)"}`,background:batt===v?(v?"rgba(251,146,60,0.16)":"rgba(74,222,128,0.14)"):"transparent",color:batt===v?(v?"#fdba74":"#4ade80"):"rgba(255,255,255,0.55)"}}>{l}</button>)}
+    {mode==="manual"&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:12}}>
+      <p style={{...LBL,fontSize:12}}>Productos</p>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        {saving?<span style={{fontSize:11.5,color:SKY,fontWeight:600}}>Guardando…</span>:savedAt?<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Borrador guardado {savedAt.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>:null}
+        <button onClick={add} style={SMALL_GOLD}>+ Producto</button>
       </div>
-      {mode==="manual"&&<button onClick={add} style={SMALL_GOLD}>+ Producto</button>}
-    </div>
+    </div>}
     {mode===null&&<InputModeSelector mode={mode} onChange={setMode} labels={{pdf_title:"📄 Leer la factura",pdf_desc:"PDF, foto o imagen pegada: detectamos los productos",manual_title:"✍️ Cargar a mano",manual_desc:"Producto por producto, como en la calculadora"}}/>}
     {mode==="pdf"&&<PdfInvoiceReader onCancel={()=>setMode("manual")} onItemsConfirmed={(detected)=>{setRows(detected.map(it=>({...empty(),description:it.description||"",quantity:String(it.quantity||"1"),unit_price:String(it.unit_price_usd||"").replace(".",","),ncm_hint:String(it.hs_code||"").replace(/[^\d.]/g,"")})));setMode("manual");}}/>}
     {mode==="manual"&&<>
@@ -778,17 +712,29 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:10,paddingTop:14,borderTop:HAIR}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:14,padding:"8px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)"}}><span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase",lineHeight:1}}>FOB mercadería</span><span style={{fontSize:22,fontWeight:800,color:totalFob>0?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{totalFob>0?usd(totalFob):"—"}</span></div>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          {pendingClass&&!classifyingAll&&sinNcm.length>0&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171"}}>Clasificá el NCM antes de guardar</span>}
+          {pendingClass&&!classifyingAll&&sinNcm.length>0&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171"}}>Tocá clasificar NCM</span>}
           {sinNcm.length>0&&<button onClick={classifyAll} disabled={classifyingAll} style={{height:40,padding:"0 20px",fontSize:12.5,fontWeight:800,letterSpacing:"0.06em",borderRadius:9,cursor:classifyingAll?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,opacity:classifyingAll?0.6:1,boxShadow:GOLD_GLOW}}>{classifyingAll?"CLASIFICANDO…":`CLASIFICAR NCM${sinNcm.length>1?` (${sinNcm.length})`:""}`}</button>}
-          {sinNcm.length===0&&<button onClick={save} disabled={!canSave} style={{height:40,padding:"0 22px",fontSize:12.5,fontWeight:800,letterSpacing:"0.06em",borderRadius:9,cursor:canSave?"pointer":"not-allowed",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,opacity:canSave?1:0.45,boxShadow:canSave?GOLD_GLOW:"none"}}>{saving?"GUARDANDO…":items.length?"GUARDAR CAMBIOS":"GUARDAR MERCADERÍA"}</button>}
         </div>
+      </div>
+      {/* Baterías + confirmación final */}
+      <div style={{marginTop:18,paddingTop:16,borderTop:HAIR,display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",justifyContent:"center"}}>
+          <span style={{...LBL,fontSize:12}}>¿Tu mercadería contiene baterías?</span>
+          {[[true,"⚡ Sí"],[false,"✓ No"]].map(([v,l])=><button key={l} onClick={()=>{dirtyRef.current=true;setBatt(v);}} style={{height:36,padding:"0 18px",fontSize:12.5,fontWeight:800,borderRadius:9,cursor:"pointer",border:`1px solid ${batt===v?(v?"rgba(251,146,60,0.65)":"rgba(74,222,128,0.55)"):"rgba(255,255,255,0.2)"}`,background:batt===v?(v?"rgba(251,146,60,0.16)":"rgba(74,222,128,0.14)"):"transparent",color:batt===v?(v?"#fdba74":"#4ade80"):"rgba(255,255,255,0.6)"}}>{l}</button>)}
+        </div>
+        {aMedias.length>0&&<span style={{fontSize:12,fontWeight:700,color:"#fbbf24",textAlign:"center"}}>Hay {aMedias.length===1?"un producto":`${aMedias.length} productos`} sin precio o cantidad: completalo o quitalo para confirmar.</span>}
+        <button onClick={confirmar} disabled={!canConfirm} style={{minHeight:52,padding:"0 30px",fontSize:13,fontWeight:900,letterSpacing:"0.08em",textTransform:"uppercase",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:canConfirm?"pointer":"not-allowed",background:GOLD_GRADIENT,color:"#0A1628",opacity:canConfirm?1:0.45,boxShadow:canConfirm?GOLD_GLOW:"none"}}>Documentación completa · avanzar con la importación →</button>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,textAlign:"center",maxWidth:560,lineHeight:1.5}}>Los cambios se guardan solos mientras cargás. Al confirmar, la mercadería queda cerrada y Argencargo presupuesta y arma el vuelo con estos datos.</p>
       </div>
     </>}
   </div>;
 }
 
-function OperationDetail({op,token,client,onBack}){
+function OperationDetail({op:opProp,token,client,onBack}){
   const {t}=useT();
+  // La op se refresca sola después de cada guardado (descripción, baterías, confirmación).
+  const [opFresh,setOpFresh]=useState(null);const op=opFresh||opProp;
+  const [tabDet,setTabDet]=useState(null);
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó "Esperando más bultos": ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
@@ -811,7 +757,7 @@ function OperationDetail({op,token,client,onBack}){
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
   const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
   const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
-  const loadAll=async()=>{const [it,ev,pk,pm,cp,rk,fl,fii,tf,cf,ov]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`}),dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);
+  const loadAll=async()=>{dq("operations",{token,filters:`?id=eq.${op.id}&select=*`}).then(r=>{if(Array.isArray(r)&&r[0])setOpFresh(r[0]);}).catch(()=>{});const [it,ev,pk,pm,cp,rk,fl,fii,tf,cf,ov]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`}),dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);
   {const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setCalcCtx({tariffs:Array.isArray(tf)?tf:[],config:cfg,overrides:Array.isArray(ov)?ov:[]});}
   setDeclaredItems(Array.isArray(fii)?fii:[]);
 
@@ -843,7 +789,7 @@ function OperationDetail({op,token,client,onBack}){
   const pkData=pkgs.map(pk=>{const q=Number(pk.quantity||1);const l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0)*q;const vw=l&&w&&h?((l*w*h)/5000)*q:0;const cbm=l&&w&&h?((l*w*h)/1e6)*q:0;return{...pk,l,w,h,gw,vw,cbm};});
   const totGW=pkData.reduce((s,p)=>s+p.gw,0),totVW=pkData.reduce((s,p)=>s+p.vw,0),totCBM=pkData.reduce((s,p)=>s+p.cbm,0),pf=pkData.reduce((s,p)=>s+Math.max(p.gw,p.vw),0);
   const nBultos=pkgs.length>0?pkgs.reduce((s,p)=>s+Number(p.quantity||1),0):(op.total_quantity||0);
-  const isEditable=!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&(op.consolidation_confirmed||localConfirmed)&&!inFlight;
+  const isEditable=!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&(op.consolidation_confirmed||localConfirmed)&&!inFlight&&!op.docs_confirmed_at;
   const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
   const riPagaImpuestosDirecto=op.channel==="aereo_blanco"&&client?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes;
   const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnticipado=Number(op.total_anticipos||0);const pmtPendiente=Math.max(0,pmtTotal-pmtAnticipado);
@@ -863,7 +809,8 @@ function OperationDetail({op,token,client,onBack}){
   const accion=(()=>{
     if(op.lost_in_customs_at||["operacion_cerrada","cancelada"].includes(op.status))return null;
     if(isEditable&&items.length===0)return{c:GOLD_LIGHT,t:"Cargá la mercadería de tu importación",s:"Leé la factura o cargala a mano, clasificá el NCM y vas a ver el costo estimado al instante."};
-    if(isEditable&&items.length>0&&!hasBudget)return{c:SKY,t:"Estamos presupuestando tu carga",s:"Ya tenemos tu mercadería. Cuando el presupuesto esté confirmado te avisamos; mientras tanto, abajo tenés el costo estimado y el costo de cada producto."};
+    if(isEditable&&items.length>0)return{c:GOLD_LIGHT,t:"Confirmá tu mercadería cuando esté completa",s:"Revisá los productos y tocá el botón de abajo. Después de confirmar ya no se puede editar: Argencargo presupuesta y arma el vuelo con eso."};
+    if(op.docs_confirmed_at&&op.status==="en_preparacion"&&!hasBudget)return{c:SKY,t:"Estamos presupuestando tu carga",s:"Tu mercadería está confirmada. Cuando el presupuesto esté listo te avisamos; mientras tanto, abajo tenés el costo estimado y el costo de cada producto."};
     if(hasBudget&&saldoReal>0.01&&op.status!=="entregada")return{c:GOLD_LIGHT,t:`Saldo a abonar: ${usd(saldoReal)}`,s:"Podés pagarlo por transferencia o en efectivo. Si ya lo pagaste, mandanos el comprobante por WhatsApp."};
     if(op.status==="entregada")return{c:"#4ade80",t:"Tu carga está lista para retirar",s:"Te mandamos por WhatsApp el link para coordinar el retiro o el envío."};
     if(op.status==="en_transito")return{c:SKY,t:"Tu carga está en camino",s:op.eta?`Llegada estimada: ${fd(op.eta)}.`:"Te avisamos cuando llegue a Argentina."};
@@ -880,11 +827,11 @@ function OperationDetail({op,token,client,onBack}){
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <span style={{fontSize:20,fontWeight:800,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.05em"}}>{op.operation_code}</span>
         {isGI&&<span className="ac-gi-pulse" style={{fontSize:10.5,fontWeight:800,padding:"5px 12px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
-        {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?"Retenida en aduana":st.l}</span>;})()}
+        {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?"Retenida en aduana":stLabelOf(op)}</span>;})()}
         <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{op.origin==="USA"?"🇺🇸":"🇨🇳"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?"Arribó":"ETA"} {fd(op.eta)}</span></>:null}</span>
       </div>
       <h2 style={{fontSize:19,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.4)",margin:"12px 0 4px",fontStyle:op.description?"normal":"italic"}}>{op.description||(items.length?items.map(i=>i.description).filter(Boolean).slice(0,3).join(", "):"Sin mercadería cargada")}</h2>
-      <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at}/>
+      <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={!!op.docs_confirmed_at}/>
       {op.lost_in_customs_at&&<div style={{marginBottom:14,padding:"12px 16px",background:"rgba(248,113,113,0.08)",border:"1.5px solid rgba(248,113,113,0.4)",borderRadius:12}}>
         <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚨 Carga retenida en aduana</p>
         <p style={{fontSize:12.5,color:"rgba(255,255,255,0.75)",margin:"4px 0 0",lineHeight:1.5}}>Esta operación quedó retenida por aduana y no puede liberarse. No tenés saldo pendiente: la pérdida la asume Argencargo. Cualquier duda, escribinos por WhatsApp.</p>
@@ -899,8 +846,15 @@ function OperationDetail({op,token,client,onBack}){
       </div>
     </div>
 
-    {/* ZONA 2 · mercadería y costos */}
-    {!loading&&<div style={PANEL}>
+    {/* Solapas */}
+    {!loading&&(()=>{const def=isEditable?"merc":["en_transito","arribo_argentina","en_aduana"].includes(op.status)?"seg":"merc";const cur=tabDet||def;
+      const tabs=[["merc","Mercadería y costos"],["bultos",`Bultos${pkgs.length?` · ${pkgs.length}`:""}`],["seg","Seguimiento"]];
+      return <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><div style={{display:"flex",gap:6,padding:5,borderRadius:13,background:"rgba(0,0,0,0.32)",border:"1px solid rgba(255,255,255,0.1)",flexWrap:"wrap",justifyContent:"center"}}>
+        {tabs.map(([k,l])=><button key={k} onClick={()=>setTabDet(k)} style={{padding:"10px 18px",fontSize:12,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",borderRadius:10,cursor:"pointer",border:"none",background:cur===k?"rgba(255,255,255,0.1)":"transparent",color:cur===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:cur===k?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{l}</button>)}
+      </div></div>;})()}
+    {(()=>{const def=isEditable?"merc":["en_transito","arribo_argentina","en_aduana"].includes(op.status)?"seg":"merc";const tabCur=tabDet||def;return <>
+    {/* SOLAPA · mercadería y costos */}
+    {!loading&&tabCur==="merc"&&<div style={PANEL}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
         <h3 style={H3}>Mercadería y costos</h3>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -910,12 +864,14 @@ function OperationDetail({op,token,client,onBack}){
       </div>
 
       {isEditable
-        ?<MercaderiaEditor key={`${op.id}-${items.length}`} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
-        :items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
+        ?<MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
+        :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>Mercadería confirmada</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
+        {items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
           <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM",...(isGI?[]:["Derechos","Tasa est.","IVA"])].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
           <tbody>{items.map((it,i)=>{const qty=Number(it.quantity||1);const fob=Number(it.unit_price_usd||0)*qty;const last=i===items.length-1;const td=(c,ci,hot)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
             return <tr key={it.id||i}>{[it.description||"—",String(qty),usd(it.unit_price_usd),usd(fob),it.ncm_code&&it.ncm_code!=="MANUAL"?it.ncm_code:(it.import_duty_rate!=null?"Estimado":"—"),...(isGI?[]:[`${it.import_duty_rate??0}%`,`${it.statistics_rate??0}%`,`${it.iva_rate??21}%`])].map((c,ci)=>td(c,ci,ci===4&&it.ncm_code))}</tr>;})}</tbody>
         </table></div>}
+        </>}
 
       {/* RI: declaración a Aduana con los valores del despacho */}
       {muestraAduana&&(()=>{const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
@@ -1015,9 +971,10 @@ function OperationDetail({op,token,client,onBack}){
       </div>}
     </div>}
 
-    {/* ZONA 3 · bultos y seguimiento */}
-    {!loading&&(pkgs.length>0||events.length>0||repackInfo||pmts.length>0)&&<div style={PANEL}>
-      <h3 style={{...H3,marginBottom:14}}>Bultos y seguimiento</h3>
+    {/* SOLAPA · bultos */}
+    {!loading&&tabCur==="bultos"&&<div style={PANEL}>
+      <h3 style={{...H3,marginBottom:14}}>Bultos</h3>
+      {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Esta importación todavía no tiene bultos registrados.</p>}
       {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;
         return <div style={{marginBottom:12,padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff"}}><b style={{color:"#4ade80"}}>Reempaque realizado en depósito.</b> Peso facturable {f2(before)} kg → <b>{f2(after)} kg</b>{delta>0&&<span style={{color:"#4ade80",marginLeft:6}}>(−{pct.toFixed(0)}%)</span>}</div>;})()}
       {pkgs.length>0&&<>
@@ -1035,15 +992,20 @@ function OperationDetail({op,token,client,onBack}){
           {isAer?<>{kpi("Peso bruto total",`${f2(totGW)} kg`,totGW>=totVW&&totGW>0)}{kpi("Volumétrico total",`${f2(totVW)} kg`,totVW>totGW)}{kpi("Facturable",`${f2(pf)} kg`,true)}{kpi("Volumen",`${totCBM.toFixed(3)} m³`)}</>:<>{kpi("Volumen total",`${totCBM.toFixed(3)} m³`,true)}{kpi("Peso bruto",`${f2(totGW)} kg`)}</>}
         </div>
       </>}
-      {pmts.length>0&&<div style={{marginTop:pkgs.length?20:0,paddingTop:pkgs.length?16:0,borderTop:pkgs.length?HAIR:"none"}}>
+    </div>}
+    {/* SOLAPA · seguimiento */}
+    {!loading&&tabCur==="seg"&&<div style={PANEL}>
+      <h3 style={{...H3,marginBottom:14}}>Seguimiento</h3>
+      {events.length===0&&pmts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Todavía no hay novedades de esta importación.</p>}
+      {pmts.length>0&&<div>
         <p style={{...LBL,marginBottom:8}}>Gestión de pagos al proveedor</p>
         {pmts.map((pm,i)=>{const gs={pendiente:["Pendiente","#fbbf24"],enviado:["Enviado",SKY],confirmado:["Confirmado","#4ade80"]}[pm.giro_status]||[pm.giro_status,"#fff"];return <div key={pm.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none"}}>
           <span style={{fontSize:13,color:"#fff",fontWeight:600}}>{pm.description||`Pago ${i+1}`}{pm.client_paid_date?<span style={{color:"rgba(255,255,255,0.5)",fontWeight:500}}> · pagado el {fd(pm.client_paid_date)}</span>:null}</span>
           <span style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:pm.client_paid?"#4ade80":"#fbbf24",background:pm.client_paid?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)"}}>{pm.client_paid?"Pagado":"Pendiente de pago"}</span><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:gs[1],background:`${gs[1]}1f`}}>Giro {gs[0]}</span><span style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(pm.client_amount_usd)}</span></span>
         </div>;})}
       </div>}
-      {events.length>0&&<div style={{marginTop:pkgs.length||pmts.length?20:0,paddingTop:pkgs.length||pmts.length?16:0,borderTop:pkgs.length||pmts.length?HAIR:"none"}}>
-        <p style={{...LBL,marginBottom:12}}>Seguimiento</p>
+      {events.length>0&&<div style={{marginTop:pmts.length?20:0,paddingTop:pmts.length?16:0,borderTop:pmts.length?HAIR:"none"}}>
+        <p style={{...LBL,marginBottom:12}}>Novedades</p>
         <div style={{position:"relative",paddingLeft:22}}><div style={{position:"absolute",left:6,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.1)"}}/>
           {events.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<events.length-1?16:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?GOLD_LIGHT:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(232,208,152,0.2)":"none"}}/>
             <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><p style={{fontSize:13.5,fontWeight:700,color:i===0?"#fff":"rgba(255,255,255,0.65)",margin:0}}>{ev.title}</p><p style={{fontSize:11.5,color:SKY,margin:0,fontWeight:600,whiteSpace:"nowrap"}}>{ev.occurred_at?new Date(ev.occurred_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p></div>
@@ -1052,6 +1014,7 @@ function OperationDetail({op,token,client,onBack}){
         </div>
       </div>}
     </div>}
+    </>;})()}
     {loading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"2rem 0"}}>Cargando…</p>}
 
     {/* Visor de escaneo */}
@@ -2575,6 +2538,12 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .dep-row{grid-template-columns:30px 1fr 1fr!important}
         .dep-track{grid-column:2/-1}
         .op-pk-head{display:none!important}
+        .ol-head{display:none!important}
+        .ol-row{grid-template-columns:1fr 1fr!important}
+        .ol-desc{grid-column:1/-1}
+        .ol-stage{grid-column:1/-1;text-align:left!important}
+        .ol-stage>div{justify-content:flex-start!important}
+        .ol-arrow{display:none}
         .op-pk-row{grid-template-columns:1fr 1fr!important}
         .op-pk-track{grid-column:1/-1}
         .pc-head,.pk-head{display:none!important}
@@ -2816,7 +2785,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
     {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} mCargo={mCargo}/>}</>}
-    {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>setSelOp(null)}/>}
+    {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>{setSelOp(null);loadOps();}}/>}
     {page==="deposito"&&<>
       <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>
       <DepositoView pkgs={depPkgs} token={token} client={client} onCreated={op=>{setOps(p=>[op,...p]);setDepPkgs([]);setPage("imports");setSelOp(op);loadOps();}}/>

@@ -1,5 +1,7 @@
 // POST /api/portal/guardar-mercaderia
 // Body: { op_id, items:[{description, quantity, unit_price_usd, ncm_code, import_duty_rate, statistics_rate, iva_rate, package_ids, antidumping_note}], has_battery, client_id? }
+// `confirm: true` = el cliente terminó: se marca docs_confirmed_at y desde ahí no puede editar más
+// (Bautista lo destraba desde el admin). Los guardados intermedios son borradores.
 //
 // El cliente carga la mercadería de su importación (la misma tabla que la calculadora). Va con
 // service role porque además de los ítems hay que escribir la descripción y las baterías en
@@ -36,9 +38,10 @@ export async function POST(req) {
   if (body.client_id && (isAdmin || body.client_id === ownClientId)) clientId = body.client_id;
   if (!clientId) return Response.json({ error: "sin_cliente" }, { status: 403 });
 
-  const opR = await svc(`/rest/v1/operations?id=eq.${opId}&client_id=eq.${clientId}&select=id,status,channel,service_type&limit=1`);
+  const opR = await svc(`/rest/v1/operations?id=eq.${opId}&client_id=eq.${clientId}&select=id,operation_code,status,channel,service_type,docs_confirmed_at&limit=1`);
   const op = Array.isArray(opR.data) ? opR.data[0] : null;
   if (!op) return Response.json({ error: "op_no_encontrada" }, { status: 404 });
+  if (op.docs_confirmed_at && !isAdmin) return Response.json({ error: "mercaderia_confirmada" }, { status: 409 });
   if (op.channel !== "aereo_blanco" || op.service_type === "gestion_integral" || !["en_deposito_origen", "en_preparacion"].includes(op.status))
     return Response.json({ error: "op_no_editable" }, { status: 409 });
   const fo = await svc(`/rest/v1/flight_operations?operation_id=eq.${opId}&select=id&limit=1`);
@@ -65,6 +68,19 @@ export async function POST(req) {
   const description = items.length > 3 ? "Consolidado" : items.map((it) => it.description).join(", ").slice(0, 200);
   const patch = { description };
   if (typeof body.has_battery === "boolean") patch.has_battery = body.has_battery;
+  const confirm = body.confirm === true;
+  const now = new Date().toISOString();
+  if (confirm) patch.docs_confirmed_at = now;
   await svc(`/rest/v1/operations?id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
-  return Response.json({ ok: true, items: items.length, description });
+  if (confirm) {
+    await svc(`/rest/v1/tracking_events`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: opId, title: "Mercadería confirmada por el cliente", occurred_at: now, source: "internal", status_code: op.status, is_visible_to_client: true }) });
+    // Aviso al admin: la importación quedó lista para presupuestar y armar el vuelo.
+    const adm = await svc(`/rest/v1/profiles?role=eq.admin&select=id`);
+    const cli = await svc(`/rest/v1/clients?id=eq.${clientId}&select=client_code&limit=1`);
+    const code = Array.isArray(cli.data) && cli.data[0]?.client_code ? cli.data[0].client_code + " · " : "";
+    for (const a of (Array.isArray(adm.data) ? adm.data : [])) {
+      await svc(`/rest/v1/notifications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ user_id: a.id, portal: "admin", title: `📋 Mercadería confirmada · ${op.operation_code}`, body: `${code}${items.length} producto${items.length !== 1 ? "s" : ""} · ${description}`, link: `/admin?op=${op.operation_code}` }) });
+    }
+  }
+  return Response.json({ ok: true, items: items.length, description, confirmed: confirm });
 }
