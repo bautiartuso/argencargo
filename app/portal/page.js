@@ -740,6 +740,9 @@ function OperationDetail({op:opProp,token,client,onBack}){
   // La op se refresca sola después de cada guardado (descripción, baterías, confirmación).
   const [opFresh,setOpFresh]=useState(null);const op=opFresh||opProp;
   const [tabDet,setTabDet]=useState(null);const [pkOpenDet,setPkOpenDet]=useState(null);
+  // Desglose de impuestos abierto/cerrado en el Resumen: el cliente quiere ver que paga por cada
+  // producto (derechos, tasa estadistica, IVA) y el desaduanaje, no solo el total.
+  const [impOpen,setImpOpen]=useState(false);
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó t("op.waitingPackages"): ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
@@ -803,6 +806,10 @@ function OperationDetail({op:opProp,token,client,onBack}){
   const totalCli=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldoReal=Math.max(0,totalAbonar-totalCli);
   const fobItems=giTotalItems;
   let est=null;try{if(!isGI&&op.channel==="aereo_blanco"&&items.length>0&&calcCtx)est=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);}catch(e){est=null;}
+  // Lo que el cliente paga por fuera de Argencargo. Para el RI de aereo blanco son los impuestos
+  // Y el desaduanaje: los abona directo al despachante, asi que no entran en el total de
+  // Argencargo. Se muestra aparte para que el "estimado total de la importacion" cierre.
+  const fueraDeAC=riPagaImpuestosDirecto&&est?Number(est.totalTax||0):0;
   const showEstimate=!!est&&!hasBudget;
   const costoPorProducto=(()=>{const r=est;if(!r||!items.length)return[];
     const fobOf=it=>Number(it.unit_price_usd||0)*Number(it.quantity||1);const fobTot=items.reduce((s,it)=>s+fobOf(it),0)||1;
@@ -872,7 +879,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         {(hasBudget||showEstimate)?<div style={{marginTop:22,paddingTop:18,borderTop:HAIR}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
             <p style={LBL}>{hasBudget?(isGI?t("op.priceLanded"):"Presupuesto"):"Costo estimado"}</p>
-            {showEstimate&&<span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}
+            {showEstimate&&<span title={t("imp.estimateTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}{hasBudget&&!isGI&&<span title={t("imp.confirmedTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#4ade80",background:"rgba(74,222,128,0.12)",border:"1px solid rgba(74,222,128,0.45)"}}>{t("imp.confirmed")}</span>}
             <span style={{flex:1}}/>
             {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,cursor:"pointer"}}>Presupuesto PDF</button>}
             {!isGI&&["entregada","operacion_cerrada"].includes(op.status)&&<button onClick={downloadClosingPdf} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(74,222,128,0.45)",background:"rgba(74,222,128,0.1)",color:"#4ade80",cursor:"pointer"}}>Resumen final PDF</button>}
@@ -886,14 +893,74 @@ function OperationDetail({op:opProp,token,client,onBack}){
             {shipCost>0&&fila(t("op.homeDelivery"),usd(shipCost))}
             {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
           </div>}
-          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0);const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
-            const rows=[[t("op.airFreight"),Number(est.flete||0)-bat],[t("op.batterySurcharge"),bat],[t("op.overweight"),Number(est.overweightSurcharge||0)],[t("op.cargoInsurance"),Number(est.seguro||0)],[riPagaImpuestosDirecto?t("op.taxesToAirline"):t("op.taxesFull"),impTot],["Desaduanaje e IVA sobre desaduanaje",gastos]].filter(([l,v])=>/^Impuestos/.test(l)||Number(v||0)>0.005);
-            return <div>{rows.map(([l,v],k)=><div key={k}>{fila(l,usd(v),{muted:/aerolínea/.test(l)})}</div>)}</div>;})()}
-          {(()=>{const tot=hasBudget?totalAbonar:Number(est?.totalAbonar||0);const label=hasBudget?(cliPmts.length===0?(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo"):"Total a abonar"):"Estimado a abonar a Argencargo";
-            return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,padding:"14px 18px",borderRadius:12,background:GOLD_GRADIENT,boxShadow:GOLD_GLOW}}>
-              <span style={{fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</span>
-              <span style={{fontSize:24,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(tot)}</span>
-            </div>;})()}
+          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);
+            const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0);
+            const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
+            const detItems=Array.isArray(td.items)?td.items.filter(x=>Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0)>0.005):[];
+            const pctTxt=(n)=>`${Number(n||0).toLocaleString("es-AR",{maximumFractionDigits:1})}%`;
+            const cel={fontSize:11.5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"};
+            // El desaduanaje va atenuado igual que los impuestos cuando el RI los paga directo:
+            // no se suman al total y mostrarlos en blanco hacia creer que si.
+            const rows=[
+              [t("op.airFreight"),Number(est.flete||0)-bat,{}],
+              [t("op.batterySurcharge"),bat,{}],
+              [t("op.overweight"),Number(est.overweightSurcharge||0),{}],
+              [t("op.cargoInsurance"),Number(est.seguro||0),{}],
+              [riPagaImpuestosDirecto?t("op.taxesToAirline"):t("op.taxesFull"),impTot,{imp:true,muted:riPagaImpuestosDirecto}],
+              [t("imp.clearanceRow"),gastos,{muted:riPagaImpuestosDirecto}],
+            ].filter(([l,v,o])=>o.imp||Number(v||0)>0.005);
+            return <div>{rows.map(([l,v,o],k)=><div key={k}>
+              {o.imp&&(detItems.length>0||gastos>0)
+                ? <div style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                    <button onClick={()=>setImpOpen(x=>!x)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"8px 0",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
+                      <span style={{fontSize:13,color:o.muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94,display:"inline-flex",alignItems:"center",gap:7}}>
+                        {l}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
+                      </span>
+                      <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span>
+                    </button>
+                    {impOpen&&<div style={{margin:"0 0 12px",padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:HAIR,overflowX:"auto"}}>
+                      <div className="imp-det" style={{display:"grid",gridTemplateColumns:"minmax(130px,1fr) 92px 92px 92px 96px",gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.09)"}}>
+                        <span style={{...LBL,fontSize:9}}>{t("imp.colProduct")}</span>
+                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDuties")}</span>
+                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colStat")}</span>
+                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colIva")}</span>
+                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colSubtotal")}</span>
+                      </div>
+                      {detItems.map((x,j)=>{const sub=Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0);
+                        return <div key={j} className="imp-det" style={{display:"grid",gridTemplateColumns:"minmax(130px,1fr) 92px 92px 92px 96px",gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
+                          <span style={{fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis"}}>{x.description||`Producto ${j+1}`}</span>
+                          <span style={{...cel,textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd(x.derechos)}<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(x.drPct)}</span></span>
+                          <span style={{...cel,textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd(x.tasaE)}<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(x.tePct)}</span></span>
+                          <span style={{...cel,textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd(x.iva)}<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(x.ivaPct)}</span></span>
+                          <span style={{...cel,textAlign:"right",fontWeight:700,color:"#fff"}}>{usd(sub)}</span>
+                        </div>;})}
+                      {gastos>0&&<div style={{marginTop:9,paddingTop:9,borderTop:"1px dashed rgba(255,255,255,0.12)"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12,color:"rgba(255,255,255,0.7)"}}><span>{t("imp.clearance")}</span><span style={cel}>{usd(td.desembolso)}</span></div>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:3}}><span>{t("imp.clearanceIva")}</span><span style={cel}>{usd(td.ivaDesembolso)}</span></div>
+                      </div>}
+                      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"10px 0 0",lineHeight:1.5}}>{t("imp.note")}</p>
+                    </div>}
+                  </div>
+                : fila(l,usd(v),{muted:o.muted})}
+            </div>)}</div>;})()}
+          {(()=>{const tot=hasBudget?totalAbonar:Number(est?.totalAbonar||0);
+            const label=hasBudget?(cliPmts.length===0?(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo"):"Total a abonar"):"Estimado a abonar a Argencargo";
+            // Cuando el cliente paga impuestos por fuera (RI), el total de Argencargo NO es lo
+            // que le cuesta la importacion: se muestran los dos numeros separados.
+            const totalImpo=tot+fueraDeAC;
+            return <>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,padding:"14px 18px",borderRadius:12,background:GOLD_GRADIENT,boxShadow:GOLD_GLOW}}>
+                <span style={{fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</span>
+                <span style={{fontSize:24,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(tot)}</span>
+              </div>
+              {fueraDeAC>0.005&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:8,padding:"13px 18px",borderRadius:12,background:"rgba(140,200,245,0.09)",border:"1px solid rgba(140,200,245,0.32)"}}>
+                <span style={{minWidth:0}}>
+                  <span style={{display:"block",fontSize:11.5,fontWeight:900,color:SKY,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t(hasBudget?"imp.totalImport":"imp.totalImportEst")}</span>
+                  <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3,lineHeight:1.45}}>{t("imp.totalImportNote")}</span>
+                </span>
+                <span style={{fontSize:21,fontWeight:900,color:SKY,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(totalImpo)}</span>
+              </div>}
+            </>;})()}
           {hasBudget&&cliPmts.length>0&&<div style={{marginTop:12}}>
             {fila("Pagado",usd(totalCli),{color:"#4ade80"})}
             {fila(saldoReal>0.01?"Saldo pendiente":t("op.fullyPaid"),usd(saldoReal),{bold:true,color:saldoReal<=0.01?"#4ade80":GOLD_LIGHT,last:true})}
