@@ -87,6 +87,13 @@ const CSS = `
 .pz-price span{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(26,26,26,.5);padding-bottom:3px}
 .pz-price b{font-size:23px;font-weight:800;letter-spacing:-.035em;line-height:1;white-space:nowrap}
 .pz-price b i{font-style:normal;font-size:12px;font-weight:700;color:rgba(26,26,26,.5);margin-right:4px}
+.pz-ver{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;padding:10px 12px;border:none;border-radius:9px;background:#15803d;color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;transition:background .16s}
+.pz-ver:hover{background:#12692f}
+.pz-ver.on{background:rgba(21,128,61,.1);color:#15803d}
+.pz-ver.on:hover{background:rgba(21,128,61,.17)}
+.pz-ver span{font-size:8.5px;line-height:1}
+.pz-ver:focus{outline:none}
+.pz-ver:focus-visible{outline:2px solid #15803d;outline-offset:2px}
 .pz-desg{margin-top:12px;padding-top:10px;border-top:1px dashed #eae4d6}
 .pz-desg div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;font-size:12.5px}
 .pz-desg div span{color:rgba(26,26,26,.6)}
@@ -120,6 +127,9 @@ export default function PresupuestoPage({ params }) {
   const token = params?.token;
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [elegido, setElegido] = useState("");
+  // Qué desglose está abierto. Va aparte de `elegido` para que el cliente pueda comparar
+  // los desgloses sin comprometerse con una opción.
+  const [abierto, setAbierto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [listo, setListo] = useState(null);
@@ -344,7 +354,7 @@ export default function PresupuestoPage({ params }) {
           {!yaAceptada && (
             <div className="pz-sec">
               <p className="pz-lbl">{alts.length > 1 ? "Elegí cómo querés hacer la importación" : "Tu opción"}</p>
-              {alts.length > 1 && <p className="pz-hint">Es la misma carga en todos los casos: cambian el tiempo de tránsito y el costo final. Tocá una para ver el desglose.</p>}
+              {alts.length > 1 && <p className="pz-hint">Es la misma carga en todos los casos: cambian el tiempo de tránsito y el costo final. Mirá el desglose de cada una y tocá la que preferís.</p>}
 
               {alts.map((a, i) => {
                 const sel = elegido === a.key;
@@ -360,8 +370,13 @@ export default function PresupuestoPage({ params }) {
                       a.totalTax > 0 && ["Impuestos y gastos de aduana", usd(a.totalTax)],
                       a.shipCost > 0 && ["Envío a domicilio", usd(a.shipCost)],
                     ].filter(Boolean);
+                const abierta = abierto === a.key;
+                // Tocar la tarjeta elige la opción y abre su desglose (como venía).
+                const elegir = () => { if (!vencida) { setElegido(a.key); setAbierto(a.key); } };
                 return (
-                  <button key={a.key} onClick={() => !vencida && setElegido(a.key)} disabled={vencida}
+                  <div key={a.key} role="button" tabIndex={vencida ? -1 : 0}
+                    onClick={elegir}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); elegir(); } }}
                     className={`pz-opt ${sel ? "on" : ""} ${vencida ? "off" : ""}`}>
                     <div className="pz-opt-h">
                       <span className="pz-n">{i + 1}</span>
@@ -376,7 +391,14 @@ export default function PresupuestoPage({ params }) {
                         <span>Costo de importación total<small style={{ display: "block", fontSize: 10, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "rgba(26,26,26,0.45)", marginTop: 2 }}>Sin gastos adicionales · no incluye el valor de la mercadería</small></span>
                         <b><i>USD</i>{fmt(a.totalAbonar)}</b>
                       </div>
-                      {sel && comps.length > 0 && (
+                      {comps.length > 0 && (
+                        <button type="button" className={`pz-ver ${abierta ? "on" : ""}`}
+                          onClick={(e) => { e.stopPropagation(); setAbierto(abierta ? "" : a.key); }}>
+                          {abierta ? "Ocultar desglose" : "Ver desglose"}
+                          <span aria-hidden="true">{abierta ? "▲" : "▼"}</span>
+                        </button>
+                      )}
+                      {abierta && comps.length > 0 && (
                         <div className="pz-desg">
                           {comps.map(([l, v], k) => <div key={k}><span>{l}</span><b>{v}</b></div>)}
                           {comps.length > 1 && <div className="t"><span>Total</span><b>{usd(a.totalAbonar)}</b></div>}
@@ -384,7 +406,7 @@ export default function PresupuestoPage({ params }) {
                         </div>
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
