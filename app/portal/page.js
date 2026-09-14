@@ -893,24 +893,27 @@ function OperationDetail({op:opProp,token,client,onBack}){
             {shipCost>0&&fila(t("op.homeDelivery"),usd(shipCost))}
             {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
           </div>}
-          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);
+                    {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);
             const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0);
             const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
-            const detItems=Array.isArray(td.items)?td.items.filter(x=>Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0)>0.005):[];
+            // Una sola fila: impuestos + gasto documental, y adentro el desglose por producto con
+            // el gasto documental ya prorrateado. Antes el desaduanaje iba en una fila aparte
+            // debajo y se repetia adentro del desglose: confundia.
+            const impYGastos=impTot+gastos;
+            const subDe=(x)=>Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0)+Number(x.gastoDoc||0);
+            const detItems=Array.isArray(td.items)?td.items.filter(x=>subDe(x)>0.005):[];
             const pctTxt=(n)=>`${Number(n||0).toLocaleString("es-AR",{maximumFractionDigits:1})}%`;
-            const cel={fontSize:11.5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"};
-            // El desaduanaje va atenuado igual que los impuestos cuando el RI los paga directo:
-            // no se suman al total y mostrarlos en blanco hacia creer que si.
+            const COLS_IMP="minmax(130px,1fr) 88px 88px 88px 104px 96px";
+            const cel={fontSize:11.5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",textAlign:"right"};
             const rows=[
               [t("op.airFreight"),Number(est.flete||0)-bat,{}],
               [t("op.batterySurcharge"),bat,{}],
               [t("op.overweight"),Number(est.overweightSurcharge||0),{}],
               [t("op.cargoInsurance"),Number(est.seguro||0),{}],
-              [riPagaImpuestosDirecto?t("op.taxesToAirline"):t("op.taxesFull"),impTot,{imp:true,muted:riPagaImpuestosDirecto}],
-              [t("imp.clearanceRow"),gastos,{muted:riPagaImpuestosDirecto}],
+              [riPagaImpuestosDirecto?t("op.taxesAndFeesDirect"):t("op.taxesAndFees"),impYGastos,{imp:true,muted:riPagaImpuestosDirecto}],
             ].filter(([l,v,o])=>o.imp||Number(v||0)>0.005);
             return <div>{rows.map(([l,v,o],k)=><div key={k}>
-              {o.imp&&(detItems.length>0||gastos>0)
+              {o.imp&&detItems.length>0
                 ? <div style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
                     <button onClick={()=>setImpOpen(x=>!x)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"8px 0",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
                       <span style={{fontSize:13,color:o.muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94,display:"inline-flex",alignItems:"center",gap:7}}>
@@ -919,26 +922,32 @@ function OperationDetail({op:opProp,token,client,onBack}){
                       <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span>
                     </button>
                     {impOpen&&<div style={{margin:"0 0 12px",padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:HAIR,overflowX:"auto"}}>
-                      <div className="imp-det" style={{display:"grid",gridTemplateColumns:"minmax(130px,1fr) 92px 92px 92px 96px",gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.09)"}}>
+                      <div style={{display:"grid",gridTemplateColumns:COLS_IMP,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.09)"}}>
                         <span style={{...LBL,fontSize:9}}>{t("imp.colProduct")}</span>
                         <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDuties")}</span>
                         <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colStat")}</span>
                         <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colIva")}</span>
+                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDoc")}</span>
                         <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colSubtotal")}</span>
                       </div>
-                      {detItems.map((x,j)=>{const sub=Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0);
-                        return <div key={j} className="imp-det" style={{display:"grid",gridTemplateColumns:"minmax(130px,1fr) 92px 92px 92px 96px",gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
-                          <span style={{fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis"}}>{x.description||`Producto ${j+1}`}</span>
-                          <span style={{...cel,textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd(x.derechos)}<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(x.drPct)}</span></span>
-                          <span style={{...cel,textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd(x.tasaE)}<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(x.tePct)}</span></span>
-                          <span style={{...cel,textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd(x.iva)}<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(x.ivaPct)}</span></span>
-                          <span style={{...cel,textAlign:"right",fontWeight:700,color:"#fff"}}>{usd(sub)}</span>
+                      {detItems.map((x,j)=>{
+                        const celda=(monto,pct)=><span style={{...cel,color:"rgba(255,255,255,0.75)"}}>{usd(monto)}{pct!=null&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(pct)}</span>}</span>;
+                        return <div key={j} style={{display:"grid",gridTemplateColumns:COLS_IMP,gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
+                          <span style={{fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis"}}>{x.description||`${t("imp.colProduct")} ${j+1}`}</span>
+                          {celda(x.derechos,x.drPct)}
+                          {celda(x.tasaE,x.tePct)}
+                          {celda(x.iva,x.ivaPct)}
+                          {celda(x.gastoDoc,null)}
+                          <span style={{...cel,fontWeight:700,color:"#fff"}}>{usd(subDe(x))}</span>
                         </div>;})}
-                      {gastos>0&&<div style={{marginTop:9,paddingTop:9,borderTop:"1px dashed rgba(255,255,255,0.12)"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12,color:"rgba(255,255,255,0.7)"}}><span>{t("imp.clearance")}</span><span style={cel}>{usd(td.desembolso)}</span></div>
-                        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:3}}><span>{t("imp.clearanceIva")}</span><span style={cel}>{usd(td.ivaDesembolso)}</span></div>
-                      </div>}
-                      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"10px 0 0",lineHeight:1.5}}>{t("imp.note")}</p>
+                      <div style={{display:"grid",gridTemplateColumns:COLS_IMP,gap:8,marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.14)"}}>
+                        <span style={{fontSize:11.5,fontWeight:800,color:"#fff"}}>{t("common.total")}</span>
+                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(td.derechos)}</span>
+                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(td.tasaE)}</span>
+                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(td.iva)}</span>
+                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(gastos)}</span>
+                        <span style={{...cel,fontWeight:800,color:GOLD_LIGHT}}>{usd(impYGastos)}</span>
+                      </div>
                     </div>}
                   </div>
                 : fila(l,usd(v),{muted:o.muted})}
