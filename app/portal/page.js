@@ -92,7 +92,7 @@ const dq=async(t,{method="GET",body,token,filters=""})=>{
 const PR=["Buenos Aires","CABA","Catamarca","Chaco","Chubut","Córdoba","Corrientes","Entre Ríos","Formosa","Jujuy","La Pampa","La Rioja","Mendoza","Misiones","Neuquén","Río Negro","Salta","San Juan","San Luis","Santa Cruz","Santa Fe","Santiago del Estero","Tierra del Fuego","Tucumán"];
 // El valor "ninguna" es el del enum tax_condition en la DB. La etiqueta visible es "Consumidor final"
 // (resuelta por i18n via tax.ninguna). Mantenemos el valor interno para no romper la columna enum.
-const TX=[{value:"responsable_inscripto",label:"Responsable Inscripto"},{value:"monotributista",label:"Monotributista"},{value:"ninguna",label:"Consumidor final"}];
+const TX=[{value:"responsable_inscripto",tk:"tax.responsable_inscripto"},{value:"monotributista",tk:"tax.monotributista"},{value:"ninguna",tk:"tax.ninguna"}];
 const INIT={first_name:"",last_name:"",whatsapp:"",dni:"",email:"",password:"",confirm_password:"",street:"",floor_apt:"",postal_code:"",city:"",province:"",tax_condition:"ninguna",company_name:"",cuit:""};
 const SP={proveedor:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"],warehouse:["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z","M9 22V12h6v10"],documentacion:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"],en_transito_aereo:["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.5-.6.4-1.1z"],en_transito_maritimo:["M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.5 0 2.5 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1","M4 18l-1-5h18l-1 5","M5 13V7h14v6","M9 7V4h6v3"],arribo:["M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z","M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],aduana:["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z","M9 12l2 2 4-4"],liberacion:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],entrega:["M1 3h15v13H1z","M16 8h4l3 3v5h-7V8z","M5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z","M18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"],cerrada:["M22 11.08V12a10 10 0 1 1-5.93-9.14","M22 4 12 14.01l-3-3"]};
 const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Depósito"},{k:"documentacion",l:"Mercadería"},{k:"preparacion",l:"Preparación"},{k:"en_transito",l:"En tránsito"},{k:"arribo",l:"Arribo"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"A retirar"},{k:"cerrada",l:"Cerrada"}];
@@ -100,10 +100,10 @@ const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Depósito"},{k:"docume
 // (la confirmó, Argencargo presupuesta y arma el vuelo); el resto no tiene esos dos pasos.
 const stageSteps=(showDoc)=>showDoc?OS:OS.filter(s=>s.k!=="documentacion"&&s.k!=="preparacion");
 const stageKeyOf=(status,showDoc,docsConfirmed,lost)=>{if(lost)return "aduana";const m={pendiente:"proveedor",en_deposito_origen:"warehouse",en_preparacion:showDoc?(docsConfirmed?"preparacion":"documentacion"):"warehouse",en_transito:"en_transito",arribo_argentina:"arribo",en_aduana:"aduana",entregada:"entrega",operacion_cerrada:"cerrada"};return m[status]||"proveedor";};
-const stLabelOf=(op)=>op.status==="en_preparacion"&&op.docs_confirmed_at?"EN PREPARACIÓN":(SM[op.status]||{l:op.status}).l;
+const stLabelOf=(op,t)=>op.status==="en_preparacion"&&op.docs_confirmed_at?t("opStatus.prep_confirmed"):(SM[op.status]?t(SM[op.status].tk):op.status);
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
-const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
-const CM={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
+const SM={pendiente:{tk:"opStatus.pendiente",c:"#94a3b8"},en_deposito_origen:{tk:"opStatus.warehouse_ac",c:"#fbbf24"},en_preparacion:{tk:"opStatus.en_preparacion",c:"#a78bfa"},en_transito:{tk:"opStatus.en_transito",c:"#60a5fa"},arribo_argentina:{tk:"opStatus.arribo_argentina",c:"#818cf8"},en_aduana:{tk:"opStatus.en_aduana",c:"#fb923c"},entregada:{tk:"opStatus.entregada",c:"#22c55e"},operacion_cerrada:{tk:"opStatus.operacion_cerrada",c:"#10b981"},cancelada:{tk:"opStatus.cancelada",c:"#f87171"}};
+const CM={aereo_blanco:"channel.aereo_blanco",maritimo_blanco:"channel.maritimo_blanco",maritimo_negro:"channel.maritimo_negro"};
 // Nav portal cliente — estructura definida por el usuario, sentence case
 const CN_SECTIONS=[
   {section:"Operaciones",skey:"nav.sec.operations",items:[
@@ -182,6 +182,7 @@ function NI({p,a,sz=17}){return <svg width={sz} height={sz} viewBox="0 0 24 24" 
 // Progress steps estilo mockup: dots limpios (sin íconos), líneas conectoras gold cuando done,
 // dot relleno gold para done, dot pulsante gold gradient para current, dot vacío para pending.
 function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCustoms,docsConfirmed}){
+  const {t}=useT();
   const showDoc=!isGI&&channel==="aereo_blanco";
   const STEPS=stageSteps(showDoc);
   const key=stageKeyOf(status,showDoc,!!docsConfirmed,!!lostInCustoms);
@@ -192,7 +193,7 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
   const cur=STEPS[si]||STEPS[0];
   const next=STEPS[si+1]||null;
   const done=si>=n-1;
-  const curLabel=isDoc?(hasItems?"Confirmar la mercadería":"Cargar la mercadería"):cur.l;
+  const curLabel=isDoc?(hasItems?t("op.confirmGoodsBtn"):t("op.loadGoodsBtn")):t(cur.tk);
   return <div style={{padding:"16px 0 12px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:12}}>
       <span onClick={isDoc&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:undefined} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"5px 13px",borderRadius:999,background:isDoc?"rgba(251,191,36,0.12)":"rgba(184,149,106,0.10)",border:`1px solid ${isDoc?"rgba(251,191,36,0.4)":"rgba(184,149,106,0.35)"}`,cursor:isDoc&&onActionClick?"pointer":"default"}}>
@@ -200,7 +201,7 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
         <span style={{fontSize:12.5,fontWeight:700,color:isDoc?"#fbbf24":GOLD_LIGHT,letterSpacing:"0.02em"}}>{curLabel}</span>
       </span>
       <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>
-        Etapa {si+1} de {n}{next?<span> · después: <b style={{color:"rgba(255,255,255,0.6)",fontWeight:600}}>{next.l}</b></span>:null}
+        Etapa {si+1} de {n}{next?<span> · después: <b style={{color:"rgba(255,255,255,0.6)",fontWeight:600}}>{t(next.tk)}</b></span>:null}
       </span>
     </div>
     <div style={{position:"relative",height:26}}>
@@ -209,13 +210,13 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
       {STEPS.map((st,i2)=>{
         const x=n>1?(i2/(n-1))*100:0;
         const d=i2<si,c=i2===si;
-        return <div key={st.k} title={st.l} style={{position:"absolute",left:`${x}%`,top:13,transform:"translate(-50%,-50%)",width:c?13:d?9:8,height:c?13:d?9:8,borderRadius:"50%",background:d?GOLD:c?GOLD_LIGHT:"#0E1B30",border:d?"none":c?"none":"1.5px solid rgba(255,255,255,0.2)",boxShadow:c?"0 0 0 4px rgba(232,208,152,0.18), 0 0 12px rgba(232,208,152,0.4)":"none",zIndex:1,transition:"all 200ms"}}/>;
+        return <div key={st.k} title={t(st.tk)} style={{position:"absolute",left:`${x}%`,top:13,transform:"translate(-50%,-50%)",width:c?13:d?9:8,height:c?13:d?9:8,borderRadius:"50%",background:d?GOLD:c?GOLD_LIGHT:"#0E1B30",border:d?"none":c?"none":"1.5px solid rgba(255,255,255,0.2)",boxShadow:c?"0 0 0 4px rgba(232,208,152,0.18), 0 0 12px rgba(232,208,152,0.4)":"none",zIndex:1,transition:"all 200ms"}}/>;
       })}
     </div>
     <div className="op-progress" style={{display:"flex",marginTop:6}}>
       {STEPS.map((st,i2)=>{
         const d=i2<si,c=i2===si;
-        return <span key={st.k} style={{flex:1,fontSize:10.5,fontWeight:c?700:500,color:c?GOLD_LIGHT:d?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.28)",textAlign:i2===0?"left":i2===n-1?"right":"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{st.l}</span>;
+        return <span key={st.k} style={{flex:1,fontSize:10.5,fontWeight:c?700:500,color:c?GOLD_LIGHT:d?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.28)",textAlign:i2===0?"left":i2===n-1?"right":"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t(st.tk)}</span>;
       })}
     </div>
   </div>;
@@ -237,7 +238,7 @@ function DepositoView({pkgs,token,client,onCreated}){
   const toggle=id=>setSel(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const allSel=pkgs.length>0&&sel.length===pkgs.length;
   const crear=async()=>{if(!sel.length||creating)return;
-    if(!await confirmDialog(`¿Creamos una importación con ${sel.length===1?"este bulto":`estos ${sel.length} bultos`}? El paso siguiente es cargar la mercadería.`,{confirmText:"Crear importación"}))return;
+    if(!await confirmDialog(`¿Creamos una importación con ${sel.length===1?t("dep.onePackage"):`estos ${sel.length} bultos`}? El paso siguiente es cargar la mercadería.`,{confirmText:t("dep.createImport")}))return;
     setCreating(true);
     try{const r=await fetch("/api/portal/crear-importacion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({package_ids:sel,client_id:client?.id})});const d=await r.json().catch(()=>null);
       if(!r.ok||!d?.op){toast(d?.error==="bultos_invalidos"?t("dep.errGone"):t("dep.errCreate"),"error");setCreating(false);return;}
@@ -270,8 +271,8 @@ function DepositoView({pkgs,token,client,onCreated}){
           <span style={{fontSize:13,fontWeight:700,color:!hot&&x.bruto>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.bruto>0?`${f2(x.bruto)} kg`:"—"}</span>
           <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.vol>0?`${f2(x.vol)} kg`:"—"}</span>
           <span style={{textAlign:"center"}}>{p.photo_url
-            ?<button onClick={e=>{e.stopPropagation();setOpen(p.id);}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>Ver escaneo</button>
-            :<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Sin foto</span>}</span>
+            ?<button onClick={e=>{e.stopPropagation();setOpen(p.id);}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>
+            :<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t("dep.noPhoto")}</span>}</span>
         </div>
       </div>;})}
     {open&&(()=>{const p=pkgs.find(x=>x.id===open);if(!p?.photo_url)return null;const idx=pkgs.indexOf(p);
@@ -281,11 +282,11 @@ function DepositoView({pkgs,token,client,onCreated}){
             <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#fff"}}>Escaneo · Bulto {idx+1}<span style={{marginLeft:10,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:SKY,textTransform:"none",letterSpacing:0}}>{p.national_tracking||""}</span></span>
             <button onClick={()=>setOpen(null)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)",color:"#fff",cursor:"pointer"}}>Cerrar</button>
           </div>
-          <img src={p.photo_url} alt="Escaneo del bulto" style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+          <img src={p.photo_url} alt={t("dep.scanTitle")} style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
         </div>
       </div>;})()}
     <div style={{display:"flex",alignItems:"stretch",gap:10,flexWrap:"wrap",marginTop:16,paddingTop:16,borderTop:HAIR}}>
-      {[["Bultos",String(sel.length),false],["Peso bruto",`${f2(tot.bruto)} kg`,false],["Volumétrico",`${f2(tot.vol)} kg`,false],["Facturable",`${f2(tot.fact)} kg`,true],["Volumen",`${tot.m3.toFixed(3)} m³`,false]].map(([l,v,hot])=>
+      {[["Bultos",String(sel.length),false],["Peso bruto",`${f2(tot.bruto)} kg`,false],[t("dep.volumetric"),`${f2(tot.vol)} kg`,false],["Facturable",`${f2(tot.fact)} kg`,true],["Volumen",`${tot.m3.toFixed(3)} m³`,false]].map(([l,v,hot])=>
         <div key={l} style={{flex:"1 1 110px",padding:"9px 12px",borderRadius:10,border:`1px solid ${hot?"rgba(232,208,152,0.45)":"rgba(255,255,255,0.14)"}`,background:hot?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.04)"}}><p style={{...LBL,color:hot?GOLD_LIGHT:SKY}}>{l}</p><p style={{margin:"3px 0 0",fontSize:15,fontWeight:800,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p></div>)}
       <button onClick={crear} disabled={!sel.length||creating} style={{flex:"1 1 240px",minHeight:54,fontSize:13,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:!sel.length||creating?"not-allowed":"pointer",opacity:!sel.length?0.45:1,background:GOLD_GRADIENT,color:"#0A1628",boxShadow:sel.length?GOLD_GLOW:"none"}}>{creating?"Creando…":`Crear importación${sel.length?` · ${sel.length} bulto${sel.length!==1?"s":""}`:""} →`}</button>
     </div>
@@ -325,7 +326,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     const s=saldoDe(op);if(s.tone==="due"&&!["operacion_cerrada","cancelada"].includes(op.status))return{c:GOLD_LIGHT,t:"Saldo pendiente"};
     return null;};
   const COLS="150px minmax(0,1.5fr) 200px 88px 150px 34px";
-  const head=<div className="ol-head" style={{display:"grid",gridTemplateColumns:COLS,gap:12,padding:"0 16px 8px"}}>{["Importación","Mercadería","Etapa","ETA","A abonar",""].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>;
+  const head=<div className="ol-head" style={{display:"grid",gridTemplateColumns:COLS,gap:12,padding:"0 16px 8px"}}>{[t("ol.import"),"Mercadería","Etapa","ETA","A abonar",""].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>;
   const renderRow=(op)=>{const isGI=op.service_type==="gestion_integral";const showDoc=!isGI&&op.channel==="aereo_blanco";const steps=stageSteps(showDoc);const key=stageKeyOf(op.status,showDoc,!!op.docs_confirmed_at,!!op.lost_in_customs_at);const si=Math.max(0,steps.findIndex(s=>s.k===key));const cur=steps[si]||steps[0];
     const done=["operacion_cerrada","cancelada"].includes(op.status);const s=saldoDe(op);const ac=accionDe(op);
     return <div key={op.id} onClick={()=>onSelect(op)} className="ol-row" style={{display:"grid",gridTemplateColumns:COLS,gap:12,alignItems:"center",padding:"14px 16px",marginBottom:8,borderRadius:13,border:ac?.strong?"1px solid rgba(232,208,152,0.5)":HAIR,background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",boxShadow:"0 10px 26px rgba(0,0,0,0.25)",cursor:"pointer",opacity:done?0.75:1,transition:"border-color 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(140,200,245,0.55)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=ac?.strong?"rgba(232,208,152,0.5)":"rgba(255,255,255,0.13)";}}>
@@ -338,8 +339,8 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
         {ac&&<span style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:5,fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:ac.c,background:`${ac.c}1c`,border:`1px solid ${ac.c}66`}}>{ac.strong&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:ac.c,display:"inline-block"}}/>}{ac.t}{ac.strong?" →":""}</span>}
       </div>
       <div className="ol-stage" style={{textAlign:"center"}}>
-        <div style={{display:"flex",justifyContent:"center",gap:4,marginBottom:5}}>{steps.map((st,i)=><span key={st.k} title={st.l} style={{width:i===si?18:9,height:5,borderRadius:999,background:i<si?GOLD:i===si?GOLD_LIGHT:"rgba(255,255,255,0.14)",boxShadow:i===si?"0 0 8px rgba(232,208,152,0.55)":"none",transition:"width 200ms"}}/>)}</div>
-        <p style={{margin:0,fontSize:11.5,fontWeight:700,color:op.lost_in_customs_at?"#f87171":GOLD_LIGHT,whiteSpace:"nowrap"}}>{op.lost_in_customs_at?t("ol.heldCustoms"):cur.l}<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}> · {si+1}/{steps.length}</span></p>
+        <div style={{display:"flex",justifyContent:"center",gap:4,marginBottom:5}}>{steps.map((st,i)=><span key={st.k} title={t(st.tk)} style={{width:i===si?18:9,height:5,borderRadius:999,background:i<si?GOLD:i===si?GOLD_LIGHT:"rgba(255,255,255,0.14)",boxShadow:i===si?"0 0 8px rgba(232,208,152,0.55)":"none",transition:"width 200ms"}}/>)}</div>
+        <p style={{margin:0,fontSize:11.5,fontWeight:700,color:op.lost_in_customs_at?"#f87171":GOLD_LIGHT,whiteSpace:"nowrap"}}>{op.lost_in_customs_at?t("ol.heldCustoms"):t(cur.tk)}<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}> · {si+1}/{steps.length}</span></p>
       </div>
       <p className="ol-eta" style={{margin:0,textAlign:"center",fontSize:12.5,fontWeight:700,color:op.eta?SKY:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{fShort(op.eta)}</p>
       <div className="ol-saldo" style={{textAlign:"center"}}>
@@ -393,7 +394,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
     confirm_items:labels.confirm_items||t("pdf.review"),
     confirm:labels.confirm||"Confirmar e importar",
     cancel:labels.cancel||"Cancelar",
-    select_all:labels.select_all||"Seleccionar todos",
+    select_all:labels.select_all||t("dep.selectAll"),
     deselect_all:labels.deselect_all||"Deseleccionar",
   };
   const [stage,setStage]=useState("idle"); // idle | rendering | extracting | review | error
@@ -451,7 +452,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
     const name=file.name.toLowerCase();
     const isPdf=name.endsWith(".pdf")||file.type==="application/pdf";
     const isImage=file.type.startsWith("image/")||/\.(jpe?g|png|webp|heic|heif)$/i.test(name);
-    if(!isPdf&&!isImage){setError("Subí un PDF o una imagen (JPG/PNG)");return;}
+    if(!isPdf&&!isImage){setError(t("pdf.uploadOne"));return;}
     setError("");setStage("rendering");
     try{
       let images=[];
@@ -477,21 +478,21 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
       setStage("extracting");
       const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
       const j=await r.json();
-      if(!j.ok){setError(j.error||"Error al leer la factura");setStage("error");return;}
+      if(!j.ok){setError(j.error||t("pdf.readError"));setStage("error");return;}
       const its=Array.isArray(j.items)?j.items:[];
       if(its.length===0){setError(L.no_items);setStage("error");return;}
       setItems(its);
       const sel={};its.forEach((_,i)=>sel[i]=true);
       setSelected(sel);
       setStage("review");
-    }catch(e){console.error(e);setError(e.message||"Error al procesar");setStage("error");}
+    }catch(e){console.error(e);setError(e.message||t("pdf.procError"));setStage("error");}
   };
 
   const updateItem=(i,f,v)=>setItems(p=>p.map((it,j)=>j===i?{...it,[f]:v}:it));
   const toggleAll=(checked)=>{const sel={};items.forEach((_,i)=>sel[i]=checked);setSelected(sel);};
   const confirm=()=>{
     const final=items.filter((_,i)=>selected[i]).map(it=>({description:it.description,quantity:Number(it.quantity)||1,unit_price_usd:Number(String(it.unit_price_usd).replace(",","."))||0,hs_code:it.hs_code?String(it.hs_code).trim():null}));
-    if(final.length===0){setError("Seleccioná al menos un producto");return;}
+    if(final.length===0){setError(t("pdf.pickOne"));return;}
     onItemsConfirmed(final);
   };
 
@@ -522,7 +523,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
           <div style={{display:"flex",gap:8}}>
             <input type="checkbox" checked={!!selected[i]} onChange={e=>setSelected(p=>({...p,[i]:e.target.checked}))} style={{cursor:"pointer",marginTop:6}}/>
             <div style={{flex:1,display:"grid",gridTemplateColumns:"3fr 1fr 1.2fr",gap:6}}>
-              <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Descripción" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+              <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder={t("common.description")} style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
               <input type="number" value={it.quantity} onChange={e=>updateItem(i,"quantity",e.target.value)} placeholder="Cant" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
               <input type="text" inputMode="decimal" value={it.unit_price_usd} onChange={e=>updateItem(i,"unit_price_usd",e.target.value.replace(/[^0-9.,]/g,""))} placeholder="USD c/u" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
             </div>
@@ -545,19 +546,20 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
     <input ref={fileRef} type="file" accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp,.heic" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
     <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFile(e.dataTransfer.files?.[0]);}} style={{border:`2px dashed ${pasteHint?GOLD:"rgba(184,149,106,0.3)"}`,background:pasteHint?"rgba(184,149,106,0.15)":"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
       <div style={{fontSize:42,marginBottom:8}}>{pasteHint?"📥":"📄"}</div>
-      <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{pasteHint?"¡Pegado!":L.drop_or_pick}</p>
+      <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{pasteHint?t("pdf.pasted"):L.drop_or_pick}</p>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>PDF (max 10 páginas) o imagen JPG/PNG · también podés <strong style={{color:GOLD_LIGHT}}>pegar (Cmd/Ctrl+V)</strong> directamente</p>
     </div>
     {error&&<p style={{fontSize:12,color:"#ff6b6b",margin:"10px 0 0",textAlign:"center"}}>{error}</p>}
     {onCancel&&<div style={{display:"flex",justifyContent:"center",marginTop:10}}>
-      <button onClick={onCancel} style={{fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer"}}>← Cargar a mano en su lugar</button>
+      <button onClick={onCancel} style={{fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer"}}>{t("pdf.manualInstead")}</button>
     </div>}
   </div>;
 }
 
 // Selector grande arriba: PDF vs manual. Modo exclusivo.
 function InputModeSelector({mode,onChange,labels={}}){
-  const L={pdf_title:labels.pdf_title||"📄 Subir PDF",pdf_desc:labels.pdf_desc||"Factura del proveedor — detección automática",manual_title:labels.manual_title||"✍️ Cargar a mano",manual_desc:labels.manual_desc||"Producto por producto, manual"};
+  const {t}=useT();
+  const L={pdf_title:labels.pdf_title||"📄 Subir PDF",pdf_desc:labels.pdf_desc||t("merc.modeInvoice"),manual_title:labels.manual_title||"✍️ Cargar a mano",manual_desc:labels.manual_desc||t("merc.modeManual")};
   if(mode)return null;
   const Card=({k,title,desc,color})=><button onClick={()=>onChange(k)} style={{flex:"1 1 240px",minWidth:200,padding:"22px 20px",background:"rgba(255,255,255,0.028)",border:`2px solid ${color}30`,borderRadius:14,cursor:"pointer",textAlign:"center",transition:"all 200ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=color;e.currentTarget.style.background=`${color}10`;e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=`${color}30`;e.currentTarget.style.background="rgba(255,255,255,0.028)";e.currentTarget.style.transform="none";}}>
     <p style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>{title}</p>
@@ -683,13 +685,13 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
     {mode===null&&<InputModeSelector mode={mode} onChange={setMode} labels={{pdf_title:t("merc.readInvoice"),pdf_desc:t("merc.readInvoiceSub"),manual_title:"✍️ Cargar a mano",manual_desc:t("merc.manualSub")}}/>}
     {mode==="pdf"&&<PdfInvoiceReader onCancel={()=>setMode("manual")} onItemsConfirmed={(detected)=>{setRows(detected.map(it=>({...empty(),description:it.description||"",quantity:String(it.quantity||"1"),unit_price:String(it.unit_price_usd||"").replace(".",","),ncm_hint:String(it.hs_code||"").replace(/[^\d.]/g,"")})));setMode("manual");}}/>}
     {mode==="manual"&&<>
-      <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{["Descripción","USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"].map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===4?40:0}}>{h}</span>)}</div>
+      <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{[t("common.description"),"USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"].map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===4?40:0}}>{h}</span>)}</div>
       {rows.map((p,i)=><div key={i}>
         <div className="pc-row" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,alignItems:"center",padding:"6px 4px",borderTop:i>0?HAIR:"none"}}>
           <input className="pc-desc" value={p.description||""} onChange={e=>ch(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{...INP,textAlign:"left"}} onFocus={onF} onBlur={onB}/>
           {numIn({value:p.unit_price,onChange:v=>ch(i,"unit_price",v),placeholder:"USD c/u"})}
           {numIn({value:p.quantity,onChange:v=>ch(i,"quantity",v),placeholder:"Cant."})}
-          <input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))ch(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title="Si tenés la posición arancelaria que te pasó el proveedor, cargala: Argencargo la valida" style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>
+          <input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))ch(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title={t("merc.hsHint")} style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>
           <div className="pc-tail" style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",minWidth:0}}>{ncmCell(p)}{delBtn(()=>rm(i),rows.length<=1)}</div>
         </div>
         {(()=>{const est=()=>ch(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21});const n=p.ncm;
@@ -698,13 +700,13 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
               {n?.ncm_code&&[[t("quotes.duties"),n.import_duty_rate],[t("merc.statRate"),n.statistics_rate],["IVA",n.iva_rate]].map(([l,v])=><span key={l} style={{display:"inline-flex",alignItems:"center",gap:8,height:30,padding:"0 12px",borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>{l}</span><span style={{fontSize:13,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}%</span></span>)}
             </div>
             {n?.hint_verdict==="diff"&&<p style={{fontSize:12,color:"#fbbf24",margin:"6px 0 0",lineHeight:1.5}}>Tu posición sugerida ({n.hint_code}) no corresponde para esta mercadería{n.hint_note?`: ${n.hint_note}`:"."}</p>}
-            {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>Coincide con la posición que sugeriste.</p>}
+            {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>{t("merc.hsMatch")}</p>}
             {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}{n.antidumping.medidaTexto?` · ${n.antidumping.medidaTexto}`:""}). El costo es estimativo: el equipo lo revisa antes de confirmar.</p>}
             {p.ncmError&&<div style={{marginTop:8,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)"}}>
               <p style={{fontSize:12.5,color:"#ff8a8a",margin:"0 0 8px",fontWeight:600}}>No pudimos clasificar “{p.description}” automáticamente</p>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <button onClick={est} style={SMALL_GOLD}>Usar valores estimados (35 % derechos)</button>
-                <a href={`https://wa.me/5491125088580?text=${encodeURIComponent("Hola! Necesito ayuda para clasificar: "+p.description)}`} target="_blank" rel="noopener noreferrer" style={{...SMALL_GHOST,color:"#4ade80"}}>Consultar por WhatsApp</a>
+                <a href={`https://wa.me/5491125088580?text=${encodeURIComponent("Hola! Necesito ayuda para clasificar: "+p.description)}`} target="_blank" rel="noopener noreferrer" style={{...SMALL_GHOST,color:"#4ade80"}}>{t("merc.askWA")}</a>
               </div>
             </div>}
           </div>;})()}
@@ -712,7 +714,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:10,paddingTop:14,borderTop:HAIR}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:14,padding:"8px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)"}}><span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase",lineHeight:1}}>FOB mercadería</span><span style={{fontSize:22,fontWeight:800,color:totalFob>0?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{totalFob>0?usd(totalFob):"—"}</span></div>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          {pendingClass&&!classifyingAll&&sinNcm.length>0&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171"}}>Tocá clasificar NCM</span>}
+          {pendingClass&&!classifyingAll&&sinNcm.length>0&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171"}}>{t("merc.tapClassify")}</span>}
           {sinNcm.length>0&&<button onClick={classifyAll} disabled={classifyingAll} style={{height:40,padding:"0 20px",fontSize:12.5,fontWeight:800,letterSpacing:"0.06em",borderRadius:9,cursor:classifyingAll?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,opacity:classifyingAll?0.6:1,boxShadow:GOLD_GLOW}}>{classifyingAll?"CLASIFICANDO…":`CLASIFICAR NCM${sinNcm.length>1?` (${sinNcm.length})`:""}`}</button>}
         </div>
       </div>
@@ -723,7 +725,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
           {[[true,t("calc.batteryYesShort")],[false,"✓ "+t("common.no")]].map(([v,l])=><button key={l} onClick={()=>{dirtyRef.current=true;setBatt(v);}} style={{height:36,padding:"0 18px",fontSize:12.5,fontWeight:800,borderRadius:9,cursor:"pointer",border:`1px solid ${batt===v?(v?"rgba(251,146,60,0.65)":"rgba(74,222,128,0.55)"):"rgba(255,255,255,0.2)"}`,background:batt===v?(v?"rgba(251,146,60,0.16)":"rgba(74,222,128,0.14)"):"transparent",color:batt===v?(v?"#fdba74":"#4ade80"):"rgba(255,255,255,0.6)"}}>{l}</button>)}
         </div>
         {aMedias.length>0&&<span style={{fontSize:12,fontWeight:700,color:"#fbbf24",textAlign:"center"}}>Hay {aMedias.length===1?t("merc.oneProduct"):`${aMedias.length} productos`} sin precio o cantidad: completalo o quitalo para confirmar.</span>}
-        <button onClick={confirmar} disabled={!canConfirm} style={{minHeight:52,padding:"0 30px",fontSize:13,fontWeight:900,letterSpacing:"0.08em",textTransform:"uppercase",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:canConfirm?"pointer":"not-allowed",background:GOLD_GRADIENT,color:"#0A1628",opacity:canConfirm?1:0.45,boxShadow:canConfirm?GOLD_GLOW:"none"}}>Documentación completa · avanzar con la importación →</button>
+        <button onClick={confirmar} disabled={!canConfirm} style={{minHeight:52,padding:"0 30px",fontSize:13,fontWeight:900,letterSpacing:"0.08em",textTransform:"uppercase",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:canConfirm?"pointer":"not-allowed",background:GOLD_GRADIENT,color:"#0A1628",opacity:canConfirm?1:0.45,boxShadow:canConfirm?GOLD_GLOW:"none"}}>{t("merc.docsDone")}</button>
       </div>
     </>}
   </div>;
@@ -825,9 +827,9 @@ function OperationDetail({op:opProp,token,client,onBack}){
     <div style={PANEL}>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <span style={{fontSize:20,fontWeight:800,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.05em"}}>{op.operation_code}</span>
-        {isGI&&<span className="ac-gi-pulse" style={{fontSize:10.5,fontWeight:800,padding:"5px 12px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
-        {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?"Retenida en aduana":stLabelOf(op)}</span>;})()}
-        <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{op.origin==="USA"?"🇺🇸":"🇨🇳"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?"Arribó":"ETA"} {fd(op.eta)}</span></>:null}</span>
+        {isGI&&<span className="ac-gi-pulse" style={{fontSize:10.5,fontWeight:800,padding:"5px 12px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>{t("op.gi")}</span>}
+        {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?t("ol.heldCustoms"):stLabelOf(op,t)}</span>;})()}
+        <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{op.origin==="USA"?"🇺🇸":"🇨🇳"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?t("op.arrived"):"ETA"} {fd(op.eta)}</span></>:null}</span>
       </div>
       <h2 style={{fontSize:19,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.4)",margin:"12px 0 4px",fontStyle:op.description?"normal":"italic"}}>{op.description||(items.length?items.map(i=>i.description).filter(Boolean).slice(0,3).join(", "):t("op.noGoods"))}</h2>
       <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={!!op.docs_confirmed_at}/>
@@ -859,9 +861,9 @@ function OperationDetail({op:opProp,token,client,onBack}){
       {tabCur==="resumen"&&<div style={PANEL}>
         <h3 style={{...H3,marginBottom:14}}>Resumen</h3>
         <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
-          {kpi("Importación",op.operation_code)}
+          {kpi(t("ol.import"),op.operation_code)}
           {isGI?<>{kpi("Productos",String(items.length))}{kpi(t("op.totalLanded"),usd(giTotalItems),true)}</>
-          :<>{kpi("Bultos",String(nBultos||"—"))}{isAer?<>{kpi("Peso bruto",totGW?`${f2(totGW)} kg`:"—")}{kpi("Peso facturable",pf?`${f2(pf)} kg`:"—",true)}</>:kpi("Volumen",totCBM?`${totCBM.toFixed(3)} m³`:"—",true)}{kpi("FOB mercadería",fobItems>0?usd(fobItems):"—")}</>}
+          :<>{kpi("Bultos",String(nBultos||"—"))}{isAer?<>{kpi("Peso bruto",totGW?`${f2(totGW)} kg`:"—")}{kpi("Peso facturable",pf?`${f2(pf)} kg`:"—",true)}</>:kpi("Volumen",totCBM?`${totCBM.toFixed(3)} m³`:"—",true)}{kpi(t("merc.fobGoods"),fobItems>0?usd(fobItems):"—")}</>}
         </div>
         {(hasBudget||showEstimate)?<div style={{marginTop:22,paddingTop:18,borderTop:HAIR}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
@@ -877,7 +879,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
             {(isB?(bt-shipCost):bFlete)>0&&fila(isB?t("op.integralService"):t("imports.freight"),usd(isB?(bt-shipCost):bFlete))}
             {!isB&&bSeg>0&&fila(t("op.cargoInsurance"),usd(bSeg))}
             {!isB&&isAer&&Number(op.budget_surcharge||0)>0&&fila(t("op.overweight"),usd(op.budget_surcharge))}
-            {shipCost>0&&fila("Envío a domicilio",usd(shipCost))}
+            {shipCost>0&&fila(t("op.homeDelivery"),usd(shipCost))}
             {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
           </div>}
           {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0);const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
@@ -903,7 +905,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         <h3 style={{...H3,marginBottom:14}}>Mercadería</h3>
         {isEditable
           ?<MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
-          :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>Mercadería confirmada</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
+          :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>{t("op.goodsConfirmed")}</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
           {items.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:0}}>{t("op.noGoodsYet")}</p>}
           {items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
             <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM",...(isGI?[]:["Derechos","Tasa est.","IVA"])].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
@@ -933,11 +935,11 @@ function OperationDetail({op:opProp,token,client,onBack}){
         <h3 style={{...H3,marginBottom:6}}>Bultos</h3>
         {canAsig&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"0 0 14px",lineHeight:1.5}}>Marcá qué mercadería viaja en cada bulto: así el flete se reparte por bulto y el costo de cada producto sale más exacto. Si no marcás nada, se reparte según el valor FOB.</p>}
         {!canAsig&&<div style={{marginBottom:12}}/>}
-        {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Esta importación todavía no tiene bultos registrados.</p>}
+        {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("op.noPkgsYet")}</p>}
         {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;
-          return <div style={{marginBottom:12,padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff"}}><b style={{color:"#4ade80"}}>Reempaque realizado en depósito.</b> Peso facturable {f2(before)} kg → <b>{f2(after)} kg</b>{delta>0&&<span style={{color:"#4ade80",marginLeft:6}}>(−{pct.toFixed(0)}%)</span>}</div>;})()}
+          return <div style={{marginBottom:12,padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff"}}><b style={{color:"#4ade80"}}>{t("op.repackDone")}</b> Peso facturable {f2(before)} kg → <b>{f2(after)} kg</b>{delta>0&&<span style={{color:"#4ade80",marginLeft:6}}>(−{pct.toFixed(0)}%)</span>}</div>;})()}
         {pkgs.length>0&&<>
-          <div className="op-pk-head" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,padding:"0 12px 8px"}}>{["Bulto","Tracking","Medidas","Peso bruto","Volumétrico","m³","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>
+          <div className="op-pk-head" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,padding:"0 12px 8px"}}>{["Bulto","Tracking","Medidas","Peso bruto",t("dep.volumetric"),"m³","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>
           {pkData.map((p,i)=>{const hot=p.vw>p.gw;const enEste=items.filter(it=>Array.isArray(it.package_ids)&&it.package_ids.includes(p.id));
             return <div key={p.id} style={{marginBottom:8,borderRadius:11,border:HAIR,background:"rgba(255,255,255,0.04)"}}>
               <div className="op-pk-row" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,alignItems:"center",padding:"11px 12px"}}>
@@ -947,7 +949,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
                 <span style={{fontSize:13,fontWeight:700,color:!hot&&p.gw>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.gw>0?`${f2(p.gw)} kg`:"—"}</span>
                 <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.vw>0?`${f2(p.vw)} kg`:"—"}</span>
                 <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{p.cbm>0?p.cbm.toFixed(3):"—"}</span>
-                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>Ver escaneo</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Sin foto</span>}</span>
+                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t("dep.noPhoto")}</span>}</span>
               </div>
               {canAsig&&(()=>{const open=pkOpenDet===p.id;const label=enEste.length===0?t("op.variousUnassigned"):enEste.map(it=>it.description||t("calc.product")).join(", ");
                 return <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 11px",flexWrap:"wrap"}}>
@@ -974,7 +976,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
           <p style={{...LBL,marginBottom:8}}>{t("op.supplierPayments")}</p>
           {pmts.map((pm,i)=>{const gs={pendiente:["Pendiente","#fbbf24"],enviado:["Enviado",SKY],confirmado:["Confirmado","#4ade80"]}[pm.giro_status]||[pm.giro_status,"#fff"];return <div key={pm.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none"}}>
             <span style={{fontSize:13,color:"#fff",fontWeight:600}}>{pm.description||`Pago ${i+1}`}{pm.client_paid_date?<span style={{color:"rgba(255,255,255,0.5)",fontWeight:500}}> · pagado el {fd(pm.client_paid_date)}</span>:null}</span>
-            <span style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:pm.client_paid?"#4ade80":"#fbbf24",background:pm.client_paid?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)"}}>{pm.client_paid?"Pagado":"Pendiente de pago"}</span><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:gs[1],background:`${gs[1]}1f`}}>Giro {gs[0]}</span><span style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(pm.client_amount_usd)}</span></span>
+            <span style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:pm.client_paid?"#4ade80":"#fbbf24",background:pm.client_paid?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)"}}>{pm.client_paid?"Pagado":t("op.paymentPending")}</span><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:gs[1],background:`${gs[1]}1f`}}>Giro {gs[0]}</span><span style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(pm.client_amount_usd)}</span></span>
           </div>;})}
         </div>}
         {events.length>0&&<div style={{marginTop:pmts.length?20:0,paddingTop:pmts.length?16:0,borderTop:pmts.length?HAIR:"none"}}>
@@ -998,7 +1000,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
           <tbody>{costoPorProducto.map((r,i)=>{const last=i===costoPorProducto.length-1;const td=(c,ci,hot)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
             const bultos=pkData.map((p,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(p.id)?k+1:null).filter(Boolean);
             return <tr key={r.it.id||i}>{[<>{r.it.description||"—"}{bultos.length>0&&<span style={{display:"block",fontSize:10.5,color:SKY,fontWeight:600}}>Bulto {bultos.join(", ")}</span>}</>,String(r.qty),usd(r.fobUnit),usd(r.taxUnit),usd(r.svcUnit),usd(r.totalUnit),usd(r.total)].map((c,ci)=>td(c,ci,ci===5))}</tr>;})}
-            <tr><td colSpan={6} style={{padding:"11px 10px",fontSize:11.5,fontWeight:800,color:"#fff",letterSpacing:"0.06em",textTransform:"uppercase",borderTop:"1px solid rgba(232,208,152,0.4)"}}>Total puesto en Argentina</td><td style={{padding:"11px 10px",textAlign:"right",fontWeight:900,fontSize:14,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",borderTop:"1px solid rgba(232,208,152,0.4)",whiteSpace:"nowrap"}}>{usd(costoPorProducto.reduce((s,r)=>s+r.total,0))}</td></tr>
+            <tr><td colSpan={6} style={{padding:"11px 10px",fontSize:11.5,fontWeight:800,color:"#fff",letterSpacing:"0.06em",textTransform:"uppercase",borderTop:"1px solid rgba(232,208,152,0.4)"}}>{t("op.totalLanded")}</td><td style={{padding:"11px 10px",textAlign:"right",fontWeight:900,fontSize:14,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",borderTop:"1px solid rgba(232,208,152,0.4)",whiteSpace:"nowrap"}}>{usd(costoPorProducto.reduce((s,r)=>s+r.total,0))}</td></tr>
           </tbody>
         </table></div>}
       </div>}
@@ -1012,7 +1014,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
           <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#fff"}}>Escaneo{lightboxPhoto.n?` · Bulto ${lightboxPhoto.n}`:""}{lightboxPhoto.trk&&<span style={{marginLeft:10,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:SKY,textTransform:"none",letterSpacing:0}}>{lightboxPhoto.trk}</span>}</span>
           <button onClick={()=>setLightboxPhoto(null)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)",color:"#fff",cursor:"pointer"}}>Cerrar</button>
         </div>
-        <img src={lightboxPhoto.url||lightboxPhoto} alt="Escaneo del bulto" style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+        <img src={lightboxPhoto.url||lightboxPhoto} alt={t("dep.scanTitle")} style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
       </div>
     </div>}
   </div>;
@@ -1026,7 +1028,7 @@ function ProfilePage({client,token}){
   const [pwd1,setPwd1]=useState("");const [pwd2,setPwd2]=useState("");const [pwdMsg,setPwdMsg]=useState("");const [pwdErr,setPwdErr]=useState("");const [pwdSaving,setPwdSaving]=useState(false);
   const changePwd=async()=>{
     setPwdMsg("");setPwdErr("");
-    if(!pwd1||pwd1.length<6){setPwdErr("Mínimo 6 caracteres");return;}
+    if(!pwd1||pwd1.length<6){setPwdErr(t("profile.min6"));return;}
     if(pwd1!==pwd2){setPwdErr(t("auth.reset.passwordsDontMatch"));return;}
     setPwdSaving(true);
     try{
@@ -1043,9 +1045,9 @@ function ProfilePage({client,token}){
       const opsArr=Array.isArray(ops)?ops:[];
       if(opsArr.length===0){alert("No tenés importaciones para exportar todavía.");setExporting(false);return;}
       const chLbl={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:t("hist.seaLcl"),maritimo_negro:"Marítimo Integral AC"};
-      const stLbl={pendiente:"Pendiente",en_deposito_origen:t("hist.inWarehouse"),en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:t("hist.inCustoms"),entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
+      const stLbl={pendiente:"Pendiente",en_deposito_origen:t("hist.inWarehouse"),en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:t("op.arrived"),en_aduana:t("hist.inCustoms"),entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
       if(format==="csv"){
-        const headers=["Código","Descripción","Origen","Canal","Estado",t("hist.created"),"Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
+        const headers=[t("hist.code"),t("common.description"),"Origen","Canal","Estado",t("hist.created"),"Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
         const rows=opsArr.map(o=>[o.operation_code,`"${(o.description||"").replace(/"/g,'""')}"`,o.origin||"",chLbl[o.channel]||o.channel||"",stLbl[o.status]||o.status||"",o.created_at?o.created_at.slice(0,10):"",o.delivered_at?o.delivered_at.slice(0,10):"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No"].join(","));
         const csv=[headers.join(","),...rows].join("\n");
         const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
@@ -1721,12 +1723,12 @@ function CalculatorPage({token,client,preset}){
         {line(its.length===1?`${t("merc.statRate")} (${its[0].tePct}%)`:t("merc.statRate"),sum(its,it=>it.tasa_e))}
         {line(its.length===1?`IVA (${its[0].ivaPct}%)`:"IVA",sum(its,it=>it.iva))}
         {ch.isMar?line("IVA adicional + IIGG + IIBB",sum(its,it=>(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0))):<>{line("Gasto documental",sum(its,it=>it.desembolso))}{sum(its,it=>it.ivaDesemb)>0&&line("IVA sobre gasto documental",sum(its,it=>it.ivaDesemb))}</>}
-        {delivCost>0&&line("Envío a domicilio",delivCost)}
+        {delivCost>0&&line(t("op.homeDelivery"),delivCost)}
       </>:<>
         {line(ch.key==="maritimo_a_china"?t("quotes.seaService"):t("op.integralService"),Number(ch.flete||0)+Number(ch.surcharge||0))}
         {ch.battExtra>0&&line("Recargo por baterías",ch.battExtra)}
         {Number(ch.overweightSurcharge||0)>0&&line(t("op.overweight"),ch.overweightSurcharge)}
-        {delivCost>0&&line("Envío a domicilio",delivCost)}
+        {delivCost>0&&line(t("op.homeDelivery"),delivCost)}
       </>}
       {line("Total",total,{total:true})}
       {!ch.isBlanco&&<p style={{fontSize:12,color:SUB,margin:"10px 0 0",lineHeight:1.5}}>{t("calc.allInNote")}</p>}
@@ -1836,13 +1838,13 @@ function CalculatorPage({token,client,preset}){
           <p style={{...LBL,fontSize:13}}>Productos</p>
           <button onClick={addProduct} style={SMALL_GOLD}>+ Producto</button>
         </div>
-        <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{(isChina?["Descripción","USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"]:["Descripción","USD c/u","Cantidad","Tipo"]).map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===(isChina?4:3)?40:0}}>{h}</span>)}</div>
+        <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{(isChina?[t("common.description"),"USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"]:[t("common.description"),"USD c/u","Cantidad","Tipo"]).map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===(isChina?4:3)?40:0}}>{h}</span>)}</div>
         {products.map((p,i)=><div key={i}>
           <div className="pc-row" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,alignItems:"center",padding:"6px 4px",borderTop:i>0?HAIR:"none"}}>
             <input className="pc-desc" value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder={isChina?"Sé específico. Ej: Auriculares inalámbricos bluetooth":t("calc.productPlaceholder")} style={{...INP,textAlign:"left"}} onFocus={onF} onBlur={onB}/>
             {numIn({value:p.unit_price,onChange:v=>chProd(i,"unit_price",v),placeholder:"USD c/u"})}
             {numIn({value:p.quantity,onChange:v=>chProd(i,"quantity",v),placeholder:"Cant."})}
-            {isChina&&<input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))chProd(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title="Si tenés la posición arancelaria que te pasó el proveedor, cargala: Argencargo la valida" style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>}
+            {isChina&&<input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))chProd(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title={t("merc.hsHint")} style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>}
             <div className={isChina?"pc-tail":"pc-tail pc-tail-full"} style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",minWidth:0}}>
               {isChina?ncmCell(p):typeCell(p,i)}
               {delBtn(()=>rmProduct(i),products.length<=1)}
@@ -1852,13 +1854,13 @@ function CalculatorPage({token,client,preset}){
             return <div style={{padding:"0 4px 8px"}}>
               {n?.ncm_code&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{[[t("quotes.duties"),n.import_duty_rate],[t("merc.statRate"),n.statistics_rate],["IVA",n.iva_rate]].map(([l,v])=><span key={l} style={{display:"inline-flex",alignItems:"center",gap:8,height:30,padding:"0 12px",borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>{l}</span><span style={{fontSize:13,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}%</span></span>)}</div>}
               {n?.hint_verdict==="diff"&&<p style={{fontSize:12,color:"#fbbf24",margin:"6px 0 0",lineHeight:1.5}}>Tu posición sugerida ({n.hint_code}) no corresponde para esta mercadería{n.hint_note?`: ${n.hint_note}`:"."}</p>}
-              {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>Coincide con la posición que sugeriste.</p>}
+              {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>{t("merc.hsMatch")}</p>}
               {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}{n.antidumping.medidaTexto?` · ${n.antidumping.medidaTexto}`:""}). La cotización es estimativa: el equipo la revisa antes de confirmar.</p>}
               {p.ncmError&&<div style={{marginTop:8,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)"}}>
                 <p style={{fontSize:12.5,color:"#ff8a8a",margin:"0 0 8px",fontWeight:600}}>No pudimos clasificar “{p.description}” automáticamente</p>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                   <button onClick={est} style={SMALL_GOLD}>Usar valores estimados (35 % derechos)</button>
-                  <a href={`https://wa.me/5491125088580?text=${encodeURIComponent("Hola! Necesito ayuda para clasificar: "+p.description)}`} target="_blank" rel="noopener noreferrer" style={{...SMALL_GHOST,color:"#4ade80"}}>Consultar por WhatsApp</a>
+                  <a href={`https://wa.me/5491125088580?text=${encodeURIComponent("Hola! Necesito ayuda para clasificar: "+p.description)}`} target="_blank" rel="noopener noreferrer" style={{...SMALL_GHOST,color:"#4ade80"}}>{t("merc.askWA")}</a>
                   <span style={{fontSize:11,color:SUB}}>o cargá las alícuotas:</span>
                   {[["Derechos %","import_duty_rate",35],["TE %","statistics_rate",3],["IVA %","iva_rate",21]].map(([l,f,def])=><input key={f} type="text" inputMode="decimal" placeholder={l} onChange={e=>{const v=e.target.value===""?def:toN(e.target.value);chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:p.ncm?.import_duty_rate??35,statistics_rate:p.ncm?.statistics_rate??3,iva_rate:p.ncm?.iva_rate??21,[f]:v});}} style={{...INP,width:96,height:32,fontSize:12}} onFocus={onF} onBlur={onB}/>)}
                 </div>
@@ -1982,12 +1984,12 @@ function QuotesPage({token,client,onEdit}){
             <tbody>{prods.map((p,i)=>{const nc=p.ncm||{};const qty=Number(p.quantity||1);const fob=Number(p.unit_price||0)*qty;const last=i===prods.length-1;const td=(c,ci,hot)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
               return <tr key={i}>{[p.description||p.type||"—",String(qty),usd(p.unit_price),usd(fob),nc.ncm_code?(nc.ncm_code==="MANUAL"?"Estimado":nc.ncm_code):"—",nc.ncm_code?`${nc.import_duty_rate??0}%`:"—",nc.ncm_code?`${nc.statistics_rate??0}%`:"—",nc.ncm_code?`${nc.iva_rate??21}%`:"—"].map((c,ci)=>td(c,ci,ci===4&&nc.ncm_code))}</tr>;})}</tbody>
           </table></div>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>{[["FOB mercadería",usd(q.total_fob)],["Bultos",String(nPk)],["Peso bruto",Number(q.total_weight)>0?`${fmt2(q.total_weight)} kg`:"—"],["Volumen",Number(q.total_cbm)>0?`${Number(q.total_cbm).toFixed(3)} m³`:"—"]].map(([l,v])=><div key={l} style={{flex:"1 1 140px",padding:"10px 14px",borderRadius:10,border:HAIR,background:"rgba(255,255,255,0.05)"}}><p style={{...LBL,fontSize:10}}>{l}</p><p style={{margin:"4px 0 0",fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p></div>)}</div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>{[[t("merc.fobGoods"),usd(q.total_fob)],["Bultos",String(nPk)],["Peso bruto",Number(q.total_weight)>0?`${fmt2(q.total_weight)} kg`:"—"],["Volumen",Number(q.total_cbm)>0?`${Number(q.total_cbm).toFixed(3)} m³`:"—"]].map(([l,v])=><div key={l} style={{flex:"1 1 140px",padding:"10px 14px",borderRadius:10,border:HAIR,background:"rgba(255,255,255,0.05)"}}><p style={{...LBL,fontSize:10}}>{l}</p><p style={{margin:"4px 0 0",fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p></div>)}</div>
 
           <p style={{...LBL,margin:"18px 0 8px"}}>{t("quotes.ways")}</p>
           {alts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>{t("quotes.noWays")}</p>}
           {alts.map((a,i)=>{const on=chosen?.key===a.key;const [big,small]=chTitle(a);const isAereo=(a.key||"").includes("aereo");const isCheap=alts.length>1&&cheapest&&a.key===cheapest.key;const dk=`${q.id}:${a.key}`;const dOpen=openAlt===dk;
-            const detail=Array.isArray(a.detail)&&a.detail.length?a.detail:[Number(a.flete)>0&&["Flete + servicio",a.flete],Number(a.seguro)>0&&["Seguro",a.seguro],Number(a.overweight)>0&&["Recargo por sobrepeso",a.overweight],Number(a.totalTax)>0&&[t("quotes.taxesCustoms"),a.totalTax],Number(a.shipCost)>0&&["Envío a domicilio",a.shipCost]].filter(Boolean);
+            const detail=Array.isArray(a.detail)&&a.detail.length?a.detail:[Number(a.flete)>0&&["Flete + servicio",a.flete],Number(a.seguro)>0&&["Seguro",a.seguro],Number(a.overweight)>0&&["Recargo por sobrepeso",a.overweight],Number(a.totalTax)>0&&[t("quotes.taxesCustoms"),a.totalTax],Number(a.shipCost)>0&&[t("op.homeDelivery"),a.shipCost]].filter(Boolean);
             return <div key={a.key||i} style={{borderRadius:12,marginTop:i?8:0,border:`1px solid ${on?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(140,200,245,0.06)"}}>
               <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 16px"}}>
                 <span style={{fontSize:20,width:36,textAlign:"center"}}>{isAereo?"✈️":"🚢"}</span>
@@ -2480,7 +2482,7 @@ function InternationalPaymentsPage({client,token}){
               </p>
             </div>
             <span style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {chipG(pagado?"Pagado":"Pendiente de pago",pagado?"#4ade80":"#fbbf24",true)}
+              {chipG(pagado?"Pagado":t("op.paymentPending"),pagado?"#4ade80":"#fbbf24",true)}
               {chipG(enviado?"Girado":t("pay.inProgress"),"#4ade80",enviado)}
             </span>
             <span style={{fontSize:19,fontWeight:900,color:"#fff",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",marginRight:5}}>USD</span>{monto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
@@ -2613,7 +2615,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         {key:"imports",ic:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"],l:t("nav.imports")},
         {key:"calculator",ic:["M4 4h16v16H4z","M4 8h16","M8 4v16"],l:t("nav.calculator")},
         {key:"quotes",ic:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"],l:t("nav.quotes")},
-        {key:"_more",ic:["M5 12h.01M12 12h.01M19 12h.01"],l:"Más",isMore:true},
+        {key:"_more",ic:["M5 12h.01M12 12h.01M19 12h.01"],l:t("common.more"),isMore:true},
       ].map(it=>{const active=page===it.key;return <button key={it.key} onClick={()=>{if(it.isMore){setMobOpen(true);}else{setPage(it.key);}}} style={{flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 4px",background:"transparent",border:"none",color:active?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer",borderRadius:8,transition:"color 150ms"}}>
         <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.ic.map((d,i)=><path key={i} d={d}/>)}</svg>
         <span style={{fontSize:10,fontWeight:active?700:500,letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.l}</span>
@@ -3016,7 +3018,7 @@ export default function Page(){
     const s=loadSession();if(!s?.token||!s?.user){setRestoring(false);return;}try{const uid=s.user.id;const p=await dq("profiles",{token:s.token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof){clearSession();setRestoring(false);return;}if(prof.role==="cliente"){const c=await dq("clients",{token:s.token,filters:`?auth_user_id=eq.${uid}&select=*`});setClient(Array.isArray(c)?c[0]:null);}setSession(s);setProfile(prof);}catch{clearSession();}setRestoring(false);
   };r();},[]);
   const ch=f=>v=>{setForm(p=>({...p,[f]:v}));setErrors(p=>({...p,[f]:undefined}));setGErr("");};
-  const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email=t("auth.emailInvalid");if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password="Mínimo 6 caracteres";if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";}if(s===2&&(form.tax_condition==="responsable_inscripto"||form.tax_condition==="monotributista")){if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}if(s===2&&form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"){if(!form.dni.trim())e.dni="Requerido";else if(form.dni.replace(/\D/g,"").length<7)e.dni="DNI inválido";}setErrors(e);return !Object.keys(e).length;};
+  const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email=t("auth.emailInvalid");if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password=t("profile.min6");if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";}if(s===2&&(form.tax_condition==="responsable_inscripto"||form.tax_condition==="monotributista")){if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}if(s===2&&form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"){if(!form.dni.trim())e.dni="Requerido";else if(form.dni.replace(/\D/g,"").length<7)e.dni="DNI inválido";}setErrors(e);return !Object.keys(e).length;};
   const gc=(fn,ln)=>(fn.substring(0,3)+ln.substring(0,3)).toUpperCase();
   // Inserta el cliente reintentando con sufijo numérico si el client_code ya existe.
   // Dos personas con iniciales iguales generan el mismo código (ej. "Martin Briones" y
@@ -3124,7 +3126,7 @@ export default function Page(){
     }
   },[]);
   const doReset=async()=>{
-    if(!resetPwd||resetPwd.length<6){setGErr("Mínimo 6 caracteres");return;}
+    if(!resetPwd||resetPwd.length<6){setGErr(t("profile.min6"));return;}
     if(resetPwd!==resetPwd2){setGErr(t("auth.reset.passwordsDontMatch"));return;}
     setLoading(true);setGErr("");
     try{
@@ -3183,7 +3185,7 @@ export default function Page(){
         <p style={{fontSize:32,margin:"0 0 8px"}}>✓</p>
         <p style={{fontSize:13,color:"#22c55e",margin:0,fontWeight:600}}>{t("auth.reset.success")}</p>
       </div>:<>
-        <Inp label={t("auth.password")} type="password" value={resetPwd} onChange={setResetPwd} placeholder="Mínimo 6 caracteres" req/>
+        <Inp label={t("auth.password")} type="password" value={resetPwd} onChange={setResetPwd} placeholder={t("profile.min6")} req/>
         <Inp label={t("auth.passwordConfirm")} type="password" value={resetPwd2} onChange={setResetPwd2} placeholder="••••••••" req/>
         <div style={{marginTop:16}}><PBtn onClick={doReset} disabled={loading}>{loading?t("common.saving"):`${t("auth.reset.save")} →`}</PBtn></div>
       </>}
@@ -3199,9 +3201,9 @@ export default function Page(){
     </>:<>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:0}}>{t("auth.register.title")}</h2><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{step+1}/3</span></div>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 16px"}}>{ST[step]}</p><ErrBox msg={gErr}/>
-      {step===0&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label={t("auth.firstName")} value={form.first_name} onChange={ch("first_name")} placeholder="Juan" req error={errors.first_name}/><Inp label={t("auth.lastName")} value={form.last_name} onChange={ch("last_name")} placeholder="Pérez" req error={errors.last_name}/></div><Inp label={t("auth.whatsapp")} type="tel" value={form.whatsapp} onChange={ch("whatsapp")} placeholder="+54 9 11 1234-5678" req error={errors.whatsapp}/><Inp label={t("auth.email")} type="email" value={form.email} onChange={ch("email")} placeholder="tu@email.com" req error={errors.email}/><Inp label={t("auth.password")} type="password" value={form.password} onChange={ch("password")} placeholder="Mínimo 6 caracteres" req error={errors.password}/><Inp label={t("auth.passwordConfirm")} type="password" value={form.confirm_password} onChange={ch("confirm_password")} placeholder="••••••••" req error={errors.confirm_password}/></>}
+      {step===0&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label={t("auth.firstName")} value={form.first_name} onChange={ch("first_name")} placeholder="Juan" req error={errors.first_name}/><Inp label={t("auth.lastName")} value={form.last_name} onChange={ch("last_name")} placeholder="Pérez" req error={errors.last_name}/></div><Inp label={t("auth.whatsapp")} type="tel" value={form.whatsapp} onChange={ch("whatsapp")} placeholder="+54 9 11 1234-5678" req error={errors.whatsapp}/><Inp label={t("auth.email")} type="email" value={form.email} onChange={ch("email")} placeholder="tu@email.com" req error={errors.email}/><Inp label={t("auth.password")} type="password" value={form.password} onChange={ch("password")} placeholder={t("profile.min6")} req error={errors.password}/><Inp label={t("auth.passwordConfirm")} type="password" value={form.confirm_password} onChange={ch("confirm_password")} placeholder="••••••••" req error={errors.confirm_password}/></>}
       {step===1&&<><Inp label={t("auth.address")} value={form.street} onChange={ch("street")} placeholder="Av. Corrientes 1234" req error={errors.street}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Piso/Depto" value={form.floor_apt} onChange={ch("floor_apt")} placeholder="3° B"/><Inp label="CP" value={form.postal_code} onChange={ch("postal_code")} placeholder="1414" req error={errors.postal_code}/></div><Inp label={t("auth.city")} value={form.city} onChange={ch("city")} placeholder="Palermo" req error={errors.city}/><Sel label={t("auth.province")} value={form.province} onChange={ch("province")} options={PR} req ph="—"/></>}
-      {step===2&&<><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>{t("auth.taxCondition")}</p><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>{TX.map(o=><div key={o.value} onClick={()=>ch("tax_condition")(o.value)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",border:`1.5px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:form.tax_condition===o.value?"rgba(184,149,106,0.1)":"transparent"}}><div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.15)"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.tax_condition===o.value&&<div style={{width:10,height:10,borderRadius:"50%",background:B.accent}}/>}</div><span style={{fontSize:14,color:"rgba(255,255,255,0.7)"}}>{t(`tax.${o.value}`)}</span></div>)}</div>{form.tax_condition==="responsable_inscripto"&&<div style={{padding:14,background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}><Inp label="Empresa" value={form.company_name} onChange={ch("company_name")} placeholder="Mi Empresa S.R.L." req error={errors.company_name}/><Inp label={t("auth.cuit")} value={form.cuit} onChange={ch("cuit")} placeholder="20-12345678-9" req error={errors.cuit}/></div>}{form.tax_condition==="monotributista"&&<div style={{padding:14,background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}><Inp label={t("auth.cuit")} value={form.cuit} onChange={ch("cuit")} placeholder="20-12345678-9" req error={errors.cuit}/></div>}{form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"&&<div style={{padding:14,background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}><Inp label={t("auth.dni")} value={form.dni} onChange={ch("dni")} placeholder="30123456" req error={errors.dni}/></div>}</>}
+      {step===2&&<><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>{t("auth.taxCondition")}</p><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>{TX.map(o=><div key={o.value} onClick={()=>ch("tax_condition")(o.value)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",border:`1.5px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:form.tax_condition===o.value?"rgba(184,149,106,0.1)":"transparent"}}><div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.15)"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.tax_condition===o.value&&<div style={{width:10,height:10,borderRadius:"50%",background:B.accent}}/>}</div><span style={{fontSize:14,color:"rgba(255,255,255,0.7)"}}>{t(`tax.${o.value}`)}</span></div>)}</div>{form.tax_condition==="responsable_inscripto"&&<div style={{padding:14,background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}><Inp label={t("auth.company")} value={form.company_name} onChange={ch("company_name")} placeholder="Mi Empresa S.R.L." req error={errors.company_name}/><Inp label={t("auth.cuit")} value={form.cuit} onChange={ch("cuit")} placeholder="20-12345678-9" req error={errors.cuit}/></div>}{form.tax_condition==="monotributista"&&<div style={{padding:14,background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}><Inp label={t("auth.cuit")} value={form.cuit} onChange={ch("cuit")} placeholder="20-12345678-9" req error={errors.cuit}/></div>}{form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"&&<div style={{padding:14,background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}><Inp label={t("auth.dni")} value={form.dni} onChange={ch("dni")} placeholder="30123456" req error={errors.dni}/></div>}</>}
       <div style={{display:"flex",gap:12,marginTop:18}}>{step>0&&<SBtn onClick={()=>setStep(s=>s-1)}>{t("common.back")}</SBtn>}<PBtn onClick={step<2?()=>{if(val(step))setStep(s=>s+1);}:doReg} disabled={loading}>{loading?t("common.saving"):step<2?`${t("common.next")} →`:t("auth.register.title")}</PBtn></div>
       {step===2&&<p style={{fontSize:11,color:"rgba(255,255,255,0.42)",margin:"12px 0 0",textAlign:"center",lineHeight:1.5}}>Al crear tu cuenta aceptás los <a href="/terminos" target="_blank" rel="noopener" style={{color:"#E8C99B",fontWeight:600}}>Términos y Condiciones</a> del servicio.</p>}
       <p style={{textAlign:"center",fontSize:13,color:"rgba(255,255,255,0.4)",marginTop:18,marginBottom:0}}>{t("auth.haveAccount")} <span onClick={()=>{setView("login");setStep(0);setGErr("");}} style={{color:B.accent,cursor:"pointer",fontWeight:600}}>{t("auth.login.cta")}</span></p>
