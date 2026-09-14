@@ -733,6 +733,11 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const userId=session.user?.id;
   const [signup,setSignup]=useState(null);
   const [loading,setLoading]=useState(true);
+  // El admin entra a este mismo panel para supervisar: tiene que ver TODO el deposito, no solo
+  // lo que registro el (que es nada). Se usa un ref ademas del estado porque reloadAll() se
+  // llama en el mismo tick en que se detecta el rol, antes de que el estado se aplique.
+  const [esAdmin,setEsAdmin]=useState(false);
+  const adminRef=useRef(false);
   const [packages,setPackages]=useState([]);
   const [flights,setFlights]=useState([]);
   const [flightOps,setFlightOps]=useState([]);
@@ -751,7 +756,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc,rp]=await Promise.all([
-      dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)&registered_by_agent_id=eq.${userId}&order=created_at.desc&limit=150`}),
+      dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
@@ -770,6 +775,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     if(role==="admin"){
       // tutorial_completed:true — el signup sintético del admin no tiene ficha donde persistir
       // el tutorial, así que sin esto el overlay aparecía en CADA ingreso del admin.
+      adminRef.current=true;setEsAdmin(true);
       setSignup({status:"approved",first_name:"Admin",email:session.user?.email,country:"Argentina",tutorial_completed:true});
       await reloadAll();
       setLoading(false);
@@ -939,6 +945,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
+      {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"16px 0 0",fontSize:12,color:"#E8D098",fontWeight:600}}>
+        Vista de supervisión: estás viendo el depósito de <strong>todos</strong> los agentes, no solo los bultos que registraste vos.
+      </div>}
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} origin={/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China"} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
       {/* Banner: paquetes pendientes de foto */}
       {(()=>{const pendientes=depositPkgsAll.filter(p=>!p.photo_url);if(pendientes.length===0)return null;
