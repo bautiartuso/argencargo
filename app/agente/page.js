@@ -756,7 +756,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc,rp]=await Promise.all([
-      dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
+      dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,status,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
@@ -822,12 +822,20 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
 
-  // Computed: paquetes en depósito = los que todavía no viajan, con o sin operación asignada.
-  // OJO con el filter(Boolean): si una fila de flight_operations quedó sin operation_id (paso:
-  // FL-0052 tenía una huérfana), ese null entraba al Set y `has(null)` daba true, con lo cual
-  // TODOS los bultos sin operación desaparecían del depósito. 49 bultos invisibles por una fila.
+  // Computed: paquetes que estan FISICAMENTE en el deposito.
+  // Se define por el ESTADO de la operacion, no por "no tener vuelo asignado": hay 101 bultos de
+  // operaciones cerradas (entregadas hace meses, marítimas o viejas) que nunca tuvieron fila en
+  // flight_operations, y con el criterio anterior aparecian como si estuvieran en el deposito.
+  // OJO con el filter(Boolean): si una fila de flight_operations queda sin operation_id (paso con
+  // FL-0052), ese null entra al Set y `has(null)` da true, con lo cual TODOS los bultos sin
+  // operacion desaparecen del deposito.
+  const EN_DEPOSITO=new Set(["pendiente","en_deposito_origen","en_preparacion"]);
   const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean));
-  const depositPkgsAll=packages.filter(p=>!p.operation_id||!flightOpIds.has(p.operation_id));
+  const depositPkgsAll=packages.filter(p=>{
+    if(!p.operation_id)return true;                       // suelto: el cliente todavia no armo la importacion
+    if(flightOpIds.has(p.operation_id))return false;       // ya esta cargado en un vuelo
+    return EN_DEPOSITO.has(String(p.operations?.status||""));
+  });
   const depositPkgs=depositPkgsAll.filter(p=>{
     if(!depositSearch)return true;
     const q=depositSearch.toLowerCase();
