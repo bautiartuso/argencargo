@@ -1031,9 +1031,9 @@ function ProfilePage({client,token}){
     setPwdSaving(true);
     try{
       const r=await fetch(`${SB_URL}/auth/v1/user`,{method:"PUT",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({password:pwd1})}).then(x=>x.json());
-      if(r?.error||r?.msg||r?.error_description){setPwdErr(r.msg||r.error_description||"Error al cambiar la contraseña");}
+      if(r?.error||r?.msg||r?.error_description){setPwdErr(r.msg||r.error_description||t("profile.pwdError"));}
       else{setPwdMsg(t("profile.changed"));setPwd1("");setPwd2("");setTimeout(()=>setPwdMsg(""),3000);}
-    }catch(e){setPwdErr("Error de conexión");}
+    }catch(e){setPwdErr(t("common.connError"));}
     setPwdSaving(false);
   };
   const exportHistory=async(format)=>{
@@ -1042,10 +1042,10 @@ function ProfilePage({client,token}){
       const ops=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=operation_code,description,channel,origin,status,budget_total,collected_amount,is_collected,created_at,closed_at,delivered_at,eta&order=created_at.desc`});
       const opsArr=Array.isArray(ops)?ops:[];
       if(opsArr.length===0){alert("No tenés importaciones para exportar todavía.");setExporting(false);return;}
-      const chLbl={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
-      const stLbl={pendiente:"Pendiente",en_deposito_origen:"En depósito",en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:"En aduana",entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
+      const chLbl={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:t("hist.seaLcl"),maritimo_negro:"Marítimo Integral AC"};
+      const stLbl={pendiente:"Pendiente",en_deposito_origen:t("hist.inWarehouse"),en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:t("hist.inCustoms"),entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
       if(format==="csv"){
-        const headers=["Código","Descripción","Origen","Canal","Estado","Fecha creación","Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
+        const headers=["Código","Descripción","Origen","Canal","Estado",t("hist.created"),"Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
         const rows=opsArr.map(o=>[o.operation_code,`"${(o.description||"").replace(/"/g,'""')}"`,o.origin||"",chLbl[o.channel]||o.channel||"",stLbl[o.status]||o.status||"",o.created_at?o.created_at.slice(0,10):"",o.delivered_at?o.delivered_at.slice(0,10):"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No"].join(","));
         const csv=[headers.join(","),...rows].join("\n");
         const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
@@ -1079,8 +1079,8 @@ function ProfilePage({client,token}){
           .footer{margin-top:24px;padding:14px;background:#152D54;color:#fff;border-radius:8px;text-align:center;font-size:10px}
         </style></head><body>
           <div class="header"><img src="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png" alt="Argencargo"/><div class="meta"><span class="code">${client.client_code}</span>${client.first_name} ${client.last_name}<br/>Generado ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div></div>
-          <h1>Histórico de importaciones</h1>
-          <p class="sub">Listado completo de tus operaciones con Argencargo</p>
+          <h1>${t("hist.title")}</h1>
+          <p class="sub">${t("hist.subtitle")}</p>
           <div class="stats">
             <div><span>Total ops</span><b>${opsArr.length}</b></div>
             <div><span>Cerradas</span><b>${opsArr.filter(o=>o.is_collected).length}</b></div>
@@ -1101,7 +1101,7 @@ function ProfilePage({client,token}){
   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,padding:"16px 20px",background:`linear-gradient(135deg, ${ti.color}1a, rgba(255,255,255,0.02))`,border:`1px solid ${ti.color}55`,borderRadius:14}}>
     <span style={{fontSize:30,lineHeight:1}}>{ti.icon}</span>
     <div>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Tu categoría</p>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("profile.yourTier")}</p>
       <p style={{fontSize:20,fontWeight:800,margin:0,letterSpacing:"-0.01em",background:ti.gradient,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{ti.label}</p>
     </div>
   </div>
@@ -1110,7 +1110,7 @@ function ProfilePage({client,token}){
     {/* Cambiar contraseña */}
     <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem 2rem",marginTop:16}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🔒 {t("profile.changePassword")}</h3>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",lineHeight:1.5}}>Mínimo 6 caracteres. Tu sesión se mantiene activa después del cambio.</p>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",lineHeight:1.5}}>{t("profile.min6Session")}</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
         <div><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("profile.newPassword")}</p><input type="password" value={pwd1} onChange={e=>setPwd1(e.target.value)} autoComplete="new-password" style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#fff",outline:"none"}}/></div>
         <div><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("auth.passwordConfirm")}</p><input type="password" value={pwd2} onChange={e=>setPwd2(e.target.value)} autoComplete="new-password" style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#fff",outline:"none"}}/></div>
@@ -1130,7 +1130,9 @@ function ProfilePage({client,token}){
     </div>
   </div>;
 }
-const SERVICES_C=[{key:"aereo_a_china",label:"Aéreo Courier Comercial — China / USA",info:"Demora 7-10 días hábiles desde China · 3-5 desde USA",unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
+// Funcion y no constante: las etiquetas se traducen, y una constante de modulo se evalua
+// al cargar el archivo, cuando todavia no existe ningun traductor.
+const serviciosC=(tr)=>[{key:"aereo_a_china",label:tr("rates.airTitle"),info:tr("rates.airSub"),unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
 function RatesPage({token,client}){
   const {t:tr}=useT();
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [lo,setLo]=useState(true);
@@ -1141,7 +1143,7 @@ function RatesPage({token,client}){
   const _tnow=Date.now();const tariffsNow=tariffs.filter(t=>(t.effective_from==null||Date.parse(t.effective_from)<=_tnow)&&(t.effective_to==null||_tnow<Date.parse(t.effective_to)));
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>{tr("common.loading")}</p>;
   return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>{tr("rates.title")}</h2>
-    {SERVICES_C.map(svc=>{const rates=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="rate");const specials=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
+    {serviciosC(tr).map(svc=>{const rates=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="rate");const specials=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
     return <div key={svc.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{svc.label}</h3>{svc.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"4px 10px",background:"rgba(255,255,255,0.028)",borderRadius:6}}>{svc.info}</span>}</div>
       {hideRanges(svc.key)?<div style={{textAlign:"center",padding:"16px 0"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>{tr("rates.varies")}</p><p style={{fontSize:14,fontWeight:600,color:IC,margin:0}}>{tr("rates.askForQuote")}</p></div>:
@@ -1534,8 +1536,8 @@ function CalculatorPage({token,client,preset}){
   const clientIsCABA=(()=>{if(!client)return false;const c=(client.city||"").toLowerCase();const p=(client.province||"").toLowerCase();return c.includes("capital")||c.includes("caba")||p.includes("capital")||p==="caba";})();
   // Mantengo clientZone para retrocompat (otros lados del código pueden usarlo).
   const clientZone=clientIsCABA?"caba":(client?"interior":null);
-  const autoDelivLabel=(()=>{if(delivery==="oficina")return"Retiro por Oficina (Gratis)";if(delivery==="coordinar")return"Envío a coordinar";const{totWeight}=calcTotals();const cost=getShipCost(delivery,totWeight);return `Envío CABA (USD ${cost})`;})();
-  const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA",coordinar:"Envío a coordinar"};
+  const autoDelivLabel=(()=>{if(delivery==="oficina")return t("calc.pickupOfficeFree");if(delivery==="coordinar")return t("calc.deliveryTBD");const{totWeight}=calcTotals();const cost=getShipCost(delivery,totWeight);return `Envío CABA (USD ${cost})`;})();
+  const DELIV={oficina:t("calc.pickupOfficeFree"),caba:t("calc.shipCaba"),coordinar:t("calc.deliveryTBD")};
   const [savedMsg,setSavedMsg]=useState("");
   // Tiempo de tránsito por canal (para la lista de resultados y la cotización guardada).
   const transitOf=ch=>ch?.info||({aereo_a_china:origin==="USA"?"3-5 días hábiles":"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
@@ -1637,7 +1639,7 @@ function CalculatorPage({token,client,preset}){
   const isRI=client?.tax_condition==="responsable_inscripto";
   const battRate=isRI?2:1;
   const flagOf=o=>o==="China"?"🇨🇳":o==="España"?"🇪🇸":"🇺🇸";
-  const chTitle=ch=>({aereo_a_china:["AÉREO","Courier comercial"],maritimo_a_china:["MARÍTIMO","Carga FCL/LCL"],maritimo_b:["MARÍTIMO","Integral AC"],aereo_b_spain:["AÉREO","Integral AC"],aereo_b_usa:["AÉREO","Integral AC"]})[ch.key]||[ch.key?.includes("aereo")?"AÉREO":"MARÍTIMO",ch.name];
+  const chTitle=ch=>({aereo_a_china:[t("calc.air"),"Courier comercial"],maritimo_a_china:[t("calc.sea"),"Carga FCL/LCL"],maritimo_b:["MARÍTIMO","Integral AC"],aereo_b_spain:["AÉREO","Integral AC"],aereo_b_usa:["AÉREO","Integral AC"]})[ch.key]||[ch.key?.includes("aereo")?"AÉREO":"MARÍTIMO",ch.name];
   const resetAll=()=>{setResults(null);setOrigin("");setStep(0);setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:"",product_ids:null}]);setNoDims(false);setDelivery("oficina");setHasBattery(null);setExpandedCh(null);savedQuoteIdRef.current=null;if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});};
   const pickOrigin=k=>{if(k===origin)return;setOrigin(k);setHasBattery(null);setResults(null);setExpandedCh(null);setStep(1);};
   const PROD_COLS=isChina?"1fr 110px 90px 150px 170px":"1fr 110px 90px 230px";
@@ -1700,8 +1702,8 @@ function CalculatorPage({token,client,preset}){
     const hasAereo=calc.some(c=>c.key.includes("aereo")),hasMar=calc.some(c=>c.key.includes("maritimo"));
     const noDimsReason=noDims||tot.totCBM===0;
     const unavailable=[];
-    if(isChina&&!hasAereo)unavailable.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",motivo:owPk?<>Uno de los bultos de tu envío ({fmt2(toN(owPk.weight))} kg) supera los 50 kg por pieza.<br/>El régimen courier establece un máximo de 50 kg por bulto.<br/>Para avanzar vía Courier comercial, dividí la carga en bultos cuyo peso unitario no supere los 50 kg.</>:"No cargaste el peso ni las medidas de los bultos."});
-    if(!hasMar)unavailable.push({key:"maritimo_b",name:"Marítimo Integral AC",motivo:noDimsReason?"No colocaste las dimensiones de los bultos: sin volumen (m³) no se puede cotizar el marítimo.":"Esta carga no aplica para la vía marítima."});
+    if(isChina&&!hasAereo)unavailable.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",motivo:owPk?<>Uno de los bultos de tu envío ({fmt2(toN(owPk.weight))} kg) supera los 50 kg por pieza.<br/>El régimen courier establece un máximo de 50 kg por bulto.<br/>Para avanzar vía Courier comercial, dividí la carga en bultos cuyo peso unitario no supere los 50 kg.</>:t("calc.noWeightDims")});
+    if(!hasMar)unavailable.push({key:"maritimo_b",name:"Marítimo Integral AC",motivo:noDimsReason?t("calc.noDimsSea"):t("calc.noSeaForCargo")});
     const ordered=[...calc.filter(c=>c.key.includes("aereo")),...calc.filter(c=>!c.key.includes("aereo"))];
     const RES_PANEL={...PANEL,padding:"24px"};
     const line=(l,v,opts={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:opts.total?"12px 0 0":"7px 0",borderTop:opts.total?"1px solid rgba(255,255,255,0.22)":"none",marginTop:opts.total?8:0}}><span style={{fontSize:opts.total?14:13,color:"#fff",fontWeight:opts.total?700:500,opacity:opts.total?1:0.92}}>{l}</span><span style={{fontSize:opts.total?18:13.5,fontWeight:opts.total?800:600,color:opts.total?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span></div>;
@@ -1727,10 +1729,10 @@ function CalculatorPage({token,client,preset}){
         {delivCost>0&&line("Envío a domicilio",delivCost)}
       </>}
       {line("Total",total,{total:true})}
-      {!ch.isBlanco&&<p style={{fontSize:12,color:SUB,margin:"10px 0 0",lineHeight:1.5}}>Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
+      {!ch.isBlanco&&<p style={{fontSize:12,color:SUB,margin:"10px 0 0",lineHeight:1.5}}>{t("calc.allInNote")}</p>}
     </div>;};
     const waMedidaMsg=(()=>{const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`🏷️ *Mercadería ${i+1}*\nDescripción: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${fmt2(toN(p.unit_price))}`).join("\n\n");
-      const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:"sin dimensiones";return `📦 *Bulto ${i+1}*\nDimensiones: ${dims}\nPeso unitario: ${toN(p.weight)||0} kg\nCantidad: ${p.qty||1}`;}).join("\n\n");
+      const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:t("calc.noDimsShort");return `📦 *Bulto ${i+1}*\nDimensiones: ${dims}\nPeso unitario: ${toN(p.weight)||0} kg\nCantidad: ${p.qty||1}`;}).join("\n\n");
       return encodeURIComponent(`Hola! Coticé en el portal pero mi carga necesita cotización a medida.${prodLines?`\n\n${prodLines}`:""}${pkgLines?`\n\n${pkgLines}`:""}`);})();
     const chHead=(ch,extraRight,sub,dim)=>{const isAereo=ch.key.includes("aereo");const [big,small]=chTitle(ch);return <>
       <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,opacity:dim?0.5:1}}>{isAereo?"✈️":"🚢"}</span>
@@ -1741,16 +1743,16 @@ function CalculatorPage({token,client,preset}){
     </>;};
     const unavailRow=(list)=>list.map(u=><div key={u.key} className="rs-head" style={{display:"flex",alignItems:"center",gap:16,padding:"18px 20px",border:"1px dashed rgba(248,113,113,0.5)",borderRadius:14,marginTop:10,background:"rgba(248,113,113,0.06)"}}>
       {chHead(u,null,<><strong style={{color:"#f87171"}}>Motivo:</strong> {u.motivo}</>,true)}
-      <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"6px 10px",borderRadius:999,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.5)",whiteSpace:"nowrap"}}>Vía no disponible</span>
+      <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"6px 10px",borderRadius:999,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.5)",whiteSpace:"nowrap"}}>{t("calc.wayUnavailable")}</span>
     </div>);
-    const tagPill=(tag)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 9px",borderRadius:999,background:tag==="Más económica"?"rgba(34,197,94,0.2)":"rgba(184,149,106,0.24)",color:tag==="Más económica"?"#4ade80":GOLD_LIGHT,border:`1px solid ${tag==="Más económica"?"rgba(34,197,94,0.5)":"rgba(232,208,152,0.55)"}`}}>{tag}</span>;
+    const tagPill=(tag)=>{const barata=tag==="cheapest";return <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 9px",borderRadius:999,background:barata?"rgba(34,197,94,0.2)":"rgba(184,149,106,0.24)",color:barata?"#4ade80":GOLD_LIGHT,border:`1px solid ${barata?"rgba(34,197,94,0.5)":"rgba(232,208,152,0.55)"}`}}>{t(barata?"calc.cheapestTag":"calc.fastestTag")}</span>;};
     return <div ref={resultsRef}>
       <div style={{marginBottom:16}}>{btnGhost("← Volver a editar",()=>{setResults(null);setExpandedCh(null);})}</div>
       <div style={RES_PANEL}>
         <div className="rs-stats" style={{display:"flex",justifyContent:"center",flexWrap:"wrap",marginBottom:20,padding:"14px 0",borderRadius:12,background:"rgba(255,255,255,0.05)",border:HAIR}}>
           {[["Total FOB",usd(totalFob)],["Peso facturable",facturable>0?`${fmt2(facturable)} kg`:"—"],["Volumen",!noDims&&tot.totCBM>0?`${tot.totCBM.toFixed(3)} m³`:"—"],["Válida hasta",new Date(Date.now()+15*864e5).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"})]].map(([l,v],i)=><div key={i} style={{flex:"1 1 140px",textAlign:"center",padding:"4px 16px",borderLeft:i?"1px solid rgba(255,255,255,0.16)":"none"}}><p style={{...LBL,fontSize:10,color:SKY}}>{l}</p><p style={{margin:"5px 0 0",fontSize:19,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{v}</p></div>)}
         </div>
-        {ordered.map((ch,i)=>{const open=expandedCh===ch.key;const total=ch.total+delivCost;const tag=calc.length>1&&cheapest&&ch.key===cheapest.key?"Más económica":calc.length>1&&ch.key==="aereo_a_china"?"Más rápida":null;
+        {ordered.map((ch,i)=>{const open=expandedCh===ch.key;const total=ch.total+delivCost;const tag=calc.length>1&&cheapest&&ch.key===cheapest.key?"cheapest":calc.length>1&&ch.key==="aereo_a_china"?"fastest":null;
           const its=ch.items||[];const svc=Number(ch.flete||0)+Number(ch.surcharge||0)+Number(ch.seguro||0)+Number(ch.battExtra||0)+Number(ch.overweightSurcharge||0);const imp=ch.isBlanco?sum(its,it=>it.totalImp):0;
           const half=(l,v,extra)=><div style={{flex:"1 1 260px",padding:"14px 18px",borderRadius:12,border:"1px solid rgba(255,255,255,0.14)",background:"#0B1628",textAlign:"center"}}><p style={{...LBL,fontSize:10.5,color:SKY}}>{l}</p>{v!=null&&<p style={{margin:"6px 0 0",fontSize:18,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</p>}{extra}</div>;
           return <div key={ch.key} style={{border:`1px solid ${open?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,borderRadius:16,marginTop:i?14:0,background:open?"linear-gradient(180deg, rgba(184,149,106,0.14), rgba(184,149,106,0.06))":"linear-gradient(180deg, rgba(140,200,245,0.1), rgba(140,200,245,0.04))",transition:"border-color 150ms",boxShadow:"0 10px 26px rgba(0,0,0,0.28)"}}>
@@ -1761,7 +1763,7 @@ function CalculatorPage({token,client,preset}){
               {ch.isBlanco?<>{half(t("quotes.freightIns"),svc)}{half(t("imports.taxes"),imp)}</>:<>{half(ch.key==="maritimo_a_china"?t("quotes.seaService"):t("op.integralService"),svc)}{half("Tarifa ALL IN",null,<p style={{margin:"6px 0 0",fontSize:12.5,color:"#fff",lineHeight:1.5,fontWeight:500}}>Costo final cerrado: es todo lo que pagás, sin adicionales.</p>)}</>}
             </div>
             <div style={{margin:"0 22px 12px",padding:"14px 20px",borderRadius:12,border:"1px solid rgba(232,208,152,0.55)",background:"rgba(184,149,106,0.16)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}><span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.14em",textTransform:"uppercase"}}>Total</span><span className="rs-price" style={{fontSize:30,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap",lineHeight:1}}><span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.8)",marginRight:8,letterSpacing:"0.06em"}}>USD</span>{fmt2(total)}</span></div>
-            {ch.isBlanco&&<div style={{padding:"0 22px 18px"}}><button onClick={()=>setExpandedCh(open?null:ch.key)} style={{width:"100%",height:44,borderRadius:10,fontSize:13.5,fontWeight:800,letterSpacing:"0.04em",cursor:"pointer",border:"1px solid rgba(140,200,245,0.7)",background:open?SKY:"rgba(140,200,245,0.16)",color:open?"#0A1628":SKY}}>{open?"Ocultar desglose ▲":"Ver desglose ▼"}</button></div>}
+            {ch.isBlanco&&<div style={{padding:"0 22px 18px"}}><button onClick={()=>setExpandedCh(open?null:ch.key)} style={{width:"100%",height:44,borderRadius:10,fontSize:13.5,fontWeight:800,letterSpacing:"0.04em",cursor:"pointer",border:"1px solid rgba(140,200,245,0.7)",background:open?SKY:"rgba(140,200,245,0.16)",color:open?"#0A1628":SKY}}>{open?"Ocultar desglose ▲":t("calc.viewBreakdown")+" ▼"}</button></div>}
             {(open||!ch.isBlanco)&&<div style={{padding:"0 22px 20px"}}>
               {ch.isBlanco&&breakdown(ch,total)}
               <div style={{display:"flex",gap:10,marginTop:ch.isBlanco?14:0,flexWrap:"wrap"}}>
@@ -1781,12 +1783,12 @@ function CalculatorPage({token,client,preset}){
 
       {/* Cálculo de costos: separado de la cotización */}
       {calc.length>0&&validIdx.length>0&&<div style={RES_PANEL}>
-        <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:"0 0 6px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>Cálculo unitario de costos</p>
-        <p style={{fontSize:13,color:SUB,margin:"0 auto 18px",lineHeight:1.5,textAlign:"center",maxWidth:760}}>Cuánto te cuesta cada producto puesto en Argentina según la vía de importación. Costo unitario = lo que le pagás al proveedor (FOB) · Importación = flete, seguro, impuestos y gastos{multi?(anyAssigned?", prorrateados por los bultos asignados a cada mercadería":", prorrateados por valor FOB"):""}.</p>
+        <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:"0 0 6px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("calc.unitCosts")}</p>
+        <p style={{fontSize:13,color:SUB,margin:"0 auto 18px",lineHeight:1.5,textAlign:"center",maxWidth:760}}>Cuánto te cuesta cada producto puesto en Argentina según la vía de importación. Costo unitario = lo que le pagás al proveedor (FOB) · Importación = flete, seguro, impuestos y gastos{multi?(anyAssigned?t("calc.proratedByPkg"):t("calc.proratedByFob")):""}.</p>
         {ordered.map((ch,i)=>{const cpp=costPerProduct(ch);const [big,small]=chTitle(ch);return <div key={ch.key} style={{marginTop:i?16:0}}>
           <p style={{margin:"0 0 8px",fontSize:13.5,color:"#fff"}}><span style={{marginRight:8}}>{ch.key.includes("aereo")?"✈️":"🚢"}</span><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span>{small}</p>
           <div style={{...BOX,padding:"4px 8px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:640}}>
-            <thead><tr>{["Producto","Cantidad","Costo unitario","Importación unitaria","Puesto en Argentina unitario","Total"].map(TH)}</tr></thead>
+            <thead><tr>{["Producto","Cantidad","Costo unitario",t("calc.unitImport"),t("calc.unitLanded"),"Total"].map(TH)}</tr></thead>
             <tbody>{cpp.map((r,ri)=><tr key={ri}>{[r.desc,String(r.qty),usd(r.fobUnit),usd(r.impUnit),usd(r.totalUnit),usd(r.total)].map((c,ci)=>TD(c,ci,ci===4,ri===cpp.length-1))}</tr>)}</tbody>
           </table></div>
         </div>;})}
@@ -1837,7 +1839,7 @@ function CalculatorPage({token,client,preset}){
         <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{(isChina?["Descripción","USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"]:["Descripción","USD c/u","Cantidad","Tipo"]).map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===(isChina?4:3)?40:0}}>{h}</span>)}</div>
         {products.map((p,i)=><div key={i}>
           <div className="pc-row" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,alignItems:"center",padding:"6px 4px",borderTop:i>0?HAIR:"none"}}>
-            <input className="pc-desc" value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder={isChina?"Sé específico. Ej: Auriculares inalámbricos bluetooth":"Ej: Fundas de silicona para celular"} style={{...INP,textAlign:"left"}} onFocus={onF} onBlur={onB}/>
+            <input className="pc-desc" value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder={isChina?"Sé específico. Ej: Auriculares inalámbricos bluetooth":t("calc.productPlaceholder")} style={{...INP,textAlign:"left"}} onFocus={onF} onBlur={onB}/>
             {numIn({value:p.unit_price,onChange:v=>chProd(i,"unit_price",v),placeholder:"USD c/u"})}
             {numIn({value:p.quantity,onChange:v=>chProd(i,"quantity",v),placeholder:"Cant."})}
             {isChina&&<input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))chProd(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title="Si tenés la posición arancelaria que te pasó el proveedor, cargala: Argencargo la valida" style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>}
@@ -1865,7 +1867,7 @@ function CalculatorPage({token,client,preset}){
         </div>)}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:10,paddingTop:14,borderTop:HAIR}}>
           <div style={{display:"inline-flex",alignItems:"center",gap:14,padding:"8px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)"}}><span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase",lineHeight:1}}>FOB mercadería</span><span style={{fontSize:22,fontWeight:800,color:totalFob>0?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{totalFob>0?usd(totalFob):"—"}</span></div>
-          {pendingClass&&!classifyingAll&&<span style={{flex:"1 1 200px",fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171",textAlign:"right"}}>Tocá CLASIFICAR NCM antes de avanzar</span>}
+          {pendingClass&&!classifyingAll&&<span style={{flex:"1 1 200px",fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171",textAlign:"right"}}>{t("calc.classifyFirst")}</span>}
           {isChina&&sinNcm.length>0&&<button onClick={classifyAll} disabled={classifyingAll} style={{height:40,padding:"0 20px",fontSize:12.5,fontWeight:800,letterSpacing:"0.06em",borderRadius:9,cursor:classifyingAll?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,opacity:classifyingAll?0.6:1,boxShadow:GOLD_GLOW}}>{classifyingAll?"CLASIFICANDO…":`CLASIFICAR NCM${sinNcm.length>1?` (${sinNcm.length})`:""}`}</button>}
         </div>
 
@@ -1875,7 +1877,7 @@ function CalculatorPage({token,client,preset}){
           <button onClick={addPkg} style={SMALL_GOLD}>+ Bulto</button>
         </div>
         <div className="pk-head" style={{display:"grid",gridTemplateColumns:PK_COLS,gap:8,padding:"0 4px 6px"}}>{[...(multi?["Mercadería"]:[]),"Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:"center",position:"relative"}}>{h}{multi&&i===0&&<span style={{position:"relative",display:"inline-block",marginLeft:8,verticalAlign:"middle"}}>
-          <button onClick={()=>setHelpOpen(v=>!v)} title="¿Para qué sirve?" style={{width:18,height:18,borderRadius:"50%",border:`1px solid ${helpOpen?GOLD_LIGHT:"rgba(140,200,245,0.7)"}`,background:helpOpen?"rgba(184,149,106,0.25)":"rgba(140,200,245,0.15)",color:helpOpen?GOLD_LIGHT:SKY,fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1,padding:0}}>?</button>
+          <button onClick={()=>setHelpOpen(v=>!v)} title={t("calc.whatFor")} style={{width:18,height:18,borderRadius:"50%",border:`1px solid ${helpOpen?GOLD_LIGHT:"rgba(140,200,245,0.7)"}`,background:helpOpen?"rgba(184,149,106,0.25)":"rgba(140,200,245,0.15)",color:helpOpen?GOLD_LIGHT:SKY,fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1,padding:0}}>?</button>
           {helpOpen&&<div onClick={closeHelp} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(4,10,22,0.78)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,textTransform:"none",letterSpacing:0,textAlign:"left"}}>
             <div onClick={e=>e.stopPropagation()} style={{width:"min(560px, 100%)",padding:"28px 30px",borderRadius:18,background:"linear-gradient(180deg,#132340,#0B1628)",border:"1px solid rgba(232,208,152,0.55)",boxShadow:"0 30px 70px rgba(0,0,0,0.6)"}}>
               <p style={{fontSize:13,fontWeight:800,color:GOLD_LIGHT,margin:"0 0 14px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>Calculá el costo unitario de cada mercadería</p>
@@ -1908,22 +1910,23 @@ function CalculatorPage({token,client,preset}){
         </div>;})}
         <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap",alignItems:"stretch"}}>
           {chip("Peso bruto total",tot.totWeight>0?`${fmt2(tot.totWeight)} kg`:"—",tot.totWeight>0&&!volWins)}
-          {chip("Peso volumétrico total",!noDims&&tot.totVol>0?`${fmt2(tot.totVol)} kg`:"—",volWins)}
+          {chip(t("calc.volWeightTotal"),!noDims&&tot.totVol>0?`${fmt2(tot.totVol)} kg`:"—",volWins)}
           {chip("Volumen total",!noDims&&tot.totCBM>0?`${tot.totCBM.toFixed(3)} m³`:"—",false)}
           <div onClick={()=>setNoDims(!noDims)} style={{flex:"1 1 200px",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,border:`1px solid ${noDims?"rgba(251,146,60,0.5)":"rgba(255,255,255,0.16)"}`,cursor:"pointer",background:noDims?"rgba(251,146,60,0.12)":"rgba(255,255,255,0.05)",userSelect:"none"}}>
             <span style={{width:30,height:17,borderRadius:999,background:noDims?"#fb923c":"rgba(255,255,255,0.22)",position:"relative",flexShrink:0,transition:"background 180ms"}}><span style={{position:"absolute",top:2,left:noDims?15:2,width:13,height:13,borderRadius:"50%",background:"#fff",transition:"left 180ms"}}/></span>
-            <span style={{fontSize:12.5,color:noDims?"#fdba74":"#fff",lineHeight:1.35}}>Desconozco las medidas{noDims&&<span style={{display:"block",fontSize:11,opacity:0.85}}>Sin medidas no se cotiza el marítimo.</span>}</span>
+            <span style={{fontSize:12.5,color:noDims?"#fdba74":"#fff",lineHeight:1.35}}>Desconozco las medidas{noDims&&<span style={{display:"block",fontSize:11,opacity:0.85}}>{t("calc.noDimsNoSea")}</span>}</span>
           </div>
         </div>
         {owPk&&isChina&&<div style={{margin:"14px 0 0",padding:"12px 16px",borderRadius:10,border:"1px solid rgba(251,146,60,0.55)",background:"rgba(251,146,60,0.12)"}}><p style={{fontSize:13.5,fontWeight:700,color:"#fdba74",margin:0,lineHeight:1.55}}>⚠ Uno de los bultos de tu envío ({fmt2(toN(owPk.weight))} kg) supera los 50 kg por pieza. El régimen courier establece un máximo de 50 kg por bulto, así que esta carga no puede ir por Courier comercial aéreo. Si la dividís en bultos de hasta 50 kg cada uno, sí puede.</p></div>}
         <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:12,marginTop:22,paddingTop:18,borderTop:HAIR,flexWrap:"wrap"}}>
-          {!canCalc&&hasPriced&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171",textAlign:"right"}}>{pendingClass?"Clasificá los productos para calcular":!pkgOk?"Cargá el peso o las medidas de un bulto":unassignedProds.length?`Falta asignar a un bulto: ${unassignedProds.map(idx=>products[idx].description||`Producto ${idx+1}`).join(", ")}`:pkgsSinElegir?"Elegí la mercadería de cada bulto":""}</span>}
+          {!canCalc&&hasPriced&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171",textAlign:"right"}}>{pendingClass?t("calc.classifyToCalc"):!pkgOk?t("calc.needWeightOrDims"):unassignedProds.length?`Falta asignar a un bulto: ${unassignedProds.map(idx=>products[idx].description||`Producto ${idx+1}`).join(", ")}`:pkgsSinElegir?"Elegí la mercadería de cada bulto":""}</span>}
           {btnGold("Calcular costos →",doCalc,!canCalc)}
         </div>
       </div>;})()}
   </div>;
 }
 function QuotesPage({token,client,onEdit}){
+  const {t}=useT();
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [openId,setOpenId]=useState(null);const [openAlt,setOpenAlt]=useState(null);
   const numOf=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(5,"0")}`:null;
   useEffect(()=>{if(!client?.id){setLo(false);return;}(async()=>{const q=await dq("quotes",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token,client?.id]);
@@ -1936,7 +1939,7 @@ function QuotesPage({token,client,onEdit}){
   const fmtDate=d=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
   const expiryOf=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+15*864e5);
   const isExpired=q=>expiryOf(q).getTime()<Date.now();
-  const chTitle=a=>({aereo_a_china:["AÉREO","Courier comercial"],maritimo_a_china:["MARÍTIMO","Carga FCL/LCL"],maritimo_b:["MARÍTIMO","Integral AC"],aereo_b_spain:["AÉREO","Integral AC"],aereo_b_usa:["AÉREO","Integral AC"]})[a.key]||[a.key?.includes("aereo")?"AÉREO":"MARÍTIMO",a.name];
+  const chTitle=a=>({aereo_a_china:[t("calc.air"),"Courier comercial"],maritimo_a_china:[t("calc.sea"),"Carga FCL/LCL"],maritimo_b:["MARÍTIMO","Integral AC"],aereo_b_spain:["AÉREO","Integral AC"],aereo_b_usa:["AÉREO","Integral AC"]})[a.key]||[a.key?.includes("aereo")?"AÉREO":"MARÍTIMO",a.name];
   const flagOf=o=>o==="USA"?"🇺🇸":o==="España"?"🇪🇸":"🇨🇳";
   const altsOf=q=>{const a=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];if(a.length)return a;return q.channel_key?[{key:q.channel_key,name:q.channel_name,info:"",totalAbonar:q.total_cost}]:[];};
   const prodsOf=q=>{const p=typeof q.products==="string"?JSON.parse(q.products):q.products;return Array.isArray(p)?p:[];};
@@ -1946,8 +1949,8 @@ function QuotesPage({token,client,onEdit}){
   const pill=(l,c)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:c,background:`${c}22`,border:`1px solid ${c}66`,whiteSpace:"nowrap"}}>{l}</span>;
   const btn=(label,onClick,kind="ghost",disabled)=><button onClick={onClick} disabled={disabled} style={{height:40,padding:"0 18px",fontSize:13,fontWeight:800,borderRadius:10,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,whiteSpace:"nowrap",
     ...(kind==="gold"?{border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}:kind==="green"?{border:"none",background:"#22c55e",color:"#062012",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}:kind==="red"?{border:"1px solid rgba(248,113,113,0.45)",background:"rgba(248,113,113,0.1)",color:"#f87171"}:kind==="sky"?{border:"1px solid rgba(140,200,245,0.7)",background:"rgba(140,200,245,0.16)",color:SKY}:{border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.09)",color:"#fff"})}}>{label}</button>;
-  const choose=async(q,a)=>{try{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}});setQuotes(p=>p.map(x=>x.id===q.id?{...x,client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}:x));toast(`Elegiste ${a.name}`,"success");}catch(e){toast("No se pudo guardar la elección","error");}};
-  const delQuote=async(q)=>{if(!await confirmDialog("¿Eliminar esta cotización? No se puede deshacer.",{confirmText:"Eliminar",danger:true}))return;await dq("quotes",{method:"DELETE",token,filters:`?id=eq.${q.id}`});setQuotes(p=>p.filter(x=>x.id!==q.id));toast("Cotización eliminada","success");};
+  const choose=async(q,a)=>{try{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}});setQuotes(p=>p.map(x=>x.id===q.id?{...x,client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}:x));toast(`Elegiste ${a.name}`,"success");}catch(e){toast(t("quotes.saveChoiceError"),"error");}};
+  const delQuote=async(q)=>{if(!await confirmDialog(t("quotes.confirmDelete"),{confirmText:"Eliminar",danger:true}))return;await dq("quotes",{method:"DELETE",token,filters:`?id=eq.${q.id}`});setQuotes(p=>p.filter(x=>x.id!==q.id));toast(t("quotes.deleted"),"success");};
   const sendWA=(q)=>{const a=chosenOf(q)||cheapestOf(q);const prods=prodsOf(q);const summary=prods.map(p=>`${p.description||p.type} x${p.quantity}`).join(", ");const isAereo=(a?.key||"").includes("aereo");
     const msg=encodeURIComponent(`Hola Bautista! Quiero avanzar con la cotización ${numOf(q)||fmtDate(q.created_at)} que tengo guardada en el portal.\n\nOrigen: *${q.origin}* ${flagOf(q.origin)}\nMercadería: *${summary}*\nVía: *${a?.name||"—"}*\nValor FOB: *${usd(q.total_fob)}*\n${isAereo?`Peso: *${fmt2(q.total_weight)} kg*`:`Volumen: *${Number(q.total_cbm||0).toFixed(3)} m³*`}\nCosto de importación: *${usd(a?.totalAbonar??q.total_cost)}*\nCotizada el ${fmtDate(q.created_at)} · válida hasta ${fmtDate(expiryOf(q))}\n\nCódigo cliente: *${q.client_code}*`);
     window.open(`https://wa.me/5491125088580?text=${msg}`,"_blank");};
@@ -1955,24 +1958,24 @@ function QuotesPage({token,client,onEdit}){
   return <div>
     <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>Mis cotizaciones</h2>
     {quotes.length===0?<div style={{...PANEL,textAlign:"center",padding:"40px 24px"}}>
-      <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Todavía no tenés cotizaciones guardadas</p>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>Cada vez que calculás una importación en la calculadora, la cotización se guarda acá automáticamente.</p>
+      <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>{t("quotes.emptyTitle")}</p>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>{t("quotes.emptyDesc2")}</p>
     </div>:quotes.map(q=>{const open=openId===q.id;const prods=prodsOf(q);const pkgs=pkgsOf(q);const alts=altsOf(q);const chosen=chosenOf(q);const cheapest=cheapestOf(q);const expired=isExpired(q);
-      const summary=prods.length>3?"Consolidado":(prods.map(p=>p.description||p.type).filter(Boolean).join(" · ")||"Sin productos");
+      const summary=prods.length>3?"Consolidado":(prods.map(p=>p.description||p.type).filter(Boolean).join(" · ")||t("quotes.noProducts"));
       const nPk=pkgs.reduce((s,p)=>s+(Number(String(p.qty??"1").replace(",","."))||1),0);
       return <div key={q.id} style={{...PANEL,border:open?"1px solid rgba(232,208,152,0.5)":HAIR}}>
         <div className="rs-head" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{flagOf(q.origin)}</span>
           <div style={{flex:1,minWidth:220}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:19,fontWeight:900,color:"#fff",letterSpacing:"0.07em",fontVariantNumeric:"tabular-nums"}}>{numOf(q)||"AGC-—"}</span>{pill(expired?"Vencida":"Lista para importar",expired?"#f87171":"#4ade80")}</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:19,fontWeight:900,color:"#fff",letterSpacing:"0.07em",fontVariantNumeric:"tabular-nums"}}>{numOf(q)||"AGC-—"}</span>{pill(expired?"Vencida":t("quotes.readyToImport"),expired?"#f87171":"#4ade80")}</div>
             <p style={{margin:"8px 0 0",fontSize:14.5,color:"#fff",fontWeight:700,lineHeight:1.4}}>{summary}</p>
             <p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#f87171"}}>{expired?"Venció el":"Válida hasta el"} {fmtDate(expiryOf(q))}</p>
             <p style={{margin:"5px 0 0",fontSize:12,color:SKY,fontWeight:600}}>Cotizada el {fmtDate(q.created_at)} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
           </div>
-          {btn(open?"Ocultar ▲":"Ver detalle ▼",()=>setOpenId(open?null:q.id),"sky")}
+          {btn(open?"Ocultar ▲":t("quotes.viewDetail")+" ▼",()=>setOpenId(open?null:q.id),"sky")}
         </div>
         {open&&<div style={{marginTop:18,paddingTop:18,borderTop:HAIR}}>
-          {expired&&<p style={{margin:"0 0 14px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(248,113,113,0.5)",background:"rgba(248,113,113,0.08)",fontSize:13,fontWeight:600,color:"#fca5a5",lineHeight:1.5}}>Esta cotización venció: las cotizaciones tienen una validez de 15 días. Recotizala para actualizar los valores.</p>}
+          {expired&&<p style={{margin:"0 0 14px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(248,113,113,0.5)",background:"rgba(248,113,113,0.08)",fontSize:13,fontWeight:600,color:"#fca5a5",lineHeight:1.5}}>{t("quotes.expiredNote")}</p>}
           <p style={{...LBL,marginBottom:8}}>Productos</p>
           <div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:560}}>
             <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM","Derechos","Tasa est.","IVA"].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
@@ -1981,17 +1984,17 @@ function QuotesPage({token,client,onEdit}){
           </table></div>
           <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>{[["FOB mercadería",usd(q.total_fob)],["Bultos",String(nPk)],["Peso bruto",Number(q.total_weight)>0?`${fmt2(q.total_weight)} kg`:"—"],["Volumen",Number(q.total_cbm)>0?`${Number(q.total_cbm).toFixed(3)} m³`:"—"]].map(([l,v])=><div key={l} style={{flex:"1 1 140px",padding:"10px 14px",borderRadius:10,border:HAIR,background:"rgba(255,255,255,0.05)"}}><p style={{...LBL,fontSize:10}}>{l}</p><p style={{margin:"4px 0 0",fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p></div>)}</div>
 
-          <p style={{...LBL,margin:"18px 0 8px"}}>Vías de importación</p>
-          {alts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>Esta cotización no tiene vías guardadas.</p>}
+          <p style={{...LBL,margin:"18px 0 8px"}}>{t("quotes.ways")}</p>
+          {alts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>{t("quotes.noWays")}</p>}
           {alts.map((a,i)=>{const on=chosen?.key===a.key;const [big,small]=chTitle(a);const isAereo=(a.key||"").includes("aereo");const isCheap=alts.length>1&&cheapest&&a.key===cheapest.key;const dk=`${q.id}:${a.key}`;const dOpen=openAlt===dk;
-            const detail=Array.isArray(a.detail)&&a.detail.length?a.detail:[Number(a.flete)>0&&["Flete + servicio",a.flete],Number(a.seguro)>0&&["Seguro",a.seguro],Number(a.overweight)>0&&["Recargo por sobrepeso",a.overweight],Number(a.totalTax)>0&&["Impuestos y gastos de aduana",a.totalTax],Number(a.shipCost)>0&&["Envío a domicilio",a.shipCost]].filter(Boolean);
+            const detail=Array.isArray(a.detail)&&a.detail.length?a.detail:[Number(a.flete)>0&&["Flete + servicio",a.flete],Number(a.seguro)>0&&["Seguro",a.seguro],Number(a.overweight)>0&&["Recargo por sobrepeso",a.overweight],Number(a.totalTax)>0&&[t("quotes.taxesCustoms"),a.totalTax],Number(a.shipCost)>0&&["Envío a domicilio",a.shipCost]].filter(Boolean);
             return <div key={a.key||i} style={{borderRadius:12,marginTop:i?8:0,border:`1px solid ${on?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(140,200,245,0.06)"}}>
               <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 16px"}}>
                 <span style={{fontSize:20,width:36,textAlign:"center"}}>{isAereo?"✈️":"🚢"}</span>
                 <div style={{flex:1,minWidth:200}}><p style={{margin:0,fontSize:15,color:"#fff"}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span>{small}{isCheap&&<span style={{marginLeft:10,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"rgba(34,197,94,0.2)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.5)"}}>Más económica</span>}</p>{a.info&&<p style={{margin:"3px 0 0",fontSize:12,color:SKY}}>Llega en {a.info}</p>}</div>
                 <span style={{fontSize:22,fontWeight:900,color:on?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",marginRight:6}}>USD</span>{fmt2(a.totalAbonar)}</span>
                 {detail.length>0&&btn(dOpen?"Ocultar ▲":"Desglose ▼",()=>setOpenAlt(dOpen?null:dk),"sky")}
-                {on?pill("Elegida",GOLD_LIGHT):btn("Elegir esta vía",()=>choose(q,a),"ghost",expired)}
+                {on?pill("Elegida",GOLD_LIGHT):btn(t("quotes.pickThisWay"),()=>choose(q,a),"ghost",expired)}
               </div>
               {dOpen&&<div style={{margin:"0 16px 14px",padding:"6px 16px 10px",borderRadius:10,background:"rgba(11,22,40,0.85)",border:HAIR}}>
                 {detail.map(([l,v],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:13,color:"#fff",opacity:0.92}}>{l}</span><span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</span></div>)}
@@ -2001,7 +2004,7 @@ function QuotesPage({token,client,onEdit}){
             </div>;})}
 
           <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:18,paddingTop:16,borderTop:HAIR,alignItems:"center"}}>
-            {expired?btn("Recotizar en la calculadora →",()=>onEdit?.(q),"gold"):<>{btn(chosen?`Avanzar por WhatsApp con ${chosen.name} →`:"Avanzar por WhatsApp →",()=>sendWA(q),"green")}{btn("Editar en la calculadora",()=>onEdit?.(q),"ghost")}</>}
+            {expired?btn(t("quotes.requote"),()=>onEdit?.(q),"gold"):<>{btn(chosen?`Avanzar por WhatsApp con ${chosen.name} →`:t("quotes.goWA"),()=>sendWA(q),"green")}{btn(t("quotes.editInCalc"),()=>onEdit?.(q),"ghost")}</>}
             <span style={{flex:1}}/>
             {btn("Eliminar",()=>delQuote(q),"red")}
           </div>
@@ -2044,8 +2047,8 @@ function PointsPage({token,client}){
     setBusy(r.id);
     const res=await dq("rpc/redeem_reward",{method:"POST",token,body:{p_reward_id:r.id,p_client_id:client.id}});
     if(res?.ok){flash(`✓ Canjeaste "${r.name}". Te lo aplicamos en tu próxima operación.`);await load();}
-    else if(res?.error==="insufficient_points")flash("❌ No te alcanzan los puntos.");
-    else flash("❌ Error al canjear.");
+    else if(res?.error==="insufficient_points")flash(t("points.notEnoughToast"));
+    else flash(t("points.redeemError"));
     setBusy(null);
   };
   const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
@@ -2360,7 +2363,7 @@ function InternationalPaymentsPage({client,token}){
   const canSend=canAdvance; // Datos bancarios son opcionales — el cliente puede mandar la foto por WA
 
   const originLabel=origin==="usa"?"Estados Unidos 🇺🇸":origin==="china"?"China 🇨🇳":"";
-  const methodLabel=method==="cash"?"Efectivo (sin recargo)":method==="transfer"?"Transferencia (+2,5%)":"";
+  const methodLabel=method==="cash"?t("pay.cashNoFee"):method==="transfer"?"Transferencia (+2,5%)":"";
   const wireLabel=origin==="usa"?"Transferencia WIRE":origin==="china"?"Transferencia SWIFT":"";
 
   const buildWAMessage=()=>{
@@ -2453,7 +2456,7 @@ function InternationalPaymentsPage({client,token}){
           </div>
           <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"12px 0 0",textAlign:"center",lineHeight:1.5}}>Te abrimos el chat con el detalle del cálculo listo. Ahí nos mandás los datos bancarios del proveedor.</p>
         </>
-        :<p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:"22px 0 0",textAlign:"center"}}>{!origin?"Elegí dónde está la cuenta del proveedor.":amount<=0?"Cargá el importe que hay que transferirle.":"Elegí cómo vas a abonarle a Argencargo."}</p>}
+        :<p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:"22px 0 0",textAlign:"center"}}>{!origin?t("pay.step1Sub"):amount<=0?t("pay.step2Sub"):t("pay.step3Sub")}</p>}
     </div>
 
     {/* Historial de gestiones de pago del cliente. La calculadora de arriba es para estimar; esto es
@@ -2478,7 +2481,7 @@ function InternationalPaymentsPage({client,token}){
             </div>
             <span style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {chipG(pagado?"Pagado":"Pendiente de pago",pagado?"#4ade80":"#fbbf24",true)}
-              {chipG(enviado?"Girado":"Giro en curso","#4ade80",enviado)}
+              {chipG(enviado?"Girado":t("pay.inProgress"),"#4ade80",enviado)}
             </span>
             <span style={{fontSize:19,fontWeight:900,color:"#fff",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",marginRight:5}}>USD</span>{monto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </div>;
@@ -2489,13 +2492,14 @@ function InternationalPaymentsPage({client,token}){
 }
 
 function NotifBell({token}){
+  const {t}=useT();
   const [open,setOpen]=useState(false);const [notifs,setNotifs]=useState([]);const [unread,setUnread]=useState(0);
   const load=async()=>{const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});const list=Array.isArray(r)?r:[];setNotifs(list);setUnread(list.filter(n=>!n.read).length);};
   useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});setNotifs(p=>p.map(n=>n.id===id?{...n,read:true}:n));setUnread(p=>Math.max(0,p-1));};
   const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);if(ids.length===0)return;await dq("notifications",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{read:true}});setNotifs(p=>p.map(n=>({...n,read:true})));setUnread(0);};
   return <div style={{position:"relative"}}><button onClick={()=>setOpen(p=>!p)} style={{background:"none",border:"none",cursor:"pointer",padding:4,position:"relative"}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{unread>0&&<span style={{position:"absolute",top:0,right:0,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unread}</span>}</button>
-  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700}}>Marcar todas leídas</button>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
+  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700}}>Marcar todas leídas</button>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||t("notif.one")}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
   </div>;
 }
 
@@ -2704,15 +2708,16 @@ function ReferralsPage({token,client}){
   </div>;
 }
 
-// Sección "Tu carga marítima en camino": cargas que ya están en un contenedor pero
+// Sección t("mar.title"): cargas que ya están en un contenedor pero
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
 function MaritimeCargoSection({cargo}){
+  const {t}=useT();
   const [openId,setOpenId]=useState(null); // card con el detalle de bultos desplegado
   if(!cargo||cargo.length===0)return null;
   const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
   const statusChip=(c)=>c.container_status==="arribado"
-    ?{l:"⚓ Arribó al puerto",bg:"rgba(34,197,94,0.12)",fg:"#4ade80"}
-    :{l:"🚢 En tránsito marítimo",bg:"rgba(96,165,250,0.12)",fg:"#60a5fa"};
+    ?{l:t("mar.arrivedPort"),bg:"rgba(34,197,94,0.12)",fg:"#4ade80"}
+    :{l:t("mar.inTransit"),bg:"rgba(96,165,250,0.12)",fg:"#60a5fa"};
   const cell=(label,val,col)=><div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</p><p style={{fontSize:14,fontWeight:700,color:col,margin:0,fontVariantNumeric:"tabular-nums"}}>{val}</p></div>;
   return <div style={{marginBottom:24}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
@@ -2742,7 +2747,7 @@ function MaritimeCargoSection({cargo}){
         </div>}
         {Array.isArray(c.bultos_detalle)&&c.bultos_detalle.length>0&&<div style={{marginTop:12}}>
           <button onClick={()=>setOpenId(openId===c.id?null:c.id)} style={{width:"100%",padding:"9px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#93c5fd",cursor:"pointer",fontFamily:"inherit"}}>
-            📦 {openId===c.id?"Ocultar detalle de bultos ▲":"Ver detalle de bultos ▼"}
+            📦 {openId===c.id?t("mar.hidePkgs")+" ▲":t("mar.showPkgs")+" ▼"}
           </button>
           {openId===c.id&&<div style={{marginTop:8,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"4px 12px"}}>
             {c.bultos_detalle.map((b,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:i<c.bultos_detalle.length-1?"1px solid rgba(255,255,255,0.05)":"none",flexWrap:"wrap"}}>
@@ -2809,7 +2814,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="payments"&&<InternationalPaymentsPage client={client} token={token}/>}
     {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
     {page==="support"&&<SupportPage token={token} client={client}/>}
-    {!["imports","deposito","profile","rates","calculator","services","quotes","points","payments","account","support","referrals"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
+    {!["imports","deposito","profile","rates","calculator","services","quotes","points","payments","account","support","referrals"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>{t("common.inDevelopment")}</p></div>}
   </DashShell>;
 }
 // ═══════════════════════════════════════════════════════════════
@@ -2819,6 +2824,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
 // la página "Mi Cuenta" con el botón "Ver tutorial de nuevo".
 // ═══════════════════════════════════════════════════════════════
 function AnnouncementModal({client,token,onClose}){
+  const {t}=useT();
   const [closing,setClosing]=useState(false);
   const dismiss=async()=>{
     if(closing)return;
@@ -2838,11 +2844,12 @@ function AnnouncementModal({client,token,onClose}){
         </div>)}
       </div>
       <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"0 0 18px",fontStyle:"italic"}}>{ANNOUNCEMENT.foot}</p>
-      <button onClick={dismiss} disabled={closing} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#1a1206",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{closing?"...":"¡Entendido!"}</button>
+      <button onClick={dismiss} disabled={closing} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#1a1206",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{closing?"...":t("tut.gotIt")}</button>
     </div>
   </div>;
 }
 function TutorialOverlay({client,token,onClose,onComplete}){
+  const {t}=useT();
   const [i,setI]=useState(0);
   const [closing,setClosing]=useState(false);
   const fn=client?.first_name||"";
@@ -2850,7 +2857,7 @@ function TutorialOverlay({client,token,onClose,onComplete}){
   const steps=[
     {
       icon:"🪪",
-      title:"Tu código de cliente",
+      title:t("tut.codeTitle"),
       subtitle:"Importante — anotalo",
       body:"Este es tu identificador único en Argencargo. Usalo cuando le pidas a tu proveedor en China que rotule la carga (ej: 'ARGENCARGO "+(code||"XXXXXX")+"'). Así sabemos al toque que esa mercadería es tuya cuando llega a depósito. Siempre lo tenés acá también en Mi Cuenta.",
       cta:"Continuar",
@@ -2861,14 +2868,14 @@ function TutorialOverlay({client,token,onClose,onComplete}){
       icon:"👋",
       title:`¡Hola ${fn}!`,
       subtitle:"Bienvenido a Argencargo",
-      body:"Te muestro en 1 minuto cómo usar tu portal para importar de forma simple. Podés saltar este tour en cualquier momento.",
+      body:t("tut.intro"),
       cta:"Empezar",
       nav:null
     },
     {
       icon:"🧮",
-      title:"Calculadora de importación",
-      subtitle:"Cotizá en segundos",
+      title:t("tut.calcTitle"),
+      subtitle:t("tut.calcSub"),
       body:"Cargá tus productos, bultos y origen (China o USA). Te mostramos las opciones de envío disponibles — aéreo y marítimo — con sus tiempos y costos para que elijas la que mejor se adapte a tu importación.",
       cta:"Siguiente",
       nav:"calculator"
@@ -2876,7 +2883,7 @@ function TutorialOverlay({client,token,onClose,onComplete}){
     {
       icon:"📦",
       title:"Mis Importaciones",
-      subtitle:"Seguimiento en tiempo real",
+      subtitle:t("tut.trackTitle"),
       body:"Acá vas a ver todas tus ops con tracker visual, ETA estimada, estado de pagos y gestiones pendientes. Recibís notificaciones cuando algo cambia.",
       cta:"Siguiente",
       nav:"imports"
@@ -2899,9 +2906,9 @@ function TutorialOverlay({client,token,onClose,onComplete}){
     },
     {
       icon:"✅",
-      title:"¡Listo!",
+      title:t("tut.done"),
       subtitle:"Cualquier duda, escribinos",
-      body:"Cualquier consulta, tocá el botón de WhatsApp que está siempre abajo a la derecha. Te respondemos rápido. ¡A importar!",
+      body:t("tut.doneDesc"),
       cta:"Finalizar",
       nav:"imports"
     }
@@ -2954,7 +2961,7 @@ function TutorialOverlay({client,token,onClose,onComplete}){
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontWeight:600,letterSpacing:"0.05em"}}>{i+1} / {steps.length}</span>
         <div style={{display:"flex",gap:8}}>
-          {i>0&&<button onClick={()=>setI(i-1)} disabled={closing} style={{padding:"11px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Atrás</button>}
+          {i>0&&<button onClick={()=>setI(i-1)} disabled={closing} style={{padding:"11px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{t("common.previous")}</button>}
           <button onClick={next} disabled={closing} style={{padding:"11px 24px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.04em",boxShadow:GOLD_GLOW}}>{closing?"Guardando...":cur.cta} {!last&&"→"}</button>
         </div>
       </div>
@@ -3009,7 +3016,7 @@ export default function Page(){
     const s=loadSession();if(!s?.token||!s?.user){setRestoring(false);return;}try{const uid=s.user.id;const p=await dq("profiles",{token:s.token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof){clearSession();setRestoring(false);return;}if(prof.role==="cliente"){const c=await dq("clients",{token:s.token,filters:`?auth_user_id=eq.${uid}&select=*`});setClient(Array.isArray(c)?c[0]:null);}setSession(s);setProfile(prof);}catch{clearSession();}setRestoring(false);
   };r();},[]);
   const ch=f=>v=>{setForm(p=>({...p,[f]:v}));setErrors(p=>({...p,[f]:undefined}));setGErr("");};
-  const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email="Email inválido";if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password="Mínimo 6 caracteres";if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";}if(s===2&&(form.tax_condition==="responsable_inscripto"||form.tax_condition==="monotributista")){if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}if(s===2&&form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"){if(!form.dni.trim())e.dni="Requerido";else if(form.dni.replace(/\D/g,"").length<7)e.dni="DNI inválido";}setErrors(e);return !Object.keys(e).length;};
+  const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email=t("auth.emailInvalid");if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password="Mínimo 6 caracteres";if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";}if(s===2&&(form.tax_condition==="responsable_inscripto"||form.tax_condition==="monotributista")){if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}if(s===2&&form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"){if(!form.dni.trim())e.dni="Requerido";else if(form.dni.replace(/\D/g,"").length<7)e.dni="DNI inválido";}setErrors(e);return !Object.keys(e).length;};
   const gc=(fn,ln)=>(fn.substring(0,3)+ln.substring(0,3)).toUpperCase();
   // Inserta el cliente reintentando con sufijo numérico si el client_code ya existe.
   // Dos personas con iniciales iguales generan el mismo código (ej. "Martin Briones" y
@@ -3048,10 +3055,10 @@ export default function Page(){
   const doReg=async()=>{if(!val(2))return;setLoading(true);setGErr("");try{const a=await ac("signup",{email:form.email,password:form.password,data:{role:"cliente",first_name:form.first_name.trim(),last_name:form.last_name.trim(),whatsapp:form.whatsapp.trim(),dni:form.dni.trim()||null,tax_condition:form.tax_condition,company_name:form.company_name.trim(),cuit:form.cuit.trim(),street:form.street.trim(),floor_apt:form.floor_apt.trim(),postal_code:form.postal_code.trim(),city:form.city.trim(),province:form.province}});if(a.error){setGErr(a.error.message||"Error");setLoading(false);return;}if(!a.access_token){setOkMsg("Te enviamos un email de confirmación. Una vez confirmado, ingresá con tu email y contraseña.");setLoading(false);return;}const c=await createClient(a.access_token,a.user.id);if(c?.error||!c){setGErr("Error guardando datos.");setLoading(false);return;}const ss={token:a.access_token,refresh_token:a.refresh_token,user:a.user};saveSession(ss);setSession(ss);const cliente=Array.isArray(c)?c[0]:c;setClient(cliente);setProfile({role:"cliente"});
     // Welcome email (fire-and-forget, no bloqueamos si falla)
     try{if(cliente?.id){fetch("/api/notify/welcome",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${a.access_token}`},body:JSON.stringify({client_id:cliente.id})}).catch(()=>{});}}catch{}
-  }catch{setGErr("Error de conexión.");}setLoading(false);};
+  }catch{setGErr(t("common.connError"));}setLoading(false);};
   const doLogin=async()=>{setLoading(true);setGErr("");if(!form.email||!form.password){setGErr("Completá email y contraseña");setLoading(false);return;}try{const r=await ac("token?grant_type=password",{email:form.email,password:form.password});if(r.error||r.error_description||r.msg){setGErr("Email o contraseña incorrectos");setLoading(false);return;}const token=r.access_token,uid=r.user.id;const p=await dq("profiles",{token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(prof?.role==="cliente"){let c=await dq("clients",{token,filters:`?auth_user_id=eq.${uid}&select=*`});let cl=Array.isArray(c)?c[0]:null;
       if(!cl&&r.user?.user_metadata){const m=r.user.user_metadata;if(m.first_name){const code=(m.first_name.substring(0,3)+m.last_name.substring(0,3)).toUpperCase();const nc=await insertClientUnique(token,{auth_user_id:uid,first_name:m.first_name,last_name:m.last_name,whatsapp:m.whatsapp||"",dni:m.dni||null,email:r.user.email,tax_condition:m.tax_condition||"ninguna",company_name:m.company_name||null,cuit:m.cuit||null,street:m.street||"",floor_apt:m.floor_apt||null,postal_code:m.postal_code||"",city:m.city||"",province:m.province||"",client_code:code});cl=Array.isArray(nc)?nc[0]:nc;}}
-      setClient(cl);}const ss={token,refresh_token:r.refresh_token,user:r.user};saveSession(ss);setSession(ss);setProfile(prof);}catch{setGErr("Email o contraseña incorrectos. Verificá tus datos e intentá de nuevo.");}setLoading(false);};
+      setClient(cl);}const ss={token,refresh_token:r.refresh_token,user:r.user};saveSession(ss);setSession(ss);setProfile(prof);}catch{setGErr(t("auth.badCredentials"));}setLoading(false);};
   const logout=()=>{clearSession();setSession(null);setClient(null);setProfile(null);setForm(INIT);setStep(0);setView("login");setGErr("");setOkMsg("");};
 
   // Forgot password — envía email con link de recuperación a través de Supabase
@@ -3072,7 +3079,7 @@ export default function Page(){
       // Supabase devuelve {} en éxito; si hay error trae error_code o msg
       if(r?.error||r?.msg||r?.error_description){setGErr(r.msg||r.error_description||"Error");setLoading(false);return;}
       setForgotSent(true);
-    }catch(e){setGErr("Error de conexión");}
+    }catch(e){setGErr(t("common.connError"));}
     setLoading(false);
   };
 
@@ -3089,7 +3096,7 @@ export default function Page(){
     // Pasa cuando el link de recovery expiró o el redirect_to no está whitelisted.
     if(qs.includes("error=")){
       const sp=new URLSearchParams(qs);
-      const err=sp.get("error_description")||sp.get("error_code")||sp.get("error")||"Link inválido o expirado";
+      const err=sp.get("error_description")||sp.get("error_code")||sp.get("error")||t("auth.linkInvalid");
       setOkMsg("");setGErr(`Recuperación falló: ${decodeURIComponent(err).replace(/\+/g," ")}. Pedí un link nuevo.`);
       setView("forgot");
       try{history.replaceState(null,"",window.location.pathname);}catch(e){}
@@ -3111,7 +3118,7 @@ export default function Page(){
         // limpiar hash para que no quede expuesto
         try{history.replaceState(null,"",window.location.pathname+window.location.search);}catch(e){}
       } else {
-        setGErr("El link no trae el token de acceso. Pedí un link nuevo.");
+        setGErr(t("auth.linkNoToken"));
         setView("forgot");
       }
     }
@@ -3133,7 +3140,7 @@ export default function Page(){
       // Pero mejor: hacemos login limpio con email+pwd para tener refresh_token fresco.
       // Más simple: avisamos y mandamos a login manualmente
       setTimeout(()=>{setView("login");setResetToken(null);setResetDone(false);setResetPwd("");setResetPwd2("");setOkMsg("Contraseña actualizada. Ingresá con tu nueva contraseña.");},1500);
-    }catch(e){setGErr("Error de conexión");}
+    }catch(e){setGErr(t("common.connError"));}
     setLoading(false);
   };
   if(restoring)return <><ToastStack/><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div></>;
