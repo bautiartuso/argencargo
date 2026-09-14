@@ -956,19 +956,25 @@ function OperationDetail({op:opProp,token,client,onBack}){
             const label=hasBudget?(cliPmts.length===0?(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo"):"Total a abonar"):"Estimado a abonar a Argencargo";
             // Cuando el cliente paga impuestos por fuera (RI), el total de Argencargo NO es lo
             // que le cuesta la importacion: se muestran los dos numeros separados.
+            // El dorado va en el TOTAL DE LA IMPORTACION, no en lo que se le paga a Argencargo:
+            // al cliente le importa cuanto le sale la importacion completa. Cuando no hay nada
+            // por fuera los dos numeros son el mismo y queda una sola barra dorada.
             const totalImpo=tot+fueraDeAC;
+            const aparte=fueraDeAC>0.005;
+            const barraDorada=(etiqueta,monto,nota)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:aparte?8:12,padding:"14px 18px",borderRadius:12,background:GOLD_GRADIENT,boxShadow:GOLD_GLOW}}>
+              <span style={{minWidth:0}}>
+                <span style={{display:"block",fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.1em"}}>{etiqueta}</span>
+                {nota&&<span style={{display:"block",fontSize:11,color:"rgba(10,22,40,0.66)",marginTop:3,lineHeight:1.45,fontWeight:600}}>{nota}</span>}
+              </span>
+              <span style={{fontSize:24,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(monto)}</span>
+            </div>;
+            if(!aparte)return barraDorada(label,tot,null);
             return <>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,padding:"14px 18px",borderRadius:12,background:GOLD_GRADIENT,boxShadow:GOLD_GLOW}}>
-                <span style={{fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</span>
-                <span style={{fontSize:24,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(tot)}</span>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,padding:"13px 18px",borderRadius:12,background:"rgba(140,200,245,0.09)",border:"1px solid rgba(140,200,245,0.32)"}}>
+                <span style={{fontSize:11.5,fontWeight:900,color:SKY,textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</span>
+                <span style={{fontSize:21,fontWeight:900,color:SKY,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(tot)}</span>
               </div>
-              {fueraDeAC>0.005&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:8,padding:"13px 18px",borderRadius:12,background:"rgba(140,200,245,0.09)",border:"1px solid rgba(140,200,245,0.32)"}}>
-                <span style={{minWidth:0}}>
-                  <span style={{display:"block",fontSize:11.5,fontWeight:900,color:SKY,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t(hasBudget?"imp.totalImport":"imp.totalImportEst")}</span>
-                  <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3,lineHeight:1.45}}>{t("imp.totalImportNote")}</span>
-                </span>
-                <span style={{fontSize:21,fontWeight:900,color:SKY,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(totalImpo)}</span>
-              </div>}
+              {barraDorada(t(hasBudget?"imp.totalImport":"imp.totalImportEst"),totalImpo,t("imp.totalImportNote"))}
             </>;})()}
           {hasBudget&&cliPmts.length>0&&<div style={{marginTop:12}}>
             {fila("Pagado",usd(totalCli),{color:"#4ade80"})}
