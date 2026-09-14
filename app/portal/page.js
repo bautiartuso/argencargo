@@ -838,9 +838,12 @@ function OperationDetail({op:opProp,token,client,onBack}){
     {/* Solapas */}
     {!loading&&(()=>{const def=isEditable?"merc":"resumen";const tabCur=tabDet||def;
       const tabs=[["resumen","Resumen"],["merc","Mercadería"],["bultos",`Bultos${pkgs.length?` · ${pkgs.length}`:""}`],["seg","Seguimiento"],...(!isGI&&items.length>0?[["costos","Costo por producto"]]:[])];
-      const canAsig=!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!inFlight&&items.length>0;
+      // Asignar mercadería a bultos se puede en cualquier etapa: no cambia valores, solo el reparto del costo.
+      const canAsig=!isGI&&op.channel==="aereo_blanco"&&items.length>0&&pkgs.length>0;
       const toggleAsig=async(it,pkId)=>{const cur=Array.isArray(it.package_ids)?it.package_ids:[];const next=cur.includes(pkId)?cur.filter(x=>x!==pkId):[...cur,pkId];
-        try{await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{package_ids:next.length?next:null}});setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:next.length?next:null}:x));}catch(e){toast("No se pudo guardar","error");}};
+        setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:next.length?next:null}:x));
+        try{const r=await fetch("/api/portal/asignar-bulto",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({item_id:it.id,package_ids:next,client_id:client?.id})});if(!r.ok)throw new Error("x");}
+        catch(e){toast("No se pudo guardar la asignación","error");setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:cur.length?cur:null}:x));}};
       return <>
       <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><div style={{display:"flex",gap:6,padding:5,borderRadius:13,background:"rgba(0,0,0,0.32)",border:"1px solid rgba(255,255,255,0.1)",flexWrap:"wrap",justifyContent:"center"}}>
         {tabs.map(([k,l])=><button key={k} onClick={()=>setTabDet(k)} style={{padding:"10px 18px",fontSize:12,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",borderRadius:10,cursor:"pointer",border:"none",background:tabCur===k?"rgba(255,255,255,0.1)":"transparent",color:tabCur===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:tabCur===k?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{l}</button>)}
@@ -922,7 +925,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
       {/* BULTOS */}
       {tabCur==="bultos"&&<div style={PANEL}>
         <h3 style={{...H3,marginBottom:6}}>Bultos</h3>
-        {canAsig&&pkgs.length>0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"0 0 14px",lineHeight:1.5}}>Marcá qué mercadería viaja en cada bulto: así el flete se reparte por bulto y el costo de cada producto sale más exacto. Si no marcás nada, se reparte según el valor FOB.</p>}
+        {canAsig&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"0 0 14px",lineHeight:1.5}}>Marcá qué mercadería viaja en cada bulto: así el flete se reparte por bulto y el costo de cada producto sale más exacto. Si no marcás nada, se reparte según el valor FOB.</p>}
         {!canAsig&&<div style={{marginBottom:12}}/>}
         {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Esta importación todavía no tiene bultos registrados.</p>}
         {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;
