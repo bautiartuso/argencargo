@@ -6569,6 +6569,12 @@ function TariffsManager({token}){
   const [adConfig,setAdConfig]=useState(null);const [adLoaded,setAdLoaded]=useState(false);
   useEffect(()=>{if(!adLoaded){(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.antidumping_calzado_usd_par&select=*"});setAdConfig(Array.isArray(r)&&r[0]?r[0]:null);setAdLoaded(true);})();}},[token,adLoaded]);
   const saveAdConfig=async(val)=>{await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.antidumping_calzado_usd_par",body:{value:Number(val)}});flash("Guardado");};
+  // Posiciones con antidumping (tabla antidumping_ncm). El monto de cada medida sale de la
+  // resolucion oficial: el sistema no lo puede adivinar, hay que cargarlo a mano una vez.
+  const [adRows,setAdRows]=useState([]);const [adRowsLoaded,setAdRowsLoaded]=useState(false);
+  useEffect(()=>{if(!adRowsLoaded){(async()=>{const r=await dq("antidumping_ncm",{token,filters:"?select=*&order=ncm_prefix.asc"});setAdRows(Array.isArray(r)?r:[]);setAdRowsLoaded(true);})();}},[token,adRowsLoaded]);
+  const saveAdRow=async(id,patch)=>{await dq("antidumping_ncm",{method:"PATCH",token,filters:`?id=eq.${id}`,body:patch});flash("Guardado");};
+  const adInp={width:"100%",padding:"6px 8px",fontSize:11.5,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit"};
 
   if(!selSvc)return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
@@ -6582,6 +6588,25 @@ function TariffsManager({token}){
       ].map(f=>{const c=getCert(f.k);return <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>{f.l}</label><input type="number" value={c?.value||""} onChange={e=>{setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x));}} onBlur={e=>saveCertConfig(f.k,e.target.value)} step="0.1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>;})}</div></Card>}
     {adLoaded&&<Card title="Antidumping"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Valor imponible mínimo por par de calzado (NCM cap. 64) para DIE/tasa estadística/IVA — se aplica aunque el precio real pagado sea menor. El FOB real y lo que abona el cliente no se tocan.</p>
       <div style={{maxWidth:260}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>Piso calzado (USD/par)</label><input type="number" value={adConfig?.value??""} onChange={e=>setAdConfig(p=>({...p,value:e.target.value}))} onBlur={e=>saveAdConfig(e.target.value)} step="0.01" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div></Card>}
+    {adRowsLoaded&&<Card title="Posiciones con antidumping"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Cuando un producto cae en una de estas posiciones, el sistema avisa en la op y por notificación. El <strong style={{color:"#fbbf24"}}>monto de la medida sale de la resolución oficial</strong>: cargalo acá una vez y las alertas ya lo informan. Las que están sin monto avisan igual, pero sin decir cuánto.</p>
+      <div style={{overflowX:"auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"90px minmax(150px,1fr) 140px 100px 100px 130px",gap:8,padding:"0 0 8px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+          <span>NCM</span><span>Producto</span><span>Tipo de medida</span><span>Valor</span><span>Unidad</span><span>Resolución</span>
+        </div>
+        {adRows.map(r=>{const falta=r.valor==null||r.valor===""; return <div key={r.id} style={{display:"grid",gridTemplateColumns:"90px minmax(150px,1fr) 140px 100px 100px 130px",gap:8,alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:r.activo?1:0.45}}>
+          <span style={{fontSize:11.5,fontFamily:"monospace",color:IC,fontWeight:700}}>{r.ncm_prefix}</span>
+          <span style={{fontSize:11.5,color:"rgba(255,255,255,0.75)"}}>{r.producto}{falta&&<span title="Sin monto cargado" style={{marginLeft:6,fontSize:9,padding:"2px 6px",borderRadius:3,background:"rgba(251,191,36,0.15)",color:"#fbbf24",fontWeight:800}}>SIN MONTO</span>}</span>
+          <select value={r.medida_tipo||""} onChange={e=>{const v=e.target.value||null;setAdRows(p=>p.map(x=>x.id===r.id?{...x,medida_tipo:v}:x));saveAdRow(r.id,{medida_tipo:v});}} style={{...adInp}}>
+            <option value="">—</option><option value="derecho_especifico">Derecho específico</option><option value="valor_criterio">Valor criterio</option><option value="ad_valorem">Ad valorem</option>
+          </select>
+          <input type="number" step="0.01" value={r.valor??""} placeholder="—" onChange={e=>setAdRows(p=>p.map(x=>x.id===r.id?{...x,valor:e.target.value}:x))} onBlur={e=>saveAdRow(r.id,{valor:e.target.value===""?null:Number(e.target.value)})} style={{...adInp,textAlign:"right"}}/>
+          <select value={r.unidad||""} onChange={e=>{const v=e.target.value||null;setAdRows(p=>p.map(x=>x.id===r.id?{...x,unidad:v}:x));saveAdRow(r.id,{unidad:v});}} style={{...adInp}}>
+            <option value="">—</option><option value="USD/kg">USD/kg</option><option value="USD/u">USD/u</option><option value="USD/par">USD/par</option><option value="USD/m2">USD/m²</option><option value="%">%</option>
+          </select>
+          <input value={r.resolucion||""} placeholder="Res. .../..." onChange={e=>setAdRows(p=>p.map(x=>x.id===r.id?{...x,resolucion:e.target.value}:x))} onBlur={e=>saveAdRow(r.id,{resolucion:e.target.value||null})} style={{...adInp}}/>
+        </div>;})}
+      </div>
+    </Card>}
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate"&&tNowOk(t));if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
   const svcInfo=SERVICES.find(s=>s.key===selSvc);
   return <div>

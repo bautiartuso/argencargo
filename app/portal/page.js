@@ -625,7 +625,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const fromItem=it=>({id:it.id,description:it.description||"",unit_price:it.unit_price_usd!=null?String(it.unit_price_usd).replace(".",","):"",quantity:it.quantity!=null?String(it.quantity):"1",ncm_hint:"",ncm:it.ncm_code||it.import_duty_rate!=null?{ncm_code:it.ncm_code||"MANUAL",import_duty_rate:Number(it.import_duty_rate??0),statistics_rate:Number(it.statistics_rate??0),iva_rate:Number(it.iva_rate??21),
     // Reconstruir el aviso de antidumping desde lo guardado: si no, el ⚠ y el texto
     // solo se veían en la sesión en la que se clasificó el producto y desaparecían al recargar.
-    ...(it.antidumping_note?{antidumping:{producto:String(it.antidumping_note).split(" — ")[0],nota:String(it.antidumping_note).split(" — ")[1]||""}}:{})}:null,ncmLoading:false,ncmError:false,package_ids:Array.isArray(it.package_ids)?it.package_ids:[]});
+    ...(it.antidumping_note?{antidumping:{producto:String(it.antidumping_note).split(" · ")[0],medidaTexto:String(it.antidumping_note).split(" · ").slice(1).join(" · ")||""}}:{})}:null,ncmLoading:false,ncmError:false,package_ids:Array.isArray(it.package_ids)?it.package_ids:[]});
   const empty=()=>({description:"",unit_price:"",quantity:"1",ncm_hint:"",ncm:null,ncmLoading:false,ncmError:false,package_ids:[]});
   const [rows,setRows]=useState(()=>items.length?items.map(fromItem):[empty()]);
   const [mode,setMode]=useState(items.length?"manual":null);
@@ -647,7 +647,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const pendingClass=valid.some(r=>!r.ncm);
   // Filas a medias (con descripción pero sin precio o cantidad) frenan la confirmación, no el borrador.
   const aMedias=rows.filter(r=>r.description.trim()&&!(toN(r.unit_price)>0&&toN(r.quantity)>0));
-  const payload=()=>({op_id:op.id,client_id:client?.id,has_battery:batt,items:valid.map(x=>({description:x.description.trim(),quantity:toN(x.quantity),unit_price_usd:toN(x.unit_price),ncm_code:x.ncm?.ncm_code||null,import_duty_rate:x.ncm?.import_duty_rate??0,statistics_rate:x.ncm?.statistics_rate??0,iva_rate:x.ncm?.iva_rate??21,package_ids:x.package_ids?.length?x.package_ids:null,antidumping_note:x.ncm?.antidumping?`${x.ncm.antidumping.producto}${x.ncm.antidumping.nota?" — "+x.ncm.antidumping.nota:""}`:null}))});
+  const payload=()=>({op_id:op.id,client_id:client?.id,has_battery:batt,items:valid.map(x=>({description:x.description.trim(),quantity:toN(x.quantity),unit_price_usd:toN(x.unit_price),ncm_code:x.ncm?.ncm_code||null,import_duty_rate:x.ncm?.import_duty_rate??0,statistics_rate:x.ncm?.statistics_rate??0,iva_rate:x.ncm?.iva_rate??21,package_ids:x.package_ids?.length?x.package_ids:null,antidumping_note:x.ncm?.antidumping?`${x.ncm.antidumping.producto} · ${x.ncm.antidumping.medidaTexto||"monto sin cargar"}`:null}))});
   const persist=async(confirm)=>{const body=payload();const ser=JSON.stringify(body);
     if(!confirm&&ser===lastSavedRef.current)return true;
     setSaving(true);
@@ -696,7 +696,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
             </div>
             {n?.hint_verdict==="diff"&&<p style={{fontSize:12,color:"#fbbf24",margin:"6px 0 0",lineHeight:1.5}}>Tu posición sugerida ({n.hint_code}) no corresponde para esta mercadería{n.hint_note?`: ${n.hint_note}`:"."}</p>}
             {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>Coincide con la posición que sugeriste.</p>}
-            {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}). El costo es estimativo: el equipo lo revisa antes de confirmar.</p>}
+            {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}{n.antidumping.medidaTexto?` · ${n.antidumping.medidaTexto}`:""}). El costo es estimativo: el equipo lo revisa antes de confirmar.</p>}
             {p.ncmError&&<div style={{marginTop:8,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)"}}>
               <p style={{fontSize:12.5,color:"#ff8a8a",margin:"0 0 8px",fontWeight:600}}>No pudimos clasificar “{p.description}” automáticamente</p>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -1554,12 +1554,34 @@ function CalculatorPage({token,client,preset}){
     const main=chosen||(calc.length?calc.reduce((a,b)=>a.total<b.total?a:b):null);
     return{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:main?.key||null,channel_name:main?.name||null,products:productsToSave,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:main?main.total+delivCost:0,channel_alternatives:alts,has_battery:!!hasBattery,expires_at:new Date(Date.now()+15*864e5).toISOString(),...(chosen?{client_selected_channel:chosen.key}:{})};
   };
+  // dq() NO lanza en error HTTP: devuelve el cuerpo de la respuesta. PostgREST contesta
+  // {code, message, details} y eso no es un array, asi que el `id` quedaba null, el catch
+  // nunca corria y el fallo era invisible. Entre el 12 y el 14/09/2026 se perdieron todas
+  // las cotizaciones del portal asi (el trigger de numeracion chocaba contra el indice
+  // unico) sin un solo log. De aca en adelante un guardado que falla se ve y se avisa.
+  const errorDeApi=(r)=>{
+    if(Array.isArray(r))return null;
+    if(r&&typeof r==="object"&&(r.message||r.code))return `${r.code||""} ${r.message||""}`.trim();
+    return null;
+  };
   const persistQuote=(body)=>{
     saveChainRef.current=saveChainRef.current.then(async()=>{
       try{
-        if(savedQuoteIdRef.current){await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${savedQuoteIdRef.current}`,body});}
-        else{const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});const id=Array.isArray(r)&&r[0]?r[0].id:null;if(id)savedQuoteIdRef.current=id;}
-      }catch(e){console.error("Error saving quote:",e);}
+        if(savedQuoteIdRef.current){
+          const r=await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${savedQuoteIdRef.current}`,body});
+          const err=errorDeApi(r);if(err)throw new Error(err);
+        }else{
+          const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+          const err=errorDeApi(r);if(err)throw new Error(err);
+          const id=Array.isArray(r)&&r[0]?r[0].id:null;
+          if(!id)throw new Error("la base no devolvio la cotizacion creada");
+          savedQuoteIdRef.current=id;
+        }
+      }catch(e){
+        console.error("[cotizaciones] no se pudo guardar:",e?.message||e);
+        toast(t("quotes.saveFailed"),"error");
+        avisarAdmin(token,{title:"⚠️ No se pudo guardar una cotización del portal",body:`${client?.client_code||"?"} (${client?.first_name||""}): ${e?.message||"error desconocido"}`,url:"/admin"});
+      }
     });
     return saveChainRef.current;
   };
@@ -1826,7 +1848,7 @@ function CalculatorPage({token,client,preset}){
               {n?.ncm_code&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{[["Derechos",n.import_duty_rate],["Tasa estadística",n.statistics_rate],["IVA",n.iva_rate]].map(([l,v])=><span key={l} style={{display:"inline-flex",alignItems:"center",gap:8,height:30,padding:"0 12px",borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>{l}</span><span style={{fontSize:13,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}%</span></span>)}</div>}
               {n?.hint_verdict==="diff"&&<p style={{fontSize:12,color:"#fbbf24",margin:"6px 0 0",lineHeight:1.5}}>Tu posición sugerida ({n.hint_code}) no corresponde para esta mercadería{n.hint_note?`: ${n.hint_note}`:"."}</p>}
               {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>Coincide con la posición que sugeriste.</p>}
-              {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}). La cotización es estimativa: el equipo la revisa antes de confirmar.</p>}
+              {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}{n.antidumping.medidaTexto?` · ${n.antidumping.medidaTexto}`:""}). La cotización es estimativa: el equipo la revisa antes de confirmar.</p>}
               {p.ncmError&&<div style={{marginTop:8,padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)"}}>
                 <p style={{fontSize:12.5,color:"#ff8a8a",margin:"0 0 8px",fontWeight:600}}>No pudimos clasificar “{p.description}” automáticamente</p>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>

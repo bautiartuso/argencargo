@@ -271,13 +271,25 @@ export async function GET(req) {
 
   // ── Antidumping: aviso al admin por cada producto nuevo con NCM bajo medida (ops abiertas) ──
   try {
-    const ad = await sb(`/operation_items?antidumping_note=not.is.null&antidumping_alerted_at=is.null&select=id,description,ncm_code,antidumping_note,operations!inner(operation_code,status,clients(client_code,first_name))&operations.status=not.in.(operacion_cerrada,cancelada)&limit=20`);
+    const ad = await sb(`/operation_items?antidumping_note=not.is.null&antidumping_alerted_at=is.null&select=id,description,ncm_code,antidumping_note,quantity,unit_price_usd,operations!inner(operation_code,status,clients(client_code,first_name))&operations.status=not.in.(operacion_cerrada,cancelada)&limit=20`);
     const items = Array.isArray(ad.body) ? ad.body : [];
     if (items.length) {
       out.antidumping = items.map((i) => `${i.operations?.operation_code}: ${i.description} (${i.ncm_code})`);
       if (!dry) {
-        const lineas = items.map((i) => `• ${i.operations?.operation_code} (${i.operations?.clients?.client_code || "?"}): ${String(i.description || "").slice(0, 60)} · NCM ${i.ncm_code} → ${i.antidumping_note}`);
-        await notifyAdmins("⚠️ Antidumping: revisar antes de cotizar", `${lineas.join("\n")}\n\nChequeá derechos específicos y valores criterio. La lista de posiciones está en la tabla antidumping_ncm.`);
+        // La nota trae "producto · medida". Separamos para decir QUE lleva dumping y CUANTO,
+        // y mostramos el FOB del item para dimensionar la exposicion.
+        const lineas = items.map((i) => {
+          const [prod, ...med] = String(i.antidumping_note || "").split(" · ");
+          const medida = med.join(" · ") || "monto sin cargar";
+          const qty = Number(i.quantity || 1), pu = Number(i.unit_price_usd || 0);
+          const fob = (qty * pu).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          return `• ${i.operations?.operation_code} (${i.operations?.clients?.client_code || "?"}) — ${String(i.description || "").slice(0, 60)}\n   NCM ${i.ncm_code} · ${prod}\n   Medida: ${medida}\n   ${qty} u × USD ${pu} = FOB USD ${fob}`;
+        });
+        const sinCargar = items.filter((i) => !String(i.antidumping_note || "").includes("USD") && !String(i.antidumping_note || "").includes("%")).length;
+        const cola = sinCargar
+          ? `\n\n⚠ ${sinCargar} de ${items.length} sin monto cargado: cargá el valor de la medida en la tabla antidumping_ncm (columnas medida_tipo/valor/unidad) y la próxima alerta ya lo trae.`
+          : "\n\nVerificá que la medida siga vigente antes de presupuestar.";
+        await notifyAdmins("⚠️ Antidumping: revisar antes de cotizar", `${lineas.join("\n\n")}${cola}`);
         await sb(`/operation_items?id=in.(${items.map((i) => i.id).join(",")})`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ antidumping_alerted_at: new Date().toISOString() }) });
       }
     }

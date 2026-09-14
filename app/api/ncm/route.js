@@ -225,19 +225,38 @@ function enforceInterventionByNcm(ncm_code, currentIntervention) {
 
 
 // Alerta antidumping (tabla antidumping_ncm, editable): si el NCM cae en un prefijo con medida
-// para origen China, la respuesta trae { antidumping: { producto, nota } } para que las calculadoras
-// y la op lo muestren. Best effort: si falla la consulta, no bloquea la clasificación.
+// para origen China, la respuesta trae { antidumping: { producto, nota, medida_tipo, valor, unidad,
+// resolucion, medidaTexto } } para que las calculadoras y la op muestren QUE producto y CUANTO.
+// valor null = la medida existe pero todavia no se cargo su monto (hay que verificarlo en la norma).
+// Best effort: si falla la consulta, no bloquea la clasificación.
+// Texto corto de la medida para mostrar al lado del producto: "USD 15,75/par (valor criterio)".
+// Si el monto no esta cargado lo dice explicitamente en lugar de fingir un numero.
+const TIPO_MEDIDA = { derecho_especifico: "derecho específico", valor_criterio: "valor criterio", ad_valorem: "ad valorem" };
+function textoMedida(a) {
+  if (a.valor == null) return "monto sin cargar — verificar en la norma";
+  const n = Number(a.valor).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const u = a.unidad || "";
+  const monto = u === "%" ? `${n}%` : (u.startsWith("USD") ? `USD ${n}${u.replace("USD", "")}` : `${n} ${u}`);
+  const tipo = TIPO_MEDIDA[a.medida_tipo] || a.medida_tipo;
+  return tipo ? `${monto} (${tipo})` : monto;
+}
 let _adCache = { at: 0, rows: [] };
 async function addAntidumping(obj) {
   try {
     if (!obj?.ncm_code) return obj;
     if (Date.now() - _adCache.at > 5 * 60000) {
-      const r = await fetch(`${SB_URL}/rest/v1/antidumping_ncm?activo=eq.true&select=ncm_prefix,producto,nota`, { headers: { apikey: SB_KEY } });
+      const r = await fetch(`${SB_URL}/rest/v1/antidumping_ncm?activo=eq.true&select=ncm_prefix,producto,nota,medida_tipo,valor,unidad,resolucion,vigencia_hasta`, { headers: { apikey: SB_KEY } });
       _adCache = { at: Date.now(), rows: r.ok ? await r.json() : _adCache.rows };
     }
     const d = String(obj.ncm_code).replace(/\D/g, "");
     const hit = _adCache.rows.map((a) => ({ ...a, p: String(a.ncm_prefix).replace(/\D/g, "") })).filter((a) => a.p && d.startsWith(a.p)).sort((a, b) => b.p.length - a.p.length)[0];
-    return hit ? { ...obj, antidumping: { producto: hit.producto, nota: hit.nota || "" } } : obj;
+    if (!hit) return obj;
+    return { ...obj, antidumping: {
+      producto: hit.producto, nota: hit.nota || "",
+      medida_tipo: hit.medida_tipo || null, valor: hit.valor != null ? Number(hit.valor) : null,
+      unidad: hit.unidad || null, resolucion: hit.resolucion || null,
+      medidaTexto: textoMedida(hit),
+    } };
   } catch { return obj; }
 }
 
