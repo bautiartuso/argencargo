@@ -666,7 +666,6 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
     :p.ncm?.ncm_code?<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,background:"rgba(184,149,106,0.16)",border:"1px solid rgba(232,208,152,0.5)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{p.ncm.ncm_code==="MANUAL"?"Estimado":p.ncm.ncm_code}{p.ncm.antidumping&&<span title="Antidumping" style={{marginLeft:6,color:"#f87171"}}>⚠</span>}</span>
     :<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,border:"1px dashed rgba(255,255,255,0.35)",color:"rgba(255,255,255,0.7)",fontSize:11,fontWeight:700,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>PENDIENTE</span>;
   const delBtn=(onClick,disabled)=><button onClick={onClick} disabled={disabled} title="Quitar" style={{width:32,height:32,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)",cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.35:1,fontSize:13,flexShrink:0}}>✕</button>;
-  const multiPk=pkgs.length>1;
   return <div>
     {mode==="manual"&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:12}}>
       <p style={{...LBL,fontSize:12}}>Productos</p>
@@ -691,11 +690,6 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
           return <div style={{padding:"0 4px 8px"}}>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
               {n?.ncm_code&&[["Derechos",n.import_duty_rate],["Tasa estadística",n.statistics_rate],["IVA",n.iva_rate]].map(([l,v])=><span key={l} style={{display:"inline-flex",alignItems:"center",gap:8,height:30,padding:"0 12px",borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>{l}</span><span style={{fontSize:13,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}%</span></span>)}
-              {multiPk&&<span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:n?.ncm_code?8:0}}>
-                <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>Viaja en</span>
-                {pkgs.map((pk,k)=>{const on=(p.package_ids||[]).includes(pk.id);return <button key={pk.id} onClick={()=>ch(i,"package_ids",on?(p.package_ids||[]).filter(x=>x!==pk.id):[...(p.package_ids||[]),pk.id])} style={{height:28,padding:"0 10px",fontSize:11,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${on?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.18)"}`,background:on?"rgba(184,149,106,0.18)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.6)"}}>Bulto {k+1}</button>;})}
-                {!(p.package_ids||[]).length&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>· varios / sin asignar</span>}
-              </span>}
             </div>
             {n?.hint_verdict==="diff"&&<p style={{fontSize:12,color:"#fbbf24",margin:"6px 0 0",lineHeight:1.5}}>Tu posición sugerida ({n.hint_code}) no corresponde para esta mercadería{n.hint_note?`: ${n.hint_note}`:"."}</p>}
             {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>Coincide con la posición que sugeriste.</p>}
@@ -724,7 +718,6 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
         </div>
         {aMedias.length>0&&<span style={{fontSize:12,fontWeight:700,color:"#fbbf24",textAlign:"center"}}>Hay {aMedias.length===1?"un producto":`${aMedias.length} productos`} sin precio o cantidad: completalo o quitalo para confirmar.</span>}
         <button onClick={confirmar} disabled={!canConfirm} style={{minHeight:52,padding:"0 30px",fontSize:13,fontWeight:900,letterSpacing:"0.08em",textTransform:"uppercase",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:canConfirm?"pointer":"not-allowed",background:GOLD_GRADIENT,color:"#0A1628",opacity:canConfirm?1:0.45,boxShadow:canConfirm?GOLD_GLOW:"none"}}>Documentación completa · avanzar con la importación →</button>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,textAlign:"center",maxWidth:560,lineHeight:1.5}}>Los cambios se guardan solos mientras cargás. Al confirmar, la mercadería queda cerrada y Argencargo presupuesta y arma el vuelo con estos datos.</p>
       </div>
     </>}
   </div>;
@@ -805,7 +798,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
     pkData.forEach(p=>{const w=Math.max(p.gw,p.vw);wTot+=w;const owners=items.filter(it=>Array.isArray(it.package_ids)&&it.package_ids.includes(p.id));if(!owners.length){unassigned+=w;return;}const subFob=owners.reduce((s,it)=>s+fobOf(it),0)||1;owners.forEach(it=>{assigned[it.id]=(assigned[it.id]||0)+w*(fobOf(it)/subFob);});});
     const td=r.taxDetail||{};const service=Number(r.flete||0)+Number(r.seguro||0)+Number(r.overweightSurcharge||0)+Number(td.desembolso||0)+Number(td.ivaDesembolso||0)+Number(r.shipCost||0)+Number(op.delivery_cost_usd||0);
     const scale=hasBudget&&r.totalAbonar>0&&Math.abs(r.totalAbonar-bt)>1?bt/r.totalAbonar:1;
-    return items.map((it,k)=>{const fob=fobOf(it);const fobShare=fob/fobTot;const share=wTot>0?((assigned[it.id]||0)+unassigned*fobShare)/wTot:fobShare;const ti=td.items?.[k];const imp=((ti?ti.derechos+ti.tasaE+ti.iva:0)+service*share)*scale;const qty=Number(it.quantity||1);return{it,qty,fob,fobUnit:fob/qty,imp,impUnit:imp/qty,total:fob+imp,totalUnit:(fob+imp)/qty};});})();
+    return items.map((it,k)=>{const fob=fobOf(it);const fobShare=fob/fobTot;const share=wTot>0?((assigned[it.id]||0)+unassigned*fobShare)/wTot:fobShare;const ti=td.items?.[k];const tax=(ti?ti.derechos+ti.tasaE+ti.iva:0)*scale;const svc=service*share*scale;const imp=tax+svc;const qty=Number(it.quantity||1);return{it,qty,fob,fobUnit:fob/qty,tax,taxUnit:tax/qty,svc,svcUnit:svc/qty,imp,impUnit:imp/qty,total:fob+imp,totalUnit:(fob+imp)/qty};});})();
   const accion=(()=>{
     if(op.lost_in_customs_at||["operacion_cerrada","cancelada"].includes(op.status))return null;
     if(isEditable&&items.length===0)return{c:GOLD_LIGHT,t:"Cargá la mercadería de tu importación",s:"Leé la factura o cargala a mano, clasificá el NCM y vas a ver el costo estimado al instante."};
@@ -822,7 +815,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
   return <div>
     <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.05)",border:HAIR,cursor:"pointer",fontWeight:700,marginBottom:16,padding:"7px 13px",borderRadius:9,letterSpacing:"0.04em"}}>← Volver</button>
 
-    {/* ZONA 1 · cabecera, progreso y qué hacer ahora */}
+    {/* Cabecera: código, estado, nombre, progreso y qué hacer ahora */}
     <div style={PANEL}>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <span style={{fontSize:20,fontWeight:800,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.05em"}}>{op.operation_code}</span>
@@ -832,189 +825,171 @@ function OperationDetail({op:opProp,token,client,onBack}){
       </div>
       <h2 style={{fontSize:19,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.4)",margin:"12px 0 4px",fontStyle:op.description?"normal":"italic"}}>{op.description||(items.length?items.map(i=>i.description).filter(Boolean).slice(0,3).join(", "):"Sin mercadería cargada")}</h2>
       <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={!!op.docs_confirmed_at}/>
-      {op.lost_in_customs_at&&<div style={{marginBottom:14,padding:"12px 16px",background:"rgba(248,113,113,0.08)",border:"1.5px solid rgba(248,113,113,0.4)",borderRadius:12}}>
+      {op.lost_in_customs_at&&<div style={{marginBottom:6,padding:"12px 16px",background:"rgba(248,113,113,0.08)",border:"1.5px solid rgba(248,113,113,0.4)",borderRadius:12}}>
         <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚨 Carga retenida en aduana</p>
         <p style={{fontSize:12.5,color:"rgba(255,255,255,0.75)",margin:"4px 0 0",lineHeight:1.5}}>Esta operación quedó retenida por aduana y no puede liberarse. No tenés saldo pendiente: la pérdida la asume Argencargo. Cualquier duda, escribinos por WhatsApp.</p>
       </div>}
-      {accion&&<div style={{marginBottom:14,padding:"14px 18px",borderRadius:12,border:`1px solid ${accion.c}66`,background:`${accion.c}14`,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+      {accion&&<div style={{padding:"14px 18px",borderRadius:12,border:`1px solid ${accion.c}66`,background:`${accion.c}14`,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <span style={{width:10,height:10,borderRadius:"50%",background:accion.c,boxShadow:`0 0 12px ${accion.c}`,flexShrink:0}}/>
         <div style={{flex:1,minWidth:220}}><p style={{margin:0,fontSize:14.5,fontWeight:800,color:accion.c}}>{accion.t}</p><p style={{margin:"3px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.75)",lineHeight:1.5}}>{accion.s}</p></div>
       </div>}
-      <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
-        {isGI?<>{kpi("Productos",String(items.length))}{kpi("Total puesto en Argentina",usd(giTotalItems),true)}</>
-        :<>{kpi("Bultos",String(nBultos||"—"))}{isAer?<>{kpi("Peso bruto",totGW?`${f2(totGW)} kg`:"—")}{kpi("Facturable",pf?`${f2(pf)} kg`:"—",true)}</>:kpi("Volumen",totCBM?`${totCBM.toFixed(3)} m³`:"—",true)}{kpi("FOB mercadería",fobItems>0?usd(fobItems):"—")}{kpi(hasBudget&&saldoReal<=0.01?"Abonado":"A abonar",saldoKpi,hasBudget&&saldoReal>0.01)}</>}
-      </div>
     </div>
 
     {/* Solapas */}
-    {!loading&&(()=>{const def=isEditable?"merc":["en_transito","arribo_argentina","en_aduana"].includes(op.status)?"seg":"merc";const cur=tabDet||def;
-      const tabs=[["merc","Mercadería y costos"],["bultos",`Bultos${pkgs.length?` · ${pkgs.length}`:""}`],["seg","Seguimiento"]];
-      return <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><div style={{display:"flex",gap:6,padding:5,borderRadius:13,background:"rgba(0,0,0,0.32)",border:"1px solid rgba(255,255,255,0.1)",flexWrap:"wrap",justifyContent:"center"}}>
-        {tabs.map(([k,l])=><button key={k} onClick={()=>setTabDet(k)} style={{padding:"10px 18px",fontSize:12,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",borderRadius:10,cursor:"pointer",border:"none",background:cur===k?"rgba(255,255,255,0.1)":"transparent",color:cur===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:cur===k?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{l}</button>)}
-      </div></div>;})()}
-    {(()=>{const def=isEditable?"merc":["en_transito","arribo_argentina","en_aduana"].includes(op.status)?"seg":"merc";const tabCur=tabDet||def;return <>
-    {/* SOLAPA · mercadería y costos */}
-    {!loading&&tabCur==="merc"&&<div style={PANEL}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
-        <h3 style={H3}>Mercadería y costos</h3>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{height:32,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,cursor:"pointer"}}>Presupuesto PDF</button>}
-          {!isGI&&["entregada","operacion_cerrada"].includes(op.status)&&<button onClick={downloadClosingPdf} style={{height:32,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(74,222,128,0.45)",background:"rgba(74,222,128,0.1)",color:"#4ade80",cursor:"pointer"}}>Resumen final PDF</button>}
-        </div>
-      </div>
+    {!loading&&(()=>{const def=isEditable?"merc":"resumen";const tabCur=tabDet||def;
+      const tabs=[["resumen","Resumen"],["merc","Mercadería"],["bultos",`Bultos${pkgs.length?` · ${pkgs.length}`:""}`],["seg","Seguimiento"],...(!isGI&&items.length>0?[["costos","Costo por producto"]]:[])];
+      const canAsig=!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!inFlight&&items.length>0;
+      const toggleAsig=async(it,pkId)=>{const cur=Array.isArray(it.package_ids)?it.package_ids:[];const next=cur.includes(pkId)?cur.filter(x=>x!==pkId):[...cur,pkId];
+        try{await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{package_ids:next.length?next:null}});setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:next.length?next:null}:x));}catch(e){toast("No se pudo guardar","error");}};
+      return <>
+      <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><div style={{display:"flex",gap:6,padding:5,borderRadius:13,background:"rgba(0,0,0,0.32)",border:"1px solid rgba(255,255,255,0.1)",flexWrap:"wrap",justifyContent:"center"}}>
+        {tabs.map(([k,l])=><button key={k} onClick={()=>setTabDet(k)} style={{padding:"10px 18px",fontSize:12,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",borderRadius:10,cursor:"pointer",border:"none",background:tabCur===k?"rgba(255,255,255,0.1)":"transparent",color:tabCur===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:tabCur===k?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{l}</button>)}
+      </div></div>
 
-      {isEditable
-        ?<MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
-        :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>Mercadería confirmada</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
-        {items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
-          <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM",...(isGI?[]:["Derechos","Tasa est.","IVA"])].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-          <tbody>{items.map((it,i)=>{const qty=Number(it.quantity||1);const fob=Number(it.unit_price_usd||0)*qty;const last=i===items.length-1;const td=(c,ci,hot)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
-            return <tr key={it.id||i}>{[it.description||"—",String(qty),usd(it.unit_price_usd),usd(fob),it.ncm_code&&it.ncm_code!=="MANUAL"?it.ncm_code:(it.import_duty_rate!=null?"Estimado":"—"),...(isGI?[]:[`${it.import_duty_rate??0}%`,`${it.statistics_rate??0}%`,`${it.iva_rate??21}%`])].map((c,ci)=>td(c,ci,ci===4&&it.ncm_code))}</tr>;})}</tbody>
-        </table></div>}
+      {/* RESUMEN */}
+      {tabCur==="resumen"&&<div style={PANEL}>
+        <h3 style={{...H3,marginBottom:14}}>Resumen</h3>
+        <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
+          {kpi("Importación",op.operation_code)}
+          {isGI?<>{kpi("Productos",String(items.length))}{kpi("Total puesto en Argentina",usd(giTotalItems),true)}</>
+          :<>{kpi("Bultos",String(nBultos||"—"))}{isAer?<>{kpi("Peso bruto",totGW?`${f2(totGW)} kg`:"—")}{kpi("Peso facturable",pf?`${f2(pf)} kg`:"—",true)}</>:kpi("Volumen",totCBM?`${totCBM.toFixed(3)} m³`:"—",true)}{kpi("FOB mercadería",fobItems>0?usd(fobItems):"—")}</>}
+        </div>
+        {(hasBudget||showEstimate)?<div style={{marginTop:22,paddingTop:18,borderTop:HAIR}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
+            <p style={LBL}>{hasBudget?(isGI?"Precio puesto en Argentina":"Presupuesto"):"Costo estimado"}</p>
+            {showEstimate&&<span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}
+            <span style={{flex:1}}/>
+            {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,cursor:"pointer"}}>Presupuesto PDF</button>}
+            {!isGI&&["entregada","operacion_cerrada"].includes(op.status)&&<button onClick={downloadClosingPdf} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(74,222,128,0.45)",background:"rgba(74,222,128,0.1)",color:"#4ade80",cursor:"pointer"}}>Resumen final PDF</button>}
+          </div>
+          {isGI&&hasBudget&&<div>{items.map((it,i)=>{const qty=Number(it.quantity||0);const unit=Number(it.unit_price_usd||0);return <div key={it.id||i}>{fila(<>{it.description} <span style={{color:"rgba(255,255,255,0.5)"}}>× {qty} · {usd(unit)} c/u</span></>,usd(qty*unit),{last:i===items.length-1})}</div>;})}</div>}
+          {!isGI&&hasBudget&&<div>
+            {!isB&&bTax>0&&fila(riPagaImpuestosDirecto?"Impuestos (los abonás directo a la aerolínea)":"Impuestos",usd(bTax),{muted:riPagaImpuestosDirecto})}
+            {(isB?(bt-shipCost):bFlete)>0&&fila(isB?"Servicio integral de importación":"Flete internacional",usd(isB?(bt-shipCost):bFlete))}
+            {!isB&&bSeg>0&&fila("Seguro de carga",usd(bSeg))}
+            {!isB&&isAer&&Number(op.budget_surcharge||0)>0&&fila("Recargo por sobrepeso",usd(op.budget_surcharge))}
+            {shipCost>0&&fila("Envío a domicilio",usd(shipCost))}
+            {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
+          </div>}
+          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0);const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
+            const rows=[["Flete aéreo internacional",Number(est.flete||0)-bat],["Recargo por baterías",bat],["Recargo por sobrepeso",Number(est.overweightSurcharge||0)],["Seguro (1%)",Number(est.seguro||0)],[riPagaImpuestosDirecto?"Impuestos (los abonás directo a la aerolínea)":"Impuestos (derechos, tasa estadística e IVA)",impTot],["Desaduanaje e IVA sobre desaduanaje",gastos]].filter(([l,v])=>/^Impuestos/.test(l)||Number(v||0)>0.005);
+            return <div>{rows.map(([l,v],k)=><div key={k}>{fila(l,usd(v),{muted:/aerolínea/.test(l)})}</div>)}</div>;})()}
+          {(()=>{const tot=hasBudget?totalAbonar:Number(est?.totalAbonar||0);const label=hasBudget?(cliPmts.length===0?(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo"):"Total a abonar"):"Estimado a abonar a Argencargo";
+            return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,padding:"14px 18px",borderRadius:12,background:GOLD_GRADIENT,boxShadow:GOLD_GLOW}}>
+              <span style={{fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</span>
+              <span style={{fontSize:24,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(tot)}</span>
+            </div>;})()}
+          {hasBudget&&cliPmts.length>0&&<div style={{marginTop:12}}>
+            {fila("Pagado",usd(totalCli),{color:"#4ade80"})}
+            {fila(saldoReal>0.01?"Saldo pendiente":"Pagado en su totalidad",usd(saldoReal),{bold:true,color:saldoReal<=0.01?"#4ade80":GOLD_LIGHT,last:true})}
+            <div style={{height:7,background:"rgba(255,255,255,0.08)",borderRadius:999,overflow:"hidden",margin:"8px 0 12px"}}><div style={{width:`${totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0}%`,height:"100%",background:saldoReal<=0.01?"#4ade80":GOLD_LIGHT}}/></div>
+            <p style={{...LBL,marginBottom:6}}>Pagos realizados</p>
+            {cliPmts.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none",fontSize:12.5,flexWrap:"wrap"}}><span style={{color:"#fff"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})} · <span style={{textTransform:"capitalize",color:"rgba(255,255,255,0.7)"}}>{p.payment_method}</span>{p.notes?<span style={{color:"rgba(255,255,255,0.5)"}}> · {p.notes}</span>:null}</span><span style={{fontWeight:700,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>{usd(p.amount_usd)}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.5)",fontWeight:400,textAlign:"right"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</span></div>)}
+          </div>}
+        </div>:<p style={{marginTop:18,fontSize:13,color:"rgba(255,255,255,0.55)",lineHeight:1.5}}>{items.length===0?"Cuando cargues la mercadería vas a ver acá el costo estimado.":"Presupuesto pendiente de confirmación."}</p>}
+      </div>}
+
+      {/* MERCADERÍA */}
+      {tabCur==="merc"&&<div style={PANEL}>
+        <h3 style={{...H3,marginBottom:14}}>Mercadería</h3>
+        {isEditable
+          ?<MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
+          :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>Mercadería confirmada</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
+          {items.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:0}}>Todavía no hay mercadería cargada.</p>}
+          {items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
+            <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM",...(isGI?[]:["Derechos","Tasa est.","IVA"])].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>{items.map((it,i)=>{const qty=Number(it.quantity||1);const fob=Number(it.unit_price_usd||0)*qty;const last=i===items.length-1;const td=(c,ci,hot)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
+              return <tr key={it.id||i}>{[it.description||"—",String(qty),usd(it.unit_price_usd),usd(fob),it.ncm_code&&it.ncm_code!=="MANUAL"?it.ncm_code:(it.import_duty_rate!=null?"Estimado":"—"),...(isGI?[]:[`${it.import_duty_rate??0}%`,`${it.statistics_rate??0}%`,`${it.iva_rate??21}%`])].map((c,ci)=>td(c,ci,ci===4&&it.ncm_code))}</tr>;})}</tbody>
+          </table></div>}
+          {items.length>0&&!muestraAduana&&<div style={{display:"inline-flex",alignItems:"center",gap:14,marginTop:12,padding:"8px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)"}}><span style={{fontSize:12,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase"}}>FOB mercadería</span><span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(fobItems)}</span></div>}
+          </>}
+        {muestraAduana&&(()=>{const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
+          return <div style={{marginTop:isEditable?18:0}}>
+            <p style={{...LBL,marginBottom:8}}>Declaración a Aduana</p>
+            <div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:480}}>
+              <thead><tr>{["Producto","HS","Cant.","Unit.","Subtotal"].map((h,i)=><th key={i} style={{textAlign:i>1?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+              <tbody>{declaredItems.map((d,i)=>{const sub=Number(d.quantity||0)*Number(d.unit_price_declared_usd||0);const bb="1px solid rgba(255,255,255,0.1)";return <tr key={i}><td style={{padding:"9px 10px",color:"#fff",borderBottom:bb}}>{d.description||"—"}</td><td style={{padding:"9px 10px",fontFamily:"monospace",color:GOLD_LIGHT,borderBottom:bb}}>{d.hs_code||"—"}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#fff",borderBottom:bb}}>{Number(d.quantity||0)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#fff",borderBottom:bb}}>{usd(d.unit_price_declared_usd)}</td><td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#fff",borderBottom:bb}}>{usd(sub)}</td></tr>;})}
+                <tr><td colSpan={4} style={{padding:"10px",fontSize:11.5,fontWeight:800,color:"#fff",letterSpacing:"0.06em"}}>TOTAL DECLARADO</td><td style={{padding:"10px",textAlign:"right",fontWeight:800,color:GOLD_LIGHT}}>{usd(declTotal)}</td></tr>
+              </tbody></table></div>
+          </div>;})()}
+        {Array.isArray(op.items_backup_json)&&op.items_backup_json.length>0&&!isGI&&op.channel!=="aereo_blanco"&&<details style={{marginTop:12,padding:"8px 12px",borderRadius:10,border:HAIR,background:"rgba(255,255,255,0.03)"}}>
+          <summary style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)"}}>Ver detalle original ({op.items_backup_json.length} productos antes de agrupar)</summary>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"8px 0 8px",lineHeight:1.5}}>Los productos que declaraste originalmente, antes de que tu asesor los agrupara para la factura de exportación (máximo 8 ítems).</p>
+          {op.items_backup_json.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",fontSize:12,color:"rgba(255,255,255,0.8)",borderTop:"1px solid rgba(255,255,255,0.06)"}}><span>{it.description} <span style={{color:"rgba(255,255,255,0.45)"}}>× {Number(it.quantity||0)}</span></span><span style={{fontVariantNumeric:"tabular-nums"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</span></div>)}
+        </details>}
+      </div>}
+
+      {/* BULTOS */}
+      {tabCur==="bultos"&&<div style={PANEL}>
+        <h3 style={{...H3,marginBottom:6}}>Bultos</h3>
+        {canAsig&&pkgs.length>0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"0 0 14px",lineHeight:1.5}}>Marcá qué mercadería viaja en cada bulto: así el flete se reparte por bulto y el costo de cada producto sale más exacto. Si no marcás nada, se reparte según el valor FOB.</p>}
+        {!canAsig&&<div style={{marginBottom:12}}/>}
+        {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Esta importación todavía no tiene bultos registrados.</p>}
+        {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;
+          return <div style={{marginBottom:12,padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff"}}><b style={{color:"#4ade80"}}>Reempaque realizado en depósito.</b> Peso facturable {f2(before)} kg → <b>{f2(after)} kg</b>{delta>0&&<span style={{color:"#4ade80",marginLeft:6}}>(−{pct.toFixed(0)}%)</span>}</div>;})()}
+        {pkgs.length>0&&<>
+          <div className="op-pk-head" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,padding:"0 12px 8px"}}>{["Bulto","Tracking","Medidas","Peso bruto","Volumétrico","m³","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>
+          {pkData.map((p,i)=>{const hot=p.vw>p.gw;const enEste=items.filter(it=>Array.isArray(it.package_ids)&&it.package_ids.includes(p.id));
+            return <div key={p.id} style={{marginBottom:8,borderRadius:11,border:HAIR,background:"rgba(255,255,255,0.04)"}}>
+              <div className="op-pk-row" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,alignItems:"center",padding:"11px 12px"}}>
+                <span style={{fontSize:13,fontWeight:800,color:"#fff",whiteSpace:"nowrap"}}>Bulto {i+1}{Number(p.quantity)>1?<span style={{color:"rgba(255,255,255,0.5)",fontWeight:600}}> ×{p.quantity}</span>:null}</span>
+                <span className="op-pk-track" style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.national_tracking||""}>{p.national_tracking||"—"}</span>{p.national_tracking&&<button onClick={()=>{navigator.clipboard?.writeText(p.national_tracking);toast("Tracking copiado","success");}} title="Copiar" style={{height:22,padding:"0 7px",fontSize:10,fontWeight:700,borderRadius:5,border:HAIR,background:"rgba(255,255,255,0.06)",color:SKY,cursor:"pointer",flexShrink:0}}>copiar</button>}</span>
+                <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.l&&p.w&&p.h?`${p.l}×${p.w}×${p.h} cm`:"—"}</span>
+                <span style={{fontSize:13,fontWeight:700,color:!hot&&p.gw>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.gw>0?`${f2(p.gw)} kg`:"—"}</span>
+                <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.vw>0?`${f2(p.vw)} kg`:"—"}</span>
+                <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{p.cbm>0?p.cbm.toFixed(3):"—"}</span>
+                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>Ver escaneo</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Sin foto</span>}</span>
+              </div>
+              {items.length>0&&(canAsig||enEste.length>0)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"0 12px 11px"}}>
+                <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>Mercadería</span>
+                {canAsig?items.map(it=>{const on=Array.isArray(it.package_ids)&&it.package_ids.includes(p.id);return <button key={it.id} onClick={()=>toggleAsig(it,p.id)} style={{height:28,padding:"0 11px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${on?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.18)"}`,background:on?"rgba(184,149,106,0.18)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.6)",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{on?"✓ ":""}{it.description||"Producto"}</button>;})
+                :enEste.map(it=><span key={it.id} style={{height:26,display:"inline-flex",alignItems:"center",padding:"0 10px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT}}>{it.description}</span>)}
+                {canAsig&&enEste.length===0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· sin asignar (se reparte por FOB)</span>}
+              </div>}
+            </div>;})}
+          <div style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:10}}>
+            {isAer?<>{kpi("Peso bruto total",`${f2(totGW)} kg`,totGW>=totVW&&totGW>0)}{kpi("Volumétrico total",`${f2(totVW)} kg`,totVW>totGW)}{kpi("Facturable",`${f2(pf)} kg`,true)}{kpi("Volumen",`${totCBM.toFixed(3)} m³`)}</>:<>{kpi("Volumen total",`${totCBM.toFixed(3)} m³`,true)}{kpi("Peso bruto",`${f2(totGW)} kg`)}</>}
+          </div>
         </>}
+      </div>}
 
-      {/* RI: declaración a Aduana con los valores del despacho */}
-      {muestraAduana&&(()=>{const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
-        return <div>
-          <p style={{...LBL,marginBottom:8}}>Declaración a Aduana</p>
-          <div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:480}}>
-            <thead><tr>{["Producto","HS","Cant.","Unit.","Subtotal"].map((h,i)=><th key={i} style={{textAlign:i>1?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-            <tbody>{declaredItems.map((d,i)=>{const sub=Number(d.quantity||0)*Number(d.unit_price_declared_usd||0);return <tr key={i}><td style={{padding:"9px 10px",color:"#fff",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{d.description||"—"}</td><td style={{padding:"9px 10px",fontFamily:"monospace",color:GOLD_LIGHT,borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{d.hs_code||"—"}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#fff",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{Number(d.quantity||0)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#fff",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{usd(d.unit_price_declared_usd)}</td><td style={{padding:"9px 10px",textAlign:"right",fontWeight:700,color:"#fff",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{usd(sub)}</td></tr>;})}
-              <tr><td colSpan={4} style={{padding:"10px",fontSize:11.5,fontWeight:800,color:"#fff",letterSpacing:"0.06em"}}>TOTAL DECLARADO</td><td style={{padding:"10px",textAlign:"right",fontWeight:800,color:GOLD_LIGHT}}>{usd(declTotal)}</td></tr>
-            </tbody></table></div>
-        </div>;})()}
-
-      {Array.isArray(op.items_backup_json)&&op.items_backup_json.length>0&&!isGI&&op.channel!=="aereo_blanco"&&<details style={{marginTop:12,padding:"8px 12px",borderRadius:10,border:HAIR,background:"rgba(255,255,255,0.03)"}}>
-        <summary style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)"}}>Ver detalle original ({op.items_backup_json.length} productos antes de agrupar)</summary>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"8px 0 8px",lineHeight:1.5}}>Los productos que declaraste originalmente, antes de que tu asesor los agrupara para la factura de exportación (máximo 8 ítems).</p>
-        {op.items_backup_json.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",fontSize:12,color:"rgba(255,255,255,0.8)",borderTop:"1px solid rgba(255,255,255,0.06)"}}><span>{it.description} <span style={{color:"rgba(255,255,255,0.45)"}}>× {Number(it.quantity||0)}</span></span><span style={{fontVariantNumeric:"tabular-nums"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</span></div>)}
-      </details>}
-
-      {/* Costos: presupuesto real o estimado */}
-      {(hasBudget||showEstimate)&&<div style={{marginTop:22,paddingTop:18,borderTop:HAIR}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
-          <p style={LBL}>{hasBudget?(isGI?"Precio puesto en Argentina":"Presupuesto"):"Costo estimado"}</p>
-          {showEstimate&&<span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}
-        </div>
-        {isGI&&hasBudget&&<div>{items.map((it,i)=>{const qty=Number(it.quantity||0);const unit=Number(it.unit_price_usd||0);return fila(<>{it.description} <span style={{color:"rgba(255,255,255,0.5)"}}>× {qty} · {usd(unit)} c/u</span></>,usd(qty*unit),{last:i===items.length-1});})}</div>}
-        {!isGI&&hasBudget&&<div>
-          {!isB&&bTax>0&&fila(riPagaImpuestosDirecto?"Impuestos (los abonás directo a la aerolínea)":"Impuestos",usd(bTax),{muted:riPagaImpuestosDirecto})}
-          {!isB&&bTax>0&&(()=>{try{
-          // Preferimos el desglose guardado al presupuestar (es exactamente lo que se cobró).
-          // Si la op es vieja y no lo tiene, se recalcula y se muestra solo si cierra al centavo.
-          let td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:null;
-          if(!td){
-            if(!calcCtx)return null;
-            const r=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);
-            if(!r?.taxDetail||Math.abs(Number(r.totalTax||0)-bTax)>0.05)return null;
-            td=r.taxDetail;
-          }
-          const rateU=(fld,def)=>{const set=[...new Set(items.filter(x=>Number(x.unit_price_usd)>0).map(x=>{const v=x[fld];return (v==null||v==="")?def:Number(v);}))];return set.length===1?set[0]:null;};
-          const pctL=(l,rt)=>rt!=null?`${l} (${String(rt).replace(".",",")}%)`:l;
-          const fmt2=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-          const fmtPct=v=>String(Math.round(Number(v)*100)/100).replace(".",",");
-          const fila=(l,v,k)=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>USD {fmt2(v)}</span></div>;
-          // Alicuotas mezcladas entre productos (ej. IVA 10,5 y 21): desglose POR PRODUCTO.
-          const itemsDet=(td.items||[]).filter(x=>(x.derechos+x.tasaE+x.iva)>0.005);
-          const mixed=itemsDet.length>1&&["drPct","tePct","ivaPct"].some(f=>new Set(itemsDet.map(x=>Math.round(x[f]*100))).size>1);
-          const comunes=[["IVA adicional (20%)",td.ivaAdic],["Ganancias IIGG (6%)",td.iigg],["Ingresos brutos IIBB (5%)",td.iibb],["Desaduanaje",td.desembolso],["IVA 21% sobre desaduanaje",td.ivaDesembolso]].filter(([,v])=>Number(v||0)>0.005);
-          if(mixed){
-            return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>
-              {itemsDet.map((x,i)=><div key={i} style={{marginBottom:6}}>
-                <p style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.6)",margin:"0 0 1px"}}>{x.description||`Producto ${i+1}`}</p>
-                {fila(`Derechos importación (${fmtPct(x.drPct)}%)`,x.derechos,"d")}
-                {fila(`Tasa estadística (${fmtPct(x.tePct)}%)`,x.tasaE,"t")}
-                {fila(`IVA de Importación (${fmtPct(x.ivaPct)}%)`,x.iva,"i")}
-              </div>)}
-              {comunes.map(([l,v],k)=>fila(l,v,k))}
-            </div>;
-          }
-          const rows=[[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos,true],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE,true],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva],...comunes].filter(([,v,always])=>always||Number(v||0)>0.005);
-          if(rows.length===0)return null;
-          return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>{rows.map(([l,v],k)=>fila(l,v,k))}</div>;
-        }catch(e){return null;}})()}
-          {(isB?(bt-shipCost):bFlete)>0&&fila(isB?"Servicio integral de importación":"Flete internacional",usd(isB?(bt-shipCost):bFlete))}
-          {!isB&&bSeg>0&&fila("Seguro de carga",usd(bSeg))}
-          {!isB&&isAer&&Number(op.budget_surcharge||0)>0&&fila("Recargo por sobrepeso",usd(op.budget_surcharge))}
-          {shipCost>0&&fila("Envío a domicilio",usd(shipCost))}
-          {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
+      {/* SEGUIMIENTO */}
+      {tabCur==="seg"&&<div style={PANEL}>
+        <h3 style={{...H3,marginBottom:14}}>Seguimiento</h3>
+        {events.length===0&&pmts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Todavía no hay novedades de esta importación.</p>}
+        {pmts.length>0&&<div>
+          <p style={{...LBL,marginBottom:8}}>Gestión de pagos al proveedor</p>
+          {pmts.map((pm,i)=>{const gs={pendiente:["Pendiente","#fbbf24"],enviado:["Enviado",SKY],confirmado:["Confirmado","#4ade80"]}[pm.giro_status]||[pm.giro_status,"#fff"];return <div key={pm.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none"}}>
+            <span style={{fontSize:13,color:"#fff",fontWeight:600}}>{pm.description||`Pago ${i+1}`}{pm.client_paid_date?<span style={{color:"rgba(255,255,255,0.5)",fontWeight:500}}> · pagado el {fd(pm.client_paid_date)}</span>:null}</span>
+            <span style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:pm.client_paid?"#4ade80":"#fbbf24",background:pm.client_paid?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)"}}>{pm.client_paid?"Pagado":"Pendiente de pago"}</span><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:gs[1],background:`${gs[1]}1f`}}>Giro {gs[0]}</span><span style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(pm.client_amount_usd)}</span></span>
+          </div>;})}
         </div>}
-        {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);const rows=[["Flete aéreo internacional",Number(est.flete||0)-bat],["Recargo por baterías",bat],["Recargo por sobrepeso",Number(est.overweightSurcharge||0)],["Seguro (1%)",Number(est.seguro||0)],["Derechos de importación",td.derechos],["Tasa estadística",td.tasaE],["IVA de importación",td.iva],["Desaduanaje",td.desembolso],["IVA 21% sobre desaduanaje",td.ivaDesembolso]].filter(([l,v])=>/^(Derechos|Tasa)/.test(l)||Number(v||0)>0.005);
-          const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0)+Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
-          return <div>{rows.map(([l,v],k)=><div key={k}>{fila(l,usd(v))}</div>)}
-            {riPagaImpuestosDirecto&&<p style={{fontSize:12,color:SKY,margin:"10px 0 0",lineHeight:1.5}}>Como responsable inscripto, los impuestos ({usd(impTot)}) los abonás directo a la aerolínea. A Argencargo le pagás el resto: <b style={{color:"#fff"}}>{usd(Number(est.totalAbonar||0))}</b>.</p>}
-          </div>;})()}
-        {/* Total */}
-        {(()=>{const tot=hasBudget?totalAbonar:Number(est?.totalAbonar||0)+(riPagaImpuestosDirecto?Number(est?.totalTax||0):0);const label=hasBudget?(cliPmts.length===0?(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo"):"Total a abonar"):(riPagaImpuestosDirecto?"Costo estimado total":"Estimado a abonar a Argencargo");
-          return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:12,padding:"14px 18px",borderRadius:12,background:GOLD_GRADIENT,boxShadow:GOLD_GLOW}}>
-            <span style={{fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</span>
-            <span style={{fontSize:24,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(tot)}</span>
-          </div>;})()}
-        {hasBudget&&cliPmts.length>0&&<div style={{marginTop:12}}>
-          {fila("Pagado",usd(totalCli),{color:"#4ade80"})}
-          {fila(saldoReal>0.01?"Saldo pendiente":"Pagado en su totalidad",usd(saldoReal),{bold:true,color:saldoReal<=0.01?"#4ade80":GOLD_LIGHT,last:true})}
-          <div style={{height:7,background:"rgba(255,255,255,0.08)",borderRadius:999,overflow:"hidden",margin:"8px 0 12px"}}><div style={{width:`${totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0}%`,height:"100%",background:saldoReal<=0.01?"#4ade80":GOLD_LIGHT}}/></div>
-          <p style={{...LBL,marginBottom:6}}>Pagos realizados</p>
-          {cliPmts.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none",fontSize:12.5,flexWrap:"wrap"}}><span style={{color:"#fff"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})} · <span style={{textTransform:"capitalize",color:"rgba(255,255,255,0.7)"}}>{p.payment_method}</span>{p.notes?<span style={{color:"rgba(255,255,255,0.5)"}}> · {p.notes}</span>:null}</span><span style={{fontWeight:700,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>{usd(p.amount_usd)}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.5)",fontWeight:400,textAlign:"right"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</span></div>)}
+        {events.length>0&&<div style={{marginTop:pmts.length?20:0,paddingTop:pmts.length?16:0,borderTop:pmts.length?HAIR:"none"}}>
+          <p style={{...LBL,marginBottom:12}}>Novedades</p>
+          <div style={{position:"relative",paddingLeft:22}}><div style={{position:"absolute",left:6,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.1)"}}/>
+            {events.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<events.length-1?16:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?GOLD_LIGHT:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(232,208,152,0.2)":"none"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><p style={{fontSize:13.5,fontWeight:700,color:i===0?"#fff":"rgba(255,255,255,0.65)",margin:0}}>{ev.title}</p><p style={{fontSize:11.5,color:SKY,margin:0,fontWeight:600,whiteSpace:"nowrap"}}>{ev.occurred_at?new Date(ev.occurred_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p></div>
+              {ev.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"2px 0 0",lineHeight:1.45}}>{ev.description}{ev.location?` · ${ev.location}`:""}</p>}
+            </div>)}
+          </div>
         </div>}
       </div>}
 
-      {/* Costo por producto puesto en Argentina */}
-      {costoPorProducto.length>0&&!isGI&&<div style={{marginTop:22,paddingTop:18,borderTop:HAIR}}>
-        <p style={{...LBL,marginBottom:4}}>Costo por producto puesto en Argentina</p>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 10px",lineHeight:1.5}}>{items.some(it=>Array.isArray(it.package_ids)&&it.package_ids.length)?"El flete se reparte según el bulto en que viaja cada producto; los impuestos, según su NCM.":"Cada producto carga sus impuestos según su NCM y el flete se reparte según su valor FOB."}{showEstimate?" Es estimado hasta que Argencargo confirme el presupuesto.":""}</p>
-        <div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:560}}>
-          <thead><tr>{["Producto","Cant.","FOB c/u","Importación c/u","Puesto en Argentina c/u","Total"].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:i===4?GOLD_LIGHT:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+      {/* COSTO POR PRODUCTO */}
+      {tabCur==="costos"&&<div style={PANEL}>
+        <h3 style={{...H3,marginBottom:6}}>Costo por producto puesto en Argentina</h3>
+        <p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"0 0 14px",lineHeight:1.5}}>{items.some(it=>Array.isArray(it.package_ids)&&it.package_ids.length)?"Cada producto carga sus impuestos según su NCM; el flete y los gastos se reparten según el bulto en que viaja.":"Cada producto carga sus impuestos según su NCM; el flete y los gastos se reparten según el valor FOB. Si en la solapa Bultos marcás qué viaja en cada uno, el reparto sale por bulto."}{showEstimate?" Es estimado hasta que Argencargo confirme el presupuesto.":""}</p>
+        {costoPorProducto.length===0?<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{items.length===0?"Cargá la mercadería para ver el costo de cada producto.":"Todavía no se puede calcular el costo por producto."}</p>
+        :<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:680}}>
+          <thead><tr>{["Producto","Cant.","FOB c/u","Impuestos c/u","Flete y gastos c/u","Puesto en Argentina c/u","Total"].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:i===5?GOLD_LIGHT:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
           <tbody>{costoPorProducto.map((r,i)=>{const last=i===costoPorProducto.length-1;const td=(c,ci,hot)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
-            return <tr key={r.it.id||i}>{[r.it.description||"—",String(r.qty),usd(r.fobUnit),usd(r.impUnit),usd(r.totalUnit),usd(r.total)].map((c,ci)=>td(c,ci,ci===4))}</tr>;})}</tbody>
-        </table></div>
+            const bultos=pkData.map((p,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(p.id)?k+1:null).filter(Boolean);
+            return <tr key={r.it.id||i}>{[<>{r.it.description||"—"}{bultos.length>0&&<span style={{display:"block",fontSize:10.5,color:SKY,fontWeight:600}}>Bulto {bultos.join(", ")}</span>}</>,String(r.qty),usd(r.fobUnit),usd(r.taxUnit),usd(r.svcUnit),usd(r.totalUnit),usd(r.total)].map((c,ci)=>td(c,ci,ci===5))}</tr>;})}
+            <tr><td colSpan={6} style={{padding:"11px 10px",fontSize:11.5,fontWeight:800,color:"#fff",letterSpacing:"0.06em",textTransform:"uppercase",borderTop:"1px solid rgba(232,208,152,0.4)"}}>Total puesto en Argentina</td><td style={{padding:"11px 10px",textAlign:"right",fontWeight:900,fontSize:14,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",borderTop:"1px solid rgba(232,208,152,0.4)",whiteSpace:"nowrap"}}>{usd(costoPorProducto.reduce((s,r)=>s+r.total,0))}</td></tr>
+          </tbody>
+        </table></div>}
       </div>}
-    </div>}
-
-    {/* SOLAPA · bultos */}
-    {!loading&&tabCur==="bultos"&&<div style={PANEL}>
-      <h3 style={{...H3,marginBottom:14}}>Bultos</h3>
-      {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Esta importación todavía no tiene bultos registrados.</p>}
-      {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;
-        return <div style={{marginBottom:12,padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff"}}><b style={{color:"#4ade80"}}>Reempaque realizado en depósito.</b> Peso facturable {f2(before)} kg → <b>{f2(after)} kg</b>{delta>0&&<span style={{color:"#4ade80",marginLeft:6}}>(−{pct.toFixed(0)}%)</span>}</div>;})()}
-      {pkgs.length>0&&<>
-        <div className="op-pk-head" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,padding:"0 12px 8px"}}>{["Bulto","Tracking","Medidas","Peso bruto","Volumétrico","m³","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>
-        {pkData.map((p,i)=>{const hot=p.vw>p.gw;return <div key={p.id} className="op-pk-row" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,alignItems:"center",padding:"11px 12px",marginBottom:6,borderRadius:11,border:HAIR,background:"rgba(255,255,255,0.04)"}}>
-          <span style={{fontSize:13,fontWeight:800,color:"#fff",whiteSpace:"nowrap"}}>Bulto {i+1}{Number(p.quantity)>1?<span style={{color:"rgba(255,255,255,0.5)",fontWeight:600}}> ×{p.quantity}</span>:null}</span>
-          <span className="op-pk-track" style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.national_tracking||""}>{p.national_tracking||"—"}</span>{p.national_tracking&&<button onClick={()=>{navigator.clipboard?.writeText(p.national_tracking);toast("Tracking copiado","success");}} title="Copiar" style={{height:22,padding:"0 7px",fontSize:10,fontWeight:700,borderRadius:5,border:HAIR,background:"rgba(255,255,255,0.06)",color:SKY,cursor:"pointer",flexShrink:0}}>copiar</button>}</span>
-          <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.l&&p.w&&p.h?`${p.l}×${p.w}×${p.h} cm`:"—"}</span>
-          <span style={{fontSize:13,fontWeight:700,color:!hot&&p.gw>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.gw>0?`${f2(p.gw)} kg`:"—"}</span>
-          <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.vw>0?`${f2(p.vw)} kg`:"—"}</span>
-          <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{p.cbm>0?p.cbm.toFixed(3):"—"}</span>
-          <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>Ver escaneo</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Sin foto</span>}</span>
-        </div>;})}
-        <div style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:10}}>
-          {isAer?<>{kpi("Peso bruto total",`${f2(totGW)} kg`,totGW>=totVW&&totGW>0)}{kpi("Volumétrico total",`${f2(totVW)} kg`,totVW>totGW)}{kpi("Facturable",`${f2(pf)} kg`,true)}{kpi("Volumen",`${totCBM.toFixed(3)} m³`)}</>:<>{kpi("Volumen total",`${totCBM.toFixed(3)} m³`,true)}{kpi("Peso bruto",`${f2(totGW)} kg`)}</>}
-        </div>
-      </>}
-    </div>}
-    {/* SOLAPA · seguimiento */}
-    {!loading&&tabCur==="seg"&&<div style={PANEL}>
-      <h3 style={{...H3,marginBottom:14}}>Seguimiento</h3>
-      {events.length===0&&pmts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Todavía no hay novedades de esta importación.</p>}
-      {pmts.length>0&&<div>
-        <p style={{...LBL,marginBottom:8}}>Gestión de pagos al proveedor</p>
-        {pmts.map((pm,i)=>{const gs={pendiente:["Pendiente","#fbbf24"],enviado:["Enviado",SKY],confirmado:["Confirmado","#4ade80"]}[pm.giro_status]||[pm.giro_status,"#fff"];return <div key={pm.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none"}}>
-          <span style={{fontSize:13,color:"#fff",fontWeight:600}}>{pm.description||`Pago ${i+1}`}{pm.client_paid_date?<span style={{color:"rgba(255,255,255,0.5)",fontWeight:500}}> · pagado el {fd(pm.client_paid_date)}</span>:null}</span>
-          <span style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:pm.client_paid?"#4ade80":"#fbbf24",background:pm.client_paid?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)"}}>{pm.client_paid?"Pagado":"Pendiente de pago"}</span><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:gs[1],background:`${gs[1]}1f`}}>Giro {gs[0]}</span><span style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(pm.client_amount_usd)}</span></span>
-        </div>;})}
-      </div>}
-      {events.length>0&&<div style={{marginTop:pmts.length?20:0,paddingTop:pmts.length?16:0,borderTop:pmts.length?HAIR:"none"}}>
-        <p style={{...LBL,marginBottom:12}}>Novedades</p>
-        <div style={{position:"relative",paddingLeft:22}}><div style={{position:"absolute",left:6,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.1)"}}/>
-          {events.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<events.length-1?16:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?GOLD_LIGHT:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(232,208,152,0.2)":"none"}}/>
-            <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><p style={{fontSize:13.5,fontWeight:700,color:i===0?"#fff":"rgba(255,255,255,0.65)",margin:0}}>{ev.title}</p><p style={{fontSize:11.5,color:SKY,margin:0,fontWeight:600,whiteSpace:"nowrap"}}>{ev.occurred_at?new Date(ev.occurred_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p></div>
-            {ev.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"2px 0 0",lineHeight:1.45}}>{ev.description}{ev.location?` · ${ev.location}`:""}</p>}
-          </div>)}
-        </div>
-      </div>}
-    </div>}
-    </>;})()}
+      </>;})()}
     {loading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"2rem 0"}}>Cargando…</p>}
 
     {/* Visor de escaneo */}

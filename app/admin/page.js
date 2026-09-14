@@ -9900,30 +9900,8 @@ function AgentsPanel({token}){
         }catch(e){alertDialog("No se pudo crear: "+e.message);}
       };
       return <div>
-        {gruposSueltos.length>0&&<div style={{marginBottom:18}}>
-          <p style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#8CC8F5",margin:"0 0 8px"}}>Bultos en depósito · el cliente todavía no armó la importación ({depSueltos.length})</p>
-          <div style={{background:"rgba(255,255,255,0.028)",borderRadius:12,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-                {["Cliente","Bultos","Kg bruto","Primer bulto","Origen","Seguimiento",""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:i>=1&&i<=4?"center":"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{h}</th>)}
-              </tr></thead>
-              <tbody>{gruposSueltos.map(([cid,g])=>{const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const dias=Math.floor((Date.now()-new Date(g.pk[0].created_at))/864e5);const wa=String(g.cl.whatsapp||"").replace(/[^0-9]/g,"");
-                const origenes=[...new Set(g.pk.map(p=>p.origin||"China"))].join(" / ");
-                const msg=encodeURIComponent(`Hola ${g.cl.first_name||""}! Tenés ${g.pk.length} bulto${g.pk.length!==1?"s":""} en nuestro depósito (${kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg). Cuando estén todos los que esperás, entrá al portal, elegí cuáles viajan juntos y creá tu importación: https://argencargo.com.ar/portal\n\nSi te falta algo o tenés dudas, me escribís por acá.`);
-                return <tr key={cid} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                  <td style={{padding:"10px 14px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,color:IC,fontSize:12.5}}>{g.cl.client_code||"—"}</span><br/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{[g.cl.first_name,g.cl.last_name].filter(Boolean).join(" ")}</span></td>
-                  <td style={{padding:"10px 14px",textAlign:"center",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{g.pk.length}</td>
-                  <td style={{padding:"10px 14px",textAlign:"center",color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{kg.toLocaleString("es-AR",{minimumFractionDigits:1,maximumFractionDigits:1})} kg</td>
-                  <td style={{padding:"10px 14px",textAlign:"center",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:800,padding:"3px 9px",borderRadius:999,color:dias>=7?"#fbbf24":"rgba(255,255,255,0.6)",background:dias>=7?"rgba(251,191,36,0.14)":"rgba(255,255,255,0.06)"}}>hace {dias} d</span></td>
-                  <td style={{padding:"10px 14px",textAlign:"center",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{origenes}</td>
-                  <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}>{wa?<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:7,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>WhatsApp</a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>Sin WhatsApp</span>}</td>
-                  <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}><button onClick={()=>crearPorCliente(cid,g.pk)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:7,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>Crear importación por él</button></td>
-                </tr>;})}</tbody>
-            </table>
-          </div>
-        </div>}
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
-          {[0,1,2].map(sc=>{const on=depFilter===sc;const m=SCORE_META[sc];return <button key={sc} onClick={()=>setDepFilter(on?null:sc)} style={{padding:"6px 12px",fontSize:10.5,fontWeight:800,borderRadius:99,border:`1px solid ${on?m.c:`${m.c}44`}`,background:on?`${m.c}26`:`${m.c}0D`,color:m.c,cursor:"pointer",letterSpacing:"0.05em",transition:"all 150ms",opacity:countsByScore[sc]===0&&!on?0.45:1}}>{m.l} <span style={{fontVariantNumeric:"tabular-nums"}}>({countsByScore[sc]})</span></button>;})}
+          {[0,1].map(sc=>{const on=depFilter===sc;const m=SCORE_META[sc];return <button key={sc} onClick={()=>setDepFilter(on?null:sc)} style={{padding:"6px 12px",fontSize:10.5,fontWeight:800,borderRadius:99,border:`1px solid ${on?m.c:`${m.c}44`}`,background:on?`${m.c}26`:`${m.c}0D`,color:m.c,cursor:"pointer",letterSpacing:"0.05em",transition:"all 150ms",opacity:countsByScore[sc]===0&&!on?0.45:1}}>{m.l} <span style={{fontVariantNumeric:"tabular-nums"}}>({countsByScore[sc]})</span></button>;})}
           <input value={depSearch} onChange={e=>setDepSearch(e.target.value)} placeholder="🔍 Op, cliente o tracking…" style={{flex:"1 1 200px",maxWidth:280,padding:"7px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.1)",borderRadius:99,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
           {(depFilter!=null||q)&&<button onClick={()=>{setDepFilter(null);setDepSearch("");}} style={{fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline",padding:0}}>Limpiar</button>}
         </div>
@@ -10140,6 +10118,33 @@ function AgentsPanel({token}){
             </table>
           </div>}
         </div>;})}
+        {gruposSueltos.length>0&&<div style={{marginTop:26}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.06em",textTransform:"uppercase"}}>Bultos en depósito</span>
+            <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{gruposSueltos.length} cliente{gruposSueltos.length!==1?"s":""} · {depSueltos.length} bulto{depSueltos.length!==1?"s":""}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>el cliente todavía no armó la importación</span>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                {["Cliente","Bultos","Kg bruto","Primer bulto","Origen","WA",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+              </tr></thead>
+              <tbody>{gruposSueltos.map(([cid,g])=>{const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const dias=Math.floor((Date.now()-new Date(g.pk[0].created_at))/864e5);const wa=String(g.cl.whatsapp||"").replace(/[^0-9]/g,"");
+                const dCol=dias>14?{c:"#ef4444",bg:"rgba(239,68,68,0.12)",w:800}:dias>7?{c:"#fbbf24",bg:"rgba(251,191,36,0.12)",w:700}:{c:"rgba(255,255,255,0.45)",bg:"rgba(255,255,255,0.05)",w:600};
+                const origenes=[...new Set(g.pk.map(p=>p.origin||"China"))].join(" / ");
+                const msg=encodeURIComponent(`Hola ${g.cl.first_name||""}! Tenés ${g.pk.length} bulto${g.pk.length!==1?"s":""} en nuestro depósito (${kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg). Cuando estén todos los que esperás, entrá al portal, elegí cuáles viajan juntos y creá tu importación: https://argencargo.com.ar/portal\n\nSi te falta algo o tenés dudas, me escribís por acá.`);
+                return <tr key={cid} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                  <td style={{padding:"10px 12px"}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:12.5}}>{g.cl.client_code||"—"}</span> <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>- {[g.cl.first_name,g.cl.last_name].filter(Boolean).join(" ")}</span></td>
+                  <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums"}}>{g.pk.length}</td>
+                  <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{kg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</td>
+                  <td style={{padding:"10px 12px"}}><span style={{fontSize:10.5,fontWeight:dCol.w,padding:"2px 8px",borderRadius:5,background:dCol.bg,color:dCol.c,whiteSpace:"nowrap"}}>{dias}d</span></td>
+                  <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{origenes}</td>
+                  <td style={{padding:"10px 12px"}}>{wa?<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" title="Recordarle que arme la importación" style={{padding:"4px 9px",fontSize:10.5,fontWeight:700,borderRadius:6,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>WA</a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
+                  <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}><button onClick={()=>crearPorCliente(cid,g.pk)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>Crear importación por él</button></td>
+                </tr>;})}</tbody>
+            </table>
+          </div>
+        </div>}
       </div>;
     })()}
 
