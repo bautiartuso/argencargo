@@ -103,6 +103,7 @@ const CM={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo Car
 const CN_SECTIONS=[
   {section:"Operaciones",items:[
     {key:"imports",tkey:"nav.imports",label:"Importaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},
+    {key:"deposito",tkey:"nav.deposito",label:"Depósito",p:["M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z","M9 21V12h6v9","M3 9h18"]},
   ]},
   {section:"Herramientas",items:[
     {key:"calculator",tkey:"nav.calculator",label:"Calculadora",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},
@@ -255,7 +256,7 @@ function DepositoView({pkgs,token,client,onCreated}){
       <button onClick={()=>setSel(allSel?[]:pkgs.map(p=>p.id))} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:9,border:HAIR,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{allSel?"Deseleccionar todos":"Seleccionar todos"}</button>
     </div>
     <div className="dep-head" style={{display:"grid",gridTemplateColumns:COLS,gap:10,padding:"0 12px 8px"}}>{["","Bulto","Tracking","Llegó","Medidas","Peso bruto","Volumétrico","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=3?"center":"left"}}>{h}</p>)}</div>
-    {pkgs.map((p,i)=>{const on=sel.includes(p.id);const x=m(p);const hot=x.vol>x.bruto;const isOpen=open===p.id;
+    {pkgs.map((p,i)=>{const on=sel.includes(p.id);const x=m(p);const hot=x.vol>x.bruto;
       return <div key={p.id} style={{marginBottom:8,borderRadius:12,border:`1px solid ${on?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)",transition:"border-color 150ms, background 150ms"}}>
         <div className="dep-row" onClick={()=>toggle(p.id)} style={{display:"grid",gridTemplateColumns:COLS,gap:10,alignItems:"center",padding:"12px",cursor:"pointer"}}>
           <span style={{width:20,height:20,borderRadius:6,border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}`,background:on?GOLD_GRADIENT:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,color:"#0A1628",flexShrink:0}}>{on?"✓":""}</span>
@@ -266,11 +267,20 @@ function DepositoView({pkgs,token,client,onCreated}){
           <span style={{fontSize:13,fontWeight:700,color:!hot&&x.bruto>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.bruto>0?`${f2(x.bruto)} kg`:"—"}</span>
           <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.vol>0?`${f2(x.vol)} kg`:"—"}</span>
           <span style={{textAlign:"center"}}>{p.photo_url
-            ?<button onClick={e=>{e.stopPropagation();setOpen(isOpen?null:p.id);}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{isOpen?"Ocultar ▲":"Ver escaneo"}</button>
+            ?<button onClick={e=>{e.stopPropagation();setOpen(p.id);}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>Ver escaneo</button>
             :<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Sin foto</span>}</span>
         </div>
-        {isOpen&&p.photo_url&&<div style={{padding:"0 12px 12px"}}><img src={p.photo_url} alt="Escaneo del bulto" onClick={()=>window.open(p.photo_url,"_blank")} style={{maxWidth:"100%",maxHeight:380,borderRadius:10,border:HAIR,cursor:"zoom-in",display:"block"}}/></div>}
       </div>;})}
+    {open&&(()=>{const p=pkgs.find(x=>x.id===open);if(!p?.photo_url)return null;const idx=pkgs.indexOf(p);
+      return <div onClick={()=>setOpen(null)} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(4,9,20,0.82)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg, #16243E, #101B31)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:16,padding:14,maxWidth:"min(560px, 92vw)",boxShadow:"0 30px 70px rgba(0,0,0,0.6)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:10}}>
+            <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#fff"}}>Escaneo · Bulto {idx+1}<span style={{marginLeft:10,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:SKY,textTransform:"none",letterSpacing:0}}>{p.national_tracking||""}</span></span>
+            <button onClick={()=>setOpen(null)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)",color:"#fff",cursor:"pointer"}}>Cerrar</button>
+          </div>
+          <img src={p.photo_url} alt="Escaneo del bulto" style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+        </div>
+      </div>;})()}
     <div style={{display:"flex",alignItems:"stretch",gap:10,flexWrap:"wrap",marginTop:16,paddingTop:16,borderTop:HAIR}}>
       {[["Bultos",String(sel.length),false],["Peso bruto",`${f2(tot.bruto)} kg`,false],["Volumétrico",`${f2(tot.vol)} kg`,false],["Facturable",`${f2(tot.fact)} kg`,true],["Volumen",`${tot.m3.toFixed(3)} m³`,false]].map(([l,v,hot])=>
         <div key={l} style={{flex:"1 1 110px",padding:"9px 12px",borderRadius:10,border:`1px solid ${hot?"rgba(232,208,152,0.45)":"rgba(255,255,255,0.14)"}`,background:hot?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.04)"}}><p style={{...LBL,color:hot?GOLD_LIGHT:SKY}}>{l}</p><p style={{margin:"3px 0 0",fontSize:15,fontWeight:800,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p></div>)}
@@ -279,8 +289,7 @@ function DepositoView({pkgs,token,client,onCreated}){
   </div>;
 }
 
-function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},mCargo=[],depPkgs=[],onCreated}){
-  const [tabSel,setTabSel]=useState(null);const tab=tabSel||(depPkgs.length>0?"deposito":"imports");
+function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},mCargo=[]}){
   const {t}=useT();
   // Orden: más cerca de la entrega primero. ETA asc como desempate (antes = más urgente).
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
@@ -411,17 +420,6 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       </div>;
     })()}
 
-    {/* Solapas: lo que está en el depósito (sin importación todavía) y las importaciones armadas */}
-    <div style={{display:"flex",justifyContent:"center",marginBottom:22}}>
-      <div style={{display:"flex",gap:6,padding:5,borderRadius:13,background:"rgba(0,0,0,0.32)",border:"1px solid rgba(255,255,255,0.1)"}}>
-        {[["deposito","Depósito",depPkgs.length,"#8CC8F5"],["imports","Importaciones",act.length,GOLD_LIGHT]].map(([k,l,n,c])=>
-          <button key={k} onClick={()=>setTabSel(k)} style={{display:"flex",alignItems:"center",gap:9,padding:"10px 20px",fontSize:12.5,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",borderRadius:10,cursor:"pointer",border:"none",background:tab===k?"rgba(255,255,255,0.1)":"transparent",color:tab===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:tab===k?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>
-            {l}<span style={{fontSize:11.5,fontWeight:800,padding:"2px 8px",borderRadius:999,color:tab===k?c:"rgba(255,255,255,0.45)",background:tab===k?`${c}22`:"rgba(255,255,255,0.06)"}}>{n}</span>
-          </button>)}
-      </div>
-    </div>
-    {tab==="deposito"&&<DepositoView pkgs={depPkgs} token={token} client={client} onCreated={onCreated}/>}
-    {tab==="imports"&&<>
     {/* Carga marítima en camino (pre-operación) — debajo del saludo/cards, arriba de "En curso" */}
     <MaritimeCargoSection cargo={mCargo}/>
 
@@ -434,7 +432,6 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
 
     {past.length>0&&<><div className="ac-cli-section-h" id="ac-historico"><h2>{t("home.completed")} <span className="count">({past.length})</span></h2></div>{past.map(renderOp)}</>}
     {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No tenés importaciones todavía.</p>}
-    </>}
   </div>;
 }
 // === PDF INVOICE READER === (compartido entre cotización y declaración)
@@ -742,7 +739,7 @@ function OperationDetail({op,token,client,onBack}){
         {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:11,fontWeight:600,padding:"4px 11px 4px 9px",borderRadius:999,color,border:`1px solid ${color}40`,background:`${color}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.01em"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:color,boxShadow:isActive?`0 0 8px `:"none"}}/>{op.lost_in_customs_at?"Retenida en aduana":t("opStatus."+op.status)}</span>;})()}
         {op.eta&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>{["entregada","operacion_cerrada"].includes(op.status)?"Arribó":"ETA"} · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
-      <h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:"0 0 12px"}}>{op.description||(op.channel?.includes("maritimo")?"Carga marítima":op.channel?.includes("aereo")?"Carga aérea":"Importación")}</h2>
+      {op.description&&<h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:"0 0 12px"}}>{op.description}</h2>}
       <OpProgress status={op.status} isAereo={isA} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at}/>
       {op.lost_in_customs_at&&<div style={{marginTop:6,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(248,113,113,0.10),rgba(248,113,113,0.03))",border:"1.5px solid rgba(248,113,113,0.35)",borderRadius:12}}>
         <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚨 Carga retenida en aduana</p>
@@ -2891,6 +2888,7 @@ function MaritimeCargoSection({cargo}){
 }
 
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
+  const {t}=useT();
   const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);
   const loadOps=async()=>{setLo(true);
     // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
@@ -2911,14 +2909,18 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
   };
-  useEffect(()=>{if(page==="imports")loadOps();},[page]);
+  useEffect(()=>{if(page==="imports"||page==="deposito")loadOps();},[page]);
   useEffect(()=>{let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&page==="imports"&&!selOp&&Date.now()-last>5000){last=Date.now();loadOps();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[page,selOp]);
   // Navegación inter-widget (ej. hero widget -> points)
   useEffect(()=>{const h=(e)=>{if(e?.detail){setPage(e.detail);setSelOp(null);}};if(typeof window!=="undefined")window.addEventListener("ac_nav",h);return()=>{if(typeof window!=="undefined")window.removeEventListener("ac_nav",h);};},[]);
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
-    {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} mCargo={mCargo} depPkgs={depPkgs} onCreated={op=>{setOps(p=>[op,...p]);setDepPkgs([]);setSelOp(op);loadOps();}}/>}</>}
+    {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} mCargo={mCargo}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>setSelOp(null)}/>}
+    {page==="deposito"&&<>
+      <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>
+      <DepositoView pkgs={depPkgs} token={token} client={client} onCreated={op=>{setOps(p=>[op,...p]);setDepPkgs([]);setPage("imports");setSelOp(op);loadOps();}}/>
+    </>}
     {page==="profile"&&<ProfilePage client={client} token={token}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
     {page==="calculator"&&<CalculatorPage token={token} client={client} preset={calcPreset}/>}
@@ -2928,7 +2930,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="payments"&&<InternationalPaymentsPage client={client} token={token}/>}
     {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
     {page==="support"&&<SupportPage token={token} client={client}/>}
-    {!["imports","profile","rates","calculator","services","quotes","points","payments","account","support","referrals"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
+    {!["imports","deposito","profile","rates","calculator","services","quotes","points","payments","account","support","referrals"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
   </DashShell>;
 }
 // ═══════════════════════════════════════════════════════════════
