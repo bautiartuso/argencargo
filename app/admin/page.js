@@ -9376,6 +9376,8 @@ function AgentsPanel({token}){
   const readSub=()=>{if(typeof window==="undefined")return{};try{return JSON.parse(localStorage.getItem("ac_agents_nav")||"{}");}catch{return{};}};
   const _sub=readSub();
   const [tab,setTab]=useState(_sub.tab||"deposito");
+  // Cliente cuyo desglose de bultos en deposito esta abierto (ver tracking de cada bulto).
+  const [depOpen,setDepOpen]=useState(null);
   const [signups,setSignups]=useState([]);
   const [profiles,setProfiles]=useState({});
   const [unassigned,setUnassigned]=useState([]);
@@ -10157,30 +10159,63 @@ function AgentsPanel({token}){
           </div>}
         </div>;})}
         {gruposSueltos.length>0&&<div style={{marginTop:26}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
             <span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.06em",textTransform:"uppercase"}}>Bultos en depósito</span>
-            <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{gruposSueltos.length} cliente{gruposSueltos.length!==1?"s":""} · {depSueltos.length} bulto{depSueltos.length!==1?"s":""}</span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>el cliente todavía no armó la importación</span>
+            <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{gruposSueltos.length} cliente{gruposSueltos.length!==1?"s":""} · {gruposSueltos.reduce((s2,[,g])=>s2+g.pk.length,0)} bultos</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>el cliente todavía no armó la importación · tocá una fila para ver los trackings</span>
           </div>
           <div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["Cliente","Bultos","Kg bruto","Primer bulto","Origen","WA",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
-              </tr></thead>
-              <tbody>{gruposSueltos.map(([cid,g])=>{const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const dias=Math.floor((Date.now()-new Date(g.pk[0].created_at))/864e5);const wa=String(g.cl.whatsapp||"").replace(/[^0-9]/g,"");
-                const dCol=dias>14?{c:"#ef4444",bg:"rgba(239,68,68,0.12)",w:800}:dias>7?{c:"#fbbf24",bg:"rgba(251,191,36,0.12)",w:700}:{c:"rgba(255,255,255,0.45)",bg:"rgba(255,255,255,0.05)",w:600};
-                const origenes=[...new Set(g.pk.map(p=>p.origin||"China"))].join(" / ");
-                const msg=encodeURIComponent(`Hola ${g.cl.first_name||""}! Tenés ${g.pk.length} bulto${g.pk.length!==1?"s":""} en nuestro depósito (${kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg). Cuando estén todos los que esperás, entrá al portal, elegí cuáles viajan juntos y creá tu importación: https://argencargo.com.ar/portal\n\nSi te falta algo o tenés dudas, me escribís por acá.`);
-                return <tr key={cid} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                  <td style={{padding:"10px 12px"}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:12.5}}>{g.cl.client_code||"—"}</span> <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>- {[g.cl.first_name,g.cl.last_name].filter(Boolean).join(" ")}</span></td>
-                  <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums"}}>{g.pk.length}</td>
-                  <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{kg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</td>
-                  <td style={{padding:"10px 12px"}}><span style={{fontSize:10.5,fontWeight:dCol.w,padding:"2px 8px",borderRadius:5,background:dCol.bg,color:dCol.c,whiteSpace:"nowrap"}}>{dias}d</span></td>
-                  <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{origenes}</td>
-                  <td style={{padding:"10px 12px"}}>{wa?<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" title="Recordarle que arme la importación" style={{padding:"4px 9px",fontSize:10.5,fontWeight:700,borderRadius:6,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>WA</a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
-                  <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}><button onClick={()=>crearPorCliente(cid,g.pk)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>Crear importación por él</button></td>
-                </tr>;})}</tbody>
-            </table>
+            {gruposSueltos.map(([cid,g],idx)=>{
+              const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
+              const vol=g.pk.reduce((s2,p)=>{const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);return s2+(l2&&w2&&h2?((l2*w2*h2)/5000)*q:0);},0);
+              const dias=Math.floor((Date.now()-new Date(g.pk[0].created_at))/864e5);
+              const wa=String(g.cl.whatsapp||"").replace(/[^0-9]/g,"");
+              const dCol=dias>14?{c:"#ef4444",bg:"rgba(239,68,68,0.12)"}:dias>7?{c:"#fbbf24",bg:"rgba(251,191,36,0.12)"}:{c:"rgba(255,255,255,0.45)",bg:"rgba(255,255,255,0.05)"};
+              const origenes=[...new Set(g.pk.map(p=>p.origin||"China"))].join(" / ");
+              const msg=encodeURIComponent(`Hola ${g.cl.first_name||""}! Tenés ${g.pk.length} bulto${g.pk.length!==1?"s":""} en nuestro depósito (${kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg). Cuando estén todos los que esperás, entrá al portal y armá la importación así la despachamos.`);
+              const open=depOpen===cid;
+              // El volumetrico manda cuando supera al bruto: es lo que se factura.
+              const pesaVol=vol>kg;
+              return <div key={cid} style={{borderTop:idx>0?"1px solid rgba(255,255,255,0.05)":"none",borderLeft:`3px solid ${open?GOLD:"transparent"}`,background:open?"rgba(184,149,106,0.05)":"transparent",transition:"background 140ms"}}>
+                <div onClick={()=>setDepOpen(open?null:cid)} style={{display:"grid",gridTemplateColumns:"minmax(180px,1.5fr) 74px 110px 108px 62px 96px 74px 190px",gap:10,alignItems:"center",padding:"11px 14px",cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                    <span style={{color:open?GOLD_LIGHT:"rgba(255,255,255,0.3)",fontSize:10,width:10,flexShrink:0}}>{open?"▼":"▶"}</span>
+                    <div style={{minWidth:0}}>
+                      <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:12.5}}>{g.cl.client_code||"—"}</span>
+                      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[g.cl.first_name,g.cl.last_name].filter(Boolean).join(" ")||"—"}</p>
+                    </div>
+                  </div>
+                  <span style={{fontSize:12.5,color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{g.pk.length} <span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>blt</span></span>
+                  <span style={{fontSize:12.5,color:pesaVol?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",textAlign:"right",whiteSpace:"nowrap"}}>{kg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
+                  <span style={{fontSize:12.5,color:pesaVol?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontWeight:pesaVol?700:400,fontVariantNumeric:"tabular-nums",textAlign:"right",whiteSpace:"nowrap"}}>{vol>0?`${vol.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
+                  <span style={{textAlign:"center"}}><span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:5,background:dCol.bg,color:dCol.c,whiteSpace:"nowrap"}}>{dias}d</span></span>
+                  <span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{origenes}</span>
+                  <span style={{textAlign:"center"}}>{wa?<a href={`https://wa.me/${wa}?text=${msg}`} onClick={e=>e.stopPropagation()} target="_blank" rel="noopener noreferrer" title="Recordarle que arme la importación" style={{padding:"4px 9px",fontSize:10.5,fontWeight:700,borderRadius:6,background:"rgba(34,197,94,0.14)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",textDecoration:"none"}}>WA</a>:<span style={{fontSize:10.5,color:"rgba(255,255,255,0.25)"}}>—</span>}</span>
+                  <span style={{textAlign:"right"}}><button onClick={e=>{e.stopPropagation();crearPorCliente(cid,g.pk);}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,cursor:"pointer",whiteSpace:"nowrap"}}>Crear importación por él</button></span>
+                </div>
+                {open&&<div style={{padding:"0 14px 12px 40px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                    <span>#</span><span>Tracking</span><span style={{textAlign:"center"}}>Llegó</span><span style={{textAlign:"center"}}>Medidas (cm)</span><span style={{textAlign:"right"}}>Bruto</span><span style={{textAlign:"right"}}>Volumétrico</span><span style={{textAlign:"center"}}>Escaneo</span>
+                  </div>
+                  {g.pk.map((p,k)=>{
+                    const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);
+                    const br=Number(p.gross_weight_kg||0)*q, vo=l2&&w2&&h2?((l2*w2*h2)/5000)*q:0;
+                    const trk=p.national_tracking||p.consolidated_from_trackings||null;
+                    return <div key={p.id} style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:k<g.pk.length-1?"1px solid rgba(255,255,255,0.035)":"none"}}>
+                      <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>{k+1}</span>
+                      {trk
+                        ? <span title={trk} style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:GOLD_LIGHT,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"copy"}} onClick={()=>{navigator.clipboard?.writeText(trk);flash("Tracking copiado");}}>{trk}</span>
+                        : <span style={{fontSize:11.5,color:"rgba(255,255,255,0.28)",fontStyle:"italic"}}>sin tracking</span>}
+                      <span style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",textAlign:"center",whiteSpace:"nowrap"}}>{p.created_at?new Date(p.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}</span>
+                      <span style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{l2&&w2&&h2?`${l2}×${w2}×${h2}${q>1?` ×${q}`:""}`:"—"}</span>
+                      <span style={{fontSize:11.5,color:"rgba(255,255,255,0.8)",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{br>0?`${br.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
+                      <span style={{fontSize:11.5,color:vo>br?GOLD_LIGHT:"rgba(255,255,255,0.45)",fontWeight:vo>br?700:400,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{vo>0?`${vo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
+                      <span style={{textAlign:"center"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10.5,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Ver</a>:<span style={{fontSize:10.5,color:"rgba(255,255,255,0.22)"}}>—</span>}</span>
+                    </div>;
+                  })}
+                </div>}
+              </div>;
+            })}
           </div>
         </div>}
       </div>;
@@ -17756,7 +17791,11 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   // Mientras está "esperando al proveedor" no puede estar recibida ni en contenedor; si ya está
   // subida u operada el toggle no se ofrece (evita bajarla del contenedor sin querer desde acá).
   const puedeAwaiting=!editing?.container_id&&!editing?.operation_id;
-  const verPrecios=!esEmpleado();
+  // OJO: son dos cosas distintas y antes estaban bajo la misma bandera.
+  // verCostos = el costo de Argencargo (ganancia): el empleado NO lo ve.
+  // El valor unitario de la mercaderia es el FOB que declara el cliente, no un costo nuestro:
+  // el empleado tiene que poder cargarlo o no puede dar de alta el pedido.
+  const verCostos=!esEmpleado();
   const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",quantity:p.quantity||1})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);
   // Mercaderia unificada (pedido 02/08): una sola grilla desc/cant/USD c/u. La descripcion
   // general del pedido se arma sola con las descripciones. Al editar un pedido viejo sin
@@ -17824,7 +17863,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     };
     // Costo: solo lo manda el admin. El empleado no ve el campo y si lo mandara vacío pisaría con
     // null un costo manual cargado por Bautista.
-    if(verPrecios){
+    if(verCostos){
       // Vacio = automatico (lo calcula el trigger con la tarifa del deposito).
       body.cost_estimado=costEst.trim()===""?null:Number(costEst.replace(",","."));
       body.cost_manual=costEst.trim()!=="";
@@ -17916,10 +17955,10 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
         <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>🧾 Mercadería</p>
         <button onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Item</button>
       </div>
-      {its.map((it,i)=><div key={i} className={"mt-mf-it"+(verPrecios?"":" sinprecio")}>
+      {its.map((it,i)=><div key={i} className="mt-mf-it">
         <div className="mt-mf-desc"><Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/></div>
         <Inp label={i===0?"Cant.":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
-        {verPrecios&&<Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>}
+        {<Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>}
         <button onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>×</button>
       </div>)}
     </div>
@@ -17959,7 +17998,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     </div>
 
     {/* 9. Costo (no lo ve el empleado; vacio = automatico CBM x tarifa del deposito) */}
-    {verPrecios&&<Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Vacío = automático (CBM × tarifa del depósito)"/>}
+    {verCostos&&<Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Vacío = automático (CBM × tarifa del depósito)"/>}
 
     {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 6px"}}>✕ {err}</p>}
     <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
