@@ -13863,6 +13863,42 @@ function AdminCalculator({token}){
   const addPkg=()=>setPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:""}]);
   const rmPkg=(i)=>setPkgs(p=>p.length>1?p.filter((_,j)=>j!==i):p);
   const chPkg=(i,f,v)=>setPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  // Navegacion con Enter en la grilla de bultos: cant -> largo -> ancho -> alto -> peso, y al
+  // final de la fila salta a la siguiente (o crea un bulto nuevo si era la ultima). Pedido de
+  // Bautista para cargar medidas sin sacar las manos del teclado.
+  const PK_CAMPOS=["qty","length","width","height","weight"];
+  const [pkFoco,setPkFoco]=useState(null); // fila a enfocar despues de agregar un bulto
+  const enfocarPk=(fila,campo)=>{
+    if(typeof document==="undefined")return;
+    const el=document.querySelector(`[data-pk="${fila}-${campo}"]`);
+    if(el){el.focus();try{el.select();}catch{}}
+  };
+  useEffect(()=>{if(pkFoco==null)return;enfocarPk(pkFoco,0);setPkFoco(null);},[pkgs.length,pkFoco]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Reparte "48x42x39" (o con espacios, * o /) en largo/ancho/alto, y un cuarto numero en el
+  // peso. Devuelve true si repartio. Se corre al apretar Enter o al pegar, NUNCA en cada tecla:
+  // si no, al escribir "48x4" salta el foco cuando todavia se esta tipeando el ancho.
+  const repartirMedidas=(i,texto)=>{
+    const partes=String(texto).split(/[^\d.,]+/).filter(Boolean);
+    if(partes.length<2)return false;
+    const [l,w,h,pe]=partes;
+    setPkgs(p=>p.map((x,j)=>j===i?{...x,length:l||"",width:w||"",height:h||"",...(pe?{weight:pe}:{})}:x));
+    // Foco en el primer campo que quedo vacio: con 2 numeros falta el alto, con 3 o mas el peso.
+    setTimeout(()=>enfocarPk(i,partes.length>=3?4:3),0);
+    return true;
+  };
+  const pkEnter=(i,campo)=>(e)=>{
+    if(e.key!=="Enter")return;
+    e.preventDefault();
+    // Si en Largo se escribio todo junto, Enter lo reparte y deja el foco donde sigue.
+    if(campo===1&&repartirMedidas(i,e.currentTarget.value))return;
+    if(campo<PK_CAMPOS.length-1){enfocarPk(i,campo+1);return;}
+    if(i===pkgs.length-1){addPkg();setPkFoco(i+1);}   // ultima fila: crea el bulto siguiente
+    else enfocarPk(i+1,0);
+  };
+  const pkPegar=(i)=>(e)=>{
+    const texto=e.clipboardData?.getData("text")||"";
+    if(repartirMedidas(i,texto))e.preventDefault();
+  };
   const inputStyle={width:"100%",padding:"8px 10px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"};
   const labelStyle={fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
   const cardOption=(sel)=>({flex:1,padding:"12px",textAlign:"center",borderRadius:10,border:`1.5px solid ${sel?IC:"rgba(255,255,255,0.08)"}`,background:sel?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 150ms"});
@@ -13919,15 +13955,15 @@ function AdminCalculator({token}){
     </div>
     {/* Bultos */}
     <div style={{marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><label style={{...labelStyle,marginBottom:0}}>Bultos (cm / kg)</label><button onClick={addPkg} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>+ Bulto</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}><label style={{...labelStyle,marginBottom:0}}>Bultos (cm / kg)</label><span style={{fontSize:10.5,color:"rgba(255,255,255,0.38)"}}>Enter salta al campo siguiente · en Largo podés escribir o pegar <strong style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>48x42x39x18</strong> y Enter lo reparte</span></div><button onClick={addPkg} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>+ Bulto</button></div>
       {/* Inputs angostos y, a la derecha de cada bulto, bruto y volumétrico totales (× cantidad). Pedido 11/09/2026. */}
       <div style={{display:"grid",gridTemplateColumns:"72px 1fr 1fr 1fr 1fr 34px 330px",gap:8,padding:"0 12px",marginBottom:4}}>{["Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,j)=><span key={j} style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{h}</span>)}</div>
       {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const bruto=gw*q;const vol=(l&&w&&h)?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);return <div key={i} style={{padding:"8px 12px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,marginBottom:6,display:"grid",gridTemplateColumns:"72px 1fr 1fr 1fr 1fr 34px 330px",gap:8,alignItems:"center"}}>
-        <input value={pk.qty} onChange={e=>chPkg(i,"qty",e.target.value)} placeholder="1" style={inputStyle}/>
-        <input value={pk.length} onChange={e=>chPkg(i,"length",e.target.value)} placeholder="cm" style={inputStyle}/>
-        <input value={pk.width} onChange={e=>chPkg(i,"width",e.target.value)} placeholder="cm" style={inputStyle}/>
-        <input value={pk.height} onChange={e=>chPkg(i,"height",e.target.value)} placeholder="cm" style={inputStyle}/>
-        <input value={pk.weight} onChange={e=>chPkg(i,"weight",e.target.value)} placeholder="kg" style={inputStyle}/>
+        <input data-pk={`${i}-0`} onKeyDown={pkEnter(i,0)} value={pk.qty} onChange={e=>chPkg(i,"qty",e.target.value)} placeholder="1" style={inputStyle}/>
+        <input data-pk={`${i}-1`} onKeyDown={pkEnter(i,1)} onPaste={pkPegar(i)} value={pk.length} onChange={e=>chPkg(i,"length",e.target.value)} placeholder="cm" title="Se puede escribir o pegar todo junto: 48x42x39x18 y Enter lo reparte" style={inputStyle}/>
+        <input data-pk={`${i}-2`} onKeyDown={pkEnter(i,2)} value={pk.width} onChange={e=>chPkg(i,"width",e.target.value)} placeholder="cm" style={inputStyle}/>
+        <input data-pk={`${i}-3`} onKeyDown={pkEnter(i,3)} value={pk.height} onChange={e=>chPkg(i,"height",e.target.value)} placeholder="cm" style={inputStyle}/>
+        <input data-pk={`${i}-4`} onKeyDown={pkEnter(i,4)} value={pk.weight} onChange={e=>chPkg(i,"weight",e.target.value)} placeholder="kg" style={inputStyle}/>
         <div>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
           {(()=>{const cbm=(l&&w&&h)?((l*w*h)/1000000)*q:0;const brutoGana=bruto>0&&bruto>=vol;const volGana=vol>0&&vol>bruto;return [["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",brutoGana],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",volGana],["m³",cbm>0?`${cbm.toFixed(4)} m³`:"—",false]];})().map(([l,v,hi])=><div key={l} style={{padding:"5px 8px",borderRadius:6,background:hi?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${hi?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.06)"}`,textAlign:"center"}}>
