@@ -87,7 +87,7 @@ const CSS = `
 .pz-price span{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(26,26,26,.5);padding-bottom:3px}
 .pz-price b{font-size:23px;font-weight:800;letter-spacing:-.035em;line-height:1;white-space:nowrap}
 .pz-price b i{font-style:normal;font-size:12px;font-weight:700;color:rgba(26,26,26,.5);margin-right:4px}
-.pz-ver{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;padding:10px 12px;border:none;border-radius:9px;background:#15803d;color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;transition:background .16s}
+.pz-ver{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;padding:10px 12px;border:none;border-radius:9px;background:#15803d;color:#fff;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer}
 .pz-ver:hover{background:#12692f}
 .pz-ver.on{background:rgba(21,128,61,.1);color:#15803d}
 .pz-ver.on:hover{background:rgba(21,128,61,.17)}
