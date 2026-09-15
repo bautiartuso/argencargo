@@ -144,10 +144,10 @@ export default function Terminos() {
     <div style={{ minHeight: "100vh", background: BG, color: "#fff", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif" }}>
       <div style={{ maxWidth: 780, margin: "0 auto", padding: "36px 22px 70px" }}>
         <a href="/" style={{ display: "inline-block", marginBottom: 26 }}>
-          <img src={LOGO} alt="Argencargo" style={{ height: 34 }} />
+          <img src={LOGO} alt="Argencargo" width={52} height={34} style={{ height: 34, width: "auto" }} />
         </a>
         <h1 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 6px", letterSpacing: "-0.01em" }}>Términos y Condiciones</h1>
-        <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.45)", margin: "0 0 30px" }}>Última actualización: {VIGENCIA}</p>
+        <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.55)", margin: "0 0 30px" }}>Última actualización: {VIGENCIA}</p>
 
         {SECCIONES.map((s, i) => (
           <section key={i} style={{
@@ -165,8 +165,12 @@ export default function Terminos() {
         ))}
 
         <div style={{ marginTop: 34, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>© 2026 Argencargo</span>
-          <a href="mailto:info@argencargo.com.ar" style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", textDecoration: "none" }}>info@argencargo.com.ar</a>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>© 2026 Argencargo</span>
+          <span style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <a href="/privacidad" style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", textDecoration: "none" }}>Política de privacidad</a>
+            <a href="/legal" style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", textDecoration: "none" }}>Aviso legal</a>
+            <a href="mailto:info@argencargo.com.ar" style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", textDecoration: "none" }}>info@argencargo.com.ar</a>
+          </span>
         </div>
       </div>
     </div>

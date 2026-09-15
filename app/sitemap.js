@@ -9,6 +9,9 @@ export default async function sitemap() {
   return [
     { url: `${base}/`, lastModified, changeFrequency: 'weekly', priority: 1.0 },
     { url: `${base}/blog`, lastModified, changeFrequency: 'daily', priority: 0.8 },
+    { url: `${base}/terminos`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${base}/privacidad`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${base}/legal`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     ...notas.map((n) => ({ url: `${base}/blog/${n.slug}`, lastModified: new Date(n.published_at || lastModified), changeFrequency: 'monthly', priority: 0.6 })),
     // Nota: rutas privadas (/admin, /portal, /agente) quedan excluidas por robots.
   ];

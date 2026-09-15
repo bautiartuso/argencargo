@@ -22,7 +22,7 @@ export default async function BlogIndex() {
       {!lead && <p className="empty">Todavía no hay notas publicadas. La primera está en camino.</p>}
       {lead && (
         <section className="lead">
-          <a href={`/blog/${lead.slug}`} className="cover" aria-label={lead.title}>{lead.cover_url && <img src={lead.cover_url} alt="" width={1200} height={630} />}</a>
+          <a href={`/blog/${lead.slug}`} className="cover" aria-label={lead.title}>{lead.cover_url && <img src={lead.cover_url} alt={lead.title} width={1200} height={630} />}</a>
           <div>
             <div className="dateline">{fechaLarga(lead.published_at)}{lead.reading_min ? ` — ${lead.reading_min} min de lectura` : ""}</div>
             <h2><a href={`/blog/${lead.slug}`}>{lead.title}</a></h2>

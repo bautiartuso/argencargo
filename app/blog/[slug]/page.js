@@ -32,13 +32,13 @@ export default async function Nota({ params }) {
         <h1>{n.title}</h1>
         <div className="dateline">{fechaLarga(n.published_at)}{n.reading_min ? ` — ${n.reading_min} min de lectura` : ""}</div>
         {n.excerpt && <p className="std">{n.excerpt}</p>}
-        {n.cover_url && <div className="cover"><img src={n.cover_url} alt="" width={1200} height={630} /></div>}
+        {n.cover_url && <div className="cover"><img src={n.cover_url} alt={n.cover_alt || n.title} width={1200} height={630} /></div>}
         <div className="nota" dangerouslySetInnerHTML={{ __html: n.content_html || "" }} />
         {n.source_url && <div className="fuente"><span aria-hidden="true">📎</span><div>Esta nota se escribió a partir de <a href={n.source_url} target="_blank" rel="noopener noreferrer">{n.source_title || n.source_name || "la fuente original"}</a>{n.source_name ? ` (${n.source_name})` : ""}. Publicada el {fechaLarga(n.published_at)}.</div></div>}
         {Array.isArray(n.tags) && n.tags.length > 0 && <div className="tags">{n.tags.map((t) => <span key={t}>{t}</span>)}</div>}
         <div className="cta-band"><div>
           <div><h3>¿Estás importando desde China?</h3><p>Cotizá tu envío en dos minutos. Clasificamos cada producto antes de pasarte el número.</p></div>
-          <a href="/#cotizar" className="btn">Cotizar mi envío <span>→</span></a>
+          <a href="/portal" className="btn">Cotizar mi envío <span>→</span></a>
         </div></div>
       </article>
       {otras.length > 0 && (
