@@ -13254,10 +13254,16 @@ function QuotesList({token}){
   const msgSeg=(q,vencida)=>{const n=nombreQ(q);const saludo=n?`Hola ${n}!`:"Hola!";const m=mercQ(q);const fob=fmtN(q.total_fob);
     if(vencida)return `${saludo} Te escribo por la cotización ${numQ(q)} que armaste en el portal el ${fShort(q.created_at)} (${m}, FOB USD ${fob}).\n\nLa cotización venció el ${fShort(venceQ(q))}, pero si todavía te interesa avanzar con esa importación la revisamos juntos y te paso los valores actualizados. Cualquier duda que tengas, me consultás por acá.\n\nSaludos,\nBautista · Argencargo`;
     return `${saludo} Te escribo por la cotización ${numQ(q)} que armaste en el portal el ${fShort(q.created_at)} (${m}, FOB USD ${fob}).\n\nQuería saber qué te pareció y si te quedó alguna duda sobre los costos o sobre cómo sigue el proceso. Los valores están vigentes hasta el ${fShort(venceQ(q))}, así que si querés avanzar te ayudo a coordinar todo. Cualquier consulta, me escribís por acá.\n\nSaludos,\nBautista · Argencargo`;};
+  const opsById={};ops.forEach(o=>{opsById[o.id]=o;});
   const t=busq.trim().toLowerCase();
-  const pasa=q=>!t||[q.client_name,q.client_code,numQ(q),mercQ(q),q.channel_name].some(v=>norm(v).includes(t));
+  const pasa=q=>!t||[q.client_name,q.client_code,numQ(q),mercQ(q),q.channel_name,opsById[q.operation_id]?.operation_code].some(v=>norm(v).includes(t));
   const base=quotes.filter(pasa);
-  const portal=base.filter(q=>!q.public_token),porLink=base.filter(q=>!!q.public_token);
+  // Cotizaciones de importaciones armadas desde el depósito (operation_id, 15/09/2026): el
+  // estimado que el cliente vio al cargar la mercadería. Van en su propia solapa y no entran
+  // en Vigentes/Vencidas ni en el análisis: no es alguien que cotiza y no importa, es una
+  // importación en curso.
+  const impo=base.filter(q=>!!q.operation_id).sort((a,b)=>+new Date(b.created_at)-+new Date(a.created_at));
+  const portal=base.filter(q=>!q.public_token&&!q.operation_id),porLink=base.filter(q=>!!q.public_token&&!q.operation_id);
   const vig=portal.filter(q=>diasQ(q)>0).sort((a,b)=>diasQ(a)-diasQ(b));
   const ven=portal.filter(q=>diasQ(q)<=0).sort((a,b)=>diasQ(b)-diasQ(a));
   const links=[...porLink.filter(q=>diasQ(q)>0).sort((a,b)=>diasQ(a)-diasQ(b)),...porLink.filter(q=>diasQ(q)<=0).sort((a,b)=>diasQ(b)-diasQ(a))];
@@ -13270,8 +13276,8 @@ function QuotesList({token}){
     :<span style={{fontSize:11,color:"rgba(255,255,255,0.3)",whiteSpace:"nowrap"}}>Sin WhatsApp</span>;
   const trashBtn=(q)=><button title="Eliminar cotización" disabled={borrando} onClick={e=>{e.stopPropagation();borrarQuotes([q.id],`¿Eliminar la cotización ${numQ(q)} de ${q.client_name||"sin cliente"}? No se puede deshacer.`);}}
     style={{width:32,height:32,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8,border:"1px solid rgba(248,113,113,0.25)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:borrando?"wait":"pointer"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>;
-  const tabla=({k,sub,color,rows,vencidas,link})=>{const vis=verMas[k]?rows:rows.slice(0,40);
-    const cols=["Cotización","Fecha","Cliente","Mercadería","FOB",vencidas?"Vencimiento":"Días restantes",...(link?["Link"]:[]),"Seguimiento",""];
+  const tabla=({k,sub,color,rows,vencidas,link,impo})=>{const vis=verMas[k]?rows:rows.slice(0,40);
+    const cols=impo?["Cotización","Fecha","Cliente","Mercadería","FOB","Importación","Estimado",""]:["Cotización","Fecha","Cliente","Mercadería","FOB",vencidas?"Vencimiento":"Días restantes",...(link?["Link"]:[]),"Seguimiento",""];
     const tdC={...tdStyle,textAlign:"center"};
     return <div style={{marginBottom:26}}>
       {sub&&<p style={{margin:"0 0 10px",padding:"0 4px",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{sub}</p>}
@@ -13289,9 +13295,11 @@ function QuotesList({token}){
                 :<span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin cliente</span>}</td>
               <td style={{...tdStyle,textAlign:"left",maxWidth:300}}><span style={{color:"#fff",fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={mercQ(q)}>{mercQ(q)}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.origin||""}{q.channel_name?` · ${q.channel_name}`:""}</span></td>
               <td style={{...tdC,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",marginRight:5}}>USD</span><span style={{fontWeight:700,color:"#fff"}}>{fmtN(q.total_fob)}</span></td>
-              <td style={tdC}>{chipDias(q)}{vencidas&&<><br/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>el {fShort(venceQ(q))}</span></>}</td>
+              {impo?(()=>{const o=opsById[q.operation_id];return <td style={tdC}>{o?<><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:12.5,color:"#8CC8F5",letterSpacing:"0.04em"}}>{o.operation_code}</span><br/><span style={{fontSize:10.5,fontWeight:700,color:SM[o.status]?.c||"rgba(255,255,255,0.4)"}}>{SM[o.status]?.l||o.status}</span></>:<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>;})()
+              :<td style={tdC}>{chipDias(q)}{vencidas&&<><br/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>el {fShort(venceQ(q))}</span></>}</td>}
               {link&&<td style={tdC}>{li?chip(li.t,li.c,li.fuerte):<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>}
-              <td style={tdC} onClick={e=>e.stopPropagation()}>{waBtn(waQ(q),msgSeg(q,d<=0))}</td>
+              {impo?<td style={{...tdC,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",marginRight:5}}>USD</span><span style={{fontWeight:800,color:IC}}>{fmtN(q.total_cost)}</span></td>
+              :<td style={tdC} onClick={e=>e.stopPropagation()}>{waBtn(waQ(q),msgSeg(q,d<=0))}</td>}
               <td style={{...tdC,paddingLeft:0,width:40}} onClick={e=>e.stopPropagation()}>{trashBtn(q)}</td>
             </tr>;})}</tbody>
         </table></div>}
@@ -13303,7 +13311,7 @@ function QuotesList({token}){
   const hoy=Date.now();
   const SEG={nunca:{l:"Cotiza y nunca importó",c:"#f87171"},nuevo:{l:"Todavía no importó",c:"#8CC8F5"},poco:{l:"Importa menos de lo que cotiza",c:"#fbbf24"},volvio:{l:"Volvió a cotizar",c:"#a78bfa"},fiel:{l:"Convierte bien",c:"#4ade80"}};
   const analisis=(()=>{const m={};
-    quotes.forEach(q=>{if(!q.client_id)return;(m[q.client_id]||(m[q.client_id]={id:q.client_id,cotis:[],ops:[]})).cotis.push(q);});
+    quotes.forEach(q=>{if(!q.client_id||q.operation_id)return;(m[q.client_id]||(m[q.client_id]={id:q.client_id,cotis:[],ops:[]})).cotis.push(q);});
     ops.forEach(o=>{if(!o.client_id||!m[o.client_id])return;m[o.client_id].ops.push(o);});
     return Object.values(m).map(c=>{const cl=clientsMap[c.id]||{};
       const ultC=Math.max(...c.cotis.map(q=>+new Date(q.created_at)));const ultO=c.ops.length?Math.max(...c.ops.map(x=>+new Date(x.created_at))):null;
@@ -13327,7 +13335,7 @@ function QuotesList({token}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
       {vista==="cotis"
         ?<div style={{display:"flex",gap:6,padding:5,borderRadius:12,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",flexWrap:"wrap"}}>
-          {[["vig","Vigentes",vig.length,"#4ade80"],["ven","Vencidas",ven.length,"#f87171"],["link","Manuales",links.length,IC]].map(([k,l,n,c])=>
+          {[["vig","Vigentes",vig.length,"#4ade80"],["ven","Vencidas",ven.length,"#f87171"],["link","Manuales",links.length,IC],["impo","Importaciones",impo.length,"#8CC8F5"]].map(([k,l,n,c])=>
             <button key={k} onClick={()=>setSub(k)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",background:sub===k?"rgba(255,255,255,0.09)":"transparent",color:sub===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:sub===k?"inset 0 0 0 1px rgba(255,255,255,0.12)":"none"}}>
               <span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:sub===k?`0 0 8px ${c}`:"none",opacity:sub===k?1:0.55}}/>{l}
               <span style={{fontSize:11.5,fontWeight:800,padding:"2px 7px",borderRadius:999,color:sub===k?c:"rgba(255,255,255,0.45)",background:sub===k?`${c}22`:"rgba(255,255,255,0.06)"}}>{n}</span>
@@ -13344,6 +13352,7 @@ function QuotesList({token}){
       {sub==="vig"&&tabla({k:"vig",sub:"Las más próximas a vencer, arriba.",color:"#4ade80",rows:vig})}
       {sub==="ven"&&tabla({k:"ven",sub:"Las que vencieron hace menos, arriba.",color:"#f87171",rows:ven,vencidas:true})}
       {sub==="link"&&tabla({k:"link",sub:"Armadas a mano desde la calculadora del admin y enviadas por link.",color:IC,rows:links,link:true})}
+      {sub==="impo"&&tabla({k:"impo",sub:"El estimado que el cliente vio al cargar la mercadería de sus bultos del depósito. Se actualiza solo con cada cambio de mercadería.",color:"#8CC8F5",rows:impo,impo:true})}
     </>:<>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
         <button onClick={()=>setSegF("")} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${!segF?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.1)"}`,background:!segF?"rgba(255,255,255,0.1)":"transparent",color:"#fff"}}>Todos · {analisis.length}</button>

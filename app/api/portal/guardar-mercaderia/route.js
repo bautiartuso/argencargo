@@ -7,6 +7,12 @@
 // service role porque además de los ítems hay que escribir la descripción y las baterías en
 // `operations`, y el cliente no puede actualizar la op por RLS una vez que está en preparación.
 // Solo mientras la op está pre-vuelo: después la mercadería queda congelada.
+//
+// Además, con cada guardado se guarda la COTIZACIÓN de la importación en `quotes` (15/09/2026):
+// el estimado que el cliente ve después de cargar la mercadería es una cotización como las de
+// la calculadora, y hasta hoy no quedaba registro. Una fila por op, que se actualiza sola.
+import { calcOpBudget } from "../../../../lib/calc";
+import { armarCotizacionDeImportacion } from "../../../../lib/cotizacion-importacion";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -18,6 +24,40 @@ async function svc(path, opts = {}) {
   return { ok: r.ok, data, status: r.status };
 }
 const num = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return isNaN(n) ? 0 : n; };
+const arr = (r) => (Array.isArray(r?.data) ? r.data : null);
+
+async function avisarAdmins(title, body, link) {
+  const adm = await svc(`/rest/v1/profiles?role=eq.admin&select=id`);
+  for (const a of (arr(adm) || [])) {
+    await svc(`/rest/v1/notifications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ user_id: a.id, portal: "admin", title, body, link }) });
+  }
+}
+
+// Calcula el estimado con la misma cuenta que ve el cliente (calcOpBudget con tarifas, config
+// y overrides del cliente) y lo deja en `quotes`. Lanza si algo falla: el que llama decide
+// qué hacer, pero nunca se pierde en silencio.
+async function guardarCotizacion({ op, clientId, items }) {
+  const [pk, tf, cf, ov, cl] = await Promise.all([
+    svc(`/rest/v1/operation_packages?operation_id=eq.${op.id}&select=id,quantity,length_cm,width_cm,height_cm,gross_weight_kg,national_tracking&order=package_number.asc`),
+    svc(`/rest/v1/tariffs?select=*`),
+    svc(`/rest/v1/calc_config?select=key,value`),
+    svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`),
+    svc(`/rest/v1/clients?id=eq.${clientId}&select=id,first_name,last_name,client_code,tax_condition&limit=1`),
+  ]);
+  const pkgs = arr(pk), tariffs = arr(tf), cfgRows = arr(cf), client = (arr(cl) || [])[0];
+  if (!pkgs || !tariffs || !cfgRows || !client) throw new Error("no se pudieron leer bultos, tarifas o cliente");
+  const config = {}; cfgRows.forEach((r) => { config[r.key] = Number(r.value); });
+  const est = calcOpBudget(op, items, pkgs, tariffs, config, arr(ov) || [], client, []);
+  const body = armarCotizacionDeImportacion({ op, items, pkgs, client, est });
+  const ex = await svc(`/rest/v1/quotes?operation_id=eq.${op.id}&select=id&limit=1`);
+  const prev = (arr(ex) || [])[0];
+  const r = prev
+    ? await svc(`/rest/v1/quotes?id=eq.${prev.id}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(body) })
+    : await svc(`/rest/v1/quotes`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(body) });
+  const row = (arr(r) || [])[0];
+  if (!r.ok || !row?.id) throw new Error(r.data?.message || r.data?.hint || `HTTP ${r.status}`);
+  return { id: row.id, quote_number: row.quote_number, total_cost: body.total_cost };
+}
 
 export async function POST(req) {
   const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
@@ -38,7 +78,8 @@ export async function POST(req) {
   if (body.client_id && (isAdmin || body.client_id === ownClientId)) clientId = body.client_id;
   if (!clientId) return Response.json({ error: "sin_cliente" }, { status: 403 });
 
-  const opR = await svc(`/rest/v1/operations?id=eq.${opId}&client_id=eq.${clientId}&select=id,operation_code,status,channel,service_type,docs_confirmed_at&limit=1`);
+  // La op completa: calcOpBudget necesita origen, baterías, envío, despacho real, etc.
+  const opR = await svc(`/rest/v1/operations?id=eq.${opId}&client_id=eq.${clientId}&select=*&limit=1`);
   const op = Array.isArray(opR.data) ? opR.data[0] : null;
   if (!op) return Response.json({ error: "op_no_encontrada" }, { status: 404 });
   if (op.docs_confirmed_at && !isAdmin) return Response.json({ error: "mercaderia_confirmada" }, { status: 409 });
@@ -72,15 +113,25 @@ export async function POST(req) {
   const now = new Date().toISOString();
   if (confirm) patch.docs_confirmed_at = now;
   await svc(`/rest/v1/operations?id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+
+  // La cotización de la importación. La mercadería ya quedó guardada: si esto falla no se
+  // frena al cliente, pero se avisa al admin y el portal muestra el error. Nunca en silencio.
+  let quote = null, quoteError = null;
+  try {
+    quote = await guardarCotizacion({ op: { ...op, ...patch }, clientId, items });
+  } catch (e) {
+    quoteError = e?.message || String(e);
+    console.error("[guardar-mercaderia] cotizacion no guardada", op.operation_code, quoteError);
+    await avisarAdmins(`⚠️ No se guardó la cotización de ${op.operation_code}`, quoteError.slice(0, 200), `/admin?op=${op.operation_code}`).catch(() => {});
+  }
+
   if (confirm) {
     await svc(`/rest/v1/tracking_events`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: opId, title: "Mercadería confirmada por el cliente", occurred_at: now, source: "internal", status_code: op.status, is_visible_to_client: true }) });
     // Aviso al admin: la importación quedó lista para presupuestar y armar el vuelo.
-    const adm = await svc(`/rest/v1/profiles?role=eq.admin&select=id`);
     const cli = await svc(`/rest/v1/clients?id=eq.${clientId}&select=client_code&limit=1`);
     const code = Array.isArray(cli.data) && cli.data[0]?.client_code ? cli.data[0].client_code + " · " : "";
-    for (const a of (Array.isArray(adm.data) ? adm.data : [])) {
-      await svc(`/rest/v1/notifications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ user_id: a.id, portal: "admin", title: `📋 Mercadería confirmada · ${op.operation_code}`, body: `${code}${items.length} producto${items.length !== 1 ? "s" : ""} · ${description}`, link: `/admin?op=${op.operation_code}` }) });
-    }
+    const cot = quote?.quote_number ? ` · AGC-${String(quote.quote_number).padStart(5, "0")}` : "";
+    await avisarAdmins(`📋 Mercadería confirmada · ${op.operation_code}`, `${code}${items.length} producto${items.length !== 1 ? "s" : ""} · ${description}${cot}`, `/admin?op=${op.operation_code}`);
   }
-  return Response.json({ ok: true, items: items.length, description, confirmed: confirm });
+  return Response.json({ ok: true, items: items.length, description, confirmed: confirm, quote, quote_error: quoteError });
 }

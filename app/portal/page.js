@@ -664,6 +664,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
       const d=await r.json().catch(()=>null);
       if(!r.ok){toast(d?.error==="ya_en_vuelo"?t("merc.frozenFlight"):d?.error==="mercaderia_confirmada"?t("merc.alreadyConfirmed"):t("merc.saveError"),"error");setSaving(false);return false;}
       lastSavedRef.current=ser;dirtyRef.current=false;setSavedAt(new Date());
+      if(d?.quote_error)toast(t("quotes.saveFailed"),"error");
       if(confirm)toast(t("merc.confirmedOk"),"success");
       onSaved?.();setSaving(false);return true;
     }catch(e){toast(t("merc.saveError"),"error");setSaving(false);return false;}};
@@ -2013,11 +2014,16 @@ function CalculatorPage({token,client,preset}){
       </div>;})()}
   </div>;
 }
-function QuotesPage({token,client,onEdit}){
+function QuotesPage({token,client,onEdit,onOpenOp}){
   const {t}=useT();
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [openId,setOpenId]=useState(null);const [openAlt,setOpenAlt]=useState(null);
+  // Ops de las cotizaciones armadas desde el depósito (operation_id): se muestran con el código de la op y la abren.
+  const [opsById,setOpsById]=useState({});
   const numOf=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(5,"0")}`:null;
-  useEffect(()=>{if(!client?.id){setLo(false);return;}(async()=>{const q=await dq("quotes",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token,client?.id]);
+  useEffect(()=>{if(!client?.id){setLo(false);return;}(async()=>{const q=await dq("quotes",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});const list=Array.isArray(q)?q:[];setQuotes(list);
+    const ids=[...new Set(list.map(x=>x.operation_id).filter(Boolean))];
+    if(ids.length){const o=await dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=*`});const m={};(Array.isArray(o)?o:[]).forEach(x=>{m[x.id]=x;});setOpsById(m);}
+    setLo(false);})();},[token,client?.id]);
   const HAIR="1px solid rgba(255,255,255,0.13)";
   const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:HAIR,borderRadius:16,padding:"20px 24px",marginBottom:14,boxShadow:"0 14px 34px rgba(0,0,0,0.28)"};
   const LBL={fontSize:10.5,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8CC8F5",margin:0};
@@ -2048,16 +2054,17 @@ function QuotesPage({token,client,onEdit}){
     {quotes.length===0?<div style={{...PANEL,textAlign:"center",padding:"40px 24px"}}>
       <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>{t("quotes.emptyTitle")}</p>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>{t("quotes.emptyDesc2")}</p>
-    </div>:quotes.map(q=>{const open=openId===q.id;const prods=prodsOf(q);const pkgs=pkgsOf(q);const alts=altsOf(q);const chosen=chosenOf(q);const cheapest=cheapestOf(q);const expired=isExpired(q);
+    </div>:quotes.map(q=>{const open=openId===q.id;const prods=prodsOf(q);const pkgs=pkgsOf(q);const alts=altsOf(q);const chosen=chosenOf(q);const cheapest=cheapestOf(q);const esImpo=!!q.operation_id;const opQ=esImpo?opsById[q.operation_id]:null;const expired=!esImpo&&isExpired(q);
       const summary=prods.length>3?"Consolidado":(prods.map(p=>p.description||p.type).filter(Boolean).join(" · ")||t("quotes.noProducts"));
       const nPk=pkgs.reduce((s,p)=>s+(Number(String(p.qty??"1").replace(",","."))||1),0);
       return <div key={q.id} style={{...PANEL,border:open?"1px solid rgba(232,208,152,0.5)":HAIR}}>
         <div className="rs-head" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{flagOf(q.origin)}</span>
           <div style={{flex:1,minWidth:220}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:19,fontWeight:900,color:"#fff",letterSpacing:"0.07em",fontVariantNumeric:"tabular-nums"}}>{numOf(q)||"AGC-—"}</span>{pill(expired?"Vencida":t("quotes.readyToImport"),expired?"#f87171":"#4ade80")}</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:19,fontWeight:900,color:"#fff",letterSpacing:"0.07em",fontVariantNumeric:"tabular-nums"}}>{numOf(q)||"AGC-—"}</span>{esImpo?pill(t("quotes.importPill"),SKY):pill(expired?"Vencida":t("quotes.readyToImport"),expired?"#f87171":"#4ade80")}</div>
             <p style={{margin:"8px 0 0",fontSize:14.5,color:"#fff",fontWeight:700,lineHeight:1.4}}>{summary}</p>
-            <p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#f87171"}}>{expired?t("quotes.expiredOn"):t("quotes.validUntil")} {fmtDate(expiryOf(q))}</p>
+            {esImpo?<p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:SKY}}>{t("quotes.importOf")} {opQ?.operation_code||""}</p>
+              :<p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#f87171"}}>{expired?t("quotes.expiredOn"):t("quotes.validUntil")} {fmtDate(expiryOf(q))}</p>}
             <p style={{margin:"5px 0 0",fontSize:12,color:SKY,fontWeight:600}}>Cotizada el {fmtDate(q.created_at)} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
           </div>
           {btn(open?"Ocultar ▲":t("quotes.viewDetail")+" ▼",()=>setOpenId(open?null:q.id),"sky")}
@@ -2092,9 +2099,10 @@ function QuotesPage({token,client,onEdit}){
             </div>;})}
 
           <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:18,paddingTop:16,borderTop:HAIR,alignItems:"center"}}>
-            {expired?btn(t("quotes.requote"),()=>onEdit?.(q),"gold"):<>{btn(chosen?`Avanzar por WhatsApp con ${chosen.name} →`:t("quotes.goWA"),()=>sendWA(q),"green")}{btn(t("quotes.editInCalc"),()=>onEdit?.(q),"ghost")}</>}
+            {esImpo?<>{btn(`${t("quotes.viewImport")} →`,()=>opQ&&onOpenOp?.(opQ),"gold",!opQ)}<span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{t("quotes.importUpdates")}</span></>
+              :expired?btn(t("quotes.requote"),()=>onEdit?.(q),"gold"):<>{btn(chosen?`Avanzar por WhatsApp con ${chosen.name} →`:t("quotes.goWA"),()=>sendWA(q),"green")}{btn(t("quotes.editInCalc"),()=>onEdit?.(q),"ghost")}</>}
             <span style={{flex:1}}/>
-            {btn("Eliminar",()=>delQuote(q),"red")}
+            {!esImpo&&btn("Eliminar",()=>delQuote(q),"red")}
           </div>
         </div>}
       </div>;})}
@@ -2897,7 +2905,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="rates"&&<RatesPage token={token} client={client}/>}
     {page==="calculator"&&<CalculatorPage token={token} client={client} preset={calcPreset}/>}
     {page==="services"&&<ServicesPage client={client}/>}
-    {page==="quotes"&&<QuotesPage token={token} client={client} onEdit={q=>{setCalcPreset({...q,_t:Date.now()});setPage("calculator");setSelOp(null);}}/>}
+    {page==="quotes"&&<QuotesPage token={token} client={client} onEdit={q=>{setCalcPreset({...q,_t:Date.now()});setPage("calculator");setSelOp(null);}} onOpenOp={op=>{setSelOp(op);setPage("imports");}}/>}
     {/* Puntos y Referidos desactivados (11/06/2026) — rutas removidas, componentes quedan como código muerto para reactivar. */}
     {page==="payments"&&<InternationalPaymentsPage client={client} token={token}/>}
     {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
