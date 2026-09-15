@@ -13196,7 +13196,7 @@ function QuotesList({token}){
       <div class="grid">
         <div>CLIENTE<b>${q.client_name||""}</b><span style="font-family:monospace;color:#1B4F8A">${q.client_code||""}</span></div>
         <div>ORIGEN<b>${q.origin||""}</b></div>
-        <div>CANAL<b>${q.channel_name||""}</b></div>
+        <div>CANAL<b>${viaQ(q)}</b></div>
         <div>ENTREGA<b>${q.delivery||"—"}</b></div>
       </div>
       <h3 style="margin:18px 0 6px;font-size:13px;color:#1B4F8A">Productos y clasificación arancelaria</h3>
@@ -13244,6 +13244,13 @@ function QuotesList({token}){
   };
   // ── Cotizaciones (12/09/2026): sin estados, ordenadas por vencimiento, portal vs link, y análisis de clientes ──
   const numQ=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(5,"0")}`:"—";
+  // Vía de la cotización: solo si el cliente la eligió. Si no eligió, channel_name guarda la
+  // más barata (la columna es NOT NULL) y mostrarla hacía parecer que el cliente había
+  // elegido esa vía cuando todavía tenía las dos abiertas (15/09/2026).
+  const viaQ=q=>{const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
+    if(q.client_selected_channel){const el=alts.find(a=>a.key===q.client_selected_channel);return el?.name||q.channel_name||"";}
+    if(alts.length>1)return `Sin elegir · ${alts.map(a=>String(a.key||"").includes("aereo")?"Aéreo":"Marítimo").join(" / ")}`;
+    return q.channel_name||"";};
   const venceQ=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+15*864e5);
   const diasQ=q=>Math.ceil((venceQ(q)-Date.now())/864e5);
   const colorDias=d=>d<=5?"#f87171":d<=9?"#fbbf24":"#4ade80";
@@ -13293,7 +13300,7 @@ function QuotesList({token}){
               <td style={tdC}>{q.client_code||q.client_name
                 ?<><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code||"—"}</span><br/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{q.client_name||""}</span></>
                 :<span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin cliente</span>}</td>
-              <td style={{...tdStyle,textAlign:"left",maxWidth:300}}><span style={{color:"#fff",fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={mercQ(q)}>{mercQ(q)}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.origin||""}{q.channel_name?` · ${q.channel_name}`:""}</span></td>
+              <td style={{...tdStyle,textAlign:"left",maxWidth:300}}><span style={{color:"#fff",fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={mercQ(q)}>{mercQ(q)}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.origin||""}{viaQ(q)?` · ${viaQ(q)}`:""}</span></td>
               <td style={{...tdC,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",marginRight:5}}>USD</span><span style={{fontWeight:700,color:"#fff"}}>{fmtN(q.total_fob)}</span></td>
               {impo?(()=>{const o=opsById[q.operation_id];return <td style={tdC}>{o?<><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:12.5,color:"#8CC8F5",letterSpacing:"0.04em"}}>{o.operation_code}</span><br/><span style={{fontSize:10.5,fontWeight:700,color:SM[o.status]?.c||"rgba(255,255,255,0.4)"}}>{SM[o.status]?.l||o.status}</span></>:<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>;})()
               :<td style={tdC}>{chipDias(q)}{vencidas&&<><br/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>el {fShort(venceQ(q))}</span></>}</td>}
