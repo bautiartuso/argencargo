@@ -115,6 +115,8 @@ const dqPage=async(t,{token,filters="",desde=0,hasta=59})=>{
 // la plata cuando entra un empleado (las ganancias y costos no son de su vista).
 let ROL_SESION="admin";
 const esEmpleado=()=>ROL_SESION==="empleado";
+// Condición fiscal del cliente, para la columna CF del depósito (16/09/2026).
+const CF_META={responsable_inscripto:{l:"RI",c:"#ef4444",t:"Responsable Inscripto"},monotributista:{l:"MO",c:"#fbbf24",t:"Monotributista"},ninguna:{l:"SF",c:"#94a3b8",t:"Consumidor final"}};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 // calcOpBudget se importa desde lib/calc.js (extraído para testing)
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
@@ -9995,7 +9997,7 @@ function AgentsPanel({token}){
                 <col style={{width:100}}/>
               </colgroup>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000 ↑½","Días","Consolidación","WA"].map(h=><th key={h} title={h.startsWith("Fact. ÷6000")?"Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba":undefined} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+                {["✓","Op","Cliente","CF","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000 ↑½","Días"].map(h=><th key={h} title={h.startsWith("Fact. ÷6000")?"Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba":undefined} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map((o,oIdx)=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
               const sc=orderScore(o);const scMeta=SCORE_META[sc];
@@ -10019,7 +10021,7 @@ function AgentsPanel({token}){
               const ivItems=itemsForOp.filter(i=>i.intervention?.required);
               const ivTypes=[...new Set(ivItems.flatMap(i=>i.intervention?.types||[]))];
               return <Fragment key={o.id}>
-              {showSep&&<tr><td colSpan={11} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
+              {showSep&&<tr><td colSpan={10} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
               <tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
                 <td style={{padding:"10px 12px",boxShadow:`inset 3px 0 0 ${scMeta.c}${sc===0?"":"66"}`}}>{canSelect&&!lockedByAgent?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
                   <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
@@ -10027,8 +10029,20 @@ function AgentsPanel({token}){
                     {isChecked&&<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </span>
                 </label>;})():lockedByAgent?<span title="Un vuelo agrupa ops de UN solo agente — ya tildaste ops de otro agente" style={{display:"inline-flex",width:18,height:18,borderRadius:5,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.02)",opacity:0.35,cursor:"not-allowed"}}/>:<span title={inFlight?"Ya está en un vuelo":o.consolidation_confirmed?"Faltan los documentos del cliente (mercadería y valores)":"Falta confirmar la consolidación"} style={{color:"rgba(255,255,255,0.3)",fontSize:14,cursor:"help"}}>{isExpanded?"▾":"▸"}</span>}</td>
-                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}{hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,cursor:"help"}}>⚠ DIE 0%</span>}{ivItems.length>0&&<span title={`Requiere intervención de organismo:\n${ivItems.map(i=>`• ${i.description}: ${(i.intervention.types||[]).join(" / ")}${i.intervention.reason?` — ${i.intervention.reason}`:""}`).join("\n")}\n\nCoordinar ANTES de subirla a un vuelo.`} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.45)",letterSpacing:"0.05em",marginLeft:6,cursor:"help"}}>⚠ {ivTypes.join("/")||"INTERV."}</span>}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.clients?<>{`${o.clients.client_code} - ${o.clients.first_name||""}${o.clients.last_name?` ${o.clients.last_name}`:""}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>RI</span>}</>:"—"}</td>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,verticalAlign:"top"}}>
+                  <span style={{display:"block"}}>{o.operation_code}</span>
+                  {hasZeroDie&&(()=>{const ncms=[...new Set(zeroDieItems.map(i=>i.ncm_code).filter(Boolean))];
+                    return <span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`}
+                      style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)"}}>⚠ DIE 0% · NCM {ncms[0]||"—"}{ncms.length>1?` +${ncms.length-1}`:""}</span>;})()}
+                  {ivItems.length>0&&<span title={`Requiere intervención de organismo:\n${ivItems.map(i=>`• ${i.description}: ${(i.intervention.types||[]).join(" / ")}${i.intervention.reason?` — ${i.intervention.reason}`:""}`).join("\n")}\n\nCoordinar ANTES de subirla a un vuelo.`}
+                    style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.45)"}}>⚠ {ivTypes.join("/")||"INTERV."}</span>}
+                </td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.clients?`${o.clients.client_code} - ${(o.clients.first_name||"").trim()}`:"—"}</td>
+                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
+                  const cf=CF_META[o.clients?.tax_condition||""];
+                  if(!cf)return <span style={{color:"rgba(255,255,255,0.25)"}}>—</span>;
+                  return <span title={cf.t} style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:4,background:`${cf.c}26`,color:cf.c,border:`1px solid ${cf.c}66`,letterSpacing:"0.05em"}}>{cf.l}</span>;
+                })()}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
                   // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
                   if(o.description&&o.description.trim())return <span title={o.description} style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description}</span>;
@@ -10044,29 +10058,6 @@ function AgentsPanel({token}){
                 <td style={{padding:"10px 12px",color:"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
-                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
-                  {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,whiteSpace:"nowrap"}}>EN VUELO</span>:
-                  o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",whiteSpace:"nowrap"}}>✓ LISTO</span>:
-                  <span title={o.consolidation_confirmed?"Faltan los documentos del cliente":"Falta confirmar la consolidación"} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",whiteSpace:"nowrap"}}>⏳ ESPERANDO</span>}
-                </td>
-                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
-                  const clientWa=o.clients?.whatsapp?String(o.clients.whatsapp).replace(/[^0-9]/g,""):"";
-                  const clientName=(o.clients?.first_name||"Cliente").trim().split(/\s+/)[0];
-                  if(o.deposit_notified){return <button title={`Notificado ${formatDate(o.deposit_notified_at)} — click para desmarcar`} onClick={async(e)=>{e.stopPropagation();if(!(await confirmDialog("¿Desmarcar el aviso de WhatsApp de esta operación?")))return;const rw=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{deposit_notified:false,deposit_notified_at:null}});if(!Array.isArray(rw)||rw.length===0){flash(`❌ ${rw?.message||"No se pudo desmarcar"}`);return;}setDepositOps(prev=>prev.map(x=>x.id===o.id?{...x,deposit_notified:false,deposit_notified_at:null}:x));}} style={{background:"transparent",border:"none",fontSize:14,cursor:"pointer",padding:0}}>✅</button>;}
-                  const origenTxt=o.origin==="USA"?"Estados Unidos":o.origin==="China"?"China":(o.origin||"origen");
-                  const pkgs=opPackages(o.id);
-                  const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);const opVolDiv=Number(opAgent?.volumetric_divisor)||5000;
-                  const trackingsDetail=pkgs.filter(p=>p.national_tracking?.trim()).map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/opVolDiv)*q:0;const pf=Math.max(b,v);return `- Bulto ${p.package_number}${pf>0?` (${pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturables)`:""}: ${p.national_tracking}`;}).join("\n");
-                  const msg=`Hola ${clientName}!\n\nRecibimos tu mercadería en nuestro depósito en ${origenTxt}.${trackingsDetail?`\n\n*Tracking del paquete:*\n${trackingsDetail}`:""}\n\nPara avanzar con la operación, necesitamos que completes la documentación de la carga (mercadería, cantidad, valor declarado).\n\nIngresá acá:\nhttps://argencargo.com.ar/portal?op=${o.operation_code}\n\nUna vez completado, te confirmamos el presupuesto final y avanzamos con el envío.\n\nCualquier duda escribime y desde ya muchas gracias!\nArgencargo`;
-                  const waUrl=clientWa?`https://api.whatsapp.com/send?phone=${clientWa}&text=${encodeURIComponent(msg)}`:"";
-                  return <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
-                    <span style={{fontSize:13}}>❌</span>
-                    <button disabled={!clientWa} title={clientWa?`Enviar WA a ${clientWa}`:"Sin número de WhatsApp"} onClick={async(e)=>{e.stopPropagation();const wnd=window.open(waUrl,"_blank");if(!wnd){flash("❌ Popup bloqueado — no se marcó como notificada");return;}if(!(await confirmDialog(`¿Enviaste el mensaje a ${clientName}? Se marca la op como notificada.`)))return;const ts=new Date().toISOString();const rw=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{deposit_notified:true,deposit_notified_at:ts}});if(!Array.isArray(rw)||rw.length===0){flash(`❌ ${rw?.message||"No se pudo marcar"}`);return;}setDepositOps(prev=>prev.map(x=>x.id===o.id?{...x,deposit_notified:true,deposit_notified_at:ts}:x));}} style={{padding:"3px 7px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:clientWa?"pointer":"not-allowed",opacity:clientWa?1:0.4,background:"#25D366",color:"#fff",display:"inline-flex",alignItems:"center",gap:3,whiteSpace:"nowrap"}}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.336 0-4.512-.767-6.262-2.063l-.437-.341-2.938.985.985-2.938-.341-.437A9.955 9.955 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
-                      WA
-                    </button>
-                  </span>;
-                })()}</td>
               </tr>
               {isExpanded&&(()=>{
                 const itemsOfOp=depositItems.filter(i=>i.operation_id===o.id);
@@ -10074,7 +10065,7 @@ function AgentsPanel({token}){
                 const totalFob=itemsOfOp.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
                 const rpk=repackReqOf(o.id);
                 const canRepack=o.created_by_agent_id&&pkgsOfOp.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(o.status)&&(!rpk||rpk.status!=="pending");
-                return <tr><td colSpan={11} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
+                return <tr><td colSpan={10} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
                   <div style={{padding:"16px 18px",background:"rgba(184,149,106,0.04)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
