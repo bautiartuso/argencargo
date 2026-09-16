@@ -327,6 +327,11 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     if(!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!op.docs_confirmed_at)return{c:GOLD_LIGHT,t:hasItems?t("opq.confirmGoodsShort"):t("opq.loadGoodsShort"),strong:true};
     if(op.status==="en_preparacion"&&Number(op.budget_total||0)<=0)return{c:SKY,t:t("ol.inPreparation")};
     if(op.status==="entregada")return{c:"#4ade80",t:t("ol.readyPickup")};
+    // Mientras la carga viaja el chip dice DONDE esta, no "saldo pendiente" (16/09/2026): estos
+    // tres estados no tenian caso propio y caian al fallback del saldo, asi que una op que recien
+    // habia despegado aparecia como si el cliente estuviera atrasado con un pago. El saldo se sigue
+    // viendo en la columna A ABONAR; el chip queda para el estado operativo.
+    if(SM[op.status]&&["en_transito","arribo_argentina","en_aduana"].includes(op.status))return{c:SM[op.status].c,t:t(SM[op.status].tk)};
     const s=saldoDe(op);if(s.tone==="due"&&!["operacion_cerrada","cancelada"].includes(op.status))return{c:GOLD_LIGHT,t:"Saldo pendiente"};
     return null;};
   const COLS="150px minmax(0,1.5fr) 200px 88px 150px 34px";
