@@ -115,6 +115,10 @@ const dqPage=async(t,{token,filters="",desde=0,hasta=59})=>{
 // la plata cuando entra un empleado (las ganancias y costos no son de su vista).
 let ROL_SESION="admin";
 const esEmpleado=()=>ROL_SESION==="empleado";
+// Rótulo del flete con su tarifa, para que el cliente vea de dónde sale el número (16/09/2026):
+// "Flete aéreo internacional (USD 14/kg)". Aéreo por kilo, marítimo por m³. Sin tarifa a mano
+// (cotizaciones viejas que no la guardaron) queda el rótulo solo.
+const rotuloFlete=(base,rate,esAereo)=>Number(rate)>0?`${base} (USD ${String(Number(rate)).replace(".",",")}/${esAereo?"kg":"m³"})`:base;
 // Condición fiscal del cliente, para la columna CF del depósito (16/09/2026).
 const CF_META={responsable_inscripto:{l:"RI",c:"#ef4444",t:"Responsable Inscripto"},monotributista:{l:"MO",c:"#fbbf24",t:"Monotributista"},ninguna:{l:"CF",c:"#94a3b8",t:"Consumidor final"}};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
@@ -13112,9 +13116,9 @@ function QuotesList({token}){
       const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
       let detail=null;
       if(isBlancoCh&&isAereoCh){
-        detail=[["Flete aéreo internacional",c.flete||0],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
+        detail=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-Number(c.battExtra||0)],["Recargo por baterías",Number(c.battExtra||0)],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
       }else if(isBlancoCh&&!isAereoCh){
-        detail=[["Servicio marítimo de importación",c.flete||0],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];
+        detail=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),c.flete||0],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];
       }
       if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
       return {key:c.key,name:c.name,info:c.info,type:c.type,totalTax:c.totalTax||0,flete:c.flete||0,overweight:ow,seguro:c.seguro||0,shipCost:c.shipCost||0,totalAbonar:c.totalAbonar||0,detail};
@@ -13418,8 +13422,8 @@ function QuotesList({token}){
       const detalleDe=(c)=>{const isB=c.type==="maritimo_b"||c.type==="aereo_b";const td=c.taxDetail||{};const ow=Number(c.overweightSurcharge||0);const bat=Number(c.battExtra||0);
         let d=[];
         if(isB){d=[["Servicio integral de importación",Number(c.flete||0)]];}
-        else if(c.type==="aereo_a"){d=[["Flete aéreo internacional",Number(c.flete||0)-bat],["Recargo por baterías",bat],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
-        else{d=[["Servicio marítimo de importación",Number(c.flete||0)],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];}
+        else if(c.type==="aereo_a"){d=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-bat],["Recargo por baterías",bat],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
+        else{d=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),Number(c.flete||0)],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];}
         if(Number(c.shipCost||0)>0)d.push(["Envío a domicilio",c.shipCost]);
         return d.filter(([l,v])=>/^(Derechos|Tasa estad)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);};
       const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
@@ -14137,7 +14141,11 @@ function AdminCalculator({token}){
             const desEff=(ovStr!=null&&String(ovStr).trim()!=="")?toN(ovStr):(bd.desembolsoAuto||0);
             const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(c.key)?rateOverride[c.key]:null;
             const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
-            const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*toN(rateOvStr)+Number(c.battExtra||0)):Number(c.flete||0);
+            const fleteRateEff=hasRateOv?toN(rateOvStr):Number(c.fleteRate||0);
+            const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*fleteRateEff+Number(c.battExtra||0)):Number(c.flete||0);
+            // El recargo por baterías venía sumado dentro del flete y no aparecía en ninguna línea:
+            // el cliente veía un flete inflado sin saber por qué. Va como línea propia debajo.
+            const batEff=Number(c.battExtra||0);
             let taxEff=0;
             if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
             else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
@@ -14150,12 +14158,12 @@ function AdminCalculator({token}){
             const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
             let detail=null;
             if(bd.isBlanco&&bd.isAereo){
-              detail=[["Flete aéreo internacional",fleteEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
+              detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff],["Recargo por baterías",batEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
             }else if(bd.isBlanco&&bd.isMaritimo){
-              detail=[["Servicio marítimo de importación",fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
+              detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
             }
             if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
-            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail};
+            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),fleteRate:fleteRateEff,fleteAmt:Number(c.fleteAmt||0),battExtra:batEff,overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail};
           });
           const cli=clientId?allClients.find(c=>c.id===clientId):null;
           const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);
