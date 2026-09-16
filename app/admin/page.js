@@ -116,7 +116,7 @@ const dqPage=async(t,{token,filters="",desde=0,hasta=59})=>{
 let ROL_SESION="admin";
 const esEmpleado=()=>ROL_SESION==="empleado";
 // Condición fiscal del cliente, para la columna CF del depósito (16/09/2026).
-const CF_META={responsable_inscripto:{l:"RI",c:"#ef4444",t:"Responsable Inscripto"},monotributista:{l:"MO",c:"#fbbf24",t:"Monotributista"},ninguna:{l:"SF",c:"#94a3b8",t:"Consumidor final"}};
+const CF_META={responsable_inscripto:{l:"RI",c:"#ef4444",t:"Responsable Inscripto"},monotributista:{l:"MO",c:"#fbbf24",t:"Monotributista"},ninguna:{l:"CF",c:"#94a3b8",t:"Consumidor final"}};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 // calcOpBudget se importa desde lib/calc.js (extraído para testing)
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
@@ -9984,17 +9984,16 @@ function AgentsPanel({token}){
           {!collapsed&&<div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
               <colgroup>
-                <col style={{width:44}}/>
-                <col style={{width:100}}/>
-                <col style={{width:190}}/>
-                <col/>
-                <col style={{width:62}}/>
-                <col style={{width:92}}/>
-                <col style={{width:104}}/>
-                <col style={{width:96}}/>
-                <col style={{width:56}}/>
-                <col style={{width:118}}/>
-                <col style={{width:100}}/>
+                <col style={{width:44}}/>{/* ✓ */}
+                <col style={{width:124}}/>{/* Op — lleva la alerta de DIE 0% en su renglón */}
+                <col style={{width:180}}/>{/* Cliente */}
+                <col style={{width:54}}/>{/* CF */}
+                <col/>{/* Mercadería — toma el resto */}
+                <col style={{width:62}}/>{/* Bultos */}
+                <col style={{width:92}}/>{/* Bruto */}
+                <col style={{width:104}}/>{/* Fact. ÷5000 */}
+                <col style={{width:96}}/>{/* Fact. ÷6000 */}
+                <col style={{width:56}}/>{/* Días */}
               </colgroup>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 {["✓","Op","Cliente","CF","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000 ↑½","Días"].map(h=><th key={h} title={h.startsWith("Fact. ÷6000")?"Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba":undefined} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
@@ -10031,9 +10030,8 @@ function AgentsPanel({token}){
                 </label>;})():lockedByAgent?<span title="Un vuelo agrupa ops de UN solo agente — ya tildaste ops de otro agente" style={{display:"inline-flex",width:18,height:18,borderRadius:5,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.02)",opacity:0.35,cursor:"not-allowed"}}/>:<span title={inFlight?"Ya está en un vuelo":o.consolidation_confirmed?"Faltan los documentos del cliente (mercadería y valores)":"Falta confirmar la consolidación"} style={{color:"rgba(255,255,255,0.3)",fontSize:14,cursor:"help"}}>{isExpanded?"▾":"▸"}</span>}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,verticalAlign:"top"}}>
                   <span style={{display:"block"}}>{o.operation_code}</span>
-                  {hasZeroDie&&(()=>{const ncms=[...new Set(zeroDieItems.map(i=>i.ncm_code).filter(Boolean))];
-                    return <span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`}
-                      style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)"}}>⚠ DIE 0% · NCM {ncms[0]||"—"}{ncms.length>1?` +${ncms.length-1}`:""}</span>;})()}
+                  {hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`}
+                    style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)"}}>⚠ DIE 0%</span>}
                   {ivItems.length>0&&<span title={`Requiere intervención de organismo:\n${ivItems.map(i=>`• ${i.description}: ${(i.intervention.types||[]).join(" / ")}${i.intervention.reason?` — ${i.intervention.reason}`:""}`).join("\n")}\n\nCoordinar ANTES de subirla a un vuelo.`}
                     style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.45)"}}>⚠ {ivTypes.join("/")||"INTERV."}</span>}
                 </td>
