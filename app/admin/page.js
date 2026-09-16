@@ -8435,47 +8435,25 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       }
       return;
     }
-    // --- Rama original: comprimir UNA op (toca flight_invoice_items + operation_items) ---
-    const {opId,proposed,original,origMap}=compressState;
+    // --- Rama original: comprimir UNA op (solo flight_invoice_items) ---
+    const {opId,proposed}=compressState;
     setCompressState(s=>({...s,applying:true}));
     try{
-      // 1. Backup operation_items originales (precios que declaró el cliente)
-      const opItemsFull=await dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=*`});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{items_backup_json:Array.isArray(opItemsFull)?opItemsFull:[]}});
-      // Para cada grupo, calcular precio ORIGINAL (no subfacturado) basándose en operation_items via source_item_id
-      // El cliente tiene que ver SUS precios declarados, no los subfacturados que van a aduana.
-      const groupsWithOrig=proposed.groups.map(g=>{
-        let origTotal=0,origQty=0;
-        for(const idx of g.source_indices){
-          const fii=original[idx];
-          if(!fii)continue;
-          const orig=fii.source_item_id?origMap[fii.source_item_id]:null;
-          if(orig){
-            origTotal+=Number(orig.quantity||0)*Number(orig.unit_price_usd||0);
-            origQty+=Number(orig.quantity||0);
-          } else {
-            // Item agregado manual al vuelo (sin source) → usar el precio del flight_invoice_item
-            origTotal+=Number(fii.quantity||0)*Number(fii.unit_price_declared_usd||0);
-            origQty+=Number(fii.quantity||0);
-          }
-        }
-        const origUnitPrice=origQty>0?Number((origTotal/origQty).toFixed(4)):g.unit_price_usd;
-        return {...g,orig_unit_price_usd:origUnitPrice};
-      });
-      // 2. Reemplazar flight_invoice_items con precio SUBFACTURADO (el de la IA = promedio del subfacturado)
+      // La compresión es SOLO para la factura de exportación (RG 5608, máx. 8 ítems). La
+      // mercadería de la op NO se toca: el cliente tiene que seguir viendo producto por producto
+      // con su costo unitario puesto en Argentina, y su presupuesto se calcula con la alícuota de
+      // cada uno. Hasta el 16/09/2026 este paso borraba operation_items y los reemplazaba por los
+      // grupos comprimidos (en inglés y con precios promediados): el cliente perdía su detalle y
+      // el presupuesto pasaba a usar un HS único para productos con alícuotas distintas.
+      // Reemplazar flight_invoice_items con el precio declarado a Aduana.
       await dq("flight_invoice_items",{method:"DELETE",token,filters:`?flight_id=eq.${flight.id}&operation_id=eq.${opId}`});
       let sortIdx=0;
-      for(const g of groupsWithOrig){
+      for(const g of proposed.groups){
         sortIdx++;
         await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:g.description,quantity:g.quantity,unit_price_declared_usd:g.unit_price_usd,hs_code:g.hs_code||"",sort_order:sortIdx}});
       }
-      // 3. Reemplazar operation_items con precio ORIGINAL (lo que el cliente declaró)
-      await dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${opId}`});
-      for(const g of groupsWithOrig){
-        await dq("operation_items",{method:"POST",token,body:{operation_id:opId,description:g.description,quantity:g.quantity,unit_price_usd:g.orig_unit_price_usd,ncm_code:g.hs_code||""}});
-      }
       setCompressState(null);
-      onFlash(`✓ ${proposed.original_count} → ${proposed.compressed_count} items · cliente ve precios originales · backup guardado`);
+      onFlash(`✓ ${proposed.original_count} → ${proposed.compressed_count} ítems en la factura · la mercadería del cliente queda intacta`);
       onReload();
     }catch(e){
       console.error("compress apply error",e);
