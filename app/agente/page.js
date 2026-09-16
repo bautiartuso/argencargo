@@ -1204,7 +1204,9 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // Peso facturable: el agente lo puede ajustar a mano (prefill con el calculado de los bultos).
   const [factKgInput,setFactKgInput]=useState("");
   const [tracking,setTracking]=useState(flight.international_tracking||"");
-  const pedido=flight.requested_carrier==="FEDEX"?"FedEx":flight.requested_carrier==="DHL"?"DHL":null; // courier que pidió Argencargo
+  // Courier que pidió Argencargo. El valor tiene que coincidir con una opción del select de
+  // abajo (DHL / FedEx / UPS): si no matchea, el aviso no aparece y el chequeo queda muerto.
+  const pedido={FEDEX:"FedEx",DHL:"DHL",UPS:"UPS"}[flight.requested_carrier]||null;
   const [carrier,setCarrier]=useState(flight.international_carrier||pedido||"DHL");
   const [pmtMethod,setPmtMethod]=useState(flight.payment_method||"cuenta_corriente");
   const [saving,setSaving]=useState(false);
