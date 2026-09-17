@@ -13011,13 +13011,29 @@ function QuotesList({token}){
   const [editOrigin,setEditOrigin]=useState("China");const [editBatt,setEditBatt]=useState(false);const [openAlt,setOpenAlt]=useState(null);
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
+  // Refresco en vivo (17/09/2026): la lista cargaba una sola vez al abrir la solapa, así que una
+  // cotización recién hecha no aparecía hasta recargar la página. Se releen SOLO las
+  // cotizaciones (clientes, tarifas y config no cambian mientras mirás) cada 45 s, y nada
+  // mientras la pestaña está en segundo plano o mientras tenés una abierta editándola.
+  const [ultimaCarga,setUltimaCarga]=useState(null);
+  useEffect(()=>{
+    const refrescar=async()=>{
+      if(typeof document!=="undefined"&&document.visibilityState!=="visible")return;
+      const q=await dq("quotes",{token,filters:"?select=*&order=created_at.desc"}).catch(()=>null);
+      if(Array.isArray(q)){setQuotes(q);setUltimaCarga(new Date());}
+    };
+    const t=setInterval(()=>{if(!selQuote)refrescar();},45000);
+    const onVis=()=>{if(!selQuote)refrescar();};
+    if(typeof document!=="undefined")document.addEventListener("visibilitychange",onVis);
+    return()=>{clearInterval(t);if(typeof document!=="undefined")document.removeEventListener("visibilitychange",onVis);};
+  },[token,selQuote]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc,op]=await Promise.all([
     dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),
     dqTodos("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"}),
     dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
     dq("calc_config",{token,filters:"?select=*"}),
     dqTodos("operations",{token,filters:"?select=id,client_id,operation_code,created_at,status,declared_value_usd"})
-  ]);setQuotes(Array.isArray(q)?q:[]);setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
+  ]);setQuotes(Array.isArray(q)?q:[]);setUltimaCarga(new Date());setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
   useEffect(()=>{
     if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
     const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];
@@ -13359,6 +13375,10 @@ function QuotesList({token}){
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder={vista==="cotis"?"Buscar cliente, número, producto…":"Buscar cliente…"}
           style={{padding:"8px 12px",fontSize:12,width:240,border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
+        {ultimaCarga&&<span title={selQuote?"Pausado mientras tenés una cotización abierta":"Se actualiza solo cada 45 segundos"} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>
+          <span className={selQuote?undefined:"ac-live-dot"} style={{width:6,height:6,borderRadius:"50%",background:selQuote?"rgba(255,255,255,0.25)":"#4ade80",display:"inline-block"}}/>
+          {ultimaCarga.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}
+        </span>}
         {tabBtn("cotis","Cotizaciones")}{tabBtn("analisis","Análisis de clientes")}
       </div>
     </div>
