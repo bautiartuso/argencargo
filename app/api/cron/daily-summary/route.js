@@ -36,6 +36,8 @@ const usd = (n) => `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFracti
 
 const NAVY = "#152D54", AC = "#3B7DD8", GOLD = "#B8956A", GOLD_LIGHT = "#D4B17A";
 
+import { enviarEmail } from "../../../../lib/email";
+
 function renderHtml({ yesterdayDate, opsCreatedYesterday, opsCobradasYesterday, montoCobradoYesterday, packagesYesterday, todayPending, overdueReminders }) {
   const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
   const dateStr = new Date(yesterdayDate).toLocaleDateString("es-AR", { weekday: "long", day: "2-digit", month: "long" });
@@ -155,13 +157,8 @@ export async function GET(req) {
   }
 
   const dateStr = yesterday.toLocaleDateString("es-AR", { day: "2-digit", month: "long" });
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: RESEND_FROM, to: [ADMIN_EMAIL], subject: `☀ Resumen Argencargo · ${dateStr}`, html }),
-  });
-  const j = await r.json().catch(() => null);
-  if (!r.ok) return Response.json({ error: "send failed", detail: j }, { status: 500 });
+  const env = await enviarEmail({ to: ADMIN_EMAIL, subject: `☀ Resumen Argencargo · ${dateStr}`, html, trigger: "daily-summary" });
+  if (!env.ok) return Response.json({ error: "send failed", detail: env.detail || env.error }, { status: 500 });
 
   return Response.json({ ok: true, sent_to: ADMIN_EMAIL, summary: { opsCreatedYesterday, opsCobradasYesterday, montoCobradoYesterday: montoCobradoYesterday.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}), packagesYesterday, todayPending: todayPending.length, overdueReminders: overdueReminders.length } });
 }

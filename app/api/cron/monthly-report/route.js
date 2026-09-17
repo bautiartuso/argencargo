@@ -78,6 +78,8 @@ const AC = "#3B7DD8";
 const GOLD = "#B8956A";
 const GOLD_LIGHT = "#D4B17A";
 
+import { enviarEmail } from "../../../../lib/email";
+
 function renderEmailHtml(r, periodLabel) {
   const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
   const channelLabels = { aereo_blanco: "Aéreo Courier Comercial", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo Integral AC" };
@@ -210,13 +212,8 @@ export async function GET(req) {
   }
 
   // Enviar mail
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: RESEND_FROM, to: [ADMIN_EMAIL], subject, html }),
-  });
-  const j = await r.json().catch(() => null);
-  if (!r.ok) return Response.json({ error: "send failed", detail: j }, { status: 500 });
+  const env = await enviarEmail({ to: ADMIN_EMAIL, subject, html, trigger: "monthly-report" });
+  if (!env.ok) return Response.json({ error: "send failed", detail: env.detail || env.error }, { status: 500 });
 
   return Response.json({
     ok: true,

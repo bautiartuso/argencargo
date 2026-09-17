@@ -12369,6 +12369,49 @@ const SEG_POR_PAGINA=40;
 // Seguimiento comercial: a quien hay que escribirle. Dos grupos, con su propio mensaje.
 // La consulta la resuelve clientes_seguimiento() en la base y se pide de a paginas: son
 // ~950 clientes y traerlos todos al navegador para filtrarlos aca no escala.
+// Registro de correos (17/09/2026). Antes no había forma de saber si un aviso salió: si se
+// vencía la API key de Resend o un cliente tenía el mail mal escrito, el error quedaba en los
+// logs de Vercel y nadie lo veía. Ahora todo envío pasa por lib/email y queda en email_log.
+function EmailLogPanel({token}){
+  const [rows,setRows]=useState([]);const [lo,setLo]=useState(true);const [soloFallos,setSoloFallos]=useState(false);
+  const cargar=async()=>{
+    const f=soloFallos?"&ok=is.false":"";
+    const r=await dq("email_log",{token,filters:`?select=*&order=ts.desc&limit=80${f}`}).catch(()=>null);
+    setRows(Array.isArray(r)?r:[]);setLo(false);
+  };
+  useEffect(()=>{setLo(true);cargar();},[token,soloFallos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fallos=rows.filter(x=>!x.ok).length;
+  const fecha=(t)=>{const d=new Date(t);return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} ${d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}`;};
+  const th={padding:"9px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"};
+  const td={padding:"10px 12px",fontSize:12.5,color:"rgba(255,255,255,0.75)",verticalAlign:"top"};
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <button onClick={()=>setSoloFallos(v=>!v)} style={{padding:"6px 13px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${soloFallos?"rgba(248,113,113,0.5)":"rgba(255,255,255,0.12)"}`,background:soloFallos?"rgba(248,113,113,0.12)":"transparent",color:soloFallos?"#f87171":"rgba(255,255,255,0.6)"}}>{soloFallos?"Viendo solo los que fallaron":"Ver solo los que fallaron"}</button>
+      <button onClick={()=>{setLo(true);cargar();}} style={{padding:"6px 13px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)"}}>↻ Actualizar</button>
+      {!lo&&!soloFallos&&<span style={{fontSize:12,color:fallos>0?"#f87171":"#4ade80",fontWeight:600}}>{fallos>0?`${fallos} de los últimos ${rows.length} fallaron`:`Los últimos ${rows.length} salieron bien`}</span>}
+    </div>
+    {lo?<p style={{fontSize:13,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>
+      :rows.length===0?<p style={{fontSize:13,color:"rgba(255,255,255,0.4)"}}>{soloFallos?"Ningún envío falló. ":"Todavía no hay envíos registrados. "}El registro arrancó el 17/09/2026.</p>
+      :<div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.25)"}}>
+            {["","Cuándo","Aviso","Para","Asunto"].map((h,i)=><th key={i} style={th}>{h}</th>)}
+          </tr></thead>
+          <tbody>{rows.map(x=><tr key={x.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{...td,width:26}} title={x.ok?"Resend lo aceptó":`Falló: ${x.error||"sin detalle"}`}>{x.ok?"✅":"❌"}</td>
+            <td style={{...td,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fecha(x.ts)}</td>
+            <td style={{...td,whiteSpace:"nowrap"}}><span style={{fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:5,background:"rgba(96,165,250,0.14)",color:"#60a5fa"}}>{x.trigger||"—"}</span></td>
+            <td style={{...td,whiteSpace:"nowrap"}}>{x.to_email||"—"}</td>
+            <td style={td}>{x.ok?(x.subject||"—"):<span style={{color:"#f87171"}}>{x.error||x.subject||"—"}</span>}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </div>}
+    <p style={{fontSize:11.5,color:"rgba(255,255,255,0.35)",margin:"12px 0 0",lineHeight:1.5}}>
+      ✅ quiere decir que Resend lo aceptó. Si llegó a la bandeja o rebotó después se ve en resend.com/emails.
+    </p>
+  </div>;
+}
+
 function SeguimientoPanel({token,templates,flash}){
   const [seg,setSeg]=useState("inactivo");
   const dias=30; // "inactivo" = mas de 30 dias sin operar (pedido 31/07: antes era 90)
@@ -12649,12 +12692,12 @@ function ComunicacionesPanel({token}){
     </div>
     <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>{tab==="seguimiento"?"A quién le conviene escribirle hoy para que vuelva a operar.":"Notificaciones manuales (WhatsApp), plantillas y feedback de clientes."}</p>
     <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:10,border:"1px solid rgba(255,255,255,0.07)",marginBottom:20,width:"fit-content",maxWidth:"100%",flexWrap:"wrap"}}>
-      {[{k:"seguimiento",l:"Seguimiento de clientes"},{k:"operativa",l:"Operativa y plantillas"}].map(o=>
+      {[{k:"seguimiento",l:"Seguimiento de clientes"},{k:"operativa",l:"Operativa y plantillas"},{k:"enviados",l:"Correos enviados"}].map(o=>
         <button key={o.k} onClick={()=>setTab(o.k)} style={{padding:"7px 15px",fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:tab===o.k?GOLD_GRADIENT:"transparent",color:tab===o.k?"#0A1628":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
 
-    {tab==="seguimiento"?<SeguimientoPanel token={token} templates={templates} flash={flash}/>:<>
+    {tab==="enviados"?<EmailLogPanel token={token}/>:tab==="seguimiento"?<SeguimientoPanel token={token} templates={templates} flash={flash}/>:<>
 
     {/* WAs pendientes */}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:20}}>

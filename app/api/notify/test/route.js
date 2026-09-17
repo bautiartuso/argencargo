@@ -10,6 +10,8 @@ const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.
 const LOGO_WHITE = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 const LOGO_COLOR = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
 
+import { enviarEmail } from "../../../../lib/email";
+
 async function verifyAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
@@ -75,19 +77,9 @@ export async function POST(req) {
   </table>
 </body></html>`;
 
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [to],
-        subject: "✅ Argencargo — Test de notificaciones",
-        html,
-      }),
-    });
-    const resp = await r.json();
-    if (!r.ok) return Response.json({ error: "resend_failed", detail: resp }, { status: 500 });
-    return Response.json({ ok: true, resend_id: resp.id });
+    const env = await enviarEmail({ to, subject: "✅ Argencargo — Test de notificaciones", html, trigger: "test" });
+    if (!env.ok) return Response.json({ error: "resend_failed", detail: env.detail || env.error }, { status: 500 });
+    return Response.json({ ok: true, resend_id: env.id });
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 });
   }

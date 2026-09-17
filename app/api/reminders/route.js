@@ -15,6 +15,8 @@ const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
 const LOGO_WHITE = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 
+import { enviarEmail } from "../../../lib/email";
+
 export const maxDuration = 60;
 
 async function sb(path, opts = {}) {
@@ -101,13 +103,9 @@ async function sendReminder(op, trigger) {
   const body = mdToHtml(interpolate(tpl.body, data));
   const html = renderShell({ subject, greeting, body, ctaLink: data.portalLink, ctaText: tpl.cta_text });
 
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: RESEND_FROM, to: [client.email], subject, html }),
-  });
-  const resp = await r.json();
-  if (!r.ok) return { error: "resend_failed", detail: resp };
+  const env = await enviarEmail({ to: client.email, subject, html, trigger: `reminder:${trigger}`, client_id: client.id || null, op_id: op?.id || null });
+  if (!env.ok) return { error: "resend_failed", detail: env.detail || env.error };
+  const resp = { id: env.id };
 
   // Marcar como enviado
   const sentKey = `email_${trigger}`;

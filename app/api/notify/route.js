@@ -18,6 +18,8 @@ const RESEND_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.ar>";
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
 
+import { enviarEmail } from "../../../lib/email";
+
 export const maxDuration = 30;
 
 async function sb(path, opts = {}) {
@@ -230,13 +232,9 @@ export async function POST(req) {
       const body = mdToHtml(`${n > 1 ? `Ya tenés **${n} bultos** esperando en nuestro depósito de ${origen}.` : `Recibimos **un bulto tuyo** en nuestro depósito de ${origen}.`}\n\nCuando estén todos los que esperás, entrá al portal, elegí cuáles viajan juntos y creá tu importación. Ahí cargás la mercadería y ves el costo estimado al instante.`);
       const extraHtml = `<div style="text-align:center;margin:24px 0"><a href="${BASE_URL}/portal" style="display:inline-block;padding:14px 32px;background:${AC};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">Ver mis bultos en el portal</a></div>`;
       const html = renderEmailShell({ subject, greeting, body, extraHtml, opCode: null, NAVY, AC });
-      const r = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: RESEND_FROM, to: [cl.email], subject, html }),
-      });
-      const resp = await r.json();
-      if (!r.ok) return Response.json({ error: "resend_failed", detail: resp }, { status: 500 });
+      const env = await enviarEmail({ to: cl.email, subject, html, trigger: "bulto_deposito", client_id });
+      if (!env.ok) return Response.json({ error: "resend_failed", detail: env.detail || env.error }, { status: 500 });
+      const resp = { id: env.id };
       await sb(`/rest/v1/clients?id=eq.${client_id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ deposit_email_last_at: new Date().toISOString() }) });
       return Response.json({ ok: true, resend_id: resp.id, bultos: n });
     }
@@ -278,18 +276,9 @@ export async function POST(req) {
     const tpl = await renderEmail(trigger, op, client);
     if (!tpl) return Response.json({ error: "template no encontrada" }, { status: 500 });
 
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [client.email],
-        subject: tpl.subject,
-        html: tpl.html,
-      }),
-    });
-    const resp = await r.json();
-    if (!r.ok) return Response.json({ error: "resend_failed", detail: resp }, { status: 500 });
+    const env = await enviarEmail({ to: client.email, subject: tpl.subject, html: tpl.html, trigger, client_id: client.id || null, op_id });
+    if (!env.ok) return Response.json({ error: "resend_failed", detail: env.detail || env.error }, { status: 500 });
+    const resp = { id: env.id };
 
     // Aviso de retiro también por WhatsApp (bot de entregas): plantilla fija, sin IA.
     // Best-effort y no-op sin credenciales de Meta — el mail ya salió igual.

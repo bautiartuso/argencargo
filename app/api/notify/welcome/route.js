@@ -10,6 +10,8 @@ const RESEND_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.ar>";
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 
+import { enviarEmail } from "../../../../lib/email";
+
 export const maxDuration = 30;
 
 async function sb(path, opts = {}) {
@@ -152,28 +154,15 @@ export async function POST(req) {
 
     const html = renderShell({ subject, greeting, body, ctaLink, ctaText });
 
-    // Enviar via Resend
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [client.email],
-        subject,
-        html,
-      }),
-    });
-
-    const respBody = await resp.json().catch(() => null);
-    if (!resp.ok) {
+    // Enviar via Resend (queda registrado en email_log)
+    const env = await enviarEmail({ to: client.email, subject, html, trigger: "welcome", client_id });
+    if (!env.ok) {
       return Response.json(
-        { error: "fallo en envío", detail: respBody, status: resp.status },
+        { error: "fallo en envío", detail: env.detail || env.error, status: env.status },
         { status: 500 }
       );
     }
+    const respBody = { id: env.id };
 
     // Marcar welcome_sent_at
     await sb(`/rest/v1/clients?id=eq.${client_id}`, {
