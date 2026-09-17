@@ -20,7 +20,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_MODEL } from "../../../../lib/anthropic";
-import { tgNotify } from "../../../../lib/telegram";
+import { tgNotify, logUso, costoClaude } from "../../../../lib/telegram";
 
 export const maxDuration = 60;
 // Cuánto se espera a que el cliente termine de escribir antes de contestarle la ráfaga completa.
@@ -338,6 +338,10 @@ async function runAgent(phone, userText, history) {
       tools: esCliente ? TOOLS : LEAD_TOOLS,
       messages: turn,
     });
+    if (resp?.usage) {
+      const inp = resp.usage.input_tokens || 0, out = resp.usage.output_tokens || 0;
+      logUso({ provider: "claude", model: CLAUDE_MODEL, feature: esCliente ? "bot-entregas" : "bot-lead", input_tokens: inp, output_tokens: out, cost_usd: costoClaude(CLAUDE_MODEL, inp, out) });
+    }
     const toolUses = resp.content.filter((b) => b.type === "tool_use");
     const text = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
     if (toolUses.length === 0) { reply = text; break; }

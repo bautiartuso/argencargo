@@ -10,6 +10,29 @@ export const maxDuration = 30;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 
+// ── Memoria de clasificaciones (17/09/2026) ─────────────────────────────────
+// La misma descripción se clasificaba de nuevo cada vez: 938 llamadas a Opus en 11 días.
+// Se guarda SOLO el código; las alícuotas, la intervención y el antidumping se recalculan
+// siempre, así una corrección en la base se refleja al instante.
+// Las funciones son security definer y solo para service_role (con la clave pública, un
+// tercero podría envenenar el caché y cambiarle los derechos a un cliente).
+async function rpcCache(fn, body) {
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!key) return null;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) return null;
+    const t = await r.text();
+    try { return JSON.parse(t); } catch { return null; }
+  } catch { return null; }
+}
+const cacheBuscar  = (desc) => rpcCache("ncm_cache_buscar", { p_desc: desc });
+const cacheGuardar = (desc, ncm, src) => rpcCache("ncm_cache_guardar", { p_desc: desc, p_ncm: ncm, p_source: src || "claude" });
+
 async function searchDB(ncmCode) {
   let r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=eq.${ncmCode}&select=ncm_code,description,die,te,iva&limit=5`, { headers: { apikey: SB_KEY } });
   let d = await r.json();
@@ -260,6 +283,15 @@ async function addAntidumping(obj) {
   } catch { return obj; }
 }
 
+// Dado un NCM, arma la respuesta completa con las alícuotas de la base, la intervención por
+// prefijo y el antidumping. Es el paso que ANTES se hacía sólo después de llamar a la IA.
+async function respuestaDeNcm(ncmCode, intervencionIA, extras, source) {
+  const intervention = enforceInterventionByNcm(ncmCode, intervencionIA || { required: false, types: [], reason: null });
+  const results = await searchDB(ncmCode);
+  if (results.length > 0) return await addAntidumping({ ...pickBest(results, intervention), ...extras, source });
+  return await addAntidumping({ ncm_code: ncmCode, ncm_description: null, import_duty_rate: 35, statistics_rate: 3, iva_rate: 21, intervention, ...extras, source });
+}
+
 export async function POST(req) {
   try {
     const { description, image, image_mime, check_ncm_only, hint } = await req.json();
@@ -288,6 +320,11 @@ export async function POST(req) {
     if (!image && description) {
       const override = checkOverride(description);
       if (override) return Response.json(withHint(await addAntidumping(override)));
+      // Memoria: si esta descripción ya se clasificó, no se vuelve a llamar a la IA.
+      const recordado = await cacheBuscar(description);
+      if (typeof recordado === "string" && recordado) {
+        return Response.json(withHint(await respuestaDeNcm(recordado, null, {}, "memoria")));
+      }
     }
 
     // Clasificar: con imagen → vision, sin imagen → texto
@@ -302,6 +339,7 @@ export async function POST(req) {
       // suplementos, cosméticos, etc., especialmente cuando el producto se vende
       // como "wellness" sin la palabra "médico").
       const enforcedIntervention = enforceInterventionByNcm(claudeResult.ncm_code, claudeResult.intervention);
+      if (!image && description && !hintCode) cacheGuardar(description, claudeResult.ncm_code, "claude").catch(() => {});
       const results = await searchDB(claudeResult.ncm_code);
       if (results.length > 0) return Response.json(withHint(await addAntidumping({ ...pickBest(results, enforcedIntervention), ...extras })));
       // No match en DB pero tenemos NCM de Claude — devolver con defaults

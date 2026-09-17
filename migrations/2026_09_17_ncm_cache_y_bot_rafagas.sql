@@ -1,0 +1,17 @@
+-- 17/09/2026 · Dos cosas: el bot dejaba de contestar dos veces, y el NCM deja de reclasificar
+-- lo mismo una y otra vez. Aplicado en producción vía MCP; queda acá como registro.
+--
+-- 1) RÁFAGAS DEL BOT (bot_encolar_entrante / bot_tomar_entrantes)
+--    Cada mensaje de WhatsApp es un webhook: dos mensajes seguidos del mismo cliente se
+--    procesaban en paralelo y cada uno leía el historial antes de que el otro lo guardara.
+--    Resultado: dos respuestas que se ignoraban. Ahora se encolan y contesta sólo el último.
+--
+-- 2) MEMORIA DE CLASIFICACIONES (ncm_cache + ncm_norm + trigger)
+--    /api/ncm llamaba a Opus por cada producto: 938 llamadas en 11 días, muchas por
+--    descripciones repetidas. Se guarda SÓLO el ncm_code; las alícuotas, la intervención y el
+--    antidumping se recalculan siempre, así una corrección en la base se refleja al instante.
+--    El trigger sobre operation_items.ncm_code marca como decisión humana cualquier cambio que
+--    difiera de lo cacheado, y la IA ya no lo pisa.
+--
+-- Todas las funciones son SECURITY DEFINER con execute sólo para service_role: con la clave
+-- pública, un tercero podría envenenar el caché y cambiarle los derechos a un cliente.
