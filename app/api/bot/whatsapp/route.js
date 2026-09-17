@@ -23,6 +23,8 @@ import { CLAUDE_MODEL } from "../../../../lib/anthropic";
 import { tgNotify } from "../../../../lib/telegram";
 
 export const maxDuration = 60;
+// Cuánto se espera a que el cliente termine de escribir antes de contestarle la ráfaga completa.
+const ESPERA_RAFAGA_MS = 7000;
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -254,6 +256,8 @@ REGLAS:
 - Si el cliente no tiene cargas en la consulta: decile que por ahora no tiene entregas pendientes y que cuando llegue una carga le avisás por acá. Nada más.
 - OFICINA (retiros): ${stg.office_address || "Virrey Loreto 2428"}${stg.office_locality ? `, ${stg.office_locality}` : ", Belgrano, CABA"}${stg.office_hours ? ` · ${stg.office_hours}` : ""}. Si el cliente retira o pregunta dónde estamos, pasale la dirección directamente por acá (nunca lo mandes al link para eso).
 - DATOS PARA TRANSFERIR EN PESOS: ${stg.payment_alias || "ver link de la carga"}${stg.payment_titular ? ` · Titular: ${stg.payment_titular}` : ""}. Si el cliente paga por transferencia, pasáselos directamente.
+- Si el cliente pide un día que no se puede (hoy mismo, un sábado, un domingo o un feriado), NO le vuelvas a preguntar el día: decile en una línea por qué no se puede, ofrecele el próximo día hábil concreto con su fecha y pedile la franja EN EL MISMO MENSAJE. Ya sabés qué día quiere; lo que falta es la hora.
+- Si en un mismo turno te llegan varios datos (por ejemplo el día y la dirección juntos), tomá TODOS y preguntá solo lo que falte de verdad. Nunca pidas algo que el cliente ya te dijo.
 - Retiros por oficina: lunes a viernes. Las franjas válidas vienen en la consulta (franjas_por_modalidad: ¡las de envío a domicilio difieren de las de oficina!). Si cambiás la modalidad, usá EXACTAMENTE las franjas de la nueva modalidad. Si pide una hora puntual, ofrecele la franja que la contiene.
 - CRÍTICO: nada está coordinado ni confirmado hasta que la tool coordinar devuelva ok. Jamás digas "confirmado", "listo" o "quedó coordinado" antes de eso — mientras junten los datos, dejá claro que falta confirmar. Apenas tengas día+franja (+dirección si es envío), ejecutá coordinar; el método de pago se puede cambiar después con otro llamado.
 - Efectivo: preguntá con qué moneda paga (dólares, pesos o mixto) y, si necesita cambio, con cuánto llega. Pesos: usá el tc_blue_venta de la consulta para decirle el monto en ARS (aclarando que se ajusta al valor del día del pago).
@@ -553,8 +557,27 @@ export async function POST(req) {
       await notifyAdmins("💬 WhatsApp (modo humano)", `${phone}: ${String(logContent || "").slice(0, 180)}`);
       return Response.json({ ok: true });
     }
+    // Ráfagas: en WhatsApp la gente escribe de a pedazos ("Hoy" · "Felipe Vallese 3320").
+    // Cada mensaje es un webhook, así que antes se procesaban en paralelo y cada uno leía el
+    // historial ANTES de que el otro lo guardara: dos respuestas que se ignoraban entre sí
+    // (17/09/2026, Dana: una le ofreció reprogramar y la otra le volvió a pedir el día).
+    // Ahora el mensaje se encola, se espera un momento y contesta SOLO el último de la ráfaga,
+    // con todos los textos juntos en un mismo turno.
+    let textos = [text];
+    if (msg.type === "text") {
+      const marca = await sb(`/rpc/bot_encolar_entrante`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone, p_text: text }) })
+        .then((r) => (typeof r.body === "string" ? r.body : null)).catch(() => null);
+      if (marca) {
+        await new Promise((r) => setTimeout(r, ESPERA_RAFAGA_MS));
+        const cola = await sb(`/rpc/bot_tomar_entrantes`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone, p_marca: marca }) })
+          .then((r) => (Array.isArray(r.body) ? r.body : null)).catch(() => null);
+        // Null = llegó otro mensaje después: ese webhook contesta por todos y este se va callado.
+        if (!cola) return Response.json({ ok: true, agrupado: true });
+        textos = cola.filter((t) => String(t || "").trim());
+      }
+    }
     const history = await loadHistory(phone);
-    const { reply, newHistory } = await runAgent(phone, text, history);
+    const { reply, newHistory } = await runAgent(phone, textos.join("\n"), history);
     await saveHistory(phone, newHistory);
     const wamid = await sendWhatsApp(phone, reply);
     await logMsg(phone, "assistant", reply, { wamid });
