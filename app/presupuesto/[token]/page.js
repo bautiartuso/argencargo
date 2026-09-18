@@ -56,14 +56,21 @@ const CSS = `
 .pz-prod{grid-template-columns:1fr 92px 44px 96px 104px}
 .pz-bul{grid-template-columns:58px 40px 1fr 88px 104px}
 .pz-bul .u{color:rgba(26,26,26,.5)}
-/* Costo de cada producto puesto en Argentina. La ultima columna es la que importa: va resaltada. */
-.pz-land{grid-template-columns:1fr 42px 84px 84px 96px 104px}
-.pz-land.sin-imp{grid-template-columns:1fr 42px 96px 108px 116px}
+/* Costo de cada producto puesto en Argentina. La ultima columna es la que importa: va resaltada.
+   Los importes van sin "USD" adelante (se aclara una vez arriba): con el prefijo no entraban en
+   la columna y los montos de cuatro cifras se partian en dos lineas. */
+.pz-land{grid-template-columns:1fr 44px 84px 84px 96px 100px}
+.pz-land.sin-imp{grid-template-columns:1fr 44px 96px 108px 112px}
+.pz-land>span:not(:first-child){white-space:nowrap}
 .pz-land>span:last-child{font-weight:800;color:#8a6a3f}
-.pz-land.head>span:last-child{color:#8a6a3f}
 .pz-landbox{margin-top:13px;padding-top:11px;border-top:1px dashed #eae4d6}
 .pz-landbox>p.t{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(26,26,26,.55);margin:0 0 2px}
 .pz-landbox>p.d{font-size:11.5px;color:rgba(26,26,26,.5);margin:0 0 6px;line-height:1.5}
+.pz-landtot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:9px;padding-top:9px;border-top:1.5px solid rgba(26,26,26,.18)}
+.pz-landtot>span{font-size:12.5px;font-weight:800}
+.pz-landtot>span>small{display:block;font-size:11px;font-weight:500;color:rgba(26,26,26,.5);margin-top:2px}
+.pz-landtot>b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:#8a6a3f}
+@media(max-width:620px){.pz-land>span:not(:first-child){white-space:normal}}
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
 @media(max-width:620px){
@@ -146,7 +153,7 @@ function CostoPorProducto({ alt }) {
   return (
     <div className="pz-landbox">
       <p className="t">Cuánto te sale cada producto</p>
-      <p className="d">Ya con el flete{conImp ? ", los impuestos" : ""} y los gastos repartidos. Es el costo puesto en Argentina, antes de tu margen.</p>
+      <p className="d">Precio por unidad en dólares, ya con el flete{conImp ? ", los impuestos" : ""} y los gastos repartidos. Es el costo puesto en Argentina, antes de tu margen.</p>
       <div className={`${cls} head`}>
         <span>Producto</span><span>Cant.</span><span>Mercadería</span>
         {conImp && <span>Impuestos</span>}
@@ -156,18 +163,17 @@ function CostoPorProducto({ alt }) {
         <div className={cls} key={i}>
           <span>{r.description || "Producto"}{r.bultos?.length > 0 && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: "rgba(26,26,26,.45)", fontWeight: 600 }}>Bulto {r.bultos.join(", ")}</em>}</span>
           <span><i className="k">Cantidad</i>{r.qty}</span>
-          <span><i className="k">Mercadería c/u</i>{usd(r.fobUnit)}</span>
-          {conImp && <span><i className="k">Impuestos c/u</i>{usd(r.taxUnit)}</span>}
-          <span><i className="k">Flete y gastos c/u</i>{usd(r.svcUnit)}</span>
-          <span><i className="k">Puesto en Argentina c/u</i>{usd(r.totalUnit)}</span>
+          <span><i className="k">Mercadería c/u</i>{fmt(r.fobUnit)}</span>
+          {conImp && <span><i className="k">Impuestos c/u</i>{fmt(r.taxUnit)}</span>}
+          <span><i className="k">Flete y gastos c/u</i>{fmt(r.svcUnit)}</span>
+          <span><i className="k">Puesto en Argentina c/u</i>{fmt(r.totalUnit)}</span>
         </div>
       ))}
-      <div className={`${cls} tot`}>
-        <span>Total</span><span />
-        <span><i className="k">Mercadería</i>{usd(tot("fob"))}</span>
-        {conImp && <span><i className="k">Impuestos</i>{usd(tot("tax"))}</span>}
-        <span><i className="k">Flete y gastos</i>{usd(tot("svc"))}</span>
-        <span><i className="k">Puesto en Argentina</i>{usd(tot("total"))}</span>
+      {/* Cierre en una línea y no como fila de la tabla: las celdas son unitarias y el total es
+          absoluto, ponerlos en la misma columna hacía que no cerrara a la vista. */}
+      <div className="pz-landtot">
+        <span>Toda la carga puesta en Argentina<small>Mercadería {usd(tot("fob"))} + importación {usd(tot("tax") + tot("svc"))}</small></span>
+        <b>{usd(tot("total"))}</b>
       </div>
     </div>
   );
