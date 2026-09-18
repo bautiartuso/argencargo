@@ -13202,7 +13202,7 @@ function QuotesList({token}){
       const estEd=isBlancoCh
         ?{flete:Number(c.flete||0),seguro:Number(c.seguro||0),overweightSurcharge:ow,shipCost:Number(c.shipCost||0),taxDetail:{items:td.items||[]}}
         :{flete:Number(c.totalAbonar||0),seguro:0,overweightSurcharge:0,shipCost:0,taxDetail:{items:[]}};
-      const landed=costoPuestoEnArgentina(itemsEd,pksEd,estEd,{impuestosTotal:isBlancoCh?Number(c.totalTax||0):0}).map(r=>({
+      const landed=costoPuestoEnArgentina(itemsEd,pksEd,estEd,{impuestosTotal:isBlancoCh?Number(c.totalTax||0):0,repartirPor:isAereoCh?"peso":"volumen"}).map(r=>({
         description:r.it.description||"",ncm:r.it.ncm_code||null,qty:r.qty,
         bultos:pksEd.map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
         fob:red2(r.fob),fobUnit:red2(r.fobUnit),tax:red2(r.tax),taxUnit:red2(r.taxUnit),
@@ -14287,7 +14287,7 @@ function AdminCalculator({token}){
             // el flete se reparte por peso facturable del bulto donde viaja cada producto y los
             // impuestos por FOB. impuestosTotal hace que la suma cierre contra totalAbonar.
             const estEf={flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),seguro:bd.isBlanco?Number(c.seguro||0):0,overweightSurcharge:owEffLink,shipCost:0,taxDetail:{items:c.taxDetail?.items||[]}};
-            const landed=costoPuestoEnArgentina(itemsLink,pksLink,estEf,{impuestosTotal:taxEff}).map(r=>({
+            const landed=costoPuestoEnArgentina(itemsLink,pksLink,estEf,{impuestosTotal:taxEff,repartirPor:bd.isMaritimo?"volumen":"peso"}).map(r=>({
               description:r.it.description||"",ncm:r.it.ncm_code||null,qty:r.qty,
               bultos:pksLink.map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
               fob:red(r.fob),fobUnit:red(r.fobUnit),tax:red(r.tax),taxUnit:red(r.taxUnit),

@@ -57,9 +57,10 @@ const CSS = `
 /* Las columnas de bultos dependen del canal: en aereo se factura por peso facturable, en
    maritimo por volumen. Mostrar el peso facturable en una cotizacion maritima es el dato que
    no aplica, y era justo la columna destacada. */
-.pz-bul.c5{grid-template-columns:58px 40px 1fr 88px 104px}
-.pz-bul.c6{grid-template-columns:58px 40px 1fr 84px 92px 104px}
+.pz-bul.c5{grid-template-columns:1fr 40px 126px 88px 104px}
+.pz-bul.c6{grid-template-columns:1fr 40px 126px 84px 92px 104px}
 .pz-bul .u{color:rgba(26,26,26,.5)}
+.pz-bul em{display:block;font-style:normal;font-size:11px;font-weight:600;color:rgba(26,26,26,.45)}
 /* Costo de cada producto puesto en Argentina. La ultima columna es la que importa: va resaltada.
    Los importes van sin "USD" adelante (se aclara una vez arriba): con el prefijo no entraban en
    la columna y los montos de cuatro cifras se partian en dos lineas. */
@@ -233,6 +234,15 @@ export default function PresupuestoPage({ params }) {
   const totFob = productos.reduce((s, p) => s + num(p.unit_price) * (num(p.quantity) || 1), 0) || num(q.total_fob);
   // El aéreo se factura por peso facturable y el marítimo por volumen. Si se cotiza solo
   // marítimo, el peso facturable no aplica y no se muestra: es el dato que no le sirve.
+  // Nombre de la mercadería que viaja en cada bulto. Sale del cruce products.package_ids ↔
+  // packages.id que marca el admin en la calculadora. Las cotizaciones viejas no lo traen.
+  const mercaderiaDe = (p, i) => {
+    const pid = p.id != null ? p.id : i;
+    return productos
+      .filter((pr) => Array.isArray(pr.package_ids) && pr.package_ids.includes(pid))
+      .map((pr) => pr.description || pr.name)
+      .filter(Boolean);
+  };
   const canalesVisibles = elegidaFinal ? [elegidaFinal] : alts;
   const hayAereo = canalesVisibles.length === 0 || canalesVisibles.some(esAereo);
   const hayMaritimo = canalesVisibles.some((a) => !esAereo(a));
@@ -354,8 +364,11 @@ export default function PresupuestoPage({ params }) {
                   const c = num(p.qty) || 1;
                   const kgU = num(p.weight);
                   const kgVolU = kgVolDe(p);
+                  const qViaja = mercaderiaDe(p, i);
                   return <div className={`pz-row pz-bul ${hayAereo && hayMaritimo ? "c6" : "c5"}`} key={i}>
-                    <span>Bulto #{i + 1}</span>
+                    {/* El número queda abajo en chico: el encabezado, el total y la tabla de
+                        costos hablan de "Bulto 1, 2", y sin el número se pierde la referencia. */}
+                    <span>{qViaja.length > 0 ? <>{qViaja.join(" · ")}<em>Bulto #{i + 1}</em></> : `Bulto #${i + 1}`}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
                     <span><i className="k">Medidas</i>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</span>
                     <span className="u"><i className="k">Peso</i>{fmtKg(kgU * c)}</span>
