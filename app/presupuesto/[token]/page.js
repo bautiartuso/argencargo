@@ -151,7 +151,7 @@ const CSS = `
 //
 // En el Integral los impuestos van adentro del precio del servicio, así que no hay columna de
 // impuestos que mostrar: se cae a 5 columnas en vez de 6.
-function CostoPorProducto({ alt }) {
+function CostoPorProducto({ alt, nBultos = 0 }) {
   const filas = Array.isArray(alt.landed) ? alt.landed.filter((r) => num(r.fob) > 0) : [];
   if (filas.length === 0) return null;
   const conImp = filas.some((r) => num(r.tax) > 0.005);
@@ -167,7 +167,7 @@ function CostoPorProducto({ alt }) {
       </div>
       {filas.map((r, i) => (
         <div className={cls} key={i}>
-          <span>{r.description || "Producto"}{r.bultos?.length > 0 && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: "rgba(26,26,26,.45)", fontWeight: 600 }}>Bulto {r.bultos.join(", ")}</em>}</span>
+          <span>{r.description || "Producto"}{nBultos > 1 && r.bultos?.length > 0 && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: "rgba(26,26,26,.45)", fontWeight: 600 }}>Bulto {r.bultos.join(", ")}</em>}</span>
           <span><i className="k">Cantidad</i>{r.qty}</span>
           <span><i className="k">Mercadería c/u</i>{fmt(r.fobUnit)}</span>
           {conImp && <span><i className="k">Impuestos c/u</i>{fmt(r.taxUnit)}</span>}
@@ -417,7 +417,7 @@ export default function PresupuestoPage({ params }) {
                   <span style={{ fontSize: 15, fontWeight: 800 }}>USD {fmt(elegidaFinal.totalAbonar)}</span>
                 </div>
                 <p style={{ fontSize: 11, color: "rgba(26,26,26,0.45)", margin: "7px 0 0" }}>No incluye el valor de la mercadería.</p>
-                <CostoPorProducto alt={elegidaFinal} />
+                <CostoPorProducto alt={elegidaFinal} nBultos={bultos.length} />
               </div>
             )}
           </div>
@@ -477,7 +477,7 @@ export default function PresupuestoPage({ params }) {
                           {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
                         </div>
                       )}
-                      {abierta && <CostoPorProducto alt={a} />}
+                      {abierta && <CostoPorProducto alt={a} nBultos={bultos.length} />}
                     </div>
                   </div>
                 );
