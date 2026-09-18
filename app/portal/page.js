@@ -841,12 +841,14 @@ function OperationDetail({op:opProp,token,client,onBack}){
   const desgloseImpuestos=(label,monto,td,muted)=>{
     const detItems=Array.isArray(td?.items)?td.items.filter(x=>subImp(x)>0.005):[];
     if(detItems.length===0)return fila(label,usd(monto),{muted});
-    // El detalle que guarda el admin no reparte el gasto documental por producto. Antes que
-    // inventar un prorrateo, va como fila propia debajo de la tabla.
-    const conGastoDoc=detItems.some(x=>Number(x.gastoDoc||0)>0.005);
-    const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
+    // El desaduanaje y su IVA van discriminados abajo de la tabla y NO como columna prorrateada
+    // por producto: son un fijo de la operación, no dependen de la mercadería, y prorratearlos
+    // escondía dos conceptos distintos en una sola cifra.
+    const des=Number(td.desembolso||0);
+    const ivaDes=Number(td.ivaDesembolso||0);
+    const pctIvaDes=des>0.005?Math.round(ivaDes/des*1000)/10:null;
     const otros=Number(td.ivaAdic||0)+Number(td.iigg||0)+Number(td.iibb||0);
-    const COLS=conGastoDoc?"minmax(120px,1fr) 84px 84px 84px 96px 92px":"minmax(130px,1fr) 92px 92px 92px 96px";
+    const COLS="minmax(130px,1fr) 92px 92px 92px 96px";
     const cel={fontSize:11.5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",textAlign:"right"};
     const pctTxt=(n)=>`${Number(n||0).toLocaleString("es-AR",{maximumFractionDigits:1})}%`;
     const celda=(monto,pct)=><span style={{...cel,color:"rgba(255,255,255,0.75)"}}>{usd(monto)}{pct!=null&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(pct)}</span>}</span>;
@@ -864,7 +866,6 @@ function OperationDetail({op:opProp,token,client,onBack}){
           <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDuties")}</span>
           <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colStat")}</span>
           <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colIva")}</span>
-          {conGastoDoc&&<span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDoc")}</span>}
           <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colSubtotal")}</span>
         </div>
         {detItems.map((x,j)=><div key={j} style={{display:"grid",gridTemplateColumns:COLS,gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
@@ -872,10 +873,10 @@ function OperationDetail({op:opProp,token,client,onBack}){
           {celda(x.derechos,x.drPct)}
           {celda(x.tasaE,x.tePct)}
           {celda(x.iva,x.ivaPct)}
-          {conGastoDoc&&celda(x.gastoDoc,null)}
-          <span style={{...cel,fontWeight:700,color:"#fff"}}>{usd(subImp(x))}</span>
+          <span style={{...cel,fontWeight:700,color:"#fff"}}>{usd(Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0))}</span>
         </div>)}
-        {!conGastoDoc&&gastos>0.005&&pie(t("op.customsClearance"),gastos)}
+        {des>0.005&&pie(t("op.customsClearance"),des)}
+        {ivaDes>0.005&&pie(pctIvaDes!=null?`${t("op.customsClearanceIva")} (${String(pctIvaDes).replace(".",",")}%)`:t("op.customsClearanceIva"),ivaDes)}
         {otros>0.005&&pie(t("op.otherTaxes"),otros)}
         <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.14)"}}>
           <span style={{fontSize:11.5,fontWeight:800,color:"#fff"}}>{t("common.total")}</span>
