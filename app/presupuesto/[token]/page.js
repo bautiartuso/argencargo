@@ -172,7 +172,10 @@ function CostoPorProducto({ alt }) {
       {/* Cierre en una línea y no como fila de la tabla: las celdas son unitarias y el total es
           absoluto, ponerlos en la misma columna hacía que no cerrara a la vista. */}
       <div className="pz-landtot">
-        <span>Toda la carga puesta en Argentina<small>Mercadería {usd(tot("fob"))} + importación {usd(tot("tax") + tot("svc"))}</small></span>
+        {/* La parte de importación se DERIVA del total menos la mercadería, no se suma aparte:
+            cada producto va redondeado a dos decimales y sumando las columnas por separado la
+            línea se iba un par de centavos de su propio total. */}
+        <span>Toda la carga puesta en Argentina<small>Mercadería {usd(tot("fob"))} + importación {usd(tot("total") - tot("fob"))}</small></span>
         <b>{usd(tot("total"))}</b>
       </div>
     </div>
