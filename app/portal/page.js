@@ -833,6 +833,79 @@ function OperationDetail({op:opProp,token,client,onBack}){
     return null;})();
   const fila=(l,v,opts={})=><div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"8px 0",borderBottom:opts.last?"none":"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:13,color:opts.muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94}}>{l}</span><span style={{fontSize:13.5,fontWeight:opts.bold?800:600,color:opts.color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span></div>;
   const kpi=(l,v,hot)=><div style={{flex:"1 1 120px",padding:"10px 14px",borderRadius:10,border:`1px solid ${hot?"rgba(232,208,152,0.45)":"rgba(255,255,255,0.14)"}`,background:hot?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.04)"}}><p style={{...LBL,color:hot?GOLD_LIGHT:SKY}}>{l}</p><p style={{margin:"4px 0 0",fontSize:15,fontWeight:800,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p></div>;
+  // Desglose de impuestos por producto, desplegable. Vale tanto para el estimado como para el
+  // presupuesto ya confirmado: antes vivía dentro de showEstimate, así que el cliente lo veía
+  // mientras era un estimado y lo perdía justo cuando Argencargo confirmaba y tenía que pagar,
+  // que es cuando más quiere saber de dónde sale cada peso.
+  const subImp=(x)=>Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0)+Number(x.gastoDoc||0);
+  const desgloseImpuestos=(label,monto,td,muted)=>{
+    const detItems=Array.isArray(td?.items)?td.items.filter(x=>subImp(x)>0.005):[];
+    if(detItems.length===0)return fila(label,usd(monto),{muted});
+    // El detalle que guarda el admin no reparte el gasto documental por producto. Antes que
+    // inventar un prorrateo, va como fila propia debajo de la tabla.
+    const conGastoDoc=detItems.some(x=>Number(x.gastoDoc||0)>0.005);
+    const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
+    const otros=Number(td.ivaAdic||0)+Number(td.iigg||0)+Number(td.iibb||0);
+    const COLS=conGastoDoc?"minmax(120px,1fr) 84px 84px 84px 96px 92px":"minmax(130px,1fr) 92px 92px 92px 96px";
+    const cel={fontSize:11.5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",textAlign:"right"};
+    const pctTxt=(n)=>`${Number(n||0).toLocaleString("es-AR",{maximumFractionDigits:1})}%`;
+    const celda=(monto,pct)=><span style={{...cel,color:"rgba(255,255,255,0.75)"}}>{usd(monto)}{pct!=null&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(pct)}</span>}</span>;
+    const pie=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.72)"}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{usd(v)}</span></div>;
+    return <div style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+      <button onClick={()=>setImpOpen(x=>!x)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"8px 0",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
+        <span style={{fontSize:13,color:muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94,display:"inline-flex",alignItems:"center",gap:7}}>
+          {label}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
+        </span>
+        <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(monto)}</span>
+      </button>
+      {impOpen&&<div style={{margin:"0 0 12px",padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:HAIR,overflowX:"auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:COLS,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.09)"}}>
+          <span style={{...LBL,fontSize:9}}>{t("imp.colProduct")}</span>
+          <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDuties")}</span>
+          <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colStat")}</span>
+          <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colIva")}</span>
+          {conGastoDoc&&<span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDoc")}</span>}
+          <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colSubtotal")}</span>
+        </div>
+        {detItems.map((x,j)=><div key={j} style={{display:"grid",gridTemplateColumns:COLS,gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis"}}>{x.description||`${t("imp.colProduct")} ${j+1}`}</span>
+          {celda(x.derechos,x.drPct)}
+          {celda(x.tasaE,x.tePct)}
+          {celda(x.iva,x.ivaPct)}
+          {conGastoDoc&&celda(x.gastoDoc,null)}
+          <span style={{...cel,fontWeight:700,color:"#fff"}}>{usd(subImp(x))}</span>
+        </div>)}
+        {!conGastoDoc&&gastos>0.005&&pie(t("op.customsClearance"),gastos)}
+        {otros>0.005&&pie(t("op.otherTaxes"),otros)}
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.14)"}}>
+          <span style={{fontSize:11.5,fontWeight:800,color:"#fff"}}>{t("common.total")}</span>
+          <span style={{...cel,fontWeight:800,color:GOLD_LIGHT}}>{usd(monto)}</span>
+        </div>
+      </div>}
+    </div>;
+  };
+  // Qué detalle usar con el presupuesto ya confirmado: el que guardó el admin (es el que se
+  // cobró de verdad) y, si esa op es vieja y no lo tiene, el recalculado escalado para que sume
+  // exactamente los impuestos presupuestados.
+  const tdConfirmado=(()=>{
+    if(!(bTax>0))return null;
+    for(const e of [op.budget_tax_detail,est?.taxDetail]){
+      if(!e||!Array.isArray(e.items)||!e.items.length)continue;
+      const suma=Number(e.derechos||0)+Number(e.tasaE||0)+Number(e.iva||0)+Number(e.ivaAdic||0)+Number(e.iigg||0)+Number(e.iibb||0)+Number(e.desembolso||0)+Number(e.ivaDesembolso||0);
+      if(!(suma>0))continue;
+      const k=bTax/suma;
+      // Cuando Bautista fija el presupuesto a mano (bonifica impuestos, por ejemplo), el detalle
+      // guardado se queda con la cuenta automática y no explica lo que se cobró: hay ops con
+      // 1.740 de desglose contra 0,02 cobrados. Ahí no se muestra desglose, porque no existe.
+      // Una diferencia chica sí se escala: son redondeos.
+      if(Math.abs(k-1)>0.02)continue;
+      if(Math.abs(k-1)<0.0005)return e;
+      const esc=(v)=>Number(v||0)*k;
+      return {...e,derechos:esc(e.derechos),tasaE:esc(e.tasaE),iva:esc(e.iva),ivaAdic:esc(e.ivaAdic),iigg:esc(e.iigg),iibb:esc(e.iibb),desembolso:esc(e.desembolso),ivaDesembolso:esc(e.ivaDesembolso),
+        items:e.items.map(x=>({...x,derechos:esc(x.derechos),tasaE:esc(x.tasaE),iva:esc(x.iva),gastoDoc:esc(x.gastoDoc)}))};
+    }
+    return null;
+  })();
   const saldoKpi=(()=>{if(op.lost_in_customs_at)return "USD 0,00";if(!hasBudget)return "Pendiente";return usd(saldoReal);})();
   return <div>
     <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.05)",border:HAIR,cursor:"pointer",fontWeight:700,marginBottom:16,padding:"7px 13px",borderRadius:9,letterSpacing:"0.04em"}}>← Volver</button>
@@ -889,25 +962,17 @@ function OperationDetail({op:opProp,token,client,onBack}){
           </div>
           {isGI&&hasBudget&&<div>{items.map((it,i)=>{const qty=Number(it.quantity||0);const unit=Number(it.unit_price_usd||0);return <div key={it.id||i}>{fila(<>{it.description} <span style={{color:"rgba(255,255,255,0.5)"}}>× {qty} · {usd(unit)} c/u</span></>,usd(qty*unit),{last:i===items.length-1})}</div>;})}</div>}
           {!isGI&&hasBudget&&<div>
-            {!isB&&bTax>0&&fila(riPagaImpuestosDirecto?t("op.taxesToAirline"):t("imports.taxes"),usd(bTax),{muted:riPagaImpuestosDirecto})}
+            {!isB&&bTax>0&&desgloseImpuestos(riPagaImpuestosDirecto?t("op.taxesToAirline"):t("imports.taxes"),bTax,tdConfirmado,riPagaImpuestosDirecto)}
             {(isB?(bt-shipCost):bFlete)>0&&fila(isB?t("op.integralService"):t("imports.freight"),usd(isB?(bt-shipCost):bFlete))}
             {!isB&&bSeg>0&&fila(t("op.cargoInsurance"),usd(bSeg))}
             {!isB&&isAer&&Number(op.budget_surcharge||0)>0&&fila(t("op.overweight"),usd(op.budget_surcharge))}
             {shipCost>0&&fila(t("op.homeDelivery"),usd(shipCost))}
             {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
           </div>}
-                    {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);
-            const impTot=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0);
-            const gastos=Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
-            // Una sola fila: impuestos + gasto documental, y adentro el desglose por producto con
-            // el gasto documental ya prorrateado. Antes el desaduanaje iba en una fila aparte
-            // debajo y se repetia adentro del desglose: confundia.
-            const impYGastos=impTot+gastos;
-            const subDe=(x)=>Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0)+Number(x.gastoDoc||0);
-            const detItems=Array.isArray(td.items)?td.items.filter(x=>subDe(x)>0.005):[];
-            const pctTxt=(n)=>`${Number(n||0).toLocaleString("es-AR",{maximumFractionDigits:1})}%`;
-            const COLS_IMP="minmax(130px,1fr) 88px 88px 88px 104px 96px";
-            const cel={fontSize:11.5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",textAlign:"right"};
+          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);
+            // Impuestos y gasto documental en una sola fila, con el desglose por producto adentro:
+            // antes el desaduanaje iba en una fila aparte Y se repetía adentro del desglose.
+            const impYGastos=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0)+Number(td.ivaAdic||0)+Number(td.iigg||0)+Number(td.iibb||0)+Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
             const rows=[
               [t("op.airFreight"),Number(est.flete||0)-bat,{}],
               [t("op.batterySurcharge"),bat,{}],
@@ -916,44 +981,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
               [riPagaImpuestosDirecto?t("op.taxesAndFeesDirect"):t("op.taxesAndFees"),impYGastos,{imp:true,muted:riPagaImpuestosDirecto}],
             ].filter(([l,v,o])=>o.imp||Number(v||0)>0.005);
             return <div>{rows.map(([l,v,o],k)=><div key={k}>
-              {o.imp&&detItems.length>0
-                ? <div style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-                    <button onClick={()=>setImpOpen(x=>!x)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"8px 0",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
-                      <span style={{fontSize:13,color:o.muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94,display:"inline-flex",alignItems:"center",gap:7}}>
-                        {l}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
-                      </span>
-                      <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span>
-                    </button>
-                    {impOpen&&<div style={{margin:"0 0 12px",padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:HAIR,overflowX:"auto"}}>
-                      <div style={{display:"grid",gridTemplateColumns:COLS_IMP,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.09)"}}>
-                        <span style={{...LBL,fontSize:9}}>{t("imp.colProduct")}</span>
-                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDuties")}</span>
-                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colStat")}</span>
-                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colIva")}</span>
-                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colDoc")}</span>
-                        <span style={{...LBL,fontSize:9,textAlign:"right"}}>{t("imp.colSubtotal")}</span>
-                      </div>
-                      {detItems.map((x,j)=>{
-                        const celda=(monto,pct)=><span style={{...cel,color:"rgba(255,255,255,0.75)"}}>{usd(monto)}{pct!=null&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>{pctTxt(pct)}</span>}</span>;
-                        return <div key={j} style={{display:"grid",gridTemplateColumns:COLS_IMP,gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
-                          <span style={{fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis"}}>{x.description||`${t("imp.colProduct")} ${j+1}`}</span>
-                          {celda(x.derechos,x.drPct)}
-                          {celda(x.tasaE,x.tePct)}
-                          {celda(x.iva,x.ivaPct)}
-                          {celda(x.gastoDoc,null)}
-                          <span style={{...cel,fontWeight:700,color:"#fff"}}>{usd(subDe(x))}</span>
-                        </div>;})}
-                      <div style={{display:"grid",gridTemplateColumns:COLS_IMP,gap:8,marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.14)"}}>
-                        <span style={{fontSize:11.5,fontWeight:800,color:"#fff"}}>{t("common.total")}</span>
-                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(td.derechos)}</span>
-                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(td.tasaE)}</span>
-                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(td.iva)}</span>
-                        <span style={{...cel,color:"rgba(255,255,255,0.6)"}}>{usd(gastos)}</span>
-                        <span style={{...cel,fontWeight:800,color:GOLD_LIGHT}}>{usd(impYGastos)}</span>
-                      </div>
-                    </div>}
-                  </div>
-                : fila(l,usd(v),{muted:o.muted})}
+              {o.imp?desgloseImpuestos(l,v,td,o.muted):fila(l,usd(v),{muted:o.muted})}
             </div>)}</div>;})()}
           {(()=>{const tot=hasBudget?totalAbonar:Number(est?.totalAbonar||0);
             const label=hasBudget?(cliPmts.length===0?(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo"):"Total a abonar"):"Estimado a abonar a Argencargo";
