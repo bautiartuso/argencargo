@@ -54,8 +54,16 @@ const CSS = `
 .pz-row.head>span{font-weight:800!important}
 .pz-row.tot{border-top:1.5px solid rgba(26,26,26,.18);font-weight:800}
 .pz-prod{grid-template-columns:1fr 92px 44px 96px 104px}
-.pz-bul{grid-template-columns:58px 38px 1fr 76px 72px 78px 76px 86px}
+.pz-bul{grid-template-columns:58px 40px 1fr 88px 104px}
 .pz-bul .u{color:rgba(26,26,26,.5)}
+/* Costo de cada producto puesto en Argentina. La ultima columna es la que importa: va resaltada. */
+.pz-land{grid-template-columns:1fr 42px 84px 84px 96px 104px}
+.pz-land.sin-imp{grid-template-columns:1fr 42px 96px 108px 116px}
+.pz-land>span:last-child{font-weight:800;color:#8a6a3f}
+.pz-land.head>span:last-child{color:#8a6a3f}
+.pz-landbox{margin-top:13px;padding-top:11px;border-top:1px dashed #eae4d6}
+.pz-landbox>p.t{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(26,26,26,.55);margin:0 0 2px}
+.pz-landbox>p.d{font-size:11.5px;color:rgba(26,26,26,.5);margin:0 0 6px;line-height:1.5}
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
 @media(max-width:620px){
@@ -123,6 +131,48 @@ const CSS = `
 }
 `;
 
+// Costo de cada producto puesto en Argentina: mercadería + los impuestos y el flete que le tocan.
+// El unitario es el número que sirve para decidir a cuánto venderlo. Viene calculado y guardado
+// desde el admin (lib/calc.js · costoPuestoEnArgentina), acá solo se muestra.
+//
+// En el Integral los impuestos van adentro del precio del servicio, así que no hay columna de
+// impuestos que mostrar: se cae a 5 columnas en vez de 6.
+function CostoPorProducto({ alt }) {
+  const filas = Array.isArray(alt.landed) ? alt.landed.filter((r) => num(r.fob) > 0) : [];
+  if (filas.length === 0) return null;
+  const conImp = filas.some((r) => num(r.tax) > 0.005);
+  const tot = (c) => filas.reduce((s, r) => s + num(r[c]), 0);
+  const cls = `pz-row pz-land${conImp ? "" : " sin-imp"}`;
+  return (
+    <div className="pz-landbox">
+      <p className="t">Cuánto te sale cada producto</p>
+      <p className="d">Ya con el flete{conImp ? ", los impuestos" : ""} y los gastos repartidos. Es el costo puesto en Argentina, antes de tu margen.</p>
+      <div className={`${cls} head`}>
+        <span>Producto</span><span>Cant.</span><span>Mercadería</span>
+        {conImp && <span>Impuestos</span>}
+        <span>Flete y gastos</span><span>Puesto en Arg.</span>
+      </div>
+      {filas.map((r, i) => (
+        <div className={cls} key={i}>
+          <span>{r.description || "Producto"}{r.bultos?.length > 0 && <em style={{ display: "block", fontStyle: "normal", fontSize: 11, color: "rgba(26,26,26,.45)", fontWeight: 600 }}>Bulto {r.bultos.join(", ")}</em>}</span>
+          <span><i className="k">Cantidad</i>{r.qty}</span>
+          <span><i className="k">Mercadería c/u</i>{usd(r.fobUnit)}</span>
+          {conImp && <span><i className="k">Impuestos c/u</i>{usd(r.taxUnit)}</span>}
+          <span><i className="k">Flete y gastos c/u</i>{usd(r.svcUnit)}</span>
+          <span><i className="k">Puesto en Argentina c/u</i>{usd(r.totalUnit)}</span>
+        </div>
+      ))}
+      <div className={`${cls} tot`}>
+        <span>Total</span><span />
+        <span><i className="k">Mercadería</i>{usd(tot("fob"))}</span>
+        {conImp && <span><i className="k">Impuestos</i>{usd(tot("tax"))}</span>}
+        <span><i className="k">Flete y gastos</i>{usd(tot("svc"))}</span>
+        <span><i className="k">Puesto en Argentina</i>{usd(tot("total"))}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function PresupuestoPage({ params }) {
   const token = params?.token;
   const [state, setState] = useState({ loading: true, error: null, data: null });
@@ -158,12 +208,10 @@ export default function PresupuestoPage({ params }) {
   const productos = Array.isArray(q.products) ? q.products : [];
   const bultos = Array.isArray(q.packages) ? q.packages : [];
   const totBultos = bultos.reduce((s, p) => s + (num(p.qty) || 1), 0);
-  const totCbm = bultos.reduce((s, p) => s + (num(p.length) * num(p.width) * num(p.height) / 1e6) * (num(p.qty) || 1), 0);
   const totKg = bultos.reduce((s, p) => s + num(p.weight) * (num(p.qty) || 1), 0);
   // Peso volumétrico: cm3 / 5.000. El aéreo se cobra por el peso facturable, que es el mayor
   // entre el real y el volumétrico tomado bulto por bulto — mismo criterio que lib/calc.js.
   const kgVolDe = (p) => num(p.length) * num(p.width) * num(p.height) / 5000;
-  const totKgVol = bultos.reduce((s, p) => s + kgVolDe(p) * (num(p.qty) || 1), 0);
   const totKgFact = bultos.reduce((s, p) => s + Math.max(num(p.weight), kgVolDe(p)) * (num(p.qty) || 1), 0);
   const totFob = productos.reduce((s, p) => s + num(p.unit_price) * (num(p.quantity) || 1), 0) || num(q.total_fob);
 
@@ -274,38 +322,33 @@ export default function PresupuestoPage({ params }) {
               <div>
                 <p className="pz-sub">Bultos</p>
                 <div className="pz-row pz-bul head">
-                  <span>Bulto</span><span>Cant.</span><span>Medidas</span>
-                  <span>Vol. c/u</span><span>Peso real c/u</span><span>Peso vol. c/u</span>
-                  <span>Volumen</span><span>Peso facturable</span>
+                  <span>Bulto</span><span>Cant.</span><span>Medidas</span><span>Peso</span><span>Peso facturable</span>
                 </div>
                 {bultos.map((p, i) => {
                   const c = num(p.qty) || 1;
-                  const cbmU = num(p.length) * num(p.width) * num(p.height) / 1e6;
                   const kgU = num(p.weight);
                   const kgVolU = kgVolDe(p);
                   return <div className="pz-row pz-bul" key={i}>
                     <span>Bulto #{i + 1}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
                     <span><i className="k">Medidas</i>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</span>
-                    <span className="u"><i className="k">Volumen c/u</i>{fmtCbm(cbmU)}</span>
-                    <span className="u"><i className="k">Peso real c/u</i>{fmtKg(kgU)}</span>
-                    <span className="u"><i className="k">Peso volumétrico c/u</i>{fmtKg(kgVolU)}</span>
-                    <span><i className="k">Volumen del bulto</i>{fmtCbm(cbmU * c)}</span>
+                    <span className="u"><i className="k">Peso</i>{fmtKg(kgU * c)}</span>
                     <span><i className="k">Peso facturable</i>{fmtKg(Math.max(kgU, kgVolU) * c)}</span>
                   </div>;
                 })}
                 <div className="pz-row pz-bul tot">
-                  <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span /><span />
-                  <span className="u"><i className="k">Peso real total</i>{fmtKg(totKg)}</span>
-                  <span className="u"><i className="k">Peso volumétrico total</i>{fmtKg(totKgVol)}</span>
-                  <span><i className="k">Volumen total</i>{fmtCbm(totCbm)}</span>
+                  <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span />
+                  <span className="u"><i className="k">Peso total</i>{fmtKg(totKg)}</span>
                   <span><i className="k">Peso facturable</i>{fmtKg(totKgFact)}</span>
                 </div>
-                <p className="pz-hint" style={{ margin: "12px 0 0" }}>
-                  El peso volumétrico sale de las medidas (largo × ancho × alto ÷ 5.000). De cada bulto
-                  se toma el mayor entre el peso real y el volumétrico: eso es el peso facturable, y es
-                  el que se usa para calcular el aéreo.
-                </p>
+                {/* El volumétrico solo se explica si de verdad manda en algún bulto: si el peso real
+                    gana en todos, la explicación es información al pedo. */}
+                {totKgFact > totKg + 0.01 && (
+                  <p className="pz-hint" style={{ margin: "11px 0 0" }}>
+                    Se factura {fmtKg(totKgFact)} y no {fmtKg(totKg)} porque la carga ocupa más lugar del
+                    que pesa: en avión se cobra el mayor entre el peso real y el volumen (largo × ancho × alto ÷ 5.000).
+                  </p>
+                )}
               </div>
             )}
 
@@ -346,6 +389,7 @@ export default function PresupuestoPage({ params }) {
                   <span style={{ fontSize: 15, fontWeight: 800 }}>USD {fmt(elegidaFinal.totalAbonar)}</span>
                 </div>
                 <p style={{ fontSize: 11, color: "rgba(26,26,26,0.45)", margin: "7px 0 0" }}>No incluye el valor de la mercadería.</p>
+                <CostoPorProducto alt={elegidaFinal} />
               </div>
             )}
           </div>
@@ -403,6 +447,7 @@ export default function PresupuestoPage({ params }) {
                           {comps.map(([l, v], k) => <div key={k}><span>{l}</span><b>{v}</b></div>)}
                           {comps.length > 1 && <div className="t"><span>Total</span><b>{usd(a.totalAbonar)}</b></div>}
                           {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
+                          <CostoPorProducto alt={a} />
                         </div>
                       )}
                     </div>

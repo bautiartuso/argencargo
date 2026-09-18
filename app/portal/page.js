@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printClosingPdf } from "../../lib/pdf-templates";
-import { applyAntidumpingFloor, calcOpBudget } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import { useT, LANGS } from "../../lib/i18n-portal";
 import SupportPage from "./components/SupportPage";
@@ -817,13 +817,10 @@ function OperationDetail({op:opProp,token,client,onBack}){
   // Argencargo. Se muestra aparte para que el "estimado total de la importacion" cierre.
   const fueraDeAC=riPagaImpuestosDirecto&&est?Number(est.totalTax||0):0;
   const showEstimate=!!est&&!hasBudget;
-  const costoPorProducto=(()=>{const r=est;if(!r||!items.length)return[];
-    const fobOf=it=>Number(it.unit_price_usd||0)*Number(it.quantity||1);const fobTot=items.reduce((s,it)=>s+fobOf(it),0)||1;
-    const assigned={};let unassigned=0,wTot=0;
-    pkData.forEach(p=>{const w=Math.max(p.gw,p.vw);wTot+=w;const owners=items.filter(it=>Array.isArray(it.package_ids)&&it.package_ids.includes(p.id));if(!owners.length){unassigned+=w;return;}const subFob=owners.reduce((s,it)=>s+fobOf(it),0)||1;owners.forEach(it=>{assigned[it.id]=(assigned[it.id]||0)+w*(fobOf(it)/subFob);});});
-    const td=r.taxDetail||{};const service=Number(r.flete||0)+Number(r.seguro||0)+Number(r.overweightSurcharge||0)+Number(td.desembolso||0)+Number(td.ivaDesembolso||0)+Number(r.shipCost||0)+Number(op.delivery_cost_usd||0);
-    const scale=hasBudget&&r.totalAbonar>0&&Math.abs(r.totalAbonar-bt)>1?bt/r.totalAbonar:1;
-    return items.map((it,k)=>{const fob=fobOf(it);const fobShare=fob/fobTot;const share=wTot>0?((assigned[it.id]||0)+unassigned*fobShare)/wTot:fobShare;const ti=td.items?.[k];const tax=(ti?ti.derechos+ti.tasaE+ti.iva:0)*scale;const svc=service*share*scale;const imp=tax+svc;const qty=Number(it.quantity||1);return{it,qty,fob,fobUnit:fob/qty,tax,taxUnit:tax/qty,svc,svcUnit:svc/qty,imp,impUnit:imp/qty,total:fob+imp,totalUnit:(fob+imp)/qty};});})();
+  // Costo de cada producto puesto en Argentina. Si hay presupuesto cargado y difiere del
+  // estimado, se escala para que la suma cierre contra lo que el cliente realmente paga.
+  const escalaCosto=hasBudget&&est&&est.totalAbonar>0&&Math.abs(est.totalAbonar-bt)>1?bt/est.totalAbonar:1;
+  const costoPorProducto=costoPuestoEnArgentina(items,pkgs,est,{deliveryCost:op.delivery_cost_usd,scale:escalaCosto});
   const accion=(()=>{
     if(op.lost_in_customs_at||["operacion_cerrada","cancelada"].includes(op.status))return null;
     if(isEditable&&items.length===0)return{c:GOLD_LIGHT,t:t("opq.loadTitle"),s:t("opq.loadDesc")};
