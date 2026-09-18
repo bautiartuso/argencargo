@@ -13835,7 +13835,7 @@ function AdminCalculator({token}){
       if((ch.key==="maritimo_a_china"||ch.key==="maritimo_b")&&totCBM<=0)return false;
       return true;
     });
-    setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery,items,pks});
+    setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery});
     setLinkGenerado(null); // el link anterior quedó viejo: los números cambiaron
     setCanalesLink(all.filter(c=>!c.notVisibleToClient).map(c=>c.key));
   };
@@ -14248,6 +14248,11 @@ function AdminCalculator({token}){
         if(canalesLink.length===0){toast("Elegí al menos una opción para mostrarle al cliente","error");return;}
         setGenerandoLink(true);
         const red=(v)=>Math.round(Number(v||0)*100)/100;
+        // Se rearman con el estado de ahora: marcar en que bulto viaja cada producto no cambia
+        // ningun total, asi que no obliga a recalcular, y si leyeramos los de `results` el link
+        // guardaria el reparto de antes de marcarlos.
+        const itemsLink=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
+        const pksLink=pkgs.map(p=>({id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
         try{
           const alts=results.channels.filter(c=>canalesLink.includes(c.key)).map(c=>{
             const bd=c.bd||{};
@@ -14282,9 +14287,9 @@ function AdminCalculator({token}){
             // el flete se reparte por peso facturable del bulto donde viaja cada producto y los
             // impuestos por FOB. impuestosTotal hace que la suma cierre contra totalAbonar.
             const estEf={flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),seguro:bd.isBlanco?Number(c.seguro||0):0,overweightSurcharge:owEffLink,shipCost:0,taxDetail:{items:c.taxDetail?.items||[]}};
-            const landed=costoPuestoEnArgentina(results.items||[],results.pks||[],estEf,{impuestosTotal:taxEff}).map(r=>({
+            const landed=costoPuestoEnArgentina(itemsLink,pksLink,estEf,{impuestosTotal:taxEff}).map(r=>({
               description:r.it.description||"",ncm:r.it.ncm_code||null,qty:r.qty,
-              bultos:(results.pks||[]).map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
+              bultos:pksLink.map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
               fob:red(r.fob),fobUnit:red(r.fobUnit),tax:red(r.tax),taxUnit:red(r.taxUnit),
               svc:red(r.svc),svcUnit:red(r.svcUnit),total:red(r.total),totalUnit:red(r.totalUnit),
             }));
