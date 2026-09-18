@@ -58,7 +58,12 @@ const CSS = `
    maritimo por volumen. Mostrar el peso facturable en una cotizacion maritima es el dato que
    no aplica, y era justo la columna destacada. */
 .pz-bul.c6{grid-template-columns:1fr 40px 118px 76px 96px 104px}
-.pz-bul.c7{grid-template-columns:1fr 38px 110px 72px 92px 86px 100px}
+/* Con los dos canales entran siete columnas y no alcanza el ancho: un punto menos de letra
+   evita que "126×68×130 cm" se parta en dos lineas. */
+.pz-bul.c7{grid-template-columns:1fr 36px 118px 72px 90px 84px 96px;font-size:12.5px}
+.pz-bul.c7.head{font-size:9px}
+/* nowrap para que, si algo no entra, se vea desbordado en vez de partirse en silencio. */
+.pz-bul>span:not(:first-child){white-space:nowrap}
 .pz-bul .u{color:rgba(26,26,26,.5)}
 .pz-bul em{display:block;font-style:normal;font-size:11px;font-weight:600;color:rgba(26,26,26,.45)}
 /* Costo de cada producto puesto en Argentina. La ultima columna es la que importa: va resaltada.
@@ -78,6 +83,8 @@ const CSS = `
 @media(max-width:620px){
   .pz-land>span:not(:first-child){white-space:normal}
   .pz-bul.c6,.pz-bul.c7,.pz-land.sin-imp{grid-template-columns:1fr auto}
+  .pz-bul.c7{font-size:13.5px}
+  .pz-bul>span:not(:first-child){white-space:normal}
 }
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
