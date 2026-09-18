@@ -57,8 +57,8 @@ const CSS = `
 /* Las columnas de bultos dependen del canal: en aereo se factura por peso facturable, en
    maritimo por volumen. Mostrar el peso facturable en una cotizacion maritima es el dato que
    no aplica, y era justo la columna destacada. */
-.pz-bul.c5{grid-template-columns:1fr 40px 126px 88px 104px}
-.pz-bul.c6{grid-template-columns:1fr 40px 126px 84px 92px 104px}
+.pz-bul.c6{grid-template-columns:1fr 40px 118px 76px 96px 104px}
+.pz-bul.c7{grid-template-columns:1fr 38px 110px 72px 92px 86px 100px}
 .pz-bul .u{color:rgba(26,26,26,.5)}
 .pz-bul em{display:block;font-style:normal;font-size:11px;font-weight:600;color:rgba(26,26,26,.45)}
 /* Costo de cada producto puesto en Argentina. La ultima columna es la que importa: va resaltada.
@@ -77,7 +77,7 @@ const CSS = `
 .pz-landtot>b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:#8a6a3f}
 @media(max-width:620px){
   .pz-land>span:not(:first-child){white-space:normal}
-  .pz-bul.c5,.pz-bul.c6,.pz-land.sin-imp{grid-template-columns:1fr auto}
+  .pz-bul.c6,.pz-bul.c7,.pz-land.sin-imp{grid-template-columns:1fr auto}
 }
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
@@ -245,9 +245,11 @@ export default function PresupuestoPage({ params }) {
       .map((pr) => pr.description || pr.name)
       .filter(Boolean);
   };
+  const totKgVol = bultos.reduce((s, p) => s + kgVolDe(p) * (num(p.qty) || 1), 0);
   const canalesVisibles = elegidaFinal ? [elegidaFinal] : alts;
   const hayAereo = canalesVisibles.length === 0 || canalesVisibles.some(esAereo);
   const hayMaritimo = canalesVisibles.some((a) => !esAereo(a));
+  const colsBul = hayAereo && hayMaritimo ? "c7" : "c6";
 
   // El mensaje lo manda el cliente desde su WhatsApp: así nos llega la conversación abierta,
   // no solo un aviso interno del sistema.
@@ -357,8 +359,9 @@ export default function PresupuestoPage({ params }) {
                 <p className="pz-sub">Bultos</p>
                 {/* Volumen si se cotiza marítimo, peso facturable si se cotiza aéreo, los dos si
                     se ofrecen ambos: es lo que se factura en cada caso. */}
-                <div className={`pz-row pz-bul head ${hayAereo && hayMaritimo ? "c6" : "c5"}`}>
-                  <span>Bulto</span><span>Cant.</span><span>Medidas</span><span>Peso</span>
+                <div className={`pz-row pz-bul head ${colsBul}`}>
+                  <span>Bulto</span><span>Cant.</span><span>Medidas</span>
+                  <span>Peso c/u</span><span>Peso vol. c/u</span>
                   {hayMaritimo && <span>Volumen</span>}
                   {hayAereo && <span>Peso facturable</span>}
                 </div>
@@ -367,20 +370,22 @@ export default function PresupuestoPage({ params }) {
                   const kgU = num(p.weight);
                   const kgVolU = kgVolDe(p);
                   const qViaja = mercaderiaDe(p, i);
-                  return <div className={`pz-row pz-bul ${hayAereo && hayMaritimo ? "c6" : "c5"}`} key={i}>
+                  return <div className={`pz-row pz-bul ${colsBul}`} key={i}>
                     {/* El número queda abajo en chico: el encabezado, el total y la tabla de
                         costos hablan de "Bulto 1, 2", y sin el número se pierde la referencia. */}
                     <span>{qViaja.length > 0 ? <>{qViaja.join(" · ")}<em>Bulto #{i + 1}</em></> : `Bulto #${i + 1}`}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
                     <span><i className="k">Medidas</i>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</span>
-                    <span className="u"><i className="k">Peso</i>{fmtKg(kgU * c)}</span>
+                    <span className="u"><i className="k">Peso c/u</i>{fmtKg(kgU)}</span>
+                    <span className="u"><i className="k">Peso volumétrico c/u</i>{fmtKg(kgVolU)}</span>
                     {hayMaritimo && <span><i className="k">Volumen</i>{fmtCbm(cbmDe(p) * c)}</span>}
                     {hayAereo && <span><i className="k">Peso facturable</i>{fmtKg(Math.max(kgU, kgVolU) * c)}</span>}
                   </div>;
                 })}
-                <div className={`pz-row pz-bul tot ${hayAereo && hayMaritimo ? "c6" : "c5"}`}>
+                <div className={`pz-row pz-bul tot ${colsBul}`}>
                   <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span />
                   <span className="u"><i className="k">Peso total</i>{fmtKg(totKg)}</span>
+                  <span className="u"><i className="k">Peso volumétrico total</i>{fmtKg(totKgVol)}</span>
                   {hayMaritimo && <span><i className="k">Volumen total</i>{fmtCbm(totCbm)}</span>}
                   {hayAereo && <span><i className="k">Peso facturable</i>{fmtKg(totKgFact)}</span>}
                 </div>
