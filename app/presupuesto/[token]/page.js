@@ -103,11 +103,11 @@ const CSS = `
 .pz-ver:focus{outline:none}
 .pz-ver:focus-visible{outline:2px solid #1A3D6E;outline-offset:2px}
 .pz-desg{margin-top:12px;padding-top:10px;border-top:1px dashed #eae4d6}
-.pz-desg div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;font-size:12.5px}
-.pz-desg div span{color:rgba(26,26,26,.6)}
-.pz-desg div b{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
-.pz-desg div.t{margin-top:7px;padding-top:8px;border-top:1px solid #eae4d6;font-size:13px}
-.pz-desg div.t span{color:#1a1a1a;font-weight:800}
+.pz-desg>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;font-size:12.5px}
+.pz-desg>div>span{color:rgba(26,26,26,.6)}
+.pz-desg>div>b{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pz-desg>div.t{margin-top:7px;padding-top:8px;border-top:1px solid #eae4d6;font-size:13px}
+.pz-desg>div.t>span{color:#1a1a1a;font-weight:800}
 .pz-nota{font-size:11.5px;color:rgba(26,26,26,.55);margin:9px 0 0;line-height:1.5;font-style:italic}
 
 .pz-cta{width:100%;padding:16px;font-size:15.5px;font-weight:800;border-radius:12px;border:none;letter-spacing:-.015em;cursor:pointer;color:#0A1628;background:linear-gradient(135deg,#E8D098,#B8956A);box-shadow:0 8px 22px rgba(184,149,106,.32)}
@@ -447,9 +447,9 @@ export default function PresupuestoPage({ params }) {
                           {comps.map(([l, v], k) => <div key={k}><span>{l}</span><b>{v}</b></div>)}
                           {comps.length > 1 && <div className="t"><span>Total</span><b>{usd(a.totalAbonar)}</b></div>}
                           {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
-                          <CostoPorProducto alt={a} />
                         </div>
                       )}
+                      {abierta && <CostoPorProducto alt={a} />}
                     </div>
                   </div>
                 );
