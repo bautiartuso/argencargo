@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
-import { printQuotePdf, printClosingPdf } from "../../lib/pdf-templates";
 import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import { useT, LANGS } from "../../lib/i18n-portal";
@@ -769,8 +768,6 @@ function OperationDetail({op:opProp,token,client,onBack}){
     setShowDocPanel(false);setDocItems([]);await loadAll();setSavingDocs(false);
   };
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
-  const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
-  const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
   const loadAll=async()=>{dq("operations",{token,filters:`?id=eq.${op.id}&select=*`}).then(r=>{if(Array.isArray(r)&&r[0])setOpFresh(r[0]);}).catch(()=>{});const [it,ev,pk,pm,cp,rk,fl,fii,tf,cf,ov]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`}),dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);
   {const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setCalcCtx({tariffs:Array.isArray(tf)?tf:[],config:cfg,overrides:Array.isArray(ov)?ov:[]});}
   setDeclaredItems(Array.isArray(fii)?fii:[]);
@@ -958,8 +955,6 @@ function OperationDetail({op:opProp,token,client,onBack}){
             <p style={LBL}>{hasBudget?(isGI?t("op.priceLanded"):"Presupuesto"):"Costo estimado"}</p>
             {showEstimate&&<span title={t("imp.estimateTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}{hasBudget&&!isGI&&<span title={t("imp.confirmedTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#4ade80",background:"rgba(74,222,128,0.12)",border:"1px solid rgba(74,222,128,0.45)"}}>{t("imp.confirmed")}</span>}
             <span style={{flex:1}}/>
-            {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,cursor:"pointer"}}>Presupuesto PDF</button>}
-            {!isGI&&["entregada","operacion_cerrada"].includes(op.status)&&<button onClick={downloadClosingPdf} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(74,222,128,0.45)",background:"rgba(74,222,128,0.1)",color:"#4ade80",cursor:"pointer"}}>Resumen final PDF</button>}
           </div>
           {isGI&&hasBudget&&<div>{items.map((it,i)=>{const qty=Number(it.quantity||0);const unit=Number(it.unit_price_usd||0);return <div key={it.id||i}>{fila(<>{it.description} <span style={{color:"rgba(255,255,255,0.5)"}}>× {qty} · {usd(unit)} c/u</span></>,usd(qty*unit),{last:i===items.length-1})}</div>;})}</div>}
           {!isGI&&hasBudget&&<div>
