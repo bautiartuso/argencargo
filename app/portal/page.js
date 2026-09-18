@@ -2709,13 +2709,24 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
       <div className="main-inner" style={{maxWidth:1200,margin:"0 auto",padding:"30px 32px"}}>{children}</div></div>
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
     {/* Bottom nav mobile (≤768px) — 5 acciones más usadas. El resto via "más" → sidebar */}
-    <nav className="ac-mob-bottom-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:25,background:"rgba(10,22,40,0.95)",backdropFilter:"blur(18px)",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"6px 8px 10px",justifyContent:"space-around"}}>
+    <nav className="ac-mob-bottom-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:25,background:"rgba(10,22,40,0.95)",backdropFilter:"blur(18px)",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"6px 8px 10px",justifyContent:"space-around",alignItems:"flex-start",overflow:"visible"}}>
+      {/* Tres accesos (18/09/2026): importaciones · calculadora (centro, elevada) · depósito.
+          Cotizaciones salió de acá — se llega desde el menú. "Más" también: abría el mismo
+          menú que el ☰ del encabezado, así que era un botón de cuatro para lo mismo.
+          El ícono de la calculadora era un cuadrado con dos líneas (parecía una tabla): ahora
+          es una calculadora, con pantalla y teclas. */}
       {[
         {key:"imports",ic:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"],l:t("nav.imports")},
-        {key:"calculator",ic:["M4 4h16v16H4z","M4 8h16","M8 4v16"],l:t("nav.calculator")},
-        {key:"quotes",ic:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"],l:t("nav.quotes")},
-        {key:"_more",ic:["M5 12h.01M12 12h.01M19 12h.01"],l:t("common.more"),isMore:true},
-      ].map(it=>{const active=page===it.key;return <button key={it.key} onClick={()=>{if(it.isMore){setMobOpen(true);}else{setPage(it.key);}}} style={{flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 4px",background:"transparent",border:"none",color:active?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer",borderRadius:8,transition:"color 150ms"}}>
+        {key:"calculator",ic:["M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z","M8.5 6.5h7v3.2h-7z","M9 14h.01","M12 14h.01","M15 14h.01","M9 18h.01","M12 18h.01","M15 18h.01"],l:t("nav.calculator"),centro:true},
+        {key:"deposito",ic:["M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z","M9 21V12h6v9","M3 9h18"],l:t("nav.deposito")},
+      ].map(it=>{const active=page===it.key;
+        if(it.centro)return <button key={it.key} onClick={()=>setPage(it.key)} aria-label={it.l} style={{flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:0,background:"transparent",border:"none",cursor:"pointer"}}>
+          <span style={{width:46,height:46,marginTop:-16,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:GOLD_GRADIENT,border:`1px solid ${GOLD_DEEP}`,boxShadow:active?"0 6px 20px rgba(232,208,152,0.45)":"0 5px 16px rgba(0,0,0,0.4)",color:"#0A1628",flexShrink:0}}>
+            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.ic.map((d,i)=><path key={i} d={d}/>)}</svg>
+          </span>
+          <span style={{fontSize:10,fontWeight:active?800:600,color:active?GOLD_LIGHT:"rgba(255,255,255,0.6)",letterSpacing:"0.02em",whiteSpace:"nowrap"}}>{it.l}</span>
+        </button>;
+        return <button key={it.key} onClick={()=>setPage(it.key)} style={{position:"relative",flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 4px",background:"transparent",border:"none",color:active?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer",borderRadius:8,transition:"color 150ms"}}>
         <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.ic.map((d,i)=><path key={i} d={d}/>)}</svg>
         <span style={{fontSize:10,fontWeight:active?700:500,letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.l}</span>
         {active&&<span style={{position:"absolute",top:0,width:24,height:2,background:GOLD_GRADIENT,borderRadius:"0 0 2px 2px"}}/>}
