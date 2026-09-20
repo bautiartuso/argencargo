@@ -4,10 +4,9 @@
 // y acá se replica para mostrar el checklist antes de intentar.
 import { useState, useEffect, useMemo, useRef } from "react";
 import { comprimirImagen } from "../../../lib/img";
-import { toast, confirmDialog } from "../../../lib/ui";
 import { precioMaquina } from "../../../lib/catalogo-precio";
 import { calcOpBudget } from "../../../lib/calc";
-import { INK,GRIS,BORDE,SUAVE,CARD,BG,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,TA,Btn,Sec,Pill,Barra,Vacio,Desplegable,Archivo,Toggle,Solapas,n,numONull,txtONull,fmtUsd,fmtNum,codigoMaq,ChipMaq } from "./ui";
+import { INK,GRIS,BORDE,SUAVE,CARD,BG,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,TA,Btn,Sec,Pill,Barra,Vacio,Desplegable,Archivo,Toggle,Solapas,n,numONull,txtONull,fmtUsd,fmtNum,codigoMaq,ChipMaq,toast,confirmDialog } from "./ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -130,17 +129,24 @@ export function Proveedores({ses,dq,provs,prods,arbol,cats,recargar}){
       {maqs(p.id).length===0?<p style={{margin:0,fontSize:13,color:GRIS}}>Todavía no tiene máquinas cargadas.</p>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>{maqs(p.id).map(m=><TarjetaMaq key={m.id} p={m} nombreCat={nombreCat}/>)}</div>}
     </Sec>
   </>;
+  const Tarjeta=({p})=><button className="card" onClick={()=>setSel(p.id)} style={{textAlign:"left",background:CARD,border:`1px solid ${BORDE}`,borderRadius:16,padding:"14px 16px",cursor:"pointer",color:INK,transition:"all 150ms",width:"100%",height:"100%"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:8}}><p style={{margin:0,fontSize:14.5,fontWeight:800,letterSpacing:"-0.01em",lineHeight:1.25}}>{p.fabrica}</p><span style={{fontFamily:MONO,fontSize:11,color:GRIS,whiteSpace:"nowrap"}}>{maqs(p.id).length} máq.</span></div>
+    <p style={{margin:"3px 0 8px",fontSize:12.5,color:GRIS}}>{p.ciudad} · {p.contacto}</p>
+    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{(p.categorias||[]).slice(0,3).map(s=><span key={s} style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:LIMA_SUAVE}}>{nombreCat(s)}</span>)}{(p.categorias||[]).length>3&&<span style={{fontSize:11,color:GRIS}}>+{(p.categorias||[]).length-3}</span>}</div>
+  </button>;
+  const plano=busq.trim().length>0;
+  const sinRubro=lista.filter(p=>!(p.categorias||[]).length);
   return <>
     <Barra><input placeholder="Buscar fábrica, ciudad, contacto o rubro…" value={busq} onChange={e=>setBusq(e.target.value)} style={{...INP,flex:1,minWidth:200,borderRadius:999,padding:"10px 18px"}}/><Btn kind="lima" onClick={()=>setForm({...PROV_VACIO})}>+ Nuevo proveedor</Btn></Barra>
-    {lista.length===0?<Vacio>{provs.length===0?"Todavía no hay proveedores.":"Nada que coincida."}</Vacio>
-    :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-      {lista.map(p=><button key={p.id} className="card" onClick={()=>setSel(p.id)} style={{textAlign:"left",background:CARD,border:`1px solid ${BORDE}`,borderRadius:16,padding:"16px 18px",cursor:"pointer",color:INK,transition:"all 150ms"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:8}}><p style={{margin:0,fontSize:15,fontWeight:800,letterSpacing:"-0.01em"}}>{p.fabrica}</p><span style={{fontFamily:MONO,fontSize:11,color:GRIS,whiteSpace:"nowrap"}}>{maqs(p.id).length} máq.</span></div>
-        <p style={{margin:"2px 0 10px",fontSize:13,color:GRIS}}>{p.ciudad} · {p.contacto}</p>
-        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>{(p.categorias||[]).slice(0,4).map(s=><span key={s} style={{fontSize:11.5,fontWeight:700,padding:"3px 9px",borderRadius:999,background:LIMA_SUAVE}}>{nombreCat(s)}</span>)}{(p.categorias||[]).length===0&&<span style={{fontSize:11.5,color:GRIS}}>Sin rubro asignado</span>}</div>
-        <p style={{margin:0,fontSize:12,color:GRIS,fontFamily:MONO}}>{[p.wechat&&`WeChat ${p.wechat}`,p.whatsapp&&`WA ${p.whatsapp}`,p.chat_plataforma].filter(Boolean).join(" · ")}</p>
-      </button>)}
-    </div>}
+    {provs.length===0?<Vacio>Todavía no hay proveedores.</Vacio>
+    :plano?(lista.length===0?<Vacio>Nada que coincida.</Vacio>:<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>{lista.map(p=><Tarjeta key={p.id} p={p}/>)}</div>)
+    :<>
+      {sinRubro.length>0&&<div style={{marginBottom:18}}><div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}><h3 style={{margin:0,fontSize:16,fontWeight:800}}>Sin rubro</h3><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{sinRubro.length}</span></div><div className="carril">{sinRubro.map(p=><Tarjeta key={p.id} p={p}/>)}</div></div>}
+      {arbol.map(c=>{const del=lista.filter(p=>(p.categorias||[]).includes(c.slug));return <div key={c.slug} style={{marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}><h3 style={{margin:0,fontSize:16,fontWeight:800}}>{c.nombre}</h3><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{del.length?del.length:"sin proveedores"}</span></div>
+        {del.length===0?<div style={{border:`1px dashed ${BORDE}`,borderRadius:14,padding:"14px 16px",fontSize:12.5,color:GRIS}}>Todavía no hay fábricas de este rubro.</div>:<div className="carril">{del.map(p=><Tarjeta key={p.id} p={p}/>)}</div>}
+      </div>;})}
+    </>}
   </>;
 }
 

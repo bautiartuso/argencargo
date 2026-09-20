@@ -3,7 +3,6 @@
 // Regla de Bautista (20/09/2026): NADA nativo del navegador — ni selects, ni alerts, ni el botón
 // de "Seleccionar archivo", ni calendarios. Todo desplegable/aviso/búsqueda es del sistema.
 import { useState, useRef, useEffect } from "react";
-import DatePicker from "../../components/DatePicker";
 
 export const FONT="'Manrope',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif";
 export const MONO="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace";
@@ -93,8 +92,51 @@ export function Desplegable({value,onChange,opciones,placeholder="Elegir…",bus
     </div>}
   </div>;
 }
-// Fecha: el DatePicker del proyecto (nunca el calendario del navegador).
-export const Fecha=({value,onChange,small})=><div className="mq-fecha"><DatePicker value={value||""} onChange={onChange} small={small}/></div>;
+// Fecha: calendario propio, con los colores y la tipografía de Argenmaq (nunca el del navegador
+// ni el navy/dorado de Argencargo).
+const DIAS=["LU","MA","MI","JU","VI","SÁ","DO"];
+const isoDe=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+export function Fecha({value,onChange,small,placeholder="Fecha"}){
+  const [abierto,setAbierto]=useState(false);const ref=useRef(null);
+  const hoy=new Date();const sel=value?new Date(value+"T12:00:00"):null;
+  const [vista,setVista]=useState(()=>({y:(sel||hoy).getFullYear(),m:(sel||hoy).getMonth()}));
+  useEffect(()=>{if(abierto)setVista({y:(sel||hoy).getFullYear(),m:(sel||hoy).getMonth()});},[abierto]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{if(!abierto)return;const cerrar=(e)=>{if(ref.current&&!ref.current.contains(e.target))setAbierto(false);};document.addEventListener("mousedown",cerrar);return()=>document.removeEventListener("mousedown",cerrar);},[abierto]);
+  const primero=new Date(vista.y,vista.m,1);const offset=(primero.getDay()+6)%7;const dias=new Date(vista.y,vista.m+1,0).getDate();
+  const celdas=[];for(let i=0;i<offset;i++)celdas.push(null);for(let d=1;d<=dias;d++)celdas.push(new Date(vista.y,vista.m,d));
+  const mover=(k)=>setVista(v=>{const d=new Date(v.y,v.m+k,1);return {y:d.getFullYear(),m:d.getMonth()};});
+  const elegir=(d)=>{onChange(d?isoDe(d):"");setAbierto(false);};
+  const etiqueta=sel?sel.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"";
+  return <div ref={ref} style={{position:"relative",display:"inline-block",minWidth:small?150:"100%"}}>
+    <button type="button" onClick={()=>setAbierto(v=>!v)} style={{...INP,padding:small?"8px 12px":"11px 13px",fontSize:small?13:14,display:"flex",alignItems:"center",gap:8,cursor:"pointer",borderColor:abierto?LIMA:BORDE,textAlign:"left"}}><span style={{flex:1,color:sel?INK:GRIS,fontWeight:sel?600:500,fontFamily:sel?MONO:FONT}}>{etiqueta||placeholder}</span><Ico d={["M3 5h18v16H3z","M16 3v4","M8 3v4","M3 10h18"]} size={15} color="var(--mq-gris)"/></button>
+    {abierto&&<div style={{position:"absolute",left:0,top:"100%",zIndex:30,marginTop:6,width:290,background:CARD,border:`1px solid ${BORDE}`,borderRadius:16,boxShadow:"0 14px 40px rgba(0,0,0,0.3)",padding:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><b style={{flex:1,fontSize:14,textTransform:"capitalize"}}>{primero.toLocaleDateString("es-AR",{month:"long",year:"numeric"})}</b><Btn small onClick={()=>mover(-1)}>‹</Btn><Btn small onClick={()=>mover(1)}>›</Btn></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+        {DIAS.map(d=><span key={d} style={{fontFamily:MONO,fontSize:10,color:GRIS,textAlign:"center",padding:"4px 0"}}>{d}</span>)}
+        {celdas.map((d,i)=>{if(!d)return <span key={i}/>;const iso=isoDe(d);const es=value===iso;const esHoy=isoDe(hoy)===iso;return <button key={i} type="button" onClick={()=>elegir(d)} style={{height:34,borderRadius:8,border:`1px solid ${es?LIMA:esHoy?BORDE:"transparent"}`,background:es?LIMA:"transparent",color:es?"var(--mq-lima-ink)":INK,fontSize:13,fontWeight:es||esHoy?800:600,cursor:"pointer"}}>{d.getDate()}</button>;})}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:10}}><Btn small onClick={()=>elegir(null)}>Borrar</Btn><Btn small kind="lima" onClick={()=>elegir(hoy)}>Hoy</Btn></div>
+    </div>}
+  </div>;
+}
+// Avisos y confirmaciones del sistema, con los colores de Argenmaq.
+let _push=null;
+export function toast(msg,variant="ok",opts={}){_push?.({t:"aviso",msg:String(msg),tipo:variant==="error"?"error":variant==="warn"?"warn":"ok",dur:opts.duration});}
+export function confirmDialog(msg,opts={}){return new Promise(res=>{if(!_push){res(false);return;}_push({t:"confirmar",msg:String(msg),ok:opts.ok||"Aceptar",cancelar:opts.cancelar||"Cancelar",res});});}
+export function Avisos(){
+  const [items,setItems]=useState([]);const [dlg,setDlg]=useState(null);
+  useEffect(()=>{_push=(x)=>{if(x.t==="aviso"){const id=Date.now()+Math.random();setItems(a=>[...a,{...x,id}]);setTimeout(()=>setItems(a=>a.filter(i=>i.id!==id)),x.dur||(x.tipo==="error"?5000:3200));}else setDlg(x);};return()=>{_push=null;};},[]);
+  const cerrar=(v)=>{dlg?.res(v);setDlg(null);};
+  return <>
+    <div style={{position:"fixed",right:18,bottom:18,zIndex:60,display:"grid",gap:8,maxWidth:360}}>{items.map(i=><div key={i.id} style={{background:CARD,border:`1px solid ${i.tipo==="error"?BAD:i.tipo==="warn"?WARN:LIMA}`,borderLeftWidth:4,borderRadius:12,padding:"11px 14px",fontSize:13.5,fontWeight:600,color:INK,boxShadow:"0 10px 30px rgba(0,0,0,0.3)"}}>{i.msg}</div>)}</div>
+    {dlg&&<div onClick={()=>cerrar(false)} style={{position:"fixed",inset:0,zIndex:70,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD,border:`1px solid ${BORDE}`,borderRadius:18,padding:"22px 22px 18px",width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
+        <p style={{margin:"0 0 18px",fontSize:15,fontWeight:700,lineHeight:1.45}}>{dlg.msg}</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn onClick={()=>cerrar(false)}>{dlg.cancelar}</Btn><Btn kind="lima" onClick={()=>cerrar(true)}>{dlg.ok}</Btn></div>
+      </div>
+    </div>}
+  </>;
+}
 // Archivo: botón propio + arrastrar + pegar. `onFiles(File[])`.
 export function Archivo({onFiles,accept="image/*,application/pdf",multiple=false,label="Adjuntar",hint="Arrastrá, pegá con Ctrl+V o elegí",pegar=true,style}){
   const ref=useRef(null);const [sobre,setSobre]=useState(false);
@@ -127,14 +169,13 @@ export const ESTADOS_PEDIDO=[
   {k:"nuevo",l:"Nueva",c:GRIS,bg:SUAVE},
   {k:"pagado",l:"Pagada",c:OK,bg:OK_BG},
   {k:"en_produccion",l:"En producción",c:WARN,bg:WARN_BG},
-  {k:"prueba_fabrica",l:"Prueba en fábrica",c:WARN,bg:WARN_BG},
   {k:"listo_fabrica",l:"Lista en fábrica",c:OK,bg:OK_BG},
   {k:"en_importacion",l:"En importación",c:"#8AB4FF",bg:"#1C2A44"},
   {k:"entregado",l:"Entregada",c:OK,bg:OK_BG},
   {k:"cancelado",l:"Cancelada",c:BAD,bg:BAD_BG},
 ];
-export const ACTIVOS=["nuevo","pagado","en_produccion","prueba_fabrica","listo_fabrica","en_importacion"];
+export const ACTIVOS=["nuevo","pagado","en_produccion","listo_fabrica","en_importacion"];
 export const estadoPed=(k)=>ESTADOS_PEDIDO.find(e=>e.k===k)||ESTADOS_PEDIDO[0];
 export const ChipPed=({e})=>{const s=estadoPed(e);return <Chip {...s}/>;};
-export const CATEG_MOV={cobro_cliente:"Cobro del cliente",pago_fabrica:"Pago a fábrica",prueba_fabrica:"Prueba en fábrica",argencargo:"Pago a Argencargo",gasto:"Gasto",otro:"Otro"};
+export const CATEG_MOV={cobro_cliente:"Cobro del cliente",pago_fabrica:"Pago a fábrica",prueba_fabrica:"Prueba en fábrica",argencargo:"Argencargo",gasto:"Gasto",otro:"Otro"};
 export const nombreCliente=(c)=>c?(c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim()||c.email||"—"):"—";

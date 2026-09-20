@@ -1,9 +1,8 @@
 "use client";
 // Finanzas de Argenmaq: Resumen, Libro diario, cuenta corriente con la financiera y Tarifas.
 import { useState, useEffect } from "react";
-import { toast, confirmDialog } from "../../../lib/ui";
 import { leerAjustes, precioMaquina, totalesPedido } from "../../../lib/catalogo-precio";
-import { INK,GRIS,BORDE,SUAVE,CARD,LIMA,LIMA_SUAVE,OK,WARN,BAD,MONO,LBL,TH,TD,GRID,DOS,Campo,Inp,Btn,Sec,Pill,Barra,Vacio,Dato,Barras,Desplegable,Fecha,n,numONull,txtONull,fmtUsd,fmtMon,fmtK,fmtFecha,hoyISO,codigoOp,CATEG_MOV,MESES,MESES_C,ACTIVOS } from "./ui";
+import { INK,GRIS,BORDE,SUAVE,CARD,LIMA,LIMA_SUAVE,OK,WARN,BAD,MONO,LBL,TH,TD,GRID,DOS,Campo,Inp,Btn,Sec,Pill,Barra,Vacio,Dato,Barras,Desplegable,Fecha,Archivo,n,numONull,txtONull,fmtUsd,fmtMon,fmtK,fmtFecha,hoyISO,codigoOp,CATEG_MOV,MESES,MESES_C,ACTIVOS,toast,confirmDialog } from "./ui";
 import { ListaMovs, FormMov, cobradoDe, pagadoFabricaDe } from "./Pedidos";
 
 // Filtro de período del resumen: este mes por defecto, después año, después total.
@@ -235,9 +234,9 @@ function CCCompartir({dq,onCerrar}){
 
 // ── Tarifas: parámetros a la izquierda, simulador a la derecha ────────────────────────────
 export function Tarifas({dq,ajustes,setAjustes}){
-  const claves=["gestion_pct","markup_minimo_usd","fin_pct","fin_fijo_usd","prueba_fabrica_precio","prueba_fabrica_costo","adelanto_extra_pct"];
+  const claves=["gestion_pct","markup_minimo_usd","fin_pct","fin_fijo_usd","adelanto_extra_pct"];
   const [a,setA]=useState(()=>Object.fromEntries(claves.map(k=>[k,String(ajustes[k])])));
-  const [sim,setSim]=useState({exw:"5000",qty:"1",pct:"",prueba:false});
+  const [sim,setSim]=useState({exw:"5000",qty:"1",pct:""});
   const [guardando,setGuardando]=useState(false);
   const set=(k,v)=>setA(x=>({...x,[k]:v}));
   const filas=()=>claves.map(k=>({clave:k,valor:n(a[k])})).concat([{clave:"fin_pagos",valor:1}]);
@@ -246,7 +245,7 @@ export function Tarifas({dq,ajustes,setAjustes}){
     setAjustes(x=>({...x,...Object.fromEntries(filas().map(f=>[f.clave,f.valor]))}));toast("Tarifas guardadas");
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   const aj={...ajustes,...Object.fromEntries(filas().map(f=>[f.clave,f.valor]))};
-  const r=totalesPedido([{exw_unit:n(sim.exw),qty:n(sim.qty,1),gestion_pct:sim.pct.trim()===""?null:n(sim.pct)}],aj,sim.prueba);
+  const r=totalesPedido([{exw_unit:n(sim.exw),qty:n(sim.qty,1),gestion_pct:sim.pct.trim()===""?null:n(sim.pct)}],aj,false);
   const pctSim=sim.pct.trim()===""?n(aj.gestion_pct):n(sim.pct);
   const piso=n(sim.exw)*pctSim/100<n(aj.markup_minimo_usd);
   const Fila=({l,hint,k,step})=><div style={{display:"grid",gridTemplateColumns:"1fr 150px",gap:14,alignItems:"center",padding:"12px 0",borderTop:`1px solid ${BORDE}`}}><div><p style={{margin:0,fontSize:14,fontWeight:700}}>{l}</p>{hint&&<p style={{margin:"2px 0 0",fontSize:12.5,color:GRIS}}>{hint}</p>}</div><Inp type="number" step={step||"1"} value={a[k]} onChange={e=>set(k,e.target.value)} style={{textAlign:"right",fontFamily:MONO}}/></div>;
@@ -263,25 +262,19 @@ export function Tarifas({dq,ajustes,setAjustes}){
           <Fila l="Porcentaje por transferencia (%)" k="fin_pct" step="0.01"/>
           <Fila l="Fijo por transferencia (USD)" hint="Una transferencia por operación." k="fin_fijo_usd"/>
         </Sec>
-        <Sec titulo="Prueba en fábrica · adicional opcional">
-          <Fila l="Precio al cliente (USD)" k="prueba_fabrica_precio"/>
-          <Fila l="Costo (USD)" k="prueba_fabrica_costo"/>
-        </Sec>
       </div>
       <Sec titulo="Probá con una máquina" style={{position:"sticky",top:14,alignSelf:"start"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <Campo label="EXW (USD)"><Inp type="number" value={sim.exw} onChange={e=>setSim(x=>({...x,exw:e.target.value}))}/></Campo>
           <Campo label="Cantidad"><Inp type="number" value={sim.qty} onChange={e=>setSim(x=>({...x,qty:e.target.value}))}/></Campo>
           <Campo label="Gestión (%)"><Inp type="number" step="0.5" value={sim.pct} onChange={e=>setSim(x=>({...x,pct:e.target.value}))} placeholder={String(aj.gestion_pct)}/></Campo>
-          <Campo label="Prueba en fábrica"><div style={{display:"flex",gap:6}}><Pill on={!sim.prueba} onClick={()=>setSim(x=>({...x,prueba:false}))}>No</Pill><Pill on={sim.prueba} onClick={()=>setSim(x=>({...x,prueba:true}))}>Sí</Pill></div></Campo>
         </div>
         <div style={{marginTop:18,background:SUAVE,borderRadius:14,padding:"14px 16px",display:"grid",gridTemplateColumns:"1fr auto",gap:"6px 18px",fontSize:13.5}}>
           <span style={{color:GRIS}}>EXW</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.exw_total)}</span>
           <span style={{color:GRIS}}>Financiero</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.financiero)}</span>
           <span style={{color:GRIS}}>Gestión ({String(pctSim).replace(".",",")} %{piso?" → piso":""})</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.gestion)}</span>
-          {r.prueba_monto>0&&<><span style={{color:GRIS}}>Prueba en fábrica</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.prueba_monto)}</span></>}
           <span style={{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:8}}>Precio de la máquina</span><span style={{fontFamily:MONO,fontWeight:800,textAlign:"right",borderTop:`1px solid ${BORDE}`,paddingTop:8,fontSize:16}}>{fmtUsd(r.precio_total)}</span>
-          <span style={{color:GRIS}}>Ganancia neta</span><span style={{fontFamily:MONO,textAlign:"right",color:OK,fontWeight:700}}>{fmtUsd(r.gestion+(sim.prueba?n(aj.prueba_fabrica_precio)-n(aj.prueba_fabrica_costo):0))}</span>
+          <span style={{color:GRIS}}>Ganancia neta</span><span style={{fontFamily:MONO,textAlign:"right",color:OK,fontWeight:700}}>{fmtUsd(r.gestion)}</span>
         </div>
         <p style={{margin:"10px 0 0",fontSize:12.5,color:r.cubreAdelanto?OK:BAD}}>{r.cubreAdelanto?`Cubre el adelanto mínimo (${fmtUsd(r.adelantoMinimo)}).`:`No cubre el adelanto mínimo (${fmtUsd(r.adelantoMinimo)}): subí la gestión.`}</p>
         <p style={{margin:"12px 0 0",fontSize:12.5,color:GRIS}}>La importación de Argencargo se suma aparte, vía por vía, en la ficha de cada máquina.</p>

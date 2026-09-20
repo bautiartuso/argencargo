@@ -1,8 +1,7 @@
 "use client";
 // Inicio, Clientes (misma base que Argencargo) y Ajustes (con Usuarios adentro).
 import { useState, useEffect } from "react";
-import { toast, confirmDialog } from "../../../lib/ui";
-import { INK,GRIS,BORDE,SUAVE,CARD,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,Btn,Sec,Pill,Barra,Vacio,Dato,Barras,Solapas,Toggle,n,txtONull,fmtUsd,fmtK,fmtFecha,codigoOp,codigoMaq,ChipPed,ESTADOS_PEDIDO,ACTIVOS,CATEG_MOV,MESES,nombreCliente } from "./ui";
+import { INK,GRIS,BORDE,SUAVE,CARD,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,Btn,Sec,Pill,Barra,Vacio,Dato,Barras,Solapas,Toggle,Desplegable,n,txtONull,fmtUsd,fmtK,fmtFecha,codigoOp,codigoMaq,ChipPed,ESTADOS_PEDIDO,ACTIVOS,CATEG_MOV,MESES,nombreCliente,toast,confirmDialog } from "./ui";
 import { cobradoDe, pagadoFabricaDe } from "./Pedidos";
 import { porMes } from "./Finanzas";
 
@@ -20,7 +19,7 @@ export function Inicio({ses,prods,pedidos,movs,ajustes,ir}){
   const tareas=[];
   activos.filter(p=>p.estado==="nuevo").forEach(p=>{const falta=n(p.precio_total)-cobradoDe(movs,p.id);if(falta>0.01)tareas.push({titulo:`Cobrar ${fmtUsd(falta)} a ${p.cliente_nombre}`,sub:`${codigoOp(p)} · nueva, sin cobrar del todo`,k:"pedidos",x:p.id,c:WARN});else tareas.push({titulo:`Marcar como pagada: ${codigoOp(p)}`,sub:`${p.cliente_nombre} ya cubrió el precio`,k:"pedidos",x:p.id,c:OK});});
   activos.filter(p=>p.estado==="pagado").forEach(p=>{const falta=n(p.exw_total)-pagadoFabricaDe(movs,p.id);if(falta>0.01)tareas.push({titulo:`Pagar ${fmtUsd(falta)} a la fábrica`,sub:`${codigoOp(p)} · ${(p.items||[]).map(i=>i.proveedor).filter(Boolean)[0]||p.cliente_nombre}`,k:"pedidos",x:p.id,c:BAD});else tareas.push({titulo:`Pasar a producción: ${codigoOp(p)}`,sub:"la fábrica ya cobró",k:"pedidos",x:p.id,c:OK});});
-  activos.filter(p=>p.estado==="en_produccion"||p.estado==="prueba_fabrica").forEach(p=>{const dias=Math.max(0,...(p.items||[]).map(i=>n(i.dias_produccion)));const pagoAt=(p.historial||[]).find(h=>h.estado==="pagado")?.at||p.created_at;const listaEl=new Date(new Date(pagoAt).getTime()+dias*864e5);const rest=Math.ceil((listaEl-hoy)/864e5);if(dias>0&&rest<=0)tareas.push({titulo:`Debería estar lista: ${codigoOp(p)}`,sub:`${p.cliente_nombre} · venció hace ${-rest} día${-rest===1?"":"s"}`,k:"pedidos",x:p.id,c:WARN});else if(dias>0&&rest<=5)tareas.push({titulo:`Sale en ${rest} día${rest===1?"":"s"}: ${codigoOp(p)}`,sub:`${p.cliente_nombre} · avisale y coordiná con Argencargo`,k:"pedidos",x:p.id,c:GRIS});});
+  activos.filter(p=>p.estado==="en_produccion").forEach(p=>{const dias=Math.max(0,...(p.items||[]).map(i=>n(i.dias_produccion)));const pagoAt=(p.historial||[]).find(h=>h.estado==="pagado")?.at||p.created_at;const listaEl=new Date(new Date(pagoAt).getTime()+dias*864e5);const rest=Math.ceil((listaEl-hoy)/864e5);if(dias>0&&rest<=0)tareas.push({titulo:`Debería estar lista: ${codigoOp(p)}`,sub:`${p.cliente_nombre} · venció hace ${-rest} día${-rest===1?"":"s"}`,k:"pedidos",x:p.id,c:WARN});else if(dias>0&&rest<=5)tareas.push({titulo:`Sale en ${rest} día${rest===1?"":"s"}: ${codigoOp(p)}`,sub:`${p.cliente_nombre} · avisale y coordiná con Argencargo`,k:"pedidos",x:p.id,c:GRIS});});
   activos.filter(p=>p.estado==="listo_fabrica"&&!p.operation_id).forEach(p=>tareas.push({titulo:`Abrir la operación en Argencargo: ${codigoOp(p)}`,sub:`${p.cliente_nombre} · la máquina está lista en fábrica`,k:"pedidos",x:p.id,c:WARN}));
   const viejas=prods.filter(p=>p.estado==="publicado"&&p.precio_verificado_at&&(hoy-new Date(p.precio_verificado_at))/864e5>30);
   if(viejas.length)tareas.push({titulo:`${viejas.length} máquina${viejas.length>1?"s":""} con el EXW sin revisar hace más de 30 días`,sub:viejas.slice(0,4).map(p=>codigoMaq(p)).join(", ")+(viejas.length>4?"…":""),k:"maquinas",c:GRIS});
@@ -62,41 +61,57 @@ export function Inicio({ses,prods,pedidos,movs,ajustes,ir}){
   </>;
 }
 
-// ── Clientes: misma tabla que Argencargo, con ficha ───────────────────────────────────────
+// ── Clientes: misma tabla que Argencargo, con ficha editable ──────────────────────────────
+const COND={responsable_inscripto:"Responsable inscripto",monotributista:"Monotributista",ninguna:"Consumidor final"};
 export function Clientes({dq,pedidos,movs,ir}){
   const [q,setQ]=useState("");const [lista,setLista]=useState([]);const [cargando,setCargando]=useState(true);const [sel,setSel]=useState(null);
+  const [edit,setEdit]=useState(null);const [guardando,setGuardando]=useState(false);
   const buscar=async(t)=>{setCargando(true);try{
     const s=t.trim().replace(/[%,()]/g,"");
     const f=s.length>=2?`&or=(first_name.ilike.*${s}*,last_name.ilike.*${s}*,company_name.ilike.*${s}*,email.ilike.*${s}*,client_code.ilike.*${s}*,whatsapp.ilike.*${s}*,cuit.ilike.*${s}*)`:"";
-    const r=await dq("clients",{filters:`?select=id,client_code,first_name,last_name,company_name,email,whatsapp,cuit,tax_condition,street,city,province,postal_code,created_at&order=created_at.desc&limit=60${f}`});
+    const r=await dq("clients",{filters:`?select=id,client_code,first_name,last_name,company_name,email,whatsapp,cuit,dni,tax_condition,street,floor_apt,city,province,postal_code,created_at,account_balance_usd,is_active&order=created_at.desc&limit=60${f}`});
     setLista(Array.isArray(r)?r:[]);
   }catch(e){toast(e.message,"error");}setCargando(false);};
   useEffect(()=>{buscar("");},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const opsDe=(id)=>pedidos.filter(p=>p.client_id===id);
-  const total=(id)=>opsDe(id).filter(p=>p.estado!=="cancelado").reduce((s,p)=>s+n(p.precio_total),0);
+  const total=(id)=>opsDe(id).filter(p=>p.estado!=="cancelado").reduce((s,p)=>s+n(p.precio_total)+n(p.importacion_usd),0);
   const c=sel?lista.find(x=>x.id===sel):null;
-  const COND={responsable_inscripto:"Responsable inscripto",monotributista:"Monotributista",ninguna:"Consumidor final"};
+  const guardar=async()=>{setGuardando(true);try{
+    const body={first_name:edit.first_name.trim(),last_name:edit.last_name.trim(),company_name:txtONull(edit.company_name),email:edit.email.trim(),whatsapp:edit.whatsapp.trim(),cuit:txtONull(edit.cuit),dni:txtONull(edit.dni),tax_condition:edit.tax_condition||null,street:edit.street.trim(),floor_apt:txtONull(edit.floor_apt),city:edit.city.trim(),province:edit.province.trim(),postal_code:edit.postal_code.trim()};
+    await dq("clients",{method:"PATCH",filters:`?id=eq.${c.id}`,body});setLista(l=>l.map(x=>x.id===c.id?{...x,...body}:x));setEdit(null);toast("Cliente actualizado");
+  }catch(e){toast(e.message,"error");}setGuardando(false);};
   if(c)return <>
-    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 22px"}}><Btn small onClick={()=>setSel(null)}>← Clientes</Btn><span style={{fontWeight:800,fontSize:18}}>{nombreCliente(c)}</span><span style={{fontFamily:MONO,fontSize:12,color:GRIS}}>{c.client_code}</span><span style={{flex:1}}/>{c.whatsapp&&<a href={`https://wa.me/${String(c.whatsapp).replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small kind="lima">WhatsApp</Btn></a>}</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 22px"}}><Btn small onClick={()=>{setSel(null);setEdit(null);}}>← Clientes</Btn><span style={{fontWeight:800,fontSize:18}}>{nombreCliente(c)}</span><span style={{fontFamily:MONO,fontSize:12,color:GRIS}}>{c.client_code}</span><span style={{flex:1}}/>{c.whatsapp&&<a href={`https://wa.me/${String(c.whatsapp).replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small kind="lima">WhatsApp</Btn></a>}{!edit&&<Btn small onClick={()=>setEdit({first_name:c.first_name||"",last_name:c.last_name||"",company_name:c.company_name||"",email:c.email||"",whatsapp:c.whatsapp||"",cuit:c.cuit||"",dni:c.dni||"",tax_condition:c.tax_condition||"",street:c.street||"",floor_apt:c.floor_apt||"",city:c.city||"",province:c.province||"",postal_code:c.postal_code||""})}>Editar</Btn>}</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:14}}>
+      <Dato l="Código" v={c.client_code||"—"} acento={GRIS}/>
       <Dato l="Operaciones" v={String(opsDe(c.id).length)} sub={`${opsDe(c.id).filter(p=>ACTIVOS.includes(p.estado)).length} activas`}/>
       <Dato l="Comprado" v={fmtUsd(total(c.id))} acento={OK}/>
       <Dato l="Condición" v={COND[c.tax_condition]||"—"} acento={GRIS}/>
+      <Dato l="Saldo en Argencargo" v={fmtUsd(c.account_balance_usd||0)} color={n(c.account_balance_usd)<0?BAD:INK} acento={GRIS}/>
       <Dato l="Cliente desde" v={fmtFecha(c.created_at)} acento={GRIS}/>
     </div>
     <div className="dos" style={DOS}>
-      <Sec titulo="Datos">
-        <div style={{display:"grid",gap:10,fontSize:14}}>
-          {(c.first_name||c.last_name)&&<div><p style={{...LBL,marginBottom:2}}>Persona</p><b>{`${c.first_name||""} ${c.last_name||""}`.trim()}</b></div>}
+      <Sec titulo="Datos" extra={edit?<div style={{display:"flex",gap:8}}><Btn small kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn><Btn small onClick={()=>setEdit(null)}>Cancelar</Btn></div>:null}>
+        {edit?<div style={{display:"grid",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Campo label="Nombre"><Inp value={edit.first_name} onChange={e=>setEdit(x=>({...x,first_name:e.target.value}))}/></Campo><Campo label="Apellido"><Inp value={edit.last_name} onChange={e=>setEdit(x=>({...x,last_name:e.target.value}))}/></Campo></div>
+          <Campo label="Empresa"><Inp value={edit.company_name} onChange={e=>setEdit(x=>({...x,company_name:e.target.value}))}/></Campo>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Campo label="Email"><Inp value={edit.email} onChange={e=>setEdit(x=>({...x,email:e.target.value}))}/></Campo><Campo label="WhatsApp"><Inp value={edit.whatsapp} onChange={e=>setEdit(x=>({...x,whatsapp:e.target.value}))}/></Campo></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}><Campo label="Condición"><Desplegable value={edit.tax_condition} onChange={v=>setEdit(x=>({...x,tax_condition:v}))} opciones={Object.entries(COND).map(([v,l])=>({v,l}))} buscar={false}/></Campo><Campo label="CUIT"><Inp value={edit.cuit} onChange={e=>setEdit(x=>({...x,cuit:e.target.value}))}/></Campo><Campo label="DNI"><Inp value={edit.dni} onChange={e=>setEdit(x=>({...x,dni:e.target.value}))}/></Campo></div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}><Campo label="Calle y número"><Inp value={edit.street} onChange={e=>setEdit(x=>({...x,street:e.target.value}))}/></Campo><Campo label="Piso / depto"><Inp value={edit.floor_apt} onChange={e=>setEdit(x=>({...x,floor_apt:e.target.value}))}/></Campo></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}><Campo label="Ciudad"><Inp value={edit.city} onChange={e=>setEdit(x=>({...x,city:e.target.value}))}/></Campo><Campo label="Provincia"><Inp value={edit.province} onChange={e=>setEdit(x=>({...x,province:e.target.value}))}/></Campo><Campo label="Código postal"><Inp value={edit.postal_code} onChange={e=>setEdit(x=>({...x,postal_code:e.target.value}))}/></Campo></div>
+        </div>
+        :<div style={{display:"grid",gap:10,fontSize:14}}>
+          <div><p style={{...LBL,marginBottom:2}}>Persona</p><b>{`${c.first_name||""} ${c.last_name||""}`.trim()||"—"}</b></div>
+          {c.company_name&&<div><p style={{...LBL,marginBottom:2}}>Empresa</p><b>{c.company_name}</b></div>}
           <div><p style={{...LBL,marginBottom:2}}>Email</p><span>{c.email||"—"}</span></div>
           <div><p style={{...LBL,marginBottom:2}}>WhatsApp</p><span style={{fontFamily:MONO}}>{c.whatsapp||"—"}</span></div>
-          <div><p style={{...LBL,marginBottom:2}}>CUIT</p><span style={{fontFamily:MONO}}>{c.cuit||"—"}</span></div>
-          <div><p style={{...LBL,marginBottom:2}}>Dirección</p><span>{[c.street,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"—"}</span></div>
-        </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div><p style={{...LBL,marginBottom:2}}>CUIT</p><span style={{fontFamily:MONO}}>{c.cuit||"—"}</span></div><div><p style={{...LBL,marginBottom:2}}>DNI</p><span style={{fontFamily:MONO}}>{c.dni||"—"}</span></div></div>
+          <div><p style={{...LBL,marginBottom:2}}>Dirección</p><span>{[c.street,c.floor_apt,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"—"}</span></div>
+        </div>}
       </Sec>
       <Sec titulo="Operaciones">
         {opsDe(c.id).length===0?<p style={{margin:0,fontSize:13,color:GRIS}}>Todavía no compró.</p>
-        :<div style={{display:"grid",gap:8}}>{opsDe(c.id).map(p=><button key={p.id} className="fila" onClick={()=>ir("pedidos",p.id)} style={{display:"flex",gap:12,alignItems:"center",width:"100%",textAlign:"left",padding:"9px 10px",borderRadius:10,border:"none",background:"transparent",color:INK,cursor:"pointer",fontSize:13.5}}><span style={{fontFamily:MONO,fontSize:11.5,color:GRIS}}>{codigoOp(p)}</span><span style={{flex:1,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(p.items||[]).map(i=>i.nombre).join(" · ")}</span><ChipPed e={p.estado}/><b style={{fontFamily:MONO,whiteSpace:"nowrap"}}>{fmtUsd(p.precio_total)}</b></button>)}</div>}
+        :<div style={{display:"grid",gap:8}}>{opsDe(c.id).map(p=><button key={p.id} className="fila" onClick={()=>ir("pedidos",p.id)} style={{display:"flex",gap:12,alignItems:"center",width:"100%",textAlign:"left",padding:"9px 10px",borderRadius:10,border:"none",background:"transparent",color:INK,cursor:"pointer",fontSize:13.5}}><span style={{fontFamily:MONO,fontSize:11.5,color:GRIS}}>{codigoOp(p)}</span><span style={{flex:1,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(p.items||[]).map(i=>i.nombre).join(" · ")}</span><ChipPed e={p.estado}/><b style={{fontFamily:MONO,whiteSpace:"nowrap"}}>{fmtUsd(n(p.precio_total)+n(p.importacion_usd))}</b></button>)}</div>}
       </Sec>
     </div>
   </>;
@@ -110,46 +125,34 @@ export function Clientes({dq,pedidos,movs,ir}){
   </>;
 }
 
-// ── Ajustes: general (negocio, apariencia, avisos), usuarios y categorías de gastos ───────
+// ── Ajustes: general (apariencia, avisos), usuarios y categorías de gastos ───────────────
 export function Ajustes({ses,dq,token,ajustes,setAjustes,tema,setTema,gastoCats,recargar}){
   const [tab,setTab]=useState("general");
-  return <>
-    <Solapas val={tab} onChange={setTab} items={[["general","General"],["usuarios","Usuarios"],["gastos","Categorías de gastos",gastoCats?.length||null]]}/>
+  return <div style={{maxWidth:760}}>
+    <div style={{display:"inline-flex",gap:4,padding:4,borderRadius:999,background:SUAVE,marginBottom:22}}>{[["general","General"],["usuarios","Usuarios"],["gastos","Categorías de gastos"]].map(([k,l])=><button key={k} type="button" onClick={()=>setTab(k)} style={{padding:"8px 16px",borderRadius:999,border:"none",background:tab===k?LIMA:"transparent",color:tab===k?"var(--mq-lima-ink)":GRIS,fontSize:13.5,fontWeight:700,cursor:"pointer"}}>{l}</button>)}</div>
     {tab==="general"&&<General ses={ses} dq={dq} ajustes={ajustes} setAjustes={setAjustes} tema={tema} setTema={setTema}/>}
     {tab==="usuarios"&&<Usuarios ses={ses} token={token}/>}
     {tab==="gastos"&&<GastoCats dq={dq} gastoCats={gastoCats} recargar={recargar}/>}
-  </>;
+  </div>;
 }
 function General({ses,dq,ajustes,setAjustes,tema,setTema}){
-  const [neg,setNeg]=useState({...(ajustes.negocio||{})});
   const [notif,setNotif]=useState({...(ajustes.notif||{})});
   const [guardando,setGuardando]=useState(false);
   const guardar=async()=>{setGuardando(true);try{
-    const filas=[{clave:"negocio",valor:neg},{clave:"notif",valor:notif}];
-    await dq("cat_ajustes",{method:"POST",prefer:"resolution=merge-duplicates,return=representation",body:filas.map(f=>({...f,updated_at:new Date().toISOString()}))});
-    setAjustes(x=>({...x,...Object.fromEntries(filas.map(f=>[f.clave,f.valor]))}));toast("Ajustes guardados");
+    await dq("cat_ajustes",{method:"POST",prefer:"resolution=merge-duplicates,return=representation",body:[{clave:"notif",valor:notif,updated_at:new Date().toISOString()}]});
+    setAjustes(x=>({...x,notif}));toast("Ajustes guardados");
   }catch(e){toast(e.message,"error");}setGuardando(false);};
-  return <div style={{maxWidth:720}}>
-    <Barra><span style={{flex:1}}/><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn></Barra>
-    <Sec titulo="Negocio">
-      <div style={{display:"grid",gap:14}}>
-        <Campo label="Nombre"><Inp value={neg.nombre||""} onChange={e=>setNeg(x=>({...x,nombre:e.target.value}))}/></Campo>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Campo label="Razón social"><Inp value={neg.razon_social||""} onChange={e=>setNeg(x=>({...x,razon_social:e.target.value}))}/></Campo><Campo label="CUIT"><Inp value={neg.cuit||""} onChange={e=>setNeg(x=>({...x,cuit:e.target.value}))}/></Campo></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Campo label="WhatsApp"><Inp value={neg.whatsapp||""} onChange={e=>setNeg(x=>({...x,whatsapp:e.target.value}))}/></Campo><Campo label="Email"><Inp value={neg.email||""} onChange={e=>setNeg(x=>({...x,email:e.target.value}))}/></Campo></div>
-        <Campo label="Dirección"><Inp value={neg.direccion||""} onChange={e=>setNeg(x=>({...x,direccion:e.target.value}))}/></Campo>
-      </div>
-    </Sec>
+  const AV=[["pedido_nuevo","Operación nueva","cuando un cliente arma una operación"],["cobro","Cobro registrado","cada vez que entra plata de una operación"],["produccion_vencida","Producción vencida","cuando una máquina debería estar lista y sigue en producción"],["precio_vencido","EXW sin revisar","máquinas publicadas con el precio viejo, más de 30 días"]];
+  return <>
     <Sec titulo="Apariencia">
-      <div style={{display:"flex",gap:8}}><Pill on={tema!=="claro"} onClick={()=>setTema("cat")}>Grafito y amarillo</Pill><Pill on={tema==="claro"} onClick={()=>setTema("claro")}>Claro</Pill></div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{[["cat","Grafito y amarillo"],["claro","Claro"]].map(([k,l])=><button key={k} type="button" onClick={()=>setTema(k)} style={{flex:"1 1 200px",textAlign:"left",padding:"14px 16px",borderRadius:14,cursor:"pointer",border:`1.5px solid ${(tema==="claro")===(k==="claro")?LIMA:BORDE}`,background:(tema==="claro")===(k==="claro")?LIMA_SUAVE:"transparent",color:INK}}><span style={{display:"inline-block",width:34,height:20,borderRadius:6,marginBottom:8,background:k==="claro"?"#F7F7F5":"#141517",border:"1px solid var(--mq-borde)",verticalAlign:"middle"}}/><span style={{display:"inline-block",width:14,height:14,borderRadius:4,background:"#FFD200",marginLeft:6,verticalAlign:"middle",position:"relative",top:-4}}/><p style={{margin:0,fontSize:14,fontWeight:800}}>{l}</p></button>)}</div>
     </Sec>
     <Sec titulo="Avisos por Telegram">
-      <p style={{margin:"0 0 6px",fontSize:12.5,color:GRIS}}>La conexión con el bot se hace después; acá queda definido qué se avisa.</p>
-      <Toggle on={!!notif.pedido_nuevo} onChange={v=>setNotif(x=>({...x,pedido_nuevo:v}))} l="Operación nueva" sub="cuando un cliente arma una operación"/>
-      <Toggle on={!!notif.cobro} onChange={v=>setNotif(x=>({...x,cobro:v}))} l="Cobro registrado" sub="cada vez que entra plata de una operación"/>
-      <Toggle on={!!notif.produccion_vencida} onChange={v=>setNotif(x=>({...x,produccion_vencida:v}))} l="Producción vencida" sub="cuando una máquina debería estar lista y sigue en producción"/>
-      <Toggle on={!!notif.precio_vencido} onChange={v=>setNotif(x=>({...x,precio_vencido:v}))} l="EXW sin revisar" sub="máquinas publicadas con el precio viejo (más de 30 días)"/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:10}}>{AV.map(([k,l,sub])=><button key={k} type="button" onClick={()=>setNotif(x=>({...x,[k]:!x[k]}))} style={{display:"flex",gap:12,alignItems:"center",textAlign:"left",padding:"12px 14px",borderRadius:14,cursor:"pointer",border:`1.5px solid ${notif[k]?LIMA:BORDE}`,background:notif[k]?LIMA_SUAVE:"transparent",color:INK}}><span style={{width:38,height:22,borderRadius:11,background:notif[k]?LIMA:BORDE,position:"relative",flexShrink:0,transition:"background 120ms"}}><span style={{position:"absolute",top:3,left:notif[k]?19:3,width:16,height:16,borderRadius:"50%",background:notif[k]?"var(--mq-lima-ink)":CARD,transition:"left 120ms"}}/></span><span><span style={{display:"block",fontSize:14,fontWeight:800}}>{l}</span><span style={{display:"block",fontSize:12.5,color:GRIS}}>{sub}</span></span></button>)}</div>
+      <p style={{margin:"12px 0 0",fontSize:12.5,color:GRIS}}>La conexión con el bot se hace después; acá queda definido qué se avisa.</p>
     </Sec>
-  </div>;
+    <div style={{display:"flex",justifyContent:"flex-end"}}><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn></div>
+  </>;
 }
 function Usuarios({ses,token}){
   const [lista,setLista]=useState(null);
@@ -163,7 +166,7 @@ function Usuarios({ses,token}){
     const d=await r.json();if(!r.ok)throw new Error(d.error||"No se pudo");toast("Usuario actualizado");setEdit(null);await cargar();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   if(lista===null)return <p style={{color:GRIS}}>Cargando…</p>;
-  return <div style={{maxWidth:720}}>
+  return <div>
     <p style={{margin:"0 0 14px",fontSize:13.5,color:GRIS}}>Todos los que entran ven todo el panel. Para dar acceso a alguien nuevo se le asigna el rol desde el admin de Argencargo; acá se le cambia el mail o la contraseña.</p>
     {edit&&<Sec titulo={`Editar ${edit.emailOriginal}`} style={{borderColor:LIMA}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -182,7 +185,7 @@ function GastoCats({dq,gastoCats,recargar}){
   const [nuevo,setNuevo]=useState("");
   const agregar=async()=>{if(!nuevo.trim())return;try{await dq("cat_gasto_categorias",{method:"POST",body:{nombre:nuevo.trim(),orden:(gastoCats?.length||0)+1}});setNuevo("");await recargar();toast("Categoría agregada");}catch(e){toast(e.message,"error");}};
   const borrar=async(c)=>{if(!(await confirmDialog(`¿Eliminar la categoría “${c.nombre}”?`)))return;try{await dq("cat_gasto_categorias",{method:"DELETE",filters:`?id=eq.${c.id}`,prefer:"return=minimal"});await recargar();}catch(e){toast(e.message,"error");}};
-  return <div style={{maxWidth:560}}>
+  return <div>
     <Sec titulo="Categorías de gastos">
       <div style={{display:"flex",gap:8,marginBottom:14}}><Inp value={nuevo} onChange={e=>setNuevo(e.target.value)} placeholder="Nueva categoría…" onKeyDown={e=>{if(e.key==="Enter")agregar();}}/><Btn kind="lima" onClick={agregar}>Agregar</Btn></div>
       <div style={{display:"grid",gap:4}}>{(gastoCats||[]).map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${BORDE}`,fontSize:14}}><span style={{flex:1,fontWeight:700}}>{c.nombre}</span><Btn small kind="danger" onClick={()=>borrar(c)}>✕</Btn></div>)}</div>

@@ -2,9 +2,8 @@
 // Panel de maquinaria (20/09/2026): menú lateral fijo y las secciones del panel mayorista.
 // Estética propia, distinta al admin de Argencargo: claro/oscuro, lima, Manrope + JetBrains Mono.
 import { useState, useEffect, useMemo } from "react";
-import { ToastStack, DialogHost, toast } from "../../../lib/ui";
 import { leerAjustes, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
-import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio } from "./ui";
+import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio,Avisos,toast } from "./ui";
 import { Inicio, Clientes, Ajustes } from "./Otros";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
@@ -158,7 +157,7 @@ function Shell({ses,setSes,tema,setTema}){
 
   const inicial=(ses.user?.email||"?").slice(0,2).toUpperCase();
   return <div>
-    <ToastStack/><DialogHost/>
+    <Avisos/>
     {abierto&&<div className="velo" onClick={()=>setAbierto(false)}/>}
     <aside className={`side${abierto?" open":""}`}>
       <div style={{padding:"20px 18px 14px"}}><Logo/></div>
