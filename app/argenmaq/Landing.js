@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useState } from "react";
 
 const Y = "#FFD200", INK = "#15171A", GRIS = "#6B7075", BORDE = "#E6E7EA", SUAVE = "#F4F5F7";
 const MONO = "'JetBrains Mono',ui-monospace,Menlo,monospace";
@@ -11,8 +10,8 @@ const CSS = `
 .am *{box-sizing:border-box}
 .am a{color:inherit;text-decoration:none}
 .am .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
-.am .grupo{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:40;display:flex;gap:4px;padding:5px;border-radius:999px;background:${INK};box-shadow:0 10px 40px rgba(0,0,0,0.25);transition:transform 220ms,opacity 220ms}
-.am .grupo.oculto{transform:translate(-50%,-140%);opacity:0;pointer-events:none}
+.am .grupoWrap{display:flex;justify-content:center;padding:14px 16px 12px}
+.am .grupo{display:inline-flex;gap:4px;padding:5px;border-radius:999px;background:${INK};box-shadow:0 10px 40px rgba(0,0,0,0.25)}
 .am .grupo a{padding:9px 22px;border-radius:999px;font-family:${MONO};font-size:11px;letter-spacing:0.12em;color:#9DA3A9;font-weight:600;white-space:nowrap}
 .am .grupo a.on{background:#fff;color:${INK}}
 .am .grupo a b{color:${Y}}.am .grupo a.on b{color:${INK};background:${Y};padding:0 4px;border-radius:3px}
@@ -23,7 +22,7 @@ const CSS = `
 .am .btn:hover{transform:translateY(-1px)}
 .am .btn.y{background:${Y};border-color:${Y};color:${INK}}
 .am .btn.k{background:${INK};border-color:${INK};color:#fff}
-.am .hero{padding:92px 0 40px;text-align:center;position:relative;overflow:hidden}
+.am .hero{padding:56px 0 40px;text-align:center;position:relative;overflow:hidden}
 .am .hero .kicker{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid ${BORDE};font-family:${MONO};font-size:12px;letter-spacing:0.06em;color:#3d4147;background:#fff}
 .am .hero .kicker i{width:8px;height:8px;border-radius:50%;background:${Y};display:inline-block;animation:pulso 1.6s infinite}
 .am .hero h1{font-size:clamp(46px,9vw,124px);line-height:0.92;letter-spacing:-0.05em;font-weight:800;margin:28px 0 22px}
@@ -90,15 +89,13 @@ const Pasos = () => <svg className="anim" viewBox="0 0 400 240"><line x1="40" y1
 const Fabrica = () => <svg className="anim" viewBox="0 0 400 240" preserveAspectRatio="none"><path d="M30 200 V120 l60 -40 v40 l60 -40 v40 l60 -40 V200 Z" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.35)" /><rect x="60" y="150" width="28" height="30" fill={Y} opacity="0.85" style={{ animation: "tick 2.2s infinite" }} /><rect x="120" y="150" width="28" height="30" fill="rgba(255,255,255,0.35)" /><rect x="180" y="150" width="28" height="30" fill={Y} opacity="0.85" style={{ animation: "tick 2.2s 0.8s infinite" }} /><g style={{ animation: "flotar 3s ease-in-out infinite" }}><rect x="270" y="90" width="90" height="70" rx="10" fill="rgba(255,255,255,0.12)" stroke={Y} /><text x="315" y="132" textAnchor="middle" fontFamily={MONO} fontSize="12" fill={Y} letterSpacing="2">QC OK</text></g></svg>;
 
 export default function Landing({ rubros }) {
-  const [oculto, setOculto] = useState(false);
-  useEffect(() => { const f = () => setOculto(window.scrollY > 60); f(); window.addEventListener("scroll", f, { passive: true }); return () => window.removeEventListener("scroll", f); }, []);
   return <div className="am">
     <style dangerouslySetInnerHTML={{ __html: CSS }} />
-    <div className={`grupo${oculto ? " oculto" : ""}`}>
+    <div className="grupoWrap"><div className="grupo">
       <a className="on" href="/">ARGEN<b>MAQ</b></a>
       <a href="https://www.argencargo.com.ar">ARGEN<b>CARGO</b></a>
       <a href="#brands" title="Próximamente">ARGEN<b>BRANDS</b></a>
-    </div>
+    </div></div>
     <header className="nav">
       <div className="wrap">
         <a href="/"><Logo /></a>
