@@ -43,7 +43,7 @@ export default function MaquinariaPage(){
   const [cargando,setCargando]=useState(true);
   useEffect(()=>{setSes(cargarSesion());setCargando(false);},[]);
   return <div className="mq" style={{minHeight:"100vh",background:FONDO,fontFamily:FONT,color:INK}}>
-    <style>{CSS}</style>
+    <style dangerouslySetInnerHTML={{__html:CSS}}/>
     {cargando?<Centro>Cargando…</Centro>:!ses?<Login onLogin={setSes}/>:<Catalogo ses={ses} setSes={setSes}/>}
   </div>;
 }
