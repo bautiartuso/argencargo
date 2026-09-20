@@ -14975,6 +14975,7 @@ function AdminDashboard({session,onLogout}){
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
       {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
+      {key:"maquinaria",label:"Catálogo de máquinas",href:"/admin/maquinaria",p:["M3 8h18v12H3z","M8 8V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3","M3 13h18"]},
     ]},
     {section:"Marketing",items:[
       {key:"studio",label:"Content Studio",p:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
