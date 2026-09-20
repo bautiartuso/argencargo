@@ -7,8 +7,8 @@ import { leerAjustes, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
 import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio } from "./ui";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
-import { Resumen, Libro, Tarifas } from "./Finanzas";
-import { Inicio, Clientes, Ajustes } from "./Otros";
+import { Resumen, Libro, Tarifas, CCFinanciera } from "./Finanzas";
+import { Inicio, Clientes, Ajustes, Usuarios } from "./Otros";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -39,7 +39,7 @@ export default function MaquinariaPage(){
   </div>;
 }
 const Centro=({children})=><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:GRIS}}>{children}</div>;
-const Logo=()=><div style={{display:"inline-flex",alignItems:"center",gap:8}}><span style={{fontSize:20,fontWeight:800,letterSpacing:"-0.04em"}}>ARGENCARGO</span><span style={{fontFamily:MONO,fontSize:10,fontWeight:600,letterSpacing:"0.12em",padding:"4px 8px",borderRadius:6,background:LIMA,color:"var(--mq-lima-ink)"}}>MÁQUINAS</span></div>;
+const Logo=()=><div style={{display:"inline-flex",alignItems:"center",gap:8}}><span style={{fontSize:21,fontWeight:800,letterSpacing:"-0.04em"}}>ARGEN<span style={{background:LIMA,color:"var(--mq-lima-ink)",padding:"0 5px",borderRadius:5,marginLeft:1}}>MAQ</span></span></div>;
 
 function Login({onLogin}){
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
@@ -55,7 +55,7 @@ function Login({onLogin}){
   return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem"}}>
     <form onSubmit={entrar} style={{width:"100%",maxWidth:380}}>
       <Logo/>
-      <h1 style={{fontSize:26,fontWeight:800,letterSpacing:"-0.02em",margin:"22px 0 18px"}}>Panel de máquinas</h1>
+      <h1 style={{fontSize:26,fontWeight:800,letterSpacing:"-0.02em",margin:"22px 0 18px"}}>Panel de Argenmaq</h1>
       <Inp type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username"/>
       <Inp type="password" placeholder="Contraseña" value={pw} onChange={e=>setPw(e.target.value)} autoComplete="current-password" style={{marginTop:10}}/>
       {err&&<p style={{color:"var(--mq-bad)",fontSize:13,margin:"10px 0 0"}}>{err}</p>}
@@ -76,10 +76,14 @@ const MENU=[
   ]},
   {sec:"Comercial",items:[
     {k:"clientes",l:"Clientes",i:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.9","M16 3.1a4 4 0 0 1 0 7.8"]},
+    {k:"comunicaciones",l:"Comunicaciones",i:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
+    {k:"marketing",l:"Marketing",i:["M3 11l18-8-8 18-2-8z"]},
+    {k:"studio",l:"Content Studio",i:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
   ]},
-  {sec:"Finanzas",soloAdmin:true,items:[
+  {sec:"Finanzas",items:[
     {k:"resumen",l:"Resumen",i:["M3 3v18h18","M7 15l4-4 3 3 6-6"]},
     {k:"libro",l:"Libro diario",i:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
+    {k:"cc",l:"CC Financiera",i:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
     {k:"tarifas",l:"Tarifas",i:["M18 20V10","M12 20V4","M6 20v-6"]},
   ]},
   {sec:"Configuración",items:[
@@ -102,7 +106,7 @@ function Shell({ses,setSes,tema,setTema}){
   const salir=()=>{try{localStorage.removeItem(ses.origen);}catch{}setSes(null);};
 
   const esAdmin=ses.rol==="admin";
-  const menu=MENU.filter(s=>!s.soloAdmin||esAdmin);
+  const menu=MENU;
   const [pag,setPag]=useState(()=>{try{return localStorage.getItem("mq_nav")||"inicio";}catch{return "inicio";}});
   const [pedidoSel,setPedidoSel]=useState(null);
   const [abierto,setAbierto]=useState(false);
@@ -115,9 +119,11 @@ function Shell({ses,setSes,tema,setTema}){
   const [ajustes,setAjustes]=useState(AJUSTES_DEFAULT);
   const [pedidos,setPedidos]=useState([]);
   const [movs,setMovs]=useState([]);
+  const [ccs,setCcs]=useState([]);
+  const [ops,setOps]=useState([]);
   const [listo,setListo]=useState(false);
   const cargar=async()=>{try{
-    const [c,p,pr,a,aj,pe,mo]=await Promise.all([
+    const [c,p,pr,a,aj,pe,mo,cc]=await Promise.all([
       dq("cat_categorias",{filters:"?select=*&order=orden.asc,nombre.asc"}),
       dq("cat_proveedores",{filters:"?select=*&order=fabrica.asc"}),
       dq("cat_productos",{filters:"?select=id,numero,estado,nombre,nombre_raw,modelo,categoria,subcategoria,exw_usd,markup_pct,dias_produccion,fotos,updated_at,proveedor_id,precio_verificado_at&order=updated_at.desc"}),
@@ -125,12 +131,14 @@ function Shell({ses,setSes,tema,setTema}){
       dq("cat_ajustes",{filters:"?select=clave,valor"}),
       dq("cat_pedidos",{filters:"?select=*&order=created_at.desc"}),
       dq("cat_movimientos",{filters:"?select=*&order=fecha.desc,created_at.desc"}),
+      dq("cat_cc_financiera",{filters:"?select=*&order=fecha.desc,created_at.desc"}),
     ]);
-    setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);setAjustes(leerAjustes(Array.isArray(aj)?aj:[]));setPedidos(Array.isArray(pe)?pe:[]);setMovs(Array.isArray(mo)?mo:[]);
+    setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);setAjustes(leerAjustes(Array.isArray(aj)?aj:[]));setPedidos(Array.isArray(pe)?pe:[]);setMovs(Array.isArray(mo)?mo:[]);setCcs(Array.isArray(cc)?cc:[]);
+    const ajs=leerAjustes(Array.isArray(aj)?aj:[]);if(ajs.argencargo_client_id){const o=await dq("operations",{filters:`?select=id,operation_code,status,eta,channel,description,created_at&client_id=eq.${ajs.argencargo_client_id}&order=created_at.desc&limit=200`}).catch(()=>[]);setOps(Array.isArray(o)?o:[]);}
   }catch(e){toast(e.message,"error");}setListo(true);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const arbol=useMemo(()=>cats.filter(c=>!c.padre_slug).map(c=>({...c,subs:cats.filter(s=>s.padre_slug===c.slug)})),[cats]);
-  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,pedidos,movs,listo,recargar:cargar,ir};
+  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,pedidos,movs,ccs,ops,listo,recargar:cargar,ir};
 
   const inicial=(ses.user?.email||"?").slice(0,2).toUpperCase();
   return <div>
@@ -159,9 +167,11 @@ function Shell({ses,setSes,tema,setTema}){
         :pag==="maquinas"?<Maquinas {...ctx}/>
         :pag==="proveedores"?<Proveedores {...ctx}/>
         :pag==="clientes"?<Clientes {...ctx}/>
-        :pag==="resumen"&&esAdmin?<Resumen {...ctx}/>
-        :pag==="libro"&&esAdmin?<Libro {...ctx}/>
-        :pag==="tarifas"&&esAdmin?<Tarifas {...ctx}/>
+        :pag==="resumen"?<Resumen {...ctx}/>
+        :pag==="libro"?<Libro {...ctx}/>
+        :pag==="cc"?<CCFinanciera {...ctx}/>
+        :pag==="tarifas"?<Tarifas {...ctx}/>
+        :pag==="usuarios"?<Usuarios {...ctx}/>
         :pag==="ajustes"?<Ajustes {...ctx} tema={tema} setTema={setTema}/>
         :<Vacio/>}
       </main>

@@ -14,7 +14,7 @@ export const cobradoDe=(movs,pid)=>movs.filter(m=>m.pedido_id===pid&&m.tipo==="i
 export const pagadoFabricaDe=(movs,pid)=>movs.filter(m=>m.pedido_id===pid&&m.tipo==="egreso"&&m.categoria==="pago_fabrica").reduce((s,m)=>s+n(m.monto_usd),0);
 const ACTIVOS=["nuevo","pagado","en_produccion","prueba_fabrica","listo_fabrica","en_importacion"];
 
-export function Pedidos({ses,dq,token,prods,provs,ajustes,pedidos,movs,recargar,inicialSel}){
+export function Pedidos({ses,dq,token,prods,provs,ajustes,pedidos,movs,ops,recargar,inicialSel}){
   const [sel,setSel]=useState(inicialSel||null);
   const [nuevo,setNuevo]=useState(false);
   const [fEstado,setFEstado]=useState("activos");
@@ -23,7 +23,7 @@ export function Pedidos({ses,dq,token,prods,provs,ajustes,pedidos,movs,recargar,
   const cuenta=(k)=>k==="activos"?pedidos.filter(p=>ACTIVOS.includes(p.estado)).length:pedidos.filter(p=>p.estado===k).length;
 
   if(nuevo)return <NuevoPedido ses={ses} dq={dq} prods={prods} provs={provs} ajustes={ajustes} onCerrar={()=>setNuevo(false)} onCreado={async(id)=>{await recargar();setNuevo(false);setSel(id);}}/>;
-  if(sel){const p=pedidos.find(x=>x.id===sel);if(p)return <DetallePedido p={p} ses={ses} dq={dq} token={token} ajustes={ajustes} movs={movs} recargar={recargar} onCerrar={()=>setSel(null)}/>;}
+  if(sel){const p=pedidos.find(x=>x.id===sel);if(p)return <DetallePedido p={p} ses={ses} dq={dq} token={token} ajustes={ajustes} movs={movs} ops={ops||[]} recargar={recargar} onCerrar={()=>setSel(null)}/>;}
   return <>
     <Barra>
       {[["activos","Activos"],["todos","Todos"],["entregado","Entregados"],["cancelado","Cancelados"]].map(([k,l])=><Pill key={k} on={fEstado===k} onClick={()=>setFEstado(k)}>{l} <span style={{color:GRIS,fontFamily:MONO,fontSize:11}}>{k==="todos"?pedidos.length:cuenta(k)}</span></Pill>)}
@@ -132,15 +132,19 @@ function Totales({tot,importacion,ajustes}){
 }
 
 // ── Detalle ───────────────────────────────────────────────────────────────────────────────
-function DetallePedido({p,ses,dq,token,ajustes,movs,recargar,onCerrar}){
+function DetallePedido({p,ses,dq,token,ajustes,movs,ops,recargar,onCerrar}){
   const [mov,setMov]=useState(null); // {tipo,categoria}
   const [edit,setEdit]=useState(false);
   const [imp,setImp]=useState(p.importacion_usd==null?"":String(p.importacion_usd));
-  const [opRef,setOpRef]=useState(p.operation_ref||"");
+  const [opId,setOpId]=useState(p.operation_id||"");
   const [notas,setNotas]=useState(p.notas||"");
   const [guardando,setGuardando]=useState(false);
   const cob=cobradoDe(movs,p.id), pag=pagadoFabricaDe(movs,p.id);
   const misMovs=movs.filter(m=>m.pedido_id===p.id);
+  const otrosGastos=misMovs.filter(m=>m.tipo==="egreso"&&m.categoria!=="pago_fabrica");
+  const egresos=misMovs.filter(m=>m.tipo==="egreso").reduce((s,m)=>s+n(m.monto_usd),0);
+  const op=ops.find(o=>o.id===(p.operation_id||opId))||null;
+  const OP_ESTADO={pendiente:"Pendiente",en_transito:"En tránsito",en_aduana:"En aduana",lista_retiro:"Lista para retirar",entregada:"Entregada"};
   const idx=ESTADOS_PEDIDO.findIndex(e=>e.k===p.estado);
   const siguiente=p.estado==="entregado"||p.estado==="cancelado"?null:ESTADOS_PEDIDO[(p.estado==="en_produccion"&&!p.prueba_fabrica)?idx+2:idx+1];
   const tot={exw_total:n(p.exw_total),financiero:n(p.financiero),gestion:n(p.gestion),prueba_monto:n(p.prueba_monto),precio_total:n(p.precio_total),adelantoMinimo:n(p.exw_total)*(1+n(ajustes.adelanto_extra_pct)/100),cubreAdelanto:n(p.precio_total)>=n(p.exw_total)*(1+n(ajustes.adelanto_extra_pct)/100)};
@@ -148,7 +152,7 @@ function DetallePedido({p,ses,dq,token,ajustes,movs,recargar,onCerrar}){
   const cambiarEstado=async(k)=>{if(k==="cancelado"&&!(await confirmDialog(`¿Cancelar ${codigoPed(p)}?`)))return;try{
     await dq("cat_pedidos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{estado:k,historial:[...(p.historial||[]),{estado:k,at:new Date().toISOString(),by:ses.user?.email||null}]}});await recargar();toast(estadoPed(k).l);
   }catch(e){toast(e.message,"error");}};
-  const guardarDatos=async()=>{setGuardando(true);try{await dq("cat_pedidos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{importacion_usd:numONull(imp),operation_ref:txtONull(opRef),notas:txtONull(notas)}});await recargar();setEdit(false);toast("Guardado");}catch(e){toast(e.message,"error");}setGuardando(false);};
+  const guardarDatos=async()=>{setGuardando(true);try{const o=ops.find(x=>x.id===opId);await dq("cat_pedidos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{importacion_usd:numONull(imp),operation_id:opId||null,operation_ref:o?o.operation_code:null,notas:txtONull(notas)}});await recargar();setEdit(false);toast("Guardado");}catch(e){toast(e.message,"error");}setGuardando(false);};
   const eliminar=async()=>{if(!(await confirmDialog(`¿Eliminar ${codigoPed(p)} y sus movimientos? No se puede deshacer.`)))return;try{await dq("cat_movimientos",{method:"DELETE",filters:`?pedido_id=eq.${p.id}`,prefer:"return=minimal"});await dq("cat_pedidos",{method:"DELETE",filters:`?id=eq.${p.id}`,prefer:"return=minimal"});await recargar();toast("Eliminado");onCerrar();}catch(e){toast(e.message,"error");}};
 
   return <div>
@@ -187,14 +191,26 @@ function DetallePedido({p,ses,dq,token,ajustes,movs,recargar,onCerrar}){
       <ListaMovs lista={misMovs.filter(m=>m.tipo==="ingreso")} dq={dq} recargar={recargar} admin={ses.rol==="admin"}/>
     </Sec>
     <Sec titulo="Pagos a fábrica" extra={<Btn small onClick={()=>setMov({tipo:"egreso",categoria:"pago_fabrica"})}>+ Registrar pago</Btn>}>
-      <ListaMovs lista={misMovs.filter(m=>m.tipo==="egreso")} dq={dq} recargar={recargar} admin={ses.rol==="admin"}/>
+      <ListaMovs lista={misMovs.filter(m=>m.tipo==="egreso"&&m.categoria==="pago_fabrica")} dq={dq} recargar={recargar} admin={ses.rol==="admin"}/>
     </Sec>
+    <Sec titulo="Otros gastos del pedido" extra={<Btn small onClick={()=>setMov({tipo:"egreso"})}>+ Registrar gasto</Btn>}>
+      <ListaMovs lista={otrosGastos} dq={dq} recargar={recargar} admin={ses.rol==="admin"}/>
+    </Sec>
+    <section style={{background:SUAVE,borderRadius:18,padding:"20px 22px",marginBottom:14}}>
+      <p style={{...LBL,marginBottom:12}}>Resultado del pedido</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14}}>
+        <div><p style={{...LBL,marginBottom:2}}>Cobrado</p><b style={{fontSize:18,color:OK}}>{fmtUsd(cob)}</b></div>
+        <div><p style={{...LBL,marginBottom:2}}>Pagado a fábrica</p><b style={{fontSize:18}}>{fmtUsd(pag)}</b></div>
+        <div><p style={{...LBL,marginBottom:2}}>Otros gastos</p><b style={{fontSize:18}}>{fmtUsd(egresos-pag)}</b></div>
+        <div><p style={{...LBL,marginBottom:2}}>Ganancia real</p><b style={{fontSize:22,color:cob-egresos>=0?OK:BAD}}>{fmtUsd(cob-egresos)}</b><span style={{display:"block",fontSize:12,color:GRIS}}>prevista {fmtUsd(n(p.gestion)+(p.prueba_fabrica?n(p.prueba_monto)-n(ajustes.prueba_fabrica_costo):0))}</span></div>
+      </div>
+    </section>
     {mov&&<FormMov token={token} dq={dq} ses={ses} pedido={p} fijo={mov} onCerrar={()=>setMov(null)} onHecho={async()=>{setMov(null);await recargar();}}/>}
 
     <Sec titulo="Argencargo y notas" extra={edit?<div style={{display:"flex",gap:8}}><Btn small kind="lima" onClick={guardarDatos} disabled={guardando}>Guardar</Btn><Btn small onClick={()=>setEdit(false)}>Cancelar</Btn></div>:<Btn small onClick={()=>setEdit(true)}>Editar</Btn>}>
       <div className="grid3" style={GRID}>
         <Campo label="Importación cotizada (USD)">{edit?<Inp type="number" step="0.01" value={imp} onChange={e=>setImp(e.target.value)}/>:<p style={{margin:0,fontFamily:MONO,fontWeight:700}}>{p.importacion_usd==null?"—":fmtUsd(p.importacion_usd)}</p>}</Campo>
-        <Campo label="Operación de Argencargo">{edit?<Inp value={opRef} onChange={e=>setOpRef(e.target.value)} placeholder="AC-0181"/>:<p style={{margin:0,fontFamily:MONO,fontWeight:700}}>{p.operation_ref||"—"}</p>}</Campo>
+        <Campo label="Operación de Argencargo" hint={!edit&&op?`${OP_ESTADO[op.status]||op.status}${op.eta?` · ETA ${fmtFecha(op.eta)}`:""}${op.description?` · ${op.description}`:""}`:null}>{edit?<Sel value={opId} onChange={e=>setOpId(e.target.value)}><option value="">Sin vincular</option>{ops.map(o=><option key={o.id} value={o.id}>{o.operation_code} · {OP_ESTADO[o.status]||o.status}{o.description?` · ${o.description.slice(0,40)}`:""}</option>)}</Sel>:<p style={{margin:0,fontFamily:MONO,fontWeight:700}}>{op?<a href={`/track/${op.operation_code}`} target="_blank" rel="noreferrer" style={{color:INK}}>{op.operation_code} ↗</a>:p.operation_ref||"—"}</p>}</Campo>
         <Campo label="Notas" span={3}>{edit?<TA value={notas} onChange={e=>setNotas(e.target.value)} style={{minHeight:70}}/>:<p style={{margin:0,fontSize:13.5,whiteSpace:"pre-wrap",color:p.notas?INK:GRIS}}>{p.notas||"—"}</p>}</Campo>
       </div>
     </Sec>
@@ -232,13 +248,13 @@ export function FormMov({token,dq,ses,pedido,fijo,pedidos,onCerrar,onHecho}){
     toast("Registrado");onHecho();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   const cats=f.tipo==="ingreso"?["cobro_cliente","otro"]:["pago_fabrica","prueba_fabrica","argencargo","gasto","otro"];
-  return <Sec titulo={fijo?(fijo.tipo==="ingreso"?"Registrar cobro":"Registrar pago"):"Nuevo movimiento"} style={{borderColor:INK}}>
+  return <Sec titulo={fijo?(fijo.tipo==="ingreso"?"Registrar cobro":fijo.categoria?"Registrar pago":"Registrar gasto"):"Nuevo movimiento"} style={{borderColor:INK}}>
     <div className="grid3" style={GRID}>
       <Campo label="Fecha"><Inp type="date" value={f.fecha} onChange={e=>set("fecha",e.target.value)}/></Campo>
       {!fijo&&<Campo label="Tipo"><div style={{display:"flex",gap:8}}><Pill on={f.tipo==="ingreso"} onClick={()=>{set("tipo","ingreso");set("categoria","otro");}}>Ingreso</Pill><Pill on={f.tipo==="egreso"} onClick={()=>{set("tipo","egreso");set("categoria","gasto");}}>Egreso</Pill></div></Campo>}
-      {!fijo&&<Campo label="Categoría"><Sel value={f.categoria} onChange={e=>set("categoria",e.target.value)}>{cats.map(c=><option key={c} value={c}>{CATEG_MOV[c]}</option>)}</Sel></Campo>}
+      {(!fijo||!fijo.categoria)&&<Campo label="Categoría"><Sel value={f.categoria} onChange={e=>set("categoria",e.target.value)}>{cats.filter(c=>!fijo||c!=="pago_fabrica").map(c=><option key={c} value={c}>{CATEG_MOV[c]}</option>)}</Sel></Campo>}
       <Campo label="Monto (USD)" ob><Inp type="number" step="0.01" value={f.monto} onChange={e=>set("monto",e.target.value)}/></Campo>
-      <Campo label="Concepto" span={fijo?2:3}><Inp value={f.concepto} onChange={e=>set("concepto",e.target.value)}/></Campo>
+      <Campo label="Concepto" span={fijo&&fijo.categoria?2:3}><Inp value={f.concepto} onChange={e=>set("concepto",e.target.value)}/></Campo>
       {!fijo&&pedidos&&<Campo label="Pedido"><Sel value={f.pedido_id} onChange={e=>set("pedido_id",e.target.value)}><option value="">Sin pedido</option>{pedidos.map(p=><option key={p.id} value={p.id}>{codigoPed(p)} · {p.cliente_nombre}</option>)}</Sel></Campo>}
       <Campo label="Comprobante"><input type="file" accept="image/*,application/pdf" onChange={e=>set("archivo",e.target.files?.[0]||null)} style={{fontSize:13}}/></Campo>
     </div>
