@@ -1,6 +1,6 @@
 "use client";
 // Finanzas de Argenmaq: Resumen, Libro diario, cuenta corriente con la financiera y Tarifas.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast, confirmDialog } from "../../../lib/ui";
 import { leerAjustes, precioMaquina, totalesPedido } from "../../../lib/catalogo-precio";
 import { INK,GRIS,BORDE,SUAVE,CARD,LIMA,LIMA_SUAVE,OK,WARN,BAD,MONO,LBL,TH,TD,GRID,DOS,Campo,Inp,Btn,Sec,Pill,Barra,Vacio,Dato,Barras,Desplegable,Fecha,n,numONull,txtONull,fmtUsd,fmtMon,fmtK,fmtFecha,hoyISO,codigoOp,CATEG_MOV,MESES,MESES_C,ACTIVOS } from "./ui";
@@ -117,52 +117,120 @@ export function Libro({ses,dq,token,pedidos,movs,gastoCats,recargar}){
 }
 const LBLINP={padding:"9px 16px",borderRadius:999,border:`1px solid ${BORDE}`,background:CARD,color:INK,fontSize:13.5,fontWeight:600,outline:"none"};
 
-// ── Cuenta corriente con la financiera (se rehace estilo MyBox en el paso siguiente) ──────
-export function CCFinanciera({ses,dq,pedidos,ccs,recargar}){
-  const [nuevo,setNuevo]=useState(false);
-  const [f,setF]=useState({fecha:hoyISO(),tipo:"deposito",moneda:"USD",monto:"",concepto:"",pedido_id:""});
+// ── Cuenta corriente con la financiera (estilo MyBox) ─────────────────────────────────────
+// Ingresos con comisión de la financiera (acreditado = importe − comisión), retiros, dolarización
+// (retiro ARS + ingreso USD al tipo de cambio) y link público de solo lectura + Excel para
+// el chico de la financiera (/cc/<token> en argenmaq.vercel.app).
+const CC_TIPO={ingreso:"Ingreso",retiro:"Retiro",ajuste:"Ajuste",dolarizacion:"Dolarización"};
+const SB_URL_CC="https://nhfslvixhlbiyfmedmbr.supabase.co";
+const SB_KEY_CC="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
+export function CCFinanciera({ses,dq,token,pedidos,ccs,recargar}){
+  const [panel,setPanel]=useState(null); // ingreso | retiro | dolarizar | compartir
+  const [filtro,setFiltro]=useState("todo");
+  const movs=ccs||[];
+  const saldo=(m)=>movs.filter(c=>c.moneda===m).reduce((s,c)=>s+(c.tipo==="retiro"?-1:1)*n(c.acreditado??c.monto),0);
+  let ars=saldo("ARS"),usd=saldo("USD");
+  const filas=movs.map(m=>{const signo=m.tipo==="retiro"?-1:1;const neto=n(m.acreditado??m.monto)*signo;const fila={...m,saldoArs:ars,saldoUsd:usd};if(m.moneda==="USD")usd-=neto;else ars-=neto;return fila;}).filter(m=>filtro==="todo"||m.moneda===filtro);
+  const borrar=async(c)=>{if(!(await confirmDialog(`¿Eliminar el movimiento de ${fmtMon(c.monto,c.moneda)}?`)))return;try{await dq("cat_cc_financiera",{method:"DELETE",filters:`?id=eq.${c.id}`,prefer:"return=minimal"});await recargar();}catch(e){toast(e.message,"error");}};
+  const excel=async()=>{try{const XLSX=await import("xlsx");let a=0,u=0;const cron=movs.slice().reverse().map(m=>{const signo=m.tipo==="retiro"?-1:1;const neto=n(m.acreditado??m.monto)*signo;if(m.moneda==="USD")u+=neto;else a+=neto;return {Fecha:fmtFecha(m.fecha),Tipo:CC_TIPO[m.tipo]||m.tipo,Moneda:m.moneda,"Descripción":m.concepto||"",Importe:n(m.monto),"Comisión %":m.comision_pct??"","Comisión":n(m.comision),Acreditado:n(m.acreditado??m.monto),"Saldo ARS":Math.round(a*100)/100,"Saldo USD":Math.round(u*100)/100};}).reverse();
+    const ws=XLSX.utils.json_to_sheet(cron);ws["!cols"]=[{wch:11},{wch:13},{wch:8},{wch:40},{wch:14},{wch:10},{wch:12},{wch:14},{wch:16},{wch:14}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"CC Financiera");XLSX.writeFile(wb,`argenmaq-cc-financiera-${hoyISO()}.xlsx`);}catch(e){toast(e.message,"error");}};
+  return <>
+    <Barra>
+      <span style={{flex:1}}/>
+      <Btn onClick={()=>setPanel(panel==="compartir"?null:"compartir")}>🔗 Compartir</Btn>
+      <Btn onClick={excel}>Excel</Btn>
+      <Btn onClick={()=>setPanel(panel==="dolarizar"?null:"dolarizar")}>💱 Dolarizar</Btn>
+      <Btn onClick={()=>setPanel(panel==="retiro"?null:"retiro")}>Retirar (egreso)</Btn>
+      <Btn kind="lima" onClick={()=>setPanel(panel==="ingreso"?null:"ingreso")}>+ Ingreso</Btn>
+    </Barra>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,marginBottom:14}}>
+      {[["ARS","pesos"],["USD","dólares"]].map(([m,l])=>{const v=saldo(m);return <Sec key={m} style={{marginBottom:0,borderTop:`3px solid ${LIMA}`}}><p style={{...LBL,marginBottom:6}}>Saldo en {l} ({m})</p><p style={{margin:0,fontSize:32,fontWeight:800,letterSpacing:"-0.02em",color:v>=0?LIMA:BAD,fontVariantNumeric:"tabular-nums"}}>{fmtMon(v,m)}</p><p style={{margin:"4px 0 0",fontSize:12.5,color:GRIS}}>{v>=0?"A favor de Argenmaq (la financiera debe)":"Argenmaq le debe a la financiera"}</p></Sec>;})}
+    </div>
+    {panel==="ingreso"&&<CCMov tipo="ingreso" token={token} dq={dq} ses={ses} pedidos={pedidos} onCerrar={()=>setPanel(null)} onHecho={async()=>{setPanel(null);await recargar();}}/>}
+    {panel==="retiro"&&<CCMov tipo="retiro" token={token} dq={dq} ses={ses} pedidos={pedidos} onCerrar={()=>setPanel(null)} onHecho={async()=>{setPanel(null);await recargar();}}/>}
+    {panel==="dolarizar"&&<CCDolarizar dq={dq} ses={ses} disponible={saldo("ARS")} onCerrar={()=>setPanel(null)} onHecho={async()=>{setPanel(null);await recargar();}}/>}
+    {panel==="compartir"&&<CCCompartir dq={dq} onCerrar={()=>setPanel(null)}/>}
+    <div style={{border:`1px solid ${BORDE}`,borderRadius:18,overflow:"hidden",background:CARD}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 18px"}}><b style={{fontSize:15}}>Movimientos</b><span style={{fontFamily:MONO,fontSize:12,color:GRIS}}>{filas.length}</span><span style={{flex:1}}/>{["todo","ARS","USD"].map(k=><Pill key={k} small on={filtro===k} onClick={()=>setFiltro(k)}>{k==="todo"?"Todo":k}</Pill>)}</div>
+      {filas.length===0?<p style={{margin:0,padding:"30px 18px",color:GRIS,fontSize:13.5}}>Sin movimientos con la financiera.</p>
+      :<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
+        <thead><tr>{["Fecha","Tipo","Moneda","Descripción","Importe","Comisión","Acreditado","Saldo ARS","Saldo USD",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+        <tbody>{filas.map(m=>{const ing=m.tipo!=="retiro";return <tr key={m.id}>
+          <td style={{...TD,fontFamily:MONO,fontSize:12.5,whiteSpace:"nowrap"}}>{fmtFecha(m.fecha)}</td>
+          <td style={{...TD,fontWeight:700,color:ing?OK:BAD,whiteSpace:"nowrap"}}>{ing?"▲":"▼"} {CC_TIPO[m.tipo]||m.tipo}</td>
+          <td style={TD}>{m.moneda}</td>
+          <td style={TD}>{m.comprobante_url&&<a href={m.comprobante_url} target="_blank" rel="noreferrer" style={{marginRight:8,textDecoration:"none"}}>📎</a>}{m.concepto||"—"}</td>
+          <td style={{...TD,fontFamily:MONO,textAlign:"right",whiteSpace:"nowrap",color:ing?OK:BAD}}>{ing?"+":"−"}{fmtNum(m.monto)}</td>
+          <td style={{...TD,fontFamily:MONO,textAlign:"right",whiteSpace:"nowrap",color:WARN}}>{m.comision_pct!=null?`${String(m.comision_pct).replace(".",",")}% · −${fmtNum(m.comision)}`:"—"}</td>
+          <td style={{...TD,fontFamily:MONO,textAlign:"right",whiteSpace:"nowrap"}}>{fmtNum(m.acreditado??m.monto)}</td>
+          <td style={{...TD,fontFamily:MONO,textAlign:"right",whiteSpace:"nowrap",fontWeight:m.moneda==="ARS"?800:500,color:m.moneda==="ARS"?LIMA:GRIS}}>{fmtNum(m.saldoArs)}</td>
+          <td style={{...TD,fontFamily:MONO,textAlign:"right",whiteSpace:"nowrap",fontWeight:m.moneda==="USD"?800:500,color:m.moneda==="USD"?LIMA:GRIS}}>{fmtNum(m.saldoUsd)}</td>
+          <td style={{...TD,textAlign:"right"}}><Btn small kind="danger" onClick={()=>borrar(m)}>✕</Btn></td>
+        </tr>;})}</tbody>
+      </table></div>}
+    </div>
+  </>;
+}
+function CCMov({tipo,token,dq,ses,pedidos,onCerrar,onHecho}){
+  const [f,setF]=useState({fecha:hoyISO(),moneda:"ARS",monto:"",comision_pct:"2,5",concepto:"",pedido_id:"",archivo:null});
   const [guardando,setGuardando]=useState(false);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
-  const saldo=(m)=>(ccs||[]).filter(c=>c.moneda===m).reduce((s,c)=>s+(c.tipo==="retiro"?-1:1)*n(c.acreditado??c.monto),0);
-  const guardar=async()=>{if(n(f.monto)<=0){toast("Cargá el monto","error");return;}setGuardando(true);try{
-    await dq("cat_cc_financiera",{method:"POST",body:{fecha:f.fecha,tipo:f.tipo,moneda:f.moneda,monto:n(f.monto),concepto:txtONull(f.concepto),pedido_id:f.pedido_id||null,created_by:ses.user?.id||null}});
-    setNuevo(false);setF({fecha:hoyISO(),tipo:"deposito",moneda:"USD",monto:"",concepto:"",pedido_id:""});await recargar();toast("Registrado");
+  const com=tipo==="ingreso"?n(f.monto)*n(f.comision_pct)/100:0;
+  const guardar=async()=>{if(n(f.monto)<=0){toast("Cargá el importe","error");return;}setGuardando(true);try{
+    let url=null;
+    if(f.archivo){const ext=(f.archivo.name.split(".").pop()||"bin").toLowerCase();const path=`cc/${Date.now()}.${ext}`;const r=await fetch(`${SB_URL_CC}/storage/v1/object/catalogo/${path}`,{method:"POST",headers:{apikey:SB_KEY_CC,Authorization:`Bearer ${token}`,"Content-Type":f.archivo.type||"application/octet-stream"},body:f.archivo});if(!r.ok)throw new Error(`No se pudo subir el comprobante (${r.status})`);url=`${SB_URL_CC}/storage/v1/object/public/catalogo/${path}`;}
+    await dq("cat_cc_financiera",{method:"POST",body:{fecha:f.fecha,tipo,moneda:f.moneda,monto:n(f.monto),comision_pct:tipo==="ingreso"?n(f.comision_pct):null,comision:Math.round(com*100)/100,acreditado:Math.round((n(f.monto)-com)*100)/100,concepto:txtONull(f.concepto),pedido_id:f.pedido_id||null,comprobante_url:url,created_by:ses.user?.id||null}});
+    toast("Registrado");onHecho();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
-  const borrar=async(c)=>{if(!(await confirmDialog(`¿Eliminar el movimiento de ${fmtMon(c.monto,c.moneda)}?`)))return;try{await dq("cat_cc_financiera",{method:"DELETE",filters:`?id=eq.${c.id}`,prefer:"return=minimal"});await recargar();}catch(e){toast(e.message,"error");}};
-  const TIPO={deposito:"Depósito",retiro:"Retiro",ajuste:"Ajuste"};
-  let acumUsd=saldo("USD"),acumArs=saldo("ARS");
-  return <>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:14}}>
-      <Dato l="Saldo USD" v={fmtMon(saldo("USD"),"USD")} color={saldo("USD")>=0?INK:BAD}/>
-      <Dato l="Saldo ARS" v={fmtMon(saldo("ARS"),"ARS")} color={saldo("ARS")>=0?INK:BAD} acento={GRIS}/>
-      <Dato l="Movimientos" v={String((ccs||[]).length)} acento={GRIS}/>
+  return <Sec titulo={tipo==="ingreso"?"Nuevo ingreso":"Retiro (egreso)"} style={{borderColor:LIMA}}>
+    <div className="grid3" style={GRID}>
+      <Campo label="Fecha"><Fecha value={f.fecha} onChange={v=>set("fecha",v)}/></Campo>
+      <Campo label="Moneda"><div style={{display:"flex",gap:6}}><Pill on={f.moneda==="ARS"} onClick={()=>set("moneda","ARS")}>ARS</Pill><Pill on={f.moneda==="USD"} onClick={()=>set("moneda","USD")}>USD</Pill></div></Campo>
+      <Campo label={`Importe (${f.moneda})`} ob><Inp type="number" step="0.01" value={f.monto} onChange={e=>set("monto",e.target.value)}/></Campo>
+      {tipo==="ingreso"&&<Campo label="Comisión de la financiera (%)" hint={n(f.monto)>0?`−${fmtMon(com,f.moneda)} · acreditado ${fmtMon(n(f.monto)-com,f.moneda)}`:null}><Inp type="number" step="0.01" value={f.comision_pct} onChange={e=>set("comision_pct",e.target.value)}/></Campo>}
+      <Campo label="Descripción" span={tipo==="ingreso"?2:3}><Inp value={f.concepto} onChange={e=>set("concepto",e.target.value)} placeholder={tipo==="ingreso"?"Cobro AM-00001 · cliente":"Retiro"}/></Campo>
+      <Campo label="Operación (opcional)"><Desplegable value={f.pedido_id} onChange={v=>set("pedido_id",v)} opciones={pedidos.map(p=>({v:p.id,l:`${codigoOp(p)} · ${p.cliente_nombre}`}))} placeholder="Sin operación"/></Campo>
+      <Campo label="Comprobante" span={2}><Archivo onFiles={(fs)=>set("archivo",fs[0])} label={f.archivo?f.archivo.name.slice(0,28):"Adjuntar"} hint={f.archivo?"listo · podés cambiarlo":"Arrastrá, pegá con Ctrl+V o elegí"}/></Campo>
     </div>
-    <Barra><span style={{flex:1}}/><Btn kind="lima" onClick={()=>setNuevo(v=>!v)}>+ Movimiento</Btn></Barra>
-    {nuevo&&<Sec titulo="Nuevo movimiento" style={{borderColor:LIMA}}>
-      <div className="grid3" style={GRID}>
-        <Campo label="Fecha"><Fecha value={f.fecha} onChange={v=>set("fecha",v)}/></Campo>
-        <Campo label="Tipo"><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{Object.entries(TIPO).map(([k,l])=><Pill key={k} on={f.tipo===k} onClick={()=>set("tipo",k)}>{l}</Pill>)}</div></Campo>
-        <Campo label="Moneda"><div style={{display:"flex",gap:6}}><Pill on={f.moneda==="USD"} onClick={()=>set("moneda","USD")}>USD</Pill><Pill on={f.moneda==="ARS"} onClick={()=>set("moneda","ARS")}>ARS</Pill></div></Campo>
-        <Campo label="Monto" ob><Inp type="number" step="0.01" value={f.monto} onChange={e=>set("monto",e.target.value)}/></Campo>
-        <Campo label="Concepto"><Inp value={f.concepto} onChange={e=>set("concepto",e.target.value)}/></Campo>
-        <Campo label="Operación"><Desplegable value={f.pedido_id} onChange={v=>set("pedido_id",v)} opciones={pedidos.map(p=>({v:p.id,l:`${codigoOp(p)} · ${p.cliente_nombre}`}))} placeholder="Sin operación"/></Campo>
-      </div>
-      <div style={{display:"flex",gap:8,marginTop:14}}><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn><Btn onClick={()=>setNuevo(false)}>Cancelar</Btn></div>
-    </Sec>}
-    {(ccs||[]).length===0?<Vacio>Sin movimientos con la financiera.</Vacio>
-    :<div style={{border:`1px solid ${BORDE}`,borderRadius:18,overflow:"hidden",background:CARD}}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
-      <thead><tr>{["Fecha","Tipo","Concepto","Operación","Monto","Saldo",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
-      <tbody>{ccs.map(c=>{const signo=c.tipo==="retiro"?-1:1;const fila=<tr key={c.id}>
-        <td style={{...TD,fontFamily:MONO,fontSize:12.5,whiteSpace:"nowrap"}}>{fmtFecha(c.fecha)}</td>
-        <td style={TD}>{TIPO[c.tipo]||c.tipo}</td>
-        <td style={{...TD,fontWeight:700}}>{c.concepto||"—"}</td>
-        <td style={{...TD,fontFamily:MONO,fontSize:12.5}}>{c.pedido_id?codigoOp(pedidos.find(p=>p.id===c.pedido_id)||{}):"—"}</td>
-        <td style={{...TD,fontFamily:MONO,fontWeight:700,whiteSpace:"nowrap",color:signo>0?OK:BAD}}>{signo>0?"+":"−"} {fmtMon(c.monto,c.moneda)}</td>
-        <td style={{...TD,fontFamily:MONO,whiteSpace:"nowrap"}}>{fmtMon(c.moneda==="USD"?acumUsd:acumArs,c.moneda)}</td>
-        <td style={{...TD,textAlign:"right"}}><Btn small kind="danger" onClick={()=>borrar(c)}>✕</Btn></td>
-      </tr>;if(c.moneda==="USD")acumUsd-=signo*n(c.acreditado??c.monto);else acumArs-=signo*n(c.acreditado??c.monto);return fila;})}</tbody>
-    </table></div></div>}
-  </>;
+    <div style={{display:"flex",gap:8,marginTop:14}}><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn><Btn onClick={onCerrar}>Cancelar</Btn></div>
+  </Sec>;
+}
+function CCDolarizar({dq,ses,disponible,onCerrar,onHecho}){
+  const [f,setF]=useState({fecha:hoyISO(),ars:"",tc:""});
+  const [guardando,setGuardando]=useState(false);
+  const usd=n(f.tc)>0?n(f.ars)/n(f.tc):0;
+  const guardar=async()=>{if(n(f.ars)<=0||n(f.tc)<=0){toast("Cargá el importe en pesos y el tipo de cambio","error");return;}setGuardando(true);try{
+    const concepto=`💱 Dolarización de ${fmtMon(n(f.ars),"ARS")} @ TC ${fmtNum(n(f.tc))}`;
+    await dq("cat_cc_financiera",{method:"POST",body:[
+      {fecha:f.fecha,tipo:"retiro",moneda:"ARS",monto:n(f.ars),comision:0,acreditado:n(f.ars),tipo_cambio:n(f.tc),concepto,created_by:ses.user?.id||null},
+      {fecha:f.fecha,tipo:"dolarizacion",moneda:"USD",monto:Math.round(usd*100)/100,comision:0,acreditado:Math.round(usd*100)/100,tipo_cambio:n(f.tc),concepto,created_by:ses.user?.id||null},
+    ]});
+    toast("Dolarizado");onHecho();
+  }catch(e){toast(e.message,"error");}setGuardando(false);};
+  return <Sec titulo="Dolarizar pesos" style={{borderColor:LIMA}}>
+    <div className="grid3" style={GRID}>
+      <Campo label="Fecha"><Fecha value={f.fecha} onChange={v=>setF(x=>({...x,fecha:v}))}/></Campo>
+      <Campo label="Importe en pesos" ob hint={`Disponible: ${fmtMon(disponible,"ARS")}`}><Inp type="number" step="0.01" value={f.ars} onChange={e=>setF(x=>({...x,ars:e.target.value}))}/></Campo>
+      <Campo label="Tipo de cambio (ARS por USD)" ob hint={usd>0?`= ${fmtMon(usd,"USD")}`:null}><Inp type="number" step="0.01" value={f.tc} onChange={e=>setF(x=>({...x,tc:e.target.value}))}/></Campo>
+    </div>
+    <div style={{display:"flex",gap:8,marginTop:14}}><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Dolarizar"}</Btn><Btn onClick={onCerrar}>Cancelar</Btn></div>
+  </Sec>;
+}
+function CCCompartir({dq,onCerrar}){
+  const [tokens,setTokens]=useState(null);const [label,setLabel]=useState("");
+  const cargar=async()=>{try{const r=await dq("cat_cc_tokens",{filters:"?select=*&order=created_at.desc"});setTokens(Array.isArray(r)?r:[]);}catch(e){toast(e.message,"error");setTokens([]);}};
+  useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
+  const crear=async()=>{try{const t=Array.from(crypto.getRandomValues(new Uint8Array(18))).map(b=>b.toString(16).padStart(2,"0")).join("");await dq("cat_cc_tokens",{method:"POST",body:{token:t,label:txtONull(label)}});setLabel("");await cargar();toast("Link creado");}catch(e){toast(e.message,"error");}};
+  const alternar=async(t)=>{try{await dq("cat_cc_tokens",{method:"PATCH",filters:`?id=eq.${t.id}`,body:{active:!t.active}});await cargar();}catch(e){toast(e.message,"error");}};
+  const borrar=async(t)=>{if(!(await confirmDialog("¿Eliminar este link? Quien lo tenga deja de ver la cuenta.")))return;try{await dq("cat_cc_tokens",{method:"DELETE",filters:`?id=eq.${t.id}`,prefer:"return=minimal"});await cargar();}catch(e){toast(e.message,"error");}};
+  const url=(t)=>`${typeof window!=="undefined"?window.location.origin:""}${typeof window!=="undefined"&&/argenmaq\./i.test(window.location.host)?"":"/argenmaq"}/cc/${t.token}`;
+  const copiar=async(t)=>{try{await navigator.clipboard.writeText(url(t));toast("Link copiado");}catch{toast(url(t),"info",{duration:8000});}};
+  return <Sec titulo="Compartir con la financiera" style={{borderColor:LIMA}}>
+    <p style={{margin:"0 0 12px",fontSize:13,color:GRIS}}>Quien tenga el link ve la cuenta de solo lectura y puede bajar el Excel. Se puede pausar o eliminar cuando quieras.</p>
+    <div style={{display:"flex",gap:8,marginBottom:14}}><Inp value={label} onChange={e=>setLabel(e.target.value)} placeholder="Para quién (opcional)"/><Btn kind="lima" onClick={crear}>Crear link</Btn><Btn onClick={onCerrar}>Cerrar</Btn></div>
+    {tokens===null?<p style={{margin:0,color:GRIS,fontSize:13}}>Cargando…</p>:tokens.length===0?<p style={{margin:0,color:GRIS,fontSize:13}}>Todavía no hay links.</p>
+    :<div style={{display:"grid",gap:8}}>{tokens.map(t=><div key={t.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",borderRadius:12,background:SUAVE,fontSize:13.5,flexWrap:"wrap"}}><span style={{fontWeight:700}}>{t.label||"Sin nombre"}</span><span style={{fontFamily:MONO,fontSize:11.5,color:GRIS,flex:1,minWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url(t)}</span><span style={{fontFamily:MONO,fontSize:10.5,color:t.active?OK:GRIS}}>{t.active?"ACTIVO":"PAUSADO"}</span><Btn small onClick={()=>copiar(t)}>Copiar</Btn><Btn small onClick={()=>alternar(t)}>{t.active?"Pausar":"Activar"}</Btn><Btn small kind="danger" onClick={()=>borrar(t)}>✕</Btn></div>)}</div>}
+  </Sec>;
 }
 
 // ── Tarifas: parámetros a la izquierda, simulador a la derecha ────────────────────────────
