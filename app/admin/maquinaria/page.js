@@ -215,7 +215,7 @@ function Proveedores({provs,prods}){
     <Titulo sup="CATÁLOGO">Proveedores</Titulo>
     {provs.length===0?<div style={{border:`1px dashed ${BORDE}`,borderRadius:18,padding:"60px 20px",textAlign:"center",color:GRIS,fontSize:14}}>Los proveedores se crean desde la ficha de una máquina.</div>
     :<div style={{border:`1px solid ${BORDE}`,borderRadius:18,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
-      <thead><tr style={{background:SUAVE}}>{["Fábrica","Ciudad","Contacto","WeChat","WhatsApp","Chat","Máquinas"].map(h=><th key={h} style={{...LBL,textAlign:"left",padding:"11px 14px",marginBottom:0}}>{h}</th>)}</tr></thead>
+      <thead><tr style={{background:SUAVE}}>{["Fábrica","Ciudad","Contacto","WeChat","WhatsApp","Chat","Máquinas"].map(h=><th key={h} style={{...LBL,display:"table-cell",textAlign:"left",padding:"11px 14px",marginBottom:0}}>{h}</th>)}</tr></thead>
       <tbody>{provs.map(p=><tr key={p.id} style={{borderTop:`1px solid ${BORDE}`}}><td style={{padding:"11px 14px",fontWeight:800}}>{p.fabrica}</td><td style={{padding:"11px 14px"}}>{p.ciudad}</td><td style={{padding:"11px 14px"}}>{p.contacto}</td><td style={{padding:"11px 14px",fontFamily:MONO,fontSize:12.5}}>{p.wechat||"—"}</td><td style={{padding:"11px 14px",fontFamily:MONO,fontSize:12.5}}>{p.whatsapp||"—"}</td><td style={{padding:"11px 14px"}}>{p.chat_plataforma||"—"}</td><td style={{padding:"11px 14px",fontFamily:MONO}}>{cuenta(p.id)}</td></tr>)}</tbody>
     </table></div>}
   </>;
@@ -451,7 +451,7 @@ function Editor({id,dq,token,arbol,provs,antid,recargar,onCerrar,onProvNuevo}){
 
     <Sec titulo="Packing" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{totM3.toFixed(3).replace(".",",")} M³ · {totKg.toLocaleString("es-AR")} KG</span>}>
       <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:"0 6px"}}>
-        <thead><tr>{["Bulto","Cantidad","Largo (cm)","Ancho (cm)","Alto (cm)","Peso bruto (kg)",""].map(h=><th key={h} style={{...LBL,textAlign:"left",padding:"0 6px 2px",marginBottom:0,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+        <thead><tr>{["Bulto","Cantidad","Largo (cm)","Ancho (cm)","Alto (cm)","Peso bruto (kg)",""].map(h=><th key={h} style={{...LBL,display:"table-cell",textAlign:"left",padding:"0 6px 2px",marginBottom:0,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
         <tbody>{f.packing.map((b,i)=>{const up=(k,v)=>set("packing",f.packing.map((x,j)=>j===i?{...x,[k]:v}:x));return <tr key={i}>
           <td style={{padding:"0 6px",fontFamily:MONO,fontSize:12,color:GRIS,whiteSpace:"nowrap"}}>#{i+1}</td>
           {["cantidad","largo_cm","ancho_cm","alto_cm","peso_kg"].map(k=><td key={k} style={{padding:"0 4px",minWidth:96}}><Inp type="number" step="0.01" value={b[k]} onChange={e=>up(k,e.target.value)}/></td>)}
