@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { comprimirImagen } from "../../../lib/img";
 import { toast, ToastStack, confirmDialog, DialogHost } from "../../../lib/ui";
+import { leerAjustes, precioMaquina, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -105,35 +106,23 @@ const Ico=({d,size=17,color="currentColor"})=><svg width={size} height={size} vi
 const MENU=[
   {sec:"General",items:[
     {k:"inicio",l:"Inicio",i:["M3 12L12 3l9 9","M5 10v10h14V10"]},
+    {k:"pedidos",l:"Pedidos",i:["M6 2h12l2 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z","M4 7h16","M9 11a3 3 0 0 0 6 0"]},
   ]},
   {sec:"Catálogo",items:[
     {k:"maquinas",l:"Máquinas",i:["M3 8h18v12H3z","M8 8V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3","M3 13h18"]},
     {k:"proveedores",l:"Proveedores",i:["M3 21h18","M5 21V7l7-4 7 4v14","M9 21v-6h6v6"]},
-    {k:"categorias",l:"Categorías",i:["M4 4h6v6H4z","M14 4h6v6h-6z","M4 14h6v6H4z","M14 14h6v6h-6z"]},
-  ]},
-  {sec:"Ventas",items:[
-    {k:"pedidos",l:"Pedidos",i:["M6 2h12l2 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z","M4 7h16","M9 11a3 3 0 0 0 6 0"]},
-    {k:"consultas",l:"Consultas",i:["M21 12a8 8 0 0 1-11.6 7.2L4 21l1.8-5.4A8 8 0 1 1 21 12z"]},
-    {k:"clientes",l:"Clientes",i:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.9","M16 3.1a4 4 0 0 1 0 7.8"]},
-  ]},
-  {sec:"Operaciones",items:[
-    {k:"importaciones",l:"Importaciones",i:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 4 0 2.4 2.4 0 0 0 4 0 2.4 2.4 0 0 1 4 0 2.4 2.4 0 0 0 4 0","M21 9H3l1 7h16z","M5 9V3h14v6"]},
-    {k:"entregas",l:"Entregas",i:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
-  ]},
-  {sec:"Finanzas",items:[
-    {k:"cobros",l:"Cobros",i:["M2 7h20v10H2z","M6 12h.01","M18 12h.01","M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"]},
-    {k:"pagos",l:"Pagos a proveedores",i:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
-    {k:"rentabilidad",l:"Rentabilidad",i:["M3 3v18h18","M7 15l4-4 3 3 6-6"]},
   ]},
   {sec:"Comercial",items:[
-    {k:"promociones",l:"Promociones",i:["M20 12l-8 8-9-9V3h8z","M7.5 7.5h.01"]},
-    {k:"contenido",l:"Contenido",i:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
-    {k:"resenas",l:"Reseñas",i:["M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21l1.4-7L2 9.3l7-.8z"]},
+    {k:"clientes",l:"Clientes",i:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.9","M16 3.1a4 4 0 0 1 0 7.8"]},
+    {k:"cotizaciones",l:"Cotizaciones",i:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
+  ]},
+  {sec:"Finanzas",soloAdmin:true,items:[
+    {k:"resumen",l:"Resumen",i:["M3 3v18h18","M7 15l4-4 3 3 6-6"]},
+    {k:"libro",l:"Libro diario",i:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
   ]},
   {sec:"Configuración",items:[
-    {k:"precios",l:"Precios y markup",i:["M18 20V10","M12 20V4","M6 20v-6"]},
     {k:"usuarios",l:"Usuarios",i:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
-    {k:"ajustes",l:"Ajustes",i:["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z","M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"]},
+    {k:"ajustes",l:"Ajustes",soloAdmin:true,i:["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z","M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"]},
   ]},
 ];
 const TITULOS=Object.fromEntries(MENU.flatMap(s=>s.items.map(i=>[i.k,{l:i.l,sec:s.sec}])));
@@ -160,19 +149,23 @@ function Shell({ses,setSes}){
   const [provs,setProvs]=useState([]);
   const [prods,setProds]=useState([]);
   const [antid,setAntid]=useState([]);
+  const [ajustes,setAjustes]=useState(AJUSTES_DEFAULT);
   const [listo,setListo]=useState(false);
   const cargar=async()=>{try{
-    const [c,p,pr,a]=await Promise.all([
+    const [c,p,pr,a,aj]=await Promise.all([
       dq("cat_categorias",{filters:"?select=*&order=orden.asc,nombre.asc"}),
       dq("cat_proveedores",{filters:"?select=*&order=fabrica.asc"}),
       dq("cat_productos",{filters:"?select=id,numero,estado,nombre,nombre_raw,modelo,categoria,subcategoria,exw_usd,fotos,updated_at,proveedor_id&order=updated_at.desc"}),
       dq("antidumping_ncm",{filters:"?select=ncm_prefix,producto,nota,medida_tipo,valor,unidad,resolucion,vigencia_hasta&activo=eq.true"}),
+      dq("cat_ajustes",{filters:"?select=clave,valor"}),
     ]);
-    setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);
+    setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);setAjustes(leerAjustes(Array.isArray(aj)?aj:[]));
   }catch(e){toast(e.message,"error");}setListo(true);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const arbol=useMemo(()=>cats.filter(c=>!c.padre_slug).map(c=>({...c,subs:cats.filter(s=>s.padre_slug===c.slug)})),[cats]);
-  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,listo,recargar:cargar};
+  const esAdmin=ses.rol==="admin";
+  const menu=MENU.filter(s=>!s.soloAdmin||esAdmin).map(s=>({...s,items:s.items.filter(i=>!i.soloAdmin||esAdmin)}));
+  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,listo,recargar:cargar};
 
   const inicial=(ses.user?.email||"?").slice(0,2).toUpperCase();
   return <div style={{display:"flex",minHeight:"100vh"}}>
@@ -181,7 +174,7 @@ function Shell({ses,setSes}){
     <aside className={`side${abierto?" open":""}`}>
       <div style={{padding:"20px 18px 14px"}}><Logo/></div>
       <nav style={{padding:"0 10px",flex:1}}>
-        {MENU.map(s=><div key={s.sec} style={{marginBottom:14}}>
+        {menu.map(s=><div key={s.sec} style={{marginBottom:14}}>
           <p style={{...LBL,padding:"0 10px",marginBottom:4,fontSize:10}}>{s.sec}</p>
           {s.items.map(it=>{const on=pag===it.k;return <button key={it.k} className="navi" onClick={()=>ir(it.k)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10,border:"none",background:on?LIMA_SUAVE:"transparent",color:INK,fontSize:13.5,fontWeight:on?800:600,cursor:"pointer",textAlign:"left",marginBottom:1}}><Ico d={it.i} color={on?INK:GRIS}/>{it.l}</button>;})}
         </div>)}
@@ -197,7 +190,7 @@ function Shell({ses,setSes}){
       <main style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px 90px"}}>
         {pag==="maquinas"?<Maquinas {...ctx}/>
         :pag==="proveedores"?<Proveedores {...ctx}/>
-        :pag==="categorias"?<Categorias {...ctx}/>
+        :pag==="ajustes"&&esAdmin?<Ajustes {...ctx}/>
         :<Vacio k={pag}/>}
       </main>
     </div>
@@ -208,6 +201,55 @@ function Vacio({k}){const t=TITULOS[k]||{l:k,sec:""};return <>
   <Titulo sup={t.sec.toUpperCase()}>{t.l}</Titulo>
   <div style={{border:`1px dashed ${BORDE}`,borderRadius:18,padding:"70px 20px",textAlign:"center"}}><span style={{fontFamily:MONO,fontSize:11,letterSpacing:"0.12em",padding:"6px 12px",borderRadius:8,background:SUAVE,color:GRIS}}>PRÓXIMAMENTE</span></div>
 </>;}
+
+function Ajustes({dq,ajustes,setAjustes}){
+  const [a,setA]=useState(()=>({...ajustes,markup_escalas:(ajustes.markup_escalas||[]).map(e=>({hasta:e.hasta==null?"":String(e.hasta),pct:String(e.pct)}))}));
+  const [guardando,setGuardando]=useState(false);
+  const set=(k,v)=>setA(x=>({...x,[k]:v}));
+  const setEsc=(i,k,v)=>setA(x=>({...x,markup_escalas:x.markup_escalas.map((e,j)=>j===i?{...e,[k]:v}:e)}));
+  const guardar=async()=>{setGuardando(true);try{
+    const escalas=a.markup_escalas.map(e=>({hasta:String(e.hasta).trim()===""?null:n(e.hasta),pct:n(e.pct)})).filter(e=>e.pct>0);
+    if(!escalas.length||escalas[escalas.length-1].hasta!=null){toast("La última escala tiene que quedar sin tope (vacía)","error");setGuardando(false);return;}
+    const filas=[["markup_escalas",escalas],["markup_minimo_usd",n(a.markup_minimo_usd)],["fin_pct",n(a.fin_pct)],["fin_fijo_usd",n(a.fin_fijo_usd)],["fin_pagos",Math.max(1,n(a.fin_pagos,1))],["prueba_fabrica_precio",n(a.prueba_fabrica_precio)],["prueba_fabrica_costo",n(a.prueba_fabrica_costo)],["adelanto_extra_pct",n(a.adelanto_extra_pct)]];
+    await dq("cat_ajustes",{method:"POST",prefer:"resolution=merge-duplicates,return=representation",body:filas.map(([clave,valor])=>({clave,valor,updated_at:new Date().toISOString()}))});
+    setAjustes(leerAjustes(filas.map(([clave,valor])=>({clave,valor}))));toast("Ajustes guardados");
+  }catch(e){toast(e.message,"error");}setGuardando(false);};
+  const ej=[800,5000,20000].map(v=>({v,r:precioMaquina({exwUnit:v,ajustes:leerAjustes([["markup_escalas",a.markup_escalas.map(e=>({hasta:String(e.hasta).trim()===""?null:n(e.hasta),pct:n(e.pct)}))],["markup_minimo_usd",n(a.markup_minimo_usd)],["fin_pct",n(a.fin_pct)],["fin_fijo_usd",n(a.fin_fijo_usd)],["fin_pagos",n(a.fin_pagos,1)],["adelanto_extra_pct",n(a.adelanto_extra_pct)]].map(([clave,valor])=>({clave,valor})))})}));
+  return <>
+    <Titulo sup="CONFIGURACIÓN" extra={<Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn>}>Ajustes</Titulo>
+    <Sec titulo="Gestión (ganancia de la unidad)">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
+        {a.markup_escalas.map((e,i)=><div key={i} style={{background:SUAVE,borderRadius:14,padding:14}}>
+          <Campo label={i===a.markup_escalas.length-1?"Más de la escala anterior":`Hasta USD`}><Inp type="number" value={e.hasta} onChange={ev=>setEsc(i,"hasta",ev.target.value)} placeholder="sin tope" disabled={i===a.markup_escalas.length-1}/></Campo>
+          <div style={{height:10}}/>
+          <Campo label="Gestión (%)"><Inp type="number" step="0.5" value={e.pct} onChange={ev=>setEsc(i,"pct",ev.target.value)}/></Campo>
+        </div>)}
+        <div><Campo label="Piso de gestión (USD)"><Inp type="number" value={a.markup_minimo_usd} onChange={e=>set("markup_minimo_usd",e.target.value)}/></Campo></div>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:12}}><Btn small onClick={()=>setA(x=>({...x,markup_escalas:[...x.markup_escalas.slice(0,-1),{hasta:"",pct:x.markup_escalas[x.markup_escalas.length-1].pct},x.markup_escalas[x.markup_escalas.length-1]]}))}>+ Escala</Btn>{a.markup_escalas.length>1&&<Btn small kind="danger" onClick={()=>setA(x=>({...x,markup_escalas:x.markup_escalas.filter((_,j)=>j!==x.markup_escalas.length-2)}))}>− Escala</Btn>}</div>
+    </Sec>
+    <Sec titulo="Costo financiero del pago a fábrica">
+      <div className="grid3" style={GRID}>
+        <Campo label="Porcentaje por transferencia (%)"><Inp type="number" step="0.01" value={a.fin_pct} onChange={e=>set("fin_pct",e.target.value)}/></Campo>
+        <Campo label="Fijo por transferencia (USD)"><Inp type="number" value={a.fin_fijo_usd} onChange={e=>set("fin_fijo_usd",e.target.value)}/></Campo>
+        <Campo label="Transferencias por pedido"><Inp type="number" value={a.fin_pagos} onChange={e=>set("fin_pagos",e.target.value)}/></Campo>
+      </div>
+    </Sec>
+    <Sec titulo="Adicionales y adelanto">
+      <div className="grid3" style={GRID}>
+        <Campo label="Prueba en fábrica · precio (USD)"><Inp type="number" value={a.prueba_fabrica_precio} onChange={e=>set("prueba_fabrica_precio",e.target.value)}/></Campo>
+        <Campo label="Prueba en fábrica · costo (USD)"><Inp type="number" value={a.prueba_fabrica_costo} onChange={e=>set("prueba_fabrica_costo",e.target.value)}/></Campo>
+        <Campo label="Adelanto mínimo: EXW + (%)"><Inp type="number" value={a.adelanto_extra_pct} onChange={e=>set("adelanto_extra_pct",e.target.value)}/></Campo>
+      </div>
+    </Sec>
+    <Sec titulo="Cómo queda">
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
+        <thead><tr>{["EXW","Financiero","Gestión","Precio de la máquina","Adelanto mínimo"].map(h=><th key={h} style={{...LBL,display:"table-cell",textAlign:"right",padding:"0 10px 6px",marginBottom:0}}>{h}</th>)}</tr></thead>
+        <tbody>{ej.map(({v,r})=><tr key={v} style={{borderTop:`1px solid ${BORDE}`}}>{[r.exw,r.financiero,`${fmtUsd(r.gestion)} (${String(r.pct).replace(".",",")} %)`,r.precio,r.adelantoMinimo].map((x,i)=><td key={i} style={{padding:"9px 10px",textAlign:"right",fontFamily:MONO,fontWeight:i===3?800:500,color:i===4?(r.cubreAdelanto?"#1F7A2E":"#B42323"):INK}}>{typeof x==="number"?fmtUsd(x):x}</td>)}</tr>)}</tbody>
+      </table></div>
+    </Sec>
+  </>;
+}
 
 function Proveedores({provs,prods}){
   const cuenta=(id)=>prods.filter(p=>p.proveedor_id===id).length;
@@ -224,7 +266,6 @@ function Proveedores({provs,prods}){
 function Categorias({arbol,prods}){
   const cuenta=(slug)=>prods.filter(p=>p.categoria===slug||p.subcategoria===slug).length;
   return <>
-    <Titulo sup="CATÁLOGO">Categorías</Titulo>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
       {arbol.map(c=><div key={c.slug} style={{border:`1px solid ${BORDE}`,borderRadius:18,padding:"16px 18px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><p style={{margin:0,fontSize:15,fontWeight:800}}>{c.nombre}</p><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{cuenta(c.slug)}</span></div>
@@ -235,18 +276,20 @@ function Categorias({arbol,prods}){
 }
 
 // ── Máquinas: listado + editor ────────────────────────────────────────────────────────────
-function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,listo,recargar}){
+function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,listo,recargar}){
   const [sel,setSel]=useState(null);
   const [fEstado,setFEstado]=useState("todos");
   const [busq,setBusq]=useState("");
+  const [verCats,setVerCats]=useState(false);
   const nombreCat=(slug)=>cats.find(c=>c.slug===slug)?.nombre||slug||"—";
   const nuevo=async()=>{try{const r=await dq("cat_productos",{method:"POST",body:{estado:"borrador",created_by:ses.user?.id||null}});const p=Array.isArray(r)?r[0]:r;await recargar();setSel(p.id);}catch(e){toast(e.message,"error");}};
   const visibles=prods.filter(p=>(fEstado==="todos"||p.estado===fEstado)&&(!busq.trim()||`${codigo(p)} ${p.nombre||""} ${p.nombre_raw||""} ${p.modelo||""}`.toLowerCase().includes(busq.toLowerCase())));
   const cuenta=(e)=>prods.filter(p=>p.estado===e).length;
 
-  if(sel)return <Editor key={sel} id={sel} dq={dq} token={token} arbol={arbol} provs={provs} antid={antid} recargar={recargar} onCerrar={()=>setSel(null)} onProvNuevo={(p)=>setProvs(x=>[...x,p].sort((a,b)=>a.fabrica.localeCompare(b.fabrica)))}/>;
+  if(sel)return <Editor key={sel} id={sel} dq={dq} token={token} arbol={arbol} provs={provs} antid={antid} ajustes={ajustes} recargar={recargar} onCerrar={()=>setSel(null)} onProvNuevo={(p)=>setProvs(x=>[...x,p].sort((a,b)=>a.fabrica.localeCompare(b.fabrica)))}/>;
   return <>
-    <Titulo sup="CATÁLOGO" extra={<Btn kind="lima" onClick={nuevo}>+ Nueva máquina</Btn>}>Máquinas</Titulo>
+    <Titulo sup="CATÁLOGO" extra={<div style={{display:"flex",gap:8}}><Btn onClick={()=>setVerCats(v=>!v)}>{verCats?"← Máquinas":"Categorías"}</Btn><Btn kind="lima" onClick={nuevo}>+ Nueva máquina</Btn></div>}>{verCats?"Categorías":"Máquinas"}</Titulo>
+    {verCats?<Categorias arbol={arbol} prods={prods}/>:<>
     <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,marginBottom:18}}>
       {[["todos","Todas",prods.length],["publicado","Publicadas",cuenta("publicado")],["borrador","Borradores",cuenta("borrador")],["pausado","Pausadas",cuenta("pausado")]].map(([k,l,c])=><Pill key={k} on={fEstado===k} onClick={()=>setFEstado(k)}>{l} <span style={{color:GRIS,fontFamily:MONO,fontSize:11}}>{c}</span></Pill>)}
       <input placeholder="Buscar…" value={busq} onChange={e=>setBusq(e.target.value)} style={{...INP,flex:1,minWidth:200,borderRadius:999,padding:"10px 18px"}}/>
@@ -263,14 +306,15 @@ function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,listo,reca
         </div>
       </button>;})}
     </div>}
+    </>}
   </>;
 }
 
 // ── Editor de un producto ─────────────────────────────────────────────────────────────────
 const BULTO=()=>({cantidad:"1",largo_cm:"",ancho_cm:"",alto_cm:"",peso_kg:""});
-const VACIO={nombre_raw:"",modelo:"",specs_raw:"",descripcion_raw:"",nombre:"",descripcion:"",categoria:"",subcategoria:"",condicion:"nueva",anio:"",horas_uso:"",garantia_meses:"",fotos:[],video_url:"",exw_usd:"",moq:"1",dias_produccion:"",packing:[BULTO()],ncm_code:"",ncm_descripcion:"",die:"",te:"",iva:"",intervencion:null,proveedor_id:"",link_producto:"",notas_internas:""};
+const VACIO={nombre_raw:"",modelo:"",specs_raw:"",descripcion_raw:"",nombre:"",descripcion:"",categoria:"",subcategoria:"",condicion:"nueva",anio:"",horas_uso:"",garantia_meses:"",fotos:[],video_url:"",exw_usd:"",moq:"1",dias_produccion:"",markup_pct:"",packing:[BULTO()],ncm_code:"",ncm_descripcion:"",die:"",te:"",iva:"",intervencion:null,proveedor_id:"",link_producto:"",notas_internas:""};
 
-function Editor({id,dq,token,arbol,provs,antid,recargar,onCerrar,onProvNuevo}){
+function Editor({id,dq,token,arbol,provs,antid,ajustes,recargar,onCerrar,onProvNuevo}){
   const [p,setP]=useState(null);
   const [f,setF]=useState(VACIO);
   const [dirty,setDirty]=useState(false);
@@ -288,7 +332,7 @@ function Editor({id,dq,token,arbol,provs,antid,recargar,onCerrar,onProvNuevo}){
     setP(row);
     const s=(v)=>v==null?"":String(v);
     const pk=Array.isArray(row.packing)&&row.packing.length?row.packing.map(b=>({cantidad:s(b.cantidad||1),largo_cm:s(b.largo_cm),ancho_cm:s(b.ancho_cm),alto_cm:s(b.alto_cm),peso_kg:s(b.peso_kg)})):[BULTO()];
-    setF({...VACIO,nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:s(row.specs_raw),descripcion_raw:s(row.descripcion_raw),nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
+    setF({...VACIO,nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:s(row.specs_raw),descripcion_raw:s(row.descripcion_raw),nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),markup_pct:s(row.markup_pct),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
   }catch(e){toast(e.message,"error");}})();},[id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set=(k,v)=>{setF(x=>({...x,[k]:v}));setDirty(true);};
@@ -318,7 +362,7 @@ function Editor({id,dq,token,arbol,provs,antid,recargar,onCerrar,onProvNuevo}){
     nombre_raw:txtONull(f.nombre_raw),modelo:txtONull(f.modelo),specs_raw:txtONull(f.specs_raw),descripcion_raw:txtONull(f.descripcion_raw),
     nombre:txtONull(f.nombre),descripcion:txtONull(f.descripcion),categoria:txtONull(f.categoria),subcategoria:txtONull(f.subcategoria),
     condicion:f.condicion,anio:numONull(f.anio),horas_uso:numONull(f.horas_uso),garantia_meses:numONull(f.garantia_meses),fotos:f.fotos,video_url:txtONull(f.video_url),
-    exw_usd:numONull(f.exw_usd),moq:numONull(f.moq)||1,dias_produccion:numONull(f.dias_produccion),
+    exw_usd:numONull(f.exw_usd),moq:numONull(f.moq)||1,dias_produccion:numONull(f.dias_produccion),markup_pct:numONull(f.markup_pct),
     packing:f.packing.map(b=>({cantidad:n(b.cantidad),largo_cm:n(b.largo_cm),ancho_cm:n(b.ancho_cm),alto_cm:n(b.alto_cm),peso_kg:n(b.peso_kg)})),
     ncm_code:txtONull(f.ncm_code),ncm_descripcion:txtONull(f.ncm_descripcion),die:numONull(f.die),te:numONull(f.te),iva:numONull(f.iva),intervencion:f.intervencion||null,antidumping:ad?{prefix:ad.ncm_prefix,producto:ad.producto,medida_tipo:ad.medida_tipo,valor:ad.valor,unidad:ad.unidad,resolucion:ad.resolucion}:null,
     proveedor_id:f.proveedor_id||null,link_producto:txtONull(f.link_producto),notas_internas:txtONull(f.notas_internas),
@@ -387,6 +431,7 @@ function Editor({id,dq,token,arbol,provs,antid,recargar,onCerrar,onProvNuevo}){
   const totKg=f.packing.reduce((s,b)=>s+n(b.peso_kg)*(n(b.cantidad)||1),0);
   const totM3=f.packing.reduce((s,b)=>s+(n(b.largo_cm)*n(b.ancho_cm)*n(b.alto_cm)/1e6)*(n(b.cantidad)||1),0);
   const verificado=p.precio_verificado_at?Math.floor((Date.now()-new Date(p.precio_verificado_at))/864e5):null;
+  const pm=precioMaquina({exwUnit:n(f.exw_usd),qty:1,ajustes,markupPct:f.markup_pct.trim()===""?null:f.markup_pct});
   const pv=(x)=>x==null?null:String(x).replace(".",",");
 
   return <div>
@@ -446,7 +491,18 @@ function Editor({id,dq,token,arbol,provs,antid,recargar,onCerrar,onProvNuevo}){
         <Campo label="Valor EXW (USD)" ob hint={verificado!=null?`Verificado hace ${verificado} día${verificado===1?"":"s"}`:null}><Inp type="number" step="0.01" value={f.exw_usd} onChange={e=>set("exw_usd",e.target.value)}/></Campo>
         <Campo label="Días de producción" ob><Inp type="number" value={f.dias_produccion} onChange={e=>set("dias_produccion",e.target.value)}/></Campo>
         <Campo label="Cantidad mínima (MOQ)"><Inp type="number" value={f.moq} onChange={e=>set("moq",e.target.value)}/></Campo>
+        <Campo label="Gestión propia (%)" hint={f.markup_pct.trim()===""?`Vacío: usa la escala general (${pm.pct} % para este valor)`:"Pisa la escala general para esta máquina"}><Inp type="number" step="0.5" value={f.markup_pct} onChange={e=>set("markup_pct",e.target.value)} placeholder={String(pm.pct)}/></Campo>
       </div>
+      {n(f.exw_usd)>0&&<div style={{marginTop:18,background:SUAVE,borderRadius:16,padding:"16px 18px"}}>
+        <p style={{...LBL,marginBottom:10}}>Precio de la máquina para el cliente · por unidad</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"6px 18px",fontSize:13.5,maxWidth:460}}>
+          <span style={{color:GRIS}}>EXW fábrica</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pm.exw)}</span>
+          <span style={{color:GRIS}}>Costo financiero del pago ({String(ajustes.fin_pct).replace(".",",")} % + USD {ajustes.fin_fijo_usd} × {ajustes.fin_pagos})</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pm.financiero)}</span>
+          <span style={{color:GRIS}}>Gestión ({String(pm.pct).replace(".",",")} %{pm.gestion>pm.exw*pm.pct/100+0.005?", piso":""})</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pm.gestion)}</span>
+          <span style={{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:8}}>Precio de la máquina</span><span style={{fontFamily:MONO,fontWeight:800,textAlign:"right",borderTop:`1px solid ${BORDE}`,paddingTop:8}}>{fmtUsd(pm.precio)}</span>
+        </div>
+        <p style={{margin:"10px 0 0",fontSize:12.5,color:pm.cubreAdelanto?"#1F7A2E":"#B42323"}}>{pm.cubreAdelanto?`Cubre el adelanto mínimo (EXW + ${ajustes.adelanto_extra_pct} % = ${fmtUsd(pm.adelantoMinimo)}).`:`No cubre el adelanto mínimo (EXW + ${ajustes.adelanto_extra_pct} % = ${fmtUsd(pm.adelantoMinimo)}): subí la gestión.`} La importación (flete, seguro, impuestos y servicio de Argencargo) va aparte.</p>
+      </div>}
     </Sec>
 
     <Sec titulo="Packing" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{totM3.toFixed(3).replace(".",",")} M³ · {totKg.toLocaleString("es-AR")} KG</span>}>
