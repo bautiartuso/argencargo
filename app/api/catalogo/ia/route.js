@@ -28,16 +28,12 @@ async function puedeEditar(token) {
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["nombre", "categoria", "subcategoria", "descripcion", "voltaje", "fase", "capacidad", "incluye"],
+  required: ["nombre", "categoria", "subcategoria", "descripcion"],
   properties: {
     nombre:       { type: "string", description: "Nombre comercial completo en castellano: tipo de máquina + característica que la define + código de modelo al final, separado por ' · '. Ej: 'Escuadradora de 3.200 mm con incisor · MJ6132TD'" },
     categoria:    { type: "string", description: "slug exacto de una categoría de la lista" },
     subcategoria: { type: "string", description: "slug exacto de una subcategoría de esa categoría" },
-    descripcion:  { type: "string", description: "Descripción comercial en castellano rioplatense, 2 a 4 párrafos cortos, sin inventar datos que no estén en las specs" },
-    voltaje:      { type: "string", description: "Voltaje si figura, ej '220 V' o '380 V'; vacío si no se sabe" },
-    fase:         { type: "string", enum: ["monofasica", "trifasica", ""], description: "vacío si no se sabe" },
-    capacidad:    { type: "string", description: "Capacidad o producción si figura, ej '25 L/h' o '1.200 piezas/h'; vacío si no" },
-    incluye:      { type: "string", description: "Qué viene incluido (accesorios, repuestos, manual) si figura; vacío si no" },
+    descripcion:  { type: "string", description: "Descripción comercial en castellano rioplatense, 3 a 5 párrafos cortos separados por línea en blanco. Tiene que incluir la capacidad o producción y qué viene incluido cuando figuren en el material. Sin inventar datos." },
   },
 };
 
@@ -46,8 +42,7 @@ const SYSTEM = `Sos el redactor del catálogo de maquinaria de un importador arg
 Reglas:
 - El nombre tiene que decir qué máquina es y qué la distingue (tamaño, capacidad, tecnología), y terminar con el código de modelo exactamente como lo pasó el proveedor, separado por " · ". Nunca un nombre genérico como "Escuadradora" o "Máquina de helados".
 - Categoría y subcategoría: elegí solo entre los slugs de la lista que te paso. Si nada encaja, usá "otros" / "otros-otros".
-- La descripción es para un comprador que quiere la máquina para su negocio, no para un técnico: qué hace, para quién es, qué la hace conveniente, y los datos técnicos importantes. No inventes números ni prestaciones que no estén en el material. No menciones al proveedor, a China ni precios.
-- Los campos técnicos (voltaje, fase, capacidad, incluye) solo si están en el material; si no, dejalos vacíos.`;
+- La descripción es para un comprador que quiere la máquina para su negocio, no para un técnico: qué hace, para quién es, qué la hace conveniente, y los datos técnicos importantes. Dedicá un párrafo a la capacidad o producción (piezas por hora, litros, tamaño máximo de trabajo, potencia) y otro a qué viene incluido (accesorios, repuestos, manual), siempre que figuren en el material. Todas las máquinas se entregan en 220 V, no hace falta aclararlo. No inventes números ni prestaciones que no estén en el material. No menciones al proveedor, a China ni precios.`;
 
 export async function POST(req) {
   try {
