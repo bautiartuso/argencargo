@@ -71,7 +71,7 @@ function NuevaOperacion({ses,dq,prods,provs,ajustes,onCerrar,onCreado}){
   }catch(e){toast(e.message,"error");}setBuscando(false);};
   const agregar=(id)=>{const p=publicadas.find(x=>x.id===id);if(!p||items.some(i=>i.producto_id===p.id))return;const prov=provs.find(x=>x.id===p.proveedor_id);setItems(x=>[...x,{producto_id:p.id,codigo:codigoMaq(p),nombre:p.nombre||p.nombre_raw,qty:"1",exw_unit:String(p.exw_usd),gestion_pct:p.markup_pct!=null?String(p.markup_pct):String(ajustes.gestion_pct),proveedor:prov?`${prov.fabrica} · ${prov.ciudad}`:null,dias_produccion:p.dias_produccion||null}]);};
   const up=(i,k,v)=>setItems(x=>x.map((it,j)=>j===i?{...it,[k]:v}:it));
-  const tot=totalesPedido(items,ajustes,false);
+  const tot=totalesPedido(items,ajustes,numONull(importacion)||0);
   const crear=async()=>{if(!cli){toast("Elegí el cliente","error");return;}if(!items.length){toast("Agregá al menos una máquina","error");return;}setGuardando(true);try{
     const body={estado:"nuevo",client_id:cli.id,cliente_nombre:nombreCliente(cli),cliente_contacto:[cli.whatsapp,cli.email].filter(Boolean).join(" · ")||null,
       items:items.map(it=>({...it,qty:Math.max(1,n(it.qty,1)),exw_unit:n(it.exw_unit),gestion_pct:n(it.gestion_pct)})),
@@ -90,7 +90,7 @@ function NuevaOperacion({ses,dq,prods,provs,ajustes,onCerrar,onCreado}){
     <Sec titulo="Máquinas">
       {items.length>0&&<div style={{overflowX:"auto",marginBottom:12}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:"0 6px"}}>
         <thead><tr>{["Máquina","Cantidad","EXW unitario","Gestión (%)","Precio línea",""].map(h=><th key={h} style={{...LBL,display:"table-cell",textAlign:"left",padding:"0 6px 2px",marginBottom:0,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-        <tbody>{items.map((it,i)=>{const l=totalesPedido([it],{...ajustes,fin_fijo_usd:0,fin_pct:0},false);return <tr key={it.producto_id}>
+        <tbody>{items.map((it,i)=>{const l=totalesPedido([it],{...ajustes,fin_fijo_usd:0,fin_pct:0},0);return <tr key={it.producto_id}>
           <td style={{padding:"0 6px"}}><span style={{fontWeight:800}}>{it.nombre}</span><br/><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{it.codigo}{it.proveedor?` · ${it.proveedor}`:""}</span></td>
           <td style={{padding:"0 4px",width:90}}><Inp type="number" value={it.qty} onChange={e=>up(i,"qty",e.target.value)}/></td>
           <td style={{padding:"0 4px",width:130}}><Inp type="number" step="0.01" value={it.exw_unit} onChange={e=>up(i,"exw_unit",e.target.value)}/></td>
@@ -118,28 +118,18 @@ function NuevaOperacion({ses,dq,prods,provs,ajustes,onCerrar,onCreado}){
 // Presupuesto: cómo se arma el precio y cómo se cobra (anticipo = máquina, contra entrega = importación).
 function Presupuesto({tot,importacion,ajustes,cobrado}){
   const anticipo=tot.precio_total, contra=importacion||0, total=anticipo+contra;
-  const estado=(monto,acum)=>cobrado==null?null:acum<=cobrado+0.01?{l:"COBRADO",c:OK,bg:OK_BG}:acum-monto<cobrado-0.01?{l:"PARCIAL",c:WARN,bg:WARN_BG}:{l:"PENDIENTE",c:GRIS,bg:SUAVE};
-  const eA=estado(anticipo,anticipo), eC=estado(contra,total);
-  const fila=(l,v,sub)=><div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"2px 18px",fontSize:13,padding:"6px 0"}}><span style={{color:GRIS}}>{l}</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(v)}</span>{sub&&<span style={{gridColumn:"1 / -1",fontSize:11.5,color:GRIS}}>{sub}</span>}</div>;
-  return <Sec titulo="Presupuesto">
-    <div className="dos" style={{...DOS,gridTemplateColumns:"1fr 1fr",gap:18}}>
-      <div>
-        <p style={{...LBL,marginBottom:8}}>Cómo se arma</p>
-        {fila("EXW fábrica",tot.exw_total)}
-        {fila(`Costo financiero del pago (${String(ajustes.fin_pct).replace(".",",")} % + USD ${ajustes.fin_fijo_usd})`,tot.financiero)}
-        {fila("Gestión",tot.gestion)}
-        {contra>0&&fila("Importación · Argencargo",contra)}
-      </div>
-      <div style={{background:SUAVE,borderRadius:14,padding:"14px 16px"}}>
-        <p style={{...LBL,marginBottom:8}}>Cómo se cobra</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:"8px 14px",alignItems:"center",fontSize:13.5}}>
-          <span>Anticipo · máquina</span><b style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(anticipo)}</b>{eA?<span style={{fontFamily:MONO,fontSize:10,padding:"3px 8px",borderRadius:6,background:eA.bg,color:eA.c}}>{eA.l}</span>:<span/>}
-          <span>Contra entrega · importación</span><b style={{fontFamily:MONO,textAlign:"right"}}>{contra>0?fmtUsd(contra):"—"}</b>{contra>0&&eC?<span style={{fontFamily:MONO,fontSize:10,padding:"3px 8px",borderRadius:6,background:eC.bg,color:eC.c}}>{eC.l}</span>:<span/>}
-          <span style={{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:8}}>Total</span><b style={{fontFamily:MONO,textAlign:"right",fontSize:17,borderTop:`1px solid ${BORDE}`,paddingTop:8}}>{fmtUsd(total)}</b><span style={{borderTop:`1px solid ${BORDE}`}}/>
-        </div>
-        <p style={{margin:"10px 0 0",fontSize:12,color:tot.cubreAdelanto?OK:BAD}}>{tot.cubreAdelanto?`El anticipo cubre el EXW + ${ajustes.adelanto_extra_pct} %.`:`El anticipo no cubre el EXW + ${ajustes.adelanto_extra_pct} % (${fmtUsd(tot.adelantoMinimo)}).`}</p>
-      </div>
-    </div>
+  // Lo cobrado se aplica primero al anticipo y después a la contra entrega.
+  const cobA=cobrado==null?null:Math.min(cobrado,anticipo), cobC=cobrado==null?null:Math.max(0,Math.min(cobrado-anticipo,contra));
+  const chip=(monto,cob)=>{if(cob==null)return null;const s=cob>=monto-0.01?{l:"COBRADO",c:OK,bg:OK_BG}:cob>0.01?{l:"PARCIAL",c:WARN,bg:WARN_BG}:{l:"PENDIENTE",c:GRIS,bg:SUAVE};return <span style={{fontFamily:MONO,fontSize:10,padding:"3px 8px",borderRadius:6,background:s.bg,color:s.c,whiteSpace:"nowrap"}}>{s.l}</span>;};
+  const Fila=({l,monto,cob,b})=><div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:"4px 16px",alignItems:"center",padding:"10px 0",borderTop:b?`1px solid ${BORDE}`:"none"}}>
+    <span style={{fontSize:b?15:14,fontWeight:b?800:700}}>{l}</span><b style={{fontFamily:MONO,fontSize:b?18:15,textAlign:"right"}}>{fmtUsd(monto)}</b>{cob!=null?chip(monto,cob):<span/>}
+    {cob!=null&&monto>0&&<span style={{gridColumn:"1 / -1",fontSize:12,color:GRIS,fontFamily:MONO}}>cobrado {fmtUsd(cob)} · pendiente {fmtUsd(Math.max(0,monto-cob))}</span>}
+  </div>;
+  return <Sec titulo="Presupuesto" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>EXW {fmtUsd(tot.exw_total)} · FINANCIERO {fmtUsd(tot.financiero)} · GESTIÓN {fmtUsd(tot.gestion)}{contra>0?` · IMPORTACIÓN ${fmtUsd(contra)}`:""}</span>}>
+    <Fila l="Anticipo · máquina" monto={anticipo} cob={cobA}/>
+    {contra>0&&<Fila l="Contra entrega · importación" monto={contra} cob={cobC}/>}
+    <Fila l="Total" monto={total} cob={cobrado} b/>
+    <p style={{margin:"8px 0 0",fontSize:12,color:tot.cubreAdelanto?OK:BAD}}>{tot.cubreAdelanto?`El anticipo cubre el EXW + ${ajustes.adelanto_extra_pct} %.`:`El anticipo no cubre el EXW + ${ajustes.adelanto_extra_pct} % (${fmtUsd(tot.adelantoMinimo)}).`}</p>
   </Sec>;
 }
 
@@ -206,7 +196,7 @@ function ResumenOp({p,dq,ses,cob,presupuesto,recargar,cambiarEstado}){
       <Dato l="Cliente" v={p.cliente_nombre||"—"} sub={[cont1,cont2].filter(Boolean).join(" · ")}/>
       <Dato l="Presupuesto" v={fmtUsd(presupuesto)}/>
       <Dato l="Cobrado" v={fmtUsd(cob)} color={cob>=presupuesto-0.01?OK:cob>0?WARN:INK} acento={cob>=presupuesto-0.01?OK:WARN}/>
-      <div style={{background:SUAVE,borderRadius:14,padding:"14px 16px 14px 18px",position:"relative",overflow:"hidden"}}><span style={{position:"absolute",left:0,top:12,bottom:12,width:4,borderRadius:"0 4px 4px 0",background:GRIS}}/><p style={{...LBL,marginBottom:6}}>Estado</p><Desplegable value={p.estado} onChange={cambiarEstado} opciones={ESTADOS_PEDIDO.map(e=>({v:e.k,l:e.l}))} buscar={false}/></div>
+      <div style={{background:SUAVE,borderRadius:14,padding:"14px 16px 14px 18px",position:"relative"}}><span style={{position:"absolute",left:0,top:12,bottom:12,width:4,borderRadius:"0 4px 4px 0",background:GRIS}}/><p style={{...LBL,marginBottom:6}}>Estado</p><Desplegable value={p.estado} onChange={cambiarEstado} opciones={ESTADOS_PEDIDO.map(e=>({v:e.k,l:e.l}))} buscar={false}/></div>
     </div>
     <Sec titulo="Máquinas">
       <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
@@ -273,7 +263,7 @@ function Costos({p,pagosFab,pagosArg,otros,pagFab,pagArg,dq,token,ses,ajustes,ga
   return <>
     <p style={{...LBL,margin:"6px 0 10px"}}>Costos</p>
     <Bloque k="fabrica" titulo="Pago a fábrica" objetivo={n(p.exw_total)} pagado={pagFab} lista={pagosFab} form={<FormPagoFabrica p={p} dq={dq} token={token} ses={ses} ajustes={ajustes} falta={Math.max(0,n(p.exw_total)-pagFab)} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
-    <Bloque k="argencargo" titulo="Argencargo · importación" objetivo={p.importacion_usd==null?null:n(p.importacion_usd)} pagado={pagArg} lista={pagosArg} form={<FormPagoSimple p={p} dq={dq} token={token} ses={ses} categoria="argencargo" concepto={`Pago a Argencargo ${codigoOp(p)}`} falta={p.importacion_usd==null?0:Math.max(0,n(p.importacion_usd)-pagArg)} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
+    <Bloque k="argencargo" titulo="Argencargo · Importación" objetivo={p.importacion_usd==null?null:n(p.importacion_usd)} pagado={pagArg} lista={pagosArg} form={<FormPagoSimple p={p} dq={dq} token={token} ses={ses} categoria="argencargo" concepto={`Pago a Argencargo ${codigoOp(p)}`} falta={p.importacion_usd==null?0:Math.max(0,n(p.importacion_usd)-pagArg)} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
     <Bloque k="otro" titulo="Otros costos" lista={otros} form={<FormPagoSimple p={p} dq={dq} token={token} ses={ses} categoria="gasto" gastoCats={gastoCats} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
   </>;
 }

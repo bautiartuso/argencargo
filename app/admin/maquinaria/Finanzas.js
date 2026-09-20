@@ -236,7 +236,7 @@ function CCCompartir({dq,onCerrar}){
 export function Tarifas({dq,ajustes,setAjustes}){
   const claves=["gestion_pct","markup_minimo_usd","fin_pct","fin_fijo_usd","adelanto_extra_pct"];
   const [a,setA]=useState(()=>Object.fromEntries(claves.map(k=>[k,String(ajustes[k])])));
-  const [sim,setSim]=useState({exw:"5000",qty:"1",pct:""});
+  const [sim,setSim]=useState({exw:"5000",qty:"1",pct:"",arg:"1500"});
   const [guardando,setGuardando]=useState(false);
   const set=(k,v)=>setA(x=>({...x,[k]:v}));
   const filas=()=>claves.map(k=>({clave:k,valor:n(a[k])})).concat([{clave:"fin_pagos",valor:1}]);
@@ -245,9 +245,9 @@ export function Tarifas({dq,ajustes,setAjustes}){
     setAjustes(x=>({...x,...Object.fromEntries(filas().map(f=>[f.clave,f.valor]))}));toast("Tarifas guardadas");
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   const aj={...ajustes,...Object.fromEntries(filas().map(f=>[f.clave,f.valor]))};
-  const r=totalesPedido([{exw_unit:n(sim.exw),qty:n(sim.qty,1),gestion_pct:sim.pct.trim()===""?null:n(sim.pct)}],aj,false);
+  const r=totalesPedido([{exw_unit:n(sim.exw),qty:n(sim.qty,1),gestion_pct:sim.pct.trim()===""?null:n(sim.pct)}],aj,n(sim.arg));
   const pctSim=sim.pct.trim()===""?n(aj.gestion_pct):n(sim.pct);
-  const piso=n(sim.exw)*pctSim/100<n(aj.markup_minimo_usd);
+  const piso=(r.exw_total+r.financiero+n(sim.arg))*pctSim/100<n(aj.markup_minimo_usd)*n(sim.qty,1);
   const Fila=({l,hint,k,step})=><div style={{display:"grid",gridTemplateColumns:"1fr 150px",gap:14,alignItems:"center",padding:"12px 0",borderTop:`1px solid ${BORDE}`}}><div><p style={{margin:0,fontSize:14,fontWeight:700}}>{l}</p>{hint&&<p style={{margin:"2px 0 0",fontSize:12.5,color:GRIS}}>{hint}</p>}</div><Inp type="number" step={step||"1"} value={a[k]} onChange={e=>set(k,e.target.value)} style={{textAlign:"right",fontFamily:MONO}}/></div>;
   return <>
     <Barra><span style={{flex:1}}/><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn></Barra>
@@ -268,16 +268,18 @@ export function Tarifas({dq,ajustes,setAjustes}){
           <Campo label="EXW (USD)"><Inp type="number" value={sim.exw} onChange={e=>setSim(x=>({...x,exw:e.target.value}))}/></Campo>
           <Campo label="Cantidad"><Inp type="number" value={sim.qty} onChange={e=>setSim(x=>({...x,qty:e.target.value}))}/></Campo>
           <Campo label="Gestión (%)"><Inp type="number" step="0.5" value={sim.pct} onChange={e=>setSim(x=>({...x,pct:e.target.value}))} placeholder={String(aj.gestion_pct)}/></Campo>
+          <Campo label="Importación Argencargo (USD)"><Inp type="number" value={sim.arg} onChange={e=>setSim(x=>({...x,arg:e.target.value}))}/></Campo>
         </div>
         <div style={{marginTop:18,background:SUAVE,borderRadius:14,padding:"14px 16px",display:"grid",gridTemplateColumns:"1fr auto",gap:"6px 18px",fontSize:13.5}}>
           <span style={{color:GRIS}}>EXW</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.exw_total)}</span>
           <span style={{color:GRIS}}>Financiero</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.financiero)}</span>
-          <span style={{color:GRIS}}>Gestión ({String(pctSim).replace(".",",")} %{piso?" → piso":""})</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.gestion)}</span>
-          <span style={{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:8}}>Precio de la máquina</span><span style={{fontFamily:MONO,fontWeight:800,textAlign:"right",borderTop:`1px solid ${BORDE}`,paddingTop:8,fontSize:16}}>{fmtUsd(r.precio_total)}</span>
+          <span style={{color:GRIS}}>Importación · Argencargo</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(n(sim.arg))}</span>
+          <span style={{color:GRIS}}>Gestión ({String(pctSim).replace(".",",")} % sobre todos los costos{piso?" → piso":""})</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.gestion)}</span>
+          <span style={{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:8}}>Precio de la máquina · anticipo</span><span style={{fontFamily:MONO,fontWeight:800,textAlign:"right",borderTop:`1px solid ${BORDE}`,paddingTop:8,fontSize:16}}>{fmtUsd(r.precio_total)}</span>
+          <span style={{fontWeight:800}}>Total para el cliente</span><span style={{fontFamily:MONO,fontWeight:800,textAlign:"right",fontSize:16}}>{fmtUsd(r.total)}</span>
           <span style={{color:GRIS}}>Ganancia neta</span><span style={{fontFamily:MONO,textAlign:"right",color:OK,fontWeight:700}}>{fmtUsd(r.gestion)}</span>
         </div>
         <p style={{margin:"10px 0 0",fontSize:12.5,color:r.cubreAdelanto?OK:BAD}}>{r.cubreAdelanto?`Cubre el adelanto mínimo (${fmtUsd(r.adelantoMinimo)}).`:`No cubre el adelanto mínimo (${fmtUsd(r.adelantoMinimo)}): subí la gestión.`}</p>
-        <p style={{margin:"12px 0 0",fontSize:12.5,color:GRIS}}>La importación de Argencargo se suma aparte, vía por vía, en la ficha de cada máquina.</p>
       </Sec>
     </div>
   </>;

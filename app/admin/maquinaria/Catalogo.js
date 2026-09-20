@@ -406,7 +406,7 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
     return {...v,r,err,motivos};
   }),[f.exw_usd,f.packing,f.die,f.te,f.iva,tarifas]); // eslint-disable-line react-hooks/exhaustive-deps
   const setC=(k,campo,v)=>setCfg(x=>{const nx={...x,[k]:{...x[k],[campo]:v}};if(campo==="mostrar"&&v&&k!=="aereo"){const otra=k==="maritimo_lcl"?"maritimo_integral":"maritimo_lcl";nx[otra]={...nx[otra],mostrar:false};}return nx;});
-  const precioDe=(v)=>{const c=cfg[v.k];const base=precioMaquina({exwUnit:n(f.exw_usd),qty:1,ajustes,gestionPct:c.gestion_usd.trim()!==""?0:(c.gestion_pct.trim()!==""?c.gestion_pct:null)});const gestion=c.gestion_usd.trim()!==""?n(c.gestion_usd):base.gestion;const arg=v.r?n(v.r.totalAbonar):0;return {exw:base.exw,financiero:base.financiero,gestion,maquina:base.exw+base.financiero+gestion,argencargo:arg,total:base.exw+base.financiero+gestion+arg};};
+  const precioDe=(v)=>{const c=cfg[v.k];const arg=v.r?n(v.r.totalAbonar):0;const r=precioMaquina({exwUnit:n(f.exw_usd),qty:1,ajustes,gestionPct:c.gestion_pct.trim()!==""?c.gestion_pct:(p.markup_pct??null),gestionUsd:c.gestion_usd.trim()!==""?c.gestion_usd:null,importacion:arg});return {exw:r.exw,financiero:r.financiero,gestion:r.gestion,base:r.base,maquina:r.precio,argencargo:arg,total:r.total};};
   const guardar=async()=>{setGuardando(true);try{
     const canales=Object.fromEntries(calc.map(v=>{const c=cfg[v.k];const pr=precioDe(v);return [v.k,{mostrar:!!c.mostrar,gestion_pct:c.gestion_pct.trim()===""?null:n(c.gestion_pct),gestion_usd:c.gestion_usd.trim()===""?null:n(c.gestion_usd),argencargo:v.r?{flete:n(v.r.flete),seguro:n(v.r.seguro),sobrepeso:n(v.r.overweightSurcharge),impuestos:n(v.r.totalTax),recargo:n(v.r.surcharge),total:n(v.r.totalAbonar),unidad:v.r.fleteAmt}:null,precio:pr,motivos:v.motivos,calculado_at:new Date().toISOString()}];}));
     await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{canales}});toast("Canales guardados");await onVolver();
@@ -432,7 +432,8 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
           <Campo label="o fijo (USD)"><Inp type="number" value={c.gestion_usd} onChange={e=>setC(v.k,"gestion_usd",e.target.value)} placeholder="—"/></Campo>
         </div>
         <div style={{background:SUAVE,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr auto",gap:"4px 12px",fontSize:12.5,marginBottom:12}}>
-          <span style={{color:GRIS}}>Máquina (EXW + financiero + gestión {fmtUsd(pr.gestion)})</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.maquina)}</span>
+          <span style={{color:GRIS}}>Gestión sobre {fmtUsd(pr.base)} (EXW + financiero + Argencargo)</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.gestion)}</span>
+          <span style={{color:GRIS}}>Máquina (EXW + financiero + gestión)</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.maquina)}</span>
           <span style={{color:GRIS}}>Argencargo</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.argencargo)}</span>
           <span style={{fontWeight:800,fontSize:14}}>Precio al cliente</span><span style={{fontFamily:MONO,fontWeight:800,fontSize:16,textAlign:"right"}}>{fmtUsd(pr.total)}</span>
         </div>
