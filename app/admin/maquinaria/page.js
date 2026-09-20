@@ -5,10 +5,10 @@ import { useState, useEffect, useMemo } from "react";
 import { ToastStack, DialogHost, toast } from "../../../lib/ui";
 import { leerAjustes, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
 import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio } from "./ui";
+import { Inicio, Clientes, Ajustes } from "./Otros";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
 import { Resumen, Libro, Tarifas, CCFinanciera } from "./Finanzas";
-import { Inicio, Clientes, Ajustes, Usuarios } from "./Otros";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -30,10 +30,10 @@ const jwtExp=(t)=>{try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").
 export default function MaquinariaPage(){
   const [ses,setSes]=useState(null);
   const [cargando,setCargando]=useState(true);
-  const [tema,setTemaSt]=useState("claro");
-  useEffect(()=>{setSes(cargarSesion());try{setTemaSt(localStorage.getItem("mq_tema")==="oscuro"?"oscuro":"claro");}catch{}setCargando(false);},[]);
+  const [tema,setTemaSt]=useState("cat");
+  useEffect(()=>{setSes(cargarSesion());try{setTemaSt(localStorage.getItem("mq_tema")==="claro"?"claro":"cat");}catch{}setCargando(false);},[]);
   const setTema=(t)=>{setTemaSt(t);try{localStorage.setItem("mq_tema",t);}catch{}};
-  return <div className="mq" data-tema={tema} style={{minHeight:"100vh",background:"var(--mq-bg)",fontFamily:"'Manrope',ui-sans-serif,system-ui,sans-serif",color:INK}}>
+  return <div className="mq" data-tema={tema==="claro"?"claro":undefined} style={{minHeight:"100vh",background:"var(--mq-bg)",fontFamily:"'Manrope',ui-sans-serif,system-ui,sans-serif",color:INK}}>
     <style dangerouslySetInnerHTML={{__html:CSS}}/>
     {cargando?<Centro>Cargando…</Centro>:!ses?<Login onLogin={setSes}/>:<Shell ses={ses} setSes={setSes} tema={tema} setTema={setTema}/>}
   </div>;
@@ -68,7 +68,7 @@ function Login({onLogin}){
 const MENU=[
   {sec:"General",items:[
     {k:"inicio",l:"Inicio",i:["M3 12L12 3l9 9","M5 10v10h14V10"]},
-    {k:"pedidos",l:"Pedidos",i:["M6 2h12l2 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z","M4 7h16","M9 11a3 3 0 0 0 6 0"]},
+    {k:"pedidos",l:"Operaciones",i:["M6 2h12l2 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z","M4 7h16","M9 11a3 3 0 0 0 6 0"]},
   ]},
   {sec:"Catálogo",items:[
     {k:"maquinas",l:"Máquinas",i:["M3 8h18v12H3z","M8 8V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3","M3 13h18"]},
@@ -77,7 +77,8 @@ const MENU=[
   {sec:"Comercial",items:[
     {k:"clientes",l:"Clientes",i:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.9","M16 3.1a4 4 0 0 1 0 7.8"]},
     {k:"comunicaciones",l:"Comunicaciones",i:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
-    {k:"marketing",l:"Marketing",i:["M3 11l18-8-8 18-2-8z"]},
+  ]},
+  {sec:"Marketing",items:[
     {k:"studio",l:"Content Studio",i:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
   ]},
   {sec:"Finanzas",items:[
@@ -87,7 +88,6 @@ const MENU=[
     {k:"tarifas",l:"Tarifas",i:["M18 20V10","M12 20V4","M6 20v-6"]},
   ]},
   {sec:"Configuración",items:[
-    {k:"usuarios",l:"Usuarios",i:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
     {k:"ajustes",l:"Ajustes",i:["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z","M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"]},
   ]},
 ];
@@ -121,9 +121,11 @@ function Shell({ses,setSes,tema,setTema}){
   const [movs,setMovs]=useState([]);
   const [ccs,setCcs]=useState([]);
   const [ops,setOps]=useState([]);
+  const [tarifas,setTarifas]=useState(null);
+  const [gastoCats,setGastoCats]=useState([]);
   const [listo,setListo]=useState(false);
   const cargar=async()=>{try{
-    const [c,p,pr,a,aj,pe,mo,cc]=await Promise.all([
+    const [c,p,pr,a,aj,pe,mo,cc,gc,tf,cfg]=await Promise.all([
       dq("cat_categorias",{filters:"?select=*&order=orden.asc,nombre.asc"}),
       dq("cat_proveedores",{filters:"?select=*&order=fabrica.asc"}),
       dq("cat_productos",{filters:"?select=id,numero,estado,nombre,nombre_raw,modelo,categoria,subcategoria,exw_usd,markup_pct,dias_produccion,fotos,updated_at,proveedor_id,precio_verificado_at&order=updated_at.desc"}),
@@ -132,13 +134,27 @@ function Shell({ses,setSes,tema,setTema}){
       dq("cat_pedidos",{filters:"?select=*&order=created_at.desc"}),
       dq("cat_movimientos",{filters:"?select=*&order=fecha.desc,created_at.desc"}),
       dq("cat_cc_financiera",{filters:"?select=*&order=fecha.desc,created_at.desc"}),
+      dq("cat_gasto_categorias",{filters:"?select=*&order=orden.asc,nombre.asc"}),
+      dq("tariffs",{filters:"?select=*&order=sort_order.asc"}).catch(()=>[]),
+      dq("calc_config",{filters:"?select=*"}).catch(()=>[]),
     ]);
-    setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);setAjustes(leerAjustes(Array.isArray(aj)?aj:[]));setPedidos(Array.isArray(pe)?pe:[]);setMovs(Array.isArray(mo)?mo:[]);setCcs(Array.isArray(cc)?cc:[]);
-    const ajs=leerAjustes(Array.isArray(aj)?aj:[]);if(ajs.argencargo_client_id){const o=await dq("operations",{filters:`?select=id,operation_code,status,eta,channel,description,created_at&client_id=eq.${ajs.argencargo_client_id}&order=created_at.desc&limit=200`}).catch(()=>[]);setOps(Array.isArray(o)?o:[]);}
+    setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);setAjustes(leerAjustes(Array.isArray(aj)?aj:[]));setPedidos(Array.isArray(pe)?pe:[]);setMovs(Array.isArray(mo)?mo:[]);setCcs(Array.isArray(cc)?cc:[]);setGastoCats(Array.isArray(gc)?gc:[]);
+    const ajs=leerAjustes(Array.isArray(aj)?aj:[]);
+    const config={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{config[r.key]=Number(r.value);});
+    let cliente=null,overrides=[];
+    if(ajs.argencargo_client_id){
+      const [o,cl,ov]=await Promise.all([
+        dq("operations",{filters:`?select=id,operation_code,status,eta,channel,description,created_at,dispatched_at,arrived_in_argentina_at,cleared_customs_at,delivered_at,international_tracking&client_id=eq.${ajs.argencargo_client_id}&order=created_at.desc&limit=200`}).catch(()=>[]),
+        dq("clients",{filters:`?id=eq.${ajs.argencargo_client_id}&select=id,tax_condition,client_code`}).catch(()=>[]),
+        dq("client_tariff_overrides",{filters:`?client_id=eq.${ajs.argencargo_client_id}&select=*`}).catch(()=>[]),
+      ]);
+      setOps(Array.isArray(o)?o:[]);cliente=Array.isArray(cl)?cl[0]:null;overrides=Array.isArray(ov)?ov:[];
+    }
+    setTarifas({tariffs:Array.isArray(tf)?tf:[],config,overrides,cliente:cliente||{tax_condition:"responsable_inscripto"}});
   }catch(e){toast(e.message,"error");}setListo(true);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const arbol=useMemo(()=>cats.filter(c=>!c.padre_slug).map(c=>({...c,subs:cats.filter(s=>s.padre_slug===c.slug)})),[cats]);
-  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,pedidos,movs,ccs,ops,listo,recargar:cargar,ir};
+  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,pedidos,movs,ccs,ops,tarifas,gastoCats,listo,recargar:cargar,ir};
 
   const inicial=(ses.user?.email||"?").slice(0,2).toUpperCase();
   return <div>
@@ -171,7 +187,6 @@ function Shell({ses,setSes,tema,setTema}){
         :pag==="libro"?<Libro {...ctx}/>
         :pag==="cc"?<CCFinanciera {...ctx}/>
         :pag==="tarifas"?<Tarifas {...ctx}/>
-        :pag==="usuarios"?<Usuarios {...ctx}/>
         :pag==="ajustes"?<Ajustes {...ctx} tema={tema} setTema={setTema}/>
         :<Vacio/>}
       </main>
