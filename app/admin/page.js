@@ -9631,8 +9631,10 @@ function AgentsPanel({token}){
   const [moveSelClient,setMoveSelClient]=useState(null);
   const [moveDest,setMoveDest]=useState(null); // null=auto | "new" | opId
   const [moveSaving,setMoveSaving]=useState(false);
+  // fromOp=null: el bulto está suelto en el depósito del cliente (modelo 13/09/2026), todavía sin
+  // importación. Se puede mover igual: cambia de dueño y se queda en depósito, o entra a una op.
   const openMoveModal=async(pkg,fromOp)=>{
-    setMovePkgState({pkg,fromOp});setMoveSearch("");setMoveSelClient(null);
+    setMovePkgState({pkg,fromOp:fromOp||null});setMoveSearch("");setMoveSelClient(null);
     if(moveClients.length===0){
       const r=await dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});
       setMoveClients(Array.isArray(r)?r:[]);
@@ -9648,7 +9650,7 @@ function AgentsPanel({token}){
     const seen=new Set();const out=[];
     for(const o of [...depositOps,...allOps]){
       if(!o||o.client_id!==moveSelClient.id)continue;
-      if(o.id===movePkgState.fromOp.id)continue;
+      if(movePkgState.fromOp&&o.id===movePkgState.fromOp.id)continue;
       if(!OPEN.includes(o.status))continue;
       if(seen.has(o.id))continue;seen.add(o.id);out.push(o);
     }
@@ -9656,7 +9658,8 @@ function AgentsPanel({token}){
   })();
   // Default: si hay una op abierta del MISMO agente, sugerirla; si no, la primera op abierta; si no hay, op nueva.
   const moveDefaultDest=(()=>{
-    const sameAgent=moveCandidateOps.find(o=>o.created_by_agent_id===movePkgState?.fromOp.created_by_agent_id);
+    if(movePkgState&&!movePkgState.fromOp)return "deposito";
+    const sameAgent=moveCandidateOps.find(o=>o.created_by_agent_id===movePkgState?.fromOp?.created_by_agent_id);
     return (sameAgent||moveCandidateOps[0])?.id||"new";
   })();
   const moveEffectiveDest=moveDest||moveDefaultDest;
@@ -9665,6 +9668,21 @@ function AgentsPanel({token}){
     const {pkg,fromOp}=movePkgState;
     setMoveSaving(true);
     let destOpId=null,destCode=null;
+    // Destino "depósito": el bulto queda a nombre del cliente destino, sin importación.
+    if(moveEffectiveDest==="deposito"){
+      await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:null,client_id:moveSelClient.id}});
+      let borrada="";
+      if(fromOp){
+        const quedan=await dq("operation_packages",{token,filters:`?operation_id=eq.${fromOp.id}&select=id&limit=1`});
+        const quedanIt=await dq("operation_items",{token,filters:`?operation_id=eq.${fromOp.id}&select=id&limit=1`});
+        const vacia=(!Array.isArray(quedan)||quedan.length===0)&&(!Array.isArray(quedanIt)||quedanIt.length===0);
+        const borrable=["en_deposito_origen","en_preparacion","pendiente"].includes(fromOp.status)&&!fromOp.is_collected&&Number(fromOp.budget_total||0)===0;
+        if(vacia&&borrable){await dq("operations",{method:"DELETE",token,filters:`?id=eq.${fromOp.id}`});borrada=` · ${fromOp.operation_code} eliminada (quedó vacía)`;}
+      }
+      setMoveSaving(false);closeMoveModal();
+      flash(`✓ Bulto reasignado al depósito de ${moveSelClient.client_code}${borrada}`);
+      load();return;
+    }
     if(moveEffectiveDest&&moveEffectiveDest!=="new"){
       const dest=moveCandidateOps.find(o=>o.id===moveEffectiveDest);
       destOpId=dest?.id;destCode=dest?.operation_code;
@@ -9674,7 +9692,7 @@ function AgentsPanel({token}){
       const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const newCode=typeof rpc==="string"?rpc:null;
       if(!newCode){flash("❌ No pude generar código");setMoveSaving(false);return;}
-      const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:moveSelClient.id,channel:fromOp.channel||"aereo_blanco",status:"en_deposito_origen",origin:fromOp.origin||"China",created_by_agent_id:fromOp.created_by_agent_id||null}});
+      const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:moveSelClient.id,channel:fromOp?.channel||"aereo_blanco",status:"en_deposito_origen",origin:fromOp?.origin||pkg.origin||"China",created_by_agent_id:fromOp?.created_by_agent_id||pkg.registered_by_agent_id||null}});
       const created=Array.isArray(r)?r[0]:r;
       if(!created?.id){flash("❌ No pude crear op");setMoveSaving(false);return;}
       destOpId=created.id;destCode=newCode;
@@ -9682,9 +9700,10 @@ function AgentsPanel({token}){
     // Renumerar en la op destino
     const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${destOpId}&select=package_number`});
     const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
-    await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:destOpId,package_number:maxNum+1}});
+    await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:destOpId,package_number:maxNum+1,client_id:moveSelClient.id}});
     // Si la op origen quedó vacía y todavía no avanzó, la eliminamos.
     let deletedMsg="";
+    if(fromOp){
     const remainPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${fromOp.id}&select=id&limit=1`});
     const remainItems=await dq("operation_items",{token,filters:`?operation_id=eq.${fromOp.id}&select=id&limit=1`});
     const empty=(!Array.isArray(remainPkgs)||remainPkgs.length===0)&&(!Array.isArray(remainItems)||remainItems.length===0);
@@ -9692,6 +9711,7 @@ function AgentsPanel({token}){
     if(empty&&safeToDelete){
       await dq("operations",{method:"DELETE",token,filters:`?id=eq.${fromOp.id}`});
       deletedMsg=` · ${fromOp.operation_code} eliminada (quedó vacía)`;
+    }
     }
     setMoveSaving(false);closeMoveModal();
     flash(`✓ Bulto movido a ${destCode} (${moveSelClient.client_code})${deletedMsg}`);
@@ -10208,14 +10228,14 @@ function AgentsPanel({token}){
                   <span style={{textAlign:"right"}}><button onClick={e=>{e.stopPropagation();crearPorCliente(cid,g.pk);}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,cursor:"pointer",whiteSpace:"nowrap"}}>Crear importación por él</button></span>
                 </div>
                 {open&&<div style={{padding:"0 14px 12px 40px"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 92px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
                     <span>#</span><span>Tracking</span><span style={{textAlign:"center"}}>Llegó</span><span style={{textAlign:"center"}}>Medidas (cm)</span><span style={{textAlign:"right"}}>Bruto</span><span style={{textAlign:"right"}}>Volumétrico</span><span style={{textAlign:"center"}}>Escaneo</span>
-                  </div>
+                  <span style={{textAlign:"center"}}>Mover</span></div>
                   {g.pk.map((p,k)=>{
                     const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);
                     const br=Number(p.gross_weight_kg||0)*q, vo=l2&&w2&&h2?((l2*w2*h2)/5000)*q:0;
                     const trk=p.national_tracking||p.consolidated_from_trackings||null;
-                    return <div key={p.id} style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:k<g.pk.length-1?"1px solid rgba(255,255,255,0.035)":"none"}}>
+                    return <div key={p.id} style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 92px",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:k<g.pk.length-1?"1px solid rgba(255,255,255,0.035)":"none"}}>
                       <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>{k+1}</span>
                       {trk
                         ? <span title={trk} style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:GOLD_LIGHT,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"copy"}} onClick={()=>{navigator.clipboard?.writeText(trk);flash("Tracking copiado");}}>{trk}</span>
@@ -10225,6 +10245,7 @@ function AgentsPanel({token}){
                       <span style={{fontSize:11.5,color:"rgba(255,255,255,0.8)",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{br>0?`${br.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                       <span style={{fontSize:11.5,color:vo>br?GOLD_LIGHT:"rgba(255,255,255,0.45)",fontWeight:vo>br?700:400,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{vo>0?`${vo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                       <span style={{textAlign:"center"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10.5,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Ver</a>:<span style={{fontSize:10.5,color:"rgba(255,255,255,0.22)"}}>—</span>}</span>
+                      <span style={{textAlign:"center"}}><button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} title="Reasignar este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></span>
                     </div>;
                   })}
                 </div>}
@@ -10430,18 +10451,18 @@ function AgentsPanel({token}){
         </tr>;})}</tbody>
       </table>
     </div>)}
-    {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const fromCl=movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const suelto=!movePkgState.fromOp;const fromCl=suelto?(movePkgState.pkg.clients||null):movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <div>
             <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>↪ Mover bulto #{movePkgState.pkg.package_number}</h3>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Origen: <strong style={{color:"#fff"}}>{movePkgState.fromOp.operation_code}</strong> · {fromName}</p>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Origen: <strong style={{color:"#fff"}}>{suelto?"depósito":movePkgState.fromOp.operation_code}</strong> · {fromName}</p>
           </div>
           <button onClick={closeMoveModal} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
         <input autoFocus value={moveSearch} onChange={e=>{setMoveSearch(e.target.value);setMoveSelClient(null);setMoveDest(null);}} placeholder="Buscar cliente por código o nombre…" style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",marginBottom:10,outline:"none"}}/>
         {!moveSelClient&&<div style={{maxHeight:260,overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
-          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===movePkgState.fromOp.client_id;return <button key={c.id} onClick={()=>{setMoveSelClient(c);setMoveDest(null);}} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===(suelto?movePkgState.pkg.client_id:movePkgState.fromOp.client_id);return <button key={c.id} onClick={()=>{setMoveSelClient(c);setMoveDest(null);}} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code}</strong> — {c.first_name} {c.last_name}</span>
             {isFrom&&<span style={{fontSize:10,fontWeight:700,color:"#a78bfa",padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.3)"}}>MISMO CLIENTE</span>}
           </button>;})}
@@ -10451,7 +10472,11 @@ function AgentsPanel({token}){
           <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px"}}><span style={{fontFamily:"monospace",color:IC}}>{moveSelClient.client_code}</span> — {moveSelClient.first_name} {moveSelClient.last_name}</p>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Destino del bulto</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {moveCandidateOps.map(o=>{const sel=moveEffectiveDest===o.id;const sameAg=o.created_by_agent_id===movePkgState.fromOp.created_by_agent_id;return <button key={o.id} onClick={()=>setMoveDest(o.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"9px 11px",fontSize:12,borderRadius:8,border:`1px solid ${sel?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.1)"}`,background:sel?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+            {(()=>{const sel=moveEffectiveDest==="deposito";return <button onClick={()=>setMoveDest("deposito")} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"9px 11px",fontSize:12,borderRadius:8,border:`1px solid ${sel?"rgba(140,200,245,0.5)":"rgba(255,255,255,0.1)"}`,background:sel?"rgba(140,200,245,0.12)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+              <span>🏬 Dejarlo en el depósito del cliente <span style={{color:"rgba(255,255,255,0.45)"}}>(sin importación)</span></span>
+              {sel&&<span style={{color:"#8CC8F5",fontWeight:700}}>✓</span>}
+            </button>;})()}
+            {moveCandidateOps.map(o=>{const sel=moveEffectiveDest===o.id;const sameAg=o.created_by_agent_id===(suelto?movePkgState.pkg.registered_by_agent_id:movePkgState.fromOp.created_by_agent_id);return <button key={o.id} onClick={()=>setMoveDest(o.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"9px 11px",fontSize:12,borderRadius:8,border:`1px solid ${sel?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.1)"}`,background:sel?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
               <span>📦 Agregar a <strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong>{sameAg?"":<span style={{color:"#fbbf24"}}> · otro agente</span>}</span>
               {sel&&<span style={{color:"#22c55e",fontWeight:700}}>✓</span>}
             </button>;})}
