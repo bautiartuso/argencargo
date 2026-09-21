@@ -14,14 +14,15 @@ export const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
 .amq{--bg:#FFFFFF;--card:#FFFFFF;--ink:#15171A;--gris:#5B6066;--borde:#E6E7EA;--suave:#F4F5F7;--y:#FFD200;--ysuave:#FFF3B0;--yink:#15171A;--ok:#1F7A2E;--sombra:0 14px 40px rgba(0,0,0,0.08);font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;min-height:100vh}
 .amq[data-tema="oscuro"]{--bg:#141517;--card:#1C1E21;--ink:#F3F3F1;--gris:#9DA3A9;--borde:#2B2E33;--suave:#23262A;--ysuave:#3A3305;--ok:#7BD88F;--sombra:0 14px 40px rgba(0,0,0,0.35)}
+html,body{overflow-x:clip!important}
 .amq *{box-sizing:border-box}.amq a{color:inherit;text-decoration:none}.amq button{font-family:inherit}
 .amq .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
-.amq .grupoWrap{display:flex;justify-content:center;padding:14px 16px 0}
-.amq .grupo{display:inline-flex;gap:4px;padding:5px;border-radius:999px;background:#15171A;box-shadow:0 10px 40px rgba(0,0,0,0.25)}
-.amq .grupo a{padding:8px 20px;border-radius:999px;display:inline-flex;align-items:center;gap:9px;opacity:0.75;transition:opacity 140ms}
-.amq .grupo a:hover{opacity:1}.amq .grupo a.on{background:#fff;opacity:1}
-.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:20px}.amq .grupo .txt{height:13px}
-.amq .nav{position:sticky;top:10px;z-index:30;padding:0 20px;margin:-14px 0 0}
+.amq .grupoWrap{display:flex;justify-content:center;padding:7px 16px;background:#15171A}
+.amq .grupo{display:inline-flex;gap:6px}
+.amq .grupo a{height:34px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;background:#fff;opacity:0.68;transition:opacity 140ms}
+.amq .grupo a:hover,.amq .grupo a.on{opacity:1}
+.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:11px}
+.amq .nav{position:sticky;top:10px;z-index:30;padding:0 20px;margin:12px 0 0}
 .amq .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
 .amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
 .amq .nav .links{display:flex;gap:22px;font-size:14.5px;font-weight:600;color:var(--gris);flex:1;justify-content:center}
@@ -52,7 +53,7 @@ export const CSS = `
 @keyframes girar{to{transform:rotate(360deg)}}
 @keyframes tick{0%,100%{opacity:0.2}50%{opacity:1}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{padding:8px 14px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
+@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{padding:0 12px;height:30px}.amq .grupo .iso{height:16px}.amq .grupo .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
 `;
 
 // ── Idiomas ───────────────────────────────────────────────────────────────────────────────
@@ -153,11 +154,11 @@ export function Marco({ actual, children, sinGrupo }) {
   return <>
     {!sinGrupo && <div className="grupoWrap"><div className="grupo">
       <a className="on" href="/" aria-label="ARGENMAQ"><img className="iso" src="/argenmaq/isotipo.png" alt="" /><img className="txt" src="/argenmaq/texto.png" alt="ARGENMAQ" /></a>
-      <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src="/argencargo/texto-blanco.png" alt="ARGENCARGO" /></a>
+      <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src="/argencargo/texto.png" alt="ARGENCARGO" /></a>
     </div></div>}
     <header className="nav">
       <div className="isla">
-        <a href="/"><Logo /></a>
+        <a href="/" style={{ display: "flex", alignItems: "center" }}><Logo /></a>
         <nav className="links">
           <a className={actual === "catalogo" ? "on" : ""} href="/catalogo">{t("catalogo")}</a>
           <a className={actual === "como" ? "on" : ""} href="/como-funciona">{t("como")}</a>
