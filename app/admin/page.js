@@ -14253,26 +14253,12 @@ function AdminCalculator({token}){
         canal, pero el PDF muestra una sola opción: con el link el cliente compara las tres y elige,
         y la elección vuelve como aviso. */}
     {results&&results.channels.length>0&&(()=>{
-      // Lo que se copia es el mensaje entero listo para pegar, no la URL sola: el link pelado
-      // obliga a escribir el contexto a mano cada vez.
+      // Lo que se copia es el mensaje entero listo para pegar, no la URL sola. Corto y al hueso
+      // por pedido del usuario (21/09/2026): antes iba un saludo con el nombre y un párrafo
+      // explicando las opciones, y el saludo lo escribe él en el chat igual.
       const armarMensaje=(url)=>{
-        const cli=clientId?allClients.find(c=>c.id===clientId):null;
-        const nombre=(cli?.first_name||results.clientName||"").trim().split(" ")[0];
-        const n=canalesLink.length;
         const vence=new Date(Date.now()+10*24*60*60*1000).toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
-        return [
-          nombre?`Hola ${nombre}! Tu cotización ya está lista.`:"Hola! Tu cotización ya está lista.",
-          "",
-          n>1
-            ?`Te preparamos ${n} opciones para traer tu carga desde ${results.origin||"origen"}, con los tiempos y el costo final de cada una. Entrá, compará y elegí la que mejor te sirva:`
-            :`Te preparamos la cotización para traer tu carga desde ${results.origin||"origen"}, con el tiempo de tránsito y el costo final:`,
-          "",
-          url,
-          "",
-          `Válida hasta el ${vence}.`,
-          "",
-          "Cualquier duda escribime por acá.",
-        ].join("\n");
+        return ["Tu cotización ya está lista.","",url,"",`Válida hasta el ${vence}.`].join("\n");
       };
       const generarLink=async()=>{
         if(canalesLink.length===0){toast("Elegí al menos una opción para mostrarle al cliente","error");return;}
