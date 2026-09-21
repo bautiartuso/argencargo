@@ -18,16 +18,17 @@ export const LINKS_LEGALES = [
   { href: "/terminos", t: "Términos y condiciones" },
 ];
 
-export function Logo({ size = 22 }) {
+export function Logo({ size = 22, inv = false }) {
+  const alto = size * 1.5;
   return (
-    <span style={{ fontSize: size, fontWeight: 800, letterSpacing: "-0.04em", color: INK }}>
-      ARGEN
-      <span style={{ background: Y, color: INK, padding: "0 6px", borderRadius: 6, marginLeft: 1 }}>MAQ</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <img src={inv ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" style={{ height: alto, width: "auto" }} />
+      <img src={inv ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" style={{ height: alto * 0.62, width: "auto" }} />
     </span>
   );
 }
 
-const FUENTE = "'Manrope',ui-sans-serif,system-ui,-apple-system,sans-serif";
+const FUENTE = "'Montserrat',ui-sans-serif,system-ui,-apple-system,sans-serif";
 
 // Marco de las páginas legales de ARGENMAQ: blanco, tipografía de la marca, amarillo de acento.
 export default function DocArgenmaq({ titulo, bajada, secciones, actual }) {
@@ -35,7 +36,7 @@ export default function DocArgenmaq({ titulo, bajada, secciones, actual }) {
     <div style={{ minHeight: "100vh", background: "#fff", color: INK, fontFamily: FUENTE, WebkitFontSmoothing: "antialiased" }}>
       <style
         dangerouslySetInnerHTML={{
-          __html: "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');",
+          __html: "@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap');",
         }}
       />
       <div style={{ maxWidth: 780, margin: "0 auto", padding: "36px 22px 70px" }}>

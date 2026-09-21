@@ -5,6 +5,9 @@ export const dynamic = "force-static";
 
 const RUTAS = [
   { loc: "/", freq: "weekly", pri: "1.0" },
+  { loc: "/catalogo", freq: "daily", pri: "0.9" },
+  { loc: "/como-funciona", freq: "monthly", pri: "0.6" },
+  { loc: "/quienes-somos", freq: "monthly", pri: "0.5" },
   { loc: "/terminos", freq: "yearly", pri: "0.3" },
   { loc: "/privacidad", freq: "yearly", pri: "0.3" },
   { loc: "/legal", freq: "yearly", pri: "0.3" },

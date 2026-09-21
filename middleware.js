@@ -16,7 +16,9 @@ const HOSTS_ARGENMAQ = /^(www\.)?argenmaq\./i;
 const PASA = [/^\/_next\//, /^\/api\//, /^\/monitoring/, /^\/admin/, /^\/cc\//, /^\/argenmaq/];
 
 // Páginas propias de ARGENMAQ que se sirven desde la raíz de su host.
-const PROPIAS = new Set(["/terminos", "/privacidad", "/legal"]);
+const PROPIAS = new Set(["/terminos", "/privacidad", "/legal", "/catalogo", "/cuenta", "/carrito", "/como-funciona", "/quienes-somos"]);
+// Rutas con parámetro del sitio público.
+const PREFIJOS = [/^\/catalogo\//, /^\/m\//, /^\/cuenta\//];
 
 export function middleware(req) {
   const host = req.headers.get("host") || "";
@@ -31,6 +33,7 @@ export function middleware(req) {
   if (pathname === "/sitemap.xml") return rw("/argenmaq/sitemap.xml");
   if (pathname.startsWith("/cc/")) return rw(`/argenmaq${pathname}`); // link público de la CC Financiera
   if (PROPIAS.has(pathname) || PROPIAS.has(pathname.replace(/\/$/, ""))) return rw(`/argenmaq${pathname.replace(/\/$/, "")}`);
+  if (PREFIJOS.some((re) => re.test(pathname))) return rw(`/argenmaq${pathname.replace(/\/$/, "")}`);
 
   if (PASA.some((re) => re.test(pathname))) return NextResponse.next();
   if (/\.[a-z0-9]+$/i.test(pathname)) return NextResponse.next(); // íconos, imágenes y demás de /public
