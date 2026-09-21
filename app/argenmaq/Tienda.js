@@ -4,18 +4,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto, usePrecios, precioVidriera, lineaCarrito } from "./kit";
 import { escalonPara } from "../../lib/canales-maquinas";
+import { PAISES, bandera, paisDe } from "./_paises";
 export { usePrecios, precioVidriera } from "./kit";
 
 const PR = ["Buenos Aires", "CABA", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
 const COND = [["ninguna", "Consumidor final"], ["monotributista", "Monotributista"], ["responsable_inscripto", "Responsable inscripto"]];
 
 // Desplegable propio para los formularios públicos (regla: nada nativo del navegador).
-function Elegir({ value, onChange, opciones, placeholder = "Elegir…" }) {
+function Elegir({ value, onChange, opciones, placeholder = "Elegir…", buscable }) {
   const [abierto, setAbierto] = useState(false);
+  const [q, setQ] = useState("");
   const sel = opciones.find((o) => o.v === value);
+  const conBusqueda = buscable || opciones.length > 14;
+  const lista = q.trim() ? opciones.filter((o) => `${o.l} ${o.busca || ""}`.toLowerCase().includes(q.toLowerCase())) : opciones;
+  const Img = ({ o }) => o.img ? <img src={o.img} alt="" style={{ width: 22, height: 15, objectFit: "cover", borderRadius: 3, flexShrink: 0 }} /> : null;
   return <div style={{ position: "relative" }}>
-    <button type="button" className="inp" onClick={() => setAbierto((v) => !v)} style={{ textAlign: "left", display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><span style={{ flex: 1, color: sel ? "var(--ink)" : "var(--gris)", fontWeight: sel ? 600 : 500 }}>{sel ? sel.l : placeholder}</span><Ico d={["M6 9l6 6 6-6"]} size={14} /></button>
-    {abierto && <><div onClick={() => setAbierto(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} /><div style={{ position: "absolute", left: 0, right: 0, top: "100%", zIndex: 21, marginTop: 6, background: "var(--card)", border: "1px solid var(--borde)", borderRadius: 14, boxShadow: "var(--sombra)", maxHeight: 260, overflowY: "auto" }}>{opciones.map((o) => <button key={o.v} type="button" onClick={() => { onChange(o.v); setAbierto(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: o.v === value ? "var(--ysuave)" : "transparent", color: "var(--ink)", cursor: "pointer", fontSize: 14, fontWeight: o.v === value ? 800 : 600 }}>{o.l}</button>)}</div></>}
+    <button type="button" className="inp" onClick={() => { setAbierto((v) => !v); setQ(""); }} style={{ textAlign: "left", display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>{sel && <Img o={sel} />}<span style={{ flex: 1, color: sel ? "var(--ink)" : "var(--gris)", fontWeight: sel ? 600 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? (sel.corto || sel.l) : placeholder}</span><Ico d={["M6 9l6 6 6-6"]} size={14} /></button>
+    {abierto && <><div onClick={() => setAbierto(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} /><div style={{ position: "absolute", left: 0, zIndex: 21, marginTop: 6, minWidth: "100%", width: conBusqueda ? 300 : undefined, background: "var(--card)", border: "1px solid var(--borde)", borderRadius: 14, boxShadow: "var(--sombra)", overflow: "hidden" }}>
+      {conBusqueda && <div style={{ padding: 8, borderBottom: "1px solid var(--borde)" }}><input autoFocus className="inp" value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} style={{ padding: "9px 12px", fontSize: 13.5 }} /></div>}
+      <div style={{ maxHeight: 260, overflowY: "auto" }}>{lista.map((o) => <button key={o.v} type="button" onClick={() => { onChange(o.v); setAbierto(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: o.v === value ? "var(--ysuave)" : "transparent", color: "var(--ink)", cursor: "pointer", fontSize: 14, fontWeight: o.v === value ? 800 : 600 }}><Img o={o} /><span style={{ flex: 1 }}>{o.l}</span>{o.extra && <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--gris)" }}>{o.extra}</span>}</button>)}{lista.length === 0 && <p style={{ margin: 0, padding: "10px 14px", fontSize: 13, color: "var(--gris)" }}>Sin resultados</p>}</div>
+    </div></>}
   </div>;
 }
 
@@ -295,18 +303,19 @@ export function CuentaVista() {
 function CampoTxt({ k, l, f, set, type = "text", req = true, span }) {
   return <label className="lbl" style={{ gridColumn: span ? "span 2" : undefined }}>{l}<input className="inp" type={type} value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} required={req} style={{ marginTop: 6 }} /></label>;
 }
-// WhatsApp con código de país aparte: se guarda como +54 9 11 … (solo dígitos después del +).
-const PREFIJOS = ["+54", "+598", "+595", "+591", "+56", "+55", "+51", "+1", "+34", "+7", "+86"];
-function CampoWa({ f, set, t }) {
+// WhatsApp con código de país aparte (todos los países, con bandera). Se guarda como +54911… .
+const OPC_PAISES = PAISES.map(([iso, dial, nombre]) => ({ v: iso, l: `${nombre} ${dial}`, corto: dial, extra: "", img: bandera(iso), busca: `${dial} ${iso}` }));
+function CampoWa({ f, set }) {
   return <div style={{ gridColumn: "span 2" }}><span className="lbl">WhatsApp</span><div className="waPref">
-    <Elegir value={f.wa_pref} onChange={(v) => set("wa_pref", v)} opciones={PREFIJOS.map((p) => ({ v: p, l: p }))} />
+    <Elegir value={f.wa_iso} onChange={(v) => set("wa_iso", v)} opciones={OPC_PAISES} placeholder="País" buscable />
     <input className="inp" type="tel" inputMode="numeric" value={f.wa_num ?? ""} onChange={(e) => set("wa_num", e.target.value.replace(/[^0-9 ]/g, ""))} placeholder="9 11 2345 6789" required />
   </div></div>;
 }
 // Los clientes de Argencargo tienen el número guardado como dígitos con país y sin "+" (5491…):
-// se reconoce el prefijo igual, con o sin el signo, para no duplicarlo al guardar.
-const partirWa = (w) => { const s = String(w || "").replace(/[^0-9+]/g, ""); const d = s.replace(/^\+/, ""); const pref = [...PREFIJOS].sort((a, b) => b.length - a.length).find((p) => d.startsWith(p.slice(1))); return pref ? { wa_pref: pref, wa_num: d.slice(pref.length - 1) } : { wa_pref: "+54", wa_num: d }; };
-const unirWa = (f) => `${f.wa_pref || "+54"}${String(f.wa_num || "").replace(/\D/g, "")}`;
+// se reconoce el prefijo igual, con o sin el signo, para no duplicarlo al guardar. Entre países
+// que comparten prefijo (+1, +7) gana el primero de la lista con el prefijo más largo.
+const partirWa = (w) => { const d = String(w || "").replace(/[^0-9]/g, ""); if (!d) return { wa_iso: "AR", wa_num: "" }; const cand = PAISES.filter((p) => d.startsWith(p[1].slice(1))).sort((a, b) => b[1].length - a[1].length)[0]; return cand ? { wa_iso: cand[0], wa_num: d.slice(cand[1].length - 1) } : { wa_iso: "AR", wa_num: d }; };
+const unirWa = (f) => `${paisDe(f.wa_iso || "AR")[1]}${String(f.wa_num || "").replace(/\D/g, "")}`;
 
 function Login({ login, t, volver }) {
   const [email, setEmail] = useState(""); const [pass, setPass] = useState(""); const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
@@ -321,10 +330,9 @@ function Login({ login, t, volver }) {
   </form>;
 }
 function Registro({ sf, guardarSes, t, volver }) {
-  const [f, setF] = useState({ first_name: "", last_name: "", wa_pref: "+54", wa_num: "", email: "", password: "", street: "", floor_apt: "", postal_code: "", city: "", province: "", tax_condition: "ninguna", company_name: "", cuit: "", dni: "" });
+  const [f, setF] = useState({ first_name: "", last_name: "", wa_iso: "AR", wa_num: "", email: "", password: "", street: "", floor_apt: "", postal_code: "", city: "", province: "", tax_condition: "ninguna", company_name: "", cuit: "", dni: "" });
   const [err, setErr] = useState(""); const [lo, setLo] = useState(false); const [ok, setOk] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const I = (p) => <CampoTxt {...p} f={f} set={set} />;
   const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
   const registrar = async (e) => { e.preventDefault(); setErr(""); if (f.password.length < 6) { setErr("La contraseña tiene que tener al menos 6 caracteres"); return; } if (String(f.wa_num || "").replace(/\D/g, "").length < 8) { setErr("WhatsApp inválido"); return; } if (["responsable_inscripto", "monotributista"].includes(f.tax_condition) && f.cuit.replace(/\D/g, "").length !== 11) { setErr("CUIT inválido (11 dígitos)"); return; } if (f.tax_condition === "ninguna" && f.dni.replace(/\D/g, "").length < 7) { setErr("DNI inválido"); return; } if (!f.province) { setErr("Elegí la provincia"); return; } setLo(true); try {
     const data = { role: "cliente", first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: unirWa(f), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.company_name.trim(), cuit: f.cuit.trim(), street: f.street.trim(), floor_apt: f.floor_apt.trim(), postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province, origen: "argenmaq" };
@@ -340,15 +348,15 @@ function Registro({ sf, guardarSes, t, volver }) {
   return <form onSubmit={registrar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
     <h1 className="h2" style={{ fontSize: 30, gridColumn: "span 2" }}>{t("crear")}</h1>
     <p style={{ margin: "-4px 0 4px", color: "var(--gris)", fontSize: 14, gridColumn: "span 2" }}>Con la cuenta ves los precios de todas las máquinas. Es la misma cuenta que Argencargo.</p>
-    <I k="first_name" l="Nombre" /><I k="last_name" l="Apellido" />
-    <I k="email" l={t("email")} type="email" span /><CampoWa f={f} set={set} t={t} />
-    <I k="password" l={t("pass")} type="password" span />
-    <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
-    <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
-    <I k="postal_code" l="Código postal" />
+    <CampoTxt f={f} set={set} k="first_name" l="Nombre" /><CampoTxt f={f} set={set} k="last_name" l="Apellido" />
+    <CampoTxt f={f} set={set} k="email" l={t("email")} type="email" span /><CampoWa f={f} set={set} />
+    <CampoTxt f={f} set={set} k="password" l={t("pass")} type="password" span />
+    <CampoTxt f={f} set={set} k="street" l="Calle y número" /><CampoTxt f={f} set={set} k="floor_apt" l="Piso / depto" req={false} />
+    <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
+    <CampoTxt f={f} set={set} k="postal_code" l="Código postal" />
     <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
-    {f.tax_condition === "responsable_inscripto" && <I k="company_name" l="Razón social" />}
-    {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <I k="cuit" l="CUIT" /> : <I k="dni" l="DNI" />}
+    {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
+    {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <CampoTxt f={f} set={set} k="cuit" l="CUIT" /> : <CampoTxt f={f} set={set} k="dni" l="DNI" />}
     {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
     <button className="btn y" disabled={lo} style={{ gridColumn: "span 2" }}>{lo ? "…" : t("registrarse")}</button>
     <p style={{ margin: 0, fontSize: 12, color: "var(--gris)", gridColumn: "span 2" }}>Al crear la cuenta aceptás los <a href="/terminos" style={{ fontWeight: 700 }}>términos y condiciones</a>.</p>
@@ -361,7 +369,6 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
   const [f, setF] = useState(() => ({ first_name: cliente?.first_name || "", last_name: cliente?.last_name || "", ...partirWa(cliente?.whatsapp), street: cliente?.street || "", floor_apt: cliente?.floor_apt || "", postal_code: cliente?.postal_code || "", city: cliente?.city || "", province: cliente?.province || "", tax_condition: cliente?.tax_condition || "ninguna", company_name: cliente?.company_name || "", cuit: cliente?.cuit || "", dni: cliente?.dni || "" }));
   const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const I = (p) => <CampoTxt {...p} f={f} set={set} />;
   const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
   const guardar = async (e) => { e.preventDefault(); setErr(""); if (String(f.wa_num || "").replace(/\D/g, "").length < 8) { setErr("WhatsApp inválido"); return; } setLo(true);
     try {
@@ -377,14 +384,14 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
       const nuevo = { ...(cliente || {}), ...(row || body) }; setCliente(nuevo); onListo?.(nuevo);
     } catch (er) { setErr(er.message || "Error"); } setLo(false); };
   return <form onSubmit={guardar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-    <I k="first_name" l="Nombre" /><I k="last_name" l="Apellido" />
-    <CampoWa f={f} set={set} t={t} />
-    <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
-    <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
-    <I k="postal_code" l="Código postal" />
+    <CampoTxt f={f} set={set} k="first_name" l="Nombre" /><CampoTxt f={f} set={set} k="last_name" l="Apellido" />
+    <CampoWa f={f} set={set} />
+    <CampoTxt f={f} set={set} k="street" l="Calle y número" /><CampoTxt f={f} set={set} k="floor_apt" l="Piso / depto" req={false} />
+    <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
+    <CampoTxt f={f} set={set} k="postal_code" l="Código postal" />
     <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
-    {f.tax_condition === "responsable_inscripto" && <I k="company_name" l="Razón social" />}
-    {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <I k="cuit" l="CUIT" /> : <I k="dni" l="DNI" />}
+    {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
+    {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <CampoTxt f={f} set={set} k="cuit" l="CUIT" /> : <CampoTxt f={f} set={set} k="dni" l="DNI" />}
     {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
     <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : (textoBoton || t("guardarDatos"))}</button></div>
   </form>;

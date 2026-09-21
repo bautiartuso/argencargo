@@ -90,7 +90,7 @@ html,body{overflow-x:clip!important}
 .amq .opcion.on{border-color:var(--y);background:var(--ysuave)}
 .amq .opcion .radio{width:18px;height:18px;border-radius:50%;border:2px solid var(--gris);flex-shrink:0}
 .amq .opcion.on .radio{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--ysuave)}
-.amq .waPref{display:grid;grid-template-columns:96px 1fr;gap:8px}
+.amq .waPref{display:grid;grid-template-columns:132px 1fr;gap:8px}
 @media(max-width:900px){.amq .chkGrid{grid-template-columns:1fr}.amq .resumen{position:static}}
 .amq .catGrid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:28px;align-items:start}
 .amq .rubros{position:sticky;top:96px;border:1px solid var(--borde);border-radius:20px;padding:14px 8px;background:var(--card)}
