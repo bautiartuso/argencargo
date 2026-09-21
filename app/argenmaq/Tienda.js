@@ -7,6 +7,16 @@ import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto } from "./kit";
 const PR = ["Buenos Aires", "CABA", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
 const COND = [["ninguna", "Consumidor final"], ["monotributista", "Monotributista"], ["responsable_inscripto", "Responsable inscripto"]];
 
+// Desplegable propio para los formularios públicos (regla: nada nativo del navegador).
+function Elegir({ value, onChange, opciones, placeholder = "Elegir…" }) {
+  const [abierto, setAbierto] = useState(false);
+  const sel = opciones.find((o) => o.v === value);
+  return <div style={{ position: "relative" }}>
+    <button type="button" className="inp" onClick={() => setAbierto((v) => !v)} style={{ textAlign: "left", display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><span style={{ flex: 1, color: sel ? "var(--ink)" : "var(--gris)", fontWeight: sel ? 600 : 500 }}>{sel ? sel.l : placeholder}</span><Ico d={["M6 9l6 6 6-6"]} size={14} /></button>
+    {abierto && <><div onClick={() => setAbierto(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} /><div style={{ position: "absolute", left: 0, right: 0, top: "100%", zIndex: 21, marginTop: 6, background: "var(--card)", border: "1px solid var(--borde)", borderRadius: 14, boxShadow: "var(--sombra)", maxHeight: 260, overflowY: "auto" }}>{opciones.map((o) => <button key={o.v} type="button" onClick={() => { onChange(o.v); setAbierto(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", background: o.v === value ? "var(--ysuave)" : "transparent", color: "var(--ink)", cursor: "pointer", fontSize: 14, fontWeight: o.v === value ? 800 : 600 }}>{o.l}</button>)}</div></>}
+  </div>;
+}
+
 // ── Tarjeta de máquina ────────────────────────────────────────────────────────────────────
 export function Tarjeta({ m, precios, diasVia: dv }) {
   const { t, fmt, ses } = useAM();
@@ -186,7 +196,7 @@ function Registro({ sf, guardarSes, t, volver }) {
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const I = ({ k, l, type = "text", req = true, span }) => <label className="lbl" style={{ gridColumn: span ? "span 2" : undefined }}>{l}<input className="inp" type={type} value={f[k]} onChange={(e) => set(k, e.target.value)} required={req} style={{ marginTop: 6 }} /></label>;
   const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
-  const registrar = async (e) => { e.preventDefault(); setErr(""); if (f.password.length < 6) { setErr("La contraseña tiene que tener al menos 6 caracteres"); return; } if (f.whatsapp.replace(/\D/g, "").length < 10) { setErr("WhatsApp inválido (mínimo 10 dígitos)"); return; } if (["responsable_inscripto", "monotributista"].includes(f.tax_condition) && f.cuit.replace(/\D/g, "").length !== 11) { setErr("CUIT inválido (11 dígitos)"); return; } if (f.tax_condition === "ninguna" && f.dni.replace(/\D/g, "").length < 7) { setErr("DNI inválido"); return; } setLo(true); try {
+  const registrar = async (e) => { e.preventDefault(); setErr(""); if (f.password.length < 6) { setErr("La contraseña tiene que tener al menos 6 caracteres"); return; } if (f.whatsapp.replace(/\D/g, "").length < 10) { setErr("WhatsApp inválido (mínimo 10 dígitos)"); return; } if (["responsable_inscripto", "monotributista"].includes(f.tax_condition) && f.cuit.replace(/\D/g, "").length !== 11) { setErr("CUIT inválido (11 dígitos)"); return; } if (f.tax_condition === "ninguna" && f.dni.replace(/\D/g, "").length < 7) { setErr("DNI inválido"); return; } if (!f.province) { setErr("Elegí la provincia"); return; } setLo(true); try {
     const data = { role: "cliente", first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: f.whatsapp.trim(), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.company_name.trim(), cuit: f.cuit.trim(), street: f.street.trim(), floor_apt: f.floor_apt.trim(), postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province, origen: "argenmaq" };
     const a = (await sf("/auth/v1/signup", { method: "POST", body: JSON.stringify({ email: f.email.trim(), password: f.password, data }) })).body;
     if (a?.error || a?.msg || a?.error_description) throw new Error(a.error?.message || a.msg || a.error_description);
@@ -204,9 +214,9 @@ function Registro({ sf, guardarSes, t, volver }) {
     <I k="email" l={t("email")} type="email" /><I k="whatsapp" l="WhatsApp" />
     <I k="password" l={t("pass")} type="password" span />
     <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
-    <I k="city" l="Localidad" /><label className="lbl">Provincia<select className="inp" value={f.province} onChange={(e) => set("province", e.target.value)} required style={{ marginTop: 6 }}><option value="">Elegir…</option>{PR.map((p) => <option key={p}>{p}</option>)}</select></label>
+    <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
     <I k="postal_code" l="Código postal" />
-    <label className="lbl">Condición fiscal<select className="inp" value={f.tax_condition} onChange={(e) => set("tax_condition", e.target.value)} style={{ marginTop: 6 }}>{COND.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+    <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
     {f.tax_condition === "responsable_inscripto" && <I k="company_name" l="Razón social" />}
     {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <I k="cuit" l="CUIT" /> : <I k="dni" l="DNI" />}
     {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
