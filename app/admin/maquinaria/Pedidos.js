@@ -14,7 +14,7 @@ const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 export const cobradoDe=(movs,pid)=>movs.filter(m=>m.pedido_id===pid&&m.tipo==="ingreso").reduce((s,m)=>s+n(m.monto_usd),0);
 export const pagadoFabricaDe=(movs,pid)=>movs.filter(m=>m.pedido_id===pid&&m.tipo==="egreso"&&m.categoria==="pago_fabrica").reduce((s,m)=>s+n(m.monto_usd),0);
 const OP_ESTADO={pendiente:"Pendiente",en_transito:"En tránsito",en_aduana:"En aduana",lista_retiro:"Lista para retirar",entregada:"Entregada"};
-const METODO={transferencia:"Transferencia",efectivo:"Efectivo",cripto:"Cripto (USDT)",financiera:"Giro por la financiera",tarjeta:"Tarjeta",otro:"Otro"};
+const METODO={transferencia:"Transferencia",efectivo:"Efectivo",cripto:"Cripto (USDT)",financiera:"SOLFIN · Cable Financiera",tarjeta:"Tarjeta",contado:"Contado",otro:"Otro"};
 
 async function subirComprobante(token,file,carpeta){
   const ext=(file.name.split(".").pop()||"bin").toLowerCase();const path=`comprobantes/${carpeta}/${Date.now()}.${ext}`;
@@ -116,7 +116,7 @@ function NuevaOperacion({ses,dq,prods,provs,ajustes,onCerrar,onCreado}){
 }
 
 // Presupuesto: cómo se arma el precio y cómo se cobra (anticipo = máquina, contra entrega = importación).
-function Presupuesto({tot,importacion,ajustes,cobrado}){
+function Presupuesto({tot,importacion,ajustes,cobrado,onRecalcular}){
   const anticipo=tot.precio_total, contra=importacion||0, total=anticipo+contra;
   // Lo cobrado se aplica primero al anticipo y después a la contra entrega.
   const cobA=cobrado==null?null:Math.min(cobrado,anticipo), cobC=cobrado==null?null:Math.max(0,Math.min(cobrado-anticipo,contra));
@@ -125,7 +125,7 @@ function Presupuesto({tot,importacion,ajustes,cobrado}){
     <span style={{fontSize:b?15:14,fontWeight:b?800:700}}>{l}</span><b style={{fontFamily:MONO,fontSize:b?18:15,textAlign:"right"}}>{fmtUsd(monto)}</b>{cob!=null?chip(monto,cob):<span/>}
     {cob!=null&&monto>0&&<span style={{gridColumn:"1 / -1",fontSize:12,color:GRIS,fontFamily:MONO}}>cobrado {fmtUsd(cob)} · pendiente {fmtUsd(Math.max(0,monto-cob))}</span>}
   </div>;
-  return <Sec titulo="Presupuesto" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>EXW {fmtUsd(tot.exw_total)} · FINANCIERO {fmtUsd(tot.financiero)} · GESTIÓN {fmtUsd(tot.gestion)}{contra>0?` · IMPORTACIÓN ${fmtUsd(contra)}`:""}</span>}>
+  return <Sec titulo="Presupuesto" extra={<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>EXW {fmtUsd(tot.exw_total)} · FINANCIERO {fmtUsd(tot.financiero)} · GESTIÓN {fmtUsd(tot.gestion)}{contra>0?` · IMPORTACIÓN ${fmtUsd(contra)}`:""}</span>{onRecalcular&&<Btn small onClick={onRecalcular} title="Vuelve a calcular financiero y gestión con las tarifas de hoy">Recalcular</Btn>}</div>}>
     <Fila l="Anticipo · máquina" monto={anticipo} cob={cobA}/>
     {contra>0&&<Fila l="Contra entrega · importación" monto={contra} cob={cobC}/>}
     <Fila l="Total" monto={total} cob={cobrado} b/>
@@ -176,7 +176,7 @@ function DetalleOperacion({p,ses,dq,token,ajustes,movs,ops,gastoCats,recargar,on
     {tab==="resumen"&&<ResumenOp p={p} dq={dq} ses={ses} cob={cob} presupuesto={presupuesto} recargar={recargar} cambiarEstado={cambiarEstado}/>}
 
     {tab==="finanzas"&&<>
-      <Presupuesto tot={tot} importacion={p.importacion_usd==null?null:n(p.importacion_usd)} ajustes={ajustes} cobrado={cob}/>
+      <Presupuesto tot={tot} importacion={p.importacion_usd==null?null:n(p.importacion_usd)} ajustes={ajustes} cobrado={cob} onRecalcular={async()=>{try{const t=totalesPedido(p.items||[],ajustes,n(p.importacion_usd));await dq("cat_pedidos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{exw_total:t.exw_total,financiero:t.financiero,gestion:t.gestion,precio_total:t.precio_total}});await recargar();toast("Presupuesto recalculado");}catch(e){toast(e.message,"error");}}}/>
       <Cobros p={p} cobros={cobros} cob={cob} presupuesto={presupuesto} dq={dq} token={token} ses={ses} recargar={recargar}/>
       <Costos p={p} pagosFab={pagosFab} pagosArg={pagosArg} otros={otros} pagFab={pagFab} pagArg={pagArg} dq={dq} token={token} ses={ses} ajustes={ajustes} gastoCats={gastoCats} recargar={recargar}/>
       <Rentabilidad presupuesto={presupuesto} cob={cob} cobNeto={cobNeto} fab={costoDe(pagosFab)} arg={costoDe(pagosArg)} otros={costoDe(otros)} costos={costos} prevista={n(p.gestion)}/>
@@ -263,30 +263,36 @@ function Costos({p,pagosFab,pagosArg,otros,pagFab,pagArg,dq,token,ses,ajustes,ga
   return <>
     <p style={{...LBL,margin:"6px 0 10px"}}>Costos</p>
     <Bloque k="fabrica" titulo="Pago a fábrica" objetivo={n(p.exw_total)} pagado={pagFab} lista={pagosFab} form={<FormPagoFabrica p={p} dq={dq} token={token} ses={ses} ajustes={ajustes} falta={Math.max(0,n(p.exw_total)-pagFab)} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
-    <Bloque k="argencargo" titulo="Argencargo · Importación" objetivo={p.importacion_usd==null?null:n(p.importacion_usd)} pagado={pagArg} lista={pagosArg} form={<FormPagoSimple p={p} dq={dq} token={token} ses={ses} categoria="argencargo" concepto={`Pago a Argencargo ${codigoOp(p)}`} falta={p.importacion_usd==null?0:Math.max(0,n(p.importacion_usd)-pagArg)} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
+    <Bloque k="argencargo" titulo="ARGENCARGO · Importación" objetivo={p.importacion_usd==null?null:n(p.importacion_usd)} pagado={pagArg} lista={pagosArg} form={<FormPagoSimple p={p} dq={dq} token={token} ses={ses} categoria="argencargo" concepto={`Pago a Argencargo ${codigoOp(p)}`} falta={p.importacion_usd==null?0:Math.max(0,n(p.importacion_usd)-pagArg)} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
     <Bloque k="otro" titulo="Otros costos" lista={otros} form={<FormPagoSimple p={p} dq={dq} token={token} ses={ses} categoria="gasto" gastoCats={gastoCats} onHecho={async()=>{setAbierto(null);await recargar();}}/>}/>
   </>;
 }
 function FormPagoFabrica({p,dq,token,ses,ajustes,falta,onHecho}){
-  const [f,setF]=useState({monto:falta>0?String(Math.round(falta*100)/100):"",metodo:"financiera",fecha:hoyISO(),archivo:null});
+  const [f,setF]=useState({monto:falta>0?String(Math.round(falta*100)/100):"",metodo:"financiera",moneda:"USD",tc:"",fecha:hoyISO(),archivo:null});
   const [guardando,setGuardando]=useState(false);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
-  const monto=n(f.monto);
-  const comision=f.metodo==="financiera"?Math.round((monto*n(ajustes.fin_pct)/100+n(ajustes.fin_fijo_usd))*100)/100:f.metodo==="tarjeta"?Math.round(monto*0.03*100)/100:0;
-  const registrar=async()=>{if(monto<=0){toast("Cargá el monto","error");return;}setGuardando(true);try{
+  const esArs=f.metodo==="contado"&&f.moneda==="ARS";
+  const monto=n(f.monto), tc=n(f.tc);
+  const usd=esArs?(tc>0?monto/tc:0):monto;
+  const comision=f.metodo==="financiera"?Math.round((usd*n(ajustes.fin_pct)/100+n(ajustes.fin_fijo_usd))*100)/100:0;
+  const registrar=async()=>{if(monto<=0){toast("Cargá el monto","error");return;}if(esArs&&tc<=0){toast("Cargá el tipo de cambio","error");return;}setGuardando(true);try{
     const url=f.archivo?await subirComprobante(token,f.archivo,p.id):null;
-    const r=await dq("cat_movimientos",{method:"POST",body:{fecha:f.fecha,tipo:"egreso",categoria:"pago_fabrica",concepto:`Pago a fábrica ${codigoOp(p)} · ${METODO[f.metodo]}`,monto_usd:monto,neto_usd:monto+comision,moneda:"USD",metodo:f.metodo,destino:f.metodo==="financiera"?"financiera":null,comision_pct:f.metodo==="financiera"?n(ajustes.fin_pct):f.metodo==="tarjeta"?3:null,comision,pedido_id:p.id,comprobante_url:url,created_by:ses.user?.id||null}});
+    const r=await dq("cat_movimientos",{method:"POST",body:{fecha:f.fecha,tipo:"egreso",categoria:"pago_fabrica",concepto:`Pago a fábrica ${codigoOp(p)} · ${METODO[f.metodo]}`,monto_usd:Math.round(usd*100)/100,neto_usd:Math.round((usd+comision)*100)/100,moneda:esArs?"ARS":"USD",monto_original:esArs?monto:null,tipo_cambio:esArs?tc:null,metodo:f.metodo,destino:f.metodo==="financiera"?"financiera":null,comision_pct:f.metodo==="financiera"?n(ajustes.fin_pct):null,comision,pedido_id:p.id,comprobante_url:url,created_by:ses.user?.id||null}});
     const mov=Array.isArray(r)?r[0]:r;
-    if(f.metodo==="financiera")await dq("cat_cc_financiera",{method:"POST",body:{fecha:f.fecha,tipo:"retiro",moneda:"USD",monto:monto+comision,comision_pct:n(ajustes.fin_pct),comision,acreditado:monto+comision,concepto:`Giro a fábrica ${codigoOp(p)} (${fmtUsd(monto)} + comisión ${fmtUsd(comision)})`,pedido_id:p.id,mov_id:mov.id,comprobante_url:url,created_by:ses.user?.id||null}});
+    if(f.metodo==="financiera")await dq("cat_cc_financiera",{method:"POST",body:{fecha:f.fecha,tipo:"retiro",moneda:"USD",monto:Math.round((usd+comision)*100)/100,comision_pct:n(ajustes.fin_pct),comision,acreditado:Math.round((usd+comision)*100)/100,concepto:`Cable a fábrica ${codigoOp(p)} (${fmtUsd(usd)} + comisión ${fmtUsd(comision)})`,pedido_id:p.id,mov_id:mov.id,comprobante_url:url,created_by:ses.user?.id||null}});
     toast("Pago registrado");onHecho();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   return <div style={{borderTop:`1px solid ${BORDE}`,paddingTop:14}}>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      {[["financiera","SOLFIN · Cable Financiera",`Comisión ${String(ajustes.fin_pct).replace(".",",")} % + USD ${ajustes.fin_fijo_usd} · se descuenta de la CC financiera`],["contado","Contado","Sin comisión · no toca la CC"]].map(([v,l,h])=><button key={v} type="button" onClick={()=>set("metodo",v)} style={{flex:"1 1 220px",textAlign:"left",padding:"10px 14px",borderRadius:12,cursor:"pointer",border:`1.5px solid ${f.metodo===v?LIMA:BORDE}`,background:f.metodo===v?LIMA_SUAVE:"transparent",color:INK}}><p style={{margin:"0 0 2px",fontSize:13.5,fontWeight:800}}>{f.metodo===v?"● ":"○ "}{l}</p><p style={{margin:0,fontSize:12,color:GRIS}}>{h}</p></button>)}
+    </div>
     <div className="grid3" style={GRID}>
-      <Campo label="Monto (USD)"><Inp type="number" step="0.01" value={f.monto} onChange={e=>set("monto",e.target.value)}/></Campo>
-      <Campo label="Cómo se paga"><Desplegable value={f.metodo} onChange={v=>set("metodo",v)} opciones={[["financiera","Giro por la financiera"],["tarjeta","Tarjeta (3 % Alibaba)"],["otro","Otro"]].map(([v,l])=>({v,l}))} buscar={false}/></Campo>
+      {f.metodo==="contado"&&<Campo label="Moneda"><div style={{display:"flex",gap:6}}><Pill on={f.moneda==="USD"} onClick={()=>set("moneda","USD")}>USD</Pill><Pill on={f.moneda==="ARS"} onClick={()=>set("moneda","ARS")}>ARS</Pill></div></Campo>}
+      <Campo label={`Monto (${esArs?"ARS":"USD"})`}><Inp type="number" step="0.01" value={f.monto} onChange={e=>set("monto",e.target.value)}/></Campo>
+      {esArs&&<Campo label="Tipo de cambio (ARS/USD)" hint={usd>0?`= ${fmtUsd(usd)}`:null}><Inp type="number" step="0.01" value={f.tc} onChange={e=>set("tc",e.target.value)}/></Campo>}
       <Campo label="Fecha"><Fecha value={f.fecha} onChange={v=>set("fecha",v)}/></Campo>
     </div>
-    {monto>0&&<p style={{margin:"10px 0 0",fontSize:12.5,color:GRIS,fontFamily:MONO}}>{f.metodo==="financiera"?`Comisión ${String(ajustes.fin_pct).replace(".",",")} % + USD ${ajustes.fin_fijo_usd} = ${fmtUsd(comision)} · se descuentan ${fmtUsd(monto+comision)} de la CC financiera`:f.metodo==="tarjeta"?`Comisión 3 % = ${fmtUsd(comision)} · costo total ${fmtUsd(monto+comision)}`:`Costo total ${fmtUsd(monto)}`}</p>}
+    {usd>0&&<p style={{margin:"10px 0 0",fontSize:12.5,color:GRIS,fontFamily:MONO}}>{f.metodo==="financiera"?`Comisión ${fmtUsd(comision)} · se descuentan ${fmtUsd(usd+comision)} de la CC financiera`:`Costo total ${fmtUsd(usd)}`}</p>}
     <div style={{marginTop:12}}><Archivo onFiles={(fs)=>set("archivo",fs[0])} label={f.archivo?f.archivo.name.slice(0,30):"Comprobante"} hint={f.archivo?"listo":"Pegá con Ctrl+V, arrastrá o elegí"}/></div>
     <div style={{marginTop:14}}><Btn kind="lima" onClick={registrar} disabled={guardando||monto<=0}>{guardando?"Guardando…":"Registrar pago"}</Btn></div>
   </div>;

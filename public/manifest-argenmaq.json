@@ -1,0 +1,1 @@
+{ "name": "Argenmaq — Admin", "short_name": "Argenmaq", "start_url": "/admin", "display": "standalone", "background_color": "#141517", "theme_color": "#141517", "icons": [{ "src": "/argenmaq-icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

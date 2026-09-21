@@ -5,7 +5,7 @@ import Landing from "./Landing";
 
 export const revalidate = 300;
 export const metadata = {
-  title: "Argenmaq — Maquinaria de China, puesta en tu puerta",
+  title: { absolute: "Argenmaq — Maquinaria de China, puesta en tu puerta" },
   description: "Elegís la máquina, ves el precio final con flete e impuestos en Argentina, y nosotros hacemos todo lo demás: fábrica, control, importación y entrega. Una empresa del grupo Argencargo.",
 };
 
