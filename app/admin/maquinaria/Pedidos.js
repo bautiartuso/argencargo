@@ -1,5 +1,5 @@
 "use client";
-// Operaciones de Argenmaq (AM-00001): un cliente de la base de Argencargo pide una o más máquinas
+// Operaciones de ARGENMAQ (AM-00001): un cliente de la base de Argencargo pide una o más máquinas
 // del catálogo; la operación congela precios y % de gestión y avanza por estados.
 // Por dentro: Resumen · Finanzas · Seguimiento · Entrega.
 // Finanzas sigue la metodología de las ops de Argencargo: presupuesto (anticipo = precio de la
@@ -345,8 +345,8 @@ function Seguimiento({op,ops,p,dq,recargar}){
   const [eventos,setEventos]=useState(null);
   useEffect(()=>{if(!op){setEventos([]);return;}(async()=>{try{const r=await dq("tracking_events",{filters:`?operation_id=eq.${op.id}&select=*&order=created_at.desc&limit=50`});setEventos(Array.isArray(r)?r:[]);}catch{setEventos([]);}})();},[op?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const vincular=async(id)=>{try{const o=ops.find(x=>x.id===id);await dq("cat_pedidos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{operation_id:id||null,operation_ref:o?o.operation_code:null}});await recargar();toast(id?"Vinculada":"Desvinculada");}catch(e){toast(e.message,"error");}};
-  const selector=<div style={{maxWidth:520}}><Campo label="Operación de Argencargo"><Desplegable value={p.operation_id||""} onChange={vincular} opciones={ops.map(o=>({v:o.id,l:`${o.operation_code}${o.description?` · ${o.description.slice(0,50)}`:""}`,sub:OP_ESTADO[o.status]||o.status}))} placeholder="Sin vincular" vacio="No hay operaciones a nombre de Argenmaq en Argencargo"/></Campo></div>;
-  if(!op)return <Sec titulo="Seguimiento">{selector}<p style={{margin:"12px 0 0",fontSize:13,color:GRIS}}>Cuando Argencargo abra la operación a nombre de Argenmaq, vinculala acá y el seguimiento aparece solo.</p></Sec>;
+  const selector=<div style={{maxWidth:520}}><Campo label="Operación de Argencargo"><Desplegable value={p.operation_id||""} onChange={vincular} opciones={ops.map(o=>({v:o.id,l:`${o.operation_code}${o.description?` · ${o.description.slice(0,50)}`:""}`,sub:OP_ESTADO[o.status]||o.status}))} placeholder="Sin vincular" vacio="No hay operaciones a nombre de ARGENMAQ en Argencargo"/></Campo></div>;
+  if(!op)return <Sec titulo="Seguimiento">{selector}<p style={{margin:"12px 0 0",fontSize:13,color:GRIS}}>Cuando Argencargo abra la operación a nombre de ARGENMAQ, vinculala acá y el seguimiento aparece solo.</p></Sec>;
   const hitos=[["Creada",op.created_at],["Despachada",op.dispatched_at],["Llegó a Argentina",op.arrived_in_argentina_at],["Despacho aduanero",op.cleared_customs_at],["Entregada",op.delivered_at]];
   return <>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>

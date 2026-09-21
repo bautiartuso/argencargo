@@ -1,5 +1,5 @@
 "use client";
-// Finanzas de Argenmaq: Resumen, Libro diario, cuenta corriente con la financiera y Tarifas.
+// Finanzas de ARGENMAQ: Resumen, Libro diario, cuenta corriente con la financiera y Tarifas.
 import { useState, useEffect } from "react";
 import { leerAjustes, precioMaquina, totalesPedido } from "../../../lib/catalogo-precio";
 import { INK,GRIS,BORDE,SUAVE,CARD,LIMA,LIMA_SUAVE,OK,WARN,BAD,MONO,LBL,TH,TD,GRID,DOS,Campo,Inp,Btn,Sec,Pill,Barra,Vacio,Dato,Barras,Desplegable,Fecha,Archivo,n,numONull,txtONull,fmtUsd,fmtMon,fmtK,fmtFecha,hoyISO,codigoOp,CATEG_MOV,MESES,MESES_C,ACTIVOS,toast,confirmDialog } from "./ui";
@@ -143,7 +143,7 @@ export function CCFinanciera({ses,dq,token,pedidos,ccs,recargar}){
       <Btn kind="lima" onClick={()=>setPanel(panel==="ingreso"?null:"ingreso")}>+ Ingreso</Btn>
     </Barra>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,marginBottom:14}}>
-      {[["ARS","pesos"],["USD","dólares"]].map(([m,l])=>{const v=saldo(m);return <Sec key={m} style={{marginBottom:0,borderTop:`3px solid ${LIMA}`}}><p style={{...LBL,marginBottom:6}}>Saldo en {l} ({m})</p><p style={{margin:0,fontSize:32,fontWeight:800,letterSpacing:"-0.02em",color:v>=0?LIMA:BAD,fontVariantNumeric:"tabular-nums"}}>{fmtMon(v,m)}</p><p style={{margin:"4px 0 0",fontSize:12.5,color:GRIS}}>{v>=0?"A favor de Argenmaq (la financiera debe)":"Argenmaq le debe a la financiera"}</p></Sec>;})}
+      {[["ARS","pesos"],["USD","dólares"]].map(([m,l])=>{const v=saldo(m);return <Sec key={m} style={{marginBottom:0,borderTop:`3px solid ${LIMA}`}}><p style={{...LBL,marginBottom:6}}>Saldo en {l} ({m})</p><p style={{margin:0,fontSize:32,fontWeight:800,letterSpacing:"-0.02em",color:v>=0?LIMA:BAD,fontVariantNumeric:"tabular-nums"}}>{fmtMon(v,m)}</p><p style={{margin:"4px 0 0",fontSize:12.5,color:GRIS}}>{v>=0?"A favor de ARGENMAQ (la financiera debe)":"ARGENMAQ le debe a la financiera"}</p></Sec>;})}
     </div>
     {panel==="ingreso"&&<CCMov tipo="ingreso" token={token} dq={dq} ses={ses} pedidos={pedidos} onCerrar={()=>setPanel(null)} onHecho={async()=>{setPanel(null);await recargar();}}/>}
     {panel==="retiro"&&<CCMov tipo="retiro" token={token} dq={dq} ses={ses} pedidos={pedidos} onCerrar={()=>setPanel(null)} onHecho={async()=>{setPanel(null);await recargar();}}/>}

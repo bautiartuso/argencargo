@@ -154,20 +154,28 @@ function General({ses,dq,ajustes,setAjustes,tema,setTema}){
     <div style={{display:"flex",justifyContent:"flex-end"}}><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn></div>
   </>;
 }
+const ROL_AM={admin:"Admin",socio:"Socio",empleado:"Empleado"};
 function Usuarios({ses,token}){
   const [lista,setLista]=useState(null);
-  const [edit,setEdit]=useState(null); // {id,email,password}
+  const [edit,setEdit]=useState(null);
+  const [q,setQ]=useState("");const [res,setRes]=useState([]);
   const [guardando,setGuardando]=useState(false);
-  const cargar=async()=>{try{const r=await fetch("/api/catalogo/usuarios",{headers:{Authorization:`Bearer ${token}`}});const d=await r.json();if(!r.ok)throw new Error(d.error||"Error");setLista(d.usuarios||[]);}catch(e){toast(e.message,"error");setLista([]);}};
+  const api=async(method,body,query)=>{const r=await fetch(`/api/catalogo/usuarios${query||""}`,{method,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw new Error(d.error||"Error");return d;};
+  const cargar=async()=>{try{const d=await api("GET");setLista(d.usuarios||[]);}catch(e){toast(e.message,"error");setLista([]);}};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
-  const rol=(p)=>p.role==="admin"?"Admin":p.role==="empleado"?"Empleado":p.is_gi_partner?"Socio GI":p.role;
-  const guardar=async()=>{if(!edit.password&&!edit.email){toast("Cargá un mail o una contraseña nueva","error");return;}if(edit.password&&edit.password.length<8){toast("La contraseña tiene que tener al menos 8 caracteres","error");return;}setGuardando(true);try{
-    const r=await fetch("/api/catalogo/usuarios",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({id:edit.id,email:edit.email!==edit.emailOriginal?edit.email:undefined,password:edit.password||undefined})});
-    const d=await r.json();if(!r.ok)throw new Error(d.error||"No se pudo");toast("Usuario actualizado");setEdit(null);await cargar();
+  const rolDe=(p)=>p.argenmaq_role?ROL_AM[p.argenmaq_role]:p.role==="admin"?"Admin":p.role==="empleado"?"Empleado":p.is_gi_partner?"Socio GI":"—";
+  const setRol=async(p,rol)=>{try{await api("POST",{id:p.id,argenmaq_role:rol||null});toast(rol?`${p.email} ahora es ${ROL_AM[rol].toLowerCase()} de ARGENMAQ`:"Acceso quitado");setRes([]);setQ("");await cargar();}catch(e){toast(e.message,"error");}};
+  const buscar=async(t)=>{setQ(t);if(t.trim().length<3){setRes([]);return;}try{const d=await api("GET",null,`?buscar=${encodeURIComponent(t.trim())}`);setRes((d.usuarios||[]).filter(u=>!u.argenmaq_role));}catch{setRes([]);}};
+  const guardar=async()=>{if(!edit.password&&edit.email===edit.emailOriginal){toast("Cargá un mail o una contraseña nueva","error");return;}if(edit.password&&edit.password.length<8){toast("La contraseña tiene que tener al menos 8 caracteres","error");return;}setGuardando(true);try{
+    await api("POST",{id:edit.id,email:edit.email!==edit.emailOriginal?edit.email:undefined,password:edit.password||undefined});toast("Usuario actualizado");setEdit(null);await cargar();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   if(lista===null)return <p style={{color:GRIS}}>Cargando…</p>;
   return <div>
-    <p style={{margin:"0 0 14px",fontSize:13.5,color:GRIS}}>Todos los que entran ven todo el panel. Para dar acceso a alguien nuevo se le asigna el rol desde el admin de Argencargo; acá se le cambia el mail o la contraseña.</p>
+    <Sec titulo="Dar acceso a ARGENMAQ">
+      <p style={{margin:"0 0 10px",fontSize:13,color:GRIS}}>Buscá una cuenta por mail (tiene que existir en el sistema) y elegí su rol.</p>
+      <Inp placeholder="mail@…" value={q} onChange={e=>buscar(e.target.value)}/>
+      {res.length>0&&<div style={{marginTop:8,border:`1px solid ${BORDE}`,borderRadius:14,overflow:"hidden"}}>{res.map(u=><div key={u.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 14px",borderTop:`1px solid ${BORDE}`,fontSize:13.5,flexWrap:"wrap"}}><span style={{flex:1,fontWeight:700}}>{u.email}</span>{["admin","socio","empleado"].map(r=><Btn key={r} small onClick={()=>setRol(u,r)}>{ROL_AM[r]}</Btn>)}</div>)}</div>}
+    </Sec>
     {edit&&<Sec titulo={`Editar ${edit.emailOriginal}`} style={{borderColor:LIMA}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <Campo label="Email"><Inp type="email" value={edit.email} onChange={e=>setEdit(x=>({...x,email:e.target.value}))}/></Campo>
@@ -175,10 +183,10 @@ function Usuarios({ses,token}){
       </div>
       <div style={{display:"flex",gap:8,marginTop:14}}><Btn kind="lima" onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"Guardar"}</Btn><Btn onClick={()=>setEdit(null)}>Cancelar</Btn></div>
     </Sec>}
-    <div style={{border:`1px solid ${BORDE}`,borderRadius:18,overflow:"hidden",background:CARD}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
-      <thead><tr>{["Usuario","Rol","Desde",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
-      <tbody>{lista.map(p=><tr key={p.id}><td style={{...TD,fontWeight:800}}>{p.email}{p.id===ses.user?.id&&<span style={{fontFamily:MONO,fontSize:10,color:GRIS,marginLeft:8}}>VOS</span>}</td><td style={TD}><span style={{fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",padding:"3px 8px",borderRadius:6,background:p.role==="admin"?LIMA_SUAVE:SUAVE}}>{rol(p).toUpperCase()}</span></td><td style={{...TD,color:GRIS,fontFamily:MONO,fontSize:12.5}}>{fmtFecha(p.created_at)}</td><td style={{...TD,textAlign:"right"}}><Btn small onClick={()=>setEdit({id:p.id,email:p.email||"",emailOriginal:p.email||"",password:""})}>Editar</Btn></td></tr>)}</tbody>
-    </table></div>
+    <div style={{border:`1px solid ${BORDE}`,borderRadius:18,overflow:"hidden",background:CARD}}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13.5}}>
+      <thead><tr>{["Usuario","Rol en ARGENMAQ","En Argencargo","Desde",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+      <tbody>{lista.map(p=><tr key={p.id}><td style={{...TD,fontWeight:800}}>{p.email}{p.id===ses.user?.id&&<span style={{fontFamily:MONO,fontSize:10,color:GRIS,marginLeft:8}}>VOS</span>}</td><td style={{...TD,minWidth:170}}><Desplegable value={p.argenmaq_role||""} onChange={v=>setRol(p,v)} opciones={[{v:"admin",l:"Admin"},{v:"socio",l:"Socio"},{v:"empleado",l:"Empleado"}]} placeholder={p.role==="admin"||p.role==="empleado"||p.is_gi_partner?`Por Argencargo (${rolDe(p)})`:"Sin acceso"} buscar={false}/></td><td style={{...TD,color:GRIS,fontSize:12.5}}>{p.role==="admin"?"Admin":p.role==="empleado"?"Empleado":p.is_gi_partner?"Socio GI":"Cliente"}</td><td style={{...TD,color:GRIS,fontFamily:MONO,fontSize:12.5}}>{fmtFecha(p.created_at)}</td><td style={{...TD,textAlign:"right"}}><Btn small onClick={()=>setEdit({id:p.id,email:p.email||"",emailOriginal:p.email||"",password:""})}>Editar</Btn></td></tr>)}</tbody>
+    </table></div></div>
   </div>;
 }
 function GastoCats({dq,gastoCats,recargar}){

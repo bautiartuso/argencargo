@@ -15,13 +15,13 @@ const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 // ── Sesión: sirve la del admin (ac_admin) o la del panel GI (ac_gi_s) ─────────────────────
 const leer=(k)=>{try{const d=localStorage.getItem(k);return d?JSON.parse(d):null;}catch{return null;}};
 const cargarSesion=()=>{
-  const a=leer("ac_admin");if(a?.token&&["admin","empleado"].includes(a?.profile?.role))return{token:a.token,refresh:a.refresh_token,user:a.user,rol:a.profile.role,origen:"ac_admin",profile:a.profile};
-  const g=leer("ac_gi_s");if(g?.access_token)return{token:g.access_token,refresh:g.refresh_token,user:g.user,rol:"gi",origen:"ac_gi_s"};
+  const a=leer("ac_admin");if(a?.token&&["admin","empleado"].includes(a?.profile?.role))return{token:a.token,refresh:a.refresh_token,user:a.user,rol:a.profile.argenmaq_role||a.profile.role,origen:"ac_admin",profile:a.profile};
+  const g=leer("ac_gi_s");if(g?.access_token)return{token:g.access_token,refresh:g.refresh_token,user:g.user,rol:g.argenmaq_role||"socio",origen:"ac_gi_s"};
   return null;
 };
 const guardarSesion=(s)=>{try{
   if(s.origen==="ac_admin")localStorage.setItem("ac_admin",JSON.stringify({token:s.token,refresh_token:s.refresh,user:s.user,profile:s.profile}));
-  else localStorage.setItem("ac_gi_s",JSON.stringify({access_token:s.token,refresh_token:s.refresh,user:s.user}));
+  else localStorage.setItem("ac_gi_s",JSON.stringify({access_token:s.token,refresh_token:s.refresh,user:s.user,argenmaq_role:s.rol}));
 }catch{}};
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});let body=null;try{body=await r.json();}catch{}return{status:r.status,body};};
 const jwtExp=(t)=>{try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).exp*1000;}catch{return 0;}};
@@ -45,16 +45,16 @@ function Login({onLogin}){
   const entrar=async(e)=>{e.preventDefault();if(!email||!pw)return;setLo(true);setErr("");
     const r=(await sf("/auth/v1/token?grant_type=password",{method:"POST",body:JSON.stringify({email,password:pw})})).body;
     if(!r?.access_token){setErr(r?.error_description||"Credenciales inválidas");setLo(false);return;}
-    const p=(await sf(`/rest/v1/profiles?id=eq.${r.user.id}&select=id,role,is_gi_partner,email`,{headers:{Authorization:`Bearer ${r.access_token}`}})).body;
+    const p=(await sf(`/rest/v1/profiles?id=eq.${r.user.id}&select=id,role,is_gi_partner,argenmaq_role,email`,{headers:{Authorization:`Bearer ${r.access_token}`}})).body;
     const prof=Array.isArray(p)?p[0]:null;
-    if(!prof||!(["admin","empleado"].includes(prof.role)||prof.is_gi_partner===true)){setErr("Tu cuenta no tiene acceso.");setLo(false);return;}
+    if(!prof||!(["admin","empleado"].includes(prof.role)||prof.is_gi_partner===true||prof.argenmaq_role)){setErr("Tu cuenta no tiene acceso a ARGENMAQ.");setLo(false);return;}
     const esAdmin=["admin","empleado"].includes(prof.role);
-    const s={token:r.access_token,refresh:r.refresh_token,user:r.user,rol:esAdmin?prof.role:"gi",origen:esAdmin?"ac_admin":"ac_gi_s",profile:prof};
+    const s={token:r.access_token,refresh:r.refresh_token,user:r.user,rol:prof.argenmaq_role||(esAdmin?prof.role:"socio"),origen:esAdmin?"ac_admin":"ac_gi_s",profile:prof};
     guardarSesion(s);onLogin(s);setLo(false);};
   return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem"}}>
     <form onSubmit={entrar} style={{width:"100%",maxWidth:380}}>
       <Logo/>
-      <h1 style={{fontSize:26,fontWeight:800,letterSpacing:"-0.02em",margin:"22px 0 18px"}}>Panel de Argenmaq</h1>
+      <h1 style={{fontSize:26,fontWeight:800,letterSpacing:"-0.02em",margin:"22px 0 18px"}}>Panel de ARGENMAQ</h1>
       <Inp type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username"/>
       <Inp type="password" placeholder="Contraseña" value={pw} onChange={e=>setPw(e.target.value)} autoComplete="current-password" style={{marginTop:10}}/>
       {err&&<p style={{color:"var(--mq-bad)",fontSize:13,margin:"10px 0 0"}}>{err}</p>}

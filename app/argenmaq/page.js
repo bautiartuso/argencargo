@@ -1,11 +1,11 @@
-// Landing de Argenmaq. Copia la estructura de b2box.pro (barra de grupo arriba que desaparece
+// Landing de ARGENMAQ. Copia la estructura de b2box.pro (barra de grupo arriba que desaparece
 // al scrollear, nav fija, tipografía enorme, pasos, grilla "bento" con mini animaciones), con
 // contenido propio. Tipografía y colores provisorios hasta que Bautista los cierre.
 import Landing from "./Landing";
 
 export const revalidate = 300;
 export const metadata = {
-  title: { absolute: "Argenmaq — Maquinaria de China, puesta en tu puerta" },
+  title: { absolute: "ARGENMAQ — Maquinaria de China, puesta en tu puerta" },
   description: "Elegís la máquina, ves el precio final con flete e impuestos en Argentina, y nosotros hacemos todo lo demás: fábrica, control, importación y entrega. Una empresa del grupo Argencargo.",
 };
 

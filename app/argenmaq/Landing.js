@@ -2,7 +2,7 @@
 
 const Y = "#FFD200", INK = "#15171A", GRIS = "#6B7075", BORDE = "#E6E7EA", SUAVE = "#F4F5F7";
 const MONO = "'JetBrains Mono',ui-monospace,Menlo,monospace";
-const WA = "https://wa.me/5491125088580?text=Hola%20Argenmaq%2C%20quiero%20cotizar%20una%20m%C3%A1quina";
+const WA = "https://wa.me/5491125088580?text=Hola%20ARGENMAQ%2C%20quiero%20cotizar%20una%20m%C3%A1quina";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
@@ -157,7 +157,7 @@ export default function Landing({ rubros }) {
     <section className="cta" id="empresa">
       <div className="wrap">
         <h2>Contanos qué máquina necesitás.</h2>
-        <p style={{ color: GRIS, fontSize: 18, margin: "0 auto 24px", maxWidth: 560 }}>Te pasamos el precio puesto en tu puerta y, si te cierra, arrancamos. Argenmaq es una empresa del grupo Argencargo.</p>
+        <p style={{ color: GRIS, fontSize: 18, margin: "0 auto 24px", maxWidth: 560 }}>Te pasamos el precio puesto en tu puerta y, si te cierra, arrancamos. ARGENMAQ es una empresa del grupo Argencargo.</p>
         <a className="btn y" href={WA}>Hablar por WhatsApp</a>
       </div>
     </section>

@@ -1,5 +1,5 @@
 "use client";
-// Vista pública de la CC Financiera de Argenmaq para la financiera: solo lectura, con Excel.
+// Vista pública de la CC Financiera de ARGENMAQ para la financiera: solo lectura, con Excel.
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 
@@ -30,7 +30,7 @@ export default function CCPublica(){
       {!d&&!err&&<p style={{color:"#9DA3A9"}}>Cargando…</p>}
       {d&&<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginBottom:14}}>
-          {[["ARS",saldo("ARS")],["USD",saldo("USD")]].map(([m,v])=><div key={m} style={S.card}><p style={S.lbl}>Saldo en {m==="ARS"?"pesos":"dólares"} ({m})</p><p style={{margin:"6px 0 4px",fontSize:30,fontWeight:800,letterSpacing:"-0.02em",color:v>=0?"#FFD200":"#F28B8B",fontVariantNumeric:"tabular-nums"}}>{fmt(v,m)}</p><p style={{margin:0,fontSize:12.5,color:"#9DA3A9"}}>{v>=0?"A favor de Argenmaq (la financiera debe)":"Argenmaq debe a la financiera"}</p></div>)}
+          {[["ARS",saldo("ARS")],["USD",saldo("USD")]].map(([m,v])=><div key={m} style={S.card}><p style={S.lbl}>Saldo en {m==="ARS"?"pesos":"dólares"} ({m})</p><p style={{margin:"6px 0 4px",fontSize:30,fontWeight:800,letterSpacing:"-0.02em",color:v>=0?"#FFD200":"#F28B8B",fontVariantNumeric:"tabular-nums"}}>{fmt(v,m)}</p><p style={{margin:0,fontSize:12.5,color:"#9DA3A9"}}>{v>=0?"A favor de ARGENMAQ (la financiera debe)":"ARGENMAQ debe a la financiera"}</p></div>)}
         </div>
         <div style={{...S.card,padding:0,overflow:"hidden"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 18px"}}><b style={{fontSize:15}}>Movimientos</b><span style={{fontFamily:MONO,fontSize:12,color:"#9DA3A9"}}>{filas.length}</span><span style={{flex:1}}/>{["todo","ARS","USD"].map(k=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${filtro===k?"#FFD200":"#2B2E33"}`,background:filtro===k?"#3A3305":"transparent",color:"#F3F3F1",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{k==="todo"?"Todo":k}</button>)}</div>

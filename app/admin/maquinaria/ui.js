@@ -1,5 +1,5 @@
 "use client";
-// Piezas visuales de Argenmaq. Los colores son variables CSS para que el tema cambie de una.
+// Piezas visuales de ARGENMAQ. Los colores son variables CSS para que el tema cambie de una.
 // Regla de Bautista (20/09/2026): NADA nativo del navegador — ni selects, ni alerts, ni el botón
 // de "Seleccionar archivo", ni calendarios. Todo desplegable/aviso/búsqueda es del sistema.
 import { useState, useRef, useEffect } from "react";
@@ -92,7 +92,7 @@ export function Desplegable({value,onChange,opciones,placeholder="Elegir…",bus
     </div>}
   </div>;
 }
-// Fecha: calendario propio, con los colores y la tipografía de Argenmaq (nunca el del navegador
+// Fecha: calendario propio, con los colores y la tipografía de ARGENMAQ (nunca el del navegador
 // ni el navy/dorado de Argencargo).
 const DIAS=["LU","MA","MI","JU","VI","SÁ","DO"];
 const isoDe=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -119,7 +119,7 @@ export function Fecha({value,onChange,small,placeholder="Fecha"}){
     </div>}
   </div>;
 }
-// Avisos y confirmaciones del sistema, con los colores de Argenmaq.
+// Avisos y confirmaciones del sistema, con los colores de ARGENMAQ.
 let _push=null;
 export function toast(msg,variant="ok",opts={}){_push?.({t:"aviso",msg:String(msg),tipo:variant==="error"?"error":variant==="warn"?"warn":"ok",dur:opts.duration});}
 export function confirmDialog(msg,opts={}){return new Promise(res=>{if(!_push){res(false);return;}_push({t:"confirmar",msg:String(msg),ok:opts.ok||"Aceptar",cancelar:opts.cancelar||"Cancelar",res});});}

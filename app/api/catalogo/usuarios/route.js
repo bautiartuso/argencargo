@@ -13,10 +13,10 @@ async function quien(token) {
   const u = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!u.ok) return null;
   const { id } = await u.json();
-  const p = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}&select=id,role,is_gi_partner`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` }, cache: "no-store" });
+  const p = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${id}&select=id,role,is_gi_partner,argenmaq_role`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` }, cache: "no-store" });
   const rows = await p.json();
   const prof = Array.isArray(rows) ? rows[0] : null;
-  if (!prof || !(["admin", "empleado"].includes(prof.role) || prof.is_gi_partner === true)) return null;
+  if (!prof || !(["admin", "empleado"].includes(prof.role) || prof.is_gi_partner === true || prof.argenmaq_role)) return null;
   return prof;
 }
 const svc = (path, init = {}) => fetch(`${SB_URL}${path}`, { ...init, cache: "no-store", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", ...(init.headers || {}) } });
@@ -26,7 +26,14 @@ export async function GET(req) {
     if (!SB_SERVICE) return Response.json({ error: "server no configurado" }, { status: 500 });
     const token = String(req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
     if (!(await quien(token))) return Response.json({ error: "No autorizado" }, { status: 401 });
-    const r = await svc(`/rest/v1/profiles?select=id,email,role,is_gi_partner,created_at&or=(role.eq.admin,role.eq.empleado,is_gi_partner.eq.true)&order=created_at.asc`);
+    const q = new URL(req.url).searchParams.get("buscar");
+    if (q) {
+      const s = q.trim().toLowerCase().replace(/[%,()]/g, "");
+      const r = await svc(`/rest/v1/profiles?select=id,email,role,is_gi_partner,argenmaq_role&email=ilike.*${encodeURIComponent(s)}*&limit=6`);
+      const rows = await r.json();
+      return Response.json({ usuarios: Array.isArray(rows) ? rows : [] });
+    }
+    const r = await svc(`/rest/v1/profiles?select=id,email,role,is_gi_partner,argenmaq_role,created_at&or=(role.eq.admin,role.eq.empleado,is_gi_partner.eq.true,argenmaq_role.not.is.null)&order=created_at.asc`);
     const rows = await r.json();
     return Response.json({ usuarios: Array.isArray(rows) ? rows : [] });
   } catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
@@ -40,10 +47,19 @@ export async function POST(req) {
     const b = await req.json();
     const id = String(b.id || "");
     if (!id) return Response.json({ error: "Falta el usuario" }, { status: 400 });
-    // Solo cuentas del equipo.
-    const p = await (await svc(`/rest/v1/profiles?id=eq.${id}&select=id,role,is_gi_partner`)).json();
+    const p = await (await svc(`/rest/v1/profiles?id=eq.${id}&select=id,role,is_gi_partner,argenmaq_role`)).json();
     const prof = Array.isArray(p) ? p[0] : null;
-    if (!prof || !(["admin", "empleado"].includes(prof.role) || prof.is_gi_partner === true)) return Response.json({ error: "Ese usuario no es del equipo" }, { status: 400 });
+    if (!prof) return Response.json({ error: "Usuario no encontrado" }, { status: 400 });
+    // Rol en ARGENMAQ: admin / socio / empleado / null (sin acceso). Puede darse a cualquier cuenta.
+    if ("argenmaq_role" in b) {
+      const rol = b.argenmaq_role || null;
+      if (rol && !["admin", "socio", "empleado"].includes(rol)) return Response.json({ error: "Rol inválido" }, { status: 400 });
+      const r = await svc(`/rest/v1/profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ argenmaq_role: rol }) });
+      if (!r.ok) return Response.json({ error: "No se pudo cambiar el rol" }, { status: 400 });
+      if (!b.password && !b.email) return Response.json({ ok: true });
+    }
+    const esEquipo = ["admin", "empleado"].includes(prof.role) || prof.is_gi_partner === true || prof.argenmaq_role || ("argenmaq_role" in b && b.argenmaq_role);
+    if (!esEquipo) return Response.json({ error: "Ese usuario no es del equipo" }, { status: 400 });
     const cambios = {};
     if (b.password) { if (String(b.password).length < 8) return Response.json({ error: "La contraseña tiene que tener al menos 8 caracteres" }, { status: 400 }); cambios.password = String(b.password); }
     if (b.email) { cambios.email = String(b.email).trim().toLowerCase(); cambios.email_confirm = true; }
