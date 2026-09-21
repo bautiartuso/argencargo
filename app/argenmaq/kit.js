@@ -18,8 +18,9 @@ export const CSS = `
 .amq .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
 .amq .grupoWrap{display:flex;justify-content:center;padding:14px 16px 12px}
 .amq .grupo{display:inline-flex;gap:4px;padding:5px;border-radius:999px;background:#15171A;box-shadow:0 10px 40px rgba(0,0,0,0.25)}
-.amq .grupo a{padding:9px 22px;border-radius:999px;font-family:${MONO};font-size:11px;letter-spacing:0.12em;color:#9DA3A9;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
-.amq .grupo a.on{background:#fff;color:#15171A}.amq .grupo a b{color:#FFD200}.amq .grupo a.on b{color:#15171A;background:#FFD200;padding:0 4px;border-radius:3px}
+.amq .grupo a{padding:8px 20px;border-radius:999px;display:inline-flex;align-items:center;gap:9px;opacity:0.75;transition:opacity 140ms}
+.amq .grupo a:hover{opacity:1}.amq .grupo a.on{background:#fff;opacity:1}
+.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:20px}.amq .grupo .txt{height:13px}
 .amq .nav{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--borde)}
 .amq .nav .wrap{display:flex;align-items:center;gap:22px;height:74px}
 .amq .nav .links{display:flex;gap:22px;font-size:14.5px;font-weight:600;color:var(--gris);flex:1;justify-content:center}
@@ -150,8 +151,8 @@ export function Marco({ actual, children, sinGrupo }) {
   const n = carrito.reduce((s, i) => s + (i.qty || 1), 0);
   return <>
     {!sinGrupo && <div className="grupoWrap"><div className="grupo">
-      <a className="on" href="/"><img src="/argenmaq/isotipo.png" alt="" style={{ height: 14, width: "auto" }} />ARGEN<b>MAQ</b></a>
-      <a href="https://www.argencargo.com.ar">ARGEN<b>CARGO</b></a>
+      <a className="on" href="/" aria-label="ARGENMAQ"><img className="iso" src="/argenmaq/isotipo.png" alt="" /><img className="txt" src="/argenmaq/texto.png" alt="ARGENMAQ" /></a>
+      <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src="/argencargo/texto-blanco.png" alt="ARGENCARGO" /></a>
     </div></div>}
     <header className="nav">
       <div className="wrap">
@@ -173,7 +174,7 @@ export function Marco({ actual, children, sinGrupo }) {
     {children}
     <footer>
       <div className="wrap">
-        <div><Logo alto={28} /><div style={{ marginTop: 8 }}>{t("grupo")}. <a href="https://www.argencargo.com.ar" style={{ fontWeight: 700 }}>argencargo.com.ar</a></div></div>
+        <div><Logo alto={28} /><div style={{ marginTop: 8 }}>{t("grupo")}. <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>argencargo.com.ar</a></div></div>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}><a href="/terminos">{t("legalT")}</a><a href="/privacidad">{t("legalP")}</a><a href="/legal">{t("legalL")}</a><a href="/admin">Panel</a></div>
       </div>
     </footer>

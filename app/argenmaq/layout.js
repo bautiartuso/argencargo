@@ -28,11 +28,6 @@ export const metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
   },
-  icons: {
-    icon: [{ url: "/argenmaq/favicon-64.png", type: "image/png", sizes: "64x64" }, { url: "/argenmaq/icon-512.png", type: "image/png", sizes: "512x512" }],
-    apple: [{ url: "/argenmaq/apple-180.png", sizes: "180x180", type: "image/png" }],
-    shortcut: "/argenmaq/favicon-64.png",
-  },
 };
 
 export default function ArgenmaqLayout({ children }) {
