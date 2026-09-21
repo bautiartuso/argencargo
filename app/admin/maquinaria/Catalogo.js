@@ -153,7 +153,8 @@ export function Proveedores({ses,dq,provs,prods,arbol,cats,recargar}){
 
 // ── Ficha de una máquina ──────────────────────────────────────────────────────────────────
 const BULTO=()=>({cantidad:"1",largo_cm:"",ancho_cm:"",alto_cm:"",peso_kg:""});
-const VACIO={nombre_raw:"",modelo:"",specs_raw:"",descripcion_raw:"",nombre:"",descripcion:"",categoria:"",subcategoria:"",condicion:"nueva",anio:"",horas_uso:"",garantia_meses:"",fotos:[],video_url:"",exw_usd:"",moq:"1",dias_produccion:"",packing:[BULTO()],ncm_code:"",ncm_descripcion:"",die:"",te:"",iva:"",intervencion:null,proveedor_id:"",link_producto:"",notas_internas:""};
+const MEDIDAS=()=>({largo_cm:"",ancho_cm:"",alto_cm:"",peso_kg:""});
+const VACIO={medidas:MEDIDAS(),nombre_raw:"",modelo:"",specs_raw:"",descripcion_raw:"",nombre:"",descripcion:"",categoria:"",subcategoria:"",condicion:"nueva",anio:"",horas_uso:"",garantia_meses:"",fotos:[],video_url:"",exw_usd:"",moq:"1",dias_produccion:"",packing:[BULTO()],ncm_code:"",ncm_descripcion:"",die:"",te:"",iva:"",intervencion:null,proveedor_id:"",link_producto:"",notas_internas:""};
 
 function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onCerrar,onProvNuevo}){
   const [p,setP]=useState(null);
@@ -172,7 +173,8 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     setP(row);
     const s=(v)=>v==null?"":String(v);
     const pk=Array.isArray(row.packing)&&row.packing.length?row.packing.map(b=>({cantidad:s(b.cantidad||1),largo_cm:s(b.largo_cm),ancho_cm:s(b.ancho_cm),alto_cm:s(b.alto_cm),peso_kg:s(b.peso_kg)})):[BULTO()];
-    setF({...VACIO,nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:s(row.specs_raw),descripcion_raw:s(row.descripcion_raw),nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
+    const md=row.medidas||{};
+    setF({...VACIO,medidas:{largo_cm:s(md.largo_cm),ancho_cm:s(md.ancho_cm),alto_cm:s(md.alto_cm),peso_kg:s(md.peso_kg)},nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:s(row.specs_raw),descripcion_raw:s(row.descripcion_raw),nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
   }catch(e){toast(e.message,"error");}};
   useEffect(()=>{cargarP();},[id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -206,6 +208,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     condicion:f.condicion,anio:numONull(f.anio),horas_uso:numONull(f.horas_uso),garantia_meses:numONull(f.garantia_meses),fotos:f.fotos,video_url:txtONull(f.video_url),
     exw_usd:numONull(f.exw_usd),moq:numONull(f.moq)||1,dias_produccion:numONull(f.dias_produccion),
     packing:f.packing.map(b=>({cantidad:n(b.cantidad),largo_cm:n(b.largo_cm),ancho_cm:n(b.ancho_cm),alto_cm:n(b.alto_cm),peso_kg:n(b.peso_kg)})),
+    medidas:Object.values(f.medidas||{}).some(v=>String(v??"").trim()!=="")?{largo_cm:numONull(f.medidas.largo_cm),ancho_cm:numONull(f.medidas.ancho_cm),alto_cm:numONull(f.medidas.alto_cm),peso_kg:numONull(f.medidas.peso_kg)}:null,
     ncm_code:txtONull(f.ncm_code),ncm_descripcion:txtONull(f.ncm_descripcion),die:numONull(f.die),te:numONull(f.te),iva:numONull(f.iva),intervencion:f.intervencion||null,antidumping:ad?{prefix:ad.ncm_prefix,producto:ad.producto,medida_tipo:ad.medida_tipo,valor:ad.valor,unidad:ad.unidad,resolucion:ad.resolucion}:null,
     proveedor_id:f.proveedor_id||null,link_producto:txtONull(f.link_producto),notas_internas:txtONull(f.notas_internas),
   });
@@ -317,6 +320,12 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
       </div>
     </Sec>
 
+    <Sec titulo="Medidas de la máquina" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>ARMADA · LA VE EL CLIENTE</span>}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+        {[["largo_cm","Largo (cm)"],["ancho_cm","Ancho (cm)"],["alto_cm","Alto (cm)"],["peso_kg","Peso (kg)"]].map(([k,l])=><Campo key={k} label={l}><Inp type="number" step="0.1" value={f.medidas?.[k]??""} onChange={e=>set("medidas",{...(f.medidas||MEDIDAS()),[k]:e.target.value})}/></Campo>)}
+      </div>
+    </Sec>
+
     <Sec titulo="Packing" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>{totM3.toFixed(3).replace(".",",")} M³ · {totKg.toLocaleString("es-AR")} KG</span>}>
       <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"separate",borderSpacing:"0 6px"}}>
         <thead><tr>{["Bulto","Cantidad","Largo (cm)","Ancho (cm)","Alto (cm)","Peso bruto (kg)",""].map(h=><th key={h} style={{...LBL,display:"table-cell",textAlign:"left",padding:"0 6px 2px",marginBottom:0,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
@@ -386,7 +395,9 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   // Precio en pesos: mismo dólar que ve el cliente en la web (blue venta + 5).
   const [tc,setTc]=useState(null);
   useEffect(()=>{let vivo=true;fetch("/api/argenmaq/dolar").then(r=>r.json()).then(d=>{if(vivo&&d?.tc)setTc(Number(d.tc));}).catch(()=>{});return()=>{vivo=false;};},[]);
-  const setC=(k,campo,v)=>setCfg(x=>{const nx={...x,[k]:{...x[k],[campo]:v}};if(campo==="mostrar"&&v&&k!=="aereo"){const otra=k==="maritimo_lcl"?"maritimo_integral":"maritimo_lcl";nx[otra]={...nx[otra],mostrar:false};}return nx;});
+  // Las dos marítimas pueden estar disponibles a la vez: el cliente igual ve una sola, la más
+  // barata para la cantidad que pide (escalera de precios). Apagar una es un veto explícito.
+  const setC=(k,campo,v)=>setCfg(x=>({...x,[k]:{...x[k],[campo]:v}}));
   // Los interruptores se resuelven solos: la vía que se puede ofrecer queda visible y la que no,
   // apagada. Entre las dos marítimas el cliente ve una sola, así que se prende la más barata. La
   // elección automática corre una vez al entrar; después manda lo que toque Bautista (21/09/2026).
@@ -400,11 +411,7 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
         autoHecho.current=true;
         const aer=calc.find(v=>v.k==="aereo");
         if(aer&&!aer.bloqueada&&nx.aereo.mostrar==null){nx.aereo={...nx.aereo,mostrar:true};ch=true;}
-        const mar=calc.filter(v=>v.k!=="aereo"&&!v.bloqueada);
-        if(mar.length&&!mar.some(v=>nx[v.k].mostrar)){
-          const mejor=mar.slice().sort((a,b)=>precioDeVia(a,x[a.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes).total-precioDeVia(b,x[b.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes).total)[0];
-          nx[mejor.k]={...nx[mejor.k],mostrar:true};ch=true;
-        }
+        for(const v of calc)if(v.k!=="aereo"&&!v.bloqueada&&nx[v.k].mostrar==null){nx[v.k]={...nx[v.k],mostrar:true};ch=true;}
       }
       for(const v of calc)if(nx[v.k].mostrar==null){nx[v.k]={...nx[v.k],mostrar:false};ch=true;}
       return ch?nx:x;
@@ -412,7 +419,7 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   },[calc]); // eslint-disable-line react-hooks/exhaustive-deps
   const precioDe=(v)=>precioDeVia(v,cfg[v.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes);
   const guardar=async()=>{setGuardando(true);try{
-    const canales=armarCanales(calc,cfg,{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes);
+    const canales=armarCanales(calc,cfg,{...f,exw_usd:f.exw_usd,markup_pct:p.markup_pct,nombre:f.nombre||f.nombre_raw},ajustes,tarifas);
     await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{canales}});toast("Canales guardados");await onVolver();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   const pv=(x)=>String(x).replace(".",",");
@@ -461,7 +468,7 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
           <p style={{margin:"3px 0 0",fontFamily:MONO,fontSize:13,color:GRIS}}>{tc?`≈ ARS ${Math.round(pr.total*tc).toLocaleString("es-AR")}`:"≈ ARS —"}</p>
         </div>
         <div style={{flex:1}}/>
-        <Toggle on={c.mostrar} disabled={v.bloqueada} onChange={val=>setC(v.k,"mostrar",val)} l={v.bloqueada?"No se puede ofrecer":(c.mostrar?"Se muestra al cliente":"Oculta para el cliente")} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”":v.qty>1?`Se ofrece desde ${v.qty} unidades · el cliente la ve como “vía marítima”`:"El cliente la ve como “vía marítima” (solo una de las dos)"}/>
+        <Toggle on={c.mostrar} disabled={v.bloqueada} onChange={val=>setC(v.k,"mostrar",val)} l={v.bloqueada?"No se puede ofrecer":(c.mostrar?"Se muestra al cliente":"Oculta para el cliente")} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”, opcional en el carrito":v.qty>1?`Se ofrece desde ${v.qty} unidades · el cliente ve la marítima más barata para su cantidad`:"El cliente ve la marítima más barata para su cantidad"}/>
         {/* Las advertencias van al final: primero el número, después por qué no se puede ofrecer */}
         {v.motivos.length>0&&<div style={{background:v.bloqueada?BAD_BG:WARN_BG,borderRadius:12,padding:"10px 12px",marginTop:10,fontSize:12.5}}>{v.motivos.map((m,i)=><p key={i} style={{margin:i?"4px 0 0":0,color:m.bloquea?BAD:WARN}}>⚠ {m.t}</p>)}</div>}
       </Sec>;})}

@@ -19,7 +19,10 @@ async function sb(path, opts = {}) {
   if (!r.ok) throw new Error(d?.message || `HTTP ${r.status}`);
   return d;
 }
-const clave = (canales) => VIAS.map((v) => `${canales?.[v.k]?.argencargo?.total ?? ""}|${canales?.[v.k]?.precio?.total ?? ""}`).join(";");
+const clave = (canales) => {
+  const e = canales?.escalera ? { ...canales.escalera, calculado_at: undefined } : null;
+  return VIAS.map((v) => `${canales?.[v.k]?.argencargo?.total ?? ""}|${canales?.[v.k]?.precio?.total ?? ""}`).join(";") + "#" + JSON.stringify(e);
+};
 
 async function recalcular() {
   if (!SB_SERVICE) return { error: "sin_service_role" };
@@ -43,7 +46,7 @@ async function recalcular() {
     revisadas++;
     const an = analizarVias({ ...m, nombre: m.nombre || m.nombre_raw }, tarifas);
     const cfg = Object.fromEntries(VIAS.map((v) => [v.k, { mostrar: !!m.canales[v.k]?.mostrar, gestion_pct: m.canales[v.k]?.gestion_pct ?? "", gestion_usd: m.canales[v.k]?.gestion_usd ?? "" }]));
-    const nuevos = armarCanales(an, cfg, m, ajustes);
+    const nuevos = armarCanales(an, cfg, m, ajustes, tarifas);
     if (clave(m.canales) === clave(nuevos)) continue;
     await sb(`/cat_productos?id=eq.${m.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ canales: nuevos }) });
     actualizadas.push(m.numero);
