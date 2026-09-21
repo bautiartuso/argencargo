@@ -31,7 +31,7 @@ async function recalcular() {
     sb("/calc_config?select=key,value"),
     clienteId ? sb(`/client_tariff_overrides?client_id=eq.${clienteId}&select=*`) : Promise.resolve([]),
     clienteId ? sb(`/clients?id=eq.${clienteId}&select=id,tax_condition,client_code`) : Promise.resolve([]),
-    sb("/cat_productos?select=id,numero,nombre,nombre_raw,exw_usd,packing,die,te,iva,ncm_code,markup_pct,canales&order=numero.asc"),
+    sb("/cat_productos?select=id,numero,nombre,nombre_raw,exw_usd,packing,die,te,iva,ncm_code,intervencion,markup_pct,canales&order=numero.asc"),
   ]);
   const config = {}; (cfgRows || []).forEach((r) => { config[r.key] = Number(r.value); });
   const tarifas = { tariffs: tariffs || [], config, overrides: overrides || [], cliente: (cls || [])[0] || { tax_condition: "responsable_inscripto" } };

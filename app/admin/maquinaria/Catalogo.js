@@ -378,7 +378,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
 }
 
 function Canales({p,f,dq,ajustes,tarifas,onVolver}){
-  const inicial=()=>{const c=p.canales||{};return Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!c[v.k]?.mostrar,gestion_pct:c[v.k]?.gestion_pct!=null?String(c[v.k].gestion_pct):"",gestion_usd:c[v.k]?.gestion_usd!=null?String(c[v.k].gestion_usd):""}]));};
+  const inicial=()=>{const c=p.canales||{};return Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:c[v.k]?.mostrar??null,gestion_pct:c[v.k]?.gestion_pct!=null?String(c[v.k].gestion_pct):"",gestion_usd:c[v.k]?.gestion_usd!=null?String(c[v.k].gestion_usd):""}]));};
   const [cfg,setCfg]=useState(inicial);
   const [guardando,setGuardando]=useState(false);
   const calc=useMemo(()=>analizarVias({...f,nombre:f.nombre||f.nombre_raw},tarifas),[f.exw_usd,f.packing,f.die,f.te,f.iva,f.ncm_code,tarifas]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -387,11 +387,29 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   const [tc,setTc]=useState(null);
   useEffect(()=>{let vivo=true;fetch("/api/argenmaq/dolar").then(r=>r.json()).then(d=>{if(vivo&&d?.tc)setTc(Number(d.tc));}).catch(()=>{});return()=>{vivo=false;};},[]);
   const setC=(k,campo,v)=>setCfg(x=>{const nx={...x,[k]:{...x[k],[campo]:v}};if(campo==="mostrar"&&v&&k!=="aereo"){const otra=k==="maritimo_lcl"?"maritimo_integral":"maritimo_lcl";nx[otra]={...nx[otra],mostrar:false};}return nx;});
-  // El interruptor no puede quedar prendido en una vía que no se puede ofrecer (courier con
-  // bultos de más de 45 kg, LCL que no llega al mínimo, sin tarifas): se apaga solo.
-  useEffect(()=>{const bloq=calc.filter(v=>v.bloqueada).map(v=>v.k);if(!bloq.length)return;
-    setCfg(x=>{let cambio=false;const nx={...x};for(const k of bloq){if(nx[k]?.mostrar){nx[k]={...nx[k],mostrar:false};cambio=true;}}return cambio?nx:x;});
-  },[calc]);
+  // Los interruptores se resuelven solos: la vía que se puede ofrecer queda visible y la que no,
+  // apagada. Entre las dos marítimas el cliente ve una sola, así que se prende la más barata. La
+  // elección automática corre una vez al entrar; después manda lo que toque Bautista (21/09/2026).
+  const autoHecho=useRef(false);
+  useEffect(()=>{
+    if(!calc.length)return;
+    setCfg(x=>{
+      let ch=false;const nx={...x};
+      for(const v of calc)if(v.bloqueada&&nx[v.k].mostrar){nx[v.k]={...nx[v.k],mostrar:false};ch=true;}
+      if(!autoHecho.current){
+        autoHecho.current=true;
+        const aer=calc.find(v=>v.k==="aereo");
+        if(aer&&!aer.bloqueada&&nx.aereo.mostrar==null){nx.aereo={...nx.aereo,mostrar:true};ch=true;}
+        const mar=calc.filter(v=>v.k!=="aereo"&&!v.bloqueada);
+        if(mar.length&&!mar.some(v=>nx[v.k].mostrar)){
+          const mejor=mar.slice().sort((a,b)=>precioDeVia(a,x[a.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes).total-precioDeVia(b,x[b.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes).total)[0];
+          nx[mejor.k]={...nx[mejor.k],mostrar:true};ch=true;
+        }
+      }
+      for(const v of calc)if(nx[v.k].mostrar==null){nx[v.k]={...nx[v.k],mostrar:false};ch=true;}
+      return ch?nx:x;
+    });
+  },[calc]); // eslint-disable-line react-hooks/exhaustive-deps
   const precioDe=(v)=>precioDeVia(v,cfg[v.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes);
   const guardar=async()=>{setGuardando(true);try{
     const canales=armarCanales(calc,cfg,{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes);
@@ -438,12 +456,12 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
           <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"4px 12px",fontSize:12.5,textAlign:"left",marginBottom:10}}>
             {fila("Gestión",fmtUsd(pr.gestion))}
           </div>
-          <p style={{margin:0,fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",textTransform:"uppercase",color:GRIS}}>Precio de venta al cliente</p>
+          <p style={{margin:0,fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",textTransform:"uppercase",color:GRIS}}>{v.qty>1?`Precio por unidad · desde ${v.qty} u.`:"Precio de venta al cliente"}</p>
           <p style={{margin:"4px 0 0",fontFamily:MONO,fontSize:22,fontWeight:800,lineHeight:1.1}}>{fmtUsd(pr.total)}</p>
           <p style={{margin:"3px 0 0",fontFamily:MONO,fontSize:13,color:GRIS}}>{tc?`≈ ARS ${Math.round(pr.total*tc).toLocaleString("es-AR")}`:"≈ ARS —"}</p>
         </div>
         <div style={{flex:1}}/>
-        <Toggle on={c.mostrar} disabled={v.bloqueada} onChange={val=>setC(v.k,"mostrar",val)} l={v.bloqueada?"No se puede ofrecer":(c.mostrar?"Se muestra al cliente":"Oculta para el cliente")} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”":"El cliente la ve como “vía marítima” (solo una de las dos)"}/>
+        <Toggle on={c.mostrar} disabled={v.bloqueada} onChange={val=>setC(v.k,"mostrar",val)} l={v.bloqueada?"No se puede ofrecer":(c.mostrar?"Se muestra al cliente":"Oculta para el cliente")} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”":v.qty>1?`Se ofrece desde ${v.qty} unidades · el cliente la ve como “vía marítima”`:"El cliente la ve como “vía marítima” (solo una de las dos)"}/>
         {/* Las advertencias van al final: primero el número, después por qué no se puede ofrecer */}
         {v.motivos.length>0&&<div style={{background:v.bloqueada?BAD_BG:WARN_BG,borderRadius:12,padding:"10px 12px",marginTop:10,fontSize:12.5}}>{v.motivos.map((m,i)=><p key={i} style={{margin:i?"4px 0 0":0,color:m.bloquea?BAD:WARN}}>⚠ {m.t}</p>)}</div>}
       </Sec>;})}
