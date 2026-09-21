@@ -149,6 +149,12 @@ function Shell({ses,setSes,tema,setTema}){
       setOps(Array.isArray(o)?o:[]);cliente=Array.isArray(cl)?cl[0]:null;overrides=Array.isArray(ov)?ov:[];
     }
     setTarifas({tariffs:Array.isArray(tf)?tf:[],config,overrides,cliente:cliente||{tax_condition:"responsable_inscripto"}});
+    // Los costos de cada máquina quedan guardados con la tarifa del día en que se calcularon.
+    // Al abrir el panel se recalculan solos contra las tarifas de hoy (y la preferencial de
+    // ARGENMAQ): si alguno cambió, se vuelve a leer la lista. También corre por cron cada hora.
+    fetch("/api/argenmaq/recalcular",{method:"POST"}).then(r=>r.json()).then(d=>{
+      if(d?.actualizadas?.length)dq("cat_productos",{filters:"?select=id,numero,estado,nombre,nombre_raw,modelo,categoria,subcategoria,exw_usd,markup_pct,dias_produccion,fotos,updated_at,proveedor_id,precio_verificado_at&order=updated_at.desc"}).then(x=>{if(Array.isArray(x))setProds(x);}).catch(()=>{});
+    }).catch(()=>{});
   }catch(e){toast(e.message,"error");}setListo(true);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const arbol=useMemo(()=>cats.filter(c=>!c.padre_slug).map(c=>({...c,subs:cats.filter(s=>s.padre_slug===c.slug)})),[cats]);

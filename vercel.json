@@ -67,6 +67,10 @@
     {
       "path": "/api/cron/linkedin-redactor",
       "schedule": "45 11 * * 1"
+    },
+    {
+      "path": "/api/argenmaq/recalcular",
+      "schedule": "20 * * * *"
     }
   ]
 }

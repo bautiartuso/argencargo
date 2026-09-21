@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { comprimirImagen } from "../../../lib/img";
 import { precioMaquina } from "../../../lib/catalogo-precio";
+import { VIAS, analizarVias, precioDeVia, armarCanales } from "../../../lib/canales-maquinas";
 import { calcOpBudget } from "../../../lib/calc";
 import { INK,GRIS,BORDE,SUAVE,CARD,BG,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,TA,Btn,Sec,Pill,Barra,Vacio,Desplegable,Archivo,Toggle,Solapas,n,numONull,txtONull,fmtUsd,fmtNum,codigoMaq,ChipMaq,toast,confirmDialog } from "./ui";
 
@@ -31,32 +32,6 @@ export function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,aju
   const [verCats,setVerCats]=useState(false);
   const nombreCat=(slug)=>cats.find(c=>c.slug===slug)?.nombre||slug||"";
   const nuevo=async()=>{try{const r=await dq("cat_productos",{method:"POST",body:{estado:"borrador",created_by:ses.user?.id||null}});const p=Array.isArray(r)?r[0]:r;await recargar();setSel(p.id);}catch(e){toast(e.message,"error");}};
-  // Las tarifas de Argencargo (y la preferencial de ARGENMAQ) cambian con el tiempo, pero los
-  // costos quedan congelados en cada máquina al guardar sus canales. Esto los vuelve a calcular
-  // todos de una, respetando la gestión y la visibilidad ya configuradas (21/09/2026).
-  const [recalc,setRecalc]=useState(false);
-  const recalcularTodo=async()=>{
-    if(!tarifas?.tariffs?.length){toast("No hay tarifas de Argencargo cargadas","error");return;}
-    if(!await confirmDialog("¿Recalcular los precios de todas las máquinas con las tarifas de Argencargo de hoy? Se respeta la gestión y qué vías ve el cliente.",{confirmText:"Recalcular"}))return;
-    setRecalc(true);
-    try{
-      const rows=await dq("cat_productos",{filters:"?select=id,numero,nombre,nombre_raw,exw_usd,packing,die,te,iva,ncm_code,markup_pct,canales&order=numero.asc"});
-      let tocadas=0;
-      for(const m of (Array.isArray(rows)?rows:[])){
-        if(!m.canales)continue;
-        const an=analizarVias({...m,nombre:m.nombre||m.nombre_raw},tarifas);
-        const cfg=Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!m.canales[v.k]?.mostrar,gestion_pct:m.canales[v.k]?.gestion_pct??"",gestion_usd:m.canales[v.k]?.gestion_usd??""}]));
-        const nuevos=armarCanales(an,cfg,m,ajustes);
-        const antes=VIAS.map(v=>`${m.canales[v.k]?.argencargo?.total??""}|${m.canales[v.k]?.precio?.total??""}`).join(";");
-        const ahora=VIAS.map(v=>`${nuevos[v.k]?.argencargo?.total??""}|${nuevos[v.k]?.precio?.total??""}`).join(";");
-        if(antes===ahora)continue;
-        await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${m.id}`,body:{canales:nuevos}});tocadas++;
-      }
-      toast(tocadas?`${tocadas} máquina${tocadas>1?"s":""} con precios actualizados`:"Los precios ya estaban al día","success");
-      if(tocadas)await recargar();
-    }catch(e){toast(e.message,"error");}
-    setRecalc(false);
-  };
   const filtradas=prods.filter(p=>(fEstado==="todos"||p.estado===fEstado)&&(!busq.trim()||`${codigoMaq(p)} ${p.nombre||""} ${p.nombre_raw||""} ${p.modelo||""}`.toLowerCase().includes(busq.toLowerCase())));
   const cuenta=(e)=>prods.filter(p=>p.estado===e).length;
   const plano=busq.trim().length>0;
@@ -68,7 +43,6 @@ export function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,aju
       {!verCats&&[["todos","Todas",prods.length],["publicado","Publicadas",cuenta("publicado")],["borrador","Borradores",cuenta("borrador")],["pausado","Pausadas",cuenta("pausado")]].map(([k,l,c])=><Pill key={k} on={fEstado===k} onClick={()=>setFEstado(k)}>{l} <span style={{color:GRIS,fontFamily:MONO,fontSize:11}}>{c}</span></Pill>)}
       {!verCats&&<input placeholder="Buscar…" value={busq} onChange={e=>setBusq(e.target.value)} style={{...INP,flex:1,minWidth:180,borderRadius:999,padding:"10px 18px"}}/>}
       {verCats&&<span style={{flex:1}}/>}
-      {!verCats&&<Btn onClick={recalcularTodo} disabled={recalc}>{recalc?"Recalculando…":"Recalcular precios"}</Btn>}
       <Btn onClick={()=>setVerCats(v=>!v)}>{verCats?"← Máquinas":"Categorías"}</Btn>
       <Btn kind="lima" onClick={nuevo}>+ Nueva máquina</Btn>
     </Barra>
@@ -403,56 +377,6 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
   </div>;
 }
 
-// ── Canales y precios: costos de Argencargo por vía + gestión por vía ─────────────────────
-// Regla de Bautista (20/09/2026): se muestran SIEMPRE las tres vías con sus números; si una no se
-// puede ofrecer, se explica por qué, pero no se esconde. Quien carga decide cuáles ve el cliente.
-// El cliente nunca ve "LCL/FCL" ni "Integral": ve "vía aérea" y "vía marítima", así que como
-// mucho una de las dos marítimas puede estar visible.
-const VIAS=[
-  {k:"aereo",l:"Aéreo Courier Comercial",sub:"7-10 días",channel:"aereo_blanco"},
-  {k:"maritimo_lcl",l:"Marítimo Carga LCL/FCL",sub:"60-70 días",channel:"maritimo_blanco"},
-  {k:"maritimo_integral",l:"Marítimo Integral",sub:"60-70 días · impuestos incluidos",channel:"maritimo_negro"},
-];
-// Costos de Argencargo por vía para una máquina (1 unidad) y los motivos por los que una vía no
-// se puede ofrecer. No depende de la gestión configurada: lo usan la pantalla de canales y el
-// recálculo masivo de precios (cuando cambian las tarifas de Argencargo o la preferencial del cliente).
-export function analizarVias(m,tarifas){
-  const packing=Array.isArray(m.packing)?m.packing:[];
-  const items=[{description:m.nombre||"Máquina",unit_price_usd:n(m.exw_usd),quantity:1,import_duty_rate:n(m.die),statistics_rate:n(m.te),iva_rate:(m.iva===""||m.iva==null)?21:n(m.iva),iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:m.ncm_code||null,package_ids:packing.map((_,i)=>i)}];
-  const pks=packing.map((b,i)=>({id:i,quantity:n(b.cantidad,1),gross_weight_kg:n(b.peso_kg),length_cm:n(b.largo_cm),width_cm:n(b.ancho_cm),height_cm:n(b.alto_cm)}));
-  const totCBM=pks.reduce((x,b)=>x+(b.length_cm*b.width_cm*b.height_cm/1e6)*b.quantity,0);
-  const pesado=pks.some(b=>b.gross_weight_kg>45);
-  const cliente=tarifas?.cliente||{tax_condition:"responsable_inscripto"};
-  return VIAS.map(v=>{
-    let r=null,err=null;
-    try{r=calcOpBudget({channel:v.channel,origin:"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},items,pks,tarifas?.tariffs||[],tarifas?.config||{},tarifas?.overrides||[],cliente);}catch(e){err=e.message;}
-    const motivos=[];
-    if(v.k==="aereo"&&pesado)motivos.push({t:"Hay bultos de más de 45 kg: el courier comercial no los acepta.",bloquea:true});
-    if(v.k==="maritimo_lcl"&&totCBM<0.5)motivos.push({t:`Cubica ${totCBM.toFixed(3).replace(".",",")} m³, menos de 0,5 m³: LCL/FCL no se ofrece para una sola máquina (factura mínimo 1 m³).`,bloquea:true});
-    if(v.k==="maritimo_lcl"&&totCBM>=0.5&&totCBM<1)motivos.push({t:"Factura mínimo 1 m³.",bloquea:false});
-    if(!tarifas?.tariffs?.length)motivos.push({t:"Sin tarifas cargadas de Argencargo.",bloquea:true});
-    return {...v,r,err,motivos,bloqueada:!r||!!err||motivos.some(x=>x.bloquea),totCBM};
-  });
-}
-// Precio de venta de una vía con la gestión configurada (porcentaje o monto fijo).
-export function precioDeVia(via,cfgVia,m,ajustes){
-  const arg=via.r?n(via.r.totalAbonar):0;
-  const gp=String(cfgVia?.gestion_pct??"").trim()!==""?cfgVia.gestion_pct:(m.markup_pct??null);
-  const gu=String(cfgVia?.gestion_usd??"").trim()!==""?cfgVia.gestion_usd:null;
-  const r=precioMaquina({exwUnit:n(m.exw_usd),qty:1,ajustes,gestionPct:gp,gestionUsd:gu,importacion:arg});
-  return {exw:r.exw,financiero:r.financiero,gestion:r.gestion,base:r.base,maquina:r.precio,argencargo:arg,total:r.total};
-}
-// El objeto `canales` tal cual se guarda en cat_productos.
-export function armarCanales(analisis,cfg,m,ajustes){
-  return Object.fromEntries(analisis.map(v=>{
-    const c=cfg?.[v.k]||{};const pr=precioDeVia(v,c,m,ajustes);
-    return [v.k,{mostrar:!!c.mostrar&&!v.bloqueada,
-      gestion_pct:String(c.gestion_pct??"").trim()===""?null:n(c.gestion_pct),
-      gestion_usd:String(c.gestion_usd??"").trim()===""?null:n(c.gestion_usd),
-      argencargo:v.r?{flete:n(v.r.flete),seguro:n(v.r.seguro),sobrepeso:n(v.r.overweightSurcharge),impuestos:n(v.r.totalTax),recargo:n(v.r.surcharge),total:n(v.r.totalAbonar),unidad:v.r.fleteAmt}:null,
-      precio:pr,motivos:v.motivos,calculado_at:new Date().toISOString()}];
-  }));
-}
 function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   const inicial=()=>{const c=p.canales||{};return Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!c[v.k]?.mostrar,gestion_pct:c[v.k]?.gestion_pct!=null?String(c[v.k].gestion_pct):"",gestion_usd:c[v.k]?.gestion_usd!=null?String(c[v.k].gestion_usd):""}]));};
   const [cfg,setCfg]=useState(inicial);
@@ -475,7 +399,7 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   const pv=(x)=>String(x).replace(".",",");
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 18px"}}><Btn small onClick={onVolver}>← Ficha</Btn><span style={{fontFamily:MONO,fontSize:13,fontWeight:600,letterSpacing:"0.08em"}}>{codigoMaq(p)}</span><span style={{fontWeight:800}}>{f.nombre||f.nombre_raw}</span><span style={{flex:1}}/><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>EXW {fmtUsd(f.exw_usd)} · {totCBM.toFixed(3).replace(".",",")} M³ · {pks.reduce((s,b)=>s+b.gross_weight_kg*b.quantity,0)} KG</span></div>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 18px"}}><Btn small onClick={onVolver}>← Ficha</Btn><span style={{fontFamily:MONO,fontSize:13,fontWeight:600,letterSpacing:"0.08em"}}>{codigoMaq(p)}</span><span style={{fontWeight:800}}>{f.nombre||f.nombre_raw}</span><span style={{flex:1}}/><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>EXW {fmtUsd(f.exw_usd)} · {totCBM.toFixed(3).replace(".",",")} M³ · {(f.packing||[]).reduce((s,b)=>s+n(b.peso_kg)*n(b.cantidad,1),0)} KG</span></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:14}}>
       {calc.map(v=>{const c=cfg[v.k];const pr=precioDe(v);const r=v.r;
         const fila=(l,val,st={})=><><span style={{color:GRIS,...(st.l||{})}}>{l}</span><span style={{fontFamily:MONO,textAlign:"right",...(st.v||{})}}>{val}</span></>;
