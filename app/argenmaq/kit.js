@@ -19,9 +19,10 @@ html,body{overflow-x:clip!important}
 .amq .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
 .amq .grupoWrap{display:flex;justify-content:center;padding:12px 16px 0}
 .amq .grupo{display:inline-flex;gap:8px}
-.amq .grupo a{width:236px;height:42px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--suave);border:1px solid var(--borde);opacity:0.75;transition:opacity 140ms,background 140ms}
-.amq .grupo a:hover{opacity:1}.amq .grupo a.on{background:var(--card);opacity:1;box-shadow:0 6px 18px rgba(0,0,0,0.08)}
-.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:22px}.amq .grupo .txt{height:13px}
+.amq .grupo a{width:236px;height:42px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:10px;background:#15171A;border:2px solid transparent;box-shadow:0 6px 18px rgba(0,0,0,0.12);transition:transform 140ms}
+.amq .grupo a:hover{transform:translateY(-1px)}.amq .grupo a.on{border-color:var(--y)}
+.amq[data-tema="oscuro"] .grupo a{background:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
+.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:22px}.amq .grupo .txt{height:15px}.amq .grupo .ac .iso{height:19px}.amq .grupo .ac .txt{height:12px}
 .amq .nav{position:sticky;top:10px;z-index:30;padding:0 20px;margin:12px 0 0}
 .amq .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
 .amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
@@ -53,7 +54,7 @@ html,body{overflow-x:clip!important}
 @keyframes girar{to{transform:rotate(360deg)}}
 @keyframes tick{0%,100%{opacity:0.2}50%{opacity:1}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
+@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:12px}.amq .grupo .ac .iso{height:15px}.amq .grupo .ac .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
 `;
 
 // ── Idiomas ───────────────────────────────────────────────────────────────────────────────
@@ -151,10 +152,11 @@ export function Ico({ d, size = 17 }) { return <svg width={size} height={size} v
 export function Marco({ actual, children, sinGrupo }) {
   const { tema, setTema, lang, setLang, t, moneda, setMoneda, tc, ses, cliente, carrito } = useAM();
   const n = carrito.reduce((s, i) => s + (i.qty || 1), 0);
+  const inv = tema === "oscuro"; // pills invertidas respecto del fondo: oscuras sobre claro, blancas sobre oscuro
   return <>
     {!sinGrupo && <div className="grupoWrap"><div className="grupo">
-      <a className="on" href="/" aria-label="ARGENMAQ"><img className="iso" src="/argenmaq/isotipo.png" alt="" /><img className="txt" src="/argenmaq/texto.png" alt="ARGENMAQ" /></a>
-      <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src="/argencargo/texto.png" alt="ARGENCARGO" /></a>
+      <a className="on am" href="/" aria-label="ARGENMAQ"><img className="iso" src={inv ? "/argenmaq/isotipo.png" : "/argenmaq/isotipo-blanco.png"} alt="" /><img className="txt" src={inv ? "/argenmaq/texto.png" : "/argenmaq/texto-blanco.png"} alt="ARGENMAQ" /></a>
+      <a className="ac" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src={inv ? "/argencargo/texto.png" : "/argencargo/texto-blanco.png"} alt="ARGENCARGO" /></a>
     </div></div>}
     <header className="nav">
       <div className="isla">
