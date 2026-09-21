@@ -303,7 +303,9 @@ function CampoWa({ f, set, t }) {
     <input className="inp" type="tel" inputMode="numeric" value={f.wa_num ?? ""} onChange={(e) => set("wa_num", e.target.value.replace(/[^0-9 ]/g, ""))} placeholder="9 11 2345 6789" required />
   </div></div>;
 }
-const partirWa = (w) => { const s = String(w || "").replace(/[^0-9+]/g, ""); const pref = PREFIJOS.find((p) => s.startsWith(p)); return pref ? { wa_pref: pref, wa_num: s.slice(pref.length) } : { wa_pref: "+54", wa_num: s.replace(/^\+/, "") }; };
+// Los clientes de Argencargo tienen el número guardado como dígitos con país y sin "+" (5491…):
+// se reconoce el prefijo igual, con o sin el signo, para no duplicarlo al guardar.
+const partirWa = (w) => { const s = String(w || "").replace(/[^0-9+]/g, ""); const d = s.replace(/^\+/, ""); const pref = [...PREFIJOS].sort((a, b) => b.length - a.length).find((p) => d.startsWith(p.slice(1))); return pref ? { wa_pref: pref, wa_num: d.slice(pref.length - 1) } : { wa_pref: "+54", wa_num: d }; };
 const unirWa = (f) => `${f.wa_pref || "+54"}${String(f.wa_num || "").replace(/\D/g, "")}`;
 
 function Login({ login, t, volver }) {
