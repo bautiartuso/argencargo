@@ -17,11 +17,11 @@ export const CSS = `
 html,body{overflow-x:clip!important}
 .amq *{box-sizing:border-box}.amq a{color:inherit;text-decoration:none}.amq button{font-family:inherit}
 .amq .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
-.amq .grupoWrap{display:flex;justify-content:center;padding:7px 16px;background:#15171A}
-.amq .grupo{display:inline-flex;gap:6px}
-.amq .grupo a{height:34px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;background:#fff;opacity:0.68;transition:opacity 140ms}
-.amq .grupo a:hover,.amq .grupo a.on{opacity:1}
-.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:11px}
+.amq .grupoWrap{display:flex;justify-content:center;padding:12px 16px 0}
+.amq .grupo{display:inline-flex;gap:8px}
+.amq .grupo a{width:236px;height:42px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--suave);border:1px solid var(--borde);opacity:0.75;transition:opacity 140ms,background 140ms}
+.amq .grupo a:hover{opacity:1}.amq .grupo a.on{background:var(--card);opacity:1;box-shadow:0 6px 18px rgba(0,0,0,0.08)}
+.amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:22px}.amq .grupo .txt{height:13px}
 .amq .nav{position:sticky;top:10px;z-index:30;padding:0 20px;margin:12px 0 0}
 .amq .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
 .amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
@@ -53,7 +53,7 @@ html,body{overflow-x:clip!important}
 @keyframes girar{to{transform:rotate(360deg)}}
 @keyframes tick{0%,100%{opacity:0.2}50%{opacity:1}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{padding:0 12px;height:30px}.amq .grupo .iso{height:16px}.amq .grupo .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
+@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
 `;
 
 // ── Idiomas ───────────────────────────────────────────────────────────────────────────────
