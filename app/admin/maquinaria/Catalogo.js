@@ -31,6 +31,32 @@ export function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,aju
   const [verCats,setVerCats]=useState(false);
   const nombreCat=(slug)=>cats.find(c=>c.slug===slug)?.nombre||slug||"";
   const nuevo=async()=>{try{const r=await dq("cat_productos",{method:"POST",body:{estado:"borrador",created_by:ses.user?.id||null}});const p=Array.isArray(r)?r[0]:r;await recargar();setSel(p.id);}catch(e){toast(e.message,"error");}};
+  // Las tarifas de Argencargo (y la preferencial de ARGENMAQ) cambian con el tiempo, pero los
+  // costos quedan congelados en cada máquina al guardar sus canales. Esto los vuelve a calcular
+  // todos de una, respetando la gestión y la visibilidad ya configuradas (21/09/2026).
+  const [recalc,setRecalc]=useState(false);
+  const recalcularTodo=async()=>{
+    if(!tarifas?.tariffs?.length){toast("No hay tarifas de Argencargo cargadas","error");return;}
+    if(!await confirmDialog("¿Recalcular los precios de todas las máquinas con las tarifas de Argencargo de hoy? Se respeta la gestión y qué vías ve el cliente.",{confirmText:"Recalcular"}))return;
+    setRecalc(true);
+    try{
+      const rows=await dq("cat_productos",{filters:"?select=id,numero,nombre,nombre_raw,exw_usd,packing,die,te,iva,ncm_code,markup_pct,canales&order=numero.asc"});
+      let tocadas=0;
+      for(const m of (Array.isArray(rows)?rows:[])){
+        if(!m.canales)continue;
+        const an=analizarVias({...m,nombre:m.nombre||m.nombre_raw},tarifas);
+        const cfg=Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!m.canales[v.k]?.mostrar,gestion_pct:m.canales[v.k]?.gestion_pct??"",gestion_usd:m.canales[v.k]?.gestion_usd??""}]));
+        const nuevos=armarCanales(an,cfg,m,ajustes);
+        const antes=VIAS.map(v=>`${m.canales[v.k]?.argencargo?.total??""}|${m.canales[v.k]?.precio?.total??""}`).join(";");
+        const ahora=VIAS.map(v=>`${nuevos[v.k]?.argencargo?.total??""}|${nuevos[v.k]?.precio?.total??""}`).join(";");
+        if(antes===ahora)continue;
+        await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${m.id}`,body:{canales:nuevos}});tocadas++;
+      }
+      toast(tocadas?`${tocadas} máquina${tocadas>1?"s":""} con precios actualizados`:"Los precios ya estaban al día","success");
+      if(tocadas)await recargar();
+    }catch(e){toast(e.message,"error");}
+    setRecalc(false);
+  };
   const filtradas=prods.filter(p=>(fEstado==="todos"||p.estado===fEstado)&&(!busq.trim()||`${codigoMaq(p)} ${p.nombre||""} ${p.nombre_raw||""} ${p.modelo||""}`.toLowerCase().includes(busq.toLowerCase())));
   const cuenta=(e)=>prods.filter(p=>p.estado===e).length;
   const plano=busq.trim().length>0;
@@ -42,6 +68,7 @@ export function Maquinas({ses,dq,token,cats,arbol,provs,setProvs,prods,antid,aju
       {!verCats&&[["todos","Todas",prods.length],["publicado","Publicadas",cuenta("publicado")],["borrador","Borradores",cuenta("borrador")],["pausado","Pausadas",cuenta("pausado")]].map(([k,l,c])=><Pill key={k} on={fEstado===k} onClick={()=>setFEstado(k)}>{l} <span style={{color:GRIS,fontFamily:MONO,fontSize:11}}>{c}</span></Pill>)}
       {!verCats&&<input placeholder="Buscar…" value={busq} onChange={e=>setBusq(e.target.value)} style={{...INP,flex:1,minWidth:180,borderRadius:999,padding:"10px 18px"}}/>}
       {verCats&&<span style={{flex:1}}/>}
+      {!verCats&&<Btn onClick={recalcularTodo} disabled={recalc}>{recalc?"Recalculando…":"Recalcular precios"}</Btn>}
       <Btn onClick={()=>setVerCats(v=>!v)}>{verCats?"← Máquinas":"Categorías"}</Btn>
       <Btn kind="lima" onClick={nuevo}>+ Nueva máquina</Btn>
     </Barra>
@@ -386,16 +413,17 @@ const VIAS=[
   {k:"maritimo_lcl",l:"Marítimo Carga LCL/FCL",sub:"60-70 días",channel:"maritimo_blanco"},
   {k:"maritimo_integral",l:"Marítimo Integral",sub:"60-70 días · impuestos incluidos",channel:"maritimo_negro"},
 ];
-function Canales({p,f,dq,ajustes,tarifas,onVolver}){
-  const inicial=()=>{const c=p.canales||{};return Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!c[v.k]?.mostrar,gestion_pct:c[v.k]?.gestion_pct!=null?String(c[v.k].gestion_pct):"",gestion_usd:c[v.k]?.gestion_usd!=null?String(c[v.k].gestion_usd):""}]));};
-  const [cfg,setCfg]=useState(inicial);
-  const [guardando,setGuardando]=useState(false);
-  const items=[{description:f.nombre||f.nombre_raw||"Máquina",unit_price_usd:n(f.exw_usd),quantity:1,import_duty_rate:n(f.die),statistics_rate:n(f.te),iva_rate:f.iva!==""?n(f.iva):21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:f.ncm_code||null,package_ids:f.packing.map((_,i)=>i)}];
-  const pks=f.packing.map((b,i)=>({id:i,quantity:n(b.cantidad,1),gross_weight_kg:n(b.peso_kg),length_cm:n(b.largo_cm),width_cm:n(b.ancho_cm),height_cm:n(b.alto_cm)}));
-  const totCBM=pks.reduce((s,b)=>s+(b.length_cm*b.width_cm*b.height_cm/1e6)*b.quantity,0);
+// Costos de Argencargo por vía para una máquina (1 unidad) y los motivos por los que una vía no
+// se puede ofrecer. No depende de la gestión configurada: lo usan la pantalla de canales y el
+// recálculo masivo de precios (cuando cambian las tarifas de Argencargo o la preferencial del cliente).
+export function analizarVias(m,tarifas){
+  const packing=Array.isArray(m.packing)?m.packing:[];
+  const items=[{description:m.nombre||"Máquina",unit_price_usd:n(m.exw_usd),quantity:1,import_duty_rate:n(m.die),statistics_rate:n(m.te),iva_rate:(m.iva===""||m.iva==null)?21:n(m.iva),iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:m.ncm_code||null,package_ids:packing.map((_,i)=>i)}];
+  const pks=packing.map((b,i)=>({id:i,quantity:n(b.cantidad,1),gross_weight_kg:n(b.peso_kg),length_cm:n(b.largo_cm),width_cm:n(b.ancho_cm),height_cm:n(b.alto_cm)}));
+  const totCBM=pks.reduce((x,b)=>x+(b.length_cm*b.width_cm*b.height_cm/1e6)*b.quantity,0);
   const pesado=pks.some(b=>b.gross_weight_kg>45);
   const cliente=tarifas?.cliente||{tax_condition:"responsable_inscripto"};
-  const calc=useMemo(()=>VIAS.map(v=>{
+  return VIAS.map(v=>{
     let r=null,err=null;
     try{r=calcOpBudget({channel:v.channel,origin:"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},items,pks,tarifas?.tariffs||[],tarifas?.config||{},tarifas?.overrides||[],cliente);}catch(e){err=e.message;}
     const motivos=[];
@@ -403,9 +431,34 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
     if(v.k==="maritimo_lcl"&&totCBM<0.5)motivos.push({t:`Cubica ${totCBM.toFixed(3).replace(".",",")} m³, menos de 0,5 m³: LCL/FCL no se ofrece para una sola máquina (factura mínimo 1 m³).`,bloquea:true});
     if(v.k==="maritimo_lcl"&&totCBM>=0.5&&totCBM<1)motivos.push({t:"Factura mínimo 1 m³.",bloquea:false});
     if(!tarifas?.tariffs?.length)motivos.push({t:"Sin tarifas cargadas de Argencargo.",bloquea:true});
-    const bloqueada=!r||!!err||motivos.some(m=>m.bloquea);
-    return {...v,r,err,motivos,bloqueada};
-  }),[f.exw_usd,f.packing,f.die,f.te,f.iva,tarifas]); // eslint-disable-line react-hooks/exhaustive-deps
+    return {...v,r,err,motivos,bloqueada:!r||!!err||motivos.some(x=>x.bloquea),totCBM};
+  });
+}
+// Precio de venta de una vía con la gestión configurada (porcentaje o monto fijo).
+export function precioDeVia(via,cfgVia,m,ajustes){
+  const arg=via.r?n(via.r.totalAbonar):0;
+  const gp=String(cfgVia?.gestion_pct??"").trim()!==""?cfgVia.gestion_pct:(m.markup_pct??null);
+  const gu=String(cfgVia?.gestion_usd??"").trim()!==""?cfgVia.gestion_usd:null;
+  const r=precioMaquina({exwUnit:n(m.exw_usd),qty:1,ajustes,gestionPct:gp,gestionUsd:gu,importacion:arg});
+  return {exw:r.exw,financiero:r.financiero,gestion:r.gestion,base:r.base,maquina:r.precio,argencargo:arg,total:r.total};
+}
+// El objeto `canales` tal cual se guarda en cat_productos.
+export function armarCanales(analisis,cfg,m,ajustes){
+  return Object.fromEntries(analisis.map(v=>{
+    const c=cfg?.[v.k]||{};const pr=precioDeVia(v,c,m,ajustes);
+    return [v.k,{mostrar:!!c.mostrar&&!v.bloqueada,
+      gestion_pct:String(c.gestion_pct??"").trim()===""?null:n(c.gestion_pct),
+      gestion_usd:String(c.gestion_usd??"").trim()===""?null:n(c.gestion_usd),
+      argencargo:v.r?{flete:n(v.r.flete),seguro:n(v.r.seguro),sobrepeso:n(v.r.overweightSurcharge),impuestos:n(v.r.totalTax),recargo:n(v.r.surcharge),total:n(v.r.totalAbonar),unidad:v.r.fleteAmt}:null,
+      precio:pr,motivos:v.motivos,calculado_at:new Date().toISOString()}];
+  }));
+}
+function Canales({p,f,dq,ajustes,tarifas,onVolver}){
+  const inicial=()=>{const c=p.canales||{};return Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!c[v.k]?.mostrar,gestion_pct:c[v.k]?.gestion_pct!=null?String(c[v.k].gestion_pct):"",gestion_usd:c[v.k]?.gestion_usd!=null?String(c[v.k].gestion_usd):""}]));};
+  const [cfg,setCfg]=useState(inicial);
+  const [guardando,setGuardando]=useState(false);
+  const calc=useMemo(()=>analizarVias({...f,nombre:f.nombre||f.nombre_raw},tarifas),[f.exw_usd,f.packing,f.die,f.te,f.iva,f.ncm_code,tarifas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totCBM=calc[0]?.totCBM||0;
   // Precio en pesos: mismo dólar que ve el cliente en la web (blue venta + 5).
   const [tc,setTc]=useState(null);
   useEffect(()=>{let vivo=true;fetch("/api/argenmaq/dolar").then(r=>r.json()).then(d=>{if(vivo&&d?.tc)setTc(Number(d.tc));}).catch(()=>{});return()=>{vivo=false;};},[]);
@@ -415,9 +468,9 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   useEffect(()=>{const bloq=calc.filter(v=>v.bloqueada).map(v=>v.k);if(!bloq.length)return;
     setCfg(x=>{let cambio=false;const nx={...x};for(const k of bloq){if(nx[k]?.mostrar){nx[k]={...nx[k],mostrar:false};cambio=true;}}return cambio?nx:x;});
   },[calc]);
-  const precioDe=(v)=>{const c=cfg[v.k];const arg=v.r?n(v.r.totalAbonar):0;const r=precioMaquina({exwUnit:n(f.exw_usd),qty:1,ajustes,gestionPct:c.gestion_pct.trim()!==""?c.gestion_pct:(p.markup_pct??null),gestionUsd:c.gestion_usd.trim()!==""?c.gestion_usd:null,importacion:arg});return {exw:r.exw,financiero:r.financiero,gestion:r.gestion,base:r.base,maquina:r.precio,argencargo:arg,total:r.total};};
+  const precioDe=(v)=>precioDeVia(v,cfg[v.k],{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes);
   const guardar=async()=>{setGuardando(true);try{
-    const canales=Object.fromEntries(calc.map(v=>{const c=cfg[v.k];const pr=precioDe(v);return [v.k,{mostrar:!!c.mostrar,gestion_pct:c.gestion_pct.trim()===""?null:n(c.gestion_pct),gestion_usd:c.gestion_usd.trim()===""?null:n(c.gestion_usd),argencargo:v.r?{flete:n(v.r.flete),seguro:n(v.r.seguro),sobrepeso:n(v.r.overweightSurcharge),impuestos:n(v.r.totalTax),recargo:n(v.r.surcharge),total:n(v.r.totalAbonar),unidad:v.r.fleteAmt}:null,precio:pr,motivos:v.motivos,calculado_at:new Date().toISOString()}];}));
+    const canales=armarCanales(calc,cfg,{exw_usd:f.exw_usd,markup_pct:p.markup_pct},ajustes);
     await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${p.id}`,body:{canales}});toast("Canales guardados");await onVolver();
   }catch(e){toast(e.message,"error");}setGuardando(false);};
   const pv=(x)=>String(x).replace(".",",");
@@ -468,7 +521,7 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
         <div style={{flex:1}}/>
         <Toggle on={c.mostrar} disabled={v.bloqueada} onChange={val=>setC(v.k,"mostrar",val)} l={v.bloqueada?"No se puede ofrecer":(c.mostrar?"Se muestra al cliente":"Oculta para el cliente")} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”":"El cliente la ve como “vía marítima” (solo una de las dos)"}/>
         {/* Las advertencias van al final: primero el número, después por qué no se puede ofrecer */}
-        {v.motivos.length>0&&<div style={{background:WARN_BG,borderRadius:12,padding:"10px 12px",marginTop:10,fontSize:12.5}}>{v.motivos.map((m,i)=><p key={i} style={{margin:i?"4px 0 0":0,color:WARN}}>⚠ {m.t}</p>)}</div>}
+        {v.motivos.length>0&&<div style={{background:v.bloqueada?BAD_BG:WARN_BG,borderRadius:12,padding:"10px 12px",marginTop:10,fontSize:12.5}}>{v.motivos.map((m,i)=><p key={i} style={{margin:i?"4px 0 0":0,color:m.bloquea?BAD:WARN}}>⚠ {m.t}</p>)}</div>}
       </Sec>;})}
     </div>
     <div style={{position:"sticky",bottom:0,background:BG,borderTop:`1px solid ${BORDE}`,margin:"0 -28px",padding:"14px 28px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
