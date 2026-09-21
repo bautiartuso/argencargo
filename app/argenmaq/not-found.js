@@ -15,8 +15,8 @@ const SALIDAS = [
 
 export default function NotFoundArgenmaq() {
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", color: INK, fontFamily: "'Manrope',ui-sans-serif,system-ui,sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 22px" }}>
-      <style dangerouslySetInnerHTML={{ __html: "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap');" }} />
+    <div style={{ minHeight: "100vh", background: "#fff", color: INK, fontFamily: "'Montserrat',ui-sans-serif,system-ui,sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 22px" }}>
+      <style dangerouslySetInnerHTML={{ __html: "@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap');" }} />
       <div style={{ maxWidth: 540, width: "100%" }}>
         <a href="/" style={{ display: "inline-block", marginBottom: 28, textDecoration: "none" }}>
           <Logo />

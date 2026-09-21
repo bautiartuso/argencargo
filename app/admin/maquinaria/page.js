@@ -1,9 +1,9 @@
 "use client";
 // Panel de maquinaria (20/09/2026): menú lateral fijo y las secciones del panel mayorista.
-// Estética propia, distinta al admin de Argencargo: claro/oscuro, lima, Manrope + JetBrains Mono.
+// Estética propia, distinta al admin de Argencargo: grafito/claro, amarillo, Montserrat + JetBrains Mono.
 import { useState, useEffect, useMemo } from "react";
 import { leerAjustes, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
-import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio,Avisos,toast } from "./ui";
+import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio,Avisos,toast,Logo as LogoImg,BotonTema } from "./ui";
 import { Inicio, Clientes, Ajustes } from "./Otros";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
@@ -32,15 +32,14 @@ export default function MaquinariaPage(){
   const [tema,setTemaSt]=useState("cat");
   useEffect(()=>{setSes(cargarSesion());try{setTemaSt(localStorage.getItem("mq_tema")==="claro"?"claro":"cat");}catch{}setCargando(false);},[]);
   const setTema=(t)=>{setTemaSt(t);try{localStorage.setItem("mq_tema",t);}catch{}};
-  return <div className="mq" data-tema={tema==="claro"?"claro":undefined} style={{minHeight:"100vh",background:"var(--mq-bg)",fontFamily:"'Manrope',ui-sans-serif,system-ui,sans-serif",color:INK}}>
+  return <div className="mq" data-tema={tema==="claro"?"claro":undefined} style={{minHeight:"100vh",background:"var(--mq-bg)",fontFamily:"'Montserrat',ui-sans-serif,system-ui,sans-serif",color:INK}}>
     <style dangerouslySetInnerHTML={{__html:CSS}}/>
-    {cargando?<Centro>Cargando…</Centro>:!ses?<Login onLogin={setSes}/>:<Shell ses={ses} setSes={setSes} tema={tema} setTema={setTema}/>}
+    {cargando?<Centro>Cargando…</Centro>:!ses?<Login onLogin={setSes} tema={tema}/>:<Shell ses={ses} setSes={setSes} tema={tema} setTema={setTema}/>}
   </div>;
 }
 const Centro=({children})=><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:GRIS}}>{children}</div>;
-const Logo=()=><div style={{display:"inline-flex",alignItems:"center",gap:8}}><span style={{fontSize:21,fontWeight:800,letterSpacing:"-0.04em"}}>ARGEN<span style={{background:LIMA,color:"var(--mq-lima-ink)",padding:"0 5px",borderRadius:5,marginLeft:1}}>MAQ</span></span></div>;
 
-function Login({onLogin}){
+function Login({onLogin,tema}){
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
   const entrar=async(e)=>{e.preventDefault();if(!email||!pw)return;setLo(true);setErr("");
     const r=(await sf("/auth/v1/token?grant_type=password",{method:"POST",body:JSON.stringify({email,password:pw})})).body;
@@ -53,8 +52,8 @@ function Login({onLogin}){
     guardarSesion(s);onLogin(s);setLo(false);};
   return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem"}}>
     <form onSubmit={entrar} style={{width:"100%",maxWidth:380}}>
-      <Logo/>
-      <h1 style={{fontSize:26,fontWeight:800,letterSpacing:"-0.02em",margin:"22px 0 18px"}}>Panel de ARGENMAQ</h1>
+      <img src={tema==="claro"?"/argenmaq/completo.png":"/argenmaq/completo-blanco.png"} alt="ARGENMAQ" style={{height:96,width:"auto",display:"block",margin:"0 auto"}}/>
+      <h1 style={{fontSize:22,fontWeight:800,letterSpacing:"-0.02em",margin:"22px 0 18px",textAlign:"center"}}>Panel de ARGENMAQ</h1>
       <Inp type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username"/>
       <Inp type="password" placeholder="Contraseña" value={pw} onChange={e=>setPw(e.target.value)} autoComplete="current-password" style={{marginTop:10}}/>
       {err&&<p style={{color:"var(--mq-bad)",fontSize:13,margin:"10px 0 0"}}>{err}</p>}
@@ -160,7 +159,7 @@ function Shell({ses,setSes,tema,setTema}){
     <Avisos/>
     {abierto&&<div className="velo" onClick={()=>setAbierto(false)}/>}
     <aside className={`side${abierto?" open":""}`}>
-      <div style={{padding:"20px 18px 14px"}}><Logo/></div>
+      <div style={{padding:"20px 18px 14px"}}><LogoImg alto={34} claro={tema==="claro"}/></div>
       <nav style={{padding:"0 10px",flex:1}}>
         {menu.map(s=><div key={s.sec} style={{marginBottom:14}}>
           <p style={{...LBL,padding:"0 10px",marginBottom:4,fontSize:10}}>{s.sec}</p>
@@ -170,11 +169,12 @@ function Shell({ses,setSes,tema,setTema}){
       <div style={{padding:14,borderTop:`1px solid ${BORDE}`,display:"flex",alignItems:"center",gap:10}}>
         <span style={{width:34,height:34,borderRadius:"50%",background:LIMA_SUAVE,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{inicial}</span>
         <span style={{flex:1,minWidth:0,fontSize:12,color:GRIS,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ses.user?.email}</span>
+        <BotonTema tema={tema} setTema={setTema}/>
         <Btn small onClick={salir}>Salir</Btn>
       </div>
     </aside>
     <div className="cont">
-      <div className="topmovil" style={{alignItems:"center",gap:12,padding:"12px 16px",borderBottom:`1px solid ${BORDE}`}}><button onClick={()=>setAbierto(true)} style={{border:`1px solid ${BORDE}`,background:CARD,color:INK,borderRadius:10,padding:8,cursor:"pointer",display:"inline-flex"}}><Ico d={["M4 6h16","M4 12h16","M4 18h16"]}/></button><span style={{fontWeight:800}}>{TITULOS[pag]}</span></div>
+      <div className="topmovil" style={{alignItems:"center",gap:12,padding:"12px 16px",borderBottom:`1px solid ${BORDE}`}}><button onClick={()=>setAbierto(true)} style={{border:`1px solid ${BORDE}`,background:CARD,color:INK,borderRadius:10,padding:8,cursor:"pointer",display:"inline-flex"}}><Ico d={["M4 6h16","M4 12h16","M4 18h16"]}/></button><LogoImg alto={24} solo/><span style={{fontWeight:800,flex:1}}>{TITULOS[pag]}</span><BotonTema tema={tema} setTema={setTema}/></div>
       <main style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px 90px"}}>
         {!listo?<p style={{color:GRIS}}>Cargando…</p>
         :pag==="inicio"?<Inicio {...ctx}/>

@@ -17,12 +17,12 @@ export default function CCPublica(){
   // saldo corriente por fila (la lista viene de más nueva a más vieja)
   let ars=saldo("ARS"),usd=saldo("USD");
   const filas=movs.map(m=>{const signo=m.tipo==="retiro"?-1:1;const neto=Number(m.acreditado??m.monto)*signo;const fila={...m,saldoArs:ars,saldoUsd:usd};if(m.moneda==="USD")usd-=neto;else ars-=neto;return fila;}).filter(m=>filtro==="todo"||m.moneda===filtro);
-  const S={page:{minHeight:"100vh",background:"#141517",color:"#F3F3F1",fontFamily:"'Manrope',ui-sans-serif,system-ui,sans-serif",padding:"24px 20px 60px"},card:{background:"#1C1E21",border:"1px solid #2B2E33",borderRadius:18,padding:"18px 20px"},lbl:{fontFamily:MONO,fontSize:11,letterSpacing:"0.08em",color:"#9DA3A9",textTransform:"uppercase",margin:0},th:{fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",color:"#9DA3A9",textAlign:"left",padding:"10px 10px",background:"#23262A",whiteSpace:"nowrap"},td:{padding:"11px 10px",borderTop:"1px solid #2B2E33",fontSize:13.5,verticalAlign:"middle"}};
+  const S={page:{minHeight:"100vh",background:"#141517",color:"#F3F3F1",fontFamily:"'Montserrat',ui-sans-serif,system-ui,sans-serif",padding:"24px 20px 60px"},card:{background:"#1C1E21",border:"1px solid #2B2E33",borderRadius:18,padding:"18px 20px"},lbl:{fontFamily:MONO,fontSize:11,letterSpacing:"0.08em",color:"#9DA3A9",textTransform:"uppercase",margin:0},th:{fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",color:"#9DA3A9",textAlign:"left",padding:"10px 10px",background:"#23262A",whiteSpace:"nowrap"},td:{padding:"11px 10px",borderTop:"1px solid #2B2E33",fontSize:13.5,verticalAlign:"middle"}};
   return <main style={S.page}>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@500;600&display=swap"/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=JetBrains+Mono:wght@500;600&display=swap"/>
     <div style={{maxWidth:1120,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:20}}>
-        <span style={{fontSize:20,fontWeight:800,letterSpacing:"-0.04em"}}>ARGEN<span style={{background:"#FFD200",color:"#141517",padding:"0 5px",borderRadius:5,marginLeft:1}}>MAQ</span></span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:10}}><img src="/argenmaq/isotipo.png" alt="" style={{height:32,width:"auto"}}/><img src="/argenmaq/texto-blanco.png" alt="ARGENMAQ" style={{height:20,width:"auto"}}/></span>
         <div style={{flex:1}}><p style={{margin:0,fontSize:18,fontWeight:800}}>CC Financiera</p><p style={{margin:0,fontSize:12.5,color:"#9DA3A9"}}>Cuenta corriente con la financiera · ARS y USD{d?.share?.label?` · ${d.share.label}`:""}</p></div>
         {d&&<a href={`/api/argenmaq/cc/${token}/xlsx`} style={{padding:"10px 16px",borderRadius:999,background:"#FFD200",color:"#141517",fontWeight:700,fontSize:13.5,textDecoration:"none"}}>Descargar Excel</a>}
       </div>

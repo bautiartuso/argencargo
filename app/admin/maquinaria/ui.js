@@ -4,7 +4,7 @@
 // de "Seleccionar archivo", ni calendarios. Todo desplegable/aviso/búsqueda es del sistema.
 import { useState, useRef, useEffect } from "react";
 
-export const FONT="'Manrope',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif";
+export const FONT="'Montserrat',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif";
 export const MONO="'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace";
 export const INK="var(--mq-ink)", GRIS="var(--mq-gris)", BORDE="var(--mq-borde)", SUAVE="var(--mq-suave)", CARD="var(--mq-card)", BG="var(--mq-bg)";
 export const LIMA="var(--mq-lima)", LIMA_SUAVE="var(--mq-lima-suave)";   // "lima" por historia: es el amarillo
@@ -12,7 +12,7 @@ export const OK="var(--mq-ok)", OK_BG="var(--mq-ok-bg)", WARN="var(--mq-warn)", 
 export const ANCHO_MENU=248;
 
 // Tema por defecto "cat": grafito y amarillo, como la maquinaria. "claro" queda como opción.
-export const CSS=`@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+export const CSS=`@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
 .mq{--mq-bg:#141517;--mq-card:#1C1E21;--mq-ink:#F3F3F1;--mq-gris:#9DA3A9;--mq-borde:#2B2E33;--mq-suave:#23262A;--mq-lima:#FFD200;--mq-lima-suave:#3A3305;--mq-lima-ink:#141517;--mq-ok:#7BD88F;--mq-ok-bg:#1B3322;--mq-warn:#F2C94C;--mq-warn-bg:#3A2F10;--mq-bad:#F28B8B;--mq-bad-bg:#3D1A1A}
 .mq[data-tema="claro"]{--mq-bg:#F7F7F5;--mq-card:#FFFFFF;--mq-ink:#15171A;--mq-gris:#6B7075;--mq-borde:#E3E5E8;--mq-suave:#F0F1F3;--mq-lima:#FFD200;--mq-lima-suave:#FFF3B0;--mq-lima-ink:#15171A;--mq-ok:#1F7A2E;--mq-ok-bg:#E3F6E6;--mq-warn:#8A5B00;--mq-warn-bg:#FFF1CC;--mq-bad:#B42323;--mq-bad-bg:#FDECEC}
 .mq *{box-sizing:border-box}.mq input,.mq select,.mq textarea,.mq button{font-family:${FONT}}
@@ -47,6 +47,10 @@ export function Sec({titulo,children,onDrop,onDragOver,extra,style}){return <sec
 export const Pill=({on,children,onClick,small})=><button type="button" onClick={onClick} style={{padding:small?"6px 11px":"8px 14px",borderRadius:999,border:`1px solid ${on?LIMA:BORDE}`,background:on?LIMA_SUAVE:CARD,color:INK,fontSize:small?12.5:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{children}</button>;
 export const Chip=({l,c,bg})=><span style={{fontFamily:MONO,fontSize:10,fontWeight:600,padding:"3px 8px",borderRadius:6,background:bg,color:c,letterSpacing:"0.08em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{l}</span>;
 export const Ico=({d,size=17,color="currentColor"})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>{d.map((x,i)=><path key={i} d={x}/>)}</svg>;
+// Logo oficial: isotipo (A amarilla/negra con la bobina) + wordmark ARGENMAQ. En tema grafito va la
+// versión con el ARGEN en blanco; el MAQ amarillo es el mismo.
+export const Logo=({alto=30,solo,claro})=>{const t=claro?"":"-blanco";return <span style={{display:"inline-flex",alignItems:"center",gap:10}}><img src="/argenmaq/isotipo.png" alt="" style={{height:alto,width:"auto"}}/>{!solo&&<img src={`/argenmaq/texto${t}.png`} alt="ARGENMAQ" style={{height:alto*0.62,width:"auto"}}/>}</span>;};
+export const BotonTema=({tema,setTema})=><button type="button" onClick={()=>setTema(tema==="claro"?"cat":"claro")} title={tema==="claro"?"Modo grafito":"Modo claro"} style={{width:34,height:34,borderRadius:"50%",border:`1px solid ${BORDE}`,background:"transparent",color:GRIS,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{tema==="claro"?<Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={16}/>:<Ico d={["M12 3v2","M12 19v2","M4.2 4.2l1.4 1.4","M18.4 18.4l1.4 1.4","M3 12h2","M19 12h2","M4.2 19.8l1.4-1.4","M18.4 5.6l1.4-1.4","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={16}/>}</button>;
 export const Barra=({children})=><div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,marginBottom:18}}>{children}</div>;
 export const Vacio=({children})=><div style={{border:`1px dashed ${BORDE}`,borderRadius:18,padding:"60px 20px",textAlign:"center",color:GRIS,fontSize:14}}>{children||<span style={{fontFamily:MONO,fontSize:11,letterSpacing:"0.12em",padding:"6px 12px",borderRadius:8,background:SUAVE}}>PRÓXIMAMENTE</span>}</div>;
 export function Dato({l,v,sub,color,acento}){return <div style={{background:SUAVE,borderRadius:14,padding:"14px 16px 14px 18px",minWidth:0,position:"relative",overflow:"hidden"}}><span style={{position:"absolute",left:0,top:12,bottom:12,width:4,borderRadius:"0 4px 4px 0",background:acento||LIMA}}/><p style={{...LBL,marginBottom:4}}>{l}</p><p style={{margin:0,fontSize:24,fontWeight:800,letterSpacing:"-0.02em",color:color||INK,fontVariantNumeric:"tabular-nums",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v}</p>{sub&&<p style={{margin:"3px 0 0",fontSize:12,color:GRIS}}>{sub}</p>}</div>;}

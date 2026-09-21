@@ -1,1 +1,1 @@
-{ "name": "ARGENMAQ — Admin", "short_name": "ARGENMAQ", "start_url": "/admin", "display": "standalone", "background_color": "#141517", "theme_color": "#141517", "icons": [{ "src": "/argenmaq-icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
+{ "name": "ARGENMAQ — Admin", "short_name": "ARGENMAQ", "start_url": "/admin", "display": "standalone", "background_color": "#141517", "theme_color": "#141517", "icons": [{ "src": "/argenmaq/icon-512.png", "sizes": "512x512", "type": "image/png" }, { "src": "/argenmaq/apple-180.png", "sizes": "180x180", "type": "image/png" }] }

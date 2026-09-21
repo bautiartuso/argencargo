@@ -5,8 +5,8 @@ const MONO = "'JetBrains Mono',ui-monospace,Menlo,monospace";
 const WA = "https://wa.me/5491125088580?text=Hola%20ARGENMAQ%2C%20quiero%20cotizar%20una%20m%C3%A1quina";
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
-.am{font-family:'Manrope',ui-sans-serif,system-ui,sans-serif;color:${INK};background:#fff;-webkit-font-smoothing:antialiased}
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
+.am{font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif;color:${INK};background:#fff;-webkit-font-smoothing:antialiased}
 .am *{box-sizing:border-box}
 .am a{color:inherit;text-decoration:none}
 .am .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
@@ -78,7 +78,7 @@ const CSS = `
 @media(max-width:560px){.am .bento{grid-template-columns:1fr}.am .card.alta{grid-column:span 1}.am .hero{padding-top:84px}}
 `;
 
-function Logo({ inv }) { return <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", color: inv ? "#fff" : INK }}>ARGEN<span style={{ background: Y, color: INK, padding: "0 6px", borderRadius: 6, marginLeft: 1 }}>MAQ</span></span>; }
+function Logo({ inv, alto = 34 }) { return <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><img src="/argenmaq/isotipo.png" alt="" style={{ height: alto, width: "auto" }} /><img src={inv ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" style={{ height: alto * 0.62, width: "auto" }} /></span>; }
 
 // ── Mini animaciones de las tarjetas (SVG + CSS, sin video) ────────────────────────────────
 const Ruta = () => <svg className="anim" viewBox="0 0 400 240" preserveAspectRatio="none"><defs><path id="r" d="M40 200 C 120 60, 260 60, 360 40" /></defs><path d="M40 200 C 120 60, 260 60, 360 40" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeDasharray="8 10" style={{ animation: "correr 6s linear infinite" }} /><circle r="6" fill={Y} style={{ offsetPath: "path('M40 200 C 120 60, 260 60, 360 40')", animation: "viajar 5s ease-in-out infinite" }} /><circle cx="40" cy="200" r="10" fill="none" stroke="rgba(255,255,255,0.5)" /><circle cx="360" cy="40" r="10" fill="none" stroke={Y} /><text x="52" y="222" fill="rgba(255,255,255,0.6)" fontFamily={MONO} fontSize="10" letterSpacing="2">YIWU · NINGBO</text><text x="262" y="30" fill="rgba(255,255,255,0.6)" fontFamily={MONO} fontSize="10" letterSpacing="2">BUENOS AIRES</text></svg>;
@@ -92,7 +92,7 @@ export default function Landing({ rubros }) {
   return <div className="am">
     <style dangerouslySetInnerHTML={{ __html: CSS }} />
     <div className="grupoWrap"><div className="grupo">
-      <a className="on" href="/">ARGEN<b>MAQ</b></a>
+      <a className="on" href="/"><img src="/argenmaq/isotipo.png" alt="" style={{ height: 14, width: "auto", marginRight: 6, verticalAlign: "middle" }} />ARGEN<b>MAQ</b></a>
       <a href="https://www.argencargo.com.ar">ARGEN<b>CARGO</b></a>
       <span title="Próximamente" aria-disabled="true" style={{ opacity: 0.55, cursor: "default" }}>ARGEN<b>BRANDS</b></span>
     </div></div>
