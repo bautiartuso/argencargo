@@ -835,16 +835,20 @@ function OperationDetail({op:opProp,token,client,onBack}){
   const totalAbonar=isGI?giTotalItems:(bt+pmtPendiente);const hasBudget=isGI?giTotalItems>0:bt>0;
   const totalCli=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldoReal=Math.max(0,totalAbonar-totalCli);
   const fobItems=giTotalItems;
-  let est=null;try{if(!isGI&&op.channel==="aereo_blanco"&&items.length>0&&calcCtx)est=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);}catch(e){est=null;}
+  // El estimado se calcula en todas las vías, no solo en aéreo blanco: en marítimo también hace
+  // falta para repartir flete e impuestos por producto (21/09/2026 — el panel COSTO POR PRODUCTO
+  // de una op marítima salía vacío porque est quedaba en null). Mostrarlo como estimado sigue
+  // siendo solo de aéreo blanco: en marítimo el número lo pone Argencargo.
+  let est=null;try{if(!isGI&&items.length>0&&calcCtx)est=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);}catch(e){est=null;}
   // Lo que el cliente paga por fuera de Argencargo. Para el RI de aereo blanco son los impuestos
   // Y el desaduanaje: los abona directo al despachante, asi que no entran en el total de
   // Argencargo. Se muestra aparte para que el "estimado total de la importacion" cierre.
   const fueraDeAC=riPagaImpuestosDirecto&&est?Number(est.totalTax||0):0;
-  const showEstimate=!!est&&!hasBudget;
+  const showEstimate=!!est&&!hasBudget&&op.channel==="aereo_blanco";
   // Costo de cada producto puesto en Argentina. Si hay presupuesto cargado y difiere del
   // estimado, se escala para que la suma cierre contra lo que el cliente realmente paga.
   const escalaCosto=hasBudget&&est&&est.totalAbonar>0&&Math.abs(est.totalAbonar-bt)>1?bt/est.totalAbonar:1;
-  const costoPorProducto=costoPuestoEnArgentina(items,pkgs,est,{deliveryCost:op.delivery_cost_usd,scale:escalaCosto});
+  const costoPorProducto=costoPuestoEnArgentina(items,pkgs,est,{deliveryCost:op.delivery_cost_usd,scale:escalaCosto,repartirPor:isMar?"volumen":"peso",...(isMar?{impuestosTotal:Number(est?.totalTax||0)}:{})});
   const accion=(()=>{
     if(op.lost_in_customs_at||["operacion_cerrada","cancelada"].includes(op.status))return null;
     if(isEditable&&items.length===0)return{c:GOLD_LIGHT,t:t("opq.loadTitle"),s:t("opq.loadDesc")};
