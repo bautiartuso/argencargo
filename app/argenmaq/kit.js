@@ -16,13 +16,14 @@ export const CSS = `
 .amq[data-tema="oscuro"]{--bg:#141517;--card:#1C1E21;--ink:#F3F3F1;--gris:#9DA3A9;--borde:#2B2E33;--suave:#23262A;--ysuave:#3A3305;--ok:#7BD88F;--sombra:0 14px 40px rgba(0,0,0,0.35)}
 .amq *{box-sizing:border-box}.amq a{color:inherit;text-decoration:none}.amq button{font-family:inherit}
 .amq .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
-.amq .grupoWrap{display:flex;justify-content:center;padding:14px 16px 12px}
+.amq .grupoWrap{display:flex;justify-content:center;padding:14px 16px 0}
 .amq .grupo{display:inline-flex;gap:4px;padding:5px;border-radius:999px;background:#15171A;box-shadow:0 10px 40px rgba(0,0,0,0.25)}
 .amq .grupo a{padding:8px 20px;border-radius:999px;display:inline-flex;align-items:center;gap:9px;opacity:0.75;transition:opacity 140ms}
 .amq .grupo a:hover{opacity:1}.amq .grupo a.on{background:#fff;opacity:1}
 .amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:20px}.amq .grupo .txt{height:13px}
-.amq .nav{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--borde)}
-.amq .nav .wrap{display:flex;align-items:center;gap:22px;height:74px}
+.amq .nav{position:sticky;top:10px;z-index:30;padding:0 20px;margin:-14px 0 0}
+.amq .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
+.amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
 .amq .nav .links{display:flex;gap:22px;font-size:14.5px;font-weight:600;color:var(--gris);flex:1;justify-content:center}
 .amq .nav .links a.on{color:var(--ink)}
 .amq .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border-radius:999px;font-weight:800;font-size:14.5px;border:1px solid var(--borde);background:var(--card);color:var(--ink);cursor:pointer;transition:transform 120ms;white-space:nowrap}
@@ -51,7 +52,7 @@ export const CSS = `
 @keyframes girar{to{transform:rotate(360deg)}}
 @keyframes tick{0%,100%{opacity:0.2}50%{opacity:1}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{padding:8px 14px}.amq .carril>*{flex-basis:220px}}
+@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{padding:8px 14px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
 `;
 
 // ── Idiomas ───────────────────────────────────────────────────────────────────────────────
@@ -155,7 +156,7 @@ export function Marco({ actual, children, sinGrupo }) {
       <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src="/argencargo/texto-blanco.png" alt="ARGENCARGO" /></a>
     </div></div>}
     <header className="nav">
-      <div className="wrap">
+      <div className="isla">
         <a href="/"><Logo /></a>
         <nav className="links">
           <a className={actual === "catalogo" ? "on" : ""} href="/catalogo">{t("catalogo")}</a>
