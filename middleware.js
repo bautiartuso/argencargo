@@ -16,7 +16,7 @@ const HOSTS_ARGENMAQ = /^(www\.)?argenmaq\./i;
 const PASA = [/^\/_next\//, /^\/api\//, /^\/monitoring/, /^\/admin/, /^\/cc\//, /^\/argenmaq/];
 
 // Páginas propias de ARGENMAQ que se sirven desde la raíz de su host.
-const PROPIAS = new Set(["/terminos", "/privacidad", "/legal", "/catalogo", "/cuenta", "/carrito", "/como-funciona", "/quienes-somos"]);
+const PROPIAS = new Set(["/terminos", "/privacidad", "/legal", "/catalogo", "/cuenta", "/carrito", "/como-funciona", "/quienes-somos", "/metodos-de-pago", "/soporte", "/devoluciones", "/politica-de-compra"]);
 // Rutas con parámetro del sitio público.
 const PREFIJOS = [/^\/catalogo\//, /^\/m\//, /^\/cuenta\//];
 

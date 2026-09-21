@@ -72,7 +72,7 @@ export default function Landing({ arbol, destacadas, diasVia }) {
   const x = TXT[lang] || TXT.es;
   const precios = usePrecios(destacadas.map((m) => m.id));
   const iconos = ["M4 6h16M4 12h10M4 18h7", "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", "M2 7h20v10H2zM6 12h.01M18 12h.01", "M3 20V9l6-4v4l6-4v4l6-4v15zM7 15h2M11 15h2M15 15h2", "M3 9l9-6 9 6-9 6-9-6zM3 9v6l9 6 9-6V9"];
-  return <Marco actual="inicio">
+  return <Marco actual="inicio" conGrupo>
     <style dangerouslySetInnerHTML={{ __html: CSS }} />
     <section className="hero"><div className="wrap">
       <span className="kicker"><i /> {x.kicker}</span>

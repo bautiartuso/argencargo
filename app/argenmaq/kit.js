@@ -41,8 +41,65 @@ html,body{overflow-x:clip!important}
 .amq .inp{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--borde);background:var(--card);color:var(--ink);font-size:14.5px;font-weight:600;outline:none}
 .amq .inp:focus{border-color:var(--y);box-shadow:0 0 0 3px var(--ysuave)}
 .amq .lbl{display:block;font-family:${MONO};font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gris);margin-bottom:7px}
-.amq footer{border-top:1px solid var(--borde);padding:34px 0;font-size:13.5px;color:var(--gris)}
-.amq footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+.amq footer{background:#15171A;color:rgba(255,255,255,0.72);padding:46px 0 24px;font-size:13.5px;margin-top:44px}
+.amq[data-tema="oscuro"] footer{background:#0E0F11;border-top:1px solid var(--borde)}
+.amq footer .wrap{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:30px;align-items:start}
+.amq footer h4{margin:0 0 12px;font-family:${MONO};font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.45);font-weight:600}
+.amq footer .col a{display:block;color:#fff;font-weight:600;margin:0 0 9px;font-size:14px}
+.amq footer .col a:hover{color:var(--y)}
+.amq footer .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,0.16);color:#fff;font-size:12.5px;font-weight:700;margin:0 6px 6px 0}
+.amq footer .pill.on{background:var(--y);color:#15171A;border-color:var(--y)}
+.amq footer .abajo{max-width:1180px;margin:30px auto 0;padding:18px 24px 0;border-top:1px solid rgba(255,255,255,0.1);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:${MONO};font-size:11px;color:rgba(255,255,255,0.45)}
+.amq .buscaIsla{flex:1;display:flex;align-items:center;max-width:520px;margin:0 auto;position:relative}
+.amq .buscaIsla input{width:100%;height:42px;border-radius:999px;border:1px solid var(--borde);background:var(--suave);padding:0 16px 0 40px;font-size:14px;font-weight:600;color:var(--ink);outline:none;font-family:inherit}
+.amq .buscaIsla input:focus{border-color:var(--y);box-shadow:0 0 0 3px var(--ysuave)}
+.amq .buscaIsla svg{position:absolute;left:15px;top:13px;color:var(--gris);pointer-events:none}
+.amq .franja{overflow:hidden;max-width:1180px;margin:10px auto 0;padding:0 8px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.amq .franjaPista{display:flex;gap:8px;width:max-content;animation:desfile 55s linear infinite}
+.amq .franja:hover .franjaPista{animation-play-state:paused}
+@keyframes desfile{to{transform:translateX(-50%)}}
+.amq .catGrid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:28px;align-items:start}
+.amq .rubros{position:sticky;top:96px;border:1px solid var(--borde);border-radius:20px;padding:14px 8px;background:var(--card)}
+.amq .rubros p{padding:0 12px}
+.amq .rubros a{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;font-weight:700;font-size:14px}
+.amq .rubros a:hover{background:var(--suave)}.amq .rubros a.on{background:var(--ysuave)}
+.amq .rubros a span{font-family:${MONO};font-size:11px;color:var(--gris)}
+.amq .galeriaMain{position:relative;aspect-ratio:1/1;border-radius:22px;overflow:hidden;background:var(--suave);cursor:zoom-in}
+.amq .galeriaMain img{width:100%;height:100%;object-fit:cover;display:block}
+.amq .galeriaAcc{position:absolute;top:14px;right:14px;display:flex;gap:8px}
+.amq .redondo{width:44px;height:44px;border-radius:50%;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
+.amq .redondo.on{background:#FF5A3C;border-color:#FF5A3C;color:#fff}
+.amq .flecha{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:22px;line-height:1;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
+.amq .flecha.izq{left:14px}.amq .flecha.der{right:14px}
+.amq .contador{position:absolute;left:14px;bottom:14px;font-family:${MONO};font-size:11px;padding:5px 10px;border-radius:999px;background:rgba(21,23,26,0.72);color:#fff}
+.amq .miniaturas{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:4px}
+.amq .miniaturas button{flex:0 0 78px;height:62px;border-radius:12px;overflow:hidden;border:2px solid transparent;padding:0;background:var(--suave);cursor:pointer}
+.amq .miniaturas button.on{border-color:var(--y)}
+.amq .miniaturas img{width:100%;height:100%;object-fit:cover;display:block}
+.amq .luz{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,0.78);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:18px}
+.amq .luzCaja{position:relative;width:min(1100px,100%);max-height:96vh;background:var(--card);border-radius:26px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.amq .luzImg{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--suave);border-radius:18px;overflow:hidden;position:relative}
+.amq .luzImg img{max-width:100%;max-height:72vh;object-fit:contain;display:block}
+.amq .fichaGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:34px;align-items:start}
+.amq .cajaPrecio{border:1px solid var(--borde);border-radius:22px;padding:20px 22px;background:var(--card)}
+.amq .tramos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 12px}
+.amq .tramo{text-align:left;padding:12px 12px;border-radius:14px;border:1.5px solid var(--borde);background:transparent;color:var(--ink);cursor:pointer;font-family:inherit}
+.amq .tramo.on{border-color:var(--y);background:var(--ysuave)}
+.amq .tramo small{display:block;font-size:11.5px;color:var(--gris);font-weight:600;margin-top:2px}
+.amq .tramo b{display:block;font-size:19px;letter-spacing:-0.02em;margin-top:3px}
+.amq .stepper{display:inline-flex;align-items:center;border:1px solid var(--borde);border-radius:999px;overflow:hidden;height:46px}
+.amq .stepper button{width:44px;height:46px;border:none;background:transparent;color:var(--ink);font-size:20px;cursor:pointer;font-family:inherit}
+.amq .stepper button:disabled{opacity:0.3;cursor:not-allowed}
+.amq .stepper input{width:56px;height:46px;border:none;background:transparent;text-align:center;font-weight:800;font-size:16px;color:var(--ink);outline:none;font-family:inherit}
+.amq .detGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.amq .detCard{border:1px solid var(--borde);border-radius:18px;padding:16px 18px;background:var(--card)}
+.amq .detCard h3{margin:0 0 10px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:10px}
+.amq .detCard .fila{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid var(--borde);font-size:14px}
+.amq .detCard .fila span:first-child{color:var(--gris)}
+.amq .detCard .fila b{font-weight:700}
+.amq .modoBtn{display:flex;flex-direction:column;gap:2px;padding:9px 12px;border-radius:12px;border:1.5px solid var(--borde);background:transparent;color:var(--ink);cursor:pointer;text-align:left;font-family:inherit;min-width:150px}
+.amq .modoBtn.on{border-color:var(--y);background:var(--ysuave)}
+.amq .modoBtn small{font-size:11.5px;color:var(--gris);font-family:${MONO}}
 .amq .h1{font-size:clamp(40px,8vw,104px);line-height:0.94;letter-spacing:-0.05em;font-weight:800;margin:0}
 .amq .h2{font-size:clamp(28px,4vw,46px);letter-spacing:-0.04em;font-weight:800;margin:0;line-height:1.05}
 .amq .ac{background:var(--y);color:#15171A;padding:0 0.12em;border-radius:0.12em;display:inline-block;transform:rotate(-1.2deg)}
@@ -54,7 +111,8 @@ html,body{overflow-x:clip!important}
 @keyframes girar{to{transform:rotate(360deg)}}
 @keyframes tick{0%,100%{opacity:0.2}50%{opacity:1}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@media(max-width:900px){.amq .nav .links{display:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:12px}.amq .grupo .argc .iso{height:15px}.amq .grupo .argc .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
+@media(max-width:560px){.amq footer .wrap{grid-template-columns:1fr}}
+@media(max-width:900px){.amq .nav .links{display:none}.amq footer .wrap{grid-template-columns:1fr 1fr}.amq .catGrid{grid-template-columns:1fr}.amq .rubros{position:static;display:flex;overflow-x:auto;gap:4px;padding:8px}.amq .rubros p{display:none}.amq .rubros a{white-space:nowrap}.amq .fichaGrid{grid-template-columns:1fr}.amq .tramos{grid-template-columns:1fr}.amq .buscaIsla{max-width:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:12px}.amq .grupo .argc .iso{height:15px}.amq .grupo .argc .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
 `;
 
 // ── Idiomas ───────────────────────────────────────────────────────────────────────────────
@@ -66,7 +124,7 @@ const T = {
     nueva:"Nueva", usada:"Usada", masPedida:"Más pedida", garantia:"Garantía de fábrica", meses:"meses", produccion:"producción", noEsta:"¿No encontrás tu máquina?", noEstaSub:"Escribinos y la buscamos.",
     crear:"Crear cuenta", tengo:"Ya tengo cuenta", email:"Email", pass:"Contraseña", entrar:"Entrar", registrarse:"Registrarme",
     vacio:"Tu carrito está vacío.", pedir:"Confirmar pedido", pedido:"Pedido", total:"Total", cantidad:"Cantidad", quitar:"Quitar", misOps:"Mis operaciones", seguimiento:"Seguimiento", datos:"Mis datos",
-    legalT:"Términos y condiciones", legalP:"Política de privacidad", legalL:"Aviso legal" },
+    pieClaim:"Tu próxima máquina, resuelta de punta a punta.", pieSub:"Operación propia con Argencargo. Entrega en todo el país.", pais:"País", metodosPago:"Métodos de pago", transferencia:"Transferencia bancaria", efectivo:"Efectivo", cripto:"Cripto", comprar:"Comprar", comoComprar:"¿Cómo comprar?", nuestrasMaquinas:"Nuestras máquinas", paraTuNegocio:"Para tu negocio", grupoArg:"Grupo Argencargo", soporte:"Soporte", legal:"Legal", devoluciones:"Política de devoluciones", politicaCompra:"Política de compra", precioVolumen:"Precio por cantidad · final, sin sorpresas", inicial:"Inicial", precioUnit:"Precio unitario", unidades:"unidades", unidad:"unidad", desde:"desde", minimo:"Mínimo", precioTotal:"Precio total", llega:"Llega en", anticipoNota:"Anticipo hoy · saldo al llegar", volver:"Volver", inicio:"Inicio", rubros:"Rubros", todosRubros:"Todos los rubros", resultados:"Resultados para", detalles:"Detalles técnicos", producto:"Producto", codigo:"Código", categoria:"Categoría", subcategoria:"Subcategoría", condicion:"Condición", medidas:"Medidas de la máquina", largo:"Largo", ancho:"Ancho", alto:"Alto", peso:"Peso", packing:"Packing", bultos:"Bultos", bulto:"Bulto", descripcion:"Descripción", similares:"Máquinas similares", compartir:"Compartir", guardarFav:"Guardar", guardada:"Guardada", copiado:"Link copiado", sinDato:"A confirmar", viaEnvio:"Cómo viaja", noDisponibleQty:"No disponible para esa cantidad", legalT:"Términos y condiciones", legalP:"Política de privacidad", legalL:"Aviso legal" },
   en: { catalogo:"Catalog", como:"How it works", quienes:"About us", ingresar:"Sign in", cuenta:"My account", carrito:"Cart", salir:"Sign out",
     verPrecio:"Sign in to see the price", precioPuesto:"Price delivered to our warehouse in Buenos Aires", envioAdicional:"Home delivery extra · free pickup",
     viaAerea:"By air", viaMaritima:"By sea", tiempo:"Estimated time", dias:"days", agregar:"Add to cart", agregado:"In cart", verCarrito:"View cart",
@@ -74,7 +132,7 @@ const T = {
     nueva:"New", usada:"Used", masPedida:"Most requested", garantia:"Factory warranty", meses:"months", produccion:"production", noEsta:"Can't find your machine?", noEstaSub:"Message us and we'll source it.",
     crear:"Create account", tengo:"I have an account", email:"Email", pass:"Password", entrar:"Sign in", registrarse:"Sign up",
     vacio:"Your cart is empty.", pedir:"Confirm order", pedido:"Order", total:"Total", cantidad:"Quantity", quitar:"Remove", misOps:"My operations", seguimiento:"Tracking", datos:"My details",
-    legalT:"Terms and conditions", legalP:"Privacy policy", legalL:"Legal notice" },
+    pieClaim:"Your next machine, sorted end to end.", pieSub:"Run in-house with Argencargo. Delivery nationwide.", pais:"Country", metodosPago:"Payment methods", transferencia:"Bank transfer", efectivo:"Cash", cripto:"Crypto", comprar:"Buy", comoComprar:"How to buy?", nuestrasMaquinas:"Our machines", paraTuNegocio:"For your business", grupoArg:"Argencargo Group", soporte:"Support", legal:"Legal", devoluciones:"Returns policy", politicaCompra:"Purchase policy", precioVolumen:"Volume pricing · final, no surprises", inicial:"Starting", precioUnit:"Unit price", unidades:"units", unidad:"unit", desde:"from", minimo:"Minimum", precioTotal:"Total price", llega:"Arrives in", anticipoNota:"Deposit today · balance on arrival", volver:"Back", inicio:"Home", rubros:"Categories", todosRubros:"All categories", resultados:"Results for", detalles:"Technical details", producto:"Product", codigo:"Code", categoria:"Category", subcategoria:"Subcategory", condicion:"Condition", medidas:"Machine dimensions", largo:"Length", ancho:"Width", alto:"Height", peso:"Weight", packing:"Packing", bultos:"Packages", bulto:"Package", descripcion:"Description", similares:"Similar machines", compartir:"Share", guardarFav:"Save", guardada:"Saved", copiado:"Link copied", sinDato:"To be confirmed", viaEnvio:"How it ships", noDisponibleQty:"Not available for that quantity", legalT:"Terms and conditions", legalP:"Privacy policy", legalL:"Legal notice" },
   ru: { catalogo:"Каталог", como:"Как это работает", quienes:"О нас", ingresar:"Войти", cuenta:"Мой аккаунт", carrito:"Корзина", salir:"Выйти",
     verPrecio:"Войдите, чтобы увидеть цену", precioPuesto:"Цена с доставкой на наш склад в Буэнос-Айресе", envioAdicional:"Доставка на дом отдельно · самовывоз бесплатно",
     viaAerea:"Авиа", viaMaritima:"Морем", tiempo:"Ориентировочный срок", dias:"дней", agregar:"В корзину", agregado:"В корзине", verCarrito:"Открыть корзину",
@@ -82,7 +140,7 @@ const T = {
     nueva:"Новая", usada:"Б/у", masPedida:"Популярная", garantia:"Гарантия завода", meses:"мес.", produccion:"производство", noEsta:"Не нашли свою машину?", noEstaSub:"Напишите нам — найдём.",
     crear:"Создать аккаунт", tengo:"У меня есть аккаунт", email:"Email", pass:"Пароль", entrar:"Войти", registrarse:"Зарегистрироваться",
     vacio:"Корзина пуста.", pedir:"Подтвердить заказ", pedido:"Заказ", total:"Итого", cantidad:"Количество", quitar:"Убрать", misOps:"Мои операции", seguimiento:"Отслеживание", datos:"Мои данные",
-    legalT:"Условия", legalP:"Конфиденциальность", legalL:"Правовая информация" },
+    pieClaim:"Ваша следующая машина — под ключ.", pieSub:"Собственная логистика с Argencargo. Доставка по всей стране.", pais:"Страна", metodosPago:"Способы оплаты", transferencia:"Банковский перевод", efectivo:"Наличные", cripto:"Крипто", comprar:"Купить", comoComprar:"Как купить?", nuestrasMaquinas:"Наши машины", paraTuNegocio:"Для бизнеса", grupoArg:"Группа Argencargo", soporte:"Поддержка", legal:"Правовая информация", devoluciones:"Политика возврата", politicaCompra:"Условия покупки", precioVolumen:"Цена по количеству · окончательная", inicial:"Базовая", precioUnit:"Цена за единицу", unidades:"шт.", unidad:"шт.", desde:"от", minimo:"Минимум", precioTotal:"Итого", llega:"Доставка через", anticipoNota:"Аванс сегодня · остаток по прибытии", volver:"Назад", inicio:"Главная", rubros:"Категории", todosRubros:"Все категории", resultados:"Результаты по запросу", detalles:"Технические данные", producto:"Товар", codigo:"Код", categoria:"Категория", subcategoria:"Подкатегория", condicion:"Состояние", medidas:"Габариты машины", largo:"Длина", ancho:"Ширина", alto:"Высота", peso:"Вес", packing:"Упаковка", bultos:"Мест", bulto:"Место", descripcion:"Описание", similares:"Похожие машины", compartir:"Поделиться", guardarFav:"Сохранить", guardada:"Сохранено", copiado:"Ссылка скопирована", sinDato:"Уточняется", viaEnvio:"Способ доставки", noDisponibleQty:"Недоступно для этого количества", legalT:"Условия", legalP:"Конфиденциальность", legalL:"Правовая информация" },
 };
 
 // ── Contexto ──────────────────────────────────────────────────────────────────────────────
@@ -146,26 +204,33 @@ export function Proveedor({ children }) {
 }
 
 // ── Marco: barra del grupo + nav + pie ────────────────────────────────────────────────────
-export function Logo({ alto = 34 }) { const { tema } = useAM(); const inv = tema === "oscuro"; return <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><img src={inv ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" style={{ height: alto, width: "auto" }} /><img src={inv ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" style={{ height: alto * 0.62, width: "auto" }} /></span>; }
+export function Logo({ alto = 34, blanco = false }) { const { tema } = useAM(); const inv = blanco || tema === "oscuro"; return <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><img src={inv ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" style={{ height: alto, width: "auto" }} /><img src={inv ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" style={{ height: alto * 0.62, width: "auto" }} /></span>; }
 export function Ico({ d, size = 17 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x, i) => <path key={i} d={x} />)}</svg>; }
 
-export function Marco({ actual, children, sinGrupo }) {
+export function Marco({ actual, children, conGrupo, franja }) {
   const { tema, setTema, lang, setLang, t, moneda, setMoneda, tc, ses, cliente, carrito } = useAM();
   const n = carrito.reduce((s, i) => s + (i.qty || 1), 0);
   const inv = tema === "oscuro"; // pills invertidas respecto del fondo: oscuras sobre claro, blancas sobre oscuro
+  const enTienda = actual === "catalogo";
+  const [q, setQ] = useState("");
+  useEffect(() => { try { setQ(new URLSearchParams(window.location.search).get("q") || ""); } catch {} }, []);
+  const LUPA = ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M21 21l-4.3-4.3"];
   return <>
-    {!sinGrupo && <div className="grupoWrap"><div className="grupo">
+    {/* La barra del grupo (ARGENMAQ · ARGENCARGO) vive solo en la página principal (21/09/2026). */}
+    {conGrupo && <div className="grupoWrap"><div className="grupo">
       <a className="on am" href="/" aria-label="ARGENMAQ"><img className="iso" src={inv ? "/argenmaq/isotipo.png" : "/argenmaq/isotipo-blanco.png"} alt="" /><img className="txt" src={inv ? "/argenmaq/texto.png" : "/argenmaq/texto-blanco.png"} alt="ARGENMAQ" /></a>
       <a className="argc" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src={inv ? "/argencargo/isotipo.png" : "/argencargo/isotipo-blanco.png"} alt="" /><img className="txt" src={inv ? "/argencargo/texto.png" : "/argencargo/texto-blanco.png"} alt="ARGENCARGO" /></a>
     </div></div>}
     <header className="nav">
       <div className="isla">
         <a href="/" style={{ display: "flex", alignItems: "center" }}><Logo /></a>
-        <nav className="links">
-          <a className={actual === "catalogo" ? "on" : ""} href="/catalogo">{t("catalogo")}</a>
-          <a className={actual === "como" ? "on" : ""} href="/como-funciona">{t("como")}</a>
-          <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos">{t("quienes")}</a>
-        </nav>
+        {enTienda
+          ? <form className="buscaIsla" action="/catalogo" method="get" role="search"><Ico d={LUPA} size={16} /><input name="q" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("buscar")} aria-label={t("buscar")} /></form>
+          : <nav className="links">
+            <a className={actual === "catalogo" ? "on" : ""} href="/catalogo">{t("catalogo")}</a>
+            <a className={actual === "como" ? "on" : ""} href="/como-funciona">{t("como")}</a>
+            <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos">{t("quienes")}</a>
+          </nav>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button className="ico" onClick={() => setMoneda(moneda === "USD" ? "ARS" : "USD")} title={tc ? `Blue ${tc - 5} + 5 = ${tc}` : "Cotización"}>{moneda === "USD" ? "US$" : "AR$"}</button>
           <button className="ico" onClick={() => setLang(lang === "es" ? "en" : lang === "en" ? "ru" : "es")} title="Idioma">{lang.toUpperCase()}</button>
@@ -174,15 +239,28 @@ export function Marco({ actual, children, sinGrupo }) {
           <a className="btn s y" href="/cuenta">{ses ? (cliente?.first_name || t("cuenta")) : t("ingresar")}</a>
         </div>
       </div>
+      {/* Rubros en desfile continuo debajo de la isla (dentro de una máquina), como las categorías de B2Box. */}
+      {franja?.length > 0 && <div className="franja"><div className="franjaPista">{[...franja, ...franja].map((c, i) => <a key={`${c.slug}-${i}`} className="chip" href={`/catalogo/${c.slug}`}>{c.nombre}</a>)}</div></div>}
     </header>
     {children}
     <footer>
       <div className="wrap">
-        <div><Logo alto={28} /><div style={{ marginTop: 8 }}>{t("grupo")}. <a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>argencargo.com.ar</a></div></div>
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}><a href="/terminos">{t("legalT")}</a><a href="/privacidad">{t("legalP")}</a><a href="/legal">{t("legalL")}</a><a href="/admin">Panel</a></div>
+        <div>
+          <Logo alto={30} blanco />
+          <p style={{ margin: "14px 0 4px", color: "var(--y)", fontWeight: 800, fontSize: 15 }}>{t("pieClaim")}</p>
+          <p style={{ margin: "0 0 20px", fontSize: 13.5 }}>{t("pieSub")}</p>
+          <h4>{t("pais")}</h4>
+          <div style={{ marginBottom: 14 }}><span className="pill on">🇦🇷 Argentina</span></div>
+          <h4>{t("metodosPago")}</h4>
+          <div><span className="pill">{t("transferencia")}</span><span className="pill">{t("efectivo")}</span><span className="pill">{t("cripto")}</span></div>
+        </div>
+        <div className="col"><h4>{t("comprar")}</h4><a href="/como-funciona">{t("comoComprar")}</a><a href="/catalogo">{t("nuestrasMaquinas")}</a><a href="/metodos-de-pago">{t("metodosPago")}</a></div>
+        <div className="col"><h4>{t("paraTuNegocio")}</h4><a href="/quienes-somos">{t("quienes")}</a><a href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer">{t("grupoArg")}</a><a href="/soporte">{t("soporte")}</a></div>
+        <div className="col"><h4>{t("legal")}</h4><a href="/terminos">{t("legalT")}</a><a href="/privacidad">{t("legalP")}</a><a href="/devoluciones">{t("devoluciones")}</a><a href="/politica-de-compra">{t("politicaCompra")}</a><a href="/legal">{t("legalL")}</a></div>
       </div>
+      <div className="abajo"><span>© 2026 ARGENMAQ · {t("grupo")}.</span><span>{t("precioPuesto")} · USD / ARS</span></div>
     </footer>
-    <a className="fab" href={WA("Hola ARGENMAQ, quiero consultar por una máquina")} target="_blank" rel="noreferrer" aria-label="WhatsApp"><svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1.1 2.7c.1.2 1.9 2.9 4.6 4 1.7.7 2.3.8 3.1.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.5-.3z" /></svg></a>
+    <a className="fab" href={WA("Hola ARGENMAQ, quiero consultar por una máquina")} target="_blank" rel="noreferrer" aria-label="WhatsApp"><svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1.1 2.7c.1.2 1.8 2.8 4.5 3.9 1.7.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.5-.3z"/></svg></a>
   </>;
 }
 
