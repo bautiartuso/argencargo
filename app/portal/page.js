@@ -103,6 +103,11 @@ const OS=[{k:"proveedor",tk:"stage.proveedor"},{k:"warehouse",tk:"stage.warehous
 // (la confirmó, Argencargo presupuesta y arma el vuelo); el resto no tiene esos dos pasos.
 const stageSteps=(showDoc)=>showDoc?OS:OS.filter(s=>s.k!=="documentacion"&&s.k!=="preparacion");
 const stageKeyOf=(status,showDoc,docsConfirmed,lost)=>{if(lost)return "aduana";const m={pendiente:"proveedor",en_deposito_origen:"warehouse",en_preparacion:showDoc?(docsConfirmed?"preparacion":"documentacion"):"warehouse",en_transito:"en_transito",arribo_argentina:"arribo",en_aduana:"aduana",entregada:"entrega",operacion_cerrada:"cerrada"};return m[status]||"proveedor";};
+// La mercadería deja de ser editable cuando la op entra a un vuelo o cuando ya tiene presupuesto
+// cargado: desde ahí la etapa de documentación está cerrada aunque el cliente nunca haya apretado
+// "Confirmar la mercadería" (la cargó Argencargo, o el vuelo se armó antes). Sin esto el portal le
+// seguía pidiendo confirmar algo que el servidor ya rechaza (21/09/2026).
+const docsCerradas=(op,inFlight)=>!!op.docs_confirmed_at||!!inFlight||Number(op.budget_total||0)>0;
 const stLabelOf=(op,t)=>op.status==="en_preparacion"&&op.docs_confirmed_at?t("opStatus.prep_confirmed"):(SM[op.status]?t(SM[op.status].tk):op.status);
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{tk:"opStatus.pendiente",c:"#94a3b8"},en_deposito_origen:{tk:"opStatus.warehouse_ac",c:"#fbbf24"},en_preparacion:{tk:"opStatus.en_preparacion",c:"#a78bfa"},en_transito:{tk:"opStatus.en_transito",c:"#60a5fa"},arribo_argentina:{tk:"opStatus.arribo_argentina",c:"#818cf8"},en_aduana:{tk:"opStatus.en_aduana",c:"#fb923c"},entregada:{tk:"opStatus.entregada",c:"#22c55e"},operacion_cerrada:{tk:"opStatus.operacion_cerrada",c:"#10b981"},cancelada:{tk:"opStatus.cancelada",c:"#f87171"}};
@@ -323,7 +328,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     return{txt:usd(saldo),tone:"due",l:"Falta abonar"};};
   const accionDe=(op)=>{const isGI=op.service_type==="gestion_integral";const hasItems=(itemsByOp[op.id]||0)>0;
     if(op.lost_in_customs_at)return{c:"#f87171",t:t("ol.heldCustoms")};
-    if(!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!op.docs_confirmed_at)return{c:GOLD_LIGHT,t:hasItems?t("opq.confirmGoodsShort"):t("opq.loadGoodsShort"),strong:true};
+    if(!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!docsCerradas(op))return{c:GOLD_LIGHT,t:hasItems?t("opq.confirmGoodsShort"):t("opq.loadGoodsShort"),strong:true};
     if(op.status==="en_preparacion"&&Number(op.budget_total||0)<=0)return{c:SKY,t:t("ol.inPreparation")};
     if(op.status==="entregada")return{c:"#4ade80",t:t("ol.readyPickup")};
     // Mientras la carga viaja el chip dice DONDE esta, no "saldo pendiente" (16/09/2026): estos
@@ -335,7 +340,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     return null;};
   const COLS="150px minmax(0,1.5fr) 200px 88px 150px 34px";
   const head=<div className="ol-head" style={{display:"grid",gridTemplateColumns:COLS,gap:12,padding:"0 16px 8px"}}>{[t("ol.import"),t("ol.colGoods"),t("ol.colStage"),"ETA",t("ol.colDue"),""].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>;
-  const renderRow=(op)=>{const isGI=op.service_type==="gestion_integral";const showDoc=!isGI&&op.channel==="aereo_blanco";const steps=stageSteps(showDoc);const key=stageKeyOf(op.status,showDoc,!!op.docs_confirmed_at,!!op.lost_in_customs_at);const si=Math.max(0,steps.findIndex(s=>s.k===key));const cur=steps[si]||steps[0];
+  const renderRow=(op)=>{const isGI=op.service_type==="gestion_integral";const showDoc=!isGI&&op.channel==="aereo_blanco";const steps=stageSteps(showDoc);const key=stageKeyOf(op.status,showDoc,docsCerradas(op),!!op.lost_in_customs_at);const si=Math.max(0,steps.findIndex(s=>s.k===key));const cur=steps[si]||steps[0];
     const done=["operacion_cerrada","cancelada"].includes(op.status);const s=saldoDe(op);const ac=accionDe(op);
     return <div key={op.id} onClick={()=>onSelect(op)} className="ol-row" style={{display:"grid",gridTemplateColumns:COLS,gap:12,alignItems:"center",padding:"14px 16px",marginBottom:8,borderRadius:13,border:ac?.strong?"1px solid rgba(232,208,152,0.5)":HAIR,background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",boxShadow:"0 10px 26px rgba(0,0,0,0.25)",cursor:"pointer",opacity:done?0.75:1,transition:"border-color 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(140,200,245,0.55)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=ac?.strong?"rgba(232,208,152,0.5)":"rgba(255,255,255,0.13)";}}>
       <div style={{minWidth:0}}>
@@ -625,6 +630,28 @@ function EditableItemRow({item,editable,token,onChange}){
 // NCM Argencargo con clasificación por IA; debajo las alícuotas. Se puede cargar a mano o
 // leyendo la factura (PDF / foto / pegar imagen). Cada producto puede decir en qué bulto viaja,
 // para que el costo puesto en Argentina se prorratee por bulto; si no, se prorratea por FOB.
+// El aviso de baterías sobrevive al congelamiento de la mercadería: es un dato operativo del vuelo,
+// no plata. Guarda por /api/portal/baterias, que avisa al admin y deja el hito en el seguimiento.
+function BateriasAviso({op,token,onSaved}){
+  const {t}=useT();
+  const [val,setVal]=useState(op.has_battery==null?null:!!op.has_battery);
+  const [saving,setSaving]=useState(false);const [okAt,setOkAt]=useState(false);
+  const guardar=async(v)=>{if(saving||v===val)return;setVal(v);setSaving(true);setOkAt(false);
+    try{const r=await fetch("/api/portal/baterias",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,has_battery:v})});
+      const d=await r.json().catch(()=>null);
+      if(!r.ok){toast(t("merc.saveError"),"error");setVal(op.has_battery==null?null:!!op.has_battery);}
+      else{setOkAt(true);toast(t("merc.battSavedOk"),"success");onSaved?.();}
+    }catch(e){toast(t("merc.saveError"),"error");setVal(op.has_battery==null?null:!!op.has_battery);}
+    setSaving(false);};
+  return <div style={{marginTop:14,padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.04)"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#fff"}}>{t("calc.goodsQ")}</span>
+      {[[true,t("calc.batteryYesShort")],[false,"✓ "+t("common.no")]].map(([v,l])=><button key={l} disabled={saving} onClick={()=>guardar(v)} style={{height:34,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:9,cursor:saving?"wait":"pointer",border:`1px solid ${val===v?(v?"rgba(251,146,60,0.65)":"rgba(74,222,128,0.55)"):"rgba(255,255,255,0.2)"}`,background:val===v?(v?"rgba(251,146,60,0.16)":"rgba(74,222,128,0.14)"):"transparent",color:val===v?(v?"#fdba74":"#4ade80"):"rgba(255,255,255,0.6)"}}>{l}</button>)}
+      {okAt&&<span style={{fontSize:11.5,color:"#4ade80",fontWeight:700}}>✓</span>}
+    </div>
+    <p style={{margin:"8px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.55)",lineHeight:1.5}}>{t("merc.battLate")}</p>
+  </div>;
+}
 function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const {t}=useT();
   const HAIR="1px solid rgba(255,255,255,0.13)";const SKY="#8CC8F5";const SUB="rgba(255,255,255,0.8)";
@@ -822,7 +849,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
     if(op.lost_in_customs_at||["operacion_cerrada","cancelada"].includes(op.status))return null;
     if(isEditable&&items.length===0)return{c:GOLD_LIGHT,t:t("opq.loadTitle"),s:t("opq.loadDesc")};
     if(isEditable&&items.length>0)return{c:GOLD_LIGHT,t:t("opq.confirmTitle"),s:t("opq.confirmDesc")};
-    if(op.docs_confirmed_at&&op.status==="en_preparacion"&&!hasBudget)return{c:SKY,t:t("opq.quotingTitle"),s:t("opq.quotingDesc")};
+    if(docsCerradas(op,inFlight)&&op.status==="en_preparacion"&&!hasBudget)return{c:SKY,t:t("opq.quotingTitle"),s:t("opq.quotingDesc")};
     if(hasBudget&&saldoReal>0.01&&op.status!=="entregada")return{c:GOLD_LIGHT,t:`${t("opq.balanceDue")}: ${usd(saldoReal)}`,s:t("opq.payDesc")};
     if(op.status==="entregada")return{c:"#4ade80",t:t("opq.readyTitle"),s:t("opq.readyDesc")};
     if(op.status==="en_transito")return{c:SKY,t:t("opq.transitTitle"),s:op.eta?`${t("opq.eta")}: ${fd(op.eta)}.`:t("opq.transitDesc")};
@@ -917,7 +944,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{op.origin==="USA"?"🇺🇸":"🇨🇳"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?t("op.arrived"):"ETA"} {fd(op.eta)}</span></>:null}</span>
       </div>
       <h2 style={{fontSize:19,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.4)",margin:"12px 0 4px",fontStyle:op.description?"normal":"italic"}}>{op.description||(items.length?items.map(i=>i.description).filter(Boolean).slice(0,3).join(", "):t("op.noGoods"))}</h2>
-      <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={!!op.docs_confirmed_at}/>
+      <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={docsCerradas(op,inFlight)}/>
       {op.lost_in_customs_at&&<div style={{marginBottom:6,padding:"12px 16px",background:"rgba(248,113,113,0.08)",border:"1.5px solid rgba(248,113,113,0.4)",borderRadius:12}}>
         <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>{t("op.heldTitle")}</p>
         <p style={{fontSize:12.5,color:"rgba(255,255,255,0.75)",margin:"4px 0 0",lineHeight:1.5}}>{t("op.heldDesc")}</p>
@@ -1026,6 +1053,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
               return <tr key={it.id||i}>{[it.description||"—",String(qty),usd(it.unit_price_usd),usd(fob),it.ncm_code&&it.ncm_code!=="MANUAL"?it.ncm_code:(it.import_duty_rate!=null?"Estimado":"—"),...(isGI?[]:[`${it.import_duty_rate??0}%`,`${it.statistics_rate??0}%`,`${it.iva_rate??21}%`])].map((c,ci)=>td(c,ci,ci===4&&it.ncm_code))}</tr>;})}</tbody>
           </table></div>}
           {items.length>0&&!muestraAduana&&<div style={{display:"inline-flex",alignItems:"center",gap:14,marginTop:12,padding:"8px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)"}}><span style={{fontSize:12,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase"}}>{t("merc.fobGoods")}</span><span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(fobItems)}</span></div>}
+          {!isGI&&op.channel==="aereo_blanco"&&!["entregada","operacion_cerrada","cancelada"].includes(op.status)&&<BateriasAviso key={`bat-${op.id}-${String(op.has_battery)}`} op={op} token={token} onSaved={loadAll}/>}
           </>}
         {muestraAduana&&(()=>{const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
           return <div style={{marginTop:isEditable?18:0}}>

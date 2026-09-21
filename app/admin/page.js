@@ -9805,6 +9805,11 @@ function AgentsPanel({token}){
       oi++;progresoActual=`armando ${op.operation_code} (${oi}/${ops.length})`;
       setFlightProgress({label:`📦 Sumando ${op.operation_code} al vuelo…`,detail:"Clonando factura y recalculando presupuesto",current:oi,total:ops.length});
       await dq("flight_operations",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,weight_kg:w}});
+      // Al entrar al vuelo la mercadería queda congelada (el servidor ya rechaza cambios del cliente).
+      // Si el cliente nunca apretó "Confirmar la mercadería" —porque la cargamos nosotros o porque el
+      // vuelo se armó antes— hay que dar la etapa por cerrada, o el portal le sigue pidiendo confirmar
+      // algo que no puede (21/09/2026). El filtro is.null hace que no se pise una confirmación real.
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}&docs_confirmed_at=is.null`,body:{docs_confirmed_at:new Date().toISOString()}});
       // Clonar los operation_items del cliente como items de factura (base editable)
       const items=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});
       let sort=0;for(const it of (Array.isArray(items)?items:[])){sort++;
