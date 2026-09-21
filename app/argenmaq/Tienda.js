@@ -157,19 +157,21 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
           {ses && <>
             <p className="lbl" style={{ marginBottom: 0 }}>{t("precioVolumen")}</p>
             {tramos.length === 0 && unit == null && <p style={{ margin: "10px 0 0", color: "var(--gris)" }}>Precio a confirmar. Consultanos.</p>}
-            {tramos.length > 0 && <div className="tramos">{tramos.map((tr, i) => { const base = Number(tramos[0].unit); const desc = i > 0 && base > 0 ? Math.round((1 - Number(tr.unit) / base) * 100) : 0; return <button key={tr.q} className={`tramo${tramo?.q === tr.q ? " on" : ""}`} onClick={() => setQty(Number(tr.q))}><small>{etiquetaTramo(tr, i)}</small><b>{fmt(tr.unit)}</b><small>{t("precioUnit")}</small>{desc > 0 && <span className="desc">−{desc} %</span>}<span className="pagos">{t("anticipo")}: {fmt(tr.maquina)}<br />{t("alRecibir")}: {fmt(tr.argencargo)}</span></button>; })}</div>}
+            {tramos.length > 0 && <div className="tramos">{tramos.map((tr, i) => { const base = Number(tramos[0].unit); const desc = i > 0 && base > 0 ? Math.round((1 - Number(tr.unit) / base) * 100) : 0; return <button key={tr.q} className={`tramo${tramo?.q === tr.q ? " on" : ""}`} onClick={() => setQty(Number(tr.q))}><small>{etiquetaTramo(tr, i)}</small><b>{fmt(tr.unit)}</b><small>{t("precioUnit")}</small>{desc > 0 && <span className="desc">−{desc} %</span>}</button>; })}</div>}
             <div style={{ display: "flex", gap: 18, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: "1px solid var(--borde)" }}>
               <div><p className="lbl">{t("cantidad")}</p><div className="stepper"><button onClick={() => setQty(Math.max(minQ, q - 1))} disabled={q <= minQ} aria-label="−">−</button><input type="number" min={minQ} value={q} onChange={(e) => setQty(Math.max(minQ, Math.round(Number(e.target.value) || minQ)))} /><button onClick={() => setQty(q + 1)} aria-label="+">+</button></div>{minQ > 1 && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("minimo")} {minQ} {t("unidades")}</p>}</div>
-              <div><p className="lbl">{t("precioUnit")}</p><p style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>{unit != null ? fmt(unit) : "—"}</p>{tramo && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)", fontWeight: 700 }}>{etiquetaTramo(tramo, tramos.indexOf(tramo))}</p>}</div>
+              {tramo && <div><p className="lbl">{t("anticipo")}</p><p style={{ margin: 0, fontSize: 17, fontWeight: 800, lineHeight: 1 }}>{fmt(tramo.maquina)}</p><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>/ {t("unidad")}</p></div>}
+              {tramo && <div><p className="lbl">{t("alRecibir")}</p><p style={{ margin: 0, fontSize: 17, fontWeight: 800, lineHeight: 1 }}>{fmt(tramo.argencargo)}</p><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>/ {t("unidad")}</p></div>}
+              <div style={{ marginLeft: "auto", textAlign: "right" }}><p className="lbl">{t("precioUnit")}</p><p style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>{unit != null ? fmt(unit) : "—"}</p>{tramo && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)", fontWeight: 700 }}>{etiquetaTramo(tramo, tramos.indexOf(tramo))}</p>}</div>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--borde)" }}>
               <div><p className="lbl" style={{ marginBottom: 2 }}>{t("precioTotal")}</p><p style={{ margin: 0, fontSize: 12.5, color: "var(--gris)" }}>{q} × {unit != null ? fmt(unit) : "—"}</p></div>
               <b style={{ fontSize: 28, letterSpacing: "-0.03em" }}>{unit != null ? fmt(unit * q) : "—"}</b>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
-              <button className="btn y" onClick={() => { agregar(); window.location.href = "/carrito"; }} disabled={unit == null}>{t("comprarAhora")}</button>
-              <button className="btn k" onClick={agregar} disabled={unit == null}>{enCarrito && enCarrito.qty === q ? t("agregado") : t("agregar")}</button>
-              <a className="btn wa" href={WA(`Hola ARGENMAQ, consulto por ${m.nombre} (${codigo})`)} target="_blank" rel="noreferrer" style={{ gridColumn: "span 2" }}>{t("consultarWa")}</a>
+              <button className="btn verde" onClick={() => { agregar(); window.location.href = "/carrito"; }} disabled={unit == null}>{t("comprarAhora")}</button>
+              <button className="btn y" onClick={agregar} disabled={unit == null}>{enCarrito && enCarrito.qty === q ? t("agregado") : t("agregar")}</button>
+              <a className="btn k" href={WA(`Hola ARGENMAQ, consulto por ${m.nombre} (${codigo})`)} target="_blank" rel="noreferrer" style={{ gridColumn: "span 2" }}>{t("consultarWa")}</a>
             </div>
           </>}
         </div>
@@ -201,43 +203,78 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
   </div>;
 }
 
-// ── Carrito: cantidad con stepper, precio por escalón y elección de cómo viaja ────────────
+// ── Checkout en tres pasos, como el de B2Box: datos · cómo viaja · pago ─────────────────
 export function CarritoVista({ diasVia: dv }) {
-  const { t, fmt, ses, carrito, setCarrito, cliente } = useAM();
+  const { t, fmt, ses, carrito, setCarrito, cliente, setCliente, dq } = useAM();
   const precios = usePrecios(carrito.map((i) => i.id));
-  const [enviando, setEnviando] = useState(false);
+  const [paso, setPaso] = useState(1);
+  const [enviando, setEnviando] = useState(false); const [err, setErr] = useState("");
   const [hecho, setHecho] = useState(null);
-  const lineaDe = (i) => lineaCarrito(i, precios);
-  const total = carrito.reduce((s, i) => s + (lineaDe(i).total || 0), 0);
+  const lineas = carrito.map((i) => ({ i, L: lineaCarrito(i, precios) }));
+  const total = lineas.reduce((s, { L }) => s + (L.total || 0), 0);
+  const anticipo = lineas.reduce((s, { L }) => s + (L.anticipo || 0), 0);
+  const saldo = lineas.reduce((s, { L }) => s + (L.saldo || 0), 0);
+  const diasMax = lineas.reduce((mx, { L, i }) => { const d = L.via ? diasVia(L.via, dv) : 0; return Math.max(mx, d + Number(i.dias_produccion || 0)); }, 0);
+  const llega = new Date(Date.now() + Math.max(30, diasMax) * 864e5).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" });
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
-  const confirmar = async () => { setEnviando(true); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: carrito.map((i) => ({ id: i.id, qty: lineaDe(i).q, modo: lineaDe(i).modo })) }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { alert(e.message); } setEnviando(false); };
-  if (hecho) return <div className="wrap" style={{ padding: "60px 24px", textAlign: "center", maxWidth: 640 }}><span className="tag">{hecho.codigo}</span><h1 className="h2" style={{ margin: "14px 0 10px" }}>¡Pedido recibido!</h1><p style={{ color: "var(--gris)", fontSize: 16, lineHeight: 1.5 }}>Te escribimos para coordinar el anticipo y arrancar. Podés seguir el pedido desde <a href="/cuenta" style={{ fontWeight: 800 }}>Mi cuenta</a>.</p><a className="btn y" href="/catalogo" style={{ marginTop: 18 }}>{t("catalogo")}</a></div>;
-  return <div className="wrap" style={{ padding: "26px 24px 70px", maxWidth: 960 }}>
-    <h1 className="h2" style={{ marginBottom: 18 }}>{t("carrito")}</h1>
-    {carrito.length === 0 ? <p style={{ color: "var(--gris)" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p> : <>
-      <div style={{ display: "grid", gap: 10 }}>{carrito.map((i) => { const L = lineaDe(i); const diasDe = (modo) => { const tr = escalonPara(L.esc?.[modo] || [], L.q); return tr?.via ? diasVia(tr.via, dv) : null; }; return <div key={i.id} style={{ padding: 14, borderRadius: 18, border: "1px solid var(--borde)", background: "var(--card)" }}>
-        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          <a href={`/m/${i.id}`} style={{ width: 84, height: 64, borderRadius: 10, overflow: "hidden", background: "var(--suave)", flexShrink: 0 }}>{i.foto && <img src={i.foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}</a>
-          <div style={{ flex: 1, minWidth: 180 }}><a href={`/m/${i.id}`} style={{ fontWeight: 800, fontSize: 15 }}>{i.nombre}</a><p style={{ margin: "2px 0 0", fontSize: 12.5, color: "var(--gris)", fontFamily: MONO }}>{L.unit != null ? `${L.q} × ${fmt(L.unit)}` : ""}{L.minQ > 1 ? ` · ${t("minimo")} ${L.minQ}` : ""}</p></div>
-          <div className="stepper" style={{ height: 40 }}><button style={{ height: 40 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 40 }} type="number" min={L.minQ} value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 40 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div>
-          <b style={{ fontSize: 17, minWidth: 110, textAlign: "right" }}>{ses && L.total != null ? fmt(L.total) : "—"}</b>
-          <button className="chip" onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}>✕</button>
-        </div>
-        {ses && L.esc?.aerea?.length > 0 && L.esc?.maritima?.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--borde)", alignItems: "center" }}>
-          <span className="lbl" style={{ margin: 0, marginRight: 4 }}>{t("viaEnvio")}</span>
-          {["maritima", "aerea"].map((modo) => { const tr = escalonPara(L.esc[modo] || [], L.q); const d = diasDe(modo); return <button key={modo} className={`modoBtn${L.modo === modo ? " on" : ""}`} onClick={() => setCarrito((c) => c.map((x) => x.id === i.id ? { ...x, modo } : x))} disabled={!tr}><span style={{ fontWeight: 800, fontSize: 13.5 }}>{modo === "aerea" ? t("viaAerea") : t("viaMaritima")}</span><small>{tr ? `${fmt(tr.unit)} / ${t("unidad")}${d != null ? ` · ${d} ${t("dias")}` : ""}` : t("noDisponibleQty")}</small></button>; })}
+  const confirmar = async () => { setEnviando(true); setErr(""); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: lineas.map(({ i, L }) => ({ id: i.id, qty: L.q, modo: L.modo })) }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { setErr(e.message); } setEnviando(false); };
+  if (hecho) return <div className="wrap" style={{ padding: "60px 24px", textAlign: "center", maxWidth: 640 }}><span className="tag">{hecho.codigo}</span><h1 className="h2" style={{ margin: "14px 0 10px" }}>¡Pedido recibido!</h1><p style={{ color: "var(--gris)", fontSize: 16, lineHeight: 1.5 }}>Te escribimos por WhatsApp con los datos para el anticipo. Podés seguir el pedido desde <a href="/cuenta" style={{ fontWeight: 800 }}>Mi cuenta</a>.</p><a className="btn y" href="/catalogo" style={{ marginTop: 18 }}>{t("catalogo")}</a></div>;
+  if (!ses) return <div className="wrap" style={{ padding: "60px 24px", maxWidth: 560 }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)", margin: "0 0 16px" }}>{t("verPrecio")}</p><div style={{ display: "flex", gap: 8 }}><a className="btn y" href="/cuenta?volver=/carrito">{t("ingresar")}</a><a className="btn" href="/cuenta?registro=1&volver=/carrito">{t("crear")}</a></div></div>;
+  if (carrito.length === 0) return <div className="wrap" style={{ padding: "60px 24px" }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p></div>;
+  const PASOS = [t("envio"), t("pago"), t("confirmacion")];
+  const idxPaso = paso <= 2 ? 0 : 1; // los pasos 1 y 2 son "Envío" (datos + cómo viaja), el 3 es "Pago"
+  const Resumen = <aside className="resumen">
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><p className="lbl" style={{ margin: 0 }}>{t("queCompras")}</p><span style={{ fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{carrito.reduce((s, i) => s + (i.qty || 1), 0)} {t("unidades")}</span></div>
+    {lineas.map(({ i, L }) => <div key={i.id} className="item">
+      {i.foto ? <img src={i.foto} alt="" /> : <div style={{ width: 56, height: 56, borderRadius: 10, background: "var(--suave)" }} />}
+      <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 13.5, lineHeight: 1.3 }}>{i.nombre}</p><p style={{ margin: "2px 0 8px", fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{L.q} × {L.unit != null ? fmt(L.unit) : "—"}{L.modo === "aerea" ? ` · ${t("viaAerea")}` : ""}</p>
+        <div className="stepper" style={{ height: 32 }}><button style={{ height: 32, width: 32, fontSize: 16 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 32, width: 40, fontSize: 13 }} type="number" value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 32, width: 32, fontSize: 16 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div></div>
+      <div style={{ textAlign: "right" }}><b style={{ fontSize: 14 }}>{L.total != null ? fmt(L.total) : "—"}</b><br /><button className="ico" style={{ width: 28, height: 28, border: "none", marginTop: 6 }} onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}><Ico d={["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6"]} size={14} /></button></div>
+    </div>)}
+    <p className="lbl" style={{ margin: "16px 0 6px" }}>{t("lasCuentas")}</p>
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}><span style={{ color: "var(--gris)" }}>{t("subtotal")}</span><b>{fmt(total)}</b></div>
+    <p className="lbl" style={{ margin: "18px 0 0" }}>{t("seDosVeces")}</p>
+    <div className="dosVeces">
+      <div className="hoy"><p className="lbl" style={{ marginBottom: 4 }}>{t("hoy")} · {total > 0 ? Math.round((anticipo / total) * 100) : 0}%</p><b style={{ fontSize: 19, letterSpacing: "-0.02em" }}>{fmt(anticipo)}</b><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>{t("conEstoArranca")}</p></div>
+      <div><p className="lbl" style={{ marginBottom: 4 }}>{t("alLlegar")} · {total > 0 ? Math.round((saldo / total) * 100) : 0}%</p><b style={{ fontSize: 19, letterSpacing: "-0.02em" }}>{fmt(saldo)}</b><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>{t("teAvisamos")} <b style={{ color: "var(--ink)" }}>{llega}</b></p></div>
+    </div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--borde)" }}><span style={{ fontWeight: 800 }}>{t("totalPedido")}</span><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(total)}</b></div>
+  </aside>;
+  return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
+    <div className="chkGrid">
+      <div style={{ minWidth: 0 }}>
+        <p className="lbl" style={{ marginBottom: 4 }}>{t("paso")} {idxPaso + 1} {t("dias") === "días" ? "de" : "/"} 3</p>
+        <h1 className="h2" style={{ fontSize: 34 }}>{paso === 1 ? t("infoContacto") : paso === 2 ? t("metodoEntrega") : t("pago")}</h1>
+        <div className="pasos">{PASOS.map((pl, i) => <div key={pl} style={{ height: "auto", background: "transparent" }}><div className={i < idxPaso ? "hecho" : i === idxPaso ? "actual" : ""} /><span className={i === idxPaso ? "on" : ""}>{i + 1} {pl}</span></div>)}</div>
+
+        {paso === 1 && <div className="granCard">
+          <p style={{ margin: "0 0 14px", fontSize: 14, color: "var(--gris)" }}>{cliente ? "Revisá que estén bien: a esta dirección coordinamos la entrega." : t("completaDatos")}</p>
+          <FormDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} textoBoton={t("continuarEntrega")} onListo={() => setPaso(2)} />
         </div>}
-      </div>; })}</div>
-      <div style={{ marginTop: 18, padding: "18px 20px", borderRadius: 20, background: "var(--suave)" }}>
-        {!ses ? <><p style={{ margin: "0 0 10px", fontWeight: 800 }}>{t("verPrecio")}</p><div style={{ display: "flex", gap: 8 }}><a className="btn y" href="/cuenta?volver=/carrito">{t("ingresar")}</a><a className="btn" href="/cuenta?registro=1&volver=/carrito">{t("crear")}</a></div></>
-          : <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}><span style={{ fontWeight: 800, fontSize: 16 }}>{t("total")}</span><b style={{ fontSize: 26, letterSpacing: "-0.02em" }}>{fmt(total)}</b></div>
-            <p style={{ margin: "6px 0 14px", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}. {t("anticipoNota")}.</p>
-            <button className="btn y" onClick={confirmar} disabled={enviando || !cliente}>{enviando ? "Enviando…" : t("pedir")}</button>
-            {!cliente && <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{t("completaDatos")} <a href="/cuenta" style={{ fontWeight: 800 }}>{t("misDatos")} →</a></p>}
-          </>}
+
+        {paso === 2 && <div className="granCard">
+          <p style={{ margin: "0 0 16px", fontSize: 14, color: "var(--gris)" }}>{t("metodoEntregaSub")}</p>
+          <div style={{ display: "grid", gap: 14 }}>{lineas.map(({ i, L }) => { const opciones = [["maritima", t("viaMaritima")], ...(L.esc?.aerea?.length ? [["aerea", t("viaAerea")]] : [])]; return <div key={i.id} style={{ border: "1px solid var(--borde)", borderRadius: 18, padding: 14 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>{i.foto && <img src={i.foto} alt="" style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover" }} />}<div><p style={{ margin: 0, fontWeight: 800, fontSize: 14.5 }}>{i.nombre}</p><p style={{ margin: 0, fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{L.q} {t("unidades")}</p></div></div>
+            <div style={{ display: "grid", gridTemplateColumns: opciones.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>{opciones.map(([modo, l]) => { const tr = escalonPara(L.esc?.[modo] || [], L.q); const d = tr?.via ? diasVia(tr.via, dv) + Number(i.dias_produccion || 0) : null; return <button key={modo} className={`opcion${L.modo === modo ? " on" : ""}`} onClick={() => setCarrito((c) => c.map((x) => x.id === i.id ? { ...x, modo } : x))} disabled={!tr}><span className="radio" /><span style={{ flex: 1 }}><span style={{ display: "block", fontWeight: 800, fontSize: 14 }}>{l}</span><span style={{ display: "block", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{tr ? `${fmt(tr.unit)} / ${t("unidad")}${d != null ? ` · ${d} ${t("dias")}` : ""}` : t("noDisponibleQty")}</span></span></button>; })}</div>
+          </div>; })}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(1)}>← {t("volverDireccion")}</button><button className="btn y" onClick={() => setPaso(3)}>{t("continuarPago")}</button></div>
+        </div>}
+
+        {paso === 3 && <div className="granCard">
+          <p className="lbl">{t("elegiPago")}</p>
+          <button className="opcion on" type="button"><span className="radio" /><span><span style={{ display: "block", fontWeight: 800, fontSize: 14.5 }}>{t("transferencia")}</span><span style={{ display: "block", fontSize: 12.5, color: "var(--gris)" }}>{t("transferenciaSub")}</span></span></button>
+          <div className="dosVeces" style={{ marginTop: 16 }}>
+            <div className="hoy"><p className="lbl" style={{ marginBottom: 4 }}>{t("hoy")}</p><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(anticipo)}</b><p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("conEstoArranca")}</p></div>
+            <div><p className="lbl" style={{ marginBottom: 4 }}>{t("alLlegar")}</p><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(saldo)}</b><p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("teAvisamos")} {llega}</p></div>
+          </div>
+          {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: "12px 0 0" }}>{err}</p>}
+          <div style={{ display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(2)}>← {t("volverEnvio")}</button><button className="btn verde" onClick={confirmar} disabled={enviando || !cliente}>{enviando ? "…" : t("confirmarPedido")}</button></div>
+          <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--gris)" }}>Al confirmar aceptás los <a href="/terminos" style={{ fontWeight: 700 }}>términos y condiciones</a>. Tenés 24 horas desde el anticipo para arrepentirte sin costo.</p>
+        </div>}
       </div>
-    </>}
+      {Resumen}
+    </div>
   </div>;
 }
 
@@ -253,6 +290,22 @@ export function CuentaVista() {
     {modo === "login" ? <Login login={login} t={t} volver={volver} /> : <Registro sf={sf} guardarSes={guardarSes} t={t} volver={volver} />}
   </div>;
 }
+// Input de formulario. Vive a nivel de módulo a propósito: definido dentro del componente se
+// volvía un componente nuevo en cada render, React lo desmontaba y el foco se perdía a cada letra.
+function CampoTxt({ k, l, f, set, type = "text", req = true, span }) {
+  return <label className="lbl" style={{ gridColumn: span ? "span 2" : undefined }}>{l}<input className="inp" type={type} value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} required={req} style={{ marginTop: 6 }} /></label>;
+}
+// WhatsApp con código de país aparte: se guarda como +54 9 11 … (solo dígitos después del +).
+const PREFIJOS = ["+54", "+598", "+595", "+591", "+56", "+55", "+51", "+1", "+34", "+7", "+86"];
+function CampoWa({ f, set, t }) {
+  return <div style={{ gridColumn: "span 2" }}><span className="lbl">WhatsApp</span><div className="waPref">
+    <Elegir value={f.wa_pref} onChange={(v) => set("wa_pref", v)} opciones={PREFIJOS.map((p) => ({ v: p, l: p }))} />
+    <input className="inp" type="tel" inputMode="numeric" value={f.wa_num ?? ""} onChange={(e) => set("wa_num", e.target.value.replace(/[^0-9 ]/g, ""))} placeholder="9 11 2345 6789" required />
+  </div></div>;
+}
+const partirWa = (w) => { const s = String(w || "").replace(/[^0-9+]/g, ""); const pref = PREFIJOS.find((p) => s.startsWith(p)); return pref ? { wa_pref: pref, wa_num: s.slice(pref.length) } : { wa_pref: "+54", wa_num: s.replace(/^\+/, "") }; };
+const unirWa = (f) => `${f.wa_pref || "+54"}${String(f.wa_num || "").replace(/\D/g, "")}`;
+
 function Login({ login, t, volver }) {
   const [email, setEmail] = useState(""); const [pass, setPass] = useState(""); const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
   const entrar = async (e) => { e.preventDefault(); setLo(true); setErr(""); try { await login(email.trim(), pass); window.location.href = volver || "/catalogo"; } catch (er) { setErr(er.message); } setLo(false); };
@@ -266,13 +319,13 @@ function Login({ login, t, volver }) {
   </form>;
 }
 function Registro({ sf, guardarSes, t, volver }) {
-  const [f, setF] = useState({ first_name: "", last_name: "", whatsapp: "", email: "", password: "", street: "", floor_apt: "", postal_code: "", city: "", province: "", tax_condition: "ninguna", company_name: "", cuit: "", dni: "" });
+  const [f, setF] = useState({ first_name: "", last_name: "", wa_pref: "+54", wa_num: "", email: "", password: "", street: "", floor_apt: "", postal_code: "", city: "", province: "", tax_condition: "ninguna", company_name: "", cuit: "", dni: "" });
   const [err, setErr] = useState(""); const [lo, setLo] = useState(false); const [ok, setOk] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const I = ({ k, l, type = "text", req = true, span }) => <label className="lbl" style={{ gridColumn: span ? "span 2" : undefined }}>{l}<input className="inp" type={type} value={f[k]} onChange={(e) => set(k, e.target.value)} required={req} style={{ marginTop: 6 }} /></label>;
+  const I = (p) => <CampoTxt {...p} f={f} set={set} />;
   const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
-  const registrar = async (e) => { e.preventDefault(); setErr(""); if (f.password.length < 6) { setErr("La contraseña tiene que tener al menos 6 caracteres"); return; } if (f.whatsapp.replace(/\D/g, "").length < 10) { setErr("WhatsApp inválido (mínimo 10 dígitos)"); return; } if (["responsable_inscripto", "monotributista"].includes(f.tax_condition) && f.cuit.replace(/\D/g, "").length !== 11) { setErr("CUIT inválido (11 dígitos)"); return; } if (f.tax_condition === "ninguna" && f.dni.replace(/\D/g, "").length < 7) { setErr("DNI inválido"); return; } if (!f.province) { setErr("Elegí la provincia"); return; } setLo(true); try {
-    const data = { role: "cliente", first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: f.whatsapp.trim(), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.company_name.trim(), cuit: f.cuit.trim(), street: f.street.trim(), floor_apt: f.floor_apt.trim(), postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province, origen: "argenmaq" };
+  const registrar = async (e) => { e.preventDefault(); setErr(""); if (f.password.length < 6) { setErr("La contraseña tiene que tener al menos 6 caracteres"); return; } if (String(f.wa_num || "").replace(/\D/g, "").length < 8) { setErr("WhatsApp inválido"); return; } if (["responsable_inscripto", "monotributista"].includes(f.tax_condition) && f.cuit.replace(/\D/g, "").length !== 11) { setErr("CUIT inválido (11 dígitos)"); return; } if (f.tax_condition === "ninguna" && f.dni.replace(/\D/g, "").length < 7) { setErr("DNI inválido"); return; } if (!f.province) { setErr("Elegí la provincia"); return; } setLo(true); try {
+    const data = { role: "cliente", first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: unirWa(f), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.company_name.trim(), cuit: f.cuit.trim(), street: f.street.trim(), floor_apt: f.floor_apt.trim(), postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province, origen: "argenmaq" };
     const a = (await sf("/auth/v1/signup", { method: "POST", body: JSON.stringify({ email: f.email.trim(), password: f.password, data }) })).body;
     if (a?.error || a?.msg || a?.error_description) throw new Error(a.error?.message || a.msg || a.error_description);
     if (!a?.access_token) { setOk("Te enviamos un mail para confirmar la cuenta. Después ingresá con tu email y contraseña."); setLo(false); return; }
@@ -286,7 +339,7 @@ function Registro({ sf, guardarSes, t, volver }) {
     <h1 className="h2" style={{ fontSize: 30, gridColumn: "span 2" }}>{t("crear")}</h1>
     <p style={{ margin: "-4px 0 4px", color: "var(--gris)", fontSize: 14, gridColumn: "span 2" }}>Con la cuenta ves los precios de todas las máquinas. Es la misma cuenta que Argencargo.</p>
     <I k="first_name" l="Nombre" /><I k="last_name" l="Apellido" />
-    <I k="email" l={t("email")} type="email" /><I k="whatsapp" l="WhatsApp" />
+    <I k="email" l={t("email")} type="email" span /><CampoWa f={f} set={set} t={t} />
     <I k="password" l={t("pass")} type="password" span />
     <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
     <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
@@ -300,18 +353,17 @@ function Registro({ sf, guardarSes, t, volver }) {
   </form>;
 }
 const EST = { nuevo: "Nueva", pagado: "Pagada", en_produccion: "En producción", listo_fabrica: "Lista en fábrica", en_importacion: "En importación", entregado: "Entregada", cancelado: "Cancelada" };
-// Ficha del cliente desde Mi cuenta: si la cuenta todavía no tiene cliente (una cuenta del equipo,
-// o creada antes de que existiera el registro), se crea acá con los mismos datos que pide el alta.
-function MisDatos({ cliente, setCliente, dq, ses, t }) {
-  const [f, setF] = useState(() => ({ first_name: cliente?.first_name || "", last_name: cliente?.last_name || "", whatsapp: cliente?.whatsapp || "", street: cliente?.street || "", floor_apt: cliente?.floor_apt || "", postal_code: cliente?.postal_code || "", city: cliente?.city || "", province: cliente?.province || "", tax_condition: cliente?.tax_condition || "ninguna", company_name: cliente?.company_name || "", cuit: cliente?.cuit || "", dni: cliente?.dni || "" }));
-  const [err, setErr] = useState(""); const [ok, setOk] = useState(""); const [lo, setLo] = useState(false);
-  const [abierto, setAbierto] = useState(!cliente);
+// Ficha del cliente: la usan Mi cuenta y el paso 1 del checkout. Si la cuenta todavía no tiene
+// cliente (una cuenta del equipo, o creada antes de que existiera el registro), se crea acá.
+function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
+  const [f, setF] = useState(() => ({ first_name: cliente?.first_name || "", last_name: cliente?.last_name || "", ...partirWa(cliente?.whatsapp), street: cliente?.street || "", floor_apt: cliente?.floor_apt || "", postal_code: cliente?.postal_code || "", city: cliente?.city || "", province: cliente?.province || "", tax_condition: cliente?.tax_condition || "ninguna", company_name: cliente?.company_name || "", cuit: cliente?.cuit || "", dni: cliente?.dni || "" }));
+  const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const I = ({ k, l, req = true, span }) => <label className="lbl" style={{ gridColumn: span ? "span 2" : undefined }}>{l}<input className="inp" value={f[k]} onChange={(e) => set(k, e.target.value)} required={req} style={{ marginTop: 6 }} /></label>;
+  const I = (p) => <CampoTxt {...p} f={f} set={set} />;
   const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
-  const guardar = async (e) => { e.preventDefault(); setErr(""); setOk(""); if (f.whatsapp.replace(/\D/g, "").length < 10) { setErr("WhatsApp inválido (mínimo 10 dígitos)"); return; } setLo(true);
+  const guardar = async (e) => { e.preventDefault(); setErr(""); if (String(f.wa_num || "").replace(/\D/g, "").length < 8) { setErr("WhatsApp inválido"); return; } setLo(true);
     try {
-      const body = { first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: f.whatsapp.trim(), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.tax_condition === "responsable_inscripto" ? f.company_name.trim() : null, cuit: ["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? f.cuit.trim() : null, street: f.street.trim(), floor_apt: f.floor_apt.trim() || null, postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province };
+      const body = { first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: unirWa(f), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.tax_condition === "responsable_inscripto" ? f.company_name.trim() : null, cuit: ["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? f.cuit.trim() : null, street: f.street.trim(), floor_apt: f.floor_apt.trim() || null, postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province };
       let row = null;
       if (cliente?.id) { const r = await dq("clients", { method: "PATCH", filters: `?id=eq.${cliente.id}`, body }); row = Array.isArray(r) ? r[0] : r; }
       else {
@@ -320,8 +372,23 @@ function MisDatos({ cliente, setCliente, dq, ses, t }) {
         if (!creado) throw new Error(ultimo || "No se pudo crear la ficha");
         row = creado;
       }
-      if (row) setCliente({ ...(cliente || {}), ...row }); setOk(t("datosOk")); setAbierto(false);
+      const nuevo = { ...(cliente || {}), ...(row || body) }; setCliente(nuevo); onListo?.(nuevo);
     } catch (er) { setErr(er.message || "Error"); } setLo(false); };
+  return <form onSubmit={guardar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+    <I k="first_name" l="Nombre" /><I k="last_name" l="Apellido" />
+    <CampoWa f={f} set={set} t={t} />
+    <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
+    <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
+    <I k="postal_code" l="Código postal" />
+    <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
+    {f.tax_condition === "responsable_inscripto" && <I k="company_name" l="Razón social" />}
+    {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <I k="cuit" l="CUIT" /> : <I k="dni" l="DNI" />}
+    {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
+    <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : (textoBoton || t("guardarDatos"))}</button></div>
+  </form>;
+}
+function MisDatos({ cliente, setCliente, dq, ses, t }) {
+  const [abierto, setAbierto] = useState(!cliente); const [ok, setOk] = useState("");
   return <div style={{ padding: "18px 20px", borderRadius: 18, border: "1px solid var(--borde)", background: "var(--card)", marginBottom: 22 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
       <h2 style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, flex: 1 }}>{t("misDatos")}</h2>
@@ -331,18 +398,7 @@ function MisDatos({ cliente, setCliente, dq, ses, t }) {
     {!cliente && <p style={{ margin: "6px 0 0", fontSize: 14, color: "var(--gris)" }}>{t("completaDatos")}</p>}
     {cliente && !abierto && <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--gris)" }}>{[cliente.first_name, cliente.last_name].filter(Boolean).join(" ")} · {cliente.whatsapp || "—"} · {[cliente.street, cliente.city, cliente.province].filter(Boolean).join(", ") || "—"}</p>}
     {ok && !abierto && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--ok)", fontWeight: 700 }}>{ok}</p>}
-    {abierto && <form onSubmit={guardar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
-      <I k="first_name" l="Nombre" /><I k="last_name" l="Apellido" />
-      <I k="whatsapp" l="WhatsApp" span />
-      <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
-      <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
-      <I k="postal_code" l="Código postal" />
-      <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
-      {f.tax_condition === "responsable_inscripto" && <I k="company_name" l="Razón social" />}
-      {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <I k="cuit" l="CUIT" /> : <I k="dni" l="DNI" />}
-      {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
-      <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : t("guardarDatos")}</button>{cliente && <button type="button" className="btn" onClick={() => setAbierto(false)}>Cancelar</button>}</div>
-    </form>}
+    {abierto && <div style={{ marginTop: 16 }}><FormDatos cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} onListo={() => { setOk(t("datosOk")); setAbierto(false); }} />{cliente && <button className="btn" style={{ marginTop: 8 }} onClick={() => setAbierto(false)}>Cancelar</button>}</div>}
   </div>;
 }
 function Panel({ cliente, setCliente, dq, salir, t, fmt, ses }) {
