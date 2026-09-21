@@ -382,9 +382,9 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
 // El cliente nunca ve "LCL/FCL" ni "Integral": ve "vía aérea" y "vía marítima", así que como
 // mucho una de las dos marítimas puede estar visible.
 const VIAS=[
-  {k:"aereo",l:"Vía aérea",sub:"Aéreo Courier Comercial · 7-10 días",channel:"aereo_blanco"},
-  {k:"maritimo_lcl",l:"Vía marítima · LCL/FCL",sub:"Marítimo Carga LCL/FCL · 60-70 días",channel:"maritimo_blanco"},
-  {k:"maritimo_integral",l:"Vía marítima · Integral",sub:"Marítimo Integral · 60-70 días · impuestos incluidos",channel:"maritimo_negro"},
+  {k:"aereo",l:"Aéreo Courier Comercial",sub:"7-10 días",channel:"aereo_blanco"},
+  {k:"maritimo_lcl",l:"Marítimo Carga LCL/FCL",sub:"60-70 días",channel:"maritimo_blanco"},
+  {k:"maritimo_integral",l:"Marítimo Integral",sub:"60-70 días · impuestos incluidos",channel:"maritimo_negro"},
 ];
 function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   const inicial=()=>{const c=p.canales||{};return Object.fromEntries(VIAS.map(v=>[v.k,{mostrar:!!c[v.k]?.mostrar,gestion_pct:c[v.k]?.gestion_pct!=null?String(c[v.k].gestion_pct):"",gestion_usd:c[v.k]?.gestion_usd!=null?String(c[v.k].gestion_usd):""}]));};
@@ -399,13 +399,22 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
     let r=null,err=null;
     try{r=calcOpBudget({channel:v.channel,origin:"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},items,pks,tarifas?.tariffs||[],tarifas?.config||{},tarifas?.overrides||[],cliente);}catch(e){err=e.message;}
     const motivos=[];
-    if(v.k==="aereo"&&pesado)motivos.push("Hay bultos de más de 45 kg: el courier comercial no los acepta.");
-    if(v.k==="maritimo_lcl"&&totCBM<0.5)motivos.push(`Cubica ${totCBM.toFixed(3).replace(".",",")} m³, menos de 0,5 m³: LCL/FCL no se ofrece para una sola máquina (factura mínimo 1 m³).`);
-    if(v.k==="maritimo_lcl"&&totCBM>=0.5&&totCBM<1)motivos.push("Factura mínimo 1 m³.");
-    if(!tarifas?.tariffs?.length)motivos.push("Sin tarifas cargadas de Argencargo.");
-    return {...v,r,err,motivos};
+    if(v.k==="aereo"&&pesado)motivos.push({t:"Hay bultos de más de 45 kg: el courier comercial no los acepta.",bloquea:true});
+    if(v.k==="maritimo_lcl"&&totCBM<0.5)motivos.push({t:`Cubica ${totCBM.toFixed(3).replace(".",",")} m³, menos de 0,5 m³: LCL/FCL no se ofrece para una sola máquina (factura mínimo 1 m³).`,bloquea:true});
+    if(v.k==="maritimo_lcl"&&totCBM>=0.5&&totCBM<1)motivos.push({t:"Factura mínimo 1 m³.",bloquea:false});
+    if(!tarifas?.tariffs?.length)motivos.push({t:"Sin tarifas cargadas de Argencargo.",bloquea:true});
+    const bloqueada=!r||!!err||motivos.some(m=>m.bloquea);
+    return {...v,r,err,motivos,bloqueada};
   }),[f.exw_usd,f.packing,f.die,f.te,f.iva,tarifas]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Precio en pesos: mismo dólar que ve el cliente en la web (blue venta + 5).
+  const [tc,setTc]=useState(null);
+  useEffect(()=>{let vivo=true;fetch("/api/argenmaq/dolar").then(r=>r.json()).then(d=>{if(vivo&&d?.tc)setTc(Number(d.tc));}).catch(()=>{});return()=>{vivo=false;};},[]);
   const setC=(k,campo,v)=>setCfg(x=>{const nx={...x,[k]:{...x[k],[campo]:v}};if(campo==="mostrar"&&v&&k!=="aereo"){const otra=k==="maritimo_lcl"?"maritimo_integral":"maritimo_lcl";nx[otra]={...nx[otra],mostrar:false};}return nx;});
+  // El interruptor no puede quedar prendido en una vía que no se puede ofrecer (courier con
+  // bultos de más de 45 kg, LCL que no llega al mínimo, sin tarifas): se apaga solo.
+  useEffect(()=>{const bloq=calc.filter(v=>v.bloqueada).map(v=>v.k);if(!bloq.length)return;
+    setCfg(x=>{let cambio=false;const nx={...x};for(const k of bloq){if(nx[k]?.mostrar){nx[k]={...nx[k],mostrar:false};cambio=true;}}return cambio?nx:x;});
+  },[calc]);
   const precioDe=(v)=>{const c=cfg[v.k];const arg=v.r?n(v.r.totalAbonar):0;const r=precioMaquina({exwUnit:n(f.exw_usd),qty:1,ajustes,gestionPct:c.gestion_pct.trim()!==""?c.gestion_pct:(p.markup_pct??null),gestionUsd:c.gestion_usd.trim()!==""?c.gestion_usd:null,importacion:arg});return {exw:r.exw,financiero:r.financiero,gestion:r.gestion,base:r.base,maquina:r.precio,argencargo:arg,total:r.total};};
   const guardar=async()=>{setGuardando(true);try{
     const canales=Object.fromEntries(calc.map(v=>{const c=cfg[v.k];const pr=precioDe(v);return [v.k,{mostrar:!!c.mostrar,gestion_pct:c.gestion_pct.trim()===""?null:n(c.gestion_pct),gestion_usd:c.gestion_usd.trim()===""?null:n(c.gestion_usd),argencargo:v.r?{flete:n(v.r.flete),seguro:n(v.r.seguro),sobrepeso:n(v.r.overweightSurcharge),impuestos:n(v.r.totalTax),recargo:n(v.r.surcharge),total:n(v.r.totalAbonar),unidad:v.r.fleteAmt}:null,precio:pr,motivos:v.motivos,calculado_at:new Date().toISOString()}];}));
@@ -415,29 +424,51 @@ function Canales({p,f,dq,ajustes,tarifas,onVolver}){
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 18px"}}><Btn small onClick={onVolver}>← Ficha</Btn><span style={{fontFamily:MONO,fontSize:13,fontWeight:600,letterSpacing:"0.08em"}}>{codigoMaq(p)}</span><span style={{fontWeight:800}}>{f.nombre||f.nombre_raw}</span><span style={{flex:1}}/><span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>EXW {fmtUsd(f.exw_usd)} · {totCBM.toFixed(3).replace(".",",")} M³ · {pks.reduce((s,b)=>s+b.gross_weight_kg*b.quantity,0)} KG</span></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:14}}>
-      {calc.map(v=>{const c=cfg[v.k];const pr=precioDe(v);const r=v.r;return <Sec key={v.k} style={{marginBottom:0,borderColor:c.mostrar?LIMA:BORDE}}>
-        <div style={{display:"flex",alignItems:"start",gap:10,marginBottom:12}}><div style={{flex:1}}><p style={{margin:0,fontSize:16,fontWeight:800}}>{v.l}</p><p style={{margin:"2px 0 0",fontSize:12.5,color:GRIS}}>{v.sub}</p></div></div>
-        {v.motivos.length>0&&<div style={{background:WARN_BG,borderRadius:12,padding:"10px 12px",marginBottom:12,fontSize:12.5}}>{v.motivos.map((m,i)=><p key={i} style={{margin:i?"4px 0 0":0,color:WARN}}>⚠ {m}</p>)}</div>}
-        {v.err&&<p style={{color:BAD,fontSize:12.5}}>No se pudo calcular: {v.err}</p>}
-        {r&&<div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"5px 12px",fontSize:13,marginBottom:12}}>
-          <span style={{color:GRIS}}>Flete{r.fleteAmt?` (${fmtNum(r.fleteAmt,v.k==="aereo"?1:3)} ${v.k==="aereo"?"kg":"m³"})`:""}</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.flete)}</span>
-          {n(r.seguro)>0&&<><span style={{color:GRIS}}>Seguro</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.seguro)}</span></>}
-          {n(r.overweightSurcharge)>0&&<><span style={{color:GRIS}}>Recargo por sobrepeso</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.overweightSurcharge)}</span></>}
-          {n(r.surcharge)>0&&<><span style={{color:GRIS}}>Recargo por valor</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.surcharge)}</span></>}
-          {n(r.totalTax)>0&&<><span style={{color:GRIS}}>Impuestos</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(r.totalTax)}</span></>}
-          <span style={{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:6}}>Argencargo</span><span style={{fontFamily:MONO,fontWeight:800,textAlign:"right",borderTop:`1px solid ${BORDE}`,paddingTop:6}}>{fmtUsd(r.totalAbonar)}</span>
-        </div>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-          <Campo label="Gestión (%)"><Inp type="number" step="0.5" value={c.gestion_pct} onChange={e=>setC(v.k,"gestion_pct",e.target.value)} placeholder={String(p.markup_pct??ajustes.gestion_pct)}/></Campo>
-          <Campo label="o fijo (USD)"><Inp type="number" value={c.gestion_usd} onChange={e=>setC(v.k,"gestion_usd",e.target.value)} placeholder="—"/></Campo>
+      {calc.map(v=>{const c=cfg[v.k];const pr=precioDe(v);const r=v.r;
+        const fila=(l,val,st={})=><><span style={{color:GRIS,...(st.l||{})}}>{l}</span><span style={{fontFamily:MONO,textAlign:"right",...(st.v||{})}}>{val}</span></>;
+        return <Sec key={v.k} style={{marginBottom:0,borderColor:c.mostrar?LIMA:BORDE,display:"flex",flexDirection:"column"}}>
+        {/* Título centrado, con alto fijo para que las tres tarjetas arranquen parejas */}
+        <div style={{textAlign:"center",minHeight:58,borderBottom:`1px solid ${BORDE}`,paddingBottom:12,marginBottom:12}}>
+          <p style={{margin:0,fontSize:16,fontWeight:800}}>{v.l}</p>
+          <p style={{margin:"2px 0 0",fontSize:12.5,color:GRIS}}>{v.sub}</p>
         </div>
+        {v.err&&<p style={{color:BAD,fontSize:12.5,margin:"0 0 12px"}}>No se pudo calcular: {v.err}</p>}
+        {/* Costo de Argencargo: un solo número, sin desglose */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"5px 12px",fontSize:13.5,marginBottom:12}}>
+          {fila("Costo de importación",fmtUsd(pr.argencargo),{l:{fontWeight:700,color:INK},v:{fontWeight:800}})}
+        </div>
+        {/* Qué compone el costo de la operación (la base sobre la que se cobra la gestión) */}
         <div style={{background:SUAVE,borderRadius:12,padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr auto",gap:"4px 12px",fontSize:12.5,marginBottom:12}}>
-          <span style={{color:GRIS}}>Gestión sobre {fmtUsd(pr.base)} (EXW + financiero + Argencargo)</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.gestion)}</span>
-          <span style={{color:GRIS}}>Máquina (EXW + financiero + gestión)</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.maquina)}</span>
-          <span style={{color:GRIS}}>Argencargo</span><span style={{fontFamily:MONO,textAlign:"right"}}>{fmtUsd(pr.argencargo)}</span>
-          <span style={{fontWeight:800,fontSize:14}}>Precio al cliente</span><span style={{fontFamily:MONO,fontWeight:800,fontSize:16,textAlign:"right"}}>{fmtUsd(pr.total)}</span>
+          {fila("Máquina (EXW)",fmtUsd(pr.exw))}
+          {fila("Costo financiero",fmtUsd(pr.financiero))}
+          {fila("Importación",fmtUsd(pr.argencargo))}
+          {fila("Costo de operación",fmtUsd(pr.base),{l:{fontWeight:800,color:INK,borderTop:`1px solid ${BORDE}`,paddingTop:6},v:{fontWeight:800,borderTop:`1px solid ${BORDE}`,paddingTop:6}})}
         </div>
-        <Toggle on={c.mostrar} onChange={val=>setC(v.k,"mostrar",val)} l={c.mostrar?"Se muestra al cliente":"Oculta para el cliente"} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”":"El cliente la ve como “vía marítima” (solo una de las dos)"}/>
+        {/* Gestión: porcentaje o monto fijo, con la "o" entre las dos */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 20px 1fr",gap:8,alignItems:"end",marginBottom:10}}>
+          <div style={{minWidth:0}}>
+            <label style={{display:"block",textAlign:"center",fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",textTransform:"uppercase",color:GRIS,marginBottom:5}}>Gestión (%)</label>
+            <Inp type="number" step="0.5" value={c.gestion_pct} onChange={e=>setC(v.k,"gestion_pct",e.target.value)} placeholder={String(p.markup_pct??ajustes.gestion_pct)} style={{textAlign:"center"}}/>
+          </div>
+          <span style={{textAlign:"center",fontSize:12,color:GRIS,paddingBottom:12}}>o</span>
+          <div style={{minWidth:0}}>
+            <label style={{display:"block",textAlign:"center",fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",textTransform:"uppercase",color:GRIS,marginBottom:5}}>Costo fijo (USD)</label>
+            <Inp type="number" value={c.gestion_usd} onChange={e=>setC(v.k,"gestion_usd",e.target.value)} placeholder="—" style={{textAlign:"center"}}/>
+          </div>
+        </div>
+        {/* Precio final al cliente, en dólares y en pesos al blue + 5 */}
+        <div style={{background:SUAVE,borderRadius:12,padding:"12px",marginBottom:12,textAlign:"center"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"4px 12px",fontSize:12.5,textAlign:"left",marginBottom:10}}>
+            {fila("Gestión",fmtUsd(pr.gestion))}
+          </div>
+          <p style={{margin:0,fontFamily:MONO,fontSize:10.5,letterSpacing:"0.08em",textTransform:"uppercase",color:GRIS}}>Precio de venta al cliente</p>
+          <p style={{margin:"4px 0 0",fontFamily:MONO,fontSize:22,fontWeight:800,lineHeight:1.1}}>{fmtUsd(pr.total)}</p>
+          <p style={{margin:"3px 0 0",fontFamily:MONO,fontSize:13,color:GRIS}}>{tc?`≈ ARS ${Math.round(pr.total*tc).toLocaleString("es-AR")}`:"≈ ARS —"}</p>
+        </div>
+        <div style={{flex:1}}/>
+        <Toggle on={c.mostrar} disabled={v.bloqueada} onChange={val=>setC(v.k,"mostrar",val)} l={v.bloqueada?"No se puede ofrecer":(c.mostrar?"Se muestra al cliente":"Oculta para el cliente")} sub={v.k==="aereo"?"El cliente la ve como “vía aérea”":"El cliente la ve como “vía marítima” (solo una de las dos)"}/>
+        {/* Las advertencias van al final: primero el número, después por qué no se puede ofrecer */}
+        {v.motivos.length>0&&<div style={{background:WARN_BG,borderRadius:12,padding:"10px 12px",marginTop:10,fontSize:12.5}}>{v.motivos.map((m,i)=><p key={i} style={{margin:i?"4px 0 0":0,color:WARN}}>⚠ {m.t}</p>)}</div>}
       </Sec>;})}
     </div>
     <div style={{position:"sticky",bottom:0,background:BG,borderTop:`1px solid ${BORDE}`,margin:"0 -28px",padding:"14px 28px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
