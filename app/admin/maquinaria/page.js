@@ -159,7 +159,7 @@ function Shell({ses,setSes,tema,setTema}){
     <Avisos/>
     {abierto&&<div className="velo" onClick={()=>setAbierto(false)}/>}
     <aside className={`side${abierto?" open":""}`}>
-      <div style={{padding:"20px 18px 14px"}}><LogoImg alto={34} claro={tema==="claro"}/></div>
+      <div style={{padding:"24px 18px 18px",display:"flex",justifyContent:"center"}}><LogoImg alto={64} claro={tema==="claro"} apilado/></div>
       <nav style={{padding:"0 10px",flex:1}}>
         {menu.map(s=><div key={s.sec} style={{marginBottom:14}}>
           <p style={{...LBL,padding:"0 10px",marginBottom:4,fontSize:10}}>{s.sec}</p>
@@ -174,7 +174,7 @@ function Shell({ses,setSes,tema,setTema}){
       </div>
     </aside>
     <div className="cont">
-      <div className="topmovil" style={{alignItems:"center",gap:12,padding:"12px 16px",borderBottom:`1px solid ${BORDE}`}}><button onClick={()=>setAbierto(true)} style={{border:`1px solid ${BORDE}`,background:CARD,color:INK,borderRadius:10,padding:8,cursor:"pointer",display:"inline-flex"}}><Ico d={["M4 6h16","M4 12h16","M4 18h16"]}/></button><LogoImg alto={24} solo/><span style={{fontWeight:800,flex:1}}>{TITULOS[pag]}</span><BotonTema tema={tema} setTema={setTema}/></div>
+      <div className="topmovil" style={{alignItems:"center",gap:12,padding:"12px 16px",borderBottom:`1px solid ${BORDE}`}}><button onClick={()=>setAbierto(true)} style={{border:`1px solid ${BORDE}`,background:CARD,color:INK,borderRadius:10,padding:8,cursor:"pointer",display:"inline-flex"}}><Ico d={["M4 6h16","M4 12h16","M4 18h16"]}/></button><LogoImg alto={24} solo claro={tema==="claro"}/><span style={{fontWeight:800,flex:1}}>{TITULOS[pag]}</span><BotonTema tema={tema} setTema={setTema}/></div>
       <main style={{maxWidth:1120,margin:"0 auto",padding:"28px 28px 90px"}}>
         {!listo?<p style={{color:GRIS}}>Cargando…</p>
         :pag==="inicio"?<Inicio {...ctx}/>
