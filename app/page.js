@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { LD_ORGANIZATION, LD_WEBSITE } from "../lib/ld-argencargo";
 
 const LOGO="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 const WA="5491125088580";
@@ -42,6 +43,8 @@ export default function Landing(){
 
   return <div style={{fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",color:"#fff",background:BG}}>
 
+    <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_ORGANIZATION)}}/>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_WEBSITE)}}/>
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_FAQ)}}/>
 
     {/* NAV */}

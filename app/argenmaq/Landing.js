@@ -12,9 +12,9 @@ const CSS = `
 .am .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
 .am .grupoWrap{display:flex;justify-content:center;padding:14px 16px 12px}
 .am .grupo{display:inline-flex;gap:4px;padding:5px;border-radius:999px;background:${INK};box-shadow:0 10px 40px rgba(0,0,0,0.25)}
-.am .grupo a{padding:9px 22px;border-radius:999px;font-family:${MONO};font-size:11px;letter-spacing:0.12em;color:#9DA3A9;font-weight:600;white-space:nowrap}
+.am .grupo a,.am .grupo span{padding:9px 22px;border-radius:999px;font-family:${MONO};font-size:11px;letter-spacing:0.12em;color:#9DA3A9;font-weight:600;white-space:nowrap}
 .am .grupo a.on{background:#fff;color:${INK}}
-.am .grupo a b{color:${Y}}.am .grupo a.on b{color:${INK};background:${Y};padding:0 4px;border-radius:3px}
+.am .grupo a b,.am .grupo span b{color:${Y}}.am .grupo a.on b{color:${INK};background:${Y};padding:0 4px;border-radius:3px}
 .am .nav{position:sticky;top:0;z-index:30;background:rgba(255,255,255,0.86);backdrop-filter:blur(14px);border-bottom:1px solid ${BORDE}}
 .am .nav .wrap{display:flex;align-items:center;gap:26px;height:74px}
 .am .nav .links{display:flex;gap:22px;font-size:14.5px;font-weight:600;color:#3d4147;flex:1;justify-content:center}
@@ -94,7 +94,7 @@ export default function Landing({ rubros }) {
     <div className="grupoWrap"><div className="grupo">
       <a className="on" href="/">ARGEN<b>MAQ</b></a>
       <a href="https://www.argencargo.com.ar">ARGEN<b>CARGO</b></a>
-      <a href="#brands" title="Próximamente">ARGEN<b>BRANDS</b></a>
+      <span title="Próximamente" aria-disabled="true" style={{ opacity: 0.55, cursor: "default" }}>ARGEN<b>BRANDS</b></span>
     </div></div>
     <header className="nav">
       <div className="wrap">
@@ -165,7 +165,7 @@ export default function Landing({ rubros }) {
     <footer>
       <div className="wrap">
         <div><Logo /><div style={{ marginTop: 6 }}>Maquinaria de China, puesta en Argentina. Una empresa del grupo Argencargo.</div></div>
-        <div style={{ display: "flex", gap: 18 }}><a href="https://www.argencargo.com.ar">Argencargo</a><a href="/admin">Panel</a><a href={WA}>Contacto</a></div>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}><a href="/terminos">Términos y condiciones</a><a href="/privacidad">Privacidad</a><a href="/legal">Aviso legal</a><a href="https://www.argencargo.com.ar">Argencargo</a><a href="/admin">Panel</a><a href={WA}>Contacto</a></div>
       </div>
     </footer>
   </div>;
