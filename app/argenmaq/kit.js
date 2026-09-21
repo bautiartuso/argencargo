@@ -12,7 +12,7 @@ export const WA = (m) => `https://wa.me/${WA_NUM}?text=${encodeURIComponent(m)}`
 // ── Estilos: variables por tema, tipografía Montserrat ────────────────────────────────────
 export const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
-.amq{--bg:#FFFFFF;--card:#FFFFFF;--ink:#15171A;--gris:#5B6066;--borde:#E6E7EA;--suave:#F4F5F7;--y:#FFD200;--ysuave:#FFF3B0;--yink:#15171A;--ok:#1F7A2E;--sombra:0 14px 40px rgba(0,0,0,0.08);font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;min-height:100vh}
+.amq{--bg:#FFFFFF;--card:#FFFFFF;--ink:#15171A;--gris:#5B6066;--borde:#E6E7EA;--suave:#F4F5F7;--y:#FFD200;--ysuave:#FFF3B0;--yink:#15171A;--ok:#1F7A2E;--sombra:0 14px 40px rgba(0,0,0,0.08);font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;min-height:100vh;display:flow-root}
 .amq[data-tema="oscuro"]{--bg:#141517;--card:#1C1E21;--ink:#F3F3F1;--gris:#9DA3A9;--borde:#2B2E33;--suave:#23262A;--ysuave:#3A3305;--ok:#7BD88F;--sombra:0 14px 40px rgba(0,0,0,0.35)}
 html,body{overflow-x:clip!important}
 .amq *{box-sizing:border-box}.amq a{color:inherit;text-decoration:none}.amq button{font-family:inherit}
@@ -58,12 +58,28 @@ html,body{overflow-x:clip!important}
 .amq .franjaPista{display:flex;gap:8px;width:max-content;animation:desfile 55s linear infinite}
 .amq .franja:hover .franjaPista{animation-play-state:paused}
 @keyframes desfile{to{transform:translateX(-50%)}}
-.amq .catGrid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:28px;align-items:start}
+.amq .ico.band{position:relative;overflow:hidden;border:none}
+.amq .ico.band img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.amq .ico.band span{position:relative;color:#fff;font-weight:800;text-shadow:0 1px 3px rgba(0,0,0,0.75),0 0 1px rgba(0,0,0,0.9)}
+.amq .ico.tema.dia{background:var(--y);border-color:var(--y);color:#15171A}
+.amq .ico.tema.noche{background:#3D45E0;border-color:#3D45E0;color:#fff}
+.amq .velo{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px)}
+.amq .orden{position:fixed;top:0;right:0;bottom:0;z-index:71;width:min(480px,100%);background:var(--card);display:flex;flex-direction:column;box-shadow:-20px 0 60px rgba(0,0,0,0.25);animation:entrar 220ms ease}
+@keyframes entrar{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.amq .orden .cab{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;border-bottom:1px solid var(--borde)}
+.amq .orden .cuerpo{flex:1;overflow-y:auto;padding:8px 22px}
+.amq .orden .item{display:grid;grid-template-columns:72px 1fr auto;gap:12px;padding:16px 0;border-bottom:1px solid var(--borde);align-items:start}
+.amq .orden .item img{width:72px;height:72px;object-fit:cover;border-radius:12px;background:var(--suave)}
+.amq .orden .pie{padding:16px 22px 22px;border-top:1px solid var(--borde);background:var(--card)}
+.amq .orden .pagoBox{border-left:4px solid var(--y);background:var(--ysuave);border-radius:12px;padding:12px 14px;margin:12px 0}
+.amq[data-tema="oscuro"] .orden .pagoBox{background:#2A2708}
+.amq .catGrid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:28px;align-items:start}
 .amq .rubros{position:sticky;top:96px;border:1px solid var(--borde);border-radius:20px;padding:14px 8px;background:var(--card)}
 .amq .rubros p{padding:0 12px}
 .amq .rubros a{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;font-weight:700;font-size:14px}
 .amq .rubros a:hover{background:var(--suave)}.amq .rubros a.on{background:var(--ysuave)}
 .amq .rubros a span{font-family:${MONO};font-size:11px;color:var(--gris)}
+.amq .rubros hr{border:none;border-top:1px solid var(--borde);margin:8px 4px}
 .amq .galeriaMain{position:relative;aspect-ratio:1/1;border-radius:22px;overflow:hidden;background:var(--suave);cursor:zoom-in}
 .amq .galeriaMain img{width:100%;height:100%;object-fit:cover;display:block}
 .amq .galeriaAcc{position:absolute;top:14px;right:14px;display:flex;gap:8px}
@@ -87,6 +103,11 @@ html,body{overflow-x:clip!important}
 .amq .tramo.on{border-color:var(--y);background:var(--ysuave)}
 .amq .tramo small{display:block;font-size:11.5px;color:var(--gris);font-weight:600;margin-top:2px}
 .amq .tramo b{display:block;font-size:19px;letter-spacing:-0.02em;margin-top:3px}
+.amq .tramo .desc{display:inline-block;font-family:${MONO};font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--y);color:#15171A;margin-top:6px}
+.amq .tramo .pagos{display:block;font-size:11px;color:var(--gris);margin-top:7px;line-height:1.45}
+.amq .granCard{border:1px solid var(--borde);border-radius:24px;padding:24px 26px;background:var(--card)}
+.amq .detCard h3 .cir{width:34px;height:34px;border-radius:50%;background:var(--y);color:#15171A;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.amq .btn.wa{background:#25D366;border-color:#25D366;color:#0B2A1A}
 .amq .stepper{display:inline-flex;align-items:center;border:1px solid var(--borde);border-radius:999px;overflow:hidden;height:46px}
 .amq .stepper button{width:44px;height:46px;border:none;background:transparent;color:var(--ink);font-size:20px;cursor:pointer;font-family:inherit}
 .amq .stepper button:disabled{opacity:0.3;cursor:not-allowed}
@@ -124,7 +145,7 @@ const T = {
     nueva:"Nueva", usada:"Usada", masPedida:"Más pedida", garantia:"Garantía de fábrica", meses:"meses", produccion:"producción", noEsta:"¿No encontrás tu máquina?", noEstaSub:"Escribinos y la buscamos.",
     crear:"Crear cuenta", tengo:"Ya tengo cuenta", email:"Email", pass:"Contraseña", entrar:"Entrar", registrarse:"Registrarme",
     vacio:"Tu carrito está vacío.", pedir:"Confirmar pedido", pedido:"Pedido", total:"Total", cantidad:"Cantidad", quitar:"Quitar", misOps:"Mis operaciones", seguimiento:"Seguimiento", datos:"Mis datos",
-    pieClaim:"Tu próxima máquina, resuelta de punta a punta.", pieSub:"Operación propia con Argencargo. Entrega en todo el país.", pais:"País", metodosPago:"Métodos de pago", transferencia:"Transferencia bancaria", efectivo:"Efectivo", cripto:"Cripto", comprar:"Comprar", comoComprar:"¿Cómo comprar?", nuestrasMaquinas:"Nuestras máquinas", paraTuNegocio:"Para tu negocio", grupoArg:"Grupo Argencargo", soporte:"Soporte", legal:"Legal", devoluciones:"Política de devoluciones", politicaCompra:"Política de compra", precioVolumen:"Precio por cantidad · final, sin sorpresas", inicial:"Inicial", precioUnit:"Precio unitario", unidades:"unidades", unidad:"unidad", desde:"desde", minimo:"Mínimo", precioTotal:"Precio total", llega:"Llega en", anticipoNota:"Anticipo hoy · saldo al llegar", volver:"Volver", inicio:"Inicio", rubros:"Rubros", todosRubros:"Todos los rubros", resultados:"Resultados para", detalles:"Detalles técnicos", producto:"Producto", codigo:"Código", categoria:"Categoría", subcategoria:"Subcategoría", condicion:"Condición", medidas:"Medidas de la máquina", largo:"Largo", ancho:"Ancho", alto:"Alto", peso:"Peso", packing:"Packing", bultos:"Bultos", bulto:"Bulto", descripcion:"Descripción", similares:"Máquinas similares", compartir:"Compartir", guardarFav:"Guardar", guardada:"Guardada", copiado:"Link copiado", sinDato:"A confirmar", viaEnvio:"Cómo viaja", noDisponibleQty:"No disponible para esa cantidad", legalT:"Términos y condiciones", legalP:"Política de privacidad", legalL:"Aviso legal" },
+    pieClaim:"Tu próxima máquina, resuelta de punta a punta.", pieSub:"Operación propia con Argencargo. Entrega en todo el país.", pais:"País", metodosPago:"Métodos de pago", transferencia:"Transferencia bancaria", efectivo:"Efectivo", cripto:"Cripto", comprar:"Comprar", comoComprar:"¿Cómo comprar?", nuestrasMaquinas:"Nuestras máquinas", paraTuNegocio:"Para tu negocio", grupoArg:"Grupo Argencargo", soporte:"Soporte", legal:"Legal", devoluciones:"Política de devoluciones", politicaCompra:"Política de compra", precioVolumen:"Precio por cantidad · final, sin sorpresas", inicial:"Inicial", precioUnit:"Precio unitario", unidades:"unidades", unidad:"unidad", desde:"desde", minimo:"Mínimo", precioTotal:"Precio total", llega:"Llega en", anticipoNota:"Anticipo hoy · saldo al llegar", volver:"Volver", inicio:"Inicio", rubros:"Rubros", todosRubros:"Todos los rubros", resultados:"Resultados para", detalles:"Detalles técnicos", producto:"Producto", codigo:"Código", categoria:"Categoría", subcategoria:"Subcategoría", condicion:"Condición", medidas:"Medidas de la máquina", largo:"Largo", ancho:"Ancho", alto:"Alto", peso:"Peso", packing:"Packing", bultos:"Bultos", bulto:"Bulto", descripcion:"Descripción", similares:"Máquinas similares", compartir:"Compartir", guardarFav:"Guardar", guardada:"Guardada", copiado:"Link copiado", sinDato:"A confirmar", viaEnvio:"Cómo viaja", noDisponibleQty:"No disponible para esa cantidad", tuOrden:"Tu orden", ahoraAlConfirmar:"Ahora, al confirmar", alLlegar:"Al llegar", totalPedido:"Total del pedido", procederPago:"Proceder al pago", comprarAhora:"Comprar ahora", consultarWa:"Consultar por WhatsApp", anticipo:"Anticipo", alRecibir:"Al recibir", misDatos:"Mis datos", guardarDatos:"Guardar datos", datosOk:"Datos guardados", completaDatos:"Completá tus datos para poder pedir.", seguirComprando:"Seguir comprando", legalT:"Términos y condiciones", legalP:"Política de privacidad", legalL:"Aviso legal" },
   en: { catalogo:"Catalog", como:"How it works", quienes:"About us", ingresar:"Sign in", cuenta:"My account", carrito:"Cart", salir:"Sign out",
     verPrecio:"Sign in to see the price", precioPuesto:"Price delivered to our warehouse in Buenos Aires", envioAdicional:"Home delivery extra · free pickup",
     viaAerea:"By air", viaMaritima:"By sea", tiempo:"Estimated time", dias:"days", agregar:"Add to cart", agregado:"In cart", verCarrito:"View cart",
@@ -132,7 +153,7 @@ const T = {
     nueva:"New", usada:"Used", masPedida:"Most requested", garantia:"Factory warranty", meses:"months", produccion:"production", noEsta:"Can't find your machine?", noEstaSub:"Message us and we'll source it.",
     crear:"Create account", tengo:"I have an account", email:"Email", pass:"Password", entrar:"Sign in", registrarse:"Sign up",
     vacio:"Your cart is empty.", pedir:"Confirm order", pedido:"Order", total:"Total", cantidad:"Quantity", quitar:"Remove", misOps:"My operations", seguimiento:"Tracking", datos:"My details",
-    pieClaim:"Your next machine, sorted end to end.", pieSub:"Run in-house with Argencargo. Delivery nationwide.", pais:"Country", metodosPago:"Payment methods", transferencia:"Bank transfer", efectivo:"Cash", cripto:"Crypto", comprar:"Buy", comoComprar:"How to buy?", nuestrasMaquinas:"Our machines", paraTuNegocio:"For your business", grupoArg:"Argencargo Group", soporte:"Support", legal:"Legal", devoluciones:"Returns policy", politicaCompra:"Purchase policy", precioVolumen:"Volume pricing · final, no surprises", inicial:"Starting", precioUnit:"Unit price", unidades:"units", unidad:"unit", desde:"from", minimo:"Minimum", precioTotal:"Total price", llega:"Arrives in", anticipoNota:"Deposit today · balance on arrival", volver:"Back", inicio:"Home", rubros:"Categories", todosRubros:"All categories", resultados:"Results for", detalles:"Technical details", producto:"Product", codigo:"Code", categoria:"Category", subcategoria:"Subcategory", condicion:"Condition", medidas:"Machine dimensions", largo:"Length", ancho:"Width", alto:"Height", peso:"Weight", packing:"Packing", bultos:"Packages", bulto:"Package", descripcion:"Description", similares:"Similar machines", compartir:"Share", guardarFav:"Save", guardada:"Saved", copiado:"Link copied", sinDato:"To be confirmed", viaEnvio:"How it ships", noDisponibleQty:"Not available for that quantity", legalT:"Terms and conditions", legalP:"Privacy policy", legalL:"Legal notice" },
+    pieClaim:"Your next machine, sorted end to end.", pieSub:"Run in-house with Argencargo. Delivery nationwide.", pais:"Country", metodosPago:"Payment methods", transferencia:"Bank transfer", efectivo:"Cash", cripto:"Crypto", comprar:"Buy", comoComprar:"How to buy?", nuestrasMaquinas:"Our machines", paraTuNegocio:"For your business", grupoArg:"Argencargo Group", soporte:"Support", legal:"Legal", devoluciones:"Returns policy", politicaCompra:"Purchase policy", precioVolumen:"Volume pricing · final, no surprises", inicial:"Starting", precioUnit:"Unit price", unidades:"units", unidad:"unit", desde:"from", minimo:"Minimum", precioTotal:"Total price", llega:"Arrives in", anticipoNota:"Deposit today · balance on arrival", volver:"Back", inicio:"Home", rubros:"Categories", todosRubros:"All categories", resultados:"Results for", detalles:"Technical details", producto:"Product", codigo:"Code", categoria:"Category", subcategoria:"Subcategory", condicion:"Condition", medidas:"Machine dimensions", largo:"Length", ancho:"Width", alto:"Height", peso:"Weight", packing:"Packing", bultos:"Packages", bulto:"Package", descripcion:"Description", similares:"Similar machines", compartir:"Share", guardarFav:"Save", guardada:"Saved", copiado:"Link copied", sinDato:"To be confirmed", viaEnvio:"How it ships", noDisponibleQty:"Not available for that quantity", tuOrden:"Your order", ahoraAlConfirmar:"Now, on confirmation", alLlegar:"On arrival", totalPedido:"Order total", procederPago:"Proceed to payment", comprarAhora:"Buy now", consultarWa:"Ask on WhatsApp", anticipo:"Deposit", alRecibir:"On delivery", misDatos:"My details", guardarDatos:"Save details", datosOk:"Details saved", completaDatos:"Complete your details to order.", seguirComprando:"Keep shopping", legalT:"Terms and conditions", legalP:"Privacy policy", legalL:"Legal notice" },
   ru: { catalogo:"Каталог", como:"Как это работает", quienes:"О нас", ingresar:"Войти", cuenta:"Мой аккаунт", carrito:"Корзина", salir:"Выйти",
     verPrecio:"Войдите, чтобы увидеть цену", precioPuesto:"Цена с доставкой на наш склад в Буэнос-Айресе", envioAdicional:"Доставка на дом отдельно · самовывоз бесплатно",
     viaAerea:"Авиа", viaMaritima:"Морем", tiempo:"Ориентировочный срок", dias:"дней", agregar:"В корзину", agregado:"В корзине", verCarrito:"Открыть корзину",
@@ -140,7 +161,7 @@ const T = {
     nueva:"Новая", usada:"Б/у", masPedida:"Популярная", garantia:"Гарантия завода", meses:"мес.", produccion:"производство", noEsta:"Не нашли свою машину?", noEstaSub:"Напишите нам — найдём.",
     crear:"Создать аккаунт", tengo:"У меня есть аккаунт", email:"Email", pass:"Пароль", entrar:"Войти", registrarse:"Зарегистрироваться",
     vacio:"Корзина пуста.", pedir:"Подтвердить заказ", pedido:"Заказ", total:"Итого", cantidad:"Количество", quitar:"Убрать", misOps:"Мои операции", seguimiento:"Отслеживание", datos:"Мои данные",
-    pieClaim:"Ваша следующая машина — под ключ.", pieSub:"Собственная логистика с Argencargo. Доставка по всей стране.", pais:"Страна", metodosPago:"Способы оплаты", transferencia:"Банковский перевод", efectivo:"Наличные", cripto:"Крипто", comprar:"Купить", comoComprar:"Как купить?", nuestrasMaquinas:"Наши машины", paraTuNegocio:"Для бизнеса", grupoArg:"Группа Argencargo", soporte:"Поддержка", legal:"Правовая информация", devoluciones:"Политика возврата", politicaCompra:"Условия покупки", precioVolumen:"Цена по количеству · окончательная", inicial:"Базовая", precioUnit:"Цена за единицу", unidades:"шт.", unidad:"шт.", desde:"от", minimo:"Минимум", precioTotal:"Итого", llega:"Доставка через", anticipoNota:"Аванс сегодня · остаток по прибытии", volver:"Назад", inicio:"Главная", rubros:"Категории", todosRubros:"Все категории", resultados:"Результаты по запросу", detalles:"Технические данные", producto:"Товар", codigo:"Код", categoria:"Категория", subcategoria:"Подкатегория", condicion:"Состояние", medidas:"Габариты машины", largo:"Длина", ancho:"Ширина", alto:"Высота", peso:"Вес", packing:"Упаковка", bultos:"Мест", bulto:"Место", descripcion:"Описание", similares:"Похожие машины", compartir:"Поделиться", guardarFav:"Сохранить", guardada:"Сохранено", copiado:"Ссылка скопирована", sinDato:"Уточняется", viaEnvio:"Способ доставки", noDisponibleQty:"Недоступно для этого количества", legalT:"Условия", legalP:"Конфиденциальность", legalL:"Правовая информация" },
+    pieClaim:"Ваша следующая машина — под ключ.", pieSub:"Собственная логистика с Argencargo. Доставка по всей стране.", pais:"Страна", metodosPago:"Способы оплаты", transferencia:"Банковский перевод", efectivo:"Наличные", cripto:"Крипто", comprar:"Купить", comoComprar:"Как купить?", nuestrasMaquinas:"Наши машины", paraTuNegocio:"Для бизнеса", grupoArg:"Группа Argencargo", soporte:"Поддержка", legal:"Правовая информация", devoluciones:"Политика возврата", politicaCompra:"Условия покупки", precioVolumen:"Цена по количеству · окончательная", inicial:"Базовая", precioUnit:"Цена за единицу", unidades:"шт.", unidad:"шт.", desde:"от", minimo:"Минимум", precioTotal:"Итого", llega:"Доставка через", anticipoNota:"Аванс сегодня · остаток по прибытии", volver:"Назад", inicio:"Главная", rubros:"Категории", todosRubros:"Все категории", resultados:"Результаты по запросу", detalles:"Технические данные", producto:"Товар", codigo:"Код", categoria:"Категория", subcategoria:"Подкатегория", condicion:"Состояние", medidas:"Габариты машины", largo:"Длина", ancho:"Ширина", alto:"Высота", peso:"Вес", packing:"Упаковка", bultos:"Мест", bulto:"Место", descripcion:"Описание", similares:"Похожие машины", compartir:"Поделиться", guardarFav:"Сохранить", guardada:"Сохранено", copiado:"Ссылка скопирована", sinDato:"Уточняется", viaEnvio:"Способ доставки", noDisponibleQty:"Недоступно для этого количества", tuOrden:"Ваш заказ", ahoraAlConfirmar:"Сейчас, при подтверждении", alLlegar:"По прибытии", totalPedido:"Итого заказа", procederPago:"Перейти к оплате", comprarAhora:"Купить сейчас", consultarWa:"Спросить в WhatsApp", anticipo:"Аванс", alRecibir:"При получении", misDatos:"Мои данные", guardarDatos:"Сохранить", datosOk:"Данные сохранены", completaDatos:"Заполните данные, чтобы заказать.", seguirComprando:"Продолжить покупки", legalT:"Условия", legalP:"Конфиденциальность", legalL:"Правовая информация" },
 };
 
 // ── Contexto ──────────────────────────────────────────────────────────────────────────────
@@ -207,6 +228,69 @@ export function Proveedor({ children }) {
 export function Logo({ alto = 34, blanco = false }) { const { tema } = useAM(); const inv = blanco || tema === "oscuro"; return <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><img src={inv ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" style={{ height: alto, width: "auto" }} /><img src={inv ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" style={{ height: alto * 0.62, width: "auto" }} /></span>; }
 export function Ico({ d, size = 17 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x, i) => <path key={i} d={x} />)}</svg>; }
 
+
+// ── Precios por cantidad: lo que ve el cliente, compartido por tarjetas, ficha, carrito y panel ──
+import { escalonPara } from "../../lib/canales-maquinas";
+export const precioVidriera = (pr) => {
+  const e = pr?.escalera; const tr = e?.maritima?.[0] || e?.aerea?.[0];
+  if (tr) return { unit: Number(tr.unit), via: tr.via, q: Number(tr.q) || 1 };
+  const p = pr?.precios; if (!p) return null; let best = null;
+  for (const k of Object.keys(p)) { const v = Number(p[k]?.total); if (Number.isFinite(v) && (best == null || v < best.unit)) best = { unit: v, via: k, q: 1 }; }
+  return best;
+};
+// Los precios se leen solo con sesión (vista cat_maquinas_precios, RLS: authenticated).
+export function usePrecios(ids) {
+  const { ses, dq } = useAM();
+  const [precios, setPrecios] = useState(null);
+  const clave = (ids || []).join(",");
+  useEffect(() => { if (!ses?.token || !clave) { setPrecios(null); return; } (async () => { try { const r = await dq("cat_maquinas_precios", { filters: `?select=id,precios,escalera&id=in.(${clave})` }); const o = {}; (Array.isArray(r) ? r : []).forEach((x) => { o[x.id] = x; }); setPrecios(o); } catch { setPrecios(null); } })(); }, [ses?.token, clave]); // eslint-disable-line react-hooks/exhaustive-deps
+  return precios;
+}
+// Una línea del carrito con su escalón: cantidad efectiva, precio unitario, anticipo (máquina) y saldo (importación).
+export const lineaCarrito = (i, precios) => { const pr = precios?.[i.id]; const esc = pr?.escalera; const modo = i.modo === "aerea" && esc?.aerea?.length ? "aerea" : "maritima"; const tramos = esc?.[modo] || []; const minQ = Number(tramos[0]?.q) || 1; const q = Math.max(minQ, i.qty || 1); const tr = escalonPara(tramos, q); const unit = tr ? Number(tr.unit) : (precioVidriera(pr)?.unit ?? null); return { modo, tramos, minQ, q, tr, unit, total: unit != null ? unit * q : null, anticipo: tr ? Number(tr.maquina) * q : null, saldo: tr ? Number(tr.argencargo) * q : null, via: tr?.via || null, esc }; };
+
+// Panel lateral "Tu orden", como el de B2Box: se abre desde el carrito de la isla.
+function PanelOrden({ onCerrar }) {
+  const { t, fmt, ses, carrito, setCarrito } = useAM();
+  const precios = usePrecios(carrito.map((i) => i.id));
+  useEffect(() => { const k = (e) => { if (e.key === "Escape") onCerrar(); }; window.addEventListener("keydown", k); document.body.style.overflow = "hidden"; return () => { window.removeEventListener("keydown", k); document.body.style.overflow = ""; }; }, [onCerrar]);
+  const lineas = carrito.map((i) => ({ i, L: lineaCarrito(i, precios) }));
+  const total = lineas.reduce((s, { L }) => s + (L.total || 0), 0);
+  const anticipo = lineas.reduce((s, { L }) => s + (L.anticipo || 0), 0);
+  const saldo = lineas.reduce((s, { L }) => s + (L.saldo || 0), 0);
+  const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
+  const nU = carrito.reduce((s, i) => s + (i.qty || 1), 0);
+  return <><div className="velo" onClick={onCerrar} /><aside className="orden" role="dialog" aria-label={t("tuOrden")}>
+    <div className="cab"><div><p style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{t("tuOrden")}</p><p style={{ margin: "2px 0 0", fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{nU} {nU === 1 ? t("unidad") : t("unidades")}</p></div><button className="ico" onClick={onCerrar} aria-label="Cerrar" style={{ width: 40, height: 40, fontSize: 16 }}>✕</button></div>
+    <div className="cuerpo">
+      {carrito.length === 0 && <p style={{ color: "var(--gris)", padding: "24px 0" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }} onClick={onCerrar}>{t("catalogo")} →</a></p>}
+      {lineas.map(({ i, L }) => <div key={i.id} className="item">
+        <a href={`/m/${i.id}`}>{i.foto ? <img src={i.foto} alt="" /> : <div style={{ width: 72, height: 72, borderRadius: 12, background: "var(--suave)" }} />}</a>
+        <div style={{ minWidth: 0 }}>
+          <a href={`/m/${i.id}`} style={{ fontWeight: 800, fontSize: 14.5, lineHeight: 1.3, display: "block" }}>{i.nombre}</a>
+          <p style={{ margin: "2px 0 10px", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{L.unit != null ? `${fmt(L.unit)} / ${t("unidad")}` : ""}{L.modo === "aerea" ? ` · ${t("viaAerea")}` : ""}</p>
+          <div className="stepper" style={{ height: 38 }}><button style={{ height: 38, width: 38 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 38, width: 48 }} type="number" min={L.minQ} value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 38, width: 38 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <button className="ico" style={{ width: 32, height: 32, border: "none", marginBottom: 14 }} onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}><Ico d={["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"]} size={16} /></button>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>{ses && L.total != null ? fmt(L.total) : "—"}</p><p style={{ margin: 0, fontFamily: MONO, fontSize: 10, color: "var(--gris)", letterSpacing: "0.08em" }}>TOTAL</p>
+        </div>
+      </div>)}
+    </div>
+    {carrito.length > 0 && <div className="pie">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}><span style={{ fontWeight: 800, fontSize: 15 }}>{t("totalPedido")}</span><b style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{ses ? fmt(total) : "—"}</b></div>
+      {ses && <div className="pagoBox">
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}><span style={{ fontWeight: 800 }}>{t("ahoraAlConfirmar")}</span><b style={{ fontSize: 20 }}>{fmt(anticipo)}</b></div>
+        <p style={{ margin: "2px 0 8px", fontSize: 12.5, color: "var(--gris)" }}>{t("anticipo")} · {total > 0 ? Math.round((anticipo / total) * 100) : 0}% {t("total").toLowerCase()}</p>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}><span style={{ color: "var(--gris)" }}>{t("alLlegar")} · {total > 0 ? Math.round((saldo / total) * 100) : 0}%</span><b>{fmt(saldo)}</b></div>
+      </div>}
+      {!ses && <p style={{ margin: "10px 0", fontSize: 13, color: "var(--gris)" }}>{t("verPrecio")}</p>}
+      <a className="btn y" href={ses ? "/carrito" : "/cuenta?volver=/carrito"} style={{ width: "100%", marginTop: 6 }}>{ses ? t("procederPago") : t("ingresar")}</a>
+      <button className="btn s" onClick={onCerrar} style={{ width: "100%", marginTop: 8, border: "none", background: "transparent", color: "var(--gris)" }}>{t("seguirComprando")}</button>
+    </div>}
+  </aside></>;
+}
+
 export function Marco({ actual, children, conGrupo, franja }) {
   const { tema, setTema, lang, setLang, t, moneda, setMoneda, tc, ses, cliente, carrito } = useAM();
   const n = carrito.reduce((s, i) => s + (i.qty || 1), 0);
@@ -215,6 +299,10 @@ export function Marco({ actual, children, conGrupo, franja }) {
   const [q, setQ] = useState("");
   useEffect(() => { try { setQ(new URLSearchParams(window.location.search).get("q") || ""); } catch {} }, []);
   const LUPA = ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M21 21l-4.3-4.3"];
+  const [orden, setOrden] = useState(false);
+  const cerrarOrden = useCallback(() => setOrden(false), []);
+  const BANDERA = { USD: "us", ARS: "ar", es: "es", en: "gb", ru: "ru" };
+  const bandera = (k) => `https://flagcdn.com/w80/${BANDERA[k]}.png`;
   return <>
     {/* La barra del grupo (ARGENMAQ · ARGENCARGO) vive solo en la página principal (21/09/2026). */}
     {conGrupo && <div className="grupoWrap"><div className="grupo">
@@ -232,16 +320,17 @@ export function Marco({ actual, children, conGrupo, franja }) {
             <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos">{t("quienes")}</a>
           </nav>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="ico" onClick={() => setMoneda(moneda === "USD" ? "ARS" : "USD")} title={tc ? `Blue ${tc - 5} + 5 = ${tc}` : "Cotización"}>{moneda === "USD" ? "US$" : "AR$"}</button>
-          <button className="ico" onClick={() => setLang(lang === "es" ? "en" : lang === "en" ? "ru" : "es")} title="Idioma">{lang.toUpperCase()}</button>
-          <button className="ico" onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")} title="Tema">{tema === "oscuro" ? <Ico d={["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={15} /> : <Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={15} />}</button>
-          <a className="ico" href="/carrito" title={t("carrito")} style={{ position: "relative" }}><Ico d={["M6 6h15l-1.5 8H7.5z", "M6 6L5 3H2", "M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"]} size={16} />{n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--y)", color: "#15171A", fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "1px 6px" }}>{n}</span>}</a>
+          <button className="ico band" onClick={() => setMoneda(moneda === "USD" ? "ARS" : "USD")} title={tc ? `Blue ${tc - 5} + 5 = ${tc}` : "Cotización"}><img src={bandera(moneda)} alt="" /><span>{moneda === "USD" ? "US$" : "AR$"}</span></button>
+          <button className="ico band" onClick={() => setLang(lang === "es" ? "en" : lang === "en" ? "ru" : "es")} title="Idioma"><img src={bandera(lang)} alt="" /><span>{lang.toUpperCase()}</span></button>
+          <button className={`ico tema ${tema === "oscuro" ? "dia" : "noche"}`} onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")} title="Tema">{tema === "oscuro" ? <Ico d={["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={15} /> : <Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={15} />}</button>
+          <a className="ico" href="/carrito" title={t("carrito")} style={{ position: "relative" }} onClick={(e) => { e.preventDefault(); setOrden(true); }}><Ico d={["M6 6h15l-1.5 8H7.5z", "M6 6L5 3H2", "M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"]} size={16} />{n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--y)", color: "#15171A", fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "1px 6px" }}>{n}</span>}</a>
           <a className="btn s y" href="/cuenta">{ses ? (cliente?.first_name || t("cuenta")) : t("ingresar")}</a>
         </div>
       </div>
       {/* Rubros en desfile continuo debajo de la isla (dentro de una máquina), como las categorías de B2Box. */}
       {franja?.length > 0 && <div className="franja"><div className="franjaPista">{[...franja, ...franja].map((c, i) => <a key={`${c.slug}-${i}`} className="chip" href={`/catalogo/${c.slug}`}>{c.nombre}</a>)}</div></div>}
     </header>
+    {orden && <PanelOrden onCerrar={cerrarOrden} />}
     {children}
     <footer>
       <div className="wrap">

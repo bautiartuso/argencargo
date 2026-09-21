@@ -239,7 +239,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
 
   const subir=async(files)=>{const lista=Array.from(files||[]).filter(x=>x.type?.startsWith("image/")||x.type?.startsWith("video/"));if(!lista.length)return;setSubiendo(lista.length);const fotosNuevas=[];let video=null;
     for(let i=0;i<lista.length;i++){let file=lista[i];const esVideo=file.type.startsWith("video/");try{
-      if(!esVideo)file=await comprimirImagen(file,{maxLado:2000,calidad:0.86});
+      if(!esVideo)file=await comprimirImagen(file,{cuadrado:1080,calidad:0.88}); // todas las fotos salen 1080×1080
       const ext=esVideo?(file.name.split(".").pop()||"mp4").toLowerCase():"jpg";
       const path=`productos/${id}/${Date.now()}-${i}.${ext}`;
       const r=await fetch(`${SB_URL}/storage/v1/object/catalogo/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`,"Content-Type":file.type||"application/octet-stream","x-upsert":"false"},body:file});

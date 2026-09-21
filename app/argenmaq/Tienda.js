@@ -2,8 +2,9 @@
 // Vistas del sitio público de ARGENMAQ: catálogo (carriles por rubro), ficha, cuenta, carrito,
 // cómo funciona y quiénes somos. Sin cuenta no se ve ningún número.
 import { useEffect, useMemo, useState } from "react";
-import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto } from "./kit";
+import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto, usePrecios, precioVidriera, lineaCarrito } from "./kit";
 import { escalonPara } from "../../lib/canales-maquinas";
+export { usePrecios, precioVidriera } from "./kit";
 
 const PR = ["Buenos Aires", "CABA", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
 const COND = [["ninguna", "Consumidor final"], ["monotributista", "Monotributista"], ["responsable_inscripto", "Responsable inscripto"]];
@@ -19,15 +20,6 @@ function Elegir({ value, onChange, opciones, placeholder = "Elegir…" }) {
 }
 
 // ── Tarjeta de máquina ────────────────────────────────────────────────────────────────────
-// Precio de vidriera: el primer escalón de la vía marítima (la más barata). Si la máquina no tiene
-// escalera todavía, el menor de los precios por vía.
-const precioVidriera = (pr) => {
-  const e = pr?.escalera; const tr = e?.maritima?.[0] || e?.aerea?.[0];
-  if (tr) return { unit: Number(tr.unit), via: tr.via, q: Number(tr.q) || 1 };
-  const p = pr?.precios; if (!p) return null; let best = null;
-  for (const k of Object.keys(p)) { const v = Number(p[k]?.total); if (Number.isFinite(v) && (best == null || v < best.unit)) best = { unit: v, via: k, q: 1 }; }
-  return best;
-};
 const CANDADO = ["M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "M5 10V8a7 7 0 0 1 14 0v2", "M4 10h16v11H4z"];
 export const codigoMaq = (m) => `MAQ-${String(m?.numero || 0).padStart(5, "0")}`;
 
@@ -51,15 +43,6 @@ export function Tarjeta({ m, precios, diasVia: dv }) {
   </a>;
 }
 
-// Los precios se leen solo con sesión (vista cat_maquinas_precios, RLS: authenticated).
-export function usePrecios(ids) {
-  const { ses, dq } = useAM();
-  const [precios, setPrecios] = useState(null);
-  const clave = (ids || []).join(",");
-  useEffect(() => { if (!ses?.token || !clave) { setPrecios(null); return; } (async () => { try { const r = await dq("cat_maquinas_precios", { filters: `?select=id,precios,escalera&id=in.(${clave})` }); const o = {}; (Array.isArray(r) ? r : []).forEach((x) => { o[x.id] = x; }); setPrecios(o); } catch { setPrecios(null); } })(); }, [ses?.token, clave]); // eslint-disable-line react-hooks/exhaustive-deps
-  return precios;
-}
-
 // ── Catálogo: carriles por rubro, panel de rubros a la derecha, búsqueda desde la isla ────
 export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
   const { t } = useAM();
@@ -73,6 +56,12 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
   const rubros = arbol.filter((c) => c.slug !== "otros" || cuenta(c.slug) > 0);
   return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
     <div className="catGrid">
+      <aside className="rubros">
+        <p className="lbl">{t("rubros")}</p>
+        <a className={!cat && !q.trim() ? "on" : ""} href="/catalogo">{t("todosRubros")}<span>{lista.length}</span></a>
+        <hr />
+        {rubros.map((c) => <a key={c.slug} className={cat?.slug === c.slug ? "on" : ""} href={`/catalogo/${c.slug}`}>{c.nombre}<span>{cuenta(c.slug) || ""}</span></a>)}
+      </aside>
       <div style={{ minWidth: 0 }}>
         <div style={{ marginBottom: 18 }}>
           {cat && <a href="/catalogo" style={{ fontSize: 13, color: "var(--gris)", fontWeight: 700 }}>← {t("catalogo")}</a>}
@@ -88,11 +77,6 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
         <div style={{ marginTop: 30, padding: "22px 24px", borderRadius: 20, background: "var(--suave)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}><div style={{ flex: 1 }}><p style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>{t("noEsta")}</p><p style={{ margin: "2px 0 0", color: "var(--gris)", fontSize: 14 }}>{t("noEstaSub")}</p></div><a className="btn y" href={WA("Hola ARGENMAQ, busco una máquina que no está en el catálogo: ")} target="_blank" rel="noreferrer">{t("consultar")}</a></div>
         {lista.length > 0 && !cat && <p style={{ margin: "18px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}.</p>}
       </div>
-      <aside className="rubros">
-        <p className="lbl">{t("rubros")}</p>
-        <a className={!cat && !q.trim() ? "on" : ""} href="/catalogo">{t("todosRubros")}<span>{lista.length}</span></a>
-        {rubros.map((c) => <a key={c.slug} className={cat?.slug === c.slug ? "on" : ""} href={`/catalogo/${c.slug}`}>{c.nombre}<span>{cuenta(c.slug) || ""}</span></a>)}
-      </aside>
     </div>
   </div>;
 }
@@ -136,16 +120,11 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
   const packing = Array.isArray(m.packing) ? m.packing : [];
   const pesoPacking = packing.reduce((s, b) => s + (num(b.peso_kg) || 0) * (num(b.cantidad) || 1), 0);
   const CORAZON = ["M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"];
-  const COMPARTIR = ["M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M16 6l-4-4-4 4", "M12 2v13"];
+  const COMPARTIR = ["M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M8.6 13.5l6.8 4", "M15.4 6.5l-6.8 4"];
   const Fila = ({ l, v }) => <div className="fila"><span>{l}</span><b>{v ?? t("sinDato")}</b></div>;
   const etiquetaTramo = (tr, i) => i === 0 ? (tramos.length > 1 ? `${t("inicial")} · ${tr.q} ${Number(tr.q) === 1 ? t("unidad") : t("unidades")}` : t("precioUnit")) : `${tr.q}+ ${t("unidades")}`;
 
   return <div className="wrap" style={{ padding: "22px 24px 70px" }}>
-    {/* Migas: volver · inicio / rubro, y el código de la máquina a la derecha */}
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14, fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--gris)" }}>
-      <a href="/catalogo" style={{ fontWeight: 700 }}>← {t("volver")}</a><span>·</span><a href="/">{t("inicio")}</a><span>/</span><a href={`/catalogo/${m.categoria}`} style={{ fontWeight: 700 }}>{nombreCat(m.categoria)}</a>
-      <span style={{ flex: 1 }} /><span>{codigo}</span>
-    </div>
     <div className="fichaGrid">
       {/* Galería */}
       <div>
@@ -164,7 +143,10 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
       </div>
       {/* Precio y compra */}
       <div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}><span className="tag">{(m.condicion === "usada" ? t("usada") : t("nueva")).toUpperCase()}</span>{m.garantia_meses > 0 && <span className="tag" style={{ background: "var(--suave)", color: "var(--gris)" }}>{t("garantia").toUpperCase()} · {m.garantia_meses} {t("meses").toUpperCase()}</span>}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12, fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--gris)" }}>
+          <a href="/catalogo" style={{ fontWeight: 700 }}>← {t("volver")}</a><span>·</span><a href="/">{t("inicio")}</a><span>/</span><a href={`/catalogo/${m.categoria}`} style={{ fontWeight: 700 }}>{nombreCat(m.categoria)}</a>
+          <span style={{ flex: 1 }} /><span>{codigo}</span>
+        </div>
         <h1 style={{ fontSize: "clamp(24px,3vw,34px)", letterSpacing: "-0.03em", lineHeight: 1.1, margin: "0 0 16px" }}>{m.nombre}</h1>
         <div className="cajaPrecio">
           {!ses && <>
@@ -175,8 +157,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
           {ses && <>
             <p className="lbl" style={{ marginBottom: 0 }}>{t("precioVolumen")}</p>
             {tramos.length === 0 && unit == null && <p style={{ margin: "10px 0 0", color: "var(--gris)" }}>Precio a confirmar. Consultanos.</p>}
-            {tramos.length > 0 && <div className="tramos">{tramos.map((tr, i) => <button key={tr.q} className={`tramo${tramo?.q === tr.q ? " on" : ""}`} onClick={() => setQty(Number(tr.q))}><small>{etiquetaTramo(tr, i)}</small><b>{fmt(tr.unit)}</b><small>{t("precioUnit")}</small></button>)}</div>}
-            <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}.{moneda === "ARS" ? " Pesos al blue + 5, informativo." : ""}</p>
+            {tramos.length > 0 && <div className="tramos">{tramos.map((tr, i) => { const base = Number(tramos[0].unit); const desc = i > 0 && base > 0 ? Math.round((1 - Number(tr.unit) / base) * 100) : 0; return <button key={tr.q} className={`tramo${tramo?.q === tr.q ? " on" : ""}`} onClick={() => setQty(Number(tr.q))}><small>{etiquetaTramo(tr, i)}</small><b>{fmt(tr.unit)}</b><small>{t("precioUnit")}</small>{desc > 0 && <span className="desc">−{desc} %</span>}<span className="pagos">{t("anticipo")}: {fmt(tr.maquina)}<br />{t("alRecibir")}: {fmt(tr.argencargo)}</span></button>; })}</div>}
             <div style={{ display: "flex", gap: 18, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: "1px solid var(--borde)" }}>
               <div><p className="lbl">{t("cantidad")}</p><div className="stepper"><button onClick={() => setQty(Math.max(minQ, q - 1))} disabled={q <= minQ} aria-label="−">−</button><input type="number" min={minQ} value={q} onChange={(e) => setQty(Math.max(minQ, Math.round(Number(e.target.value) || minQ)))} /><button onClick={() => setQty(q + 1)} aria-label="+">+</button></div>{minQ > 1 && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("minimo")} {minQ} {t("unidades")}</p>}</div>
               <div><p className="lbl">{t("precioUnit")}</p><p style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>{unit != null ? fmt(unit) : "—"}</p>{tramo && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)", fontWeight: 700 }}>{etiquetaTramo(tramo, tramos.indexOf(tramo))}</p>}</div>
@@ -185,30 +166,26 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
               <div><p className="lbl" style={{ marginBottom: 2 }}>{t("precioTotal")}</p><p style={{ margin: 0, fontSize: 12.5, color: "var(--gris)" }}>{q} × {unit != null ? fmt(unit) : "—"}</p></div>
               <b style={{ fontSize: 28, letterSpacing: "-0.03em" }}>{unit != null ? fmt(unit * q) : "—"}</b>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
-              {enCarrito && enCarrito.qty === q ? <a className="btn k" href="/carrito">{t("agregado")} · {t("verCarrito")}</a> : <button className="btn y" onClick={agregar} disabled={unit == null}>{enCarrito ? t("agregado") + " · " + t("cantidad").toLowerCase() + " " + q : t("agregar")}</button>}
-              <a className="btn" href={WA(`Hola ARGENMAQ, consulto por ${m.nombre} (${codigo})`)} target="_blank" rel="noreferrer">WhatsApp</a>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
+              <button className="btn y" onClick={() => { agregar(); window.location.href = "/carrito"; }} disabled={unit == null}>{t("comprarAhora")}</button>
+              <button className="btn k" onClick={agregar} disabled={unit == null}>{enCarrito && enCarrito.qty === q ? t("agregado") : t("agregar")}</button>
+              <a className="btn wa" href={WA(`Hola ARGENMAQ, consulto por ${m.nombre} (${codigo})`)} target="_blank" rel="noreferrer" style={{ gridColumn: "span 2" }}>{t("consultarWa")}</a>
             </div>
-            <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--gris)", fontFamily: MONO }}>{dias != null ? `${t("llega")} ${dias} ${t("dias")} · ` : ""}{t("anticipoNota")}{esc?.aerea?.length ? ` · ${t("viaAerea").toLowerCase()} ${lang === "es" ? "disponible en el carrito" : lang === "en" ? "available in the cart" : "доступно в корзине"}` : ""}</p>
           </>}
         </div>
       </div>
     </div>
 
-    {/* Detalles técnicos */}
-    <section style={{ marginTop: 40 }}>
-      <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: "0 0 14px" }}>{t("detalles")}</h2>
+    {/* Detalles técnicos + descripción, en una sola tarjeta como la de B2Box */}
+    <section className="granCard" style={{ marginTop: 40 }}>
+      <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: "0 0 16px" }}>{t("detalles")}</h2>
       <div className="detGrid">
-        <div className="detCard"><h3><span className="ico" style={{ width: 30, height: 30 }}>#</span>{t("producto")}</h3><Fila l={t("codigo")} v={codigo} /><Fila l={t("categoria")} v={nombreCat(m.categoria) || null} /><Fila l={t("subcategoria")} v={nombreCat(m.subcategoria) || null} /><Fila l={t("condicion")} v={m.condicion === "usada" ? t("usada") : t("nueva")} /></div>
-        <div className="detCard"><h3><span className="ico" style={{ width: 30, height: 30 }}>↔</span>{t("medidas")}</h3><Fila l={t("largo")} v={fmtCm(med.largo_cm)} /><Fila l={t("ancho")} v={fmtCm(med.ancho_cm)} /><Fila l={t("alto")} v={fmtCm(med.alto_cm)} /><Fila l={t("peso")} v={fmtKg(med.peso_kg)} /></div>
-        <div className="detCard"><h3><span className="ico" style={{ width: 30, height: 30 }}>▣</span>{t("packing")}</h3><Fila l={t("bultos")} v={packing.length ? String(packing.reduce((s, b) => s + (num(b.cantidad) || 1), 0)) : null} />{packing.map((b, i) => <Fila key={i} l={`${t("bulto")} ${i + 1}${(num(b.cantidad) || 1) > 1 ? ` × ${b.cantidad}` : ""}`} v={num(b.largo_cm) ? `${b.largo_cm} × ${b.ancho_cm} × ${b.alto_cm} cm · ${fmtKg(b.peso_kg)}` : null} />)}{packing.length > 1 && <Fila l={t("peso")} v={fmtKg(pesoPacking)} />}</div>
+        <div className="detCard"><h3><span className="cir"><Ico d={["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z", "M3.3 7l8.7 5 8.7-5", "M12 22V12"]} size={17} /></span>{t("producto")}</h3><Fila l={t("codigo")} v={codigo} /><Fila l={t("categoria")} v={nombreCat(m.categoria) || null} /><Fila l={t("subcategoria")} v={nombreCat(m.subcategoria) || null} /><Fila l={t("condicion")} v={m.condicion === "usada" ? t("usada") : t("nueva")} /></div>
+        <div className="detCard"><h3><span className="cir"><Ico d={["M3 17l14-14 4 4L7 21l-4-4z", "M14 6l1.5 1.5", "M11 9l1.5 1.5", "M8 12l1.5 1.5", "M5 15l1.5 1.5"]} size={17} /></span>{t("medidas")}</h3><Fila l={t("largo")} v={fmtCm(med.largo_cm)} /><Fila l={t("ancho")} v={fmtCm(med.ancho_cm)} /><Fila l={t("alto")} v={fmtCm(med.alto_cm)} /><Fila l={t("peso")} v={fmtKg(med.peso_kg)} /></div>
+        <div className="detCard"><h3><span className="cir"><Ico d={["M3 7l9-4 9 4v10l-9 4-9-4z", "M3 7l9 4 9-4", "M12 11v10", "M7.5 5l9 4"]} size={17} /></span>{t("packing")}</h3><Fila l={t("bultos")} v={packing.length ? String(packing.reduce((s, b) => s + (num(b.cantidad) || 1), 0)) : null} />{packing.map((b, i) => <Fila key={i} l={`${t("bulto")} ${i + 1}${(num(b.cantidad) || 1) > 1 ? ` × ${b.cantidad}` : ""}`} v={num(b.largo_cm) ? `${b.largo_cm} × ${b.ancho_cm} × ${b.alto_cm} cm · ${fmtKg(b.peso_kg)}` : null} />)}{packing.length > 1 && <Fila l={t("peso")} v={fmtKg(pesoPacking)} />}{m.garantia_meses > 0 && <Fila l={t("garantia")} v={`${m.garantia_meses} ${t("meses")}`} />}</div>
       </div>
-    </section>
-
-    {/* Descripción */}
-    <section style={{ marginTop: 34, maxWidth: 820 }}>
-      <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: "0 0 10px" }}>{t("descripcion")}</h2>
-      <div style={{ padding: "18px 22px", borderRadius: 18, background: "var(--suave)" }}>{(m.descripcion || "").split(/\n{2,}/).map((par, i) => <p key={i} style={{ fontSize: 15.5, lineHeight: 1.65, margin: i ? "12px 0 0" : 0 }}>{par}</p>)}</div>
+      <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: "30px 0 12px" }}>{t("descripcion")}</h2>
+      <div style={{ padding: "20px 24px", borderRadius: 18, background: "var(--suave)" }}>{(m.descripcion || "").split(/\n{2,}/).map((par, i) => <p key={i} style={{ fontSize: 15.5, lineHeight: 1.7, margin: i ? "14px 0 0" : 0 }}>{par}</p>)}</div>
     </section>
 
     {relacionadas?.length > 0 && <section style={{ marginTop: 40 }}><div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}><h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>{t("similares")}</h2><span style={{ flex: 1 }} /><a href={`/catalogo/${m.categoria}`} style={{ fontSize: 13.5, fontWeight: 700 }}>{t("verTodo")} →</a></div><div className="carril">{relacionadas.map((r) => <Tarjeta key={r.id} m={r} diasVia={dv} />)}</div></section>}
@@ -228,14 +205,12 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
 export function CarritoVista({ diasVia: dv }) {
   const { t, fmt, ses, carrito, setCarrito, cliente } = useAM();
   const precios = usePrecios(carrito.map((i) => i.id));
-  const [notas, setNotas] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(null);
-  // Cada línea se cobra con el escalón de su cantidad en la vía elegida (marítima por defecto).
-  const lineaDe = (i) => { const esc = precios?.[i.id]?.escalera; const modo = i.modo === "aerea" && esc?.aerea?.length ? "aerea" : "maritima"; const tramos = esc?.[modo] || []; const minQ = Number(tramos[0]?.q) || 1; const q = Math.max(minQ, i.qty || 1); const tr = escalonPara(tramos, q); const unit = tr ? Number(tr.unit) : (precioVidriera(precios?.[i.id])?.unit ?? null); return { modo, tramos, minQ, q, tr, unit, total: unit != null ? unit * q : null, via: tr?.via || null, esc }; };
+  const lineaDe = (i) => lineaCarrito(i, precios);
   const total = carrito.reduce((s, i) => s + (lineaDe(i).total || 0), 0);
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
-  const confirmar = async () => { setEnviando(true); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: carrito.map((i) => ({ id: i.id, qty: lineaDe(i).q, modo: lineaDe(i).modo })), notas }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { alert(e.message); } setEnviando(false); };
+  const confirmar = async () => { setEnviando(true); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: carrito.map((i) => ({ id: i.id, qty: lineaDe(i).q, modo: lineaDe(i).modo })) }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { alert(e.message); } setEnviando(false); };
   if (hecho) return <div className="wrap" style={{ padding: "60px 24px", textAlign: "center", maxWidth: 640 }}><span className="tag">{hecho.codigo}</span><h1 className="h2" style={{ margin: "14px 0 10px" }}>¡Pedido recibido!</h1><p style={{ color: "var(--gris)", fontSize: 16, lineHeight: 1.5 }}>Te escribimos para coordinar el anticipo y arrancar. Podés seguir el pedido desde <a href="/cuenta" style={{ fontWeight: 800 }}>Mi cuenta</a>.</p><a className="btn y" href="/catalogo" style={{ marginTop: 18 }}>{t("catalogo")}</a></div>;
   return <div className="wrap" style={{ padding: "26px 24px 70px", maxWidth: 960 }}>
     <h1 className="h2" style={{ marginBottom: 18 }}>{t("carrito")}</h1>
@@ -258,9 +233,8 @@ export function CarritoVista({ diasVia: dv }) {
           : <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}><span style={{ fontWeight: 800, fontSize: 16 }}>{t("total")}</span><b style={{ fontSize: 26, letterSpacing: "-0.02em" }}>{fmt(total)}</b></div>
             <p style={{ margin: "6px 0 14px", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}. {t("anticipoNota")}.</p>
-            <textarea className="inp" placeholder="Notas para el equipo (opcional)" value={notas} onChange={(e) => setNotas(e.target.value)} style={{ minHeight: 70, resize: "vertical", marginBottom: 12 }} />
             <button className="btn y" onClick={confirmar} disabled={enviando || !cliente}>{enviando ? "Enviando…" : t("pedir")}</button>
-            {!cliente && <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--gris)" }}>Completá tus datos en <a href="/cuenta" style={{ fontWeight: 800 }}>Mi cuenta</a> para poder pedir.</p>}
+            {!cliente && <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{t("completaDatos")} <a href="/cuenta" style={{ fontWeight: 800 }}>{t("misDatos")} →</a></p>}
           </>}
       </div>
     </>}
@@ -326,13 +300,58 @@ function Registro({ sf, guardarSes, t, volver }) {
   </form>;
 }
 const EST = { nuevo: "Nueva", pagado: "Pagada", en_produccion: "En producción", listo_fabrica: "Lista en fábrica", en_importacion: "En importación", entregado: "Entregada", cancelado: "Cancelada" };
-function Panel({ cliente, dq, salir, t, fmt, ses }) {
+// Ficha del cliente desde Mi cuenta: si la cuenta todavía no tiene cliente (una cuenta del equipo,
+// o creada antes de que existiera el registro), se crea acá con los mismos datos que pide el alta.
+function MisDatos({ cliente, setCliente, dq, ses, t }) {
+  const [f, setF] = useState(() => ({ first_name: cliente?.first_name || "", last_name: cliente?.last_name || "", whatsapp: cliente?.whatsapp || "", street: cliente?.street || "", floor_apt: cliente?.floor_apt || "", postal_code: cliente?.postal_code || "", city: cliente?.city || "", province: cliente?.province || "", tax_condition: cliente?.tax_condition || "ninguna", company_name: cliente?.company_name || "", cuit: cliente?.cuit || "", dni: cliente?.dni || "" }));
+  const [err, setErr] = useState(""); const [ok, setOk] = useState(""); const [lo, setLo] = useState(false);
+  const [abierto, setAbierto] = useState(!cliente);
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const I = ({ k, l, req = true, span }) => <label className="lbl" style={{ gridColumn: span ? "span 2" : undefined }}>{l}<input className="inp" value={f[k]} onChange={(e) => set(k, e.target.value)} required={req} style={{ marginTop: 6 }} /></label>;
+  const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
+  const guardar = async (e) => { e.preventDefault(); setErr(""); setOk(""); if (f.whatsapp.replace(/\D/g, "").length < 10) { setErr("WhatsApp inválido (mínimo 10 dígitos)"); return; } setLo(true);
+    try {
+      const body = { first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: f.whatsapp.trim(), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.tax_condition === "responsable_inscripto" ? f.company_name.trim() : null, cuit: ["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? f.cuit.trim() : null, street: f.street.trim(), floor_apt: f.floor_apt.trim() || null, postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province };
+      let row = null;
+      if (cliente?.id) { const r = await dq("clients", { method: "PATCH", filters: `?id=eq.${cliente.id}`, body }); row = Array.isArray(r) ? r[0] : r; }
+      else {
+        const base = gc(body.first_name || "CLI", body.last_name || "ENT"); let creado = null, ultimo = "";
+        for (let i = 0; i < 12 && !creado; i++) { const code = i === 0 ? base : `${base.slice(0, 5)}${i + 1}`; try { const r = await dq("clients", { method: "POST", body: { ...body, auth_user_id: ses.user?.id, email: ses.user?.email || null, client_code: code } }); creado = Array.isArray(r) ? r[0] : r; } catch (er) { ultimo = er.message || ""; if (!/duplicate|unique|23505/i.test(ultimo)) throw er; } }
+        if (!creado) throw new Error(ultimo || "No se pudo crear la ficha");
+        row = creado;
+      }
+      if (row) setCliente({ ...(cliente || {}), ...row }); setOk(t("datosOk")); setAbierto(false);
+    } catch (er) { setErr(er.message || "Error"); } setLo(false); };
+  return <div style={{ padding: "18px 20px", borderRadius: 18, border: "1px solid var(--borde)", background: "var(--card)", marginBottom: 22 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <h2 style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, flex: 1 }}>{t("misDatos")}</h2>
+      {cliente && <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--gris)" }}>{cliente.client_code}</span>}
+      {cliente && !abierto && <button className="btn s" onClick={() => setAbierto(true)}>Editar</button>}
+    </div>
+    {!cliente && <p style={{ margin: "6px 0 0", fontSize: 14, color: "var(--gris)" }}>{t("completaDatos")}</p>}
+    {cliente && !abierto && <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--gris)" }}>{[cliente.first_name, cliente.last_name].filter(Boolean).join(" ")} · {cliente.whatsapp || "—"} · {[cliente.street, cliente.city, cliente.province].filter(Boolean).join(", ") || "—"}</p>}
+    {ok && !abierto && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--ok)", fontWeight: 700 }}>{ok}</p>}
+    {abierto && <form onSubmit={guardar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 16 }}>
+      <I k="first_name" l="Nombre" /><I k="last_name" l="Apellido" />
+      <I k="whatsapp" l="WhatsApp" span />
+      <I k="street" l="Calle y número" /><I k="floor_apt" l="Piso / depto" req={false} />
+      <I k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
+      <I k="postal_code" l="Código postal" />
+      <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
+      {f.tax_condition === "responsable_inscripto" && <I k="company_name" l="Razón social" />}
+      {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <I k="cuit" l="CUIT" /> : <I k="dni" l="DNI" />}
+      {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
+      <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : t("guardarDatos")}</button>{cliente && <button type="button" className="btn" onClick={() => setAbierto(false)}>Cancelar</button>}</div>
+    </form>}
+  </div>;
+}
+function Panel({ cliente, setCliente, dq, salir, t, fmt, ses }) {
   const [ops, setOps] = useState(null); const [seg, setSeg] = useState({});
   useEffect(() => { (async () => { try { const r = await dq("cat_pedidos", { filters: "?select=id,numero,estado,items,precio_total,importacion_usd,created_at,operation_id&order=created_at.desc" }); setOps(Array.isArray(r) ? r : []); } catch { setOps([]); } })(); }, [ses?.token]); // eslint-disable-line react-hooks/exhaustive-deps
   const verSeg = async (id) => { try { const r = await dq("rpc/argenmaq_seguimiento", { method: "POST", body: { p_pedido: id }, prefer: "return=representation" }); setSeg((s) => ({ ...s, [id]: Array.isArray(r) && r[0] ? r[0] : { vacio: true } })); } catch { setSeg((s) => ({ ...s, [id]: { vacio: true } })); } };
   return <div className="wrap" style={{ padding: "26px 24px 70px", maxWidth: 900 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}><h1 className="h2" style={{ fontSize: 30, flex: 1 }}>{cliente ? `Hola, ${cliente.first_name || cliente.company_name || ""}` : t("cuenta")}</h1><button className="btn s" onClick={salir}>{t("salir")}</button></div>
-    {cliente && <div style={{ padding: "14px 18px", borderRadius: 16, background: "var(--suave)", marginBottom: 20, fontSize: 14, display: "flex", gap: 16, flexWrap: "wrap" }}><span><b>{cliente.first_name} {cliente.last_name}</b></span><span style={{ fontFamily: MONO, fontSize: 12, color: "var(--gris)" }}>{cliente.client_code}</span><span style={{ color: "var(--gris)" }}>{cliente.email}</span><span style={{ color: "var(--gris)" }}>{cliente.whatsapp}</span></div>}
+    <MisDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} />
     <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: "0 0 12px" }}>{t("misOps")}</h2>
     {ops === null ? <p style={{ color: "var(--gris)" }}>…</p> : ops.length === 0 ? <p style={{ color: "var(--gris)" }}>Todavía no tenés operaciones. <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p>
       : <div style={{ display: "grid", gap: 10 }}>{ops.map((o) => <div key={o.id} style={{ padding: "16px 18px", borderRadius: 18, border: "1px solid var(--borde)", background: "var(--card)" }}>
