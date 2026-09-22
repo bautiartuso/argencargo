@@ -154,6 +154,7 @@ html,body{overflow-x:clip!important}
 .amq .rubros hr{border:none;border-top:1px solid var(--borde);margin:8px 4px}
 .amq .galeriaMain{position:relative;aspect-ratio:1/1;border-radius:22px;overflow:hidden;background:var(--suave);cursor:zoom-in}
 .amq .galeriaMain img{width:100%;height:100%;object-fit:cover;display:block}
+.amq .galeriaMain video{width:100%;height:100%;object-fit:contain;background:#000;display:block}.amq .galeriaMain.vid{cursor:default}.amq .galeriaMain.vid .contador{bottom:auto;top:14px}
 .amq .galeriaAcc{position:absolute;top:14px;right:14px;display:flex;gap:8px}
 .amq .redondo{width:44px;height:44px;border-radius:50%;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
 .amq .redondo.on{background:#FF5A3C;border-color:#FF5A3C;color:#fff}
@@ -163,11 +164,13 @@ html,body{overflow-x:clip!important}
 .amq .miniaturas{display:flex;gap:8px;margin-top:10px;overflow-x:auto;padding-bottom:4px}
 .amq .miniaturas button{flex:0 0 78px;height:62px;border-radius:12px;overflow:hidden;border:2px solid transparent;padding:0;background:var(--suave);cursor:pointer}
 .amq .miniaturas button.on{border-color:var(--y)}
+.amq .miniaturas button{position:relative}
 .amq .miniaturas img{width:100%;height:100%;object-fit:cover;display:block}
+.amq .miniaturas video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}.amq .miniaturas .play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);color:#fff}.amq .miniaturas .play svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5))}
 .amq .luz{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,0.78);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:18px}
 .amq .luzCaja{position:relative;width:min(1100px,100%);max-height:96vh;background:var(--card);border-radius:26px;padding:18px;display:flex;flex-direction:column;gap:12px}
 .amq .luzImg{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--suave);border-radius:18px;overflow:hidden;position:relative}
-.amq .luzImg img{max-width:100%;max-height:72vh;object-fit:contain;display:block}
+.amq .luzImg img{max-width:100%;max-height:72vh;object-fit:contain;display:block}.amq .luzImg video{max-width:100%;max-height:72vh;display:block;background:#000}
 .amq .fichaGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:34px;align-items:start}
 .amq .cajaPrecio{border:1px solid var(--borde);border-radius:22px;padding:20px 22px;background:var(--card)}
 .amq .tramos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 0}

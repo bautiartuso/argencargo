@@ -104,7 +104,12 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
   const [aviso, setAviso] = useState("");
   useEffect(() => { try { setFav((JSON.parse(localStorage.getItem("am_fav") || "[]")).includes(m?.id)); } catch {} }, [m?.id]);
   const fotos = Array.isArray(m?.fotos) ? m.fotos : [];
-  const nFotos = fotos.length;
+  // La galería mezcla fotos y video: el video va segundo, después de la foto de portada.
+  const medios = m?.video_url ? [...fotos.slice(0, 1).map((src) => ({ t: "img", src })), { t: "vid", src: m.video_url }, ...fotos.slice(1).map((src) => ({ t: "img", src }))] : fotos.map((src) => ({ t: "img", src }));
+  const nFotos = medios.length;
+  const esVideo = medios[foto]?.t === "vid";
+  const Medio = ({ md }) => md.t === "vid" ? <video src={md.src} controls playsInline preload="metadata" onClick={(e) => e.stopPropagation()} /> : <img src={md.src} alt={m?.nombre || ""} />;
+  const Mini = ({ md }) => md.t === "vid" ? <><video src={md.src} muted preload="metadata" playsInline /><span className="play"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></span></> : <img src={md.src} alt="" />;
   const ir = (d) => setFoto((f) => (nFotos ? (f + d + nFotos) % nFotos : 0));
   useEffect(() => { if (!luz) return; const k = (e) => { if (e.key === "Escape") setLuz(false); if (e.key === "ArrowRight") ir(1); if (e.key === "ArrowLeft") ir(-1); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [luz, nFotos]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!m) return <div className="wrap" style={{ padding: "60px 24px" }}><h1 className="h2">Esta máquina ya no está publicada.</h1><a className="btn y" href="/catalogo" style={{ marginTop: 18 }}>{t("catalogo")}</a></div>;
@@ -138,8 +143,8 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
     <div className="fichaGrid">
       {/* Galería */}
       <div>
-        <div className="galeriaMain" onClick={() => nFotos && setLuz(true)}>
-          {fotos[foto] ? <img src={fotos[foto]} alt={m.nombre} /> : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gris)" }}>Sin foto</div>}
+        <div className={`galeriaMain${esVideo ? " vid" : ""}`} onClick={() => nFotos && !esVideo && setLuz(true)}>
+          {medios[foto] ? <Medio md={medios[foto]} /> : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gris)" }}>Sin foto</div>}
           <div className="galeriaAcc" onClick={(e) => e.stopPropagation()}>
             <button className="redondo" onClick={compartir} title={t("compartir")} aria-label={t("compartir")}><Ico d={COMPARTIR} size={17} /></button>
             <button className={`redondo${fav ? " on" : ""}`} onClick={toggleFav} title={fav ? t("guardada") : t("guardarFav")} aria-label={t("guardarFav")}><svg width="17" height="17" viewBox="0 0 24 24" fill={fav ? "#fff" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={CORAZON[0]} /></svg></button>
@@ -148,8 +153,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
           {nFotos > 0 && <span className="contador">{foto + 1} de {nFotos}</span>}
           {aviso && <span className="contador" style={{ left: "auto", right: 14, background: "var(--y)", color: "#15171A" }}>{aviso}</span>}
         </div>
-        {nFotos > 1 && <div className="miniaturas">{fotos.map((f, i) => <button key={f} className={i === foto ? "on" : ""} onClick={() => setFoto(i)}><img src={f} alt="" /></button>)}</div>}
-        {m.video_url && <video src={m.video_url} controls style={{ width: "100%", borderRadius: 16, marginTop: 14, background: "#000" }} />}
+        {nFotos > 1 && <div className="miniaturas">{medios.map((md, i) => <button key={md.src} className={i === foto ? "on" : ""} onClick={() => setFoto(i)}><Mini md={md} /></button>)}</div>}
       </div>
       {/* Precio y compra */}
       <div>
@@ -205,8 +209,8 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
     {luz && <div className="luz" onClick={() => setLuz(false)}>
       <div className="luzCaja" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span className="contador" style={{ position: "static" }}>{foto + 1} de {nFotos}</span><span style={{ flex: 1 }} /><button className="redondo" onClick={() => setLuz(false)} aria-label="Cerrar">✕</button></div>
-        <div className="luzImg">{fotos[foto] && <img src={fotos[foto]} alt={m.nombre} />}{nFotos > 1 && <><button className="flecha izq" onClick={() => ir(-1)} aria-label="Anterior">‹</button><button className="flecha der" onClick={() => ir(1)} aria-label="Siguiente">›</button></>}</div>
-        {nFotos > 1 && <div className="miniaturas" style={{ marginTop: 0 }}>{fotos.map((f, i) => <button key={f} className={i === foto ? "on" : ""} onClick={() => setFoto(i)}><img src={f} alt="" /></button>)}</div>}
+        <div className="luzImg">{medios[foto] && <Medio md={medios[foto]} />}{nFotos > 1 && <><button className="flecha izq" onClick={() => ir(-1)} aria-label="Anterior">‹</button><button className="flecha der" onClick={() => ir(1)} aria-label="Siguiente">›</button></>}</div>
+        {nFotos > 1 && <div className="miniaturas" style={{ marginTop: 0 }}>{medios.map((md, i) => <button key={md.src} className={i === foto ? "on" : ""} onClick={() => setFoto(i)}><Mini md={md} /></button>)}</div>}
       </div>
     </div>}
   </div>;
