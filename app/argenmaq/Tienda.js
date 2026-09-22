@@ -2,7 +2,7 @@
 // Vistas del sitio público de ARGENMAQ: catálogo (carriles por rubro), ficha, cuenta, carrito,
 // cómo funciona y quiénes somos. Sin cuenta no se ve ningún número.
 import { useEffect, useMemo, useState } from "react";
-import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto, usePrecios, precioVidriera, lineaCarrito } from "./kit";
+import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto, usePrecios, precioVidriera, lineaCarrito, Logo } from "./kit";
 import { escalonPara } from "../../lib/canales-maquinas";
 import { PAISES, bandera, paisDe } from "./_paises";
 import { PROVINCIAS } from "../../lib/provincias";
@@ -240,7 +240,7 @@ export function CarritoVista({ diasVia: dv }) {
   if (carrito.length === 0) return <div className="wrap" style={{ padding: "60px 24px" }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p></div>;
   const PASOS = [t("envio"), t("pago"), t("confirmacion")];
   const idx = paso <= 2 ? 0 : 1;
-  const Resumen = <div style={{ display: "grid", gap: 14, position: "sticky", top: 20 }}>
+  const Resumen = <div style={{ display: "grid", gap: 14, position: "sticky", top: 22 }}>
     <div className="cajaSec">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><p className="lbl" style={{ margin: 0 }}>{t("queCompras")}</p><span style={{ fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{carrito.reduce((s, i) => s + (i.qty || 1), 0)} {t("unidades")}</span></div>
       {lineas.map(({ i, L }) => <div key={i.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr auto", gap: 12, padding: "14px 0", borderBottom: "1px solid var(--borde)", alignItems: "start" }}>
@@ -262,26 +262,26 @@ export function CarritoVista({ diasVia: dv }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--borde)" }}><span style={{ fontWeight: 800, fontSize: 15.5 }}>{t("totalPedido")}</span><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(total)}</b></div>
     </div>
   </div>;
-  return <div className="wrap" style={{ padding: "18px 24px 70px" }}>
-    <div className="chkGrid">
-      <div style={{ minWidth: 0 }}>
+  return <div className="chkPagina">
+      <div className="chkIzq" style={{ minWidth: 0 }}>
+        <div className="chkNav"><a href="/" style={{ display: "flex", alignItems: "center" }}><Logo /></a><span style={{ flex: 1 }} /><a className="lk" href="/catalogo"><Ico d={["M19 12H5", "M12 19l-7-7 7-7"]} size={15} />{t("volverTienda")}</a><span className="lk"><Ico d={CANDADO} size={15} />{t("compraSegura")}</span></div>
         <p className="lbl" style={{ marginBottom: 4 }}>{t("paso")} {idx + 1} {lang === "es" ? "de" : lang === "en" ? "of" : "из"} 3</p>
-        <h1 className="h2" style={{ fontSize: 36 }}>{paso === 1 ? t("infoContacto") : paso === 2 ? t("metodoEntrega") : t("pago")}</h1>
+        <h1 className="h2" style={{ fontSize: 36 }}>{paso === 1 ? t("infoContacto") : paso === 2 ? t("metodoImport") : t("pago")}</h1>
         <div className="pasos">{PASOS.map((pl, i) => <div key={pl} style={{ height: "auto", background: "transparent" }}><div className={i < idx ? "hecho" : i === idx ? "actual" : ""} /><span className={i === idx ? "on" : ""}>{i < idx ? "✓ " : `${i + 1} `}{pl}</span></div>)}</div>
 
         {paso === 1 && <>
           <div className="cajaSec"><h3>{t("infoContacto")}</h3><FormDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} formId="fDatos" sinBoton onListo={() => setPaso(2)} /></div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button form="fDatos" className="btn y" style={{ minWidth: 200 }}>{t("continuar")}</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button form="fDatos" className="btn k" style={{ minWidth: 220, height: 52 }}>{t("continuar")}</button></div>
         </>}
 
         {paso === 2 && <>
-          <div className="cajaSec"><h3>{t("metodoEntrega")}</h3><p style={{ margin: "-6px 0 16px", fontSize: 14, color: "var(--gris)" }}>{t("metodoEntregaSub")}</p>
+          <div className="cajaSec"><h3>{t("metodoImport")}</h3><p style={{ margin: "-6px 0 16px", fontSize: 14, color: "var(--gris)" }}>{t("metodoImportSub")}</p>
             <div style={{ display: "grid", gap: 14 }}>{lineas.map(({ i, L }) => { const opciones = [["maritima", t("viaMaritima")], ...(L.esc?.aerea?.length ? [["aerea", t("viaAerea")]] : [])]; return <div key={i.id} style={{ border: "1px solid var(--borde)", borderRadius: 18, padding: 14 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>{i.foto && <img src={i.foto} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--borde)" }} />}<div><p style={{ margin: 0, fontWeight: 800, fontSize: 14.5 }}>{i.nombre}</p><p style={{ margin: 0, fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{L.q} {t("unidades")}</p></div></div>
               <div style={{ display: "grid", gridTemplateColumns: opciones.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>{opciones.map(([modo, l]) => { const tr = escalonPara(L.esc?.[modo] || [], L.q); const tr2 = tr?.via ? diasVia(tr.via, dv) : null; const pd = prodDias(i); return <button key={modo} className={`opcion${L.modo === modo ? " on" : ""}`} onClick={() => setCarrito((c) => c.map((x) => x.id === i.id ? { ...x, modo } : x))} disabled={!tr}><span className="radio" /><span style={{ flex: 1 }}><span style={{ display: "flex", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 14.5 }}><span>{l}</span><span>{tr ? fmt(tr.unit) : ""}{tr ? <small style={{ fontWeight: 600, color: "var(--gris)" }}> / {t("unidad")}</small> : null}</span></span>{tr ? <span style={{ display: "block", fontSize: 12, color: "var(--gris)", fontFamily: MONO, marginTop: 4 }}>{t("produccion2")} {pd} {t("dias")} + {t("transito")} {tr2} {t("dias")} · {t("llegaEn")} {pd + tr2} {t("dias")}</span> : <span style={{ display: "block", fontSize: 12, color: "var(--gris)" }}>{t("noDisponibleQty")}</span>}</span></button>; })}</div>
             </div>; })}</div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 16, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(1)}>← {t("volver")}</button><button className="btn y" style={{ minWidth: 200 }} onClick={() => setPaso(3)}>{t("continuar")}</button></div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 16, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(1)}>← {t("volver")}</button><button className="btn k" style={{ minWidth: 220, height: 52 }} onClick={() => setPaso(3)}>{t("continuar")}</button></div>
         </>}
 
         {paso === 3 && <>
@@ -302,15 +302,13 @@ export function CarritoVista({ diasVia: dv }) {
               <div className="hoy"><p className="lbl" style={{ marginBottom: 6 }}>{t("hoyPagas")}</p><b style={{ fontSize: 24, letterSpacing: "-0.02em", display: "block" }}>{monto(anticipo)}</b><p style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.4 }}>{t("conEstoArranca")}</p></div>
               <div style={{ background: "var(--suave)", borderColor: "transparent" }}><p className="lbl" style={{ marginBottom: 6 }}>{t("alLlegarPagas")}</p><b style={{ fontSize: 24, letterSpacing: "-0.02em", display: "block" }}>{enPesos ? usd(saldo) : usd(saldo)}</b><p style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.4, color: "var(--gris)" }}>{t("teAvisamos")} <b style={{ color: "var(--ink)" }}>{llega}</b>{enPesos ? ` · ${lang === "es" ? "al dólar de ese día" : lang === "en" ? "at that day's rate" : "по курсу того дня"}` : ""}</p></div>
             </div>
-            {enPesos && tc && <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{t("dolarHoy")}: $ {tc.toLocaleString("es-AR")} · {usd(anticipo)}</p>}
           </div>
           {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: "12px 0 0" }}>{err}</p>}
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}><button className="btn" onClick={() => setPaso(2)}>← {t("volver")}</button><button className="btn y" style={{ minWidth: 220 }} onClick={confirmar} disabled={enviando || !cliente}><Ico d={["M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "M5 10V8a7 7 0 0 1 14 0v2", "M4 10h16v11H4z"]} size={15} />{enviando ? "…" : t("confirmarPedido")}</button></div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}><button className="btn" onClick={() => setPaso(2)}>← {t("volver")}</button><button className="btn k" style={{ minWidth: 240, height: 52 }} onClick={confirmar} disabled={enviando || !cliente}><Ico d={["M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "M5 10V8a7 7 0 0 1 14 0v2", "M4 10h16v11H4z"]} size={15} />{enviando ? "…" : t("confirmarPedido")}</button></div>
           <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--gris)" }}>Al confirmar aceptás los <a href="/terminos" style={{ fontWeight: 700 }}>términos y condiciones</a>. Tenés 24 horas desde el anticipo para arrepentirte sin costo.</p>
         </>}
       </div>
-      {Resumen}
-    </div>
+      <div className="chkDer">{Resumen}</div>
   </div>;
 }
 
