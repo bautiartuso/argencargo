@@ -1,52 +1,31 @@
-// 404 de ARGENMAQ. El middleware manda acá cualquier ruta desconocida del host de
-// ARGENMAQ, así no cae en la 404 de Argencargo (otra marca, otros links).
-import { Logo, wa, Y, INK, GRIS, BORDE, SUAVE } from "./_marca";
+// 404 de ARGENMAQ. El middleware manda acá cualquier ruta desconocida del host de ARGENMAQ, así no
+// cae en la 404 de Argencargo (otra marca, otros links). Va dentro del marco del sitio (isla y
+// pie), como la de B2Box: el visitante sigue adentro de la tienda (22/09/2026).
+import { Proveedor, Marco, Logo, BotonRecargar } from "./kit";
 
 export const metadata = {
   title: { absolute: "Página no encontrada — ARGENMAQ" },
   robots: { index: false, follow: true },
 };
 
-const SALIDAS = [
-  { href: "/", t: "Ver el catálogo", d: "Toda la maquinaria, por rubro" },
-  { href: "/#como", t: "Cómo funciona", d: "De la fábrica en China a tu taller" },
-  { href: "/#pago", t: "Cómo se paga", d: "Anticipo, producción y contra entrega" },
-];
-
 export default function NotFoundArgenmaq() {
-  return (
-    <div style={{ minHeight: "100vh", background: "#fff", color: INK, fontFamily: "'Montserrat',ui-sans-serif,system-ui,sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 22px" }}>
-      <style dangerouslySetInnerHTML={{ __html: "@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap');" }} />
-      <div style={{ maxWidth: 540, width: "100%" }}>
-        <a href="/" style={{ display: "inline-block", marginBottom: 28, textDecoration: "none" }}>
-          <Logo />
-        </a>
-        <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", color: GRIS, margin: "0 0 12px", fontFamily: "'JetBrains Mono',ui-monospace,monospace" }}>ERROR 404</p>
-        <h1 style={{ fontSize: "clamp(34px, 8vw, 60px)", fontWeight: 800, letterSpacing: "-0.05em", lineHeight: 0.98, margin: "0 0 14px" }}>
-          Esta página no <span style={{ background: Y, padding: "0 0.12em", borderRadius: "0.12em", display: "inline-block", transform: "rotate(-1.2deg)" }}>está en stock.</span>
-        </h1>
-        <p style={{ fontSize: 16.5, lineHeight: 1.55, color: GRIS, margin: "0 0 28px" }}>
-          El link que seguiste no existe o cambió de lugar. La máquina que buscabas seguro sí está.
-        </p>
-
-        <div style={{ display: "grid", gap: 10, marginBottom: 26 }}>
-          {SALIDAS.map((s) => (
-            <a key={s.t} href={s.href} style={{ display: "block", padding: "15px 18px", borderRadius: 18, background: SUAVE, border: `1px solid ${BORDE}`, textDecoration: "none", color: INK }}>
-              <span style={{ display: "block", fontSize: 15.5, fontWeight: 800, letterSpacing: "-0.015em", marginBottom: 2 }}>{s.t}</span>
-              <span style={{ display: "block", fontSize: 13, color: GRIS }}>{s.d}</span>
-            </a>
-          ))}
+  return <Proveedor><Marco actual="404">
+    <div className="wrap" style={{ padding: "40px 24px 80px" }}>
+      <div style={{ position: "relative", overflow: "hidden", border: "1px solid var(--borde)", borderRadius: 26, background: "var(--card)", padding: "clamp(28px,5vw,64px) clamp(22px,5vw,64px)", boxShadow: "var(--sombra)" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 6, background: "var(--y)" }} />
+        <div style={{ position: "relative", maxWidth: 640 }}>
+          <Logo alto={30} />
+          <p style={{ margin: "34px 0 12px", fontFamily: "'JetBrains Mono',ui-monospace,monospace", fontSize: 12, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gris)" }}>Página no encontrada</p>
+          <h1 style={{ margin: "0 0 16px", fontSize: "clamp(34px,6vw,60px)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1 }}>No encontramos<br />lo que buscabas</h1>
+          <p style={{ margin: "0 0 28px", fontSize: 17, lineHeight: 1.55, color: "var(--gris)" }}>Puede que el enlace haya cambiado o que la máquina ya no esté publicada.</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <BotonRecargar />
+            <a className="btn" href="/">← Volver al inicio</a>
+            <a className="btn" href="/catalogo">Ver el catálogo</a>
+          </div>
         </div>
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a href="/" style={{ display: "inline-flex", padding: "13px 22px", borderRadius: 999, fontWeight: 800, fontSize: 14.5, background: INK, color: "#fff", textDecoration: "none" }}>
-            Volver al inicio
-          </a>
-          <a href={wa("Hola ARGENMAQ, estaba buscando algo en la web y no lo encontré")} target="_blank" rel="noopener" style={{ display: "inline-flex", padding: "13px 22px", borderRadius: 999, fontWeight: 800, fontSize: 14.5, background: Y, color: INK, textDecoration: "none" }}>
-            Escribinos por WhatsApp
-          </a>
-        </div>
+        <span aria-hidden style={{ position: "absolute", right: 24, bottom: -18, fontSize: "clamp(120px,22vw,260px)", fontWeight: 800, letterSpacing: "-0.06em", lineHeight: 1, color: "var(--suave)", pointerEvents: "none", userSelect: "none" }}>404</span>
       </div>
     </div>
-  );
+  </Marco></Proveedor>;
 }

@@ -280,6 +280,8 @@ export function Proveedor({ children }) {
 
 // ── Marco: barra del grupo + nav + pie ────────────────────────────────────────────────────
 export function Logo({ alto = 34, blanco = false }) { const { tema } = useAM(); const inv = blanco || tema === "oscuro"; return <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><img src={inv ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" style={{ height: alto, width: "auto" }} /><img src={inv ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" style={{ height: alto * 0.62, width: "auto" }} /></span>; }
+// Botón "Volver a intentar" de la 404: recarga la página (necesita cliente, por eso vive acá).
+export function BotonRecargar() { return <button type="button" className="btn k" onClick={() => window.location.reload()}><Ico d={["M21 12a9 9 0 1 1-3-6.7", "M21 3v6h-6"]} size={15} />Volver a intentar</button>; }
 export function Ico({ d, size = 17 }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x, i) => <path key={i} d={x} />)}</svg>; }
 
 
