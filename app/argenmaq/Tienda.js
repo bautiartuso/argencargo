@@ -213,73 +213,101 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
 
 // ── Checkout en tres pasos, como el de B2Box: datos · cómo viaja · pago ─────────────────
 export function CarritoVista({ diasVia: dv }) {
-  const { t, fmt, ses, carrito, setCarrito, cliente, setCliente, dq } = useAM();
+  const { t, fmt, ses, carrito, setCarrito, cliente, setCliente, dq, tc, lang } = useAM();
   const precios = usePrecios(carrito.map((i) => i.id));
   const [paso, setPaso] = useState(1);
+  const [pago, setPago] = useState("transferencia"); const [monedaPago, setMonedaPago] = useState("ARS");
+  const [codigo, setCodigo] = useState(""); const [verCodigo, setVerCodigo] = useState(false); const [codigoOk, setCodigoOk] = useState(false);
   const [enviando, setEnviando] = useState(false); const [err, setErr] = useState("");
   const [hecho, setHecho] = useState(null);
   const lineas = carrito.map((i) => ({ i, L: lineaCarrito(i, precios) }));
   const total = lineas.reduce((s, { L }) => s + (L.total || 0), 0);
   const anticipo = lineas.reduce((s, { L }) => s + (L.anticipo || 0), 0);
   const saldo = lineas.reduce((s, { L }) => s + (L.saldo || 0), 0);
-  const diasMax = lineas.reduce((mx, { L, i }) => { const d = L.via ? diasVia(L.via, dv) : 0; return Math.max(mx, d + Number(i.dias_produccion || 0)); }, 0);
-  const llega = new Date(Date.now() + Math.max(30, diasMax) * 864e5).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" });
+  const prodDias = (i) => Number(i.dias_produccion || 0);
+  const diasMax = lineas.reduce((mx, { L, i }) => Math.max(mx, (L.via ? diasVia(L.via, dv) : 0) + prodDias(i)), 0);
+  const loc = lang === "en" ? "en-GB" : lang === "ru" ? "ru-RU" : "es-AR";
+  const llega = new Date(Date.now() + Math.max(15, diasMax) * 864e5).toLocaleDateString(loc, { day: "numeric", month: "short", year: "numeric" });
+  const pct = (v) => (total > 0 ? Math.round((v / total) * 100) : 0);
+  const ars = (usd) => `$ ${Math.round(usd * (tc || 0)).toLocaleString("es-AR")}`;
+  const usd = (v) => `USD ${Number(v).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
+  const enPesos = pago === "transferencia" || monedaPago === "ARS";
+  const monto = (v) => (enPesos && tc ? ars(v) : usd(v));
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
-  const confirmar = async () => { setEnviando(true); setErr(""); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: lineas.map(({ i, L }) => ({ id: i.id, qty: L.q, modo: L.modo })) }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { setErr(e.message); } setEnviando(false); };
+  const confirmar = async () => { setEnviando(true); setErr(""); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: lineas.map(({ i, L }) => ({ id: i.id, qty: L.q, modo: L.modo })), pago: { metodo: pago, moneda: enPesos ? "ARS" : "USD", tc: tc || null }, codigo: codigo.trim() || null }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { setErr(e.message); } setEnviando(false); };
   if (hecho) return <div className="wrap" style={{ padding: "60px 24px", textAlign: "center", maxWidth: 640 }}><span className="tag">{hecho.codigo}</span><h1 className="h2" style={{ margin: "14px 0 10px" }}>¡Pedido recibido!</h1><p style={{ color: "var(--gris)", fontSize: 16, lineHeight: 1.5 }}>Te escribimos por WhatsApp con los datos para el anticipo. Podés seguir el pedido desde <a href="/cuenta" style={{ fontWeight: 800 }}>Mi cuenta</a>.</p><a className="btn y" href="/catalogo" style={{ marginTop: 18 }}>{t("catalogo")}</a></div>;
   if (!ses) return <div className="wrap" style={{ padding: "60px 24px", maxWidth: 560 }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)", margin: "0 0 16px" }}>{t("verPrecio")}</p><div style={{ display: "flex", gap: 8 }}><a className="btn y" href="/cuenta?volver=/carrito">{t("ingresar")}</a><a className="btn" href="/cuenta?registro=1&volver=/carrito">{t("crear")}</a></div></div>;
   if (carrito.length === 0) return <div className="wrap" style={{ padding: "60px 24px" }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p></div>;
   const PASOS = [t("envio"), t("pago"), t("confirmacion")];
-  const idxPaso = paso <= 2 ? 0 : 1; // los pasos 1 y 2 son "Envío" (datos + cómo viaja), el 3 es "Pago"
-  const Resumen = <aside className="resumen">
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><p className="lbl" style={{ margin: 0 }}>{t("queCompras")}</p><span style={{ fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{carrito.reduce((s, i) => s + (i.qty || 1), 0)} {t("unidades")}</span></div>
-    {lineas.map(({ i, L }) => <div key={i.id} className="item">
-      {i.foto ? <img src={i.foto} alt="" /> : <div style={{ width: 56, height: 56, borderRadius: 10, background: "var(--suave)" }} />}
-      <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 13.5, lineHeight: 1.3 }}>{i.nombre}</p><p style={{ margin: "2px 0 8px", fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{L.q} × {L.unit != null ? fmt(L.unit) : "—"}{L.modo === "aerea" ? ` · ${t("viaAerea")}` : ""}</p>
-        <div className="stepper" style={{ height: 32 }}><button style={{ height: 32, width: 32, fontSize: 16 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 32, width: 40, fontSize: 13 }} type="number" value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 32, width: 32, fontSize: 16 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div></div>
-      <div style={{ textAlign: "right" }}><b style={{ fontSize: 14 }}>{L.total != null ? fmt(L.total) : "—"}</b><br /><button className="ico" style={{ width: 28, height: 28, border: "none", marginTop: 6 }} onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}><Ico d={["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6"]} size={14} /></button></div>
-    </div>)}
-    <p className="lbl" style={{ margin: "16px 0 6px" }}>{t("lasCuentas")}</p>
-    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}><span style={{ color: "var(--gris)" }}>{t("subtotal")}</span><b>{fmt(total)}</b></div>
-    <p className="lbl" style={{ margin: "18px 0 0" }}>{t("seDosVeces")}</p>
-    <div className="dosVeces">
-      <div className="hoy"><p className="lbl" style={{ marginBottom: 4 }}>{t("hoy")} · {total > 0 ? Math.round((anticipo / total) * 100) : 0}%</p><b style={{ fontSize: 19, letterSpacing: "-0.02em" }}>{fmt(anticipo)}</b><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>{t("conEstoArranca")}</p></div>
-      <div><p className="lbl" style={{ marginBottom: 4 }}>{t("alLlegar")} · {total > 0 ? Math.round((saldo / total) * 100) : 0}%</p><b style={{ fontSize: 19, letterSpacing: "-0.02em" }}>{fmt(saldo)}</b><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>{t("teAvisamos")} <b style={{ color: "var(--ink)" }}>{llega}</b></p></div>
+  const idx = paso <= 2 ? 0 : 1;
+  const Resumen = <div style={{ display: "grid", gap: 14, position: "sticky", top: 20 }}>
+    <div className="cajaSec">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><p className="lbl" style={{ margin: 0 }}>{t("queCompras")}</p><span style={{ fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{carrito.reduce((s, i) => s + (i.qty || 1), 0)} {t("unidades")}</span></div>
+      {lineas.map(({ i, L }) => <div key={i.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr auto", gap: 12, padding: "14px 0", borderBottom: "1px solid var(--borde)", alignItems: "start" }}>
+        {i.foto ? <img src={i.foto} alt="" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 10, border: "1px solid var(--borde)", background: "#fff" }} /> : <div style={{ width: 56, height: 56, borderRadius: 10, background: "var(--suave)" }} />}
+        <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 13.5, lineHeight: 1.3 }}>{i.nombre}</p><p style={{ margin: "3px 0 8px", fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{L.q} × {L.unit != null ? fmt(L.unit) : "—"}{L.modo === "aerea" ? ` · ${t("viaAerea")}` : ""}</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div className="stepper" style={{ height: 34 }}><button style={{ height: 34, width: 34, fontSize: 16 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 34, width: 42, fontSize: 13 }} type="number" value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 34, width: 34, fontSize: 16 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div><button className="ico" style={{ width: 30, height: 30, border: "none" }} onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}><Ico d={["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6"]} size={14} /></button></div></div>
+        <b style={{ fontSize: 14 }}>{L.total != null ? fmt(L.total) : "—"}</b>
+      </div>)}
+      <p className="lbl" style={{ margin: "16px 0 6px" }}>{t("lasCuentas")}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14.5 }}><span style={{ color: "var(--gris)" }}>{t("subtotal")}</span><b>{fmt(total)}</b></div>
     </div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--borde)" }}><span style={{ fontWeight: 800 }}>{t("totalPedido")}</span><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(total)}</b></div>
-  </aside>;
-  return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
+    <div className="cajaSec">
+      <p className="lbl" style={{ margin: 0 }}>{t("seDosVeces")}</p>
+      <div className="dosBarra"><i style={{ width: `${pct(anticipo)}%` }} /></div>
+      <div className="dosVeces" style={{ marginTop: 0 }}>
+        <div className="hoy"><p className="lbl" style={{ marginBottom: 6 }}>{t("hoy")} · {pct(anticipo)}%</p><b style={{ fontSize: 22, letterSpacing: "-0.02em", display: "block" }}>{fmt(anticipo)}</b><p style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.4 }}>{t("conEstoArranca")}</p></div>
+        <div style={{ background: "var(--suave)", borderColor: "transparent" }}><p className="lbl" style={{ marginBottom: 6 }}>{t("alLlegar")} · {pct(saldo)}%</p><b style={{ fontSize: 22, letterSpacing: "-0.02em", display: "block" }}>{fmt(saldo)}</b><p style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.4, color: "var(--gris)" }}>{t("teAvisamos")}<br /><b style={{ color: "var(--ink)" }}>{llega}</b></p></div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--borde)" }}><span style={{ fontWeight: 800, fontSize: 15.5 }}>{t("totalPedido")}</span><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(total)}</b></div>
+    </div>
+  </div>;
+  return <div className="wrap" style={{ padding: "18px 24px 70px" }}>
     <div className="chkGrid">
       <div style={{ minWidth: 0 }}>
-        <p className="lbl" style={{ marginBottom: 4 }}>{t("paso")} {idxPaso + 1} {t("dias") === "días" ? "de" : "/"} 3</p>
-        <h1 className="h2" style={{ fontSize: 34 }}>{paso === 1 ? t("infoContacto") : paso === 2 ? t("metodoEntrega") : t("pago")}</h1>
-        <div className="pasos">{PASOS.map((pl, i) => <div key={pl} style={{ height: "auto", background: "transparent" }}><div className={i < idxPaso ? "hecho" : i === idxPaso ? "actual" : ""} /><span className={i === idxPaso ? "on" : ""}>{i + 1} {pl}</span></div>)}</div>
+        <p className="lbl" style={{ marginBottom: 4 }}>{t("paso")} {idx + 1} {lang === "es" ? "de" : lang === "en" ? "of" : "из"} 3</p>
+        <h1 className="h2" style={{ fontSize: 36 }}>{paso === 1 ? t("infoContacto") : paso === 2 ? t("metodoEntrega") : t("pago")}</h1>
+        <div className="pasos">{PASOS.map((pl, i) => <div key={pl} style={{ height: "auto", background: "transparent" }}><div className={i < idx ? "hecho" : i === idx ? "actual" : ""} /><span className={i === idx ? "on" : ""}>{i < idx ? "✓ " : `${i + 1} `}{pl}</span></div>)}</div>
 
-        {paso === 1 && <div className="granCard">
-          <p style={{ margin: "0 0 14px", fontSize: 14, color: "var(--gris)" }}>{cliente ? "Revisá que estén bien: a esta dirección coordinamos la entrega." : t("completaDatos")}</p>
-          <FormDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} textoBoton={t("continuarEntrega")} onListo={() => setPaso(2)} />
-        </div>}
+        {paso === 1 && <>
+          <div className="cajaSec"><h3>{t("infoContacto")}</h3><FormDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} formId="fDatos" sinBoton onListo={() => setPaso(2)} /></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button form="fDatos" className="btn y" style={{ minWidth: 200 }}>{t("continuar")}</button></div>
+        </>}
 
-        {paso === 2 && <div className="granCard">
-          <p style={{ margin: "0 0 16px", fontSize: 14, color: "var(--gris)" }}>{t("metodoEntregaSub")}</p>
-          <div style={{ display: "grid", gap: 14 }}>{lineas.map(({ i, L }) => { const opciones = [["maritima", t("viaMaritima")], ...(L.esc?.aerea?.length ? [["aerea", t("viaAerea")]] : [])]; return <div key={i.id} style={{ border: "1px solid var(--borde)", borderRadius: 18, padding: 14 }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>{i.foto && <img src={i.foto} alt="" style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover" }} />}<div><p style={{ margin: 0, fontWeight: 800, fontSize: 14.5 }}>{i.nombre}</p><p style={{ margin: 0, fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{L.q} {t("unidades")}</p></div></div>
-            <div style={{ display: "grid", gridTemplateColumns: opciones.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>{opciones.map(([modo, l]) => { const tr = escalonPara(L.esc?.[modo] || [], L.q); const d = tr?.via ? diasVia(tr.via, dv) + Number(i.dias_produccion || 0) : null; return <button key={modo} className={`opcion${L.modo === modo ? " on" : ""}`} onClick={() => setCarrito((c) => c.map((x) => x.id === i.id ? { ...x, modo } : x))} disabled={!tr}><span className="radio" /><span style={{ flex: 1 }}><span style={{ display: "block", fontWeight: 800, fontSize: 14 }}>{l}</span><span style={{ display: "block", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{tr ? `${fmt(tr.unit)} / ${t("unidad")}${d != null ? ` · ${d} ${t("dias")}` : ""}` : t("noDisponibleQty")}</span></span></button>; })}</div>
-          </div>; })}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(1)}>← {t("volverDireccion")}</button><button className="btn y" onClick={() => setPaso(3)}>{t("continuarPago")}</button></div>
-        </div>}
+        {paso === 2 && <>
+          <div className="cajaSec"><h3>{t("metodoEntrega")}</h3><p style={{ margin: "-6px 0 16px", fontSize: 14, color: "var(--gris)" }}>{t("metodoEntregaSub")}</p>
+            <div style={{ display: "grid", gap: 14 }}>{lineas.map(({ i, L }) => { const opciones = [["maritima", t("viaMaritima")], ...(L.esc?.aerea?.length ? [["aerea", t("viaAerea")]] : [])]; return <div key={i.id} style={{ border: "1px solid var(--borde)", borderRadius: 18, padding: 14 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>{i.foto && <img src={i.foto} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--borde)" }} />}<div><p style={{ margin: 0, fontWeight: 800, fontSize: 14.5 }}>{i.nombre}</p><p style={{ margin: 0, fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{L.q} {t("unidades")}</p></div></div>
+              <div style={{ display: "grid", gridTemplateColumns: opciones.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>{opciones.map(([modo, l]) => { const tr = escalonPara(L.esc?.[modo] || [], L.q); const tr2 = tr?.via ? diasVia(tr.via, dv) : null; const pd = prodDias(i); return <button key={modo} className={`opcion${L.modo === modo ? " on" : ""}`} onClick={() => setCarrito((c) => c.map((x) => x.id === i.id ? { ...x, modo } : x))} disabled={!tr}><span className="radio" /><span style={{ flex: 1 }}><span style={{ display: "flex", justifyContent: "space-between", gap: 8, fontWeight: 800, fontSize: 14.5 }}><span>{l}</span><span>{tr ? fmt(tr.unit) : ""}{tr ? <small style={{ fontWeight: 600, color: "var(--gris)" }}> / {t("unidad")}</small> : null}</span></span>{tr ? <span style={{ display: "block", fontSize: 12, color: "var(--gris)", fontFamily: MONO, marginTop: 4 }}>{t("produccion2")} {pd} {t("dias")} + {t("transito")} {tr2} {t("dias")} · {t("llegaEn")} {pd + tr2} {t("dias")}</span> : <span style={{ display: "block", fontSize: 12, color: "var(--gris)" }}>{t("noDisponibleQty")}</span>}</span></button>; })}</div>
+            </div>; })}</div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 16, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(1)}>← {t("volver")}</button><button className="btn y" style={{ minWidth: 200 }} onClick={() => setPaso(3)}>{t("continuar")}</button></div>
+        </>}
 
-        {paso === 3 && <div className="granCard">
+        {paso === 3 && <>
+          <p style={{ margin: "0 0 14px", fontSize: 14.5, color: "var(--gris)" }}>{t("reservaPago")}</p>
+          <div className="acord" style={{ marginBottom: 20 }}>
+            <button type="button" onClick={() => setVerCodigo((v) => !v)}><Ico d={["M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z", "M7 7h.01"]} size={16} /><span style={{ flex: 1 }}>{t("codigoDesc")}</span><Ico d={[verCodigo ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6"]} size={15} /></button>
+            {verCodigo && <div style={{ display: "flex", gap: 8, padding: "0 0 14px" }}><input className="inp" value={codigo} onChange={(e) => { setCodigo(e.target.value.toUpperCase()); setCodigoOk(false); }} placeholder="CÓDIGO" style={{ fontFamily: MONO }} /><button className="btn k" onClick={() => setCodigoOk(!!codigo.trim())}>{t("aplicar")}</button></div>}
+            {codigoOk && <p style={{ margin: "-4px 0 14px", fontSize: 12.5, color: "var(--ok)", fontWeight: 700 }}>✓ {codigo} · {t("codigoOk")}</p>}
+          </div>
           <p className="lbl">{t("elegiPago")}</p>
-          <button className="opcion on" type="button"><span className="radio" /><span><span style={{ display: "block", fontWeight: 800, fontSize: 14.5 }}>{t("transferencia")}</span><span style={{ display: "block", fontSize: 12.5, color: "var(--gris)" }}>{t("transferenciaSub")}</span></span></button>
-          <div className="dosVeces" style={{ marginTop: 16 }}>
-            <div className="hoy"><p className="lbl" style={{ marginBottom: 4 }}>{t("hoy")}</p><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(anticipo)}</b><p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("conEstoArranca")}</p></div>
-            <div><p className="lbl" style={{ marginBottom: 4 }}>{t("alLlegar")}</p><b style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{fmt(saldo)}</b><p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("teAvisamos")} {llega}</p></div>
+          <div className="pagoOpc">
+            <button className={pago === "transferencia" ? "on" : ""} onClick={() => setPago("transferencia")}><b><Ico d={["M3 7h18v10H3z", "M3 11h18", "M7 15h2"]} size={17} />{t("transferencia")}</b><small>{t("transferenciaSub2")}</small></button>
+            <button className={pago === "efectivo" ? "on" : ""} onClick={() => setPago("efectivo")}><b><Ico d={["M2 7h20v10H2z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M6 12h.01", "M18 12h.01"]} size={17} />{t("efectivo")}</b><small>{t("efectivoSub")}</small></button>
+          </div>
+          <div className="cajaSec" style={{ marginTop: 14 }}>
+            {pago === "efectivo" && <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}><span style={{ fontSize: 13.5, fontWeight: 700 }}>{t("cantidad") === "Cantidad" ? "Moneda" : lang === "en" ? "Currency" : "Валюта"}</span><div className="monedaChips"><button className={monedaPago === "USD" ? "on" : ""} onClick={() => setMonedaPago("USD")}>USD</button><button className={monedaPago === "ARS" ? "on" : ""} onClick={() => setMonedaPago("ARS")}>ARS</button></div></div>}
+            <div className="dosVeces" style={{ marginTop: 0 }}>
+              <div className="hoy"><p className="lbl" style={{ marginBottom: 6 }}>{t("hoyPagas")}</p><b style={{ fontSize: 24, letterSpacing: "-0.02em", display: "block" }}>{monto(anticipo)}</b><p style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.4 }}>{t("conEstoArranca")}</p></div>
+              <div style={{ background: "var(--suave)", borderColor: "transparent" }}><p className="lbl" style={{ marginBottom: 6 }}>{t("alLlegarPagas")}</p><b style={{ fontSize: 24, letterSpacing: "-0.02em", display: "block" }}>{enPesos ? usd(saldo) : usd(saldo)}</b><p style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.4, color: "var(--gris)" }}>{t("teAvisamos")} <b style={{ color: "var(--ink)" }}>{llega}</b>{enPesos ? ` · ${lang === "es" ? "al dólar de ese día" : lang === "en" ? "at that day's rate" : "по курсу того дня"}` : ""}</p></div>
+            </div>
+            {enPesos && tc && <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{t("dolarHoy")}: $ {tc.toLocaleString("es-AR")} · {usd(anticipo)}</p>}
           </div>
           {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: "12px 0 0" }}>{err}</p>}
-          <div style={{ display: "flex", gap: 8, marginTop: 18, flexWrap: "wrap" }}><button className="btn" onClick={() => setPaso(2)}>← {t("volverEnvio")}</button><button className="btn verde" onClick={confirmar} disabled={enviando || !cliente}>{enviando ? "…" : t("confirmarPedido")}</button></div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}><button className="btn" onClick={() => setPaso(2)}>← {t("volver")}</button><button className="btn y" style={{ minWidth: 220 }} onClick={confirmar} disabled={enviando || !cliente}><Ico d={["M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "M5 10V8a7 7 0 0 1 14 0v2", "M4 10h16v11H4z"]} size={15} />{enviando ? "…" : t("confirmarPedido")}</button></div>
           <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--gris)" }}>Al confirmar aceptás los <a href="/terminos" style={{ fontWeight: 700 }}>términos y condiciones</a>. Tenés 24 horas desde el anticipo para arrepentirte sin costo.</p>
-        </div>}
+        </>}
       </div>
       {Resumen}
     </div>
@@ -365,7 +393,7 @@ function Registro({ sf, guardarSes, t, volver }) {
 const EST = { nuevo: "Nueva", pagado: "Pagada", en_produccion: "En producción", listo_fabrica: "Lista en fábrica", en_importacion: "En importación", entregado: "Entregada", cancelado: "Cancelada" };
 // Ficha del cliente: la usan Mi cuenta y el paso 1 del checkout. Si la cuenta todavía no tiene
 // cliente (una cuenta del equipo, o creada antes de que existiera el registro), se crea acá.
-function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
+function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton, formId, sinBoton }) {
   const [f, setF] = useState(() => ({ first_name: cliente?.first_name || "", last_name: cliente?.last_name || "", ...partirWa(cliente?.whatsapp), street: cliente?.street || "", floor_apt: cliente?.floor_apt || "", postal_code: cliente?.postal_code || "", city: cliente?.city || "", province: cliente?.province || "", tax_condition: cliente?.tax_condition || "ninguna", company_name: cliente?.company_name || "", cuit: cliente?.cuit || "", dni: cliente?.dni || "" }));
   const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
@@ -387,7 +415,7 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
       }
       const nuevo = { ...(cliente || {}), ...(row || body) }; setCliente(nuevo); onListo?.(nuevo);
     } catch (er) { setErr(er.message || "Error"); } setLo(false); };
-  return <form onSubmit={guardar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+  return <form id={formId} onSubmit={guardar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
     <CampoTxt f={f} set={set} k="first_name" l="Nombre" /><CampoTxt f={f} set={set} k="last_name" l="Apellido" />
     <CampoWa f={f} set={set} />
     <CampoTxt f={f} set={set} k="street" l="Calle y número" /><CampoTxt f={f} set={set} k="floor_apt" l="Piso / depto" req={false} />
@@ -397,7 +425,7 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
     {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
     {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <CampoTxt f={f} set={set} k="cuit" l="CUIT" /> : <CampoTxt f={f} set={set} k="dni" l="DNI" />}
     {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
-    <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : (textoBoton || t("guardarDatos"))}</button></div>
+    {!sinBoton && <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : (textoBoton || t("guardarDatos"))}</button></div>}
   </form>;
 }
 function MisDatos({ cliente, setCliente, dq, ses, t }) {

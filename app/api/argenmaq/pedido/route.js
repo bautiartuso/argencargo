@@ -55,7 +55,7 @@ export async function POST(req) {
     const ins = await svc(`/rest/v1/cat_pedidos`, { method: "POST", body: JSON.stringify({
       estado: "nuevo", client_id: cliente.id, cliente_nombre: nombre, cliente_contacto: [cliente.whatsapp, cliente.email].filter(Boolean).join(" · ") || null,
       items: lineas, prueba_fabrica: false, exw_total: tot.exw_total, financiero: tot.financiero, gestion: tot.gestion, prueba_monto: 0, precio_total: tot.precio_total,
-      importacion_usd: r2(importacion), notas: [b.notas ? String(b.notas).slice(0, 500) : null, `Vía: ${[...vias].join(", ")} · pedido desde la web`].filter(Boolean).join("\n"),
+      importacion_usd: r2(importacion), notas: [b.notas ? String(b.notas).slice(0, 500) : null, b.pago?.metodo ? `Pago: ${String(b.pago.metodo).slice(0, 30)} en ${b.pago.moneda === "ARS" ? "pesos" : "dólares"}${b.pago.tc ? ` (dólar ${n(b.pago.tc)})` : ""}` : null, b.codigo ? `Código: ${String(b.codigo).slice(0, 40)}` : null, `Vía: ${[...vias].join(", ")} · pedido desde la web`].filter(Boolean).join("\n"),
       historial: [{ estado: "nuevo", at: new Date().toISOString(), by: cliente.email || "web" }], created_by: user.id,
     }) });
     const row = Array.isArray(ins) ? ins[0] : ins;
