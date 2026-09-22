@@ -394,13 +394,16 @@ const EST = { nuevo: "Nueva", pagado: "Pagada", en_produccion: "En producción",
 function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton, formId, sinBoton }) {
   const [f, setF] = useState(() => ({ first_name: cliente?.first_name || "", last_name: cliente?.last_name || "", ...partirWa(cliente?.whatsapp), street: cliente?.street || "", floor_apt: cliente?.floor_apt || "", postal_code: cliente?.postal_code || "", city: cliente?.city || "", province: cliente?.province || "", tax_condition: cliente?.tax_condition || "ninguna", company_name: cliente?.company_name || "", cuit: cliente?.cuit || "", dni: cliente?.dni || "" }));
   const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
+  // Con condición fiscal y CUIT ya cargados, esos dos campos quedan bloqueados (regla del 22/09/2026;
+  // la base también lo impide). Un consumidor final sí puede pasar a monotributista o RI.
+  const fiscalBloq = !!(cliente?.id && ["monotributista", "responsable_inscripto"].includes(cliente.tax_condition) && String(cliente.cuit || "").trim());
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const gc = (fn, ln) => (fn.substring(0, 3) + ln.substring(0, 3)).toUpperCase();
   const guardar = async (e) => { e.preventDefault(); setErr(""); if (String(f.wa_num || "").replace(/\D/g, "").length < 8) { setErr("WhatsApp inválido"); return; } setLo(true);
     try {
       const body = { first_name: f.first_name.trim(), last_name: f.last_name.trim(), whatsapp: unirWa(f), dni: f.dni.trim() || null, tax_condition: f.tax_condition, company_name: f.tax_condition === "responsable_inscripto" ? f.company_name.trim() : null, cuit: ["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? f.cuit.trim() : null, street: f.street.trim(), floor_apt: f.floor_apt.trim() || null, postal_code: f.postal_code.trim(), city: f.city.trim(), province: f.province };
       let row = null;
-      if (cliente?.id) { const r = await dq("clients", { method: "PATCH", filters: `?id=eq.${cliente.id}`, body }); row = Array.isArray(r) ? r[0] : r; }
+      if (cliente?.id) { const b2 = { ...body }; if (fiscalBloq) { delete b2.tax_condition; delete b2.cuit; } const r = await dq("clients", { method: "PATCH", filters: `?id=eq.${cliente.id}`, body: b2 }); row = Array.isArray(r) ? r[0] : r; }
       else {
         // Las cuentas del equipo (admin / empleado) no son clientes: crearles una ficha duplica a
         // la persona en Argencargo (pasó con BAUART → BAUAR2, 22/09/2026).
@@ -419,9 +422,18 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton, formI
     <CampoTxt f={f} set={set} k="street" l="Calle y número" /><CampoTxt f={f} set={set} k="floor_apt" l="Piso / depto" req={false} />
     <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PROVINCIAS} /></div>
     <CampoTxt f={f} set={set} k="postal_code" l="Código postal" />
-    <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
-    {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
-    {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <CampoTxt f={f} set={set} k="cuit" l="CUIT" /> : <CampoTxt f={f} set={set} k="dni" l="DNI" />}
+    {fiscalBloq
+      ? <>
+        <div><span className="lbl">Condición fiscal</span><div className="inp" style={{ background: "var(--suave)", color: "var(--gris)" }}>{(COND.find(([v]) => v === f.tax_condition) || [])[1]}</div></div>
+        <div><span className="lbl">CUIT</span><div className="inp" style={{ background: "var(--suave)", color: "var(--gris)", fontFamily: MONO }}>{f.cuit}</div></div>
+        {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
+        <p style={{ gridColumn: "span 2", margin: 0, fontSize: 12.5, color: "var(--gris)", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><Ico d={["M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "M5 10V8a7 7 0 0 1 14 0v2", "M4 10h16v11H4z"]} size={14} />{t("fiscalBloq")} <a href={WA(`Hola ARGENMAQ, quiero cambiar mis datos fiscales (${cliente?.client_code || ""})`)} target="_blank" rel="noreferrer" style={{ fontWeight: 800 }}>{t("pedirAut")} →</a></p>
+      </>
+      : <>
+        <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
+        {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
+        {["responsable_inscripto", "monotributista"].includes(f.tax_condition) ? <CampoTxt f={f} set={set} k="cuit" l="CUIT" /> : <CampoTxt f={f} set={set} k="dni" l="DNI" />}
+      </>}
     {err && <p style={{ color: "#D23B3B", fontSize: 13.5, margin: 0, gridColumn: "span 2" }}>{err}</p>}
     {!sinBoton && <div style={{ display: "flex", gap: 8, gridColumn: "span 2" }}><button className="btn y" disabled={lo}>{lo ? "…" : (textoBoton || t("guardarDatos"))}</button></div>}
   </form>;
@@ -458,8 +470,7 @@ function Panel({ cliente, setCliente, dq, salir, t, fmt, ses }) {
   const ir = (k) => { setSec(k); try { window.history.replaceState(null, "", `/cuenta?s=${k}`); } catch {} };
   const NAV = [["pedidos", t("historial"), ICO.caja], ["info", t("informacion"), ICO.persona], ["favoritos", t("favoritos"), ICO.corazon], ["notif", t("notif"), ICO.campana]];
   return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 26 }}>
-      <div style={{ flex: 1 }}><p className="lbl">{t("cuentaLbl")}</p><h1 className="h2" style={{ fontSize: 38 }}>{t("miPerfil")}</h1><p style={{ margin: "6px 0 0", color: "var(--gris)", fontSize: 16 }}>{t("adminCuenta")}</p></div>
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
       <button className="btn borde" onClick={() => { salir(); window.location.href = "/"; }}><Ico d={ICO.salir} size={16} />{t("cerrarSesion")}</button>
     </div>
     <div className="perfilGrid">
