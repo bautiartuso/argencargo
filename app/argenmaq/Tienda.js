@@ -440,21 +440,98 @@ function MisDatos({ cliente, setCliente, dq, ses, t }) {
     {abierto && <div style={{ marginTop: 16 }}><FormDatos cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} onListo={() => { setOk(t("datosOk")); setAbierto(false); }} />{cliente && <button className="btn" style={{ marginTop: 8 }} onClick={() => setAbierto(false)}>Cancelar</button>}</div>}
   </div>;
 }
+function Interruptor({ on, onChange }) { return <button type="button" className={`sw${on ? " on" : ""}`} onClick={() => onChange(!on)} aria-pressed={on}><i /></button>; }
+const ICO = {
+  caja: ["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z", "M3.3 7l8.7 5 8.7-5", "M12 22V12"],
+  persona: ["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
+  corazon: ["M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"],
+  campana: ["M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9", "M13.7 21a2 2 0 0 1-3.4 0"],
+  salir: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
+  mail: ["M4 4h16v16H4z", "M4 6l8 7 8-7"],
+  chat: ["M21 12a8 8 0 0 1-11.6 7.2L4 21l1.8-5.4A8 8 0 1 1 21 12z"],
+  lapiz: ["M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"],
+};
+// Mi perfil: historial de compras, información, favoritos y notificaciones, como el de B2Box.
 function Panel({ cliente, setCliente, dq, salir, t, fmt, ses }) {
-  const [ops, setOps] = useState(null); const [seg, setSeg] = useState({});
+  const [sec, setSec] = useState("pedidos");
+  useEffect(() => { try { const s = new URLSearchParams(window.location.search).get("s"); if (["pedidos", "info", "favoritos", "notif"].includes(s)) setSec(s); } catch {} }, []);
+  const ir = (k) => { setSec(k); try { window.history.replaceState(null, "", `/cuenta?s=${k}`); } catch {} };
+  const NAV = [["pedidos", t("historial"), ICO.caja], ["info", t("informacion"), ICO.persona], ["favoritos", t("favoritos"), ICO.corazon], ["notif", t("notif"), ICO.campana]];
+  return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 26 }}>
+      <div style={{ flex: 1 }}><p className="lbl">{t("cuentaLbl")}</p><h1 className="h2" style={{ fontSize: 38 }}>{t("miPerfil")}</h1><p style={{ margin: "6px 0 0", color: "var(--gris)", fontSize: 16 }}>{t("adminCuenta")}</p></div>
+      <button className="btn borde" onClick={() => { salir(); window.location.href = "/"; }}><Ico d={ICO.salir} size={16} />{t("cerrarSesion")}</button>
+    </div>
+    <div className="perfilGrid">
+      <nav className="perfilNav">{NAV.map(([k, l, d]) => <a key={k} href={`/cuenta?s=${k}`} className={sec === k ? "on" : ""} onClick={(e) => { e.preventDefault(); ir(k); }}><span className="cir"><Ico d={d} size={18} /></span>{l}</a>)}</nav>
+      <div className="perfilCard">
+        {sec === "pedidos" && <Pedidos dq={dq} t={t} fmt={fmt} ses={ses} />}
+        {sec === "info" && <Informacion cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} />}
+        {sec === "favoritos" && <Favoritos dq={dq} t={t} />}
+        {sec === "notif" && <Notificaciones cliente={cliente} dq={dq} t={t} />}
+      </div>
+    </div>
+  </div>;
+}
+function Pedidos({ dq, t, fmt, ses }) {
+  const [ops, setOps] = useState(null); const [seg, setSeg] = useState({}); const [pag, setPag] = useState(0); const POR = 10;
   useEffect(() => { (async () => { try { const r = await dq("cat_pedidos", { filters: "?select=id,numero,estado,items,precio_total,importacion_usd,created_at,operation_id&order=created_at.desc" }); setOps(Array.isArray(r) ? r : []); } catch { setOps([]); } })(); }, [ses?.token]); // eslint-disable-line react-hooks/exhaustive-deps
   const verSeg = async (id) => { try { const r = await dq("rpc/argenmaq_seguimiento", { method: "POST", body: { p_pedido: id }, prefer: "return=representation" }); setSeg((s) => ({ ...s, [id]: Array.isArray(r) && r[0] ? r[0] : { vacio: true } })); } catch { setSeg((s) => ({ ...s, [id]: { vacio: true } })); } };
-  return <div className="wrap" style={{ padding: "26px 24px 70px", maxWidth: 900 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}><h1 className="h2" style={{ fontSize: 30, flex: 1 }}>{cliente ? `Hola, ${cliente.first_name || cliente.company_name || ""}` : t("cuenta")}</h1><button className="btn s" onClick={salir}>{t("salir")}</button></div>
-    <MisDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} />
-    <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: "0 0 12px" }}>{t("misOps")}</h2>
-    {ops === null ? <p style={{ color: "var(--gris)" }}>…</p> : ops.length === 0 ? <p style={{ color: "var(--gris)" }}>Todavía no tenés operaciones. <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p>
-      : <div style={{ display: "grid", gap: 10 }}>{ops.map((o) => <div key={o.id} style={{ padding: "16px 18px", borderRadius: 18, border: "1px solid var(--borde)", background: "var(--card)" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}><span className="tag">AM-{String(o.numero || 0).padStart(5, "0")}</span><b style={{ flex: 1 }}>{(o.items || []).map((i) => `${i.qty > 1 ? `${i.qty}× ` : ""}${i.nombre}`).join(" · ")}</b><span className="chip" style={{ cursor: "default" }}>{EST[o.estado] || o.estado}</span></div>
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 10, fontSize: 13.5, color: "var(--gris)" }}><span>Máquina: <b style={{ color: "var(--ink)" }}>{fmt(o.precio_total)}</b></span>{o.importacion_usd != null && <span>Importación (contra entrega): <b style={{ color: "var(--ink)" }}>{fmt(o.importacion_usd)}</b></span>}<span>{new Date(o.created_at).toLocaleDateString("es-AR")}</span></div>
-        {o.operation_id && <div style={{ marginTop: 10 }}>{seg[o.id] ? (seg[o.id].vacio ? <span style={{ fontSize: 13, color: "var(--gris)" }}>Seguimiento no disponible todavía.</span> : <div style={{ fontSize: 13.5, display: "flex", gap: 14, flexWrap: "wrap" }}><span>Operación <b>{seg[o.id].operation_code}</b></span><span>Estado: <b>{seg[o.id].status}</b></span>{seg[o.id].eta && <span>ETA <b>{new Date(seg[o.id].eta + "T12:00:00").toLocaleDateString("es-AR")}</b></span>}</div>) : <button className="chip" onClick={() => verSeg(o.id)}>{t("seguimiento")} →</button>}</div>}
+  const lista = ops || []; const pagina = lista.slice(pag * POR, pag * POR + POR); const n = lista.length;
+  return <>
+    <h2 style={{ margin: "0 0 18px", fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{t("pedidos")}</h2>
+    {ops === null ? <p style={{ color: "var(--gris)" }}>…</p> : n === 0
+      ? <div className="vacio"><span className="cir"><Ico d={ICO.caja} size={26} /></span><p style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{t("sinPedidosT")}</p><p style={{ margin: "0 0 22px", color: "var(--gris)", fontSize: 15.5, maxWidth: 360, lineHeight: 1.5 }}>{t("sinPedidosS")}</p><a className="btn y" href="/catalogo">{t("verCatalogo")}</a></div>
+      : <div style={{ display: "grid", gap: 10 }}>{pagina.map((o) => <div key={o.id} style={{ padding: "16px 18px", borderRadius: 18, border: "1px solid var(--borde)" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}><span className="tag">AM-{String(o.numero || 0).padStart(5, "0")}</span><b style={{ flex: 1 }}>{(o.items || []).map((i) => `${i.qty > 1 ? `${i.qty}× ` : ""}${i.nombre}`).join(" · ")}</b><span className="chip" style={{ cursor: "default" }}>{EST[o.estado] || o.estado}</span><span style={{ fontFamily: MONO, fontSize: 12, color: "var(--gris)" }}>{new Date(o.created_at).toLocaleDateString("es-AR")}</span></div>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 10, fontSize: 13.5, color: "var(--gris)" }}><span>{t("anticipo")}: <b style={{ color: "var(--ink)" }}>{fmt(o.precio_total)}</b></span>{o.importacion_usd != null && <span>{t("alRecibir")}: <b style={{ color: "var(--ink)" }}>{fmt(o.importacion_usd)}</b></span>}{o.operation_id && !seg[o.id] && <button className="chip" onClick={() => verSeg(o.id)}>{t("seguimiento")}</button>}</div>
+        {o.operation_id && seg[o.id] && <div style={{ marginTop: 10 }}>{seg[o.id].vacio ? <span style={{ fontSize: 13, color: "var(--gris)" }}>Seguimiento no disponible todavía.</span> : <div style={{ fontSize: 13.5, display: "flex", gap: 14, flexWrap: "wrap" }}><span>Operación <b>{seg[o.id].operation_code}</b></span><span>Estado <b>{seg[o.id].status}</b></span>{seg[o.id].eta && <span>ETA <b>{seg[o.id].eta}</b></span>}</div>}</div>}
       </div>)}</div>}
-  </div>;
+    <div style={{ marginTop: "auto", paddingTop: 22, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontFamily: MONO, fontSize: 11.5, color: "var(--gris)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+      <span>{t("mostrando")} {n ? pag * POR + 1 : 0}–{Math.min(n, (pag + 1) * POR)} {lang2(t)} {n}</span><span style={{ flex: 1 }} />
+      <button className="chip" disabled={pag === 0} onClick={() => setPag((p) => Math.max(0, p - 1))} style={{ opacity: pag === 0 ? 0.4 : 1 }}>‹ {t("anterior")}</button><span className="ico" style={{ cursor: "default", fontWeight: 800, color: "var(--ink)", borderColor: "var(--ink)" }}>{pag + 1}</span><button className="chip" disabled={(pag + 1) * POR >= n} onClick={() => setPag((p) => p + 1)} style={{ opacity: (pag + 1) * POR >= n ? 0.4 : 1 }}>{t("proximo")} ›</button>
+    </div>
+  </>;
+}
+const lang2 = (t) => (t("dias") === "días" ? "de" : t("dias") === "days" ? "of" : "из");
+function Informacion({ cliente, setCliente, dq, ses, t }) {
+  const [ok, setOk] = useState("");
+  const ini = `${(cliente?.first_name || ses?.user?.email || "?")[0] || ""}${(cliente?.last_name || "")[0] || ""}`.toUpperCase();
+  const wa = partirWa(cliente?.whatsapp);
+  return <>
+    <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 26 }}>
+      <span style={{ width: 62, height: 62, borderRadius: "50%", background: "var(--ysuave)", border: "1px solid var(--y)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, flexShrink: 0 }}>{ini}</span>
+      <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", textTransform: "uppercase" }}>{[cliente?.first_name, cliente?.last_name].filter(Boolean).join(" ") || t("cuenta")}</p><p style={{ margin: "4px 0 0", fontFamily: MONO, fontSize: 13, color: "var(--gris)" }}>{ses?.user?.email}</p>{cliente?.whatsapp && <p style={{ margin: "4px 0 0", fontFamily: MONO, fontSize: 13, color: "var(--gris)", display: "flex", alignItems: "center", gap: 8 }}><img src={bandera(wa.wa_iso)} alt="" style={{ width: 20, height: 14, borderRadius: 3 }} />{paisDe(wa.wa_iso)[1]} {wa.wa_num}</p>}</div>
+    </div>
+    <h2 style={{ margin: "0 0 14px", fontSize: 19, fontWeight: 800, letterSpacing: "-0.02em" }}>{t("datosEntrega")}</h2>
+    {!cliente && <p style={{ margin: "0 0 14px", fontSize: 14, color: "var(--gris)" }}>{t("completaDatos")}</p>}
+    <FormDatos key={cliente?.id || "nuevo"} cliente={cliente} setCliente={setCliente} dq={dq} ses={ses} t={t} onListo={() => { setOk(t("datosOk")); setTimeout(() => setOk(""), 2500); }} />
+    {ok && <p style={{ margin: "10px 0 0", fontSize: 13, color: "var(--ok)", fontWeight: 700 }}>✓ {ok}</p>}
+  </>;
+}
+function Favoritos({ dq, t }) {
+  const [ids, setIds] = useState(null); const [maqs, setMaqs] = useState([]);
+  useEffect(() => { let l = []; try { l = JSON.parse(localStorage.getItem("am_fav") || "[]"); } catch {} setIds(l); if (!l.length) return; (async () => { try { const r = await dq("cat_maquinas_publicas", { filters: `?select=id,numero,nombre,categoria,subcategoria,condicion,fotos,dias_produccion,vias&id=in.(${l.map((x) => `"${x}"`).join(",")})` }); setMaqs(Array.isArray(r) ? r : []); } catch { setMaqs([]); } })(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const precios = usePrecios(maqs.map((m) => m.id));
+  if (ids === null) return null;
+  if (!ids.length || (ids.length && !maqs.length)) return <div className="vacio"><span className="cir"><Ico d={ICO.corazon} size={26} /></span><p style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>{t("sinFavT")}</p><p style={{ margin: "0 0 22px", color: "var(--gris)", fontSize: 15.5, maxWidth: 360, lineHeight: 1.5 }}>{t("sinFavS")}</p><a className="btn y" href="/catalogo">{t("verCatalogo")}</a></div>;
+  return <><h2 style={{ margin: "0 0 18px", fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{t("favoritos")}</h2><div className="grilla">{maqs.map((m) => <Tarjeta key={m.id} m={m} precios={precios} />)}</div></>;
+}
+function Notificaciones({ cliente, dq, t }) {
+  const CLAVES = [["novedades", t("nNovedades")], ["pedidos", t("nPedidos")], ["promos", t("nPromos")], ["encuestas", t("nEncuestas")]];
+  const base = { mail: { novedades: true, pedidos: true, promos: true, encuestas: true }, wa: { novedades: true, pedidos: true, promos: true, encuestas: true } };
+  const [prefs, setPrefs] = useState(base); const [ok, setOk] = useState(""); const [lo, setLo] = useState(false);
+  useEffect(() => { if (!cliente?.id) return; (async () => { try { const r = await dq("argenmaq_prefs", { filters: `?client_id=eq.${cliente.id}&select=prefs` }); const p = Array.isArray(r) && r[0]?.prefs; if (p) setPrefs({ mail: { ...base.mail, ...(p.mail || {}) }, wa: { ...base.wa, ...(p.wa || {}) } }); } catch {} })(); }, [cliente?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (canal, k, v) => setPrefs((p) => ({ ...p, [canal]: { ...p[canal], [k]: v } }));
+  const guardar = async () => { if (!cliente?.id) return; setLo(true); try { await dq("argenmaq_prefs", { method: "POST", body: { client_id: cliente.id, prefs, updated_at: new Date().toISOString() }, prefer: "resolution=merge-duplicates,return=minimal" }); setOk(t("prefsOk")); setTimeout(() => setOk(""), 2500); } catch (e) { setOk(e.message); } setLo(false); };
+  const Canal = ({ k, titulo, icono }) => <div className="notifCard"><div style={{ display: "flex", alignItems: "center", gap: 12 }}><span className="ico" style={{ width: 44, height: 44, cursor: "default" }}><Ico d={icono} size={18} /></span><b style={{ fontSize: 16.5 }}>{titulo}</b></div><p style={{ margin: "10px 0 6px", fontSize: 14, color: "var(--gris)" }}>{t("notifS")}</p>{CLAVES.map(([c, l]) => <div key={c} className="notifFila"><span>{l}</span><Interruptor on={!!prefs[k][c]} onChange={(v) => set(k, c, v)} /></div>)}</div>;
+  return <>
+    <h2 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{t("notifT")}</h2>
+    <p style={{ margin: "0 0 18px", color: "var(--gris)", fontSize: 15 }}>{t("notifS")}</p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}><Canal k="mail" titulo={t("notifMail")} icono={ICO.mail} /><Canal k="wa" titulo={t("notifWa")} icono={ICO.chat} /></div>
+    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 14, marginTop: 22 }}>{ok && <span style={{ fontSize: 13, color: "var(--ok)", fontWeight: 700 }}>✓ {ok}</span>}<button className="btn y" onClick={guardar} disabled={lo || !cliente}>{lo ? "…" : t("guardarPrefs")}</button></div>
+    {!cliente && <p style={{ margin: "10px 0 0", fontSize: 13, color: "var(--gris)" }}>{t("completaDatos")}</p>}
+  </>;
 }
 
 // ── Cómo funciona / Quiénes somos ─────────────────────────────────────────────────────────

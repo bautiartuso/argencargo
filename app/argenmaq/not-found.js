@@ -13,7 +13,7 @@ export default function NotFoundArgenmaq() {
     <div className="wrap" style={{ padding: "40px 24px 80px" }}>
       <div style={{ position: "relative", overflow: "hidden", border: "1px solid var(--borde)", borderRadius: 26, background: "var(--card)", padding: "clamp(28px,5vw,64px) clamp(22px,5vw,64px)", boxShadow: "var(--sombra)" }}>
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 6, background: "var(--y)" }} />
-        <div style={{ position: "relative", maxWidth: 640 }}>
+        <div style={{ position: "relative", zIndex: 1, maxWidth: 640 }}>
           <Logo alto={30} />
           <p style={{ margin: "34px 0 12px", fontFamily: "'JetBrains Mono',ui-monospace,monospace", fontSize: 12, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gris)" }}>Página no encontrada</p>
           <h1 style={{ margin: "0 0 16px", fontSize: "clamp(34px,6vw,60px)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1 }}>No encontramos<br />lo que buscabas</h1>
@@ -24,7 +24,7 @@ export default function NotFoundArgenmaq() {
             <a className="btn" href="/catalogo">Ver el catálogo</a>
           </div>
         </div>
-        <span aria-hidden style={{ position: "absolute", right: 24, bottom: -18, fontSize: "clamp(120px,22vw,260px)", fontWeight: 800, letterSpacing: "-0.06em", lineHeight: 1, color: "var(--suave)", pointerEvents: "none", userSelect: "none" }}>404</span>
+        <span aria-hidden style={{ position: "absolute", right: 24, bottom: -18, fontSize: "clamp(120px,22vw,260px)", fontWeight: 800, letterSpacing: "-0.06em", lineHeight: 1, color: "var(--suave)", pointerEvents: "none", userSelect: "none", zIndex: 0 }}>404</span>
       </div>
     </div>
   </Marco></Proveedor>;
