@@ -58,12 +58,11 @@ html,body{overflow-x:clip!important}
 .amq .franjaPista{display:flex;gap:8px;width:max-content;animation:desfile 55s linear infinite}
 .amq .franja:hover .franjaPista{animation-play-state:paused}
 @keyframes desfile{to{transform:translateX(-50%)}}
-.amq .ico.band{position:relative;overflow:hidden;border:none}
-.amq .ico.band img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.amq .ico.band::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,0.5)}
-.amq .ico.band span{position:relative;z-index:1;color:#fff;font-weight:900;font-size:12px;letter-spacing:0.02em;text-shadow:0 1px 2px rgba(0,0,0,0.9)}
-.amq .ico.tema.dia{background:var(--y);border-color:var(--y);color:#15171A}
-.amq .ico.tema.noche{background:#3D45E0;border-color:#3D45E0;color:#fff}
+.amq .pillIso{height:36px;padding:0 12px 0 9px;border-radius:999px;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:${MONO};font-size:11.5px;font-weight:700;letter-spacing:0.02em;transition:border-color 120ms,background 120ms}
+.amq .pillIso:hover{border-color:var(--ink)}
+.amq .pillIso img{width:20px;height:14px;object-fit:cover;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,0.12)}
+.amq .pillIso.tema{padding:0;width:36px;justify-content:center}
+.amq .pillIso.tema.dia{color:#E0A800}.amq .pillIso.tema.noche{color:var(--ink)}
 .amq .velo{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px)}
 .amq .orden{position:fixed;top:0;right:0;bottom:0;z-index:71;width:min(480px,100%);background:var(--card);display:flex;flex-direction:column;box-shadow:-20px 0 60px rgba(0,0,0,0.25);animation:entrar 220ms ease}
 @keyframes entrar{from{transform:translateX(100%)}to{transform:translateX(0)}}
@@ -320,7 +319,7 @@ export function Marco({ actual, children, conGrupo, franja }) {
   const [orden, setOrden] = useState(false);
   const cerrarOrden = useCallback(() => setOrden(false), []);
   const BANDERA = { USD: "us", ARS: "ar", es: "es", en: "gb", ru: "ru" };
-  const bandera = (k) => `https://flagcdn.com/w80/${BANDERA[k]}.png`;
+  const bandera = (k) => `https://flagcdn.com/w40/${BANDERA[k]}.png`;
   return <>
     {/* La barra del grupo (ARGENMAQ · ARGENCARGO) vive solo en la página principal (21/09/2026). */}
     {conGrupo && <div className="grupoWrap"><div className="grupo">
@@ -338,9 +337,9 @@ export function Marco({ actual, children, conGrupo, franja }) {
             <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos">{t("quienes")}</a>
           </nav>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="ico band" onClick={() => setMoneda(moneda === "USD" ? "ARS" : "USD")} aria-label="Moneda"><img src={bandera(moneda)} alt="" /><span>{moneda === "USD" ? "US$" : "AR$"}</span></button>
-          <button className="ico band" onClick={() => setLang(lang === "es" ? "en" : lang === "en" ? "ru" : "es")} title="Idioma"><img src={bandera(lang)} alt="" /><span>{lang.toUpperCase()}</span></button>
-          <button className={`ico tema ${tema === "oscuro" ? "dia" : "noche"}`} onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")} title="Tema">{tema === "oscuro" ? <Ico d={["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={15} /> : <Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={15} />}</button>
+          <button className="pillIso" onClick={() => setMoneda(moneda === "USD" ? "ARS" : "USD")} aria-label="Moneda"><img src={bandera(moneda)} alt="" /><span>{moneda === "USD" ? "US$" : "AR$"}</span></button>
+          <button className="pillIso" onClick={() => setLang(lang === "es" ? "en" : lang === "en" ? "ru" : "es")} aria-label="Idioma"><img src={bandera(lang)} alt="" /><span>{lang.toUpperCase()}</span></button>
+          <button className={`pillIso tema ${tema === "oscuro" ? "dia" : "noche"}`} onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")} aria-label="Tema">{tema === "oscuro" ? <Ico d={["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={15} /> : <Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={15} />}</button>
           <a className="ico" href="/carrito" title={t("carrito")} style={{ position: "relative" }} onClick={(e) => { e.preventDefault(); setOrden(true); }}><Ico d={["M6 6h15l-1.5 8H7.5z", "M6 6L5 3H2", "M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"]} size={16} />{n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--y)", color: "#15171A", fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "1px 6px" }}>{n}</span>}</a>
           <a className="btn s y" href="/cuenta">{ses ? (cliente?.first_name || t("cuenta")) : t("ingresar")}</a>
         </div>

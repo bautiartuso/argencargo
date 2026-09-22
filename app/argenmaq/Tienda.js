@@ -376,6 +376,10 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
       let row = null;
       if (cliente?.id) { const r = await dq("clients", { method: "PATCH", filters: `?id=eq.${cliente.id}`, body }); row = Array.isArray(r) ? r[0] : r; }
       else {
+        // Las cuentas del equipo (admin / empleado) no son clientes: crearles una ficha duplica a
+        // la persona en Argencargo (pasó con BAUART → BAUAR2, 22/09/2026).
+        const prof = await dq("profiles", { filters: `?id=eq.${ses.user?.id}&select=role` }).catch(() => []);
+        if (["admin", "empleado"].includes(Array.isArray(prof) ? prof[0]?.role : null)) throw new Error("Esta es una cuenta del equipo de Argencargo. Para comprar, ingresá con tu cuenta de cliente.");
         const base = gc(body.first_name || "CLI", body.last_name || "ENT"); let creado = null, ultimo = "";
         for (let i = 0; i < 12 && !creado; i++) { const code = i === 0 ? base : `${base.slice(0, 5)}${i + 1}`; try { const r = await dq("clients", { method: "POST", body: { ...body, auth_user_id: ses.user?.id, email: ses.user?.email || null, client_code: code } }); creado = Array.isArray(r) ? r[0] : r; } catch (er) { ultimo = er.message || ""; if (!/duplicate|unique|23505/i.test(ultimo)) throw er; } }
         if (!creado) throw new Error(ultimo || "No se pudo crear la ficha");
