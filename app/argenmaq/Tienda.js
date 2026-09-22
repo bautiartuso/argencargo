@@ -118,6 +118,8 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
   const unit = tramo ? Number(tramo.unit) : (precioVidriera(pr)?.unit ?? null);
   const via = tramo?.via || precioVidriera(pr)?.via || (Array.isArray(m.vias) ? m.vias[0] : null);
   const dias = via ? diasVia(via, dv) + Number(m.dias_produccion || 0) : null;
+  // Fecha concreta de llegada estimada: hoy + produccion + transito. Con anio solo si cae en otro anio.
+  const llegaFicha = dias != null ? (() => { const d = new Date(Date.now() + dias * 864e5); const loc = lang === "en" ? "en-GB" : lang === "ru" ? "ru-RU" : "es-AR"; return d.toLocaleDateString(loc, { day: "numeric", month: "long", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }); })() : null;
   const enCarrito = carrito.find((i) => i.id === m.id);
   const nombreCat = (slug) => cats.find((c) => c.slug === slug)?.nombre || "";
   const codigo = codigoMaq(m);
@@ -172,7 +174,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
               <div className="dosBarra"><i style={{ width: `${pa}%` }} /></div>
               <div className="dosVeces">
                 <div className="hoy"><span className="paso">1</span><p className="lbl">{t("hoy")} · {t("anticipo")}</p><b>{fmt(a)}</b><small>{fmt(tramo.maquina)} / {t("unidad")}</small><p className="nota">{t("conEstoArranca")}</p></div>
-                <div><span className="paso">2</span><p className="lbl">{t("alRecibir")}</p><b>{fmt(s)}</b><small>{fmt(tramo.argencargo)} / {t("unidad")}</small><p className="nota">{dias != null ? `${t("llegaEn")} ~${dias} ${t("dias")}` : t("teAvisamos")}</p></div>
+                <div><span className="paso">2</span><p className="lbl">{t("alRecibir")}</p><b>{fmt(s)}</b><small>{fmt(tramo.argencargo)} / {t("unidad")}</small><p className="nota">{llegaFicha ? `${t("aprox")} ${llegaFicha}` : t("teAvisamos")}</p></div>
               </div>
             </div>; })()}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
