@@ -176,6 +176,25 @@ html,body{overflow-x:clip!important}
 .amq .tramo small{display:block;font-size:11.5px;color:var(--gris);font-weight:600;margin-top:2px}
 .amq .tramo b{display:block;font-size:19px;letter-spacing:-0.02em;margin-top:3px}
 .amq .tramo .desc{display:inline-block;font-family:${MONO};font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--y);color:#15171A;margin-top:6px}
+.amq .qtyFila{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding-top:14px;border-top:1px solid var(--borde)}
+.amq .qtyFila .unitBox{text-align:right;min-width:0}
+.amq .qtyFila .unitNum{margin:0;font-size:clamp(20px,2.4vw,26px);font-weight:800;letter-spacing:-0.02em;line-height:1;white-space:nowrap}
+.amq .dosPagos{margin-top:14px;padding:14px 16px 16px;border-radius:18px;background:var(--suave)}
+.amq .dosPagos .dosCab{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.amq .dosPagos .dosCab span{font-family:${MONO};font-size:11px;letter-spacing:0.06em;color:var(--gris);font-weight:700;white-space:nowrap}
+.amq .dosPagos .dosBarra{margin:10px 0 10px;background:var(--card)}
+.amq .dosPagos .dosVeces{margin-top:0}
+.amq .dosPagos .dosVeces div{background:var(--card);border-color:var(--borde);padding:12px 14px 14px;position:relative;min-width:0}
+.amq .dosPagos .dosVeces div.hoy{background:var(--ysuave);border-color:var(--y)}
+.amq .dosPagos .dosVeces .lbl{margin-bottom:6px;padding-right:28px}
+.amq .dosPagos .dosVeces b{display:block;font-size:clamp(17px,2vw,21px);letter-spacing:-0.02em;line-height:1.05;white-space:nowrap}
+.amq .dosPagos .dosVeces small{display:block;margin-top:4px;font-size:11.5px;color:var(--gris);font-weight:600}
+.amq .dosPagos .dosVeces p.nota{margin:8px 0 0;font-size:12px;line-height:1.4;color:var(--gris)}
+.amq .dosPagos .paso{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--bg);font-family:${MONO};font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.amq .dosPagos .dosVeces div.hoy .paso{background:var(--y);color:#15171A}
+.amq .totalFila{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--borde)}
+.amq .totalFila>b{font-size:clamp(22px,2.6vw,28px);letter-spacing:-0.03em;white-space:nowrap}
+@media(max-width:480px){.amq .dosPagos .dosVeces{grid-template-columns:1fr}}
 .amq .granCard{border:1px solid var(--borde);border-radius:24px;padding:24px 26px;background:var(--card)}
 .amq .detCard h3 .cir{width:34px;height:34px;border-radius:50%;background:var(--y);color:#15171A;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .amq .btn.verde{background:#22C55E;border-color:#22C55E;color:#062B14}
@@ -204,7 +223,7 @@ html,body{overflow-x:clip!important}
 @keyframes tick{0%,100%{opacity:0.2}50%{opacity:1}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @media(max-width:560px){.amq footer .wrap{grid-template-columns:1fr}}
-@media(max-width:900px){.amq .nav .links{display:none}.amq footer .wrap{grid-template-columns:1fr 1fr}.amq .catGrid{grid-template-columns:1fr}.amq .rubros{position:static;display:flex;overflow-x:auto;gap:4px;padding:8px}.amq .rubros p{display:none}.amq .rubros a{white-space:nowrap}.amq .fichaGrid{grid-template-columns:1fr}.amq .tramos{grid-template-columns:1fr}.amq .buscaIsla{max-width:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:12px}.amq .grupo .argc .iso{height:15px}.amq .grupo .argc .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
+@media(max-width:900px){.amq .nav .links{display:none}.amq footer .wrap{grid-template-columns:1fr 1fr}.amq .catGrid{grid-template-columns:1fr}.amq .rubros{position:static;display:flex;overflow-x:auto;gap:4px;padding:8px}.amq .rubros p{display:none}.amq .rubros a{white-space:nowrap}.amq .fichaGrid{grid-template-columns:minmax(0,1fr)}.amq .tramos{grid-template-columns:1fr}.amq .buscaIsla{max-width:none}.amq .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.amq .grupo .iso{height:18px}.amq .grupo .txt{height:12px}.amq .grupo .argc .iso{height:15px}.amq .grupo .argc .txt{height:10px}.amq .carril>*{flex-basis:220px}.amq .nav{padding:0 12px}.amq .isla{height:62px;padding:0 10px 0 14px;gap:10px}}
 `;
 
 // ── Idiomas ───────────────────────────────────────────────────────────────────────────────

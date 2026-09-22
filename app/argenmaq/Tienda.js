@@ -166,15 +166,21 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
             <p className="lbl" style={{ marginBottom: 0 }}>{t("precioVolumen")}</p>
             {tramos.length === 0 && unit == null && <p style={{ margin: "10px 0 0", color: "var(--gris)" }}>Precio a confirmar. Consultanos.</p>}
             {tramos.length > 0 && <div className="tramos">{tramos.map((tr, i) => { const base = Number(tramos[0].unit); const desc = i > 0 && base > 0 ? Math.round((1 - Number(tr.unit) / base) * 100) : 0; return <button key={tr.q} className={`tramo${tramo?.q === tr.q ? " on" : ""}`} onClick={() => setQty(Number(tr.q))}><small>{etiquetaTramo(tr, i)}</small><b>{fmt(tr.unit)}</b><small>{t("precioUnit")}</small>{desc > 0 && <span className="desc">−{desc} %</span>}</button>; })}</div>}
-            <div style={{ display: "flex", gap: 18, alignItems: "flex-end", flexWrap: "wrap", paddingTop: 14, borderTop: "1px solid var(--borde)" }}>
+            <div className="qtyFila">
               <div><p className="lbl">{t("cantidad")}</p><div className="stepper"><button onClick={() => setQty(Math.max(minQ, q - 1))} disabled={q <= minQ} aria-label="−">−</button><input type="number" min={minQ} value={q} onChange={(e) => setQty(Math.max(minQ, Math.round(Number(e.target.value) || minQ)))} /><button onClick={() => setQty(q + 1)} aria-label="+">+</button></div>{minQ > 1 && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("minimo")} {minQ} {t("unidades")}</p>}</div>
-              {tramo && <div><p className="lbl">{t("anticipo")}</p><p style={{ margin: 0, fontSize: 17, fontWeight: 800, lineHeight: 1 }}>{fmt(tramo.maquina)}</p><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>/ {t("unidad")}</p></div>}
-              {tramo && <div><p className="lbl">{t("alRecibir")}</p><p style={{ margin: 0, fontSize: 17, fontWeight: 800, lineHeight: 1 }}>{fmt(tramo.argencargo)}</p><p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--gris)" }}>/ {t("unidad")}</p></div>}
-              <div style={{ marginLeft: "auto", textAlign: "right" }}><p className="lbl">{t("precioUnit")}</p><p style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>{unit != null ? fmt(unit) : "—"}</p>{tramo && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)", fontWeight: 700 }}>{etiquetaTramo(tramo, tramos.indexOf(tramo))}</p>}</div>
+              <div className="unitBox"><p className="lbl">{t("precioUnit")}</p><p className="unitNum">{unit != null ? fmt(unit) : "—"}</p>{tramo && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--gris)", fontWeight: 700 }}>{etiquetaTramo(tramo, tramos.indexOf(tramo))}</p>}</div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--borde)" }}>
+            {tramo && (() => { const a = Number(tramo.maquina) * q, s = Number(tramo.argencargo) * q, tot = a + s, pa = tot > 0 ? Math.round((a / tot) * 100) : 0; return <div className="dosPagos">
+              <div className="dosCab"><p className="lbl" style={{ margin: 0 }}>{t("seDosVeces")}</p><span>{pa}% + {100 - pa}%</span></div>
+              <div className="dosBarra"><i style={{ width: `${pa}%` }} /></div>
+              <div className="dosVeces">
+                <div className="hoy"><span className="paso">1</span><p className="lbl">{t("hoy")} · {t("anticipo")}</p><b>{fmt(a)}</b><small>{fmt(tramo.maquina)} / {t("unidad")}</small><p className="nota">{t("conEstoArranca")}</p></div>
+                <div><span className="paso">2</span><p className="lbl">{t("alRecibir")}</p><b>{fmt(s)}</b><small>{fmt(tramo.argencargo)} / {t("unidad")}</small><p className="nota">{dias != null ? `${t("llegaEn")} ~${dias} ${t("dias")}` : t("teAvisamos")}</p></div>
+              </div>
+            </div>; })()}
+            <div className="totalFila">
               <div><p className="lbl" style={{ marginBottom: 2 }}>{t("precioTotal")}</p><p style={{ margin: 0, fontSize: 12.5, color: "var(--gris)" }}>{q} × {unit != null ? fmt(unit) : "—"}</p></div>
-              <b style={{ fontSize: 28, letterSpacing: "-0.03em" }}>{unit != null ? fmt(unit * q) : "—"}</b>
+              <b>{unit != null ? fmt(unit * q) : "—"}</b>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 14 }}>
               <button className="btn verde" onClick={() => { agregar(); window.location.href = "/carrito"; }} disabled={unit == null}>{t("comprarAhora")}</button>
