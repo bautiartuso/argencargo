@@ -1,13 +1,3 @@
-.amq .orden .cab{display:flex;align-items:center;justify-content:space-between;padding:22px 24px 18px;border-bottom:1px solid var(--borde)}
-.amq .orden .cuerpo{flex:1;overflow-y:auto;padding:4px 24px}
-.amq .orden .item{padding:18px 0;border-bottom:1px solid var(--borde)}
-.amq .orden .itemCab{display:grid;grid-template-columns:78px 1fr auto;gap:14px;align-items:start}
-.amq .orden .item img,.amq .orden .item .sinFoto{width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--borde);background:#fff;display:block}
-.amq .orden .itemPie{display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px}
-.amq .orden .pie{padding:16px 24px 22px;border-top:1px solid var(--borde);background:var(--card)}
-.amq .orden .pagoBox{border-left:4px solid var(--y);background:var(--ysuave);border-radius:12px;padding:14px 16px;margin:12px 0 14px}
-.amq[data-tema="oscuro"] .orden .pagoBox{background:#2A2708}
-.amq .orden .pagoBox .cirI{width:30px;height:30px;border-radius:50%;background:var(--y);color:#15171A;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 "use client";
 // Sitio público de ARGENMAQ: tema claro/oscuro, idioma (es/en/ru), moneda (USD/ARS con el blue + 5),
 // sesión del cliente (la misma cuenta que Argencargo), carrito y el marco (nav + pie).
@@ -44,7 +34,7 @@ html,body{overflow-x:clip!important}
 .amq .card{background:var(--card);border:1px solid var(--borde);border-radius:20px;overflow:hidden;transition:transform 140ms,box-shadow 140ms;display:block}
 .amq .card:hover{transform:translateY(-3px);box-shadow:var(--sombra)}
 .amq .carril{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 16px;scroll-snap-type:x proximity;scrollbar-width:thin}
-.amq .carril>*{flex:0 0 260px;scroll-snap-align:start}
+.amq .carril>*{flex:0 0 230px;scroll-snap-align:start}
 .amq .chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--borde);background:var(--card);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
 .amq .chip.on{background:var(--ysuave);border-color:var(--y)}
 .amq .tag{display:inline-block;font-family:${MONO};font-size:10px;letter-spacing:0.1em;padding:4px 8px;border-radius:6px;background:var(--y);color:var(--yink);font-weight:600}
@@ -76,12 +66,15 @@ html,body{overflow-x:clip!important}
 .amq .velo{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px)}
 .amq .orden{position:fixed;top:0;right:0;bottom:0;z-index:71;width:min(480px,100%);background:var(--card);display:flex;flex-direction:column;box-shadow:-20px 0 60px rgba(0,0,0,0.25);animation:entrar 220ms ease}
 @keyframes entrar{from{transform:translateX(100%)}to{transform:translateX(0)}}
-.amq .orden .cab{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;border-bottom:1px solid var(--borde)}
-.amq .orden .cuerpo{flex:1;overflow-y:auto;padding:8px 22px}
-.amq .orden .item{display:grid;grid-template-columns:72px 1fr auto;gap:12px;padding:16px 0;border-bottom:1px solid var(--borde);align-items:start}
-.amq .orden .item img{width:72px;height:72px;object-fit:cover;border-radius:12px;background:var(--suave)}
-.amq .orden .pie{padding:16px 22px 22px;border-top:1px solid var(--borde);background:var(--card)}
-.amq .orden .pagoBox{border-left:4px solid var(--y);background:var(--ysuave);border-radius:12px;padding:12px 14px;margin:12px 0}
+.amq .orden .cab{display:flex;align-items:center;justify-content:space-between;padding:22px 24px 18px;border-bottom:1px solid var(--borde)}
+.amq .orden .cuerpo{flex:1;overflow-y:auto;padding:4px 24px}
+.amq .orden .item{padding:18px 0;border-bottom:1px solid var(--borde)}
+.amq .orden .itemCab{display:grid;grid-template-columns:78px 1fr auto;gap:14px;align-items:start}
+.amq .orden .item img,.amq .orden .item .sinFoto{width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--borde);background:#fff;display:block}
+.amq .orden .itemPie{display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px}
+.amq .orden .pie{padding:16px 24px 22px;border-top:1px solid var(--borde);background:var(--card)}
+.amq .orden .pagoBox{border-left:4px solid var(--y);background:var(--ysuave);border-radius:12px;padding:14px 16px;margin:12px 0 14px}
+.amq .orden .pagoBox .cirI{width:30px;height:30px;border-radius:50%;background:var(--y);color:#15171A;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .amq[data-tema="oscuro"] .orden .pagoBox{background:#2A2708}
 .amq .chkGrid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:34px;align-items:start}
 .amq .pasos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 26px}
@@ -101,8 +94,18 @@ html,body{overflow-x:clip!important}
 .amq .opcion.on .radio{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--ysuave)}
 .amq .waPref{display:grid;grid-template-columns:132px 1fr;gap:8px}
 @media(max-width:900px){.amq .chkGrid{grid-template-columns:1fr}.amq .resumen{position:static}}
+.amq .prod{display:block;min-width:0}
+.amq .prod .img{position:relative;aspect-ratio:1/1;border-radius:18px;overflow:hidden;background:var(--suave);border:1px solid var(--borde)}
+.amq .prod .img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform 300ms}
+.amq .prod:hover .img img{transform:scale(1.03)}
+.amq .prod .fav{position:absolute;top:10px;right:10px;width:38px;height:38px;border-radius:50%;background:var(--card);border:1px solid var(--borde);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.amq .prod .fav.on{background:#FF5A3C;border-color:#FF5A3C;color:#fff}
+.amq .prod .nom{margin:12px 0 4px;font-size:14.5px;font-weight:600;line-height:1.35;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:39px}
+.amq .prod .precio{margin:0;font-size:18px;font-weight:800;letter-spacing:-0.02em}
+.amq .prod .precio small{font-size:12px;font-weight:600;color:var(--gris);margin-left:6px}
+.amq .grilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:22px 18px}
 .amq .catGrid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:28px;align-items:start}
-.amq .rubros{position:sticky;top:96px;border:1px solid var(--borde);border-radius:20px;padding:14px 8px;background:var(--card)}
+.amq .rubros{position:sticky;top:96px;max-height:calc(100vh - 116px);overflow-y:auto;scrollbar-width:thin;border:1px solid var(--borde);border-radius:20px;padding:14px 8px;background:var(--card)}
 .amq .rubros p{padding:0 12px}
 .amq .rubros a{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;font-weight:700;font-size:14px}
 .amq .rubros a:hover{background:var(--suave)}.amq .rubros a.on{background:var(--ysuave)}
@@ -285,12 +288,11 @@ function PanelOrden({ onCerrar }) {
   const total = lineas.reduce((s, { L }) => s + (L.total || 0), 0);
   const anticipo = lineas.reduce((s, { L }) => s + (L.anticipo || 0), 0);
   const saldo = lineas.reduce((s, { L }) => s + (L.saldo || 0), 0);
-  // Cuándo llega el saldo: producción de la máquina + viaje de la vía que le tocó, la más lejana del carrito.
+  // Cuándo se paga el saldo: producción de la máquina + viaje de la vía que le tocó, la más lejana del carrito.
   const diasMax = lineas.reduce((mx, { i, L }) => Math.max(mx, (L.via ? diasVia(L.via) : 60) + Number(i.dias_produccion || 0)), 0);
   const llega = new Date(Date.now() + Math.max(15, diasMax) * 864e5).toLocaleDateString(lang === "en" ? "en-GB" : lang === "ru" ? "ru-RU" : "es-AR", { day: "numeric", month: "long", year: "numeric" });
   const pct = (v) => (total > 0 ? Math.round((v / total) * 100) : 0);
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
-  const nU = carrito.reduce((s, i) => s + (i.qty || 1), 0);
   const TACHO = ["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"];
   return <><div className="velo" onClick={onCerrar} /><aside className="orden" role="dialog" aria-label={t("tuOrden")}>
     <div className="cab"><p style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: "-0.02em" }}>{t("tuOrden")}</p><button className="ico" onClick={onCerrar} aria-label="Cerrar" style={{ width: 42, height: 42, fontSize: 15, background: "var(--suave)", border: "none" }}>✕</button></div>

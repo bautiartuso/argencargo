@@ -31,23 +31,23 @@ function Elegir({ value, onChange, opciones, placeholder = "Elegir…", buscable
 const CANDADO = ["M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z", "M5 10V8a7 7 0 0 1 14 0v2", "M4 10h16v11H4z"];
 export const codigoMaq = (m) => `MAQ-${String(m?.numero || 0).padStart(5, "0")}`;
 
-export function Tarjeta({ m, precios, diasVia: dv }) {
+export function Tarjeta({ m, precios }) {
   const { t, fmt, ses } = useAM();
   const foto = primeraFoto(m);
   const pv = precioVidriera(precios?.[m.id]);
-  const vias = Array.isArray(m.vias) ? m.vias : [];
-  return <a className="card" href={`/m/${m.id}`}>
-    <div style={{ aspectRatio: "4/3", background: "var(--suave)", overflow: "hidden", position: "relative" }}>
-      {foto ? <img src={foto} alt={m.nombre} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gris)", fontSize: 13 }}>Sin foto</div>}
-      {m.condicion === "usada" && <span className="tag" style={{ position: "absolute", top: 10, left: 10 }}>{t("usada").toUpperCase()}</span>}
+  const [fav, setFav] = useState(false);
+  useEffect(() => { try { setFav((JSON.parse(localStorage.getItem("am_fav") || "[]")).includes(m.id)); } catch {} }, [m.id]);
+  const toggleFav = (e) => { e.preventDefault(); e.stopPropagation(); try { const l = JSON.parse(localStorage.getItem("am_fav") || "[]"); const nl = l.includes(m.id) ? l.filter((x) => x !== m.id) : [...l, m.id]; localStorage.setItem("am_fav", JSON.stringify(nl)); setFav(nl.includes(m.id)); } catch {} };
+  return <a className="prod" href={`/m/${m.id}`}>
+    <div className="img">
+      {foto ? <img src={foto} alt={m.nombre} loading="lazy" /> : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gris)", fontSize: 13 }}>Sin foto</div>}
+      {m.condicion === "usada" && <span className="tag" style={{ position: "absolute", top: 12, left: 12 }}>{t("usada").toUpperCase()}</span>}
+      <button className={`fav${fav ? " on" : ""}`} onClick={toggleFav} aria-label={t("guardarFav")}><svg width="17" height="17" viewBox="0 0 24 24" fill={fav ? "#fff" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" /></svg></button>
     </div>
-    <div style={{ padding: "14px 16px 16px" }}>
-      <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 800, lineHeight: 1.3, letterSpacing: "-0.01em", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: 39 }}>{m.nombre}</p>
-      {ses && pv
-        ? <p style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{fmt(pv.unit)} <span style={{ fontSize: 12, color: "var(--gris)", fontWeight: 600 }}>· {viaLabel(pv.via, t).toLowerCase()}{pv.q > 1 ? ` · ${t("desde")} ${pv.q} ${t("unidades")}` : ""}</span></p>
-        : <p style={{ margin: 0, fontSize: 13, color: "var(--gris)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><Ico d={CANDADO} size={14} />{t("verPrecio")}</p>}
-      {dv && vias.length > 0 && <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{t("tiempo")}: {Math.min(...vias.map((v) => diasVia(v, dv))) + Number(m.dias_produccion || 0)} {t("dias")}</p>}
-    </div>
+    <p className="nom">{m.nombre}</p>
+    {ses && pv
+      ? <p className="precio">{fmt(pv.unit)}{pv.q > 1 && <small>{t("desde")} {pv.q} {t("unidades")}</small>}</p>
+      : <p className="precio" style={{ fontSize: 13, fontWeight: 700, color: "var(--gris)", display: "inline-flex", alignItems: "center", gap: 6 }}><Ico d={CANDADO} size={14} />{t("verPrecio")}</p>}
   </a>;
 }
 
@@ -71,16 +71,16 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
         {rubros.map((c) => <a key={c.slug} className={cat?.slug === c.slug ? "on" : ""} href={`/catalogo/${c.slug}`}>{c.nombre}<span>{cuenta(c.slug) || ""}</span></a>)}
       </aside>
       <div style={{ minWidth: 0 }}>
-        <div style={{ marginBottom: 18 }}>
+        {(cat || q.trim()) && <div style={{ marginBottom: 18 }}>
           {cat && <a href="/catalogo" style={{ fontSize: 13, color: "var(--gris)", fontWeight: 700 }}>← {t("catalogo")}</a>}
-          <h1 className="h2" style={{ marginTop: cat ? 6 : 0 }}>{q.trim() ? `${t("resultados")} “${q.trim()}”` : cat ? cat.nombre : t("catalogo")}</h1>
-        </div>
+          <h1 className="h2" style={{ marginTop: cat ? 6 : 0, fontSize: 30 }}>{q.trim() ? `${t("resultados")} “${q.trim()}”` : cat.nombre}</h1>
+        </div>}
         {cat && !q.trim() && cat.subs.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}><button className={`chip${!sub ? " on" : ""}`} onClick={() => setSub("")}>{t("verTodo")}</button>{cat.subs.map((s) => <button key={s.slug} className={`chip${sub === s.slug ? " on" : ""}`} onClick={() => setSub(sub === s.slug ? "" : s.slug)}>{s.nombre}</button>)}</div>}
         {(cat || q.trim())
-          ? (filtradas.length === 0 ? <p style={{ color: "var(--gris)" }}>{t("sinMaquinas")}</p> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>{filtradas.map((m) => <Tarjeta key={m.id} m={m} precios={precios} diasVia={dv} />)}</div>)
+          ? (filtradas.length === 0 ? <p style={{ color: "var(--gris)" }}>{t("sinMaquinas")}</p> : <div className="grilla">{filtradas.map((m) => <Tarjeta key={m.id} m={m} precios={precios} />)}</div>)
           : arbol.map((c) => { const del = lista.filter((m) => m.categoria === c.slug); if (!del.length) return null; return <section key={c.slug} style={{ marginBottom: 26 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{c.nombre}</h2><span style={{ fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{del.length}</span><span style={{ flex: 1 }} /><a href={`/catalogo/${c.slug}`} style={{ fontSize: 13.5, fontWeight: 700 }}>{t("verTodo")} →</a></div>
-            <div className="carril">{del.slice(0, 10).map((m) => <Tarjeta key={m.id} m={m} precios={precios} diasVia={dv} />)}</div>
+            <div className="carril">{del.slice(0, 10).map((m) => <Tarjeta key={m.id} m={m} precios={precios} />)}</div>
           </section>; })}
         <div style={{ marginTop: 30, padding: "22px 24px", borderRadius: 20, background: "var(--suave)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}><div style={{ flex: 1 }}><p style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>{t("noEsta")}</p><p style={{ margin: "2px 0 0", color: "var(--gris)", fontSize: 14 }}>{t("noEstaSub")}</p></div><a className="btn y" href={WA("Hola ARGENMAQ, busco una máquina que no está en el catálogo: ")} target="_blank" rel="noreferrer">{t("consultar")}</a></div>
         {lista.length > 0 && !cat && <p style={{ margin: "18px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}.</p>}
@@ -198,7 +198,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
       <div style={{ padding: "20px 24px", borderRadius: 18, background: "var(--suave)" }}>{(m.descripcion || "").split(/\n{2,}/).map((par, i) => <p key={i} style={{ fontSize: 15.5, lineHeight: 1.7, margin: i ? "14px 0 0" : 0 }}>{par}</p>)}</div>
     </section>
 
-    {relacionadas?.length > 0 && <section style={{ marginTop: 40 }}><div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}><h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>{t("similares")}</h2><span style={{ flex: 1 }} /><a href={`/catalogo/${m.categoria}`} style={{ fontSize: 13.5, fontWeight: 700 }}>{t("verTodo")} →</a></div><div className="carril">{relacionadas.map((r) => <Tarjeta key={r.id} m={r} diasVia={dv} />)}</div></section>}
+    {relacionadas?.length > 0 && <section style={{ marginTop: 40 }}><div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}><h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>{t("similares")}</h2><span style={{ flex: 1 }} /><a href={`/catalogo/${m.categoria}`} style={{ fontSize: 13.5, fontWeight: 700 }}>{t("verTodo")} →</a></div><div className="carril">{relacionadas.map((r) => <Tarjeta key={r.id} m={r} />)}</div></section>}
 
     {/* Visor de fotos */}
     {luz && <div className="luz" onClick={() => setLuz(false)}>
