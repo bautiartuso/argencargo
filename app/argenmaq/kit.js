@@ -297,11 +297,11 @@ export function usePrecios(ids) {
   const { ses, dq } = useAM();
   const [precios, setPrecios] = useState(null);
   const clave = (ids || []).join(",");
-  useEffect(() => { if (!ses?.token || !clave) { setPrecios(null); return; } (async () => { try { const r = await dq("cat_maquinas_precios", { filters: `?select=id,precios,escalera&id=in.(${clave})` }); const o = {}; (Array.isArray(r) ? r : []).forEach((x) => { o[x.id] = x; }); setPrecios(o); } catch { setPrecios(null); } })(); }, [ses?.token, clave]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!ses?.token || !clave) { setPrecios(null); return; } (async () => { try { const r = await dq("cat_maquinas_precios", { filters: `?select=id,precios,escalera,dias_produccion&id=in.(${clave})` }); const o = {}; (Array.isArray(r) ? r : []).forEach((x) => { o[x.id] = x; }); setPrecios(o); } catch { setPrecios(null); } })(); }, [ses?.token, clave]); // eslint-disable-line react-hooks/exhaustive-deps
   return precios;
 }
 // Una línea del carrito con su escalón: cantidad efectiva, precio unitario, anticipo (máquina) y saldo (importación).
-export const lineaCarrito = (i, precios) => { const pr = precios?.[i.id]; const esc = pr?.escalera; const modo = i.modo === "aerea" && esc?.aerea?.length ? "aerea" : "maritima"; const tramos = esc?.[modo] || []; const minQ = Number(tramos[0]?.q) || 1; const q = Math.max(minQ, i.qty || 1); const tr = escalonPara(tramos, q); const unit = tr ? Number(tr.unit) : (precioVidriera(pr)?.unit ?? null); return { modo, tramos, minQ, q, tr, unit, total: unit != null ? unit * q : null, anticipo: tr ? Number(tr.maquina) * q : null, saldo: tr ? Number(tr.argencargo) * q : null, via: tr?.via || null, esc }; };
+export const lineaCarrito = (i, precios) => { const pr = precios?.[i.id]; const esc = pr?.escalera; const modo = i.modo === "aerea" && esc?.aerea?.length ? "aerea" : "maritima"; const tramos = esc?.[modo] || []; const minQ = Number(tramos[0]?.q) || 1; const q = Math.max(minQ, i.qty || 1); const tr = escalonPara(tramos, q); const unit = tr ? Number(tr.unit) : (precioVidriera(pr)?.unit ?? null); return { modo, tramos, minQ, q, tr, unit, total: unit != null ? unit * q : null, anticipo: tr ? Number(tr.maquina) * q : null, saldo: tr ? Number(tr.argencargo) * q : null, via: tr?.via || null, esc, diasProd: Number(pr?.dias_produccion ?? i.dias_produccion ?? 0) }; };
 
 // Panel lateral "Tu orden", como el de B2Box: se abre desde el carrito de la isla.
 function PanelOrden({ onCerrar }) {
@@ -313,7 +313,7 @@ function PanelOrden({ onCerrar }) {
   const anticipo = lineas.reduce((s, { L }) => s + (L.anticipo || 0), 0);
   const saldo = lineas.reduce((s, { L }) => s + (L.saldo || 0), 0);
   // Cuándo se paga el saldo: producción de la máquina + viaje de la vía que le tocó, la más lejana del carrito.
-  const diasMax = lineas.reduce((mx, { i, L }) => Math.max(mx, (L.via ? diasVia(L.via) : 60) + Number(i.dias_produccion || 0)), 0);
+  const diasMax = lineas.reduce((mx, { L }) => Math.max(mx, (L.via ? diasVia(L.via) : 60) + L.diasProd), 0);
   const llega = new Date(Date.now() + Math.max(15, diasMax) * 864e5).toLocaleDateString(lang === "en" ? "en-GB" : lang === "ru" ? "ru-RU" : "es-AR", { day: "numeric", month: "long", year: "numeric" });
   const pct = (v) => (total > 0 ? Math.round((v / total) * 100) : 0);
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
