@@ -5,9 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useAM, Ico, MONO, WA, viaLabel, diasVia, primeraFoto, usePrecios, precioVidriera, lineaCarrito } from "./kit";
 import { escalonPara } from "../../lib/canales-maquinas";
 import { PAISES, bandera, paisDe } from "./_paises";
+import { PROVINCIAS } from "../../lib/provincias";
 export { usePrecios, precioVidriera } from "./kit";
 
-const PR = ["Buenos Aires", "CABA", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
 const COND = [["ninguna", "Consumidor final"], ["monotributista", "Monotributista"], ["responsable_inscripto", "Responsable inscripto"]];
 
 // Desplegable propio para los formularios públicos (regla: nada nativo del navegador).
@@ -352,7 +352,7 @@ function Registro({ sf, guardarSes, t, volver }) {
     <CampoTxt f={f} set={set} k="email" l={t("email")} type="email" span /><CampoWa f={f} set={set} />
     <CampoTxt f={f} set={set} k="password" l={t("pass")} type="password" span />
     <CampoTxt f={f} set={set} k="street" l="Calle y número" /><CampoTxt f={f} set={set} k="floor_apt" l="Piso / depto" req={false} />
-    <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
+    <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PROVINCIAS} /></div>
     <CampoTxt f={f} set={set} k="postal_code" l="Código postal" />
     <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
     {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
@@ -391,7 +391,7 @@ function FormDatos({ cliente, setCliente, dq, ses, t, onListo, textoBoton }) {
     <CampoTxt f={f} set={set} k="first_name" l="Nombre" /><CampoTxt f={f} set={set} k="last_name" l="Apellido" />
     <CampoWa f={f} set={set} />
     <CampoTxt f={f} set={set} k="street" l="Calle y número" /><CampoTxt f={f} set={set} k="floor_apt" l="Piso / depto" req={false} />
-    <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PR.map((p) => ({ v: p, l: p }))} /></div>
+    <CampoTxt f={f} set={set} k="city" l="Localidad" /><div><span className="lbl">Provincia</span><Elegir value={f.province} onChange={(v) => set("province", v)} opciones={PROVINCIAS} /></div>
     <CampoTxt f={f} set={set} k="postal_code" l="Código postal" />
     <div><span className="lbl">Condición fiscal</span><Elegir value={f.tax_condition} onChange={(v) => set("tax_condition", v)} opciones={COND.map(([v, l]) => ({ v, l }))} /></div>
     {f.tax_condition === "responsable_inscripto" && <CampoTxt f={f} set={set} k="company_name" l="Razón social" />}
