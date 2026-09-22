@@ -546,7 +546,7 @@ function Notificaciones({ cliente, dq, t }) {
   </>;
 }
 
-// ── Cómo funciona / Quiénes somos ─────────────────────────────────────────────────────────
+// ── Cómo funciona ─────────────────────────────────────────────────────────
 export function ComoFunciona() {
   const P = [["01", "Elegís la máquina", "Entrás al catálogo, ves fotos, descripción y tiempo estimado. Con tu cuenta ves el precio final, puesto en nuestro depósito de CABA."], ["02", "Confirmás y pagás la máquina", "El anticipo es el precio de la máquina. Con eso la fábrica arranca la producción. Tenés 24 horas para arrepentirte."], ["03", "Producción y control", "La fábrica produce; antes de embarcar te mandamos foto o video de tu máquina funcionando."], ["04", "Argencargo la importa", "Flete, seguro y aduana con el equipo de Argencargo. Te avisamos por mail en cada hito y lo seguís desde tu cuenta."], ["05", "Retirás o te la enviamos", "Cuando llega a Buenos Aires se abona la importación contra entrega. Retirás en nuestro depósito sin cargo o te la enviamos a cualquier punto del país (adicional)."]];
   return <div className="wrap" style={{ padding: "40px 24px 70px", maxWidth: 820 }}>
@@ -554,14 +554,5 @@ export function ComoFunciona() {
     <div style={{ display: "grid", gap: 12 }}>{P.map(([n, tt, d]) => <div key={n} style={{ display: "grid", gridTemplateColumns: "56px 1fr", gap: 14, padding: "18px 20px", borderRadius: 20, border: "1px solid var(--borde)", background: "var(--card)" }}><span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600, color: "var(--y)" }}>{n}</span><div><b style={{ fontSize: 17, display: "block", marginBottom: 4 }}>{tt}</b><p style={{ margin: 0, color: "var(--gris)", lineHeight: 1.5 }}>{d}</p></div></div>)}</div>
     <div style={{ marginTop: 26, padding: "20px 22px", borderRadius: 20, background: "var(--suave)" }}><b>Lo que no incluye</b><p style={{ margin: "6px 0 0", color: "var(--gris)", lineHeight: 1.5 }}>Envío a domicilio, instalación y puesta en marcha (podemos ayudarte con un técnico), obra civil y maniobras especiales de descarga. La garantía es la del fabricante; ante cualquier inconveniente ARGENMAQ está presente y cada caso se evalúa, con un tope máximo reembolsable. Los tiempos son estimados.</p></div>
     <div style={{ marginTop: 22 }}><a className="btn y" href="/catalogo">Ver el catálogo</a></div>
-  </div>;
-}
-export function QuienesSomos({ ops }) {
-  return <div className="wrap" style={{ padding: "40px 24px 70px", maxWidth: 820 }}>
-    <h1 className="h2" style={{ marginBottom: 8 }}>Quiénes somos</h1>
-    <p style={{ color: "var(--gris)", fontSize: 17, lineHeight: 1.55, margin: "0 0 18px" }}>ARGENMAQ es la unidad de maquinaria del grupo Argencargo. Nació de algo que veíamos todos los días: gente de oficio que quería traer una máquina de China y se quedaba en el camino entre proveedores, aduana y flete. Acá eso ya está resuelto: elegís, pagás y la máquina llega.</p>
-    <p style={{ color: "var(--gris)", fontSize: 17, lineHeight: 1.55, margin: "0 0 26px" }}>La importación la hace Argencargo{ops ? `, que ya lleva más de ${Math.floor(ops / 10) * 10} operaciones` : ""}. Atendemos por WhatsApp y por llamada, y lo que le pasa a tu máquina lo seguís desde tu cuenta.</p>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>{[["Oficina", "La misma que Argencargo, en Buenos Aires."], ["Depósito", "Recibimos y entregamos en CABA; enviamos a todo el país."], ["Equipo", "Un responsable de ARGENMAQ te acompaña de punta a punta."]].map(([a, b]) => <div key={a} style={{ padding: "16px 18px", borderRadius: 18, border: "1px solid var(--borde)", background: "var(--card)" }}><b style={{ display: "block", marginBottom: 4 }}>{a}</b><span style={{ color: "var(--gris)", fontSize: 14.5 }}>{b}</span></div>)}</div>
-    <div style={{ marginTop: 22, display: "flex", gap: 8 }}><a className="btn y" href="/catalogo">Ver el catálogo</a><a className="btn" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer">Conocer Argencargo</a></div>
   </div>;
 }
