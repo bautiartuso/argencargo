@@ -229,7 +229,7 @@ export function Proveedor({ children }) {
   }, [ses, sf, refrescar]);
 
   // Ficha del cliente (tabla clients de Argencargo) cuando hay sesión.
-  useEffect(() => { if (!ses?.token || !listo) { setCliente(null); return; } (async () => { try { const r = await dq("clients", { filters: `?auth_user_id=eq.${ses.user?.id}&select=id,client_code,first_name,last_name,company_name,email,whatsapp,tax_condition,city,province&limit=1` }); setCliente(Array.isArray(r) && r[0] ? r[0] : null); } catch { setCliente(null); } })(); }, [ses?.token, listo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!ses?.token || !listo) { setCliente(null); return; } (async () => { try { const r = await dq("clients", { filters: `?auth_user_id=eq.${ses.user?.id}&select=id,client_code,first_name,last_name,email,whatsapp,dni,cuit,company_name,tax_condition,street,floor_apt,city,province,postal_code` }); setCliente(Array.isArray(r) && r[0] ? r[0] : null); } catch { setCliente(null); } })(); }, [ses?.token, listo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = async (email, password) => { const r = (await sf("/auth/v1/token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password }) })).body; if (!r?.access_token) throw new Error(r?.error_description || r?.msg || "Credenciales inválidas"); guardarSes({ token: r.access_token, refresh: r.refresh_token, user: r.user }); return r; };
   const salir = () => { guardarSes(null); setCliente(null); };
