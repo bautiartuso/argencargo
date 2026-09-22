@@ -9425,8 +9425,6 @@ function AgentsPanel({token}){
   const [repackReqs,setRepackReqs]=useState([]);
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
-  const [depFilter,setDepFilter]=useState(null); // null=todas | 0 listo | 1 docs pend | 2 esperando
-  const [depSearch,setDepSearch]=useState("");
   const [collapsedAgents,setCollapsedAgents]=useState(()=>new Set()); // grupos de agente colapsados en depósito
   const [flightProgress,setFlightProgress]=useState(null); // overlay de progreso de createFlight {label,current,total}
   const load=async()=>{setLo(true);
@@ -9952,15 +9950,8 @@ function AgentsPanel({token}){
       const lastPkgOf=(o)=>opPackages(o.id).reduce((mx,p2)=>{const t=p2.created_at?new Date(p2.created_at).getTime():0;return t>mx?t:mx;},0);
       const countsByScore=[0,0,0];trulyInDeposit.forEach(o=>{countsByScore[orderScore(o)]++;});
       // Filtro por estado + buscador (op, cliente, tracking de bulto — todo ya está en memoria)
-      const q=depSearch.trim().toLowerCase();
-      const visibleOps=trulyInDeposit.filter(o=>{
-        if(depFilter!=null&&orderScore(o)!==depFilter)return false;
-        if(!q)return true;
-        if(String(o.operation_code||"").toLowerCase().includes(q))return true;
-        const cl=o.clients;
-        if(cl&&`${cl.client_code||""} ${cl.first_name||""} ${cl.last_name||""}`.toLowerCase().includes(q))return true;
-        return opPackages(o.id).some(p2=>String(p2.national_tracking||"").toLowerCase().includes(q));
-      });
+      // Sin chips ni buscador arriba (22/09/2026): el estado de cada op ya se ve en su grupo.
+      const visibleOps=trulyInDeposit;
       // Agrupar por agente y ordenar dentro: por estado, y dentro de cada estado la más vieja primero
       const byAgent={};visibleOps.forEach(o=>{const k=o.created_by_agent_id||"sin_agente";if(!byAgent[k])byAgent[k]={ops:[],agentName:""};byAgent[k].ops.push(o);});
       Object.keys(byAgent).forEach(k=>{
@@ -9987,29 +9978,47 @@ function AgentsPanel({token}){
         }catch(e){alertDialog("No se pudo crear: "+e.message);}
       };
       return <div>
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
-          {[0,1].map(sc=>{const on=depFilter===sc;const m=SCORE_META[sc];return <button key={sc} onClick={()=>setDepFilter(on?null:sc)} style={{padding:"6px 12px",fontSize:10.5,fontWeight:800,borderRadius:99,border:`1px solid ${on?m.c:`${m.c}44`}`,background:on?`${m.c}26`:`${m.c}0D`,color:m.c,cursor:"pointer",letterSpacing:"0.05em",transition:"all 150ms",opacity:countsByScore[sc]===0&&!on?0.45:1}}>{m.l} <span style={{fontVariantNumeric:"tabular-nums"}}>({countsByScore[sc]})</span></button>;})}
-          <input value={depSearch} onChange={e=>setDepSearch(e.target.value)} placeholder="🔍 Op, cliente o tracking…" style={{flex:"1 1 200px",maxWidth:280,padding:"7px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.1)",borderRadius:99,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
-          {(depFilter!=null||q)&&<button onClick={()=>{setDepFilter(null);setDepSearch("");}} style={{fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline",padding:0}}>Limpiar</button>}
-        </div>
         {selectedOps.length>0&&(()=>{
           const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
           const riOps=selObjs.filter(o=>o.clients?.tax_condition==="responsable_inscripto");
-          return <div style={{padding:"12px 16px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10,marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{selectedOps.length} operación(es) seleccionada(s)</p>
-                {riOps.length>0&&<span title={"Clientes RI: "+riOps.map(o=>o.clients?.client_code).join(", ")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:6,background:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>⚠ {riOps.length} RI · facturar con CUIT</span>}
+          // Totales de lo seleccionado: la misma cuenta que las columnas de la tabla (por bulto, el
+          // mayor entre bruto y volumétrico; ÷6000 con el redondeo del agente al medio kilo).
+          const factDe=(opId,div,redondeo)=>opPackages(opId).reduce((s2,p2)=>{const q2=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v);return s2+(redondeo?Math.ceil(f*2)/2:f)*q2;},0);
+          const tot=selObjs.reduce((a,o)=>({
+            bultos:a.bultos+opPackages(o.id).reduce((s2,p2)=>s2+Number(p2.quantity||1),0),
+            bruto:a.bruto+opPackages(o.id).reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0),
+            f5:a.f5+factDe(o.id,5000,false), f6:a.f6+factDe(o.id,6000,true),
+          }),{bultos:0,bruto:0,f5:0,f6:0});
+          const kg2=(v)=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+          const Dato=({l,v,c,t:tt})=><div title={tt} style={{minWidth:96}}>
+            <p style={{margin:0,fontSize:9.5,fontWeight:700,letterSpacing:"0.1em",color:"rgba(255,255,255,0.4)"}}>{l}</p>
+            <p style={{margin:"3px 0 0",fontSize:15,fontWeight:700,color:c||"#fff",fontFamily:"monospace"}}>{v}</p>
+          </div>;
+          return <div style={{background:"linear-gradient(180deg,rgba(184,149,106,0.12),rgba(184,149,106,0.05))",border:`1px solid ${IC}55`,borderRadius:14,marginBottom:14,overflow:"hidden"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"13px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",minWidth:0}}>
+                <span style={{width:30,height:30,borderRadius:"50%",background:GOLD_GRADIENT,color:"#0A1628",display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:14,flexShrink:0}}>{selectedOps.length}</span>
+                <div style={{minWidth:0}}>
+                  <p style={{margin:0,fontSize:13.5,color:"#fff",fontWeight:700,letterSpacing:"-0.01em"}}>{selectedOps.length===1?"operación seleccionada":"operaciones seleccionadas"}</p>
+                  <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:420}}>{selObjs.map(o=>o.operation_code).join(" · ")}</p>
+                </div>
+                {riOps.length>0&&<span title={"Clientes RI: "+riOps.map(o=>o.clients?.client_code).join(", ")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:6,background:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>⚠ {riOps.length} RI · facturar A</span>}
               </div>
               <div style={{display:"flex",gap:8}}>
                 <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
                 <Btn small onClick={createFlight}>+ Crear vuelo con seleccionadas</Btn>
               </div>
             </div>
-            {riOps.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"8px 0 0",lineHeight:1.5}}>Hay clientes Responsable Inscripto en este vuelo. Recordá emitir factura A con su CUIT y aplicar el régimen impositivo correspondiente.</p>}
+            <div style={{display:"flex",gap:26,flexWrap:"wrap",padding:"12px 16px",borderTop:`1px solid ${IC}33`,background:"rgba(0,0,0,0.18)"}}>
+              <Dato l="BULTOS" v={tot.bultos}/>
+              <Dato l="BRUTO" v={kg2(tot.bruto)} c="rgba(255,255,255,0.8)"/>
+              <Dato l="FACT. ÷5000" v={kg2(tot.f5)} c={IC} t="Peso facturable con volumétrico a 5000: por bulto, el mayor entre bruto y volumétrico"/>
+              <Dato l="FACT. ÷6000 ↑½" v={kg2(tot.f6)} c="#fb923c" t="Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba"/>
+            </div>
+            {riOps.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:0,padding:"10px 16px",borderTop:"1px solid rgba(96,165,250,0.2)",lineHeight:1.5,background:"rgba(96,165,250,0.06)"}}>Hay clientes Responsable Inscripto en este vuelo. Recordá emitir factura A con su CUIT y aplicar el régimen impositivo correspondiente.</p>}
           </div>;
         })()}
-        {Object.keys(byAgent).length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{trulyInDeposit.length===0?"No hay paquetes en depósito":"Nada coincide con el filtro"}</p>}
+        {Object.keys(byAgent).length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en depósito</p>}
         {Object.entries(byAgent).map(([agentId,grp])=>{
           const grpKg=grp.ops.reduce((s2,o)=>s2+opWeight(o.id),0);
           const grpFob=grp.ops.reduce((s2,o)=>s2+depositItems.filter(i=>i.operation_id===o.id).reduce((a2,i)=>a2+Number(i.unit_price_usd||0)*Number(i.quantity||1),0),0);
