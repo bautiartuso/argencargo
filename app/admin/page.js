@@ -1003,9 +1003,17 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Cargar al montar / cambiar de op. SIN refetch en focus/visibility — pisaba inputs no guardados.
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
-  const deleteOp=async()=>{if(!await confirmDialog(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
-    await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
-    await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});onDelete();};
+  // Borrado en una sola transacción del lado de la base (RPC): o se va todo, o no se toca nada.
+  // Antes se borraban productos, bultos y eventos y recién después la op; si ese último DELETE
+  // fallaba por una referencia (un gasto en Finanzas), la op quedaba viva y vacía (AC-0058, 22/09/2026).
+  const deleteOp=async()=>{
+    const detalle=[items.length?`${items.length} producto${items.length!==1?"s":""}`:null,pkgs.length?`${pkgs.length} bulto${pkgs.length!==1?"s":""}`:null,events.length?`${events.length} evento${events.length!==1?"s":""}`:null].filter(Boolean).join(", ");
+    if(!await confirmDialog(`¿Eliminar la operación ${op.operation_code}?${detalle?`\n\nSe borran también ${detalle}. No se puede deshacer.`:"\n\nNo se puede deshacer."}`,{confirmText:"Eliminar"}))return;
+    try{
+      await dq("rpc/eliminar_operacion",{method:"POST",token,body:{p_op:op.id},prefer:"return=representation"});
+      onDelete();
+    }catch(e){alertDialog(e.message||"No se pudo eliminar la operación");}
+  };
   // Modal para marcar/desmarcar la op como perdida en aduana (retención + abandono)
   const [customsLossModal,setCustomsLossModal]=useState(null); // {reason} cuando está abierto
   const REASONES_PERDIDA=[
