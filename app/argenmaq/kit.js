@@ -1,3 +1,13 @@
+.amq .orden .cab{display:flex;align-items:center;justify-content:space-between;padding:22px 24px 18px;border-bottom:1px solid var(--borde)}
+.amq .orden .cuerpo{flex:1;overflow-y:auto;padding:4px 24px}
+.amq .orden .item{padding:18px 0;border-bottom:1px solid var(--borde)}
+.amq .orden .itemCab{display:grid;grid-template-columns:78px 1fr auto;gap:14px;align-items:start}
+.amq .orden .item img,.amq .orden .item .sinFoto{width:78px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--borde);background:#fff;display:block}
+.amq .orden .itemPie{display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px}
+.amq .orden .pie{padding:16px 24px 22px;border-top:1px solid var(--borde);background:var(--card)}
+.amq .orden .pagoBox{border-left:4px solid var(--y);background:var(--ysuave);border-radius:12px;padding:14px 16px;margin:12px 0 14px}
+.amq[data-tema="oscuro"] .orden .pagoBox{background:#2A2708}
+.amq .orden .pagoBox .cirI{width:30px;height:30px;border-radius:50%;background:var(--y);color:#15171A;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 "use client";
 // Sitio público de ARGENMAQ: tema claro/oscuro, idioma (es/en/ru), moneda (USD/ARS con el blue + 5),
 // sesión del cliente (la misma cuenta que Argencargo), carrito y el marco (nav + pie).
@@ -268,42 +278,50 @@ export const lineaCarrito = (i, precios) => { const pr = precios?.[i.id]; const 
 
 // Panel lateral "Tu orden", como el de B2Box: se abre desde el carrito de la isla.
 function PanelOrden({ onCerrar }) {
-  const { t, fmt, ses, carrito, setCarrito } = useAM();
+  const { t, fmt, ses, carrito, setCarrito, lang } = useAM();
   const precios = usePrecios(carrito.map((i) => i.id));
   useEffect(() => { const k = (e) => { if (e.key === "Escape") onCerrar(); }; window.addEventListener("keydown", k); document.body.style.overflow = "hidden"; return () => { window.removeEventListener("keydown", k); document.body.style.overflow = ""; }; }, [onCerrar]);
   const lineas = carrito.map((i) => ({ i, L: lineaCarrito(i, precios) }));
   const total = lineas.reduce((s, { L }) => s + (L.total || 0), 0);
   const anticipo = lineas.reduce((s, { L }) => s + (L.anticipo || 0), 0);
   const saldo = lineas.reduce((s, { L }) => s + (L.saldo || 0), 0);
+  // Cuándo llega el saldo: producción de la máquina + viaje de la vía que le tocó, la más lejana del carrito.
+  const diasMax = lineas.reduce((mx, { i, L }) => Math.max(mx, (L.via ? diasVia(L.via) : 60) + Number(i.dias_produccion || 0)), 0);
+  const llega = new Date(Date.now() + Math.max(15, diasMax) * 864e5).toLocaleDateString(lang === "en" ? "en-GB" : lang === "ru" ? "ru-RU" : "es-AR", { day: "numeric", month: "long", year: "numeric" });
+  const pct = (v) => (total > 0 ? Math.round((v / total) * 100) : 0);
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
   const nU = carrito.reduce((s, i) => s + (i.qty || 1), 0);
+  const TACHO = ["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"];
   return <><div className="velo" onClick={onCerrar} /><aside className="orden" role="dialog" aria-label={t("tuOrden")}>
-    <div className="cab"><div><p style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{t("tuOrden")}</p><p style={{ margin: "2px 0 0", fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{nU} {nU === 1 ? t("unidad") : t("unidades")}</p></div><button className="ico" onClick={onCerrar} aria-label="Cerrar" style={{ width: 40, height: 40, fontSize: 16 }}>✕</button></div>
+    <div className="cab"><p style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: "-0.02em" }}>{t("tuOrden")}</p><button className="ico" onClick={onCerrar} aria-label="Cerrar" style={{ width: 42, height: 42, fontSize: 15, background: "var(--suave)", border: "none" }}>✕</button></div>
     <div className="cuerpo">
       {carrito.length === 0 && <p style={{ color: "var(--gris)", padding: "24px 0" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }} onClick={onCerrar}>{t("catalogo")} →</a></p>}
       {lineas.map(({ i, L }) => <div key={i.id} className="item">
-        <a href={`/m/${i.id}`}>{i.foto ? <img src={i.foto} alt="" /> : <div style={{ width: 72, height: 72, borderRadius: 12, background: "var(--suave)" }} />}</a>
-        <div style={{ minWidth: 0 }}>
-          <a href={`/m/${i.id}`} style={{ fontWeight: 800, fontSize: 14.5, lineHeight: 1.3, display: "block" }}>{i.nombre}</a>
-          <p style={{ margin: "2px 0 10px", fontSize: 12, color: "var(--gris)", fontFamily: MONO }}>{L.unit != null ? `${fmt(L.unit)} / ${t("unidad")}` : ""}{L.modo === "aerea" ? ` · ${t("viaAerea")}` : ""}</p>
-          <div className="stepper" style={{ height: 38 }}><button style={{ height: 38, width: 38 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 38, width: 48 }} type="number" min={L.minQ} value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 38, width: 38 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div>
+        <div className="itemCab">
+          <a href={`/m/${i.id}`}>{i.foto ? <img src={i.foto} alt="" /> : <div className="sinFoto" />}</a>
+          <div style={{ minWidth: 0 }}><a href={`/m/${i.id}`} style={{ fontWeight: 800, fontSize: 15, lineHeight: 1.3, display: "block" }}>{i.nombre}</a><p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{i.codigo ? `${i.codigo} · ` : ""}{L.unit != null ? `${fmt(L.unit)} / ${t("unidad")}` : ""}{L.modo === "aerea" ? ` · ${t("viaAerea")}` : ""}</p></div>
+          <button className="ico" style={{ width: 34, height: 34, border: "none" }} onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}><Ico d={TACHO} size={17} /></button>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <button className="ico" style={{ width: 32, height: 32, border: "none", marginBottom: 14 }} onClick={() => setCarrito((c) => c.filter((x) => x.id !== i.id))} aria-label={t("quitar")}><Ico d={["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"]} size={16} /></button>
-          <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>{ses && L.total != null ? fmt(L.total) : "—"}</p><p style={{ margin: 0, fontFamily: MONO, fontSize: 10, color: "var(--gris)", letterSpacing: "0.08em" }}>TOTAL</p>
+        <div className="itemPie">
+          <div className="stepper" style={{ height: 40 }}><button style={{ height: 40, width: 40 }} onClick={() => setQty(i.id, L.q - 1)} disabled={L.q <= L.minQ}>−</button><input style={{ height: 40, width: 52 }} type="number" min={L.minQ} value={L.q} onChange={(e) => setQty(i.id, Number(e.target.value))} /><button style={{ height: 40, width: 40 }} onClick={() => setQty(i.id, L.q + 1)}>+</button></div>
+          <div style={{ textAlign: "right" }}><p style={{ margin: 0, fontWeight: 800, fontSize: 17, letterSpacing: "-0.01em" }}>{ses && L.total != null ? fmt(L.total) : "—"}</p><p style={{ margin: 0, fontFamily: MONO, fontSize: 10, color: "var(--gris)", letterSpacing: "0.1em" }}>TOTAL</p></div>
         </div>
       </div>)}
     </div>
     {carrito.length > 0 && <div className="pie">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}><span style={{ fontWeight: 800, fontSize: 15 }}>{t("totalPedido")}</span><b style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{ses ? fmt(total) : "—"}</b></div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}><span style={{ fontWeight: 800, fontSize: 16 }}>{t("totalPedido")}</span><b style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{ses ? fmt(total) : "—"}</b></div>
       {ses && <div className="pagoBox">
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}><span style={{ fontWeight: 800 }}>{t("ahoraAlConfirmar")}</span><b style={{ fontSize: 20 }}>{fmt(anticipo)}</b></div>
-        <p style={{ margin: "2px 0 8px", fontSize: 12.5, color: "var(--gris)" }}>{t("anticipo")} · {total > 0 ? Math.round((anticipo / total) * 100) : 0}% {t("total").toLowerCase()}</p>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}><span style={{ color: "var(--gris)" }}>{t("alLlegar")} · {total > 0 ? Math.round((saldo / total) * 100) : 0}%</span><b>{fmt(saldo)}</b></div>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span className="cirI"><Ico d={["M3 7h18v12H3z", "M3 11h18", "M7 15h3"]} size={15} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}><span style={{ fontWeight: 800, fontSize: 15.5 }}>{t("ahoraAlConfirmar")}</span><b style={{ fontSize: 21, letterSpacing: "-0.02em" }}>{fmt(anticipo)}</b></div>
+            <p style={{ margin: "2px 0 10px", fontSize: 13, color: "var(--gris)" }}>{pct(anticipo)}% {t("total").toLowerCase()} · {t("anticipo").toLowerCase()}</p>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", fontSize: 13 }}><span style={{ color: "var(--gris)", display: "inline-flex", alignItems: "center", gap: 6 }}><Ico d={["M3 5h18v16H3z", "M3 10h18", "M8 3v4", "M16 3v4"]} size={14} />{t("alLlegar")} · {llega} · {pct(saldo)}%</span><b style={{ fontSize: 15 }}>{fmt(saldo)}</b></div>
+          </div>
+        </div>
       </div>}
       {!ses && <p style={{ margin: "10px 0", fontSize: 13, color: "var(--gris)" }}>{t("verPrecio")}</p>}
-      <a className="btn y" href={ses ? "/carrito" : "/cuenta?volver=/carrito"} style={{ width: "100%", marginTop: 6 }}>{ses ? t("procederPago") : t("ingresar")}</a>
-      <button className="btn s" onClick={onCerrar} style={{ width: "100%", marginTop: 8, border: "none", background: "transparent", color: "var(--gris)" }}>{t("seguirComprando")}</button>
+      <a className="btn y" href={ses ? "/carrito" : "/cuenta?volver=/carrito"} style={{ width: "100%", height: 52 }}>{ses ? t("procederPago") : t("ingresar")}</a>
     </div>}
   </aside></>;
 }

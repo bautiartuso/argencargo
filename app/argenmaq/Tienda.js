@@ -121,7 +121,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
   const enCarrito = carrito.find((i) => i.id === m.id);
   const nombreCat = (slug) => cats.find((c) => c.slug === slug)?.nombre || "";
   const codigo = codigoMaq(m);
-  const agregar = () => setCarrito((c) => [...c.filter((i) => i.id !== m.id), { id: m.id, nombre: m.nombre, foto: fotos[0] || null, qty: q, modo: esc?.maritima?.length ? "maritima" : "aerea" }]);
+  const agregar = () => setCarrito((c) => [...c.filter((i) => i.id !== m.id), { id: m.id, nombre: m.nombre, codigo, foto: fotos[0] || null, qty: q, modo: esc?.maritima?.length ? "maritima" : "aerea", dias_produccion: Number(m.dias_produccion || 0) }]);
   const compartir = async () => { const url = typeof window !== "undefined" ? window.location.href : ""; try { if (navigator.share) { await navigator.share({ title: m.nombre, url }); return; } } catch { return; } try { await navigator.clipboard.writeText(url); setAviso(t("copiado")); setTimeout(() => setAviso(""), 1800); } catch {} };
   const toggleFav = () => { try { const l = JSON.parse(localStorage.getItem("am_fav") || "[]"); const nl = l.includes(m.id) ? l.filter((x) => x !== m.id) : [...l, m.id]; localStorage.setItem("am_fav", JSON.stringify(nl)); setFav(nl.includes(m.id)); } catch {} };
   const med = m.medidas || {};
