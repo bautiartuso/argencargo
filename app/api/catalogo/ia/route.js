@@ -33,7 +33,13 @@ const SCHEMA = {
     nombre:       { type: "string", description: "Nombre comercial completo en castellano: tipo de máquina + característica que la define + código de modelo al final, separado por ' · '. Ej: 'Escuadradora de 3.200 mm con incisor · MJ6132TD'" },
     categoria:    { type: "string", description: "slug exacto de una categoría de la lista" },
     subcategoria: { type: "string", description: "slug exacto de una subcategoría de esa categoría" },
-    descripcion:  { type: "string", description: "Descripción comercial en castellano rioplatense, 3 a 5 párrafos cortos separados por línea en blanco. Tiene que incluir la capacidad o producción y qué viene incluido cuando figuren en el material. Sin inventar datos." },
+    descripcion:  { type: "string", description: "Descripción comercial en castellano rioplatense, 3 a 5 párrafos cortos separados por línea en blanco. Tiene que incluir la capacidad o producción y qué viene incluido cuando figuren en el material. Sin inventar datos. NO repitas las medidas ni el peso de la máquina: van en su propio campo de la ficha." },
+    // Datos que se leen del material y llenan campos de la ficha. Si no están, se omiten: nunca inventar.
+    medidas:      { type: "object", additionalProperties: false, description: "Medidas de la máquina armada, si figuran en el material. Convertí siempre a centímetros y kilos (mm ÷ 10, m × 100, lb × 0,4536). No es el packing ni la caja.", properties: { largo_cm: { type: "number" }, ancho_cm: { type: "number" }, alto_cm: { type: "number" }, peso_kg: { type: "number" } } },
+    voltaje:      { type: "string", description: "Tensión de trabajo tal como figura, ej '220 V monofásico' o '110-240 V'. Vacío si no está." },
+    dias_produccion: { type: "integer", description: "Días de producción o plazo de entrega de fábrica, si figura. 0 si no está." },
+    garantia_meses:  { type: "integer", description: "Garantía de fábrica en meses, si figura. 0 si no está." },
+    anio:         { type: "integer", description: "Año de fabricación, solo para máquinas usadas y si figura. 0 si no está." },
   },
 };
 
@@ -42,6 +48,8 @@ const SYSTEM = `Sos el redactor del catálogo de maquinaria de un importador arg
 Reglas:
 - El nombre tiene que decir qué máquina es y qué la distingue (tamaño, capacidad, tecnología), y terminar con el código de modelo exactamente como lo pasó el proveedor, separado por " · ". Nunca un nombre genérico como "Escuadradora" o "Máquina de helados".
 - Categoría y subcategoría: elegí solo entre los slugs de la lista que te paso. Si nada encaja, usá "otros" / "otros-otros".
+- Medidas: si el material dice el tamaño o el peso de la máquina, devolvelos en "medidas" en centímetros y kilos (convertí desde mm, m o libras). No confundas la máquina con el embalaje: si el material habla de "packing size" o "carton", no lo uses.
+- voltaje, dias_produccion, garantia_meses y anio: completalos solo si el material los dice; si no, string vacío o 0.
 - La descripción es para un comprador que quiere la máquina para su negocio, no para un técnico: qué hace, para quién es, qué la hace conveniente, y los datos técnicos importantes. Dedicá un párrafo a la capacidad o producción (piezas por hora, litros, tamaño máximo de trabajo, potencia) y otro a qué viene incluido (accesorios, repuestos, manual), siempre que figuren en el material. Todas las máquinas se entregan en 220 V, no hace falta aclararlo. No inventes números ni prestaciones que no estén en el material. No menciones al proveedor, a China ni precios.`;
 
 export async function POST(req) {
@@ -60,6 +68,10 @@ export async function POST(req) {
     const cat = cats.find((c) => c.slug === out.categoria);
     if (!cat) { out.categoria = "otros"; out.subcategoria = "otros-otros"; }
     else if (!(cat.subs || []).some((s) => s.slug === out.subcategoria)) out.subcategoria = (cat.subs || [])[0]?.slug || "otros-otros";
+    // Los datos técnicos vacíos no viajan: el panel solo completa lo que la IA realmente leyó.
+    if (out.medidas) { const m = {}; for (const k of ["largo_cm", "ancho_cm", "alto_cm", "peso_kg"]) if (Number(out.medidas[k]) > 0) m[k] = Number(out.medidas[k]); out.medidas = Object.keys(m).length ? m : null; }
+    for (const k of ["dias_produccion", "garantia_meses", "anio"]) if (!(Number(out[k]) > 0)) delete out[k];
+    if (!String(out.voltaje || "").trim()) delete out.voltaje;
     return Response.json(out);
   } catch (e) {
     console.error("[catalogo/ia]", e);

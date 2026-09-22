@@ -174,7 +174,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     const s=(v)=>v==null?"":String(v);
     const pk=Array.isArray(row.packing)&&row.packing.length?row.packing.map(b=>({cantidad:s(b.cantidad||1),largo_cm:s(b.largo_cm),ancho_cm:s(b.ancho_cm),alto_cm:s(b.alto_cm),peso_kg:s(b.peso_kg)})):[BULTO()];
     const md=row.medidas||{};
-    setF({...VACIO,medidas:{largo_cm:s(md.largo_cm),ancho_cm:s(md.ancho_cm),alto_cm:s(md.alto_cm),peso_kg:s(md.peso_kg)},nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:s(row.specs_raw),descripcion_raw:s(row.descripcion_raw),nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
+    setF({...VACIO,medidas:{largo_cm:s(md.largo_cm),ancho_cm:s(md.ancho_cm),alto_cm:s(md.alto_cm),peso_kg:s(md.peso_kg)},nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:[s(row.specs_raw),s(row.descripcion_raw)].filter(t=>t.trim()).join("\n\n"),descripcion_raw:"",nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
   }catch(e){toast(e.message,"error");}};
   useEffect(()=>{cargarP();},[id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -203,7 +203,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
 
   const cuerpo=(estado)=>({
     estado:estado||p.estado,
-    nombre_raw:txtONull(f.nombre_raw),modelo:txtONull(f.modelo),specs_raw:txtONull(f.specs_raw),descripcion_raw:txtONull(f.descripcion_raw),
+    nombre_raw:txtONull(f.nombre_raw),modelo:txtONull(f.modelo),specs_raw:txtONull(f.specs_raw),descripcion_raw:null,
     nombre:txtONull(f.nombre),descripcion:txtONull(f.descripcion),categoria:txtONull(f.categoria),subcategoria:txtONull(f.subcategoria),
     condicion:f.condicion,anio:numONull(f.anio),horas_uso:numONull(f.horas_uso),garantia_meses:numONull(f.garantia_meses),fotos:f.fotos,video_url:txtONull(f.video_url),
     exw_usd:numONull(f.exw_usd),moq:numONull(f.moq)||1,dias_produccion:numONull(f.dias_produccion),
@@ -223,10 +223,18 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     await dq("cat_productos",{method:"DELETE",filters:`?id=eq.${id}`,prefer:"return=minimal"});await recargar();toast("Eliminada");onCerrar();
   }catch(e){toast(e.message,"error");}};
 
-  const completarIA=async()=>{if(!f.nombre_raw.trim()&&!f.specs_raw.trim()&&!f.descripcion_raw.trim()){toast("Cargá primero el nombre, las especificaciones o la descripción","error");return;}setIa(true);try{
+  const completarIA=async()=>{if(!f.nombre_raw.trim()&&!f.specs_raw.trim()){toast("Cargá primero el nombre o las especificaciones","error");return;}setIa(true);try{
     const r=await fetch("/api/catalogo/ia",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({nombre_raw:f.nombre_raw,modelo:f.modelo,specs_raw:f.specs_raw,descripcion_raw:f.descripcion_raw,condicion:f.condicion,categorias:arbol.map(c=>({slug:c.slug,nombre:c.nombre,subs:c.subs.map(s=>({slug:s.slug,nombre:s.nombre}))}))})});
     const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Falló la IA");
-    setF(x=>({...x,nombre:d.nombre||x.nombre,descripcion:d.descripcion||x.descripcion,categoria:d.categoria||x.categoria,subcategoria:d.subcategoria||x.subcategoria}));setDirty(true);toast("Listo");
+    setF(x=>{
+      // Lo que la IA leyó del material completa los campos vacíos; lo cargado a mano no se pisa.
+      const md={...(x.medidas||MEDIDAS())};
+      if(d.medidas)for(const k of ["largo_cm","ancho_cm","alto_cm","peso_kg"])if(d.medidas[k]&&String(md[k]??"").trim()==="")md[k]=String(d.medidas[k]);
+      const y={...x,nombre:d.nombre||x.nombre,descripcion:d.descripcion||x.descripcion,categoria:d.categoria||x.categoria,subcategoria:d.subcategoria||x.subcategoria,medidas:md};
+      for(const [k,v] of [["voltaje",d.voltaje],["dias_produccion",d.dias_produccion],["garantia_meses",d.garantia_meses],["anio",d.anio]])
+        if(v&&String(x[k]??"").trim()==="")y[k]=String(v);
+      return y;
+    });setDirty(true);toast(d.medidas?"Listo · también cargué medidas y datos técnicos":"Listo");
   }catch(e){toast(e.message,"error");}setIa(false);};
 
   const aplicarNcm=(d)=>{setF(x=>({...x,ncm_code:d.ncm_code||x.ncm_code,ncm_descripcion:d.ncm_description||d.description||x.ncm_descripcion,die:d.import_duty_rate!=null?String(d.import_duty_rate):d.die!=null?String(d.die):x.die,te:d.statistics_rate!=null?String(d.statistics_rate):d.te!=null?String(Math.min(Number(d.te),3)):x.te,iva:d.iva_rate!=null?String(d.iva_rate):d.iva!=null?String(d.iva):x.iva,intervencion:d.intervention!==undefined?d.intervention:x.intervencion}));setDirty(true);};
@@ -282,8 +290,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
       <div className="grid3" style={GRID}>
         <Campo label="Nombre de la máquina" ob span={2}><Inp value={f.nombre_raw} onChange={e=>set("nombre_raw",e.target.value)}/></Campo>
         <Campo label="Modelo / código" ob><Inp value={f.modelo} onChange={e=>set("modelo",e.target.value)}/></Campo>
-        <Campo label="Especificaciones" span={3}><TA value={f.specs_raw} onChange={e=>set("specs_raw",e.target.value)} style={{minHeight:120}}/></Campo>
-        <Campo label="Descripción de la máquina" ob span={3}><TA value={f.descripcion_raw} onChange={e=>set("descripcion_raw",e.target.value)}/></Campo>
+        <Campo label="Especificaciones y descripción" ob span={3} hint="Pegá lo que te pasó el proveedor: ficha técnica, medidas, capacidad, lo que sea. La IA lo ordena y completa los campos que pueda."><TA value={f.specs_raw} onChange={e=>set("specs_raw",e.target.value)} style={{minHeight:200}}/></Campo>
       </div>
       <div style={{marginTop:16}}><Btn kind="lima" onClick={completarIA} disabled={ia}>{ia?"Redactando…":"✦ Completar con IA"}</Btn></div>
       <div className="grid3" style={{...GRID,marginTop:22,paddingTop:22,borderTop:`1px solid ${BORDE}`}}>
