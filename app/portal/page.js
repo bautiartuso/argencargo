@@ -258,7 +258,7 @@ function DepositoView({pkgs,token,client,onCreated}){
   const crear=async()=>{if(!sel.length||creating)return;
     if(!await confirmDialog(`¿Creamos una importación con ${sel.length===1?t("dep.onePackage"):`estos ${sel.length} bultos`}? El paso siguiente es cargar la mercadería.`,{confirmText:t("dep.createImport")}))return;
     setCreating(true);
-    try{const r=await fetch("/api/portal/crear-importacion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({package_ids:sel,client_id:client?.id})});const d=await r.json().catch(()=>null);
+    try{const r=await fetch("/api/portal/crear-importacion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({package_ids:sel,client_id:client?.id})});const d=await r.json().catch(()=>null);
       if(!r.ok||!d?.op){toast(d?.error==="bultos_invalidos"?t("dep.errGone"):t("dep.errCreate"),"error");setCreating(false);return;}
       toast(`Importación ${d.op.operation_code} creada`,"success");setSel([]);onCreated?.(d.op);
     }catch(e){toast(t("dep.errCreate"),"error");}
@@ -647,7 +647,7 @@ function BateriasAviso({op,token,onSaved}){
   const [val,setVal]=useState(op.has_battery==null?null:!!op.has_battery);
   const [saving,setSaving]=useState(false);const [okAt,setOkAt]=useState(false);
   const guardar=async(v)=>{if(saving||v===val)return;setVal(v);setSaving(true);setOkAt(false);
-    try{const r=await fetch("/api/portal/baterias",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,has_battery:v})});
+    try{const r=await fetch("/api/portal/baterias",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({op_id:op.id,has_battery:v})});
       const d=await r.json().catch(()=>null);
       if(!r.ok){toast(t("merc.saveError"),"error");setVal(op.has_battery==null?null:!!op.has_battery);}
       else{setOkAt(true);toast(t("merc.battSavedOk"),"success");onSaved?.();}
@@ -701,7 +701,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const persist=async(confirm)=>{const body=payload();const ser=JSON.stringify(body);
     if(!confirm&&ser===lastSavedRef.current)return true;
     setSaving(true);
-    try{const r=await fetch("/api/portal/guardar-mercaderia",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({...body,confirm:!!confirm})});
+    try{const r=await fetch("/api/portal/guardar-mercaderia",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({...body,confirm:!!confirm})});
       const d=await r.json().catch(()=>null);
       if(!r.ok){toast(d?.error==="ya_en_vuelo"?t("merc.frozenFlight"):d?.error==="mercaderia_confirmada"?t("merc.alreadyConfirmed"):t("merc.saveError"),"error");setSaving(false);return false;}
       lastSavedRef.current=ser;dirtyRef.current=false;setSavedAt(new Date());
@@ -976,7 +976,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
       const canAsig=!isGI&&op.channel==="aereo_blanco"&&items.length>1&&pkgs.length>0;
       const toggleAsig=async(it,pkId)=>{const cur=Array.isArray(it.package_ids)?it.package_ids:[];const next=cur.includes(pkId)?cur.filter(x=>x!==pkId):[...cur,pkId];
         setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:next.length?next:null}:x));
-        try{const r=await fetch("/api/portal/asignar-bulto",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({item_id:it.id,package_ids:next,client_id:client?.id})});if(!r.ok)throw new Error("x");}
+        try{const r=await fetch("/api/portal/asignar-bulto",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({item_id:it.id,package_ids:next,client_id:client?.id})});if(!r.ok)throw new Error("x");}
         catch(e){toast(t("op.assignError"),"error");setItems(p=>p.map(x=>x.id===it.id?{...x,package_ids:cur.length?cur:null}:x));}};
       return <>
       <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><div style={{display:"flex",gap:6,padding:5,borderRadius:13,background:"rgba(0,0,0,0.32)",border:"1px solid rgba(255,255,255,0.1)",flexWrap:"wrap",justifyContent:"center"}}>
@@ -1187,7 +1187,7 @@ function ProfilePage({client,token}){
     if(pwd1!==pwd2){setPwdErr(t("auth.reset.passwordsDontMatch"));return;}
     setPwdSaving(true);
     try{
-      const r=await fetch(`${SB_URL}/auth/v1/user`,{method:"PUT",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({password:pwd1})}).then(x=>x.json());
+      const r=await fetch(`${SB_URL}/auth/v1/user`,{method:"PUT",headers:{apikey:SB_KEY,Authorization:`Bearer ${await ensureFreshToken(token)}`,"Content-Type":"application/json"},body:JSON.stringify({password:pwd1})}).then(x=>x.json());
       if(r?.error||r?.msg||r?.error_description){setPwdErr(r.msg||r.error_description||t("profile.pwdError"));}
       else{setPwdMsg(t("profile.changed"));setPwd1("");setPwd2("");setTimeout(()=>setPwdMsg(""),3000);}
     }catch(e){setPwdErr(t("common.connError"));}
@@ -2955,7 +2955,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     const cId=client?.id;
     if(!cId){setLo(false);return;}
     // Cargas marítimas en camino (en contenedor, todavía sin operación) — vía endpoint con whitelist.
-    fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>setMCargo(Array.isArray(d?.cargo)?d.cargo:[])).catch(()=>setMCargo([]));
+    ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.json()).then(d=>setMCargo(Array.isArray(d?.cargo)?d.cargo:[])).catch(()=>setMCargo([]));
     dq("operation_packages",{token,filters:`?client_id=eq.${cId}&operation_id=is.null&select=*&order=created_at.asc`}).then(d=>setDepPkgs(Array.isArray(d)?d:[])).catch(()=>setDepPkgs([]));
     const [r,it,pm,cp,tv]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
@@ -3101,7 +3101,7 @@ function TutorialOverlay({client,token,onClose,onComplete}){
     setClosing(true);
     try{
       if(client?.id&&token){
-        await fetch(`${SB_URL}/rest/v1/clients?id=eq.${client.id}`,{method:"PATCH",headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${token}`,Prefer:"return=minimal"},body:JSON.stringify({tutorial_completed:true})});
+        await fetch(`${SB_URL}/rest/v1/clients?id=eq.${client.id}`,{method:"PATCH",headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${await ensureFreshToken(token)}`,Prefer:"return=minimal"},body:JSON.stringify({tutorial_completed:true})});
       }
     }catch(e){console.error("tutorial save",e);}
     onComplete?.();
@@ -3189,7 +3189,7 @@ export default function Page(){
         window.history.replaceState({},"",window.location.pathname);
       }
     }
-    const s=loadSession();if(!s?.token||!s?.user){setRestoring(false);return;}try{const uid=s.user.id;const p=await dq("profiles",{token:s.token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof){clearSession();setRestoring(false);return;}if(prof.role==="cliente"){const c=await dq("clients",{token:s.token,filters:`?auth_user_id=eq.${uid}&select=*`});setClient(Array.isArray(c)?c[0]:null);}setSession(s);setProfile(prof);}catch{clearSession();}setRestoring(false);
+    const s=loadSession();if(!s?.token||!s?.user){setRestoring(false);return;}try{const uid=s.user.id;const p=await dq("profiles",{token:s.token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof){clearSession();setRestoring(false);return;}if(prof.role==="cliente"){const c=await dq("clients",{token:s.token,filters:`?auth_user_id=eq.${uid}&select=*`});setClient(Array.isArray(c)?c[0]:null);}setSession(loadSession()||s);setProfile(prof);}catch{clearSession();}setRestoring(false);
   };r();},[]);
   const ch=f=>v=>{setForm(p=>({...p,[f]:v}));setErrors(p=>({...p,[f]:undefined}));setGErr("");};
   const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email=t("auth.emailInvalid");if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password=t("profile.min6");if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";}if(s===2&&(form.tax_condition==="responsable_inscripto"||form.tax_condition==="monotributista")){if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}if(s===2&&form.tax_condition!=="responsable_inscripto"&&form.tax_condition!=="monotributista"){if(!form.dni.trim())e.dni="Requerido";else if(form.dni.replace(/\D/g,"").length<7)e.dni="DNI inválido";}setErrors(e);return !Object.keys(e).length;};
