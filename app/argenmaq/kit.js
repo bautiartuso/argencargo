@@ -170,17 +170,16 @@ html,body{overflow-x:clip!important}
 .amq .luzImg img{max-width:100%;max-height:72vh;object-fit:contain;display:block}
 .amq .fichaGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:34px;align-items:start}
 .amq .cajaPrecio{border:1px solid var(--borde);border-radius:22px;padding:20px 22px;background:var(--card)}
-.amq .tramos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 12px}
+.amq .tramos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 0}
+.amq .cabPrecio{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.amq .stepper.chico{height:40px}.amq .stepper.chico button{width:38px;height:40px;font-size:18px}.amq .stepper.chico input{width:44px;height:40px;font-size:15px}
 .amq .tramo{text-align:left;padding:12px 12px;border-radius:14px;border:1.5px solid var(--borde);background:transparent;color:var(--ink);cursor:pointer;font-family:inherit}
 .amq .tramo.on{border-color:var(--y);background:var(--ysuave)}
 .amq .tramo small{display:block;font-size:11.5px;color:var(--gris);font-weight:600;margin-top:2px}
 .amq .tramo b{display:block;font-size:19px;letter-spacing:-0.02em;margin-top:3px}
 .amq .tramo .desc{display:inline-block;font-family:${MONO};font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--y);color:#15171A;margin-top:6px}
-.amq .qtyFila{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding-top:14px;border-top:1px solid var(--borde)}
-.amq .qtyFila .unitBox{text-align:right;min-width:0}
-.amq .qtyFila .unitNum{margin:0;font-size:clamp(20px,2.4vw,26px);font-weight:800;letter-spacing:-0.02em;line-height:1;white-space:nowrap}
-.amq .dosPagos{margin-top:14px;padding:14px 16px 16px;border-radius:18px;background:var(--suave)}
-.amq .dosPagos .dosCab{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.amq .dosPagos{margin-top:10px;padding:14px 16px 16px;border-radius:18px;background:var(--suave)}
+.amq .dosPagos .dosCab{display:flex;justify-content:space-between;align-items:center;gap:6px 12px;flex-wrap:wrap}
 .amq .dosPagos .dosCab span{font-family:${MONO};font-size:11px;letter-spacing:0.06em;color:var(--gris);font-weight:700;white-space:nowrap}
 .amq .dosPagos .dosBarra{margin:10px 0 10px;background:var(--card)}
 .amq .dosPagos .dosVeces{margin-top:0}
@@ -192,8 +191,6 @@ html,body{overflow-x:clip!important}
 .amq .dosPagos .dosVeces p.nota{margin:8px 0 0;font-size:12px;line-height:1.4;color:var(--gris)}
 .amq .dosPagos .paso{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--bg);font-family:${MONO};font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
 .amq .dosPagos .dosVeces div.hoy .paso{background:var(--y);color:#15171A}
-.amq .totalFila{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--borde)}
-.amq .totalFila>b{font-size:clamp(22px,2.6vw,28px);letter-spacing:-0.03em;white-space:nowrap}
 @media(max-width:480px){.amq .dosPagos .dosVeces{grid-template-columns:1fr}}
 .amq .granCard{border:1px solid var(--borde);border-radius:24px;padding:24px 26px;background:var(--card)}
 .amq .detCard h3 .cir{width:34px;height:34px;border-radius:50%;background:var(--y);color:#15171A;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
