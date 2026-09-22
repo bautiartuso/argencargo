@@ -342,7 +342,6 @@ function PanelOrden({ onCerrar }) {
       </div>}
       {!ses && <p style={{ margin: "10px 0", fontSize: 13, color: "var(--gris)" }}>{t("verPrecio")}</p>}
       <a className="btn k" href={ses ? "/carrito" : "/cuenta?volver=/carrito"} style={{ width: "100%", height: 54, fontSize: 15 }}>{ses ? t("procederPago") : t("ingresar")}</a>
-      <p style={{ margin: "12px 0 0", textAlign: "center", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--gris)" }}>{t("precioPuesto")}</p>
     </div>}
   </aside></>;
 }
