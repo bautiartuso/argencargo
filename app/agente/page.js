@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { ToastStack, toast, SkeletonTable, EmptyState } from "../../lib/ui";
+import { ToastStack, toast, SkeletonTable, EmptyState, confirmDialog, DialogHost } from "../../lib/ui";
 import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
@@ -76,6 +76,26 @@ const clearSession=()=>{try{localStorage.removeItem("ac_agent_s");}catch(e){}};
 // i18n
 const I18N={
   es:{
+    sec_preparing:"En preparación",
+    sec_ready:"Listo para enviar",
+    sec_transit:"En tránsito",
+    sec_customs:"En aduana · Argentina",
+    flight_status_transito:"En tránsito",
+    flight_status_aduana:"En aduana",
+    theme_light:"Modo claro",
+    theme_dark:"Modo oscuro",
+    supervision_msg:"Vista de supervisión: estás viendo el depósito de todos los agentes, no solo lo que registraste vos.",
+    tutorial:"Tutorial",
+    rejected_title:"Solicitud rechazada",
+    received_on:"Recibido el",
+    dispatched_on:"Despachado el",
+    no_history:"Todavía no hay vuelos recibidos",
+    col_operation:"Operación",
+    col_weights:"Bruto · Vol. · Fact.",
+    deposit_hint:"Bultos en tu depósito que todavía no salieron en un vuelo",
+    history_hint:"Vuelos liberados en aduana y recibidos en Argentina",
+    flights_hint:"Todo lo que está en preparación, listo para enviar, en tránsito o en aduana",
+    sure_delete:"Eliminar",
     login_title:"Portal Agente",
     login_subtitle:"Iniciá sesión para registrar paquetes",
     email:"Email",
@@ -147,7 +167,7 @@ const I18N={
     flight:"Vuelo",
     flight_status_preparando:"Preparando",
     flight_status_listo:"Listo para enviar",
-    flight_status_despachado:"Despachado",
+    flight_status_despachado:"En tránsito",
     flight_status_recibido:"Recibido",
     no_flights:"Aún no tenés vuelos asignados",
     invoice:"Factura de exportación",
@@ -348,6 +368,26 @@ const I18N={
     processing:"Procesando…",
   },
   zh:{
+    sec_preparing:"准备中",
+    sec_ready:"可以发送",
+    sec_transit:"运输中",
+    sec_customs:"阿根廷清关中",
+    flight_status_transito:"运输中",
+    flight_status_aduana:"清关中",
+    theme_light:"浅色模式",
+    theme_dark:"深色模式",
+    supervision_msg:"监督视图：您正在查看所有代理的仓库，而不仅仅是您登记的包裹。",
+    tutorial:"教程",
+    rejected_title:"申请被拒绝",
+    received_on:"接收于",
+    dispatched_on:"发出于",
+    no_history:"还没有已接收的航班",
+    col_operation:"操作",
+    col_weights:"毛重 · 体积重 · 计费重",
+    deposit_hint:"仓库中尚未装入航班的包裹",
+    history_hint:"已在海关放行并在阿根廷接收的航班",
+    flights_hint:"所有准备中、可发送、运输中或清关中的航班",
+    sure_delete:"删除",
     login_title:"代理门户",
     login_subtitle:"登录以注册包裹",
     email:"电子邮件",
@@ -419,7 +459,7 @@ const I18N={
     flight:"航班",
     flight_status_preparando:"准备中",
     flight_status_listo:"可以发送",
-    flight_status_despachado:"已发送",
+    flight_status_despachado:"运输中",
     flight_status_recibido:"已接收",
     no_flights:"您还没有指定的航班",
     invoice:"出口发票",
@@ -621,34 +661,83 @@ const I18N={
   }
 };
 
-function Inp({label,type="text",value,onChange,placeholder,req}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/></div>;}
+function Inp({label,type="text",value,onChange,placeholder,req}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"var(--red)"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(var(--ink),0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(var(--ink),0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(var(--ink),0.04)";}}/></div>;}
 
 function Btn({children,onClick,disabled,variant="primary",type="button"}){
   const [h,setH]=useState(false);
   const isGold=variant==="primary"&&!disabled;
   const isSec=variant==="secondary";
-  const bg=disabled?"rgba(255,255,255,0.06)":(isSec?(h?"rgba(255,255,255,0.08)":"rgba(255,255,255,0.04)"):(isGold?GOLD_GRADIENT:`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`));
-  return <button type={type} onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:isSec?`1px solid ${h?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.14)"}`:(isGold?`1px solid ${GOLD_DEEP}`:"none"),borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:bg,color:disabled?"rgba(255,255,255,0.4)":(isSec?"rgba(255,255,255,0.85)":(isGold?"#0A1628":"#fff")),opacity:disabled?0.6:1,letterSpacing:"0.02em",transition:"all 180ms cubic-bezier(0.4,0,0.2,1)",boxShadow:disabled?"none":(isGold?(h?GOLD_GLOW_STRONG:GOLD_GLOW):"none"),transform:h&&!disabled?"translateY(-1px)":"none",backgroundSize:isGold?"200% 100%":undefined,backgroundPosition:isGold?(h?"100% 0":"0 0"):undefined}}>{children}</button>;
+  const bg=disabled?"rgba(var(--ink),0.06)":(isSec?(h?"rgba(var(--ink),0.08)":"rgba(var(--ink),0.04)"):(isGold?GOLD_GRADIENT:`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`));
+  return <button type={type} onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:isSec?`1px solid ${h?"rgba(184,149,106,0.4)":"rgba(var(--ink),0.14)"}`:(isGold?`1px solid ${GOLD_DEEP}`:"none"),borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:bg,color:disabled?"rgba(var(--ink),0.4)":(isSec?"rgba(var(--ink),0.85)":(isGold?"#0A1628":"#fff")),opacity:disabled?0.6:1,letterSpacing:"0.02em",transition:"all 180ms cubic-bezier(0.4,0,0.2,1)",boxShadow:disabled?"none":(isGold?(h?GOLD_GLOW_STRONG:GOLD_GLOW):"none"),transform:h&&!disabled?"translateY(-1px)":"none",backgroundSize:isGold?"200% 100%":undefined,backgroundPosition:isGold?(h?"100% 0":"0 0"):undefined}}>{children}</button>;
 }
-function Card({title,children,accent}){return <div style={{background:"rgba(255,255,255,0.04)",backdropFilter:"blur(8px)",borderRadius:14,border:`1px solid ${accent?"rgba(184,149,106,0.35)":"rgba(255,255,255,0.08)"}`,padding:"1.25rem 1.5rem",marginBottom:14,boxShadow:accent?GOLD_GLOW:"0 2px 8px rgba(0,0,0,0.12)",position:"relative",overflow:"hidden"}}>{accent&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}<h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.95)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{title}</h3>{children}</div>;}
+function Card({title,children,accent}){return <div style={{background:"rgba(var(--ink),0.04)",backdropFilter:"blur(8px)",borderRadius:14,border:`1px solid ${accent?"rgba(184,149,106,0.35)":"rgba(var(--ink),0.08)"}`,padding:"1.25rem 1.5rem",marginBottom:14,boxShadow:accent?GOLD_GLOW:"0 2px 8px rgba(0,0,0,0.12)",position:"relative",overflow:"hidden"}}>{accent&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}<h3 style={{fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.95)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{title}</h3>{children}</div>;}
 
 const B_PRIMARY="#1B4F8A",B_ACCENT="#4A90D9";
 
-function LangToggle({lang,setLang}){return <div style={{display:"inline-flex",gap:4,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:3,border:"1px solid rgba(255,255,255,0.08)"}}>{["es","zh"].map(l=><button key={l} onClick={()=>setLang(l)} style={{padding:"5px 12px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:lang===l?GOLD_GRADIENT:"transparent",color:lang===l?"#0A1628":"rgba(255,255,255,0.55)",transition:"all 180ms",boxShadow:lang===l?GOLD_GLOW:"none"}}>{l==="es"?"🇦🇷 ES":"🇨🇳 中文"}</button>)}</div>;}
+function LangToggle({lang,setLang}){return <div style={{display:"inline-flex",gap:4,background:"rgba(var(--ink),0.04)",borderRadius:8,padding:3,border:"1px solid rgba(var(--ink),0.08)"}}>{["es","zh"].map(l=><button key={l} onClick={()=>setLang(l)} style={{padding:"5px 12px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:lang===l?GOLD_GRADIENT:"transparent",color:lang===l?"#0A1628":"rgba(var(--ink),0.55)",transition:"all 180ms",boxShadow:lang===l?GOLD_GLOW:"none"}}>{l==="es"?"🇦🇷 ES":"🇨🇳 中文"}</button>)}</div>;}
+
+
+// Tema claro / oscuro del panel del agente. Todo el panel pinta con "tinta con alfa"
+// (rgba(var(--ink),x)): en oscuro la tinta es blanca sobre navy, en claro es navy sobre blanco.
+const THEME_CSS=`
+.ac-ag{--ink:255,255,255;--tx:#fff;--panel:#142038;--isla:rgba(10,22,40,0.72);--amber:#fbbf24;--green:#22c55e;--blue:#60a5fa;--red:#ff6b6b;
+  --bg:radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.10), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(96,165,250,0.06), transparent 50%), #0A1628;
+  color:var(--tx);min-height:100vh;background:var(--bg)}
+.ac-ag[data-theme="light"]{--ink:10,22,40;--tx:#0A1628;--panel:#ffffff;--isla:rgba(255,255,255,0.86);--amber:#b45309;--green:#15803d;--blue:#1d4ed8;--red:#dc2626;
+  --bg:radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.14), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(29,78,216,0.05), transparent 50%), #F3F5F9}
+.ac-ag[data-theme="light"] .ac-hover-card:hover{box-shadow:0 12px 32px rgba(10,22,40,0.10),0 0 0 1px rgba(184,149,106,0.3)}
+.ac-ag[data-theme="light"] .ac-card{background:#fff!important;box-shadow:0 1px 2px rgba(10,22,40,0.04),0 8px 24px -12px rgba(10,22,40,0.12)}
+.ac-ag[data-theme="light"] input,.ac-ag[data-theme="light"] textarea,.ac-ag[data-theme="light"] select{color-scheme:light}
+.ac-ag ::selection{background:rgba(184,149,106,0.35)}
+.ac-isla{position:sticky;top:10px;z-index:30;margin:12px auto 0;max-width:1200px;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 18px;border-radius:22px;background:var(--isla);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid rgba(var(--ink),0.1);box-shadow:0 12px 40px -10px rgba(0,0,0,0.35)}
+.ac-isla-tabs{display:flex;gap:2px;flex:1;justify-content:center;min-width:0;overflow-x:auto;scrollbar-width:none}
+.ac-isla-tabs::-webkit-scrollbar{display:none}
+.ac-isla-tab{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:14px;border:none;background:transparent;color:rgba(var(--ink),0.62);font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;letter-spacing:0.01em;transition:background 150ms,color 150ms}
+.ac-isla-tab:hover{background:rgba(var(--ink),0.06);color:var(--tx)}
+.ac-isla-tab.on{background:linear-gradient(135deg,#B8956A 0%,#E8D098 50%,#B8956A 100%);color:#0A1628;box-shadow:0 0 20px rgba(184,149,106,0.25)}
+.ac-isla-tab .n{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(var(--ink),0.1);font-variant-numeric:tabular-nums}
+.ac-isla-tab.on .n{background:rgba(10,22,40,0.14)}
+.ac-isla-ctl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.ac-ico{width:36px;height:36px;border-radius:12px;border:1px solid rgba(var(--ink),0.1);background:rgba(var(--ink),0.04);color:var(--tx);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;padding:0;transition:all 150ms;font-family:inherit}
+.ac-ico:hover{border-color:rgba(184,149,106,0.45);background:rgba(184,149,106,0.1)}
+.ac-mini{padding:5px 10px;font-size:11.5px;font-weight:700;border-radius:8px;border:1px solid rgba(var(--ink),0.12);background:rgba(var(--ink),0.04);color:rgba(var(--ink),0.75);cursor:pointer;font-family:inherit;transition:all 150ms}
+.ac-mini:hover{border-color:rgba(184,149,106,0.45);color:var(--tx)}
+.ac-mini.danger:hover{border-color:rgba(220,38,38,0.45);color:var(--red)}
+.ac-agente-main{max-width:1200px;margin:0 auto;padding:28px 28px 70px}
+.ac-tbl{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+.ac-tbl th{padding:11px 14px;text-align:left;font-size:10px;font-weight:700;color:rgba(var(--ink),0.42);text-transform:uppercase;letter-spacing:0.07em;border-bottom:1px solid rgba(var(--ink),0.07)}
+.ac-tbl td{padding:12px 14px;border-bottom:1px solid rgba(var(--ink),0.05);vertical-align:middle}
+.ac-tbl tbody tr:last-child td{border-bottom:none}
+.ac-tbl tbody tr:hover td{background:rgba(var(--ink),0.025)}
+@media(max-width:860px){
+  .ac-isla{flex-wrap:wrap;margin:8px 8px 0;padding:8px 10px;border-radius:18px;top:6px;gap:6px}
+  .ac-isla-tabs{order:3;flex-basis:100%;justify-content:flex-start;padding-top:6px;border-top:1px solid rgba(var(--ink),0.08);margin-top:2px}
+  .ac-isla-tab{padding:8px 12px;font-size:12px}
+  .ac-agente-main{padding:18px 12px 60px}
+  h2{font-size:20px!important}
+  h3{font-size:13px!important}
+  table{font-size:11.5px!important}
+  table td,table th{padding:9px 8px!important;white-space:nowrap!important}
+}
+`;
 
 export default function AgentePortal(){
   const [session,setSession]=useState(null);
   const [loading,setLoading]=useState(true);
   const [lang,setLang]=useState("es");
+  const [theme,setTheme]=useState("dark");
   const t=I18N[lang];
+  useEffect(()=>{try{const th=localStorage.getItem("ac_agent_theme");if(th==="light"||th==="dark")setTheme(th);}catch(e){}},[]);
+  useEffect(()=>{try{localStorage.setItem("ac_agent_theme",theme);}catch(e){}},[theme]);
   useEffect(()=>{const s=loadSession();if(s?.access_token){setSession(s);}setLoading(false);const savedLang=typeof window!=="undefined"?localStorage.getItem("ac_agent_lang"):null;if(savedLang==="zh"||savedLang==="es")setLang(savedLang);
     // Registrar service worker (PWA)
     if(typeof window!=="undefined"&&"serviceWorker"in navigator){navigator.serviceWorker.register("/sw-agente.js",{scope:"/agente"}).catch(()=>{});}
   },[]);
   useEffect(()=>{try{localStorage.setItem("ac_agent_lang",lang);}catch(e){}},[lang]);
-  if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>{t.loading_dots}</div>;
-  if(!session)return <><ToastStack/><AuthScreen onLogin={setSession} lang={lang} setLang={setLang} t={t}/></>;
-  return <><ToastStack/><Dashboard session={session} onLogout={()=>{clearSession();setSession(null);}} lang={lang} setLang={setLang} t={t}/></>;
+  const wrap=(ch)=><div className="ac-ag" data-theme={theme}><style dangerouslySetInnerHTML={{__html:THEME_CSS}}/><ToastStack/><DialogHost/>{ch}</div>;
+  if(loading)return wrap(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(var(--ink),0.4)"}}>{t.loading_dots}</div>);
+  if(!session)return wrap(<AuthScreen onLogin={setSession} lang={lang} setLang={setLang} t={t}/>);
+  return wrap(<Dashboard session={session} onLogout={()=>{clearSession();setSession(null);}} lang={lang} setLang={setLang} t={t} theme={theme} setTheme={setTheme}/>);
 }
 
 function AuthScreen({onLogin,lang,setLang,t}){
@@ -701,7 +790,7 @@ function AuthScreen({onLogin,lang,setLang,t}){
       setErr(r.error_description||r.msg||r.message||t.err_generic);
     }
     setLo(false);};
-  return <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
+  return <div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
     <style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/>
     <div style={{position:"absolute",top:"-15%",right:"-8%",width:500,height:500,background:"radial-gradient(circle, rgba(184,149,106,0.14) 0%, transparent 70%)",pointerEvents:"none"}}/>
     <div style={{position:"absolute",bottom:"-15%",left:"-8%",width:540,height:540,background:"radial-gradient(circle, rgba(184,149,106,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
@@ -710,11 +799,11 @@ function AuthScreen({onLogin,lang,setLang,t}){
         <img src={LOGO} alt="AC" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
       </div>
       <div style={{textAlign:"center",marginBottom:18}}><LangToggle lang={lang} setLang={setLang}/></div>
-      <div style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.028)",position:"relative",overflow:"hidden"}}>
+      <div style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(var(--ink),0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(var(--ink),0.028)",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px",textAlign:"center"}}>{t.login_title}</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 22px",textAlign:"center"}}>{t.login_subtitle}</p>
-        {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
+        <h2 style={{fontSize:22,fontWeight:700,color:"var(--tx)",margin:"0 0 6px",textAlign:"center"}}>{t.login_title}</h2>
+        <p style={{fontSize:13,color:"rgba(var(--ink),0.4)",margin:"0 0 22px",textAlign:"center"}}>{t.login_subtitle}</p>
+        {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"var(--red)",marginBottom:14}}>{err}</div>}
         {mode==="signup"&&<>
           <Inp label={t.first_name} value={fName} onChange={setFName} req/>
           <Inp label={t.last_name} value={lName} onChange={setLName}/>
@@ -728,7 +817,7 @@ function AuthScreen({onLogin,lang,setLang,t}){
   </div>;
 }
 
-function Dashboard({session,onLogout,lang,setLang,t}){
+function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const token=session.access_token;
   const userId=session.user?.id;
   const [signup,setSignup]=useState(null);
@@ -758,7 +847,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     const [pk,fl,fo,acc,rp]=await Promise.all([
       dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,status,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(status)"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"})
     ]);
@@ -798,29 +887,38 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   },0);
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-  if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>...</div>;
+  if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",color:"rgba(var(--ink),0.4)"}}>...</div>;
 
   if(!signup||signup.status==="pending"){
-    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
+    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token} theme={theme} setTheme={setTheme}>
       <div style={{maxWidth:600,margin:"3rem auto",background:"rgba(251,191,36,0.08)",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
         <p style={{fontSize:48,margin:"0 0 12px"}}>⏳</p>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#fbbf24",margin:"0 0 10px"}}>{t.pending_title}</h2>
-        <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0}}>{t.pending_msg}</p>
+        <h2 style={{fontSize:20,fontWeight:700,color:"var(--amber)",margin:"0 0 10px"}}>{t.pending_title}</h2>
+        <p style={{fontSize:14,color:"rgba(var(--ink),0.5)",margin:0}}>{t.pending_msg}</p>
       </div>
     </SimpleShell>;
   }
 
   if(signup.status==="rejected"){
-    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
+    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token} theme={theme} setTheme={setTheme}>
       <div style={{maxWidth:600,margin:"3rem auto",background:"rgba(255,80,80,0.08)",border:"1.5px solid rgba(255,80,80,0.3)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
         <p style={{fontSize:48,margin:"0 0 12px"}}>✕</p>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#ff6b6b",margin:"0 0 10px"}}>Rejected</h2>
-        <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0}}>{t.rejected_msg}</p>
+        <h2 style={{fontSize:20,fontWeight:700,color:"var(--red)",margin:"0 0 10px"}}>{t.rejected_title}</h2>
+        <p style={{fontSize:14,color:"rgba(var(--ink),0.5)",margin:0}}>{t.rejected_msg}</p>
       </div>
     </SimpleShell>;
   }
 
-  const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+  const stColors={preparando:"#fbbf24",listo:"#22c55e",despachado:"#60a5fa",transito:"#60a5fa",aduana:"#a78bfa",recibido:"#22c55e"};
+  // Fase del vuelo para el agente: preparando → listo (factura presentada) → en tránsito → en aduana (alguna
+  // op arribó a Argentina) → recibido. Las 4 primeras son "vuelos activos"; recibido es histórico.
+  const faseVuelo=(f)=>{
+    if(f.status==="recibido")return "recibido";
+    if(f.status==="preparando")return f.invoice_presented_at?"listo":"preparando";
+    const enAduana=flightOps.some(fo=>fo.flight_id===f.id&&["arribo_argentina","en_aduana"].includes(String(fo.operations?.status||"")));
+    return enAduana?"aduana":"transito";
+  };
+  const faseLabel=(fase)=>fase==="listo"?t.flight_status_listo:fase==="transito"?t.flight_status_transito:fase==="aduana"?t.flight_status_aduana:t["flight_status_"+fase];
 
   // Computed: paquetes que estan FISICAMENTE en el deposito.
   // Se define por el ESTADO de la operacion, no por "no tener vuelo asignado": hay 101 bultos de
@@ -846,8 +944,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     return false;
   });
   const depositTotalKg=depositPkgsAll.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const activeFlights=flights.filter(f=>f.status==="preparando");
-  const historyFlights=flights.filter(f=>f.status==="despachado"||f.status==="recibido");
+  const activeFlights=flights.filter(f=>f.status==="preparando"||f.status==="despachado");
+  const historyFlights=flights.filter(f=>f.status==="recibido").sort((a,b)=>String(b.received_at||b.created_at).localeCompare(String(a.received_at||a.created_at)));
 
   // Stats con filtro de período (week / month / year / all)
   const periodCutoff=()=>{const now=Date.now();const day=86400000;if(statsPeriod==="week")return new Date(now-7*day).toISOString();if(statsPeriod==="month")return new Date(now-30*day).toISOString();if(statsPeriod==="year")return new Date(now-365*day).toISOString();return null;};
@@ -861,27 +959,28 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const statTotalUsd=periodFlights.filter(f=>f.total_cost_usd).reduce((s,f)=>s+Number(f.total_cost_usd||0),0);
   const statTotalPkgs=periodPackages.length;
 
+  const fechaCorta=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"2-digit"}):null;
   const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
-    const isReady=f.status==="preparando"&&f.invoice_presented_at;
-    const isWaiting=f.status==="preparando"&&!f.invoice_presented_at;
-    const cardBg=isReady?"rgba(34,197,94,0.08)":isWaiting?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.028)";
-    const cardBorder=isReady?"1.5px solid rgba(34,197,94,0.35)":isWaiting?"1.5px solid rgba(251,191,36,0.25)":"1px solid rgba(255,255,255,0.06)";
-    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card" style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
-    {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px",display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.ready_to_ship}</p>}
-    {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>{t.waiting_invoice}</p>}
-    {f.status==="preparando"&&f.requested_carrier&&<p style={{fontSize:12,fontWeight:700,color:"#93c5fd",margin:"0 0 8px",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {f.requested_carrier==="FEDEX"?"FedEx (÷6000)":f.requested_carrier}</p>}
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
-        <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:isReady?"#22c55e":stColors[f.status],background:isReady?"rgba(34,197,94,0.14)":`${stColors[f.status]}14`,border:`1px solid ${isReady?"rgba(34,197,94,0.4)":stColors[f.status]+"40"}`,textTransform:"uppercase",letterSpacing:"0.05em",display:"inline-flex",alignItems:"center",gap:6}}><span className={f.status==="preparando"||f.status==="despachado"?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:isReady?"#22c55e":stColors[f.status]}}/>{isReady?t.flight_status_listo:t["flight_status_"+f.status]}</span>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{ops.length} ops</span>
+    const fase=faseVuelo(f);const c=stColors[fase]||stColors[f.status];
+    const isReady=fase==="listo",isWaiting=fase==="preparando",live=fase!=="recibido";
+    const meta=[];
+    if(isWaiting)meta.push(<span key="w" style={{color:"var(--amber)",fontWeight:700}}>{t.waiting_invoice}</span>);
+    if(fase==="transito"||fase==="aduana"){if(f.dispatched_at)meta.push(<span key="d">{t.dispatched_on} {fechaCorta(f.dispatched_at)}</span>);if(f.international_carrier||f.international_tracking)meta.push(<span key="c" style={{fontFamily:"'JetBrains Mono',monospace"}}>{[f.international_carrier,f.international_tracking].filter(Boolean).join(" · ")}</span>);}
+    if(fase==="recibido"&&f.received_at)meta.push(<span key="r">{t.received_on} {fechaCorta(f.received_at)}</span>);
+    if(f.total_weight_kg)meta.push(<span key="k">{Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:1})} kg</span>);
+    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card ac-card" style={{cursor:"pointer",background:"rgba(var(--ink),0.028)",border:`1px solid ${isReady?"rgba(34,197,94,0.4)":"rgba(var(--ink),0.07)"}`,borderLeft:`3px solid ${c}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:220}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
+          <span style={{fontSize:15,fontWeight:800,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
+          <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,color:c,background:`${c}18`,border:`1px solid ${c}55`,textTransform:"uppercase",letterSpacing:"0.06em",display:"inline-flex",alignItems:"center",gap:6}}><span className={live?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:c}}/>{faseLabel(fase)}</span>
+          <span style={{fontSize:11.5,color:"rgba(var(--ink),0.45)"}}>{ops.length} ops</span>
+          {f.status==="preparando"&&f.requested_carrier&&<span style={{fontSize:11,fontWeight:700,color:"var(--blue)",padding:"2px 9px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {f.requested_carrier==="FEDEX"?"FedEx (÷6000)":f.requested_carrier}</span>}
+        </div>
+        {meta.length>0&&<p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,display:"flex",gap:12,flexWrap:"wrap"}}>{meta}</p>}
+        {f.destination_address&&<p style={{fontSize:11,color:"rgba(var(--ink),0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
       </div>
-      <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
-    </div>
-    {!isReady&&!isWaiting&&f.invoice_presented_at?<p style={{fontSize:11,color:"#22c55e",margin:0}}>📄 {t.invoice} ✓</p>:null}
-    {!isReady&&!isWaiting&&!f.invoice_presented_at?<p style={{fontSize:11,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>:null}
-    {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
-  </div>;};
+      <span style={{color:IC,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{t.flight} →</span>
+    </div>;};
 
   // Stats hero — paquetes hoy / total depósito / vuelos preparando / saldo CC
   const todayISO=new Date().toISOString().slice(0,10);
@@ -889,16 +988,24 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const noPhotoCount=depositPkgsAll.filter(p=>!p.photo_url).length;
   const greeting=(()=>{const h=new Date().getHours();return h<12?(t.greet_morning||"Buen día"):h<19?(t.greet_afternoon||"Buenas tardes"):(t.greet_night||"Buenas noches");})();
 
-  return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
+  const tabsIsla=[
+    {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length},
+    {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
+    {k:"history",l:t.tab_history},
+    {k:"stats",l:t.tab_stats},
+    {k:"account",l:t.tab_account},
+  ];
+  const irA=(k)=>{setTab(k);setSelFlight(null);if(k!=="deposit")setShowForm(false);window.scrollTo({top:0,behavior:"smooth"});};
+  return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token} theme={theme} setTheme={setTheme} tabs={tabsIsla} tab={tab} setTab={irA}>
     {/* Tutorial overlay — primera vez para agentes aprobados o cuando piden volver a verlo */}
     {(showTutorial||(signup&&signup.status==="approved"&&!signup.tutorial_completed&&!tutorialDone))&&<AgentTutorialOverlay signup={signup} token={token} lang={lang} onClose={()=>setShowTutorial(false)} onComplete={()=>{setTutorialDone(true);signup.tutorial_completed=true;}}/>}
     <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
       <div>
-        <h2 style={{fontSize:28,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.025em"}}>👋 {greeting}, {signup.first_name||signup.email}</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
+        <h2 style={{fontSize:28,fontWeight:700,color:"var(--tx)",margin:"0 0 4px",letterSpacing:"-0.025em"}}>👋 {greeting}, {signup.first_name||signup.email}</h2>
+        <p style={{fontSize:13,color:"rgba(var(--ink),0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowTutorial(true)} title={lang==="zh"?"再次观看教程":"Ver tutorial de nuevo"} style={{padding:"8px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🎓 {lang==="zh"?"教程":"Tutorial"}</button>
+        <button onClick={()=>setShowTutorial(true)} className="ac-mini" style={{padding:"9px 13px"}}>🎓 {t.tutorial}</button>
         {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
       </div>
     </div>
@@ -907,24 +1014,24 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
       {[
         {label:t.stat_today_pkgs||"Paquetes hoy",value:pkgsToday,color:GOLD_LIGHT,icon:"📦"},
-        {label:t.stat_in_deposit||"En depósito",value:depositPkgsAll.length,color:"#60a5fa",icon:"🏬",sub:`${depositTotalKg} kg`},
-        {label:t.stat_active_flights||"Vuelos activos",value:activeFlights.length,color:"#fbbf24",icon:"✈️"},
+        {label:t.stat_in_deposit||"En depósito",value:depositPkgsAll.length,color:"var(--blue)",icon:"🏬",sub:`${depositTotalKg} kg`},
+        {label:t.stat_active_flights||"Vuelos activos",value:activeFlights.length,color:"var(--amber)",icon:"✈️"},
         {label:t.stat_balance||"Saldo CC",value:balance,color:balance>=0?"#22c55e":"#ef4444",icon:"💰",fmt:v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`},
-      ].map((s,i)=><div key={i} className="ac-hover-card ac-bento-cell" data-span={3} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden",minHeight:90}}>
+      ].map((s,i)=><div key={i} className="ac-hover-card ac-bento-cell ac-card" data-span={3} style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden",minHeight:90}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-          <span style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{s.label}</span>
+          <span style={{fontSize:9.5,fontWeight:700,color:"rgba(var(--ink),0.5)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{s.label}</span>
           <span style={{fontSize:14,opacity:0.6}}>{s.icon}</span>
         </div>
         <p style={{fontSize:24,fontWeight:800,color:s.color,margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{s.fmt?s.fmt(s.value):s.value}</p>
-        {s.sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.42)",margin:"6px 0 0"}}>{s.sub}</p>}
+        {s.sub&&<p style={{fontSize:10.5,color:"rgba(var(--ink),0.42)",margin:"6px 0 0"}}>{s.sub}</p>}
       </div>)}
     </div>
 
     {/* Banner foto pendiente — alerta visual amarilla cuando hay paquetes sin foto */}
-    {noPhotoCount>0&&<div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:"#fbbf24"}}>
+    {noPhotoCount>0&&<div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:"var(--amber)"}}>
       <span style={{fontSize:16}}>📷</span>
       <span style={{flex:1}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
-      <button onClick={()=>setTab("deposit")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>{t.review||"Revisar"} →</button>
+      <button onClick={()=>setTab("deposit")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"var(--amber)",cursor:"pointer"}}>{t.review||"Revisar"} →</button>
     </div>}
     <PushNagBanner token={token} t={t}/>
     {repackRequests.length>0&&<div style={{marginBottom:16}}>
@@ -932,70 +1039,67 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:24}}>🔄</span>
           <div>
-            <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"#fbbf24"}}>{r.operations?.operation_code}</span></p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
+            <p style={{fontSize:14,fontWeight:700,color:"var(--tx)",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"var(--amber)"}}>{r.operations?.operation_code}</span></p>
+            <p style={{fontSize:11,color:"rgba(var(--ink),0.7)",margin:"3px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
           </div>
         </div>
         <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
       </div>)}
     </div>}
     {repackOpen&&<RepackModal opId={repackOpen} request={repackRequests.find(r=>r.operation_id===repackOpen)} packages={packages.filter(p=>p.operation_id===repackOpen)} divisor={Number(signup?.volumetric_divisor)||5000} token={token} userId={userId} t={t} onClose={()=>setRepackOpen(null)} onDone={async()=>{setRepackOpen(null);await reloadAll();flash(t.repack_done||"Reempaque guardado");}}/>}
-    {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
-    <div className="ac-agente-tabs" style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
-      {[
-        {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length,extra:`${depositTotalKg} kg`},
-        {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
-        {k:"history",l:t.tab_history,n:historyFlights.length},
-        {k:"stats",l:t.tab_stats},
-        {k:"account",l:t.tab_account,extra:usdF(balance)}
-      ].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{tb.l}{tb.n!==undefined&&<span style={{fontSize:10,fontWeight:700,color:active?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}{tb.extra&&<span style={{fontSize:10,fontWeight:500,color:"rgba(255,255,255,0.4)",marginLeft:2,textTransform:"none",letterSpacing:0}}>· {tb.extra}</span>}</button>;})}
-    </div>
-
+    {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"var(--green)",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
       {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"16px 0 0",fontSize:12,color:"#E8D098",fontWeight:600}}>
-        Vista de supervisión: estás viendo el depósito de <strong>todos</strong> los agentes, no solo los bultos que registraste vos.
+        {t.supervision_msg}
       </div>}
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} origin={/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China"} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
-      {/* Banner: paquetes pendientes de foto */}
-      {(()=>{const pendientes=depositPkgsAll.filter(p=>!p.photo_url);if(pendientes.length===0)return null;
-        return <div style={{padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.1),rgba(251,191,36,0.02))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,margin:"16px 0 0",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <span style={{fontSize:18}}>📷</span>
-          <div style={{flex:1,minWidth:200}}>
-            <p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:0}}>{pendientes.length} {t.photos_pending_count}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>{t.photo_pending_msg}</p>
+      <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:16,border:"1px solid rgba(var(--ink),0.07)",overflow:"hidden",marginTop:16}}>
+        <div style={{padding:"16px 18px",borderBottom:"1px solid rgba(var(--ink),0.07)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+          <div>
+            <h3 style={{fontSize:15,fontWeight:800,margin:0,letterSpacing:"-0.01em"}}>{t.tab_deposit} <span style={{color:"rgba(var(--ink),0.45)",fontWeight:600}}>· {depositPkgs.length}{depositSearch?` / ${depositPkgsAll.length}`:""} · {depositTotalKg} kg</span></h3>
+            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.45)",margin:"3px 0 0"}}>{t.deposit_hint}</p>
           </div>
-        </div>;})()}
-      <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginTop:16,marginBottom:0}}/>
-      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden",marginTop:10}}>
-        <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length}) {"\u00b7"} {depositTotalKg} kg</h3></div>
-        {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
+          <div style={{position:"relative",minWidth:240,flex:"0 1 300px"}}>
+            <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,opacity:0.5,pointerEvents:"none"}}>⌕</span>
+            <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"9px 12px 9px 30px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}} onFocus={e=>{e.target.style.borderColor=GOLD;}} onBlur={e=>{e.target.style.borderColor="rgba(var(--ink),0.12)";}}/>
+          </div>
+        </div>
+        {depositPkgs.length===0?<p style={{padding:"2.5rem",textAlign:"center",color:"rgba(var(--ink),0.4)",margin:0}}>{t.no_pkgs}</p>:
         <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:880,whiteSpace:"nowrap"}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            {[t.op,t.client,t.tracking,t.weight_gross_short||t.weight,t.weight_vol_short||"Vol.",t.weight_billable_short||"Fact.",t.photo,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+        <table className="ac-tbl" style={{minWidth:860}}>
+          <thead><tr>
+            {[t.col_operation,t.tracking,t.col_weights,t.photo,t.date,""].map((h,k)=><th key={k} style={k===2?{textAlign:"right"}:undefined}>{h}</th>)}
           </tr></thead>
           <tbody>{depositPkgs.map(p=>{
             const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
             const volDiv=Number(signup?.volumetric_divisor)||5000;const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/volDiv)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
-            return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:p.operations?.operation_code?"#fff":"#fbbf24"}}>{p.operations?.operation_code||(t.in_deposit||"Depósito")}</td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.clients?.client_code||p.operations?.clients?.client_code||"—"}</td>
-            <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
+            const kg=(v)=>v?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";
+            const cli=p.clients?.client_code||p.operations?.clients?.client_code||"";
+            return <tr key={p.id}>
+            <td>
+              <div style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,fontSize:12.5,color:p.operations?.operation_code?"var(--tx)":"var(--amber)"}}>{p.operations?.operation_code||(t.in_deposit||"Depósito")}</div>
+              {cli&&<div style={{fontSize:11,color:"rgba(var(--ink),0.5)",marginTop:2}}>{cli}</div>}
+            </td>
+            <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(var(--ink),0.65)"}}>
               {p.national_tracking||"—"}
-              {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={`Trackings originales consolidados: ${p.consolidated_from_trackings.join(", ")}`}>
-                {p.consolidated_from_trackings.slice(0,3).map((tr,k)=><span key={k} style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"#60a5fa",fontFamily:"monospace"}}>{tr}</span>)}
-                {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
+              {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={p.consolidated_from_trackings.join(", ")}>
+                {p.consolidated_from_trackings.slice(0,3).map((tr,k)=><span key={k} style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"var(--blue)"}}>{tr}</span>)}
+                {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(var(--ink),0.06)",color:"rgba(var(--ink),0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
               </div>}
             </td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"10px 14px",color:isVolBigger?"#fb923c":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{vol?`${vol.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"10px 14px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fact?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"10px 14px"}}><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
-            <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}>
-              <button onClick={()=>setEditPkg(p)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",marginRight:6}}>{t.edit}</button>
-              <button onClick={async()=>{if(!confirm(`${t.confirm_delete_pkg} ${p.operations?.operation_code||p.clients?.client_code||""}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>{t.delete}</button>
+            <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>
+              <span style={{color:"rgba(var(--ink),0.6)"}}>{kg(bruto)}</span>
+              <span style={{color:"rgba(var(--ink),0.3)",margin:"0 6px"}}>·</span>
+              <span style={{color:isVolBigger?"#fb923c":"rgba(var(--ink),0.5)"}}>{kg(vol)}</span>
+              <span style={{color:"rgba(var(--ink),0.3)",margin:"0 6px"}}>·</span>
+              <span style={{color:fact>0?IC:"rgba(var(--ink),0.3)",fontWeight:800}}>{kg(fact)} kg</span>
+            </td>
+            <td><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
+            <td style={{color:"rgba(var(--ink),0.45)",fontSize:11.5}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
+            <td style={{textAlign:"right"}}>
+              <button onClick={()=>setEditPkg(p)} className="ac-mini" style={{marginRight:6}}>✎ {t.edit}</button>
+              <button onClick={async()=>{if(!await confirmDialog(`${t.confirm_delete_pkg} ${p.operations?.operation_code||cli||""}?`,{confirmText:t.sure_delete}))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} className="ac-mini danger">✕</button>
             </td>
           </tr>;})}</tbody>
         </table></div>}
@@ -1005,16 +1109,23 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {/* Modal de edición de paquete (compartido por todos los tabs que muestren paquetes en depósito) */}
     {editPkg&&<EditPackageModal pkg={editPkg} token={token} t={t} onClose={()=>setEditPkg(null)} onSaved={()=>{setEditPkg(null);reloadAll();flash(t.edit_success);}}/>}
 
-    {/* TAB 2: Vuelos activos (preparando / despachado) */}
+    {/* TAB 2: Vuelos activos — preparando · listo · en tránsito · en aduana */}
     {tab==="active_flights"&&!selFlight&&<>
-      {activeFlights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
-      <div style={{display:"grid",gap:12}}>{activeFlights.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
+      <p style={{fontSize:12,color:"rgba(var(--ink),0.45)",margin:"0 0 16px"}}>{t.flights_hint}</p>
+      {activeFlights.length===0?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
+      [["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs]].map(([k,l])=>{
+        const fs=activeFlights.filter(f=>faseVuelo(f)===k);if(fs.length===0)return null;const c=stColors[k];
+        return <div key={k} style={{marginBottom:24}}>
+          <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:c,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:`0 0 8px ${c}`}}/>{l}<span style={{color:"rgba(var(--ink),0.4)",fontWeight:600}}>· {fs.length}</span></p>
+          <div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>
+        </div>;})}
     </>}
 
-    {/* TAB 3: Histórico (recibido) */}
+    {/* TAB 3: Histórico — solo vuelos recibidos */}
     {tab==="history"&&!selFlight&&<>
-      {historyFlights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
-      <div style={{display:"grid",gap:12}}>{historyFlights.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
+      <p style={{fontSize:12,color:"rgba(var(--ink),0.45)",margin:"0 0 16px"}}>{t.history_hint}</p>
+      {historyFlights.length===0?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_history}</p>:
+      <div style={{display:"grid",gap:10}}>{historyFlights.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
     </>}
 
     {/* Flight detail (shared by active_flights + history) */}
@@ -1053,73 +1164,70 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       const greeting=hour<12?t.greet_morning:hour<19?t.greet_afternoon:t.greet_night;
       const agentName=signup?.first_name||"";
       return <>
-        <div style={{marginBottom:18}}>
-          <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>👋 {greeting}, {agentName}</h2>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{t.stats_subtitle}</p>
-        </div>
+        <p style={{fontSize:12,color:"rgba(var(--ink),0.5)",margin:"0 0 16px"}}>{t.stats_subtitle}</p>
 
         {/* Stats de HOY destacadas */}
         <div style={{background:`linear-gradient(135deg, rgba(184,149,106,0.18), rgba(212,177,122,0.06))`,border:`1.5px solid rgba(184,149,106,0.4)`,borderRadius:16,padding:"20px 24px",marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
           <div>
             <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t.stats_today}</p>
-            <p style={{fontSize:36,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{todayPkgs.length} <span style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>{todayPkgs.length!==1?t.stats_pkgs:t.stats_pkg}</span></p>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"4px 0 0"}}>{todayPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} {t.stats_kg_today}</p>
+            <p style={{fontSize:36,fontWeight:800,color:"var(--tx)",margin:0,letterSpacing:"-0.02em"}}>{todayPkgs.length} <span style={{fontSize:14,fontWeight:600,color:"rgba(var(--ink),0.5)"}}>{todayPkgs.length!==1?t.stats_pkgs:t.stats_pkg}</span></p>
+            <p style={{fontSize:12,color:"rgba(var(--ink),0.6)",margin:"4px 0 0"}}>{todayPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} {t.stats_kg_today}</p>
           </div>
           <div style={{textAlign:"right"}}>
             <p style={{fontSize:48,margin:0,lineHeight:1}}>{todayPkgs.length===0?"☕":todayPkgs.length<5?"💪":todayPkgs.length<15?"🔥":"🚀"}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",fontStyle:"italic"}}>{todayPkgs.length===0?t.mood_chill:todayPkgs.length<5?t.mood_good:todayPkgs.length<15?t.mood_fire:t.mood_unstoppable}</p>
+            <p style={{fontSize:11,color:"rgba(var(--ink),0.5)",margin:"4px 0 0",fontStyle:"italic"}}>{todayPkgs.length===0?t.mood_chill:todayPkgs.length<5?t.mood_good:todayPkgs.length<15?t.mood_fire:t.mood_unstoppable}</p>
           </div>
         </div>
 
         {/* Mini chart últimos 7 días */}
-        <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 22px",marginBottom:18}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📊 {t.last_7_days}</p>
+        <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"18px 22px",marginBottom:18}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📊 {t.last_7_days}</p>
           <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6,height:100,marginBottom:10}}>
             {last7.map((d,i)=>{const h=(d.count/max7)*100;const isToday=i===6;return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
               <div style={{width:"100%",height:`${Math.max(h,4)}%`,background:isToday?`linear-gradient(180deg,${GOLD_LIGHT},${GOLD})`:"rgba(96,165,250,0.4)",borderRadius:"4px 4px 0 0",transition:"height 300ms",position:"relative"}}>
-                {d.count>0&&<span style={{position:"absolute",top:-18,left:"50%",transform:"translateX(-50%)",fontSize:10,fontWeight:700,color:isToday?GOLD_LIGHT:"#fff"}}>{d.count}</span>}
+                {d.count>0&&<span style={{position:"absolute",top:-18,left:"50%",transform:"translateX(-50%)",fontSize:10,fontWeight:700,color:isToday?GOLD_LIGHT:"var(--tx)"}}>{d.count}</span>}
               </div>
             </div>;})}
           </div>
           <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
-            {last7.map((d,i)=><span key={i} style={{flex:1,fontSize:10,color:"rgba(255,255,255,0.4)",textAlign:"center",fontWeight:i===6?700:500}}>{d.date.toLocaleDateString("es-AR",{weekday:"short"}).slice(0,3)}</span>)}
+            {last7.map((d,i)=><span key={i} style={{flex:1,fontSize:10,color:"rgba(var(--ink),0.4)",textAlign:"center",fontWeight:i===6?700:500}}>{d.date.toLocaleDateString("es-AR",{weekday:"short"}).slice(0,3)}</span>)}
           </div>
         </div>
 
         {/* Selector de período */}
         <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
-          {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(255,255,255,0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(255,255,255,0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
+          <span style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
+          {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(var(--ink),0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(var(--ink),0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(var(--ink),0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
           {deltaPkgs!==null&&statsPeriod!=="all"&&<span style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:5,background:deltaPkgs>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)",color:deltaPkgs>=0?"#22c55e":"#ff6b6b",letterSpacing:"0.04em"}}>{deltaPkgs>=0?"▲":"▼"} {Math.abs(deltaPkgs).toFixed(0)}% {t.vs_previous}</span>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14,marginBottom:18}}>
         {[
-          {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"#60a5fa"},
+          {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"var(--blue)"},
           {label:t.stats_total_pkgs,value:statTotalPkgs,icon:"📬",color:"#a78bfa"},
-          {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"#22c55e"},
-          {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"#fbbf24"},
+          {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"var(--green)"},
+          {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"var(--amber)"},
           {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
-        ].map(s=><div key={s.label} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"16px 20px"}}>
+        ].map(s=><div key={s.label} className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1px solid rgba(var(--ink),0.06)",padding:"16px 20px"}}>
           <p style={{fontSize:22,margin:"0 0 2px"}}>{s.icon}</p>
           <p style={{fontSize:22,fontWeight:800,color:s.color,margin:"0 0 4px",letterSpacing:"-0.01em"}}>{s.value}</p>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</p>
         </div>)}
         </div>
 
         {/* Logros */}
-        <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 22px"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏆 {t.achievements} ({milestones.length})</p>
-          {milestones.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>{t.no_achievements}</p>:<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"18px 22px"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.5)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏆 {t.achievements} ({milestones.length})</p>
+          {milestones.length===0?<p style={{fontSize:12,color:"rgba(var(--ink),0.4)",margin:0,fontStyle:"italic"}}>{t.no_achievements}</p>:<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {milestones.map(m=><div key={m.threshold} style={{padding:"8px 14px",background:"linear-gradient(135deg, rgba(184,149,106,0.2), rgba(212,177,122,0.08))",border:`1px solid rgba(184,149,106,0.4)`,borderRadius:999,display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>
               <span>{m.icon}</span> {m.label}
             </div>)}
           </div>}
-          {nextMilestone&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:4}}>
-              <span>{t.next_achievement}: <strong style={{color:"#fff"}}>{nextMilestone} {t.stats_pkgs}</strong></span>
+          {nextMilestone&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(var(--ink),0.55)",marginBottom:4}}>
+              <span>{t.next_achievement}: <strong style={{color:"var(--tx)"}}>{nextMilestone} {t.stats_pkgs}</strong></span>
               <span style={{color:GOLD_LIGHT,fontWeight:700}}>{allPkgs.length} / {nextMilestone}</span>
             </div>
-            <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}>
+            <div style={{height:6,background:"rgba(var(--ink),0.06)",borderRadius:3,overflow:"hidden"}}>
               <div style={{height:"100%",width:`${Math.min(100,(allPkgs.length/nextMilestone)*100)}%`,background:`linear-gradient(90deg,${GOLD},${GOLD_LIGHT})`,transition:"width 300ms"}}/>
             </div>
           </div>}
@@ -1132,19 +1240,19 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       <PushSetup token={token} userId={userId} signup={signup} t={t}/>
       <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,background:bal=>(bal>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"),borderRadius:14,padding:"20px 24px",border:`1px solid ${balance>=0?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)"}`,backgroundColor:balance>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.balance}</p>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.balance}</p>
           <p style={{fontSize:32,fontWeight:700,color:balance>=0?"#22c55e":"#ff6b6b",margin:0}}>{usdF(balance)}</p>
         </div>
       </div>
-      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-        {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_movements}</p>:
+      <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1px solid rgba(var(--ink),0.06)",overflow:"hidden"}}>
+        {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(var(--ink),0.4)",margin:0}}>{t.no_movements}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,t.cc_type,t.cc_amount,t.cc_description,t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-          <tbody>{account.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{new Date(m.date).toLocaleDateString("es-AR")}</td>
+          <thead><tr style={{borderBottom:"1px solid rgba(var(--ink),0.08)"}}>{[t.date,t.cc_type,t.cc_amount,t.cc_description,t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{account.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(var(--ink),0.04)"}}>
+            <td style={{padding:"10px 14px",color:"rgba(var(--ink),0.5)",fontSize:12}}>{new Date(m.date).toLocaleDateString("es-AR")}</td>
             <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b",textTransform:"uppercase"}}>{m.type==="anticipo"?t.movement_anticipo:t.movement_deduccion}</span></td>
             <td style={{padding:"10px 14px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{(()=>{const isCredit=m.type==="anticipo";const monto=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return `${isCredit?"+":"-"}${usdF(monto)}`;})()}</td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{m.description||"—"}</td>
+            <td style={{padding:"10px 14px",color:"rgba(var(--ink),0.5)",fontSize:12}}>{m.description||"—"}</td>
             <td style={{padding:"10px 14px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>
         </table>}
@@ -1164,11 +1272,11 @@ function AgAdornInp({label,req,value,onChange,placeholder,prefix,suffix}){
     return x;
   };
   return <div style={{marginBottom:14}}>
-    <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label>
+    <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"var(--red)"}}> *</span>}</label>
     <div style={{position:"relative"}}>
-      {prefix&&<span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{prefix}</span>}
-      <input type="text" inputMode="decimal" value={value} onChange={e=>onChange(clean(e.target.value))} placeholder={placeholder} style={{width:"100%",padding:`11px ${suffix?"52px":"14px"} 11px ${prefix?"52px":"14px"}`,fontSize:15,fontWeight:600,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'}}/>
-      {suffix&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{suffix}</span>}
+      {prefix&&<span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(var(--ink),0.45)",pointerEvents:"none"}}>{prefix}</span>}
+      <input type="text" inputMode="decimal" value={value} onChange={e=>onChange(clean(e.target.value))} placeholder={placeholder} style={{width:"100%",padding:`11px ${suffix?"52px":"14px"} 11px ${prefix?"52px":"14px"}`,fontSize:15,fontWeight:600,boxSizing:"border-box",border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none",fontFeatureSettings:'"tnum"'}}/>
+      {suffix&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(var(--ink),0.45)",pointerEvents:"none"}}>{suffix}</span>}
     </div>
   </div>;
 }
@@ -1370,25 +1478,25 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   };
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_active_flights}</button>
-    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem",marginBottom:16}}>
+    <div style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1px solid rgba(var(--ink),0.06)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
-        <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
+        <h3 style={{fontSize:18,fontWeight:700,color:"var(--tx)",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
         {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{ready?t.flight_status_listo:t["flight_status_"+flight.status]}</span>;})()}
       </div>
       <div style={{marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
         <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.invoice}</p>
-          {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.invoice}</p>
+          {flight.invoice_presented_at?<p style={{fontSize:13,color:"var(--green)",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"var(--amber)",margin:0}}>⏳ {t.no_invoice_yet}</p>}
         </div>
         <button onClick={downloadInvoicePdf} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.04em",boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>📄 {t.download_invoice}</button>
       </div>
       {/* Datos de destino completos — lo que el agente necesita para despachar */}
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
         <p style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 {t.destination}</p>
-        {(()=>{const any=flight.dest_name||flight.dest_address||flight.destination_address||flight.dest_phone||flight.dest_email||flight.dest_tax_id||flight.dest_postal_code;if(!any)return <p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_destination_yet}</p>;
+        {(()=>{const any=flight.dest_name||flight.dest_address||flight.destination_address||flight.dest_phone||flight.dest_email||flight.dest_tax_id||flight.dest_postal_code;if(!any)return <p style={{fontSize:13,color:"var(--amber)",margin:0}}>⏳ {t.no_destination_yet}</p>;
         const row=(lbl,val,copyable)=>val?<div style={{display:"flex",gap:10,padding:"4px 0",fontSize:12,alignItems:"baseline"}}>
-          <span style={{minWidth:80,color:"rgba(255,255,255,0.4)",fontWeight:700,fontSize:10,textTransform:"uppercase"}}>{lbl}</span>
-          <span style={{color:"#fff",flex:1,wordBreak:"break-word",fontFamily:copyable?"monospace":"inherit"}}>{val}</span>
+          <span style={{minWidth:80,color:"rgba(var(--ink),0.4)",fontWeight:700,fontSize:10,textTransform:"uppercase"}}>{lbl}</span>
+          <span style={{color:"var(--tx)",flex:1,wordBreak:"break-word",fontFamily:copyable?"monospace":"inherit"}}>{val}</span>
         </div>:null;
         return <>
           {row(t.dest_name,flight.dest_name)}
@@ -1399,37 +1507,37 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           {row(t.dest_email,flight.dest_email,true)}
         </>;})()}
       </div>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
-      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
-        {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);const opCode=opPkgs[0]?.operations?.operation_code||"OP";const clientCode=opPkgs[0]?.operations?.clients?.client_code||"";return <div key={fo.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
+      <div style={{background:"rgba(var(--ink),0.04)",borderRadius:8,padding:"10px 14px"}}>
+        {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);const opCode=opPkgs[0]?.operations?.operation_code||"OP";const clientCode=opPkgs[0]?.operations?.clients?.client_code||"";return <div key={fo.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(var(--ink),0.04)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:opPkgs.length>0?8:0}}>
-            <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{opCode} — {clientCode}</span>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
+            <span style={{fontSize:13,fontWeight:600,color:"var(--tx)"}}>{opCode} — {clientCode}</span>
+            <span style={{fontSize:12,color:"rgba(var(--ink),0.5)"}}>{w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
           </div>
           {opPkgs.length>0&&<div style={{paddingLeft:12,borderLeft:"2px solid rgba(184,149,106,0.2)",marginLeft:4}}>
-            {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",fontSize:11,color:"rgba(255,255,255,0.7)",gap:10,flexWrap:"wrap"}}>
+            {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",fontSize:11,color:"rgba(var(--ink),0.7)",gap:10,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                {p.photo_url?<img src={p.photo_url} alt="" onClick={()=>setLightboxPhoto(p.photo_url)} style={{width:38,height:38,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/>:<div style={{width:38,height:38,borderRadius:6,border:"1px dashed rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"rgba(255,255,255,0.25)"}}>📦</div>}
+                {p.photo_url?<img src={p.photo_url} alt="" onClick={()=>setLightboxPhoto(p.photo_url)} style={{width:38,height:38,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/>:<div style={{width:38,height:38,borderRadius:6,border:"1px dashed rgba(var(--ink),0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"rgba(var(--ink),0.25)"}}>📦</div>}
                 <span style={{minWidth:22,color:IC,fontWeight:700}}>#{p.package_number||i+1}</span>
                 {nt&&<span style={{fontFamily:"monospace",background:"rgba(184,149,106,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(184,149,106,0.2)"}}>{nt}</span>}
                 {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<>
-                  <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>←</span>
-                  {p.consolidated_from_trackings.slice(0,4).map((tr,k)=><span key={k} style={{fontFamily:"monospace",fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.25)"}}>{tr}</span>)}
-                  {p.consolidated_from_trackings.length>4&&<span title={p.consolidated_from_trackings.join(", ")} style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",cursor:"help"}}>+{p.consolidated_from_trackings.length-4}</span>}
+                  <span style={{fontSize:10,color:"rgba(var(--ink),0.4)"}}>←</span>
+                  {p.consolidated_from_trackings.slice(0,4).map((tr,k)=><span key={k} style={{fontFamily:"monospace",fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"var(--blue)",border:"1px solid rgba(96,165,250,0.25)"}}>{tr}</span>)}
+                  {p.consolidated_from_trackings.length>4&&<span title={p.consolidated_from_trackings.join(", ")} style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(var(--ink),0.06)",color:"rgba(var(--ink),0.5)",cursor:"help"}}>+{p.consolidated_from_trackings.length-4}</span>}
                 </>}
               </div>
-              <span style={{color:"rgba(255,255,255,0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:""}</span>
+              <span style={{color:"rgba(var(--ink),0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:""}</span>
             </div>;})}
           </div>}
         </div>;})}
       </div>
     </div>
     {invoiceItems.length>0&&<Card title={t.invoice}>
-      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+      <div style={{background:"rgba(var(--ink),0.04)",borderRadius:8,padding:"10px 14px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"6px 0",borderBottom:"1px solid rgba(var(--ink),0.08)",fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.4)",textTransform:"uppercase"}}>
           <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unit. USD</span><span style={{textAlign:"right"}}>Total</span>
         </div>
-        {invoiceItems.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.85)"}}>
+        {invoiceItems.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"8px 0",borderBottom:"1px solid rgba(var(--ink),0.04)",fontSize:12,color:"rgba(var(--ink),0.85)"}}>
           <span>{it.description}</span>
           <span style={{fontFamily:"monospace"}}>{it.hs_code||"—"}</span>
           <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
@@ -1437,28 +1545,28 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",marginTop:4,borderTop:"1px solid rgba(184,149,106,0.3)"}}>
-          <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
+          <span style={{fontSize:12,fontWeight:700,color:"var(--tx)"}}>TOTAL</span>
           <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
       </div>
     </Card>}
     {flight.status==="preparando"&&!flight.invoice_presented_at&&<div style={{padding:"14px 18px",background:"rgba(251,191,36,0.08)",border:"1.5px solid rgba(251,191,36,0.25)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Esperando factura de Argencargo</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{t.flight_waiting_msg}</p>
+      <p style={{fontSize:13,fontWeight:700,color:"var(--amber)",margin:0}}>⏳ Esperando factura de Argencargo</p>
+      <p style={{fontSize:12,color:"rgba(var(--ink),0.5)",margin:"4px 0 0"}}>{t.flight_waiting_msg}</p>
     </div>}
     {flight.status==="preparando"&&flight.invoice_presented_at&&<Card title={t.dispatch_form}>
-      {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
+      {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"var(--red)",marginBottom:14}}>{err}</div>}
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.weight_from_packages}</span>
+          <span style={{fontSize:12,color:"rgba(var(--ink),0.5)"}}>{t.weight_from_packages}</span>
           <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>
-        {autoFact>autoWeight+0.01&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{t.fact_note}</span>
+        {autoFact>autoWeight+0.01&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
+          <span style={{fontSize:11,color:"rgba(var(--ink),0.45)"}}>{t.fact_note}</span>
           <span style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>{autoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>}
-        {computedCost>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{t.rate_note}</span>
+        {computedCost>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
+          <span style={{fontSize:11,color:"rgba(var(--ink),0.45)"}}>{t.rate_note}</span>
           <span style={{fontSize:13,fontWeight:700,color:IC}}>{usdF(computedCost/autoFact)}/kg fact.</span>
         </div>}
       </div>
@@ -1469,16 +1577,16 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         const tog=(val,set,onColor)=><div style={{display:"flex",gap:6}}>{[[true,t.opt_yes],[false,t.opt_no]].map(([b,l])=>{
           const active=val===b;
           const col=b?onColor:{fg:"#E8C99B",bg:"rgba(184,149,106,0.16)",bd:"rgba(184,149,106,0.5)"};
-          return <button key={String(b)} type="button" onClick={()=>set(b)} style={{flex:1,padding:"10px 12px",fontSize:13.5,fontWeight:800,borderRadius:10,letterSpacing:"0.02em",border:`1.5px solid ${active?col.bd:"rgba(255,255,255,0.1)"}`,background:active?col.bg:"rgba(255,255,255,0.03)",color:active?col.fg:"rgba(255,255,255,0.45)",cursor:"pointer",transition:"all 140ms",boxShadow:active?`0 0 14px ${col.bg}`:"none"}}>{l}</button>;
+          return <button key={String(b)} type="button" onClick={()=>set(b)} style={{flex:1,padding:"10px 12px",fontSize:13.5,fontWeight:800,borderRadius:10,letterSpacing:"0.02em",border:`1.5px solid ${active?col.bd:"rgba(var(--ink),0.1)"}`,background:active?col.bg:"rgba(var(--ink),0.03)",color:active?col.fg:"rgba(var(--ink),0.45)",cursor:"pointer",transition:"all 140ms",boxShadow:active?`0 0 14px ${col.bg}`:"none"}}>{l}</button>;
         })}</div>;
         const VERDE={fg:"#4ade80",bg:"rgba(34,197,94,0.16)",bd:"rgba(34,197,94,0.55)"};
         const ROJO={fg:"#f87171",bg:"rgba(248,113,113,0.14)",bd:"rgba(248,113,113,0.5)"};
-        const togCard=(icon,label,extra,val,set,onColor)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,display:"flex",flexDirection:"column"}}>
-          <p style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"0 0 3px",lineHeight:1.35}}>{icon} {label}</p>
-          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"0 0 9px",flex:1}}>{extra}</p>
+        const togCard=(icon,label,extra,val,set,onColor)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(var(--ink),0.025)",border:"1px solid rgba(var(--ink),0.07)",borderRadius:12,display:"flex",flexDirection:"column"}}>
+          <p style={{fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.7)",margin:"0 0 3px",lineHeight:1.35}}>{icon} {label}</p>
+          <p style={{fontSize:10.5,color:"rgba(var(--ink),0.4)",margin:"0 0 9px",flex:1}}>{extra}</p>
           {tog(val,set,onColor)}
         </div>;
-        const desgRow=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"2px 0"}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.75)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
+        const desgRow=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"2px 0"}}><span style={{fontSize:11.5,color:"rgba(var(--ink),0.5)"}}>{l}</span><span style={{fontSize:11.5,fontWeight:700,color:"rgba(var(--ink),0.75)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
         return <>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
           <AgAdornInp label={t.fact_weight} value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100).replace(".",","):"0"} suffix="kg"/>
@@ -1491,9 +1599,9 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             {togCard("🏷️",t.cost_brand,"+ USD 0,70/kg",costBrand,setCostBrand,ROJO)}
           </div>
           <div style={{flex:"1 1 260px",padding:"14px 18px",background:"linear-gradient(150deg,rgba(34,197,94,0.10),rgba(34,197,94,0.03))",border:"1.5px solid rgba(34,197,94,0.28)",borderRadius:12,display:"flex",flexDirection:"column",justifyContent:"center"}}>
-            <p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.cost_computed}</p>
-            <p style={{fontSize:26,fontWeight:800,color:computedCost>0?"#4ade80":"rgba(255,255,255,0.35)",margin:"0 0 8px",fontFeatureSettings:'"tnum"'}}>{usdF(computedCost)}</p>
-            {computedCost>0&&<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:7}}>
+            <p style={{fontSize:11,fontWeight:800,color:"rgba(var(--ink),0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.cost_computed}</p>
+            <p style={{fontSize:26,fontWeight:800,color:computedCost>0?"#4ade80":"rgba(var(--ink),0.35)",margin:"0 0 8px",fontFeatureSettings:'"tnum"'}}>{usdF(computedCost)}</p>
+            {computedCost>0&&<div style={{borderTop:"1px solid rgba(var(--ink),0.08)",paddingTop:7}}>
               {desgRow(`${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × ${usdF(rate)}/kg`,usdF(costBase))}
               {costBattery&&desgRow(`🔋 ${t.battery_short}`,`+ ${usdF(10)}`)}
               {costBrand&&desgRow(`🏷️ ${t.brand_short} · USD 0,70/kg × ${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg`,`+ ${usdF(brandAmt)}`)}
@@ -1502,29 +1610,29 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-          <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
-            <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1.5px solid ${pedido&&carrier!==pedido?"rgba(248,113,113,0.6)":"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
-              {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#142038"}}>{c}</option>)}
+          <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{t.courier}</label>
+            <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1.5px solid ${pedido&&carrier!==pedido?"rgba(248,113,113,0.6)":"rgba(var(--ink),0.12)"}`,borderRadius:10,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none"}}>
+              {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"var(--panel)"}}>{c}</option>)}
             </select>
             {pedido&&<p style={{fontSize:11,margin:"4px 0 0",color:carrier===pedido?"#93c5fd":"#f87171",fontWeight:600}}>{carrier===pedido?`✓ ${t.requested_carrier||"Enviar por"}: ${pedido}${pedido==="FedEx"?" (÷6000)":""}`:`⚠ ${t.requested_carrier_warn||"Argencargo pidió"} ${pedido}${pedido==="FedEx"?" (÷6000)":""}`}</p>}
           </div>
-          <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
-            <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
-              <option value="cuenta_corriente" style={{background:"#142038"}}>{t.method_cc}</option>
-              <option value="alibaba" style={{background:"#142038"}}>{t.method_alibaba}</option>
+          <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{t.payment_method_label}</label>
+            <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none"}}>
+              <option value="cuenta_corriente" style={{background:"var(--panel)"}}>{t.method_cc}</option>
+              <option value="alibaba" style={{background:"var(--panel)"}}>{t.method_alibaba}</option>
             </select>
           </div>
           <div style={{gridColumn:"1 / -1"}}><Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/></div>
           <div style={{gridColumn:"1 / -1",marginBottom:14}}>
-            <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>📷 {t.dispatch_photo}</label>
-            <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)"}}>
+            <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>📷 {t.dispatch_photo}</label>
+            <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(var(--ink),0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(var(--ink),0.03)"}}>
               <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
               {dispatchPhotoUrl?<>
-                <img src={dispatchPhotoUrl} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)"}}/>
-                <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
+                <img src={dispatchPhotoUrl} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.15)"}}/>
+                <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
               </>:<>
                 <span style={{fontSize:20}}>{subiendoFoto?"⏳":"📎"}</span>
-                <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
+                <p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
               </>}
             </label>
           </div>
@@ -1532,37 +1640,37 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         </>;})()}
       {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!(computedCost>0)||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:
       <div style={{padding:"14px 18px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10}}>
-        <p style={{fontSize:13,color:"#fbbf24",margin:"0 0 12px",fontWeight:600}}>{t.dispatch_warning}</p>
+        <p style={{fontSize:13,color:"var(--amber)",margin:"0 0 12px",fontWeight:600}}>{t.dispatch_warning}</p>
         <div style={{display:"flex",gap:10}}>
-          <button onClick={dispatch} disabled={saving} style={{flex:1,padding:"10px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,cursor:saving?"not-allowed":"pointer",background:"rgba(251,191,36,0.25)",color:"#fbbf24"}}>{saving?t.saving:t.confirm}</button>
-          <button onClick={()=>setConfirmDispatch(false)} disabled={saving} style={{flex:1,padding:"10px",fontSize:13,fontWeight:700,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:8,cursor:"pointer",background:"transparent",color:"rgba(255,255,255,0.5)"}}>{t.cancel}</button>
+          <button onClick={dispatch} disabled={saving} style={{flex:1,padding:"10px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,cursor:saving?"not-allowed":"pointer",background:"rgba(251,191,36,0.25)",color:"var(--amber)"}}>{saving?t.saving:t.confirm}</button>
+          <button onClick={()=>setConfirmDispatch(false)} disabled={saving} style={{flex:1,padding:"10px",fontSize:13,fontWeight:700,border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:8,cursor:"pointer",background:"transparent",color:"rgba(var(--ink),0.5)"}}>{t.cancel}</button>
         </div>
       </div>}
     </Card>}
     {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
       <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>{t.dispatch_data}</p>
-      <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
-        <span><strong style={{color:"#fff"}}>{t.total_weight}:</strong> {flight.total_weight_kg} kg</span>
-        <span><strong style={{color:"#fff"}}>{t.total_cost}:</strong> {usdF(flight.total_cost_usd)}</span>
-        <span><strong style={{color:"#fff"}}>{t.courier}:</strong> {flight.international_carrier}</span>
-        <span><strong style={{color:"#fff"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
+      <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(var(--ink),0.6)"}}>
+        <span><strong style={{color:"var(--tx)"}}>{t.total_weight}:</strong> {flight.total_weight_kg} kg</span>
+        <span><strong style={{color:"var(--tx)"}}>{t.total_cost}:</strong> {usdF(flight.total_cost_usd)}</span>
+        <span><strong style={{color:"var(--tx)"}}>{t.courier}:</strong> {flight.international_carrier}</span>
+        <span><strong style={{color:"var(--tx)"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
       </div>
       <div style={{marginTop:12}}>
         <label style={{display:"block",fontSize:11,fontWeight:700,color:IC,marginBottom:5,textTransform:"uppercase"}}>📷 {t.dispatch_photo}</label>
-        <label style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)"}}>
+        <label style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(var(--ink),0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(var(--ink),0.03)"}}>
           <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
           {dispatchPhotoUrl?<>
-            <img src={dispatchPhotoUrl} alt="" onClick={e=>{e.preventDefault();setLightboxPhoto(dispatchPhotoUrl);}} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",cursor:"zoom-in"}}/>
-            <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
+            <img src={dispatchPhotoUrl} alt="" onClick={e=>{e.preventDefault();setLightboxPhoto(dispatchPhotoUrl);}} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.15)",cursor:"zoom-in"}}/>
+            <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
           </>:<>
             <span style={{fontSize:20}}>{subiendoFoto?"⏳":"📎"}</span>
-            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
+            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
           </>}
         </label>
       </div>
     </div>}
     {lightboxPhoto&&<div onClick={()=>setLightboxPhoto(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
-      <button onClick={(e)=>{e.stopPropagation();setLightboxPhoto(null);}} style={{position:"absolute",top:20,right:20,padding:"8px 16px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(0,0,0,0.5)",color:"#fff",cursor:"pointer"}}>✕</button>
+      <button onClick={(e)=>{e.stopPropagation();setLightboxPhoto(null);}} style={{position:"absolute",top:20,right:20,padding:"8px 16px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(var(--ink),0.2)",background:"rgba(0,0,0,0.5)",color:"var(--tx)",cursor:"pointer"}}>✕</button>
       <img src={lightboxPhoto} alt="" onClick={(e)=>e.stopPropagation()} style={{maxWidth:"95vw",maxHeight:"95vh",objectFit:"contain",borderRadius:8,boxShadow:"0 20px 60px rgba(0,0,0,0.7)"}}/>
     </div>}
   </div>;
@@ -1580,52 +1688,42 @@ function NotifBell({token,t}){
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});load();};
   const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);if(ids.length===0)return;await dq("notifications",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{read:true}});setNotifs(p=>p.map(n=>({...n,read:true})));setUnread(0);};
   return <div style={{position:"relative"}}>
-    <button onClick={()=>setOpen(!open)} style={{background:"none",border:"none",cursor:"pointer",padding:6,position:"relative"}}>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    <button onClick={()=>setOpen(!open)} className="ac-ico" style={{position:"relative",color:"rgba(var(--ink),0.75)"}}>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       {unread>0&&<span style={{position:"absolute",top:2,right:2,background:"#ff4444",color:"#fff",fontSize:9,fontWeight:700,borderRadius:10,minWidth:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{unread}</span>}
     </button>
-    {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-        <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Notificaciones</span>
+    {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"var(--panel)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(var(--ink),0.08)"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"var(--tx)"}}>{t?.notifications||"Notificaciones"}</span>
         {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>{t?.mark_all_read||"Marcar todas leídas"}</button>}
       </div>
-      {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:12,margin:0}}>{t?.no_notifs||"Sin notificaciones"}</p>:
-      notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}>
-        <p style={{fontSize:12,fontWeight:n.read?400:700,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:"0 0 2px"}}>{n.title}</p>
-        {n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{n.body}</p>}
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:0}}>{new Date(n.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</p>
+      {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(var(--ink),0.4)",fontSize:12,margin:0}}>{t?.no_notifs||"Sin notificaciones"}</p>:
+      notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(var(--ink),0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}>
+        <p style={{fontSize:12,fontWeight:n.read?400:700,color:n.read?"rgba(var(--ink),0.5)":"var(--tx)",margin:"0 0 2px"}}>{n.title}</p>
+        {n.body&&<p style={{fontSize:11,color:"rgba(var(--ink),0.4)",margin:"0 0 2px"}}>{n.body}</p>}
+        <p style={{fontSize:10,color:"rgba(var(--ink),0.3)",margin:0}}>{new Date(n.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</p>
       </div>)}
     </div>}
   </div>;
 }
 
-function SimpleShell({children,lang,setLang,t,onLogout,token}){
-  return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
+function SimpleShell({children,lang,setLang,t,onLogout,token,theme,setTheme,tabs,tab,setTab}){
+  const light=theme==="light";
+  return <div style={{minHeight:"100vh",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
     <OfflineStatusBar token={token} lang={lang}/>
-    <style dangerouslySetInnerHTML={{__html:`
-      @media(max-width:768px){
-        .ac-agente-header{padding:14px 16px!important;gap:8px!important}
-        .ac-agente-header img{height:30px!important}
-        .ac-agente-header button{padding:6px 10px!important;font-size:11px!important}
-        .ac-agente-main{padding:20px 16px!important;max-width:100vw!important;box-sizing:border-box!important}
-        h2{font-size:20px!important}
-        h3{font-size:13px!important}
-        table{font-size:11.5px!important}
-        table td,table th{padding:9px 8px!important;white-space:nowrap!important}
-        .ac-agente-tabs{overflow-x:auto!important;-webkit-overflow-scrolling:touch;flex-wrap:nowrap!important;scrollbar-width:none}
-        .ac-agente-tabs::-webkit-scrollbar{display:none}
-        .ac-agente-tabs button{flex-shrink:0!important}
-      }
-    `}}/>
-    <div className="ac-agente-header" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 28px",background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:12,position:"sticky",top:0,zIndex:10}}>
-      <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain",filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
-      <div style={{display:"flex",alignItems:"center",gap:12}}>
+    <div className="ac-isla">
+      <img src={LOGO} alt="Argencargo" style={{height:26,objectFit:"contain",flexShrink:0,filter:light?"brightness(0.1)":"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
+      {tabs?<div className="ac-isla-tabs">{tabs.map(tb=><button key={tb.k} className={`ac-isla-tab${tab===tb.k?" on":""}`} onClick={()=>setTab(tb.k)}>{tb.l}{tb.n!==undefined&&tb.n>0&&<span className="n">{tb.n}</span>}</button>)}</div>:<div style={{flex:1}}/>}
+      <div className="ac-isla-ctl">
         {token&&<NotifBell token={token} t={t}/>}
         <LangToggle lang={lang} setLang={setLang}/>
-        <button onClick={onLogout} style={{padding:"7px 14px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.logout}</button>
+        {setTheme&&<button className="ac-ico" onClick={()=>setTheme(light?"dark":"light")} title={light?t.theme_dark:t.theme_light} aria-label={light?t.theme_dark:t.theme_light}>{light?"🌙":"☀️"}</button>}
+        <button className="ac-ico" onClick={onLogout} title={t.logout} aria-label={t.logout}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        </button>
       </div>
     </div>
-    <div className="ac-agente-main" style={{maxWidth:1200,margin:"0 auto",padding:"32px 28px"}}>{children}</div>
+    <div className="ac-agente-main">{children}</div>
   </div>;
 }
 
@@ -1656,7 +1754,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
   const refFor=(i)=>mergedTracking||`Bulto ${i+1}`;
   const allComplete=newBultos.every(b=>Number(b.weight)>0&&Number(b.length)>0&&Number(b.width)>0&&Number(b.height)>0);
   const save=async()=>{
-    if(!confirm(`Vas a REEMPLAZAR los ${packages.length} bultos viejos por estos ${newBultos.length} nuevos.\n\nEsta acción no se puede deshacer. ¿Confirmás?`))return;
+    if(!await confirmDialog(`Vas a REEMPLAZAR los ${packages.length} bultos viejos por estos ${newBultos.length} nuevos.\n\nEsta acción no se puede deshacer. ¿Confirmás?`))return;
     setSaving(true);
     try{
       // 1. DELETE TODOS los bultos viejos de esta op
@@ -1688,19 +1786,19 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
         if(adminId){fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,portal:"admin",title:`✅ Reempaque ${opCode}`,body:`${before.toFixed(1)} kg → ${after.toFixed(1)} kg${delta>0?` (−${delta.toFixed(1)} kg)`:""} · ${newBultos.length} bultos`,url:"/admin"})}).catch(()=>{});}
       }catch(e){}
       onDone();
-    }catch(e){alert("Error: "+e.message);setSaving(false);}
+    }catch(e){toast("Error: "+e.message,"error");setSaving(false);}
   };
   return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"4vh 16px",overflowY:"auto"}}>
-    <div onClick={e=>e.stopPropagation()} style={{maxWidth:680,width:"100%",background:"#142038",border:"2px solid rgba(184,149,106,0.5)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 80px rgba(0,0,0,0.8)"}}>
+    <div onClick={e=>e.stopPropagation()} style={{maxWidth:680,width:"100%",background:"var(--panel)",border:"2px solid rgba(184,149,106,0.5)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 80px rgba(0,0,0,0.8)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12}}>
-        <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>🔄 Reempaquetar {opCode}</h3>
-        <button onClick={onClose} style={{fontSize:20,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>✕</button>
+        <h3 style={{fontSize:18,fontWeight:700,color:"var(--tx)",margin:0}}>🔄 Reempaquetar {opCode}</h3>
+        <button onClick={onClose} style={{fontSize:20,background:"transparent",border:"none",color:"rgba(var(--ink),0.5)",cursor:"pointer"}}>✕</button>
       </div>
 
       {/* Instrucciones explícitas en español + chino para que el agente no se trabe */}
       <div style={{padding:"12px 14px",background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10,marginBottom:14}}>
-        <p style={{fontSize:13,color:"#fbbf24",margin:0,fontWeight:700}}>📋 Instrucciones / 操作说明</p>
-        <ol style={{fontSize:12,color:"rgba(255,255,255,0.85)",margin:"6px 0 0",paddingLeft:18,lineHeight:1.6}}>
+        <p style={{fontSize:13,color:"var(--amber)",margin:0,fontWeight:700}}>📋 Instrucciones / 操作说明</p>
+        <ol style={{fontSize:12,color:"rgba(var(--ink),0.85)",margin:"6px 0 0",paddingLeft:18,lineHeight:1.6}}>
           <li>Reempaquetá las cajas físicamente / 重新打包</li>
           <li>Pegá o escribí los tracking originales en la caja nueva — los códigos que vienen del proveedor se conservan / 在新箱子上保留原始追踪号</li>
           <li>Cargá <strong>peso y medidas</strong> de cada caja nueva acá / 输入每个新箱子的重量和尺寸</li>
@@ -1708,32 +1806,32 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
         </ol>
       </div>
 
-      {request?.reason&&<div style={{padding:"8px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:0,fontWeight:700,textTransform:"uppercase"}}>Motivo del pedido / 原因:</p>
-        <p style={{fontSize:12,color:"#fff",margin:"3px 0 0"}}>{request.reason}</p>
+      {request?.reason&&<div style={{padding:"8px 12px",background:"rgba(var(--ink),0.04)",border:"1px solid rgba(var(--ink),0.08)",borderRadius:8,marginBottom:14}}>
+        <p style={{fontSize:10,color:"rgba(var(--ink),0.45)",margin:0,fontWeight:700,textTransform:"uppercase"}}>Motivo del pedido / 原因:</p>
+        <p style={{fontSize:12,color:"var(--tx)",margin:"3px 0 0"}}>{request.reason}</p>
       </div>}
 
       {/* Comparación */}
       <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:120,padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
-          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Antes / 之前</p>
-          <p style={{fontSize:16,fontWeight:700,color:"#fff",margin:"3px 0 0"}}>{before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg · {packages.length} bultos</p>
+        <div style={{flex:1,minWidth:120,padding:"10px 12px",background:"rgba(var(--ink),0.04)",border:"1px solid rgba(var(--ink),0.08)",borderRadius:8}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(var(--ink),0.45)",margin:0,textTransform:"uppercase"}}>Antes / 之前</p>
+          <p style={{fontSize:16,fontWeight:700,color:"var(--tx)",margin:"3px 0 0"}}>{before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg · {packages.length} bultos</p>
         </div>
-        <div style={{flex:1,minWidth:120,padding:"10px 12px",background:delta>0?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${delta>0?"rgba(34,197,94,0.3)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
-          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Ahora / 现在</p>
-          <p style={{fontSize:16,fontWeight:700,color:delta>0?"#22c55e":"#fff",margin:"3px 0 0"}}>{after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg · {newBultos.length} bultos {delta>0&&<span style={{fontSize:11,fontWeight:600,color:"#22c55e"}}>(−{delta.toFixed(1)})</span>}</p>
+        <div style={{flex:1,minWidth:120,padding:"10px 12px",background:delta>0?"rgba(34,197,94,0.08)":"rgba(var(--ink),0.04)",border:`1px solid ${delta>0?"rgba(34,197,94,0.3)":"rgba(var(--ink),0.08)"}`,borderRadius:8}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(var(--ink),0.45)",margin:0,textTransform:"uppercase"}}>Ahora / 现在</p>
+          <p style={{fontSize:16,fontWeight:700,color:delta>0?"#22c55e":"var(--tx)",margin:"3px 0 0"}}>{after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg · {newBultos.length} bultos {delta>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--green)"}}>(−{delta.toFixed(1)})</span>}</p>
         </div>
       </div>
 
       {/* Lista de bultos nuevos */}
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>📦 Nuevos bultos / 新箱子 ({newBultos.length})</p>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.5)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>📦 Nuevos bultos / 新箱子 ({newBultos.length})</p>
       {newBultos.map((b,i)=><div key={i} style={{background:"rgba(34,197,94,0.04)",border:"1.5px solid rgba(34,197,94,0.25)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#22c55e",background:"rgba(34,197,94,0.15)",padding:"3px 8px",borderRadius:5}}>Caja {i+1} / 箱 {i+1}</span>
-            {origTrackingsList.length>0&&<span title={`Trackings originales que se preservan: ${mergedTracking}`} style={{fontSize:10.5,fontWeight:600,fontFamily:"monospace",color:"#60a5fa",background:"rgba(96,165,250,0.10)",padding:"3px 8px",borderRadius:5,border:"1px solid rgba(96,165,250,0.25)",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 {origTrackingsList.length===1?origTrackingsList[0]:`${origTrackingsList[0]} +${origTrackingsList.length-1}`}</span>}
+            <span style={{fontSize:11,fontWeight:700,color:"var(--green)",background:"rgba(34,197,94,0.15)",padding:"3px 8px",borderRadius:5}}>Caja {i+1} / 箱 {i+1}</span>
+            {origTrackingsList.length>0&&<span title={`Trackings originales que se preservan: ${mergedTracking}`} style={{fontSize:10.5,fontWeight:600,fontFamily:"monospace",color:"var(--blue)",background:"rgba(96,165,250,0.10)",padding:"3px 8px",borderRadius:5,border:"1px solid rgba(96,165,250,0.25)",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 {origTrackingsList.length===1?origTrackingsList[0]:`${origTrackingsList[0]} +${origTrackingsList.length-1}`}</span>}
           </div>
-          {newBultos.length>1&&<button onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>}
+          {newBultos.length>1&&<button onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"var(--red)",cursor:"pointer"}}>✕</button>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
           <Inp label="Peso kg / 重量" type="number" value={b.weight} onChange={v=>ch(i,"weight",v)}/>
@@ -1743,16 +1841,16 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
         </div>
       </div>)}
 
-      <button onClick={addBulto} style={{padding:"10px 14px",fontSize:13,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.05)",color:"#22c55e",cursor:"pointer",marginBottom:14,width:"100%"}}>+ Agregar otra caja / 增加另一个箱子</button>
+      <button onClick={addBulto} style={{padding:"10px 14px",fontSize:13,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.05)",color:"var(--green)",cursor:"pointer",marginBottom:14,width:"100%"}}>+ Agregar otra caja / 增加另一个箱子</button>
 
       <div style={{marginBottom:14}}>
-        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>Notas / 备注 (opcional)</label>
-        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Ej: combiné 6 cajas en 4..." rows={2} style={{width:"100%",padding:"8px 12px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(var(--ink),0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>Notas / 备注 (opcional)</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Ej: combiné 6 cajas en 4..." rows={2} style={{width:"100%",padding:"8px 12px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"var(--tx)",outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
       </div>
 
       <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
-        <button onClick={onClose} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>Cancelar / 取消</button>
-        <button onClick={save} disabled={saving||!allComplete} title={!allComplete?"Cargá peso y medidas en todas las cajas":""} style={{padding:"10px 22px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:saving||!allComplete?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:saving||!allComplete?"rgba(255,255,255,0.4)":"#0A1628",cursor:saving?"wait":(allComplete?"pointer":"not-allowed")}}>{saving?"Guardando...":"✓ Reemplazar bultos / 替换箱子"}</button>
+        <button onClick={onClose} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(var(--ink),0.12)",background:"transparent",color:"rgba(var(--ink),0.6)",cursor:"pointer"}}>Cancelar / 取消</button>
+        <button onClick={save} disabled={saving||!allComplete} title={!allComplete?"Cargá peso y medidas en todas las cajas":""} style={{padding:"10px 22px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:saving||!allComplete?"rgba(var(--ink),0.05)":GOLD_GRADIENT,color:saving||!allComplete?"rgba(var(--ink),0.4)":"#0A1628",cursor:saving?"wait":(allComplete?"pointer":"not-allowed")}}>{saving?"Guardando...":"✓ Reemplazar bultos / 替换箱子"}</button>
       </div>
     </div>
   </div>;
@@ -1777,7 +1875,7 @@ function TrackingScanButton({onDetected,t}){
   };
   return <>
     <input ref={ref} type="file" accept="image/*" capture="environment" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
-    <button type="button" onClick={()=>ref.current?.click()} disabled={scanning} title={t.scan_tracking||"Escanear tracking con foto"} style={{padding:"10px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:`1px solid ${scanning?"rgba(255,255,255,0.1)":"rgba(91,155,213,0.4)"}`,background:scanning?"rgba(255,255,255,0.04)":"rgba(91,155,213,0.1)",color:scanning?"rgba(255,255,255,0.4)":"#5b9bd5",cursor:scanning?"wait":"pointer",whiteSpace:"nowrap",height:42,boxSizing:"border-box"}}>{scanning?"…":"📷 "+(t.scan||"Escanear")}</button>
+    <button type="button" onClick={()=>ref.current?.click()} disabled={scanning} title={t.scan_tracking||"Escanear tracking con foto"} style={{padding:"10px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:`1px solid ${scanning?"rgba(var(--ink),0.1)":"rgba(91,155,213,0.4)"}`,background:scanning?"rgba(var(--ink),0.04)":"rgba(91,155,213,0.1)",color:scanning?"rgba(var(--ink),0.4)":"#5b9bd5",cursor:scanning?"wait":"pointer",whiteSpace:"nowrap",height:42,boxSizing:"border-box"}}>{scanning?"…":"📷 "+(t.scan||"Escanear")}</button>
   </>;
 }
 
@@ -1864,12 +1962,12 @@ function PushNagBanner({token,t}){
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:installPromptEvent?12:8}}>
         <span style={{fontSize:24}}>📲</span>
         <div style={{flex:1}}>
-          <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.push_android_install_title||"Instalá la app en tu pantalla de inicio"}</p>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"3px 0 0",lineHeight:1.5}}>{t.push_android_install_msg||"Para recibir notificaciones, primero instalá la app desde Chrome."}</p>
+          <p style={{fontSize:14,fontWeight:700,color:"var(--tx)",margin:0}}>{t.push_android_install_title||"Instalá la app en tu pantalla de inicio"}</p>
+          <p style={{fontSize:12,color:"rgba(var(--ink),0.75)",margin:"3px 0 0",lineHeight:1.5}}>{t.push_android_install_msg||"Para recibir notificaciones, primero instalá la app desde Chrome."}</p>
         </div>
       </div>
-      {installPromptEvent?<button onClick={triggerInstall} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>{t.push_android_install_btn||"📥 Instalar app"}</button>:<ol style={{margin:"8px 0 0",paddingLeft:24,fontSize:12,color:"rgba(255,255,255,0.85)",lineHeight:1.7}}>
-        <li>{t.push_android_step1||"Tocá los 3 puntos arriba a la derecha en Chrome"} <strong style={{display:"inline-block",padding:"0 6px",border:"1px solid rgba(255,255,255,0.4)",borderRadius:3,fontSize:10,marginLeft:4,verticalAlign:"middle"}}>⋮</strong></li>
+      {installPromptEvent?<button onClick={triggerInstall} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>{t.push_android_install_btn||"📥 Instalar app"}</button>:<ol style={{margin:"8px 0 0",paddingLeft:24,fontSize:12,color:"rgba(var(--ink),0.85)",lineHeight:1.7}}>
+        <li>{t.push_android_step1||"Tocá los 3 puntos arriba a la derecha en Chrome"} <strong style={{display:"inline-block",padding:"0 6px",border:"1px solid rgba(var(--ink),0.4)",borderRadius:3,fontSize:10,marginLeft:4,verticalAlign:"middle"}}>⋮</strong></li>
         <li>{t.push_android_step2||"Tocá «Instalar app» o «Agregar a pantalla principal»"}</li>
         <li>{t.push_android_step3||"Abrí Argencargo desde el ícono que apareció — NO desde Chrome"}</li>
         <li>{t.push_android_step4||"Volvé acá y se activarán las notificaciones automáticamente"}</li>
@@ -1882,12 +1980,12 @@ function PushNagBanner({token,t}){
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
         <span style={{fontSize:24}}>📲</span>
         <div style={{flex:1}}>
-          <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.push_ios_install_title||"Instalá la app en tu pantalla de inicio"}</p>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"3px 0 0",lineHeight:1.5}}>{t.push_ios_install_msg||"En iPhone, las notificaciones solo funcionan después de instalar la app desde el menú compartir."}</p>
+          <p style={{fontSize:14,fontWeight:700,color:"var(--tx)",margin:0}}>{t.push_ios_install_title||"Instalá la app en tu pantalla de inicio"}</p>
+          <p style={{fontSize:12,color:"rgba(var(--ink),0.75)",margin:"3px 0 0",lineHeight:1.5}}>{t.push_ios_install_msg||"En iPhone, las notificaciones solo funcionan después de instalar la app desde el menú compartir."}</p>
         </div>
       </div>
-      <ol style={{margin:"8px 0 0",paddingLeft:24,fontSize:12,color:"rgba(255,255,255,0.85)",lineHeight:1.7}}>
-        <li>{t.push_ios_step1||"Tocá el botón de compartir en la barra inferior de Safari"} <strong style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:18,height:18,border:"1px solid rgba(255,255,255,0.4)",borderRadius:4,fontSize:10,marginLeft:4,verticalAlign:"middle"}}>⬆️</strong></li>
+      <ol style={{margin:"8px 0 0",paddingLeft:24,fontSize:12,color:"rgba(var(--ink),0.85)",lineHeight:1.7}}>
+        <li>{t.push_ios_step1||"Tocá el botón de compartir en la barra inferior de Safari"} <strong style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:18,height:18,border:"1px solid rgba(var(--ink),0.4)",borderRadius:4,fontSize:10,marginLeft:4,verticalAlign:"middle"}}>⬆️</strong></li>
         <li>{t.push_ios_step2||"Buscá y tocá «Agregar a inicio» (Add to Home Screen)"}</li>
         <li>{t.push_ios_step3||"Abrí Argencargo desde el ícono que apareció en tu home — NO desde Safari"}</li>
         <li>{t.push_ios_step4||"Volvé acá y aparecerá el botón para activar notificaciones"}</li>
@@ -1900,8 +1998,8 @@ function PushNagBanner({token,t}){
     <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
       <span style={{fontSize:24}}>🔔</span>
       <div>
-        <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{isDenied?(t.push_nag_denied_title||"Notificaciones bloqueadas"):(t.push_nag_title||"Activá las notificaciones")}</p>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.4}}>{isDenied?(t.push_nag_denied_msg||"Activalas desde los ajustes del navegador para recibir avisos de nuevos vuelos."):(t.push_nag_msg||"Necesarias para recibir avisos cuando admin crea o despacha vuelos.")}</p>
+        <p style={{fontSize:14,fontWeight:700,color:"var(--tx)",margin:0}}>{isDenied?(t.push_nag_denied_title||"Notificaciones bloqueadas"):(t.push_nag_title||"Activá las notificaciones")}</p>
+        <p style={{fontSize:12,color:"rgba(var(--ink),0.7)",margin:"3px 0 0",lineHeight:1.4}}>{isDenied?(t.push_nag_denied_msg||"Activalas desde los ajustes del navegador para recibir avisos de nuevos vuelos."):(t.push_nag_msg||"Necesarias para recibir avisos cuando admin crea o despacha vuelos.")}</p>
       </div>
     </div>
     {!isDenied&&<button onClick={activate} disabled={busy} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:busy?"wait":"pointer",whiteSpace:"nowrap"}}>{busy?"...":(t.push_activate_now||"Activar ahora")}</button>}
@@ -1939,13 +2037,13 @@ function PushSetup({token,userId,signup,t}){
     }catch(e){setMsg("❌ "+e.message);}
     setBusy(false);};
   if(!supported)return <div style={{background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16}}>
-    <p style={{fontSize:12,color:"#fbbf24",margin:0}}>⚠️ {t.push_unsupported||"Tu navegador no soporta notificaciones. Usá Chrome o Edge en Android, o Safari en iOS 16.4+."}</p>
+    <p style={{fontSize:12,color:"var(--amber)",margin:0}}>⚠️ {t.push_unsupported||"Tu navegador no soporta notificaciones. Usá Chrome o Edge en Android, o Safari en iOS 16.4+."}</p>
   </div>;
   return <div style={{background:subscribed?"rgba(34,197,94,0.05)":"rgba(91,155,213,0.06)",border:`1px solid ${subscribed?"rgba(34,197,94,0.2)":"rgba(91,155,213,0.25)"}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
-        <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:8}}>🔔 {t.push_title||"Notificaciones en este dispositivo"} {subscribed&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.2)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.4)",fontWeight:700}}>ON</span>}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0",lineHeight:1.5}}>{subscribed?(t.push_subtitle_on||"Recibís avisos cuando admin crea/despacha vuelos. Sin apps externas, sin chats.") :(t.push_subtitle_off||"Activá las notificaciones para recibir avisos directo al celular cuando admin asigne un nuevo vuelo o cambie algo.")}</p>
+        <p style={{fontSize:13,fontWeight:700,color:"var(--tx)",margin:0,display:"flex",alignItems:"center",gap:8}}>🔔 {t.push_title||"Notificaciones en este dispositivo"} {subscribed&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.2)",color:"var(--green)",border:"1px solid rgba(34,197,94,0.4)",fontWeight:700}}>ON</span>}</p>
+        <p style={{fontSize:11,color:"rgba(var(--ink),0.5)",margin:"3px 0 0",lineHeight:1.5}}>{subscribed?(t.push_subtitle_on||"Recibís avisos cuando admin crea/despacha vuelos. Sin apps externas, sin chats.") :(t.push_subtitle_off||"Activá las notificaciones para recibir avisos directo al celular cuando admin asigne un nuevo vuelo o cambie algo.")}</p>
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {!subscribed&&<button onClick={subscribe} disabled={busy} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:busy?"wait":"pointer"}}>{busy?"...":(t.push_enable||"Activar")}</button>}
@@ -2004,42 +2102,42 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
   return <div onClick={()=>!saving&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>✏️ {t.edit_package} · {pkg.operations?.operation_code||"—"}</h3>
-        <button onClick={()=>!saving&&onClose()} disabled={saving} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:saving?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        <h3 style={{fontSize:16,fontWeight:700,color:"var(--tx)",margin:0}}>✏️ {t.edit_package} · {pkg.operations?.operation_code||"—"}</h3>
+        <button onClick={()=>!saving&&onClose()} disabled={saving} style={{background:"transparent",border:"none",color:"rgba(var(--ink),0.5)",fontSize:22,cursor:saving?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
       </div>
-      {err&&<div style={{padding:"8px 12px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:8,fontSize:12,color:"#ff6b6b",marginBottom:12}}>{err}</div>}
+      {err&&<div style={{padding:"8px 12px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:8,fontSize:12,color:"var(--red)",marginBottom:12}}>{err}</div>}
       <div style={{marginBottom:12}}>
-        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{t.tracking}</label>
-        <input value={tracking} onChange={e=>setTracking(e.target.value)} placeholder={t.tracking_ph} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{t.tracking}</label>
+        <input value={tracking} onChange={e=>setTracking(e.target.value)} placeholder={t.tracking_ph} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"var(--tx)",outline:"none",fontFamily:"monospace"}}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
         <div>
-          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.weight}</label>
-          <input type="number" value={weight} onChange={e=>setWeight(e.target.value)} placeholder="kg" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.weight}</label>
+          <input type="number" value={weight} onChange={e=>setWeight(e.target.value)} placeholder="kg" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"var(--tx)",outline:"none"}}/>
         </div>
         <div>
-          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.length}</label>
-          <input type="number" value={length} onChange={e=>setLength(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.length}</label>
+          <input type="number" value={length} onChange={e=>setLength(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"var(--tx)",outline:"none"}}/>
         </div>
         <div>
-          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.width}</label>
-          <input type="number" value={width} onChange={e=>setWidth(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.width}</label>
+          <input type="number" value={width} onChange={e=>setWidth(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"var(--tx)",outline:"none"}}/>
         </div>
         <div>
-          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.height}</label>
-          <input type="number" value={height} onChange={e=>setHeight(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.height}</label>
+          <input type="number" value={height} onChange={e=>setHeight(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"var(--tx)",outline:"none"}}/>
         </div>
       </div>
-      <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10}}>
-        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo}</label>
+      <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(var(--ink),0.04)",border:"1px solid rgba(var(--ink),0.08)",borderRadius:10}}>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo}</label>
         {currentPhoto?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
           <img src={currentPhoto} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
-            <p style={{fontSize:12,fontWeight:600,color:"#22c55e",margin:0}}>{photoFile?t.new_photo_ready:t.current_photo}</p>
+            <p style={{fontSize:12,fontWeight:600,color:"var(--green)",margin:0}}>{photoFile?t.new_photo_ready:t.current_photo}</p>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
-              <label htmlFor={`edit-photo-${pkg.id}`} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>📷 {t.replace}</label>
-              <button type="button" onClick={()=>{setPhotoFile(null);setPhotoPreview(null);setRemovePhoto(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>{t.remove_photo}</button>
+              <label htmlFor={`edit-photo-${pkg.id}`} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"var(--blue)",cursor:"pointer"}}>📷 {t.replace}</label>
+              <button type="button" onClick={()=>{setPhotoFile(null);setPhotoPreview(null);setRemovePhoto(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"var(--red)",cursor:"pointer"}}>{t.remove_photo}</button>
             </div>
           </div>
         </div>:<div>
@@ -2049,8 +2147,8 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
         </div>}
       </div>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-        <button onClick={()=>!saving&&onClose()} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:saving?"not-allowed":"pointer"}}>{t.cancel}</button>
-        <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.5)",background:saving?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#60a5fa,#3b82f6)",color:saving?"rgba(255,255,255,0.4)":"#fff",cursor:saving?"wait":"pointer"}}>{saving?t.saving:`✓ ${t.save_changes}`}</button>
+        <button onClick={()=>!saving&&onClose()} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(var(--ink),0.12)",background:"transparent",color:"rgba(var(--ink),0.65)",cursor:saving?"not-allowed":"pointer"}}>{t.cancel}</button>
+        <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.5)",background:saving?"rgba(var(--ink),0.05)":"linear-gradient(135deg,#60a5fa,#3b82f6)",color:saving?"rgba(var(--ink),0.4)":"var(--tx)",cursor:saving?"wait":"pointer"}}>{saving?t.saving:`✓ ${t.save_changes}`}</button>
       </div>
     </div>
   </div>;
@@ -2069,7 +2167,7 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
       await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{photo_url:url,photo_uploaded_at:new Date().toISOString()}});
       onUpdated&&onUpdated();
     }else{
-      alert(t.upload_failed);
+      toast(t.upload_failed,"error");
     }
     setUploading(false);
   };
@@ -2083,7 +2181,7 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
   }
   return <>
     <input id={`reup-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)upload(f);}} style={{display:"none"}} disabled={uploading}/>
-    <label htmlFor={`reup-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 9px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:uploading?"wait":"pointer",letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap",opacity:uploading?0.5:1}}>{uploading?"…":`📷 ${t.photo_pending}`}</label>
+    <label htmlFor={`reup-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 9px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"var(--amber)",cursor:uploading?"wait":"pointer",letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap",opacity:uploading?0.5:1}}>{uploading?"…":`📷 ${t.photo_pending}`}</label>
   </>;
 }
 
@@ -2218,29 +2316,29 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
     setSaving(false);
   };
 
-  return <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1.5px solid rgba(184,149,106,0.25)",padding:"1.5rem"}}>
-    <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 18px"}}>{t.new_package}</h3>
-    {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
+  return <div style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1.5px solid rgba(184,149,106,0.25)",padding:"1.5rem"}}>
+    <h3 style={{fontSize:16,fontWeight:700,color:"var(--tx)",margin:"0 0 18px"}}>{t.new_package}</h3>
+    {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"var(--red)",marginBottom:14}}>{err}</div>}
 
     <div style={{marginBottom:14,position:"relative"}}>
-      <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.select_client}<span style={{color:"#ff6b6b"}}> *</span></label>
-      <button type="button" onClick={()=>setShowDrop(!showDrop)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:selectedClient||clientId==="unregistered"?"#fff":"rgba(255,255,255,0.4)",outline:"none",textAlign:"left",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{t.select_client}<span style={{color:"var(--red)"}}> *</span></label>
+      <button type="button" onClick={()=>setShowDrop(!showDrop)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.06)",color:selectedClient||clientId==="unregistered"?"var(--tx)":"rgba(var(--ink),0.4)",outline:"none",textAlign:"left",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span>{clientId==="unregistered"?`📦 ${t.unregistered_client}`:selectedClient?`${selectedClient.client_code} - ${selectedClient.first_name||""} ${selectedClient.last_name||""}`:t.select_client}</span>
         <span>{showDrop?"▲":"▼"}</span>
       </button>
-      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
-        <div style={{padding:8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
-        <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(184,149,106,0.15)":"transparent",color:"#fbbf24",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>📦 {t.unregistered_client}</button>
-        {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(184,149,106,0.15)":"transparent",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"var(--panel)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
+        <div style={{padding:8,borderBottom:"1px solid rgba(var(--ink),0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.06)",borderRadius:6,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none"}}/></div>
+        <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(184,149,106,0.15)":"transparent",color:"var(--amber)",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(var(--ink),0.06)"}}>📦 {t.unregistered_client}</button>
+        {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(184,149,106,0.15)":"transparent",color:"var(--tx)",cursor:"pointer",textAlign:"left"}}>
           <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>{c.client_code}</span>
-          <span style={{color:"rgba(255,255,255,0.5)",marginLeft:8}}>{c.first_name||""} {c.last_name||""}</span>
+          <span style={{color:"rgba(var(--ink),0.5)",marginLeft:8}}>{c.first_name||""} {c.last_name||""}</span>
         </button>)}
-        {filtered.length===0&&<p style={{padding:"10px 14px",fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{t.client_not_found}</p>}
+        {filtered.length===0&&<p style={{padding:"10px 14px",fontSize:12,color:"rgba(var(--ink),0.4)",margin:0}}>{t.client_not_found}</p>}
       </div>}
     </div>
 
     {clientId==="unregistered"&&<div style={{padding:"10px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ {t.unregistered_info}</p>
+      <p style={{fontSize:12,color:"var(--amber)",margin:0,fontWeight:600}}>⚠ {t.unregistered_info}</p>
     </div>}
     {selectedClient&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.deposit_info}</p>
@@ -2254,11 +2352,11 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
 
 
     <div style={{marginTop:8,marginBottom:14}}>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
-      {bultos.map((b,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:"1px solid rgba(255,255,255,0.08)"}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
+      {bultos.map((b,i)=><div key={i} style={{background:"rgba(var(--ink),0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:"1px solid rgba(var(--ink),0.08)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <span style={{fontSize:11,fontWeight:700,color:IC}}>{t.bulto_n} {i+1}</span>
-          {bultos.length>1&&<button type="button" onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>{t.remove}</button>}
+          {bultos.length>1&&<button type="button" onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"var(--red)",cursor:"pointer",fontWeight:600}}>{t.remove}</button>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label={t.weight} type="number" value={b.weight} onChange={v=>chBulto(i,"weight",v)}/>
@@ -2267,19 +2365,19 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
           <Inp label={t.height} type="number" value={b.height} onChange={v=>chBulto(i,"height",v)} placeholder="25"/>
         </div>
         {/* Foto del bulto */}
-        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo_required}</label>
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
+          <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo_required}</label>
           {b.photoPreview?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
             <img src={b.photoPreview} alt="preview" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
             <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
-              <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>{t.photo_uploaded}</p>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0,wordBreak:"break-all"}}>{b.photo?.name||""}</p>
-              <button type="button" onClick={()=>setPhoto(i,null)} style={{alignSelf:"flex-start",fontSize:10,padding:"4px 9px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600,marginTop:4}}>{t.remove}</button>
+              <p style={{fontSize:12,fontWeight:700,color:"var(--green)",margin:0}}>{t.photo_uploaded}</p>
+              <p style={{fontSize:11,color:"rgba(var(--ink),0.5)",margin:0,wordBreak:"break-all"}}>{b.photo?.name||""}</p>
+              <button type="button" onClick={()=>setPhoto(i,null)} style={{alignSelf:"flex-start",fontSize:10,padding:"4px 9px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"var(--red)",cursor:"pointer",fontWeight:600,marginTop:4}}>{t.remove}</button>
             </div>
           </div>:<div>
             <input id={`photo-${i}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setPhoto(i,f);}} style={{display:"none"}}/>
             <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>
+            <p style={{fontSize:10,color:"rgba(var(--ink),0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>
           </div>}
         </div>
       </div>)}
@@ -2411,16 +2509,16 @@ function AgentTutorialOverlay({ signup, token, lang, onClose, onComplete }) {
       .ag-tut-card{animation:agTutSlideIn 260ms cubic-bezier(0.34,1.56,0.64,1)}
     ` }}/>
     <div className="ag-tut-card" key={i} style={{ maxWidth: 560, width: "100%", background: "linear-gradient(160deg,#152849 0%,#0F1E3D 100%)", border: "1px solid rgba(184,149,106,0.22)", borderRadius: 20, padding: "36px 32px 28px", boxShadow: "0 30px 60px rgba(0,0,0,0.45), 0 0 80px rgba(184,149,106,0.08)", position: "relative" }}>
-      <button onClick={skip} disabled={closing} style={{ position: "absolute", top: 14, right: 14, background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "6px 10px", borderRadius: 6 }}>{L.skip}</button>
-      <div style={{ display: "flex", gap: 6, marginBottom: 22, marginTop: 4 }}>{steps.map((_, idx) => <div key={idx} style={{ flex: 1, height: 4, borderRadius: 2, background: idx <= i ? GOLD_GRADIENT : "rgba(255,255,255,0.08)", transition: "background 220ms" }}/>)}</div>
+      <button onClick={skip} disabled={closing} style={{ position: "absolute", top: 14, right: 14, background: "transparent", border: "none", color: "rgba(var(--ink),0.4)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "6px 10px", borderRadius: 6 }}>{L.skip}</button>
+      <div style={{ display: "flex", gap: 6, marginBottom: 22, marginTop: 4 }}>{steps.map((_, idx) => <div key={idx} style={{ flex: 1, height: 4, borderRadius: 2, background: idx <= i ? GOLD_GRADIENT : "rgba(var(--ink),0.08)", transition: "background 220ms" }}/>)}</div>
       <div style={{ width: 72, height: 72, borderRadius: 20, background: "linear-gradient(135deg,rgba(184,149,106,0.18),rgba(232,208,152,0.06))", border: "1px solid rgba(184,149,106,0.28)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, marginBottom: 18, boxShadow: "0 0 30px rgba(184,149,106,0.2)" }}>{cur.icon}</div>
       <p style={{ fontSize: 11, fontWeight: 700, color: GOLD_LIGHT, textTransform: "uppercase", letterSpacing: "0.12em", margin: "0 0 6px" }}>{cur.subtitle}</p>
-      <h2 style={{ fontSize: 26, fontWeight: 700, color: "#fff", margin: "0 0 12px", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</h2>
-      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", lineHeight: 1.6, margin: "0 0 28px", whiteSpace: "pre-line" }} dangerouslySetInnerHTML={{ __html: cur.body.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#E8D098">$1</strong>') }}/>
+      <h2 style={{ fontSize: 26, fontWeight: 700, color: "var(--tx)", margin: "0 0 12px", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</h2>
+      <p style={{ fontSize: 14, color: "rgba(var(--ink),0.7)", lineHeight: 1.6, margin: "0 0 28px", whiteSpace: "pre-line" }} dangerouslySetInnerHTML={{ __html: cur.body.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#E8D098">$1</strong>') }}/>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, letterSpacing: "0.05em" }}>{i + 1} / {steps.length}</span>
+        <span style={{ fontSize: 11, color: "rgba(var(--ink),0.4)", fontWeight: 600, letterSpacing: "0.05em" }}>{i + 1} / {steps.length}</span>
         <div style={{ display: "flex", gap: 8 }}>
-          {i > 0 && <button onClick={() => setI(i - 1)} disabled={closing} style={{ padding: "11px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.65)", cursor: "pointer" }}>{L.back}</button>}
+          {i > 0 && <button onClick={() => setI(i - 1)} disabled={closing} style={{ padding: "11px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10, border: "1px solid rgba(var(--ink),0.1)", background: "transparent", color: "rgba(var(--ink),0.65)", cursor: "pointer" }}>{L.back}</button>}
           <button onClick={next} disabled={closing} style={{ padding: "11px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10, border: "none", background: GOLD_GRADIENT, color: "#0A1628", cursor: "pointer", letterSpacing: "0.04em", boxShadow: GOLD_GLOW }}>{closing ? L.saving : (i === 0 ? L.start : last ? L.finish : L.next)} {!last && "→"}</button>
         </div>
       </div>
