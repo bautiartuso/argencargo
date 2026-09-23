@@ -10303,14 +10303,10 @@ function AgentsPanel({token}){
       <div style={{display:"flex",gap:6,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,width:"fit-content"}}>
         {[{k:"active",l:"En operación",n:activeFlights.length,c:"#60a5fa"},{k:"received",l:"Recibidos",n:receivedFlights.length,c:"#22c55e"}].map(st=>{const isActive=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:7,background:isActive?`linear-gradient(135deg, ${st.c}33, ${st.c}1A)`:"transparent",color:isActive?st.c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,boxShadow:isActive?`inset 0 0 0 1px ${st.c}55`:"none"}}>{st.l}<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,background:isActive?`${st.c}33`:"rgba(255,255,255,0.08)",color:isActive?st.c:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
       </div>
-      <div title="Presupuestos de las operaciones de los vuelos en operación. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:16,padding:"6px 16px",background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10}}>
+      <div title="Presupuestos de las operaciones en vuelos en operación que todavía no se cobraron. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:16,padding:"6px 16px",background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10}}>
         <div>
-          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Ingresos estimados · en el aire</p>
-          <p style={{fontSize:18,fontWeight:800,color:"#22c55e",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(total)}</p>
-        </div>
-        <div style={{borderLeft:"1px solid rgba(255,255,255,0.1)",paddingLeft:14}}>
-          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Pendiente de cobro</p>
-          <p style={{fontSize:18,fontWeight:800,color:pend>0?"#fbbf24":"#fff",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(pend)}</p>
+          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Pendiente de cobro · en el aire</p>
+          <p style={{fontSize:18,fontWeight:800,color:"#fbbf24",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(pend)}</p>
           {sinPres>0&&<p style={{fontSize:10.5,color:"#f87171",margin:"3px 0 0"}}>{sinPres} op{sinPres!==1?"s":""} sin presupuesto</p>}
         </div>
       </div>
