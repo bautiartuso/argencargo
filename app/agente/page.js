@@ -76,6 +76,25 @@ const clearSession=()=>{try{localStorage.removeItem("ac_agent_s");}catch(e){}};
 // i18n
 const I18N={
   es:{
+    stats_period_pkgs:"Bultos registrados",
+    stats_kg_registered:"Kg recibidos",
+    stats_flights_dispatched:"Vuelos despachados",
+    stats_kg_shipped:"Kg enviados",
+    stats_avg_days:"Días promedio en depósito",
+    stats_avg_days_hint:"desde que registrás el bulto hasta que sale el vuelo",
+    stats_quality:"Calidad de la carga",
+    stats_photo_pct:"Bultos con foto",
+    stats_air_pct:"Cajas con aire",
+    stats_air_pct_hint:"volumétrico mayor que el bruto",
+    stats_air_kg:"Kg cobrados por volumen",
+    stats_air_hint:"Lo que se factura de más por cajas grandes o rotas. Reempacar baja este número.",
+    stats_avg_kg:"Kg promedio por bulto",
+    stats_weekly:"Bultos por semana",
+    stats_weekly_hint:"últimas 12 semanas",
+    stats_top_clients:"Clientes con más bultos",
+    stats_no_data:"Sin datos en este período",
+    phase_all:"Todos",
+    register_here:"Registrá acá los bultos que llegan al depósito",
     sec_preparing:"En preparación",
     sec_ready:"Listo para enviar",
     sec_transit:"En tránsito",
@@ -163,7 +182,7 @@ const I18N={
     tab_active_flights:"Vuelos activos",
     tab_history:"Histórico",
     tab_stats:"Estadísticas",
-    tab_account:"Mi cuenta",
+    tab_account:"Cuenta corriente",
     flight:"Vuelo",
     flight_status_preparando:"Preparando",
     flight_status_listo:"Listo para enviar",
@@ -368,6 +387,25 @@ const I18N={
     processing:"Procesando…",
   },
   zh:{
+    stats_period_pkgs:"登记的包裹",
+    stats_kg_registered:"收到的公斤数",
+    stats_flights_dispatched:"已发出的航班",
+    stats_kg_shipped:"已发出的公斤数",
+    stats_avg_days:"在仓库的平均天数",
+    stats_avg_days_hint:"从登记包裹到航班发出",
+    stats_quality:"货物质量",
+    stats_photo_pct:"有照片的包裹",
+    stats_air_pct:"有空隙的箱子",
+    stats_air_pct_hint:"体积重大于毛重",
+    stats_air_kg:"按体积计费的公斤数",
+    stats_air_hint:"因箱子过大或破损而多计费的部分。重新包装可以降低这个数字。",
+    stats_avg_kg:"每件平均公斤数",
+    stats_weekly:"每周包裹数",
+    stats_weekly_hint:"最近12周",
+    stats_top_clients:"包裹最多的客户",
+    stats_no_data:"该时期没有数据",
+    phase_all:"全部",
+    register_here:"在这里登记到达仓库的包裹",
     sec_preparing:"准备中",
     sec_ready:"可以发送",
     sec_transit:"运输中",
@@ -455,7 +493,7 @@ const I18N={
     tab_active_flights:"活跃航班",
     tab_history:"历史",
     tab_stats:"统计",
-    tab_account:"我的账户",
+    tab_account:"往来账户",
     flight:"航班",
     flight_status_preparando:"准备中",
     flight_status_listo:"可以发送",
@@ -680,10 +718,11 @@ function LangToggle({lang,setLang}){return <div style={{display:"inline-flex",ga
 // Tema claro / oscuro del panel del agente. Todo el panel pinta con "tinta con alfa"
 // (rgba(var(--ink),x)): en oscuro la tinta es blanca sobre navy, en claro es navy sobre blanco.
 const THEME_CSS=`
-.ac-ag{--ink:255,255,255;--tx:#fff;--panel:#142038;--isla:rgba(10,22,40,0.72);--amber:#fbbf24;--green:#22c55e;--blue:#60a5fa;--red:#ff6b6b;
+.ac-ag{--ink:255,255,255;--tx:#fff;--gold:#E8D098;--panel:#142038;--isla:rgba(10,22,40,0.72);--amber:#fbbf24;--green:#22c55e;--blue:#60a5fa;--red:#ff6b6b;
   --bg:radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.10), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(96,165,250,0.06), transparent 50%), #0A1628;
-  color:var(--tx);min-height:100vh;background:var(--bg)}
-.ac-ag[data-theme="light"]{--ink:10,22,40;--tx:#0A1628;--panel:#ffffff;--isla:rgba(255,255,255,0.86);--amber:#b45309;--green:#15803d;--blue:#1d4ed8;--red:#dc2626;
+  color:var(--tx);min-height:100vh;background:var(--bg);display:flow-root}
+html,body{background:#0A1628}
+.ac-ag[data-theme="light"]{--ink:10,22,40;--tx:#0A1628;--gold:#8C6B3E;--panel:#ffffff;--isla:rgba(255,255,255,0.86);--amber:#b45309;--green:#15803d;--blue:#1d4ed8;--red:#dc2626;
   --bg:radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.14), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(29,78,216,0.05), transparent 50%), #F3F5F9}
 .ac-ag[data-theme="light"] .ac-hover-card:hover{box-shadow:0 12px 32px rgba(10,22,40,0.10),0 0 0 1px rgba(184,149,106,0.3)}
 .ac-ag[data-theme="light"] .ac-card{background:#fff!important;box-shadow:0 1px 2px rgba(10,22,40,0.04),0 8px 24px -12px rgba(10,22,40,0.12)}
@@ -692,7 +731,9 @@ const THEME_CSS=`
 .ac-ag[data-theme="light"] input,.ac-ag[data-theme="light"] textarea,.ac-ag[data-theme="light"] select{color-scheme:light}
 .ac-ag ::selection{background:rgba(184,149,106,0.35)}
 .ac-isla{position:sticky;top:10px;z-index:30;margin:12px auto 0;max-width:1200px;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 18px;border-radius:22px;background:var(--isla);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid rgba(var(--ink),0.1);box-shadow:0 12px 40px -10px rgba(0,0,0,0.35)}
-.ac-isla-tabs{display:flex;gap:2px;flex:1;justify-content:center;min-width:0;overflow-x:auto;scrollbar-width:none}
+.ac-isla-side{flex:1 1 0;display:flex;align-items:center;min-width:0}
+.ac-isla-side.r{justify-content:flex-end}
+.ac-isla-tabs{display:flex;gap:2px;flex:0 1 auto;justify-content:center;min-width:0;overflow-x:auto;scrollbar-width:none}
 .ac-isla-tabs::-webkit-scrollbar{display:none}
 .ac-isla-tab{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:14px;border:none;background:transparent;color:rgba(var(--ink),0.62);font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap;letter-spacing:0.01em;transition:background 150ms,color 150ms}
 .ac-isla-tab:hover{background:rgba(var(--ink),0.06);color:var(--tx)}
@@ -700,6 +741,16 @@ const THEME_CSS=`
 .ac-isla-tab .n{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(var(--ink),0.1);font-variant-numeric:tabular-nums}
 .ac-isla-tab.on .n{background:rgba(10,22,40,0.14)}
 .ac-isla-ctl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.ac-chip{padding:7px 13px;font-size:12px;font-weight:700;border-radius:999px;border:1px solid rgba(var(--ink),0.12);background:rgba(var(--ink),0.04);color:rgba(var(--ink),0.65);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;transition:all 150ms;white-space:nowrap}
+.ac-chip:hover{color:var(--tx);border-color:rgba(var(--ink),0.25)}
+.ac-chip.on{background:var(--tx);color:var(--panel);border-color:transparent}
+.ac-ag[data-theme="light"] .ac-chip.on{background:#0A1628;color:#fff}
+.ac-chip .n{font-size:10.5px;padding:1px 6px;border-radius:999px;background:rgba(var(--ink),0.12)}
+.ac-chip.on .n{background:rgba(255,255,255,0.18)}
+.ac-tbl tr.ac-grp td{background:rgba(var(--ink),0.045);padding:9px 14px;font-size:12px;border-bottom:1px solid rgba(var(--ink),0.07)}
+.ac-tbl tr.ac-grp:hover td{background:rgba(var(--ink),0.045)}
+.ac-tbl tr.ac-grp td .code{font-family:"JetBrains Mono","SF Mono",monospace;font-weight:800;font-size:12.5px;letter-spacing:0.03em}
+.ac-tbl tr.ac-grp td .sep{color:rgba(var(--ink),0.3);margin:0 8px}
 .ac-ico{width:36px;height:36px;border-radius:12px;border:1px solid rgba(var(--ink),0.1);background:rgba(var(--ink),0.04);color:var(--tx);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;padding:0;transition:all 150ms;font-family:inherit}
 .ac-ico:hover{border-color:rgba(184,149,106,0.45);background:rgba(184,149,106,0.1)}
 .ac-mini{padding:5px 10px;font-size:11.5px;font-weight:700;border-radius:8px;border:1px solid rgba(var(--ink),0.12);background:rgba(var(--ink),0.04);color:rgba(var(--ink),0.75);cursor:pointer;font-family:inherit;transition:all 150ms}
@@ -713,9 +764,11 @@ const THEME_CSS=`
 .ac-tbl tbody tr:hover td{background:rgba(var(--ink),0.025)}
 @media(max-width:860px){
   .ac-isla{flex-wrap:wrap;margin:8px 8px 0;padding:8px 10px;border-radius:18px;top:6px;gap:6px}
+  .ac-isla-side{flex:0 0 auto}.ac-isla-side.r{flex:1 1 auto}
   .ac-isla-tabs{order:3;flex-basis:100%;justify-content:flex-start;padding-top:6px;border-top:1px solid rgba(var(--ink),0.08);margin-top:2px}
   .ac-isla-tab{padding:8px 12px;font-size:12px}
   .ac-agente-main{padding:18px 12px 60px}
+  .ac-stats-2{grid-template-columns:1fr!important}
   h2{font-size:20px!important}
   h3{font-size:13px!important}
   table{font-size:11.5px!important}
@@ -813,7 +866,7 @@ function AuthScreen({onLogin,lang,setLang,t}){
         <Inp label={t.email} type="email" value={email} onChange={setEmail} req/>
         <Inp label={t.password} type="password" value={pass} onChange={setPass} req/>
         <div style={{marginTop:8}}><Btn onClick={mode==="login"?login:signup} disabled={lo}>{lo?"...":(mode==="login"?t.login:t.signup)}</Btn></div>
-        <p onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");}} style={{fontSize:12,color:IC,textAlign:"center",margin:"14px 0 0",cursor:"pointer",fontWeight:600}}>{mode==="login"?t.to_signup:t.to_login}</p>
+        <p onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");}} style={{fontSize:12,color:"var(--gold)",textAlign:"center",margin:"14px 0 0",cursor:"pointer",fontWeight:600}}>{mode==="login"?t.to_signup:t.to_login}</p>
       </div>
     </div>
   </div>;
@@ -844,6 +897,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [showTutorial,setShowTutorial]=useState(false);
   const [tutorialDone,setTutorialDone]=useState(false);
   const [statsPeriod,setStatsPeriod]=useState("month");
+  const [fase,setFase]=useState("todos"); // filtro de Vuelos activos
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc,rp]=await Promise.all([
@@ -981,7 +1035,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         {meta.length>0&&<p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,display:"flex",gap:12,flexWrap:"wrap"}}>{meta}</p>}
         {f.destination_address&&<p style={{fontSize:11,color:"rgba(var(--ink),0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
       </div>
-      <span style={{color:IC,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{t.flight} →</span>
+      <span style={{color:"var(--gold)",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{t.flight} →</span>
     </div>;};
 
   // Stats hero — paquetes hoy / total depósito / vuelos preparando / saldo CC
@@ -998,45 +1052,15 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {k:"account",l:t.tab_account},
   ];
   const irA=(k)=>{setTab(k);setSelFlight(null);if(k!=="deposit")setShowForm(false);window.scrollTo({top:0,behavior:"smooth"});};
-  return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token} theme={theme} setTheme={setTheme} tabs={tabsIsla} tab={tab} setTab={irA}>
+  return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token} theme={theme} setTheme={setTheme} tabs={tabsIsla} tab={tab} setTab={irA} onTutorial={()=>setShowTutorial(true)}>
     {/* Tutorial overlay — primera vez para agentes aprobados o cuando piden volver a verlo */}
     {(showTutorial||(signup&&signup.status==="approved"&&!signup.tutorial_completed&&!tutorialDone))&&<AgentTutorialOverlay signup={signup} token={token} lang={lang} onClose={()=>setShowTutorial(false)} onComplete={()=>{setTutorialDone(true);signup.tutorial_completed=true;}}/>}
-    <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
-      <div>
-        <h2 style={{fontSize:28,fontWeight:700,color:"var(--tx)",margin:"0 0 4px",letterSpacing:"-0.025em"}}>👋 {greeting}, {signup.first_name||signup.email}</h2>
-        <p style={{fontSize:13,color:"rgba(var(--ink),0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowTutorial(true)} className="ac-mini" style={{padding:"9px 13px"}}>🎓 {t.tutorial}</button>
-        {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
-      </div>
-    </div>
-
-    {/* Mini stat cards — visión rápida del día */}
-    <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
-      {[
-        {label:t.stat_today_pkgs||"Paquetes hoy",value:pkgsToday,color:GOLD_LIGHT,icon:"📦"},
-        {label:t.stat_in_deposit||"En depósito",value:depositPkgsAll.length,color:"var(--blue)",icon:"🏬",sub:`${depositTotalKg} kg`},
-        {label:t.stat_active_flights||"Vuelos activos",value:activeFlights.length,color:"var(--amber)",icon:"✈️"},
-        {label:t.stat_balance||"Saldo CC",value:balance,color:balance>=0?"#22c55e":"#ef4444",icon:"💰",fmt:v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`},
-      ].map((s,i)=><div key={i} className="ac-hover-card ac-bento-cell ac-card" data-span={3} style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden",minHeight:90}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-          <span style={{fontSize:9.5,fontWeight:700,color:"rgba(var(--ink),0.5)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{s.label}</span>
-          <span style={{fontSize:14,opacity:0.6}}>{s.icon}</span>
-        </div>
-        <p style={{fontSize:24,fontWeight:800,color:s.color,margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{s.fmt?s.fmt(s.value):s.value}</p>
-        {s.sub&&<p style={{fontSize:10.5,color:"rgba(var(--ink),0.42)",margin:"6px 0 0"}}>{s.sub}</p>}
-      </div>)}
-    </div>
-
-    {/* Banner foto pendiente — alerta visual amarilla cuando hay paquetes sin foto */}
-    {noPhotoCount>0&&<div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:"var(--amber)"}}>
-      <span style={{fontSize:16}}>📷</span>
-      <span style={{flex:1}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
-      <button onClick={()=>setTab("deposit")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"var(--amber)",cursor:"pointer"}}>{t.review||"Revisar"} →</button>
-    </div>}
     <PushNagBanner token={token} t={t}/>
-    {repackRequests.length>0&&<div style={{marginBottom:16}}>
+    {repackOpen&&<RepackModal opId={repackOpen} request={repackRequests.find(r=>r.operation_id===repackOpen)} packages={packages.filter(p=>p.operation_id===repackOpen)} divisor={Number(signup?.volumetric_divisor)||5000} token={token} userId={userId} t={t} onClose={()=>setRepackOpen(null)} onDone={async()=>{setRepackOpen(null);await reloadAll();flash(t.repack_done||"Reempaque guardado");}}/>}
+    {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"var(--green)",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
+    {/* TAB 1: Depósito — paquetes sin vuelo */}
+    {tab==="deposit"&&<>
+    {repackRequests.length>0&&<div style={{marginTop:16}}>
       {repackRequests.map(r=><div key={r.id} style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(251,191,36,0.15),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.5)",borderRadius:12,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:24}}>🔄</span>
@@ -1048,11 +1072,13 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
       </div>)}
     </div>}
-    {repackOpen&&<RepackModal opId={repackOpen} request={repackRequests.find(r=>r.operation_id===repackOpen)} packages={packages.filter(p=>p.operation_id===repackOpen)} divisor={Number(signup?.volumetric_divisor)||5000} token={token} userId={userId} t={t} onClose={()=>setRepackOpen(null)} onDone={async()=>{setRepackOpen(null);await reloadAll();flash(t.repack_done||"Reempaque guardado");}}/>}
-    {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"var(--green)",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
-    {/* TAB 1: Depósito — paquetes sin vuelo */}
-    {tab==="deposit"&&<>
-      {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"16px 0 0",fontSize:12,color:"#E8D098",fontWeight:600}}>
+    {/* Banner foto pendiente — alerta visual amarilla cuando hay paquetes sin foto */}
+    {noPhotoCount>0&&<div style={{marginTop:16,marginBottom:0,padding:"10px 14px",background:"linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:"var(--amber)"}}>
+      <span style={{fontSize:16}}>📷</span>
+      <span style={{flex:1}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
+      <button onClick={()=>setTab("deposit")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"var(--amber)",cursor:"pointer"}}>{t.review||"Revisar"} →</button>
+    </div>}
+      {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"16px 0 0",fontSize:12,color:"var(--gold)",fontWeight:600}}>
         {t.supervision_msg}
       </div>}
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} origin={/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China"} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
@@ -1062,27 +1088,28 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
             <h3 style={{fontSize:15,fontWeight:800,margin:0,letterSpacing:"-0.01em"}}>{t.tab_deposit} <span style={{color:"rgba(var(--ink),0.45)",fontWeight:600}}>· {depositPkgs.length}{depositSearch?` / ${depositPkgsAll.length}`:""} · {depositTotalKg} kg</span></h3>
             <p style={{fontSize:11.5,color:"rgba(var(--ink),0.45)",margin:"3px 0 0"}}>{t.deposit_hint}</p>
           </div>
-          <div style={{position:"relative",minWidth:240,flex:"0 1 300px"}}>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          {!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"10px 16px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>+ {t.register_pkg}</button>}
+          <div style={{position:"relative",minWidth:220,flex:"0 1 280px"}}>
             <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,opacity:0.5,pointerEvents:"none"}}>⌕</span>
             <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"9px 12px 9px 30px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}} onFocus={e=>{e.target.style.borderColor=GOLD;}} onBlur={e=>{e.target.style.borderColor="rgba(var(--ink),0.12)";}}/>
+          </div>
           </div>
         </div>
         {depositPkgs.length===0?<p style={{padding:"2.5rem",textAlign:"center",color:"rgba(var(--ink),0.4)",margin:0}}>{t.no_pkgs}</p>:
         <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         <table className="ac-tbl" style={{minWidth:860}}>
           <thead><tr>
-            {[t.col_operation,t.tracking,t.col_weights,t.photo,t.date,""].map((h,k)=><th key={k} style={k===2?{textAlign:"right"}:undefined}>{h}</th>)}
+            {["#",t.tracking,t.col_weights,t.photo,t.date,""].map((h,k)=><th key={k} style={k===2?{textAlign:"right"}:undefined}>{h}</th>)}
           </tr></thead>
-          <tbody>{depositPkgs.map(p=>{
+          <tbody>{(()=>{
+            const filaDeposito=(p)=>{
             const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
             const volDiv=Number(signup?.volumetric_divisor)||5000;const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/volDiv)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
             const kg=(v)=>v?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";
             const cli=p.clients?.client_code||p.operations?.clients?.client_code||"";
             return <tr key={p.id}>
-            <td>
-              <div style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,fontSize:12.5,color:p.operations?.operation_code?"var(--tx)":"var(--amber)"}}>{p.operations?.operation_code||(t.in_deposit||"Depósito")}</div>
-              {cli&&<div style={{fontSize:11,color:"rgba(var(--ink),0.5)",marginTop:2}}>{cli}</div>}
-            </td>
+            <td style={{color:"rgba(var(--ink),0.55)",fontSize:12}}>{p.package_number?`#${p.package_number}`:""}{q>1?` ×${q}`:""}</td>
             <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(var(--ink),0.65)"}}>
               {p.national_tracking||"—"}
               {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={p.consolidated_from_trackings.join(", ")}>
@@ -1095,7 +1122,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
               <span style={{color:"rgba(var(--ink),0.3)",margin:"0 6px"}}>·</span>
               <span style={{color:isVolBigger?"#fb923c":"rgba(var(--ink),0.5)"}}>{kg(vol)}</span>
               <span style={{color:"rgba(var(--ink),0.3)",margin:"0 6px"}}>·</span>
-              <span style={{color:fact>0?IC:"rgba(var(--ink),0.3)",fontWeight:800}}>{kg(fact)} kg</span>
+              <span style={{color:fact>0?"var(--gold)":"rgba(var(--ink),0.3)",fontWeight:800}}>{kg(fact)} kg</span>
             </td>
             <td><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
             <td style={{color:"rgba(var(--ink),0.45)",fontSize:11.5}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
@@ -1103,7 +1130,26 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
               <button onClick={()=>setEditPkg(p)} className="ac-mini" style={{marginRight:6}}>✎ {t.edit}</button>
               <button onClick={async()=>{if(!await confirmDialog(`${t.confirm_delete_pkg} ${p.operations?.operation_code||cli||""}?`,{confirmText:t.sure_delete}))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} className="ac-mini danger">✕</button>
             </td>
-          </tr>;})}</tbody>
+          </tr>;};
+            const volDivG=Number(signup?.volumetric_divisor)||5000;
+            const factDe=(p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const v=l&&w&&h?((l*w*h)/volDivG)*q:0;return Math.max(gw,v);};
+            const keyDe=(p)=>p.operations?.operation_code||`dep:${p.clients?.client_code||"—"}`;
+            const grupos=[];const idx={};
+            for(const p of depositPkgs){const k=keyDe(p);if(idx[k]===undefined){idx[k]=grupos.length;grupos.push({k,op:p.operations?.operation_code||null,cli:p.clients?.client_code||p.operations?.clients?.client_code||"",nombre:p.clients?.first_name||p.operations?.clients?.first_name||"",rows:[]});}grupos[idx[k]].rows.push(p);}
+            const out=[];
+            for(const g of grupos){
+              const fact=g.rows.reduce((a,p)=>a+factDe(p),0);
+              const repack=g.op&&repackRequests.some(r=>r.operations?.operation_code===g.op);
+              out.push(<tr key={"g"+g.k} className="ac-grp"><td colSpan={6}>
+                <span className="code" style={{color:g.op?"var(--tx)":"var(--amber)"}}>{g.op||(t.in_deposit||"Depósito")}</span>
+                <span className="sep">·</span><span style={{fontWeight:700}}>{g.cli}</span>{g.nombre&&<span style={{color:"rgba(var(--ink),0.5)"}}> {g.nombre}</span>}
+                <span className="sep">·</span><span style={{color:"rgba(var(--ink),0.6)"}}>{g.rows.length} {t.bultos||"bultos"}</span>
+                <span className="sep">·</span><span style={{color:"var(--gold)",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
+                {repack&&<span style={{marginLeft:10,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(251,191,36,0.14)",color:"var(--amber)",border:"1px solid rgba(251,191,36,0.4)"}}>🔄 {t.repack_pending||"Reempaque pedido"}</span>}
+              </td></tr>);
+              for(const p of g.rows)out.push(filaDeposito(p));
+            }
+            return out;})()}</tbody>
         </table></div>}
       </div>
     </>}
@@ -1112,16 +1158,23 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {editPkg&&<EditPackageModal pkg={editPkg} token={token} t={t} onClose={()=>setEditPkg(null)} onSaved={()=>{setEditPkg(null);reloadAll();flash(t.edit_success);}}/>}
 
     {/* TAB 2: Vuelos activos — preparando · listo · en tránsito · en aduana */}
-    {tab==="active_flights"&&!selFlight&&<>
-      <p style={{fontSize:12,color:"rgba(var(--ink),0.45)",margin:"0 0 16px"}}>{t.flights_hint}</p>
-      {activeFlights.length===0?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
-      [["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs]].map(([k,l])=>{
-        const fs=activeFlights.filter(f=>faseVuelo(f)===k);if(fs.length===0)return null;const c=stColors[k];
-        return <div key={k} style={{marginBottom:24}}>
-          <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:c,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:`0 0 8px ${c}`}}/>{l}<span style={{color:"rgba(var(--ink),0.4)",fontWeight:600}}>· {fs.length}</span></p>
-          <div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>
-        </div>;})}
-    </>}
+    {tab==="active_flights"&&!selFlight&&(()=>{
+      const FASES=[["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs]];
+      const cuenta=(k)=>activeFlights.filter(f=>faseVuelo(f)===k).length;
+      const visibles=FASES.filter(([k])=>fase==="todos"||fase===k);
+      return <>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
+          <button className={`ac-chip${fase==="todos"?" on":""}`} onClick={()=>setFase("todos")}>{t.phase_all}<span className="n">{activeFlights.length}</span></button>
+          {FASES.map(([k,l])=><button key={k} className={`ac-chip${fase===k?" on":""}`} onClick={()=>setFase(k)}><span style={{width:7,height:7,borderRadius:"50%",background:stColors[k],display:"inline-block"}}/>{l}<span className="n">{cuenta(k)}</span></button>)}
+        </div>
+        {activeFlights.length===0?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
+        visibles.map(([k,l])=>{
+          const fs=activeFlights.filter(f=>faseVuelo(f)===k);if(fs.length===0)return fase===k?<p key={k} style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:null;const c=stColors[k];
+          return <div key={k} style={{marginBottom:24}}>
+            {fase==="todos"&&<p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:c,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:`0 0 8px ${c}`}}/>{l}<span style={{color:"rgba(var(--ink),0.4)",fontWeight:600}}>· {fs.length}</span></p>}
+            <div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>
+          </div>;})}
+      </>;})()}
 
     {/* TAB 3: Histórico — solo vuelos recibidos */}
     {tab==="history"&&!selFlight&&<>
@@ -1133,106 +1186,75 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {/* Flight detail (shared by active_flights + history) */}
     {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
 
-    {/* TAB 4: Estadísticas */}
+    {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {tab==="stats"&&(()=>{
-      // Stats enriquecidas: today, comparativa vs período anterior, mini chart, hitos
-      const today=new Date();today.setHours(0,0,0,0);
-      const todayMs=today.getTime();
-      const allPkgs=[...depositPkgsAll,...packages];
-      // Paquetes de hoy
-      const todayPkgs=allPkgs.filter(p=>{const d=new Date(p.created_at).getTime();return d>=todayMs;});
-      // Paquetes de los últimos 7 días para gráfico
-      const last7=Array.from({length:7},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-(6-i));const ms=d.getTime();const next=ms+86400000;return {date:d,count:allPkgs.filter(p=>{const t=new Date(p.created_at).getTime();return t>=ms&&t<next;}).length};});
-      const max7=Math.max(...last7.map(d=>d.count),1);
-      // Comparativa: período actual vs anterior
-      const periodMs={week:7,month:30,year:365,all:9999}[statsPeriod]*86400000;
-      const prevPeriodStart=Date.now()-periodMs*2;
-      const currPeriodStart=Date.now()-periodMs;
-      const prevPeriodPkgs=allPkgs.filter(p=>{const t=new Date(p.created_at).getTime();return t>=prevPeriodStart&&t<currPeriodStart;}).length;
-      const currPeriodPkgs=allPkgs.filter(p=>new Date(p.created_at).getTime()>=currPeriodStart).length;
-      const deltaPkgs=prevPeriodPkgs>0?((currPeriodPkgs-prevPeriodPkgs)/prevPeriodPkgs)*100:null;
-      // Hitos / logros
-      const totalKgAll=allPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
-      const milestones=[
-        {threshold:10,label:t.achievement_10,icon:"📦"},
-        {threshold:50,label:t.achievement_50,icon:"📬"},
-        {threshold:100,label:t.achievement_100,icon:"💯"},
-        {threshold:500,label:t.achievement_500,icon:"🌟"},
-        {threshold:1000,label:t.achievement_1000,icon:"🏆"},
-      ].filter(m=>allPkgs.length>=m.threshold);
-      const nextMilestone=[10,50,100,500,1000,2000,5000].find(m=>allPkgs.length<m);
-      // Saludo dinámico
-      const hour=new Date().getHours();
-      const greeting=hour<12?t.greet_morning:hour<19?t.greet_afternoon:t.greet_night;
-      const agentName=signup?.first_name||"";
+      const volDivS=Number(signup?.volumetric_divisor)||5000;
+      const pesos=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const v=l&&w&&h?((l*w*h)/volDivS)*q:0;return {bruto:gw,vol:v,fact:Math.max(gw,v)};};
+      const flightById=Object.fromEntries(flights.map(f=>[f.id,f]));
+      const flightDeOp={};flightOps.forEach(fo=>{if(fo.operation_id&&!flightDeOp[fo.operation_id])flightDeOp[fo.operation_id]=flightById[fo.flight_id];});
+      const pkgsP=periodPackages;
+      const kgP=pkgsP.reduce((a,p)=>a+pesos(p).bruto,0);
+      const despachados=flights.filter(f=>f.dispatched_at&&inPeriod(f.dispatched_at));
+      const kgEnv=despachados.reduce((a,f)=>a+Number(f.total_weight_kg||0),0);
+      // Días en depósito: del registro del bulto a la salida del vuelo (vuelos despachados en el período)
+      const dias=[];despachados.forEach(f=>{flightOps.filter(fo=>fo.flight_id===f.id).forEach(fo=>{packages.filter(p=>p.operation_id===fo.operation_id).forEach(p=>{const d=(new Date(f.dispatched_at)-new Date(p.created_at))/86400000;if(d>=0&&d<120)dias.push(d);});});});
+      const diasProm=dias.length?dias.reduce((a,b)=>a+b,0)/dias.length:null;
+      const conFoto=pkgsP.filter(p=>p.photo_url).length;
+      const conAire=pkgsP.filter(p=>{const w=pesos(p);return w.vol>w.bruto;});
+      const kgAire=conAire.reduce((a,p)=>{const w=pesos(p);return a+(w.vol-w.bruto);},0);
+      const kgProm=pkgsP.length?kgP/pkgsP.length:0;
+      // Semanas: últimas 12
+      const hoy=new Date();hoy.setHours(0,0,0,0);const lunes=new Date(hoy);lunes.setDate(hoy.getDate()-((hoy.getDay()+6)%7));
+      const semanas=Array.from({length:12},(_,i)=>{const ini=new Date(lunes);ini.setDate(lunes.getDate()-(11-i)*7);const fin=new Date(ini);fin.setDate(ini.getDate()+7);const rows=packages.filter(p=>{const d=new Date(p.created_at);return d>=ini&&d<fin;});return {ini,n:rows.length,kg:rows.reduce((a,p)=>a+pesos(p).bruto,0)};});
+      const maxS=Math.max(...semanas.map(x=>x.n),1);
+      // Top clientes del período
+      const porCli={};pkgsP.forEach(p=>{const k=p.clients?.client_code||p.operations?.clients?.client_code||"—";if(!porCli[k])porCli[k]={k,nombre:p.clients?.first_name||p.operations?.clients?.first_name||"",n:0,kg:0};porCli[k].n++;porCli[k].kg+=pesos(p).bruto;});
+      const top=Object.values(porCli).sort((a,b)=>b.n-a.n).slice(0,6);
+      const f1=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:1});
+      const KPI=({label,value,sub,color})=><div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"16px 18px"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{label}</p>
+        <p style={{fontSize:26,fontWeight:800,color:color||"var(--tx)",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{value}</p>
+        {sub&&<p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"7px 0 0"}}>{sub}</p>}
+      </div>;
+      const Titulo=({children,hint})=><p style={{fontSize:11,fontWeight:800,color:"rgba(var(--ink),0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{children}{hint&&<span style={{fontWeight:500,textTransform:"none",letterSpacing:0,marginLeft:8}}>· {hint}</span>}</p>;
       return <>
-        <p style={{fontSize:12,color:"rgba(var(--ink),0.5)",margin:"0 0 16px"}}>{t.stats_subtitle}</p>
-
-        {/* Stats de HOY destacadas */}
-        <div style={{background:`linear-gradient(135deg, rgba(184,149,106,0.18), rgba(212,177,122,0.06))`,border:`1.5px solid rgba(184,149,106,0.4)`,borderRadius:16,padding:"20px 24px",marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-          <div>
-            <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t.stats_today}</p>
-            <p style={{fontSize:36,fontWeight:800,color:"var(--tx)",margin:0,letterSpacing:"-0.02em"}}>{todayPkgs.length} <span style={{fontSize:14,fontWeight:600,color:"rgba(var(--ink),0.5)"}}>{todayPkgs.length!==1?t.stats_pkgs:t.stats_pkg}</span></p>
-            <p style={{fontSize:12,color:"rgba(var(--ink),0.6)",margin:"4px 0 0"}}>{todayPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} {t.stats_kg_today}</p>
+        <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+          {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} className={`ac-chip${statsPeriod===p.k?" on":""}`} onClick={()=>setStatsPeriod(p.k)}>{p.l}</button>)}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:18}}>
+          <KPI label={t.stats_period_pkgs} value={pkgsP.length} sub={`${f1(kgP)} kg · ${t.stats_avg_kg.toLowerCase()} ${f1(kgProm)}`}/>
+          <KPI label={t.stats_flights_dispatched} value={despachados.length} sub={`${f1(kgEnv)} ${t.stats_kg_shipped.toLowerCase()}`} color="var(--blue)"/>
+          <KPI label={t.stats_avg_days} value={diasProm==null?"—":f1(diasProm)} sub={t.stats_avg_days_hint} color="var(--gold)"/>
+          <KPI label={t.stats_photo_pct} value={pkgsP.length?`${Math.round(conFoto/pkgsP.length*100)}%`:"—"} sub={pkgsP.length?`${pkgsP.length-conFoto} ${t.pkg_no_photo_plural||"sin foto"}`:t.stats_no_data} color={pkgsP.length&&conFoto/pkgsP.length<0.8?"var(--amber)":"var(--green)"}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr)",gap:14,marginBottom:14}} className="ac-stats-2">
+          <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"18px 22px"}}>
+            <Titulo hint={t.stats_weekly_hint}>{t.stats_weekly}</Titulo>
+            <div style={{display:"flex",alignItems:"flex-end",gap:6,height:110}}>
+              {semanas.map((w,i)=>{const h=(w.n/maxS)*100;const cur=i===11;return <div key={i} title={`${w.ini.toLocaleDateString("es-AR",{day:"2-digit",month:"short"})} · ${w.n} · ${f1(w.kg)} kg`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+                {w.n>0&&<span style={{fontSize:10,fontWeight:700,color:cur?"var(--gold)":"rgba(var(--ink),0.6)",marginBottom:3}}>{w.n}</span>}
+                <div style={{width:"100%",height:`${Math.max(h,3)}%`,borderRadius:"5px 5px 2px 2px",background:cur?GOLD_GRADIENT:"rgba(var(--ink),0.16)"}}/>
+              </div>;})}
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:6}}>{semanas.map((w,i)=><span key={i} style={{flex:1,fontSize:9.5,color:"rgba(var(--ink),0.4)",textAlign:"center"}}>{w.ini.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>)}</div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <p style={{fontSize:48,margin:0,lineHeight:1}}>{todayPkgs.length===0?"☕":todayPkgs.length<5?"💪":todayPkgs.length<15?"🔥":"🚀"}</p>
-            <p style={{fontSize:11,color:"rgba(var(--ink),0.5)",margin:"4px 0 0",fontStyle:"italic"}}>{todayPkgs.length===0?t.mood_chill:todayPkgs.length<5?t.mood_good:todayPkgs.length<15?t.mood_fire:t.mood_unstoppable}</p>
+          <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"18px 22px"}}>
+            <Titulo>{t.stats_quality}</Titulo>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}><span style={{fontSize:13}}>{t.stats_air_pct} <span style={{color:"rgba(var(--ink),0.45)",fontSize:11}}>· {t.stats_air_pct_hint}</span></span><strong style={{fontSize:18,color:conAire.length/(pkgsP.length||1)>0.4?"#fb923c":"var(--tx)"}}>{pkgsP.length?`${Math.round(conAire.length/pkgsP.length*100)}%`:"—"}</strong></div>
+            <div style={{height:6,background:"rgba(var(--ink),0.08)",borderRadius:3,overflow:"hidden",marginBottom:16}}><div style={{height:"100%",width:`${pkgsP.length?conAire.length/pkgsP.length*100:0}%`,background:"#fb923c"}}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}><span style={{fontSize:13}}>{t.stats_air_kg}</span><strong style={{fontSize:18,color:"#fb923c"}}>{f1(kgAire)} kg</strong></div>
+            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.5)",margin:"0 0 16px",lineHeight:1.5}}>{t.stats_air_hint}</p>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontSize:13}}>{t.stats_avg_kg}</span><strong style={{fontSize:18}}>{f1(kgProm)} kg</strong></div>
           </div>
         </div>
-
-        {/* Mini chart últimos 7 días */}
-        <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"18px 22px",marginBottom:18}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📊 {t.last_7_days}</p>
-          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6,height:100,marginBottom:10}}>
-            {last7.map((d,i)=>{const h=(d.count/max7)*100;const isToday=i===6;return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-              <div style={{width:"100%",height:`${Math.max(h,4)}%`,background:isToday?`linear-gradient(180deg,${GOLD_LIGHT},${GOLD})`:"rgba(96,165,250,0.4)",borderRadius:"4px 4px 0 0",transition:"height 300ms",position:"relative"}}>
-                {d.count>0&&<span style={{position:"absolute",top:-18,left:"50%",transform:"translateX(-50%)",fontSize:10,fontWeight:700,color:isToday?GOLD_LIGHT:"var(--tx)"}}>{d.count}</span>}
-              </div>
-            </div>;})}
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
-            {last7.map((d,i)=><span key={i} style={{flex:1,fontSize:10,color:"rgba(var(--ink),0.4)",textAlign:"center",fontWeight:i===6?700:500}}>{d.date.toLocaleDateString("es-AR",{weekday:"short"}).slice(0,3)}</span>)}
-          </div>
-        </div>
-
-        {/* Selector de período */}
-        <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
-          {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(var(--ink),0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(var(--ink),0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(var(--ink),0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
-          {deltaPkgs!==null&&statsPeriod!=="all"&&<span style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:5,background:deltaPkgs>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)",color:deltaPkgs>=0?"#22c55e":"#ff6b6b",letterSpacing:"0.04em"}}>{deltaPkgs>=0?"▲":"▼"} {Math.abs(deltaPkgs).toFixed(0)}% {t.vs_previous}</span>}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14,marginBottom:18}}>
-        {[
-          {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"var(--blue)"},
-          {label:t.stats_total_pkgs,value:statTotalPkgs,icon:"📬",color:"#a78bfa"},
-          {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"var(--green)"},
-          {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"var(--amber)"},
-          {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
-        ].map(s=><div key={s.label} className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1px solid rgba(var(--ink),0.06)",padding:"16px 20px"}}>
-          <p style={{fontSize:22,margin:"0 0 2px"}}>{s.icon}</p>
-          <p style={{fontSize:22,fontWeight:800,color:s.color,margin:"0 0 4px",letterSpacing:"-0.01em"}}>{s.value}</p>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</p>
-        </div>)}
-        </div>
-
-        {/* Logros */}
         <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"18px 22px"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.5)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏆 {t.achievements} ({milestones.length})</p>
-          {milestones.length===0?<p style={{fontSize:12,color:"rgba(var(--ink),0.4)",margin:0,fontStyle:"italic"}}>{t.no_achievements}</p>:<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {milestones.map(m=><div key={m.threshold} style={{padding:"8px 14px",background:"linear-gradient(135deg, rgba(184,149,106,0.2), rgba(212,177,122,0.08))",border:`1px solid rgba(184,149,106,0.4)`,borderRadius:999,display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>
-              <span>{m.icon}</span> {m.label}
-            </div>)}
-          </div>}
-          {nextMilestone&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(var(--ink),0.55)",marginBottom:4}}>
-              <span>{t.next_achievement}: <strong style={{color:"var(--tx)"}}>{nextMilestone} {t.stats_pkgs}</strong></span>
-              <span style={{color:GOLD_LIGHT,fontWeight:700}}>{allPkgs.length} / {nextMilestone}</span>
-            </div>
-            <div style={{height:6,background:"rgba(var(--ink),0.06)",borderRadius:3,overflow:"hidden"}}>
-              <div style={{height:"100%",width:`${Math.min(100,(allPkgs.length/nextMilestone)*100)}%`,background:`linear-gradient(90deg,${GOLD},${GOLD_LIGHT})`,transition:"width 300ms"}}/>
-            </div>
-          </div>}
+          <Titulo>{t.stats_top_clients}</Titulo>
+          {top.length===0?<p style={{fontSize:12,color:"rgba(var(--ink),0.4)",margin:0}}>{t.stats_no_data}</p>:
+          <div style={{display:"grid",gap:8}}>{top.map(c=><div key={c.k} style={{display:"grid",gridTemplateColumns:"110px 1fr auto",alignItems:"center",gap:12,fontSize:13}}>
+            <span><strong>{c.k}</strong>{c.nombre&&<span style={{color:"rgba(var(--ink),0.45)",fontSize:11.5}}> {c.nombre}</span>}</span>
+            <div style={{height:8,background:"rgba(var(--ink),0.08)",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${c.n/top[0].n*100}%`,background:GOLD_GRADIENT}}/></div>
+            <span style={{fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",color:"rgba(var(--ink),0.7)"}}><strong style={{color:"var(--tx)"}}>{c.n}</strong> · {f1(c.kg)} kg</span>
+          </div>)}</div>}
         </div>
       </>;
     })()}
@@ -1255,7 +1277,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
             <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b",textTransform:"uppercase"}}>{m.type==="anticipo"?t.movement_anticipo:t.movement_deduccion}</span></td>
             <td style={{padding:"10px 14px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{(()=>{const isCredit=m.type==="anticipo";const monto=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return `${isCredit?"+":"-"}${usdF(monto)}`;})()}</td>
             <td style={{padding:"10px 14px",color:"rgba(var(--ink),0.5)",fontSize:12}}>{m.description||"—"}</td>
-            <td style={{padding:"10px 14px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
+            <td style={{padding:"10px 14px",fontFamily:"monospace",color:"var(--gold)",fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>
         </table>}
       </div>
@@ -1479,7 +1501,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     onDispatched();
   };
   return <div>
-    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_active_flights}</button>
+    <button onClick={onBack} style={{fontSize:13,color:"var(--gold)",background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_active_flights}</button>
     <div style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1px solid rgba(var(--ink),0.06)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         <h3 style={{fontSize:18,fontWeight:700,color:"var(--tx)",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
@@ -1494,7 +1516,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       </div>
       {/* Datos de destino completos — lo que el agente necesita para despachar */}
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
-        <p style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 {t.destination}</p>
+        <p style={{fontSize:10,fontWeight:700,color:"var(--gold)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 {t.destination}</p>
         {(()=>{const any=flight.dest_name||flight.dest_address||flight.destination_address||flight.dest_phone||flight.dest_email||flight.dest_tax_id||flight.dest_postal_code;if(!any)return <p style={{fontSize:13,color:"var(--amber)",margin:0}}>⏳ {t.no_destination_yet}</p>;
         const row=(lbl,val,copyable)=>val?<div style={{display:"flex",gap:10,padding:"4px 0",fontSize:12,alignItems:"baseline"}}>
           <span style={{minWidth:80,color:"rgba(var(--ink),0.4)",fontWeight:700,fontSize:10,textTransform:"uppercase"}}>{lbl}</span>
@@ -1520,8 +1542,8 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",fontSize:11,color:"rgba(var(--ink),0.7)",gap:10,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 {p.photo_url?<img src={p.photo_url} alt="" onClick={()=>setLightboxPhoto(p.photo_url)} style={{width:38,height:38,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/>:<div style={{width:38,height:38,borderRadius:6,border:"1px dashed rgba(var(--ink),0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"rgba(var(--ink),0.25)"}}>📦</div>}
-                <span style={{minWidth:22,color:IC,fontWeight:700}}>#{p.package_number||i+1}</span>
-                {nt&&<span style={{fontFamily:"monospace",background:"rgba(184,149,106,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(184,149,106,0.2)"}}>{nt}</span>}
+                <span style={{minWidth:22,color:"var(--gold)",fontWeight:700}}>#{p.package_number||i+1}</span>
+                {nt&&<span style={{fontFamily:"monospace",background:"rgba(184,149,106,0.1)",padding:"2px 7px",borderRadius:4,color:"var(--gold)",fontSize:10,border:"1px solid rgba(184,149,106,0.2)"}}>{nt}</span>}
                 {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<>
                   <span style={{fontSize:10,color:"rgba(var(--ink),0.4)"}}>←</span>
                   {p.consolidated_from_trackings.slice(0,4).map((tr,k)=><span key={k} style={{fontFamily:"monospace",fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"var(--blue)",border:"1px solid rgba(96,165,250,0.25)"}}>{tr}</span>)}
@@ -1548,7 +1570,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         </div>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",marginTop:4,borderTop:"1px solid rgba(184,149,106,0.3)"}}>
           <span style={{fontSize:12,fontWeight:700,color:"var(--tx)"}}>TOTAL</span>
-          <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span style={{fontSize:14,fontWeight:700,color:"var(--gold)"}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
       </div>
     </Card>}
@@ -1561,7 +1583,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(var(--ink),0.5)"}}>{t.weight_from_packages}</span>
-          <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
+          <span style={{fontSize:16,fontWeight:700,color:"var(--gold)"}}>{autoWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>
         {autoFact>autoWeight+0.01&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
           <span style={{fontSize:11,color:"rgba(var(--ink),0.45)"}}>{t.fact_note}</span>
@@ -1569,7 +1591,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         </div>}
         {computedCost>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
           <span style={{fontSize:11,color:"rgba(var(--ink),0.45)"}}>{t.rate_note}</span>
-          <span style={{fontSize:13,fontWeight:700,color:IC}}>{usdF(computedCost/autoFact)}/kg fact.</span>
+          <span style={{fontSize:13,fontWeight:700,color:"var(--gold)"}}>{usdF(computedCost/autoFact)}/kg fact.</span>
         </div>}
       </div>
       {(()=>{
@@ -1650,7 +1672,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       </div>}
     </Card>}
     {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
-      <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>{t.dispatch_data}</p>
+      <p style={{fontSize:11,fontWeight:700,color:"var(--gold)",margin:"0 0 8px",textTransform:"uppercase"}}>{t.dispatch_data}</p>
       <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(var(--ink),0.6)"}}>
         <span><strong style={{color:"var(--tx)"}}>{t.total_weight}:</strong> {flight.total_weight_kg} kg</span>
         <span><strong style={{color:"var(--tx)"}}>{t.total_cost}:</strong> {usdF(flight.total_cost_usd)}</span>
@@ -1658,7 +1680,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         <span><strong style={{color:"var(--tx)"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
       </div>
       <div style={{marginTop:12}}>
-        <label style={{display:"block",fontSize:11,fontWeight:700,color:IC,marginBottom:5,textTransform:"uppercase"}}>📷 {t.dispatch_photo}</label>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"var(--gold)",marginBottom:5,textTransform:"uppercase"}}>📷 {t.dispatch_photo}</label>
         <label style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(var(--ink),0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(var(--ink),0.03)"}}>
           <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
           {dispatchPhotoUrl?<>
@@ -1697,7 +1719,7 @@ function NotifBell({token,t}){
     {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"var(--panel)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(var(--ink),0.08)"}}>
         <span style={{fontSize:12,fontWeight:700,color:"var(--tx)"}}>{t?.notifications||"Notificaciones"}</span>
-        {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>{t?.mark_all_read||"Marcar todas leídas"}</button>}
+        {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:"var(--gold)",background:"none",border:"none",cursor:"pointer",fontWeight:600}}>{t?.mark_all_read||"Marcar todas leídas"}</button>}
       </div>
       {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(var(--ink),0.4)",fontSize:12,margin:0}}>{t?.no_notifs||"Sin notificaciones"}</p>:
       notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(var(--ink),0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}>
@@ -1709,21 +1731,22 @@ function NotifBell({token,t}){
   </div>;
 }
 
-function SimpleShell({children,lang,setLang,t,onLogout,token,theme,setTheme,tabs,tab,setTab}){
+function SimpleShell({children,lang,setLang,t,onLogout,token,theme,setTheme,tabs,tab,setTab,onTutorial}){
   const light=theme==="light";
   return <div style={{minHeight:"100vh",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
     <OfflineStatusBar token={token} lang={lang}/>
     <div className="ac-isla">
-      <img src={LOGO} alt="Argencargo" className="ac-logo" style={{height:26,objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
-      {tabs?<div className="ac-isla-tabs">{tabs.map(tb=><button key={tb.k} className={`ac-isla-tab${tab===tb.k?" on":""}`} onClick={()=>setTab(tb.k)}>{tb.l}{tb.n!==undefined&&tb.n>0&&<span className="n">{tb.n}</span>}</button>)}</div>:<div style={{flex:1}}/>}
-      <div className="ac-isla-ctl">
+      <div className="ac-isla-side"><img src={LOGO} alt="Argencargo" className="ac-logo" style={{height:26,objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/></div>
+      {tabs&&<div className="ac-isla-tabs">{tabs.map(tb=><button key={tb.k} className={`ac-isla-tab${tab===tb.k?" on":""}`} onClick={()=>setTab(tb.k)}>{tb.l}{tb.n!==undefined&&tb.n>0&&<span className="n">{tb.n}</span>}</button>)}</div>}
+      <div className="ac-isla-side r"><div className="ac-isla-ctl">
         {token&&<NotifBell token={token} t={t}/>}
+        {onTutorial&&<button className="ac-ico" onClick={onTutorial} title={t.tutorial} aria-label={t.tutorial}>🎓</button>}
         <LangToggle lang={lang} setLang={setLang}/>
         {setTheme&&<button className="ac-ico" onClick={()=>setTheme(light?"dark":"light")} title={light?t.theme_dark:t.theme_light} aria-label={light?t.theme_dark:t.theme_light}>{light?"🌙":"☀️"}</button>}
         <button className="ac-ico" onClick={onLogout} title={t.logout} aria-label={t.logout}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
-      </div>
+      </div></div>
     </div>
     <div className="ac-agente-main">{children}</div>
   </div>;
@@ -2144,7 +2167,7 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
           </div>
         </div>:<div>
           <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
-          <label htmlFor={`edit-photo-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
+          <label htmlFor={`edit-photo-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:"var(--gold)",cursor:"pointer"}}>📷 {t.add_photo}</label>
           {removePhoto&&<p style={{fontSize:11,color:"rgba(255,80,80,0.7)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_will_remove}</p>}
         </div>}
       </div>
@@ -2332,7 +2355,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
         <div style={{padding:8,borderBottom:"1px solid rgba(var(--ink),0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.06)",borderRadius:6,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none"}}/></div>
         <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(184,149,106,0.15)":"transparent",color:"var(--amber)",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(var(--ink),0.06)"}}>📦 {t.unregistered_client}</button>
         {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(184,149,106,0.15)":"transparent",color:"var(--tx)",cursor:"pointer",textAlign:"left"}}>
-          <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>{c.client_code}</span>
+          <span style={{fontFamily:"monospace",fontWeight:700,color:"var(--gold)"}}>{c.client_code}</span>
           <span style={{color:"rgba(var(--ink),0.5)",marginLeft:8}}>{c.first_name||""} {c.last_name||""}</span>
         </button>)}
         {filtered.length===0&&<p style={{padding:"10px 14px",fontSize:12,color:"rgba(var(--ink),0.4)",margin:0}}>{t.client_not_found}</p>}
@@ -2343,7 +2366,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
       <p style={{fontSize:12,color:"var(--amber)",margin:0,fontWeight:600}}>⚠ {t.unregistered_info}</p>
     </div>}
     {selectedClient&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.deposit_info}</p>
+      <p style={{fontSize:12,color:"var(--gold)",margin:0,fontWeight:600}}>ℹ {t.deposit_info}</p>
     </div>}
 
     <div style={{display:"flex",gap:8,alignItems:"end",marginBottom:12}}>
@@ -2357,7 +2380,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
       <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
       {bultos.map((b,i)=><div key={i} style={{background:"rgba(var(--ink),0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:"1px solid rgba(var(--ink),0.08)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <span style={{fontSize:11,fontWeight:700,color:IC}}>{t.bulto_n} {i+1}</span>
+          <span style={{fontSize:11,fontWeight:700,color:"var(--gold)"}}>{t.bulto_n} {i+1}</span>
           {bultos.length>1&&<button type="button" onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"var(--red)",cursor:"pointer",fontWeight:600}}>{t.remove}</button>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 10px"}}>
@@ -2378,12 +2401,12 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
             </div>
           </div>:<div>
             <input id={`photo-${i}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setPhoto(i,f);}} style={{display:"none"}}/>
-            <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
+            <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:"var(--gold)",cursor:"pointer"}}>📷 {t.add_photo}</label>
             <p style={{fontSize:10,color:"rgba(var(--ink),0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>
           </div>}
         </div>
       </div>)}
-      <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>{t.add_bulto}</button>
+      <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:"var(--gold)",cursor:"pointer"}}>{t.add_bulto}</button>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginTop:10}}>
