@@ -1069,7 +1069,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const diasEntre=(a,b)=>a&&b?Math.max(0,Math.round((new Date(b)-new Date(a))/86400000)):null;
   const subirFotoVuelo=async(f,file)=>{if(!file)return;const url=await uploadPackagePhoto(file,token);if(!url){toast(t.upload_failed,"error");return;}
     const r=await dq("rpc/set_flight_dispatch_photo",{method:"POST",token,body:{p_flight_id:f.id,p_url:url}});
-    if(r&&r.message){toast(r.message,"error");return;}
+    if(r===false||(r&&r.message)){toast(r?.message||t.upload_failed,"error");return;}
     setFlights(prev=>prev.map(x=>x.id===f.id?{...x,dispatch_photo_url:url}:x));toast(t.photo_ok||"Foto guardada","success");};
   const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
     const fase=faseVuelo(f);const c=stColors[fase]||stColors[f.status];
