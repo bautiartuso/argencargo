@@ -76,6 +76,25 @@ const clearSession=()=>{try{localStorage.removeItem("ac_agent_s");}catch(e){}};
 // i18n
 const I18N={
   es:{
+    search_flights:"Buscar vuelo, tracking u operación…",
+    photo_missing_alert:"Falta la foto del desglose de bultos del courier",
+    attach:"Adjuntar",
+    tl_created:"Creado",
+    tl_invoice:"Factura OK",
+    tl_tracking:"Tracking",
+    tl_pickup:"Pick-up",
+    tl_pickup_pending:"Esperando pick-up del courier",
+    tl_received:"Recibido",
+    col_dims:"Dimensiones",
+    col_fact5:"Fact. ÷5000",
+    col_fact6:"Fact. ÷6000",
+    col_received:"Recepción",
+    filter_no_photo:"Sin foto",
+    clear_filter:"Ver todos",
+    stats_billed:"Facturado a Argencargo",
+    stats_billed_hint:"vuelos despachados en el período",
+    stats_collected:"Cobrado",
+    stats_collected_hint:"anticipos recibidos en el período",
     stats_period_pkgs:"Bultos registrados",
     stats_kg_registered:"Kg recibidos",
     stats_flights_dispatched:"Vuelos despachados",
@@ -179,8 +198,8 @@ const I18N={
     bulto_n:"Bulto",
     remove:"Quitar",
     tab_deposit:"Depósito",
-    tab_active_flights:"Vuelos activos",
-    tab_history:"Histórico",
+    tab_active_flights:"Vuelos",
+    tab_history:"Recibidos",
     tab_stats:"Estadísticas",
     tab_account:"Cuenta corriente",
     flight:"Vuelo",
@@ -387,6 +406,25 @@ const I18N={
     processing:"Procesando…",
   },
   zh:{
+    search_flights:"搜索航班、单号或操作…",
+    photo_missing_alert:"缺少快递公司的包裹明细截图",
+    attach:"上传",
+    tl_created:"创建",
+    tl_invoice:"发票确认",
+    tl_tracking:"单号",
+    tl_pickup:"取件",
+    tl_pickup_pending:"等待快递取件",
+    tl_received:"已接收",
+    col_dims:"尺寸",
+    col_fact5:"计费 ÷5000",
+    col_fact6:"计费 ÷6000",
+    col_received:"接收日期",
+    filter_no_photo:"无照片",
+    clear_filter:"查看全部",
+    stats_billed:"向 Argencargo 开票",
+    stats_billed_hint:"该时期发出的航班",
+    stats_collected:"已收款",
+    stats_collected_hint:"该时期收到的预付款",
     stats_period_pkgs:"登记的包裹",
     stats_kg_registered:"收到的公斤数",
     stats_flights_dispatched:"已发出的航班",
@@ -490,8 +528,8 @@ const I18N={
     bulto_n:"包裹",
     remove:"删除",
     tab_deposit:"仓库",
-    tab_active_flights:"活跃航班",
-    tab_history:"历史",
+    tab_active_flights:"航班",
+    tab_history:"已接收",
     tab_stats:"统计",
     tab_account:"往来账户",
     flight:"航班",
@@ -751,6 +789,13 @@ html,body{background:#0A1628}
 .ac-tbl tr.ac-grp:hover td{background:rgba(var(--ink),0.045)}
 .ac-tbl tr.ac-grp td .code{font-family:"JetBrains Mono","SF Mono",monospace;font-weight:800;font-size:12.5px;letter-spacing:0.03em}
 .ac-tbl tr.ac-grp td .sep{color:rgba(var(--ink),0.3);margin:0 8px}
+.ac-tbl tr.ac-grp td{cursor:pointer;user-select:none}
+.ac-tbl tr.ac-grp td .chev{display:inline-block;width:18px;color:rgba(var(--ink),0.45);font-size:10px;transition:transform 150ms}
+.ac-tbl tr.ac-grp.cerrado td .chev{transform:rotate(-90deg)}
+.ac-alerta{padding:12px 16px;border-radius:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,rgba(239,68,68,0.14),rgba(239,68,68,0.04));border:1.5px solid rgba(239,68,68,0.5);color:var(--red)}
+.ac-tl{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:rgba(var(--ink),0.6);margin:0}
+.ac-tl b{color:var(--tx);font-weight:600}
+.ac-tl .d{color:rgba(var(--ink),0.42);font-size:10.5px;margin-left:3px}
 .ac-ico{width:36px;height:36px;border-radius:12px;border:1px solid rgba(var(--ink),0.1);background:rgba(var(--ink),0.04);color:var(--tx);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;padding:0;transition:all 150ms;font-family:inherit}
 .ac-ico:hover{border-color:rgba(184,149,106,0.45);background:rgba(184,149,106,0.1)}
 .ac-mini{padding:5px 10px;font-size:11.5px;font-weight:700;border-radius:8px;border:1px solid rgba(var(--ink),0.12);background:rgba(var(--ink),0.04);color:rgba(var(--ink),0.75);cursor:pointer;font-family:inherit;transition:all 150ms}
@@ -897,13 +942,17 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [showTutorial,setShowTutorial]=useState(false);
   const [tutorialDone,setTutorialDone]=useState(false);
   const [statsPeriod,setStatsPeriod]=useState("month");
-  const [fase,setFase]=useState("todos"); // filtro de Vuelos activos
+  const [fase,setFase]=useState("preparando"); // solapa de Vuelos
+  const [flightSearch,setFlightSearch]=useState("");
+  const [soloSinFoto,setSoloSinFoto]=useState(false);
+  const [grpCerrados,setGrpCerrados]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ac_agent_grp")||"[]"));}catch(e){return new Set();}});
+  const toggleGrp=(k)=>setGrpCerrados(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);try{localStorage.setItem("ac_agent_grp",JSON.stringify([...n]));}catch(e){}return n;});
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc,rp]=await Promise.all([
       dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,status,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(status)"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(status,operation_code)"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"})
     ]);
@@ -991,6 +1040,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     return EN_DEPOSITO.has(String(p.operations?.status||""));
   });
   const depositPkgs=depositPkgsAll.filter(p=>{
+    if(soloSinFoto&&p.photo_url)return false;
     if(!depositSearch)return true;
     const q=depositSearch.toLowerCase();
     const fields=[p.operations?.operation_code,p.operations?.clients?.client_code,p.clients?.client_code,p.national_tracking];
@@ -1015,25 +1065,47 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const statTotalUsd=periodFlights.filter(f=>f.total_cost_usd).reduce((s,f)=>s+Number(f.total_cost_usd||0),0);
   const statTotalPkgs=periodPackages.length;
 
-  const fechaCorta=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"2-digit"}):null;
+  const fechaCorta=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):null;
+  const diasEntre=(a,b)=>a&&b?Math.max(0,Math.round((new Date(b)-new Date(a))/86400000)):null;
+  const subirFotoVuelo=async(f,file)=>{if(!file)return;const url=await uploadPackagePhoto(file,token);if(!url){toast(t.upload_failed,"error");return;}
+    const r=await dq("rpc/set_flight_dispatch_photo",{method:"POST",token,body:{p_flight_id:f.id,p_url:url}});
+    if(r&&r.message){toast(r.message,"error");return;}
+    setFlights(prev=>prev.map(x=>x.id===f.id?{...x,dispatch_photo_url:url}:x));toast(t.photo_ok||"Foto guardada","success");};
   const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
     const fase=faseVuelo(f);const c=stColors[fase]||stColors[f.status];
     const isReady=fase==="listo",isWaiting=fase==="preparando",live=fase!=="recibido";
-    const meta=[];
-    if(isWaiting)meta.push(<span key="w" style={{color:"var(--amber)",fontWeight:700}}>{t.waiting_invoice}</span>);
-    if(fase==="transito"||fase==="aduana"){if(f.dispatched_at)meta.push(<span key="d">{t.dispatched_on} {fechaCorta(f.dispatched_at)}</span>);if(f.international_carrier||f.international_tracking)meta.push(<span key="c" style={{fontFamily:"'JetBrains Mono',monospace"}}>{[f.international_carrier,f.international_tracking].filter(Boolean).join(" · ")}</span>);}
-    if(fase==="recibido"&&f.received_at)meta.push(<span key="r">{t.received_on} {fechaCorta(f.received_at)}</span>);
-    if(f.total_weight_kg)meta.push(<span key="k">{Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:1})} kg</span>);
-    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card ac-card" style={{cursor:"pointer",background:"rgba(var(--ink),0.028)",border:`1px solid ${isReady?"rgba(34,197,94,0.4)":"rgba(var(--ink),0.07)"}`,borderLeft:`3px solid ${c}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-      <div style={{flex:1,minWidth:220}}>
+    const despachado=f.status!=="preparando";
+    const faltaFoto=despachado&&!f.dispatch_photo_url;
+    // Línea de tiempo: creado → factura OK → tracking (despacho) → pick-up del courier → recibido, con la demora entre pasos
+    const pasos=[];
+    pasos.push([t.tl_created,f.created_at,null]);
+    if(f.invoice_presented_at)pasos.push([t.tl_invoice,f.invoice_presented_at,diasEntre(f.created_at,f.invoice_presented_at)]);
+    if(f.dispatched_at)pasos.push([t.tl_tracking,f.dispatched_at,diasEntre(f.invoice_presented_at||f.created_at,f.dispatched_at)]);
+    if(f.dispatched_at&&f.carrier_pickup_at)pasos.push([t.tl_pickup,f.carrier_pickup_at,diasEntre(f.dispatched_at,f.carrier_pickup_at)]);
+    if(f.received_at)pasos.push([t.tl_received,f.received_at,diasEntre(f.carrier_pickup_at||f.dispatched_at,f.received_at)]);
+    const opCodes=ops.map(o=>o.operations?.operation_code).filter(Boolean);
+    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card ac-card" style={{cursor:"pointer",background:"rgba(var(--ink),0.028)",border:`1px solid ${faltaFoto?"rgba(239,68,68,0.45)":isReady?"rgba(34,197,94,0.4)":"rgba(var(--ink),0.07)"}`,borderLeft:`3px solid ${c}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+      {f.dispatch_photo_url&&<a href={f.dispatch_photo_url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} title={t.dispatch_photo} style={{flexShrink:0}}><img src={f.dispatch_photo_url} alt="" style={{width:56,height:56,objectFit:"cover",borderRadius:10,border:"1px solid rgba(var(--ink),0.15)",display:"block"}}/></a>}
+      <div style={{flex:1,minWidth:240}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
           <span style={{fontSize:15,fontWeight:800,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
           <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,color:c,background:`${c}18`,border:`1px solid ${c}55`,textTransform:"uppercase",letterSpacing:"0.06em",display:"inline-flex",alignItems:"center",gap:6}}><span className={live?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:c}}/>{faseLabel(fase)}</span>
-          <span style={{fontSize:11.5,color:"rgba(var(--ink),0.45)"}}>{ops.length} ops</span>
+          <span style={{fontSize:11.5,color:"rgba(var(--ink),0.5)",fontFamily:"'JetBrains Mono',monospace"}}>{opCodes.length?opCodes.slice(0,4).join(" · ")+(opCodes.length>4?` +${opCodes.length-4}`:""):`${ops.length} ops`}</span>
+          {isWaiting&&<span style={{fontSize:11,fontWeight:700,color:"var(--amber)"}}>{t.waiting_invoice}</span>}
           {f.status==="preparando"&&f.requested_carrier&&<span style={{fontSize:11,fontWeight:700,color:"var(--blue)",padding:"2px 9px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {f.requested_carrier==="FEDEX"?"FedEx (÷6000)":f.requested_carrier}</span>}
         </div>
-        {meta.length>0&&<p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,display:"flex",gap:12,flexWrap:"wrap"}}>{meta}</p>}
-        {f.destination_address&&<p style={{fontSize:11,color:"rgba(var(--ink),0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
+        <p className="ac-tl">{pasos.map(([l,d,dd],k)=><span key={k}>{l} <b>{fechaCorta(d)}</b>{dd!=null&&dd>0&&<span className="d">+{dd} d</span>}</span>)}
+          {f.dispatched_at&&!f.carrier_pickup_at&&!f.received_at&&<span style={{color:"var(--amber)",fontWeight:700}}>{t.tl_pickup_pending}</span>}
+        </p>
+        <p style={{fontSize:11.5,color:"rgba(var(--ink),0.5)",margin:"5px 0 0",display:"flex",gap:12,flexWrap:"wrap"}}>
+          {(f.international_carrier||f.international_tracking)&&<span style={{fontFamily:"'JetBrains Mono',monospace"}}>{[f.international_carrier,f.international_tracking].filter(Boolean).join(" · ")}</span>}
+          {f.total_weight_kg&&<span>{Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:1})} kg</span>}
+          {f.destination_address&&<span>📍 {f.destination_address}</span>}
+        </p>
+        {faltaFoto&&<div onClick={e=>e.stopPropagation()} style={{marginTop:10,padding:"8px 12px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"var(--red)",flex:1,minWidth:200}}>⚠ {t.photo_missing_alert}</span>
+          <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:"var(--red)",color:"#fff",cursor:"pointer"}}>📎 {t.attach}<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoVuelo(f,e.target.files?.[0]);e.target.value="";}}/></label>
+        </div>}
       </div>
       <span style={{color:"var(--gold)",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{t.flight} →</span>
     </div>;};
@@ -1047,7 +1119,6 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const tabsIsla=[
     {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length},
     {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
-    {k:"history",l:t.tab_history},
     {k:"stats",l:t.tab_stats},
     {k:"account",l:t.tab_account},
   ];
@@ -1060,94 +1131,83 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"var(--green)",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
-    {repackRequests.length>0&&<div style={{marginTop:16}}>
-      {repackRequests.map(r=><div key={r.id} style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(251,191,36,0.15),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.5)",borderRadius:12,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
-          <span style={{fontSize:24}}>🔄</span>
+    {repackRequests.length>0&&<div style={{marginTop:16,display:"grid",gap:8}}>
+      {repackRequests.map(r=><div key={r.id} className="ac-alerta">
+        <div style={{flex:1,minWidth:220,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:22}}>🔄</span>
           <div>
-            <p style={{fontSize:14,fontWeight:700,color:"var(--tx)",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"var(--amber)"}}>{r.operations?.operation_code}</span></p>
-            <p style={{fontSize:11,color:"rgba(var(--ink),0.7)",margin:"3px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
+            <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"var(--red)"}}>{r.operations?.operation_code}</span></p>
+            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.7)",margin:"3px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
           </div>
         </div>
-        <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
+        <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
       </div>)}
     </div>}
-    {/* Banner foto pendiente — alerta visual amarilla cuando hay paquetes sin foto */}
-    {noPhotoCount>0&&<div style={{marginTop:16,marginBottom:0,padding:"10px 14px",background:"linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:"var(--amber)"}}>
+    {noPhotoCount>0&&!soloSinFoto&&<div className="ac-alerta" style={{marginTop:12}}>
       <span style={{fontSize:16}}>📷</span>
-      <span style={{flex:1}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
-      <button onClick={()=>setTab("deposit")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"var(--amber)",cursor:"pointer"}}>{t.review||"Revisar"} →</button>
+      <span style={{flex:1,fontSize:13,fontWeight:700}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
+      <button onClick={()=>{setSoloSinFoto(true);setDepositSearch("");}} style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>{t.review||"Revisar"} →</button>
     </div>}
-      {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"16px 0 0",fontSize:12,color:"var(--gold)",fontWeight:600}}>
+      {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"12px 0 0",fontSize:12,color:"var(--gold)",fontWeight:600}}>
         {t.supervision_msg}
       </div>}
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} origin={/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China"} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
-      <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:16,border:"1px solid rgba(var(--ink),0.07)",overflow:"hidden",marginTop:16}}>
-        <div style={{padding:"16px 18px",borderBottom:"1px solid rgba(var(--ink),0.07)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-          <div>
-            <h3 style={{fontSize:15,fontWeight:800,margin:0,letterSpacing:"-0.01em"}}>{t.tab_deposit} <span style={{color:"rgba(var(--ink),0.45)",fontWeight:600}}>· {depositPkgs.length}{depositSearch?` / ${depositPkgsAll.length}`:""} · {depositTotalKg} kg</span></h3>
-            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.45)",margin:"3px 0 0"}}>{t.deposit_hint}</p>
-          </div>
-          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          {!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"10px 16px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>+ {t.register_pkg}</button>}
-          <div style={{position:"relative",minWidth:220,flex:"0 1 280px"}}>
+      <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:16,border:"1px solid rgba(var(--ink),0.07)",overflow:"hidden",marginTop:12}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(var(--ink),0.07)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <h3 style={{fontSize:15,fontWeight:800,margin:0,letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{t.tab_deposit} <span style={{color:"rgba(var(--ink),0.45)",fontWeight:600}}>· {depositPkgs.length}{(depositSearch||soloSinFoto)?` / ${depositPkgsAll.length}`:""} · {depositTotalKg} kg</span></h3>
+          {soloSinFoto&&<button className="ac-chip on" onClick={()=>setSoloSinFoto(false)} title={t.clear_filter}>📷 {t.filter_no_photo}<span className="n">{noPhotoCount}</span> ✕</button>}
+          <div style={{position:"relative",flex:"1 1 200px",maxWidth:340,marginLeft:"auto"}}>
             <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,opacity:0.5,pointerEvents:"none"}}>⌕</span>
             <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"9px 12px 9px 30px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}} onFocus={e=>{e.target.style.borderColor=GOLD;}} onBlur={e=>{e.target.style.borderColor="rgba(var(--ink),0.12)";}}/>
           </div>
-          </div>
+          {!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"9px 16px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>+ {t.register_pkg}</button>}
         </div>
         {depositPkgs.length===0?<p style={{padding:"2.5rem",textAlign:"center",color:"rgba(var(--ink),0.4)",margin:0}}>{t.no_pkgs}</p>:
         <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-        <table className="ac-tbl" style={{minWidth:860}}>
+        <table className="ac-tbl" style={{minWidth:960}}>
           <thead><tr>
-            {["#",t.tracking,t.col_weights,t.photo,t.date,""].map((h,k)=><th key={k} style={k===2?{textAlign:"right"}:undefined}>{h}</th>)}
+            {[t.tracking,t.col_dims,t.weight_gross_short||"Bruto",t.col_fact5,t.col_fact6,t.photo,t.col_received,""].map((h,k)=><th key={k} style={k>=2&&k<=4?{textAlign:"right"}:undefined}>{h}</th>)}
           </tr></thead>
           <tbody>{(()=>{
-            const filaDeposito=(p)=>{
-            const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
-            const volDiv=Number(signup?.volumetric_divisor)||5000;const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/volDiv)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
             const kg=(v)=>v?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";
-            const cli=p.clients?.client_code||p.operations?.clients?.client_code||"";
-            return <tr key={p.id}>
-            <td style={{color:"rgba(var(--ink),0.55)",fontSize:12}}>{p.package_number?`#${p.package_number}`:""}{q>1?` ×${q}`:""}</td>
-            <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(var(--ink),0.65)"}}>
-              {p.national_tracking||"—"}
-              {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={p.consolidated_from_trackings.join(", ")}>
-                {p.consolidated_from_trackings.slice(0,3).map((tr,k)=><span key={k} style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"var(--blue)"}}>{tr}</span>)}
-                {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(var(--ink),0.06)",color:"rgba(var(--ink),0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
-              </div>}
-            </td>
-            <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>
-              <span style={{color:"rgba(var(--ink),0.6)"}}>{kg(bruto)}</span>
-              <span style={{color:"rgba(var(--ink),0.3)",margin:"0 6px"}}>·</span>
-              <span style={{color:isVolBigger?"#fb923c":"rgba(var(--ink),0.5)"}}>{kg(vol)}</span>
-              <span style={{color:"rgba(var(--ink),0.3)",margin:"0 6px"}}>·</span>
-              <span style={{color:fact>0?"var(--gold)":"rgba(var(--ink),0.3)",fontWeight:800}}>{kg(fact)} kg</span>
-            </td>
-            <td><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
-            <td style={{color:"rgba(var(--ink),0.45)",fontSize:11.5}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
-            <td style={{textAlign:"right"}}>
-              <button onClick={()=>setEditPkg(p)} className="ac-mini" style={{marginRight:6}}>✎ {t.edit}</button>
-              <button onClick={async()=>{if(!await confirmDialog(`${t.confirm_delete_pkg} ${p.operations?.operation_code||cli||""}?`,{confirmText:t.sure_delete}))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} className="ac-mini danger">✕</button>
-            </td>
-          </tr>;};
-            const volDivG=Number(signup?.volumetric_divisor)||5000;
-            const factDe=(p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const v=l&&w&&h?((l*w*h)/volDivG)*q:0;return Math.max(gw,v);};
+            const pesosDe=(p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const cbm=l&&w&&h?l*w*h*q:0;return {q,l,w,h,bruto:gw,f5:Math.max(gw,cbm/5000),f6:Math.max(gw,cbm/6000)};};
+            const filaDeposito=(p)=>{
+              const x=pesosDe(p);const cli=p.clients?.client_code||p.operations?.clients?.client_code||"";
+              return <tr key={p.id}>
+              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(var(--ink),0.7)"}}>
+                {p.national_tracking||"—"}{x.q>1&&<span style={{color:"rgba(var(--ink),0.45)",marginLeft:6}}>×{x.q}</span>}
+                {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={p.consolidated_from_trackings.join(", ")}>
+                  {p.consolidated_from_trackings.slice(0,3).map((tr,k)=><span key={k} style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"var(--blue)"}}>{tr}</span>)}
+                  {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(var(--ink),0.06)",color:"rgba(var(--ink),0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
+                </div>}
+              </td>
+              <td style={{color:"rgba(var(--ink),0.6)",fontVariantNumeric:"tabular-nums"}}>{x.l&&x.w&&x.h?`${x.l} × ${x.w} × ${x.h} cm`:"—"}</td>
+              <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",color:"rgba(var(--ink),0.75)"}}>{kg(x.bruto)}</td>
+              <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:800,color:x.f5>x.bruto?"#fb923c":"var(--gold)"}}>{kg(x.f5)}</td>
+              <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:x.f6>x.bruto?"#fb923c":"rgba(var(--ink),0.7)"}}>{kg(x.f6)}</td>
+              <td><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
+              <td style={{color:"rgba(var(--ink),0.45)",fontSize:11.5}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
+              <td style={{textAlign:"right"}}>
+                <button onClick={()=>setEditPkg(p)} className="ac-mini" style={{marginRight:6}}>✎ {t.edit}</button>
+                <button onClick={async()=>{if(!await confirmDialog(`${t.confirm_delete_pkg} ${p.operations?.operation_code||cli||""}?`,{confirmText:t.sure_delete}))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} className="ac-mini danger">✕</button>
+              </td>
+            </tr>;};
             const keyDe=(p)=>p.operations?.operation_code||`dep:${p.clients?.client_code||"—"}`;
             const grupos=[];const idx={};
             for(const p of depositPkgs){const k=keyDe(p);if(idx[k]===undefined){idx[k]=grupos.length;grupos.push({k,op:p.operations?.operation_code||null,cli:p.clients?.client_code||p.operations?.clients?.client_code||"",nombre:p.clients?.first_name||p.operations?.clients?.first_name||"",rows:[]});}grupos[idx[k]].rows.push(p);}
             const out=[];
             for(const g of grupos){
-              const fact=g.rows.reduce((a,p)=>a+factDe(p),0);
+              const f5=g.rows.reduce((a,p)=>a+pesosDe(p).f5,0);const cerrado=grpCerrados.has(g.k);
               const repack=g.op&&repackRequests.some(r=>r.operations?.operation_code===g.op);
-              out.push(<tr key={"g"+g.k} className="ac-grp"><td colSpan={6}>
-                <span className="code" style={{color:g.op?"var(--tx)":"var(--amber)"}}>{g.op||(t.in_deposit||"Depósito")}</span>
-                <span className="sep">·</span><span style={{fontWeight:700}}>{g.cli}</span>{g.nombre&&<span style={{color:"rgba(var(--ink),0.5)"}}> {g.nombre}</span>}
+              out.push(<tr key={"g"+g.k} className={`ac-grp${cerrado?" cerrado":""}`} onClick={()=>toggleGrp(g.k)}><td colSpan={8}>
+                <span className="chev">▼</span>
+                <span style={{fontWeight:800,fontSize:13}}>{g.cli||"—"}</span>{g.nombre&&<span style={{color:"rgba(var(--ink),0.5)"}}> {g.nombre}</span>}
+                <span className="sep">·</span><span className="code" style={{color:g.op?"var(--tx)":"var(--amber)"}}>{g.op||(t.in_deposit||"Depósito")}</span>
                 <span className="sep">·</span><span style={{color:"rgba(var(--ink),0.6)"}}>{g.rows.length} {t.bultos||"bultos"}</span>
-                <span className="sep">·</span><span style={{color:"var(--gold)",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
-                {repack&&<span style={{marginLeft:10,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(251,191,36,0.14)",color:"var(--amber)",border:"1px solid rgba(251,191,36,0.4)"}}>🔄 {t.repack_pending||"Reempaque pedido"}</span>}
+                <span className="sep">·</span><span style={{color:"var(--gold)",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{f5.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
+                {repack&&<span style={{marginLeft:10,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(239,68,68,0.14)",color:"var(--red)",border:"1px solid rgba(239,68,68,0.4)"}}>🔄 {t.repack_pending||"Reempaque pedido"}</span>}
               </td></tr>);
-              for(const p of g.rows)out.push(filaDeposito(p));
+              if(!cerrado)for(const p of g.rows)out.push(filaDeposito(p));
             }
             return out;})()}</tbody>
         </table></div>}
@@ -1157,31 +1217,34 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {/* Modal de edición de paquete (compartido por todos los tabs que muestren paquetes en depósito) */}
     {editPkg&&<EditPackageModal pkg={editPkg} token={token} t={t} onClose={()=>setEditPkg(null)} onSaved={()=>{setEditPkg(null);reloadAll();flash(t.edit_success);}}/>}
 
-    {/* TAB 2: Vuelos activos — preparando · listo · en tránsito · en aduana */}
+    {/* TAB 2: Vuelos — en preparación · listo · en tránsito · en aduana · recibidos · todos */}
     {tab==="active_flights"&&!selFlight&&(()=>{
-      const FASES=[["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs]];
-      const cuenta=(k)=>activeFlights.filter(f=>faseVuelo(f)===k).length;
+      const FASES=[["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs],["recibido",t.tab_history]];
+      const todos=[...activeFlights,...historyFlights];
+      const q=flightSearch.trim().toLowerCase();
+      const coincide=(f)=>{if(!q)return true;if(String(f.flight_code||"").toLowerCase().includes(q))return true;if(String(f.international_tracking||"").toLowerCase().includes(q))return true;return flightOps.some(fo=>fo.flight_id===f.id&&String(fo.operations?.operation_code||"").toLowerCase().includes(q));};
+      const de=(k)=>todos.filter(f=>faseVuelo(f)===k&&coincide(f));
       const visibles=FASES.filter(([k])=>fase==="todos"||fase===k);
+      const nada=visibles.every(([k])=>de(k).length===0);
       return <>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
-          <button className={`ac-chip${fase==="todos"?" on":""}`} onClick={()=>setFase("todos")}>{t.phase_all}<span className="n">{activeFlights.length}</span></button>
-          {FASES.map(([k,l])=><button key={k} className={`ac-chip${fase===k?" on":""}`} onClick={()=>setFase(k)}><span style={{width:7,height:7,borderRadius:"50%",background:stColors[k],display:"inline-block"}}/>{l}<span className="n">{cuenta(k)}</span></button>)}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",marginBottom:12}}>
+          {FASES.map(([k,l])=><button key={k} className={`ac-chip${fase===k?" on":""}`} onClick={()=>setFase(k)}><span style={{width:7,height:7,borderRadius:"50%",background:stColors[k],display:"inline-block"}}/>{l}<span className="n">{de(k).length}</span></button>)}
+          <button className={`ac-chip${fase==="todos"?" on":""}`} onClick={()=>setFase("todos")}>{t.phase_all}<span className="n">{todos.filter(coincide).length}</span></button>
         </div>
-        {activeFlights.length===0?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
+        <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
+          <div style={{position:"relative",width:"min(460px,100%)"}}>
+            <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:14,opacity:0.5,pointerEvents:"none"}}>⌕</span>
+            <input value={flightSearch} onChange={e=>setFlightSearch(e.target.value)} placeholder={t.search_flights} style={{width:"100%",padding:"10px 14px 10px 34px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(var(--ink),0.12)",borderRadius:12,background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}} onFocus={e=>{e.target.style.borderColor=GOLD;}} onBlur={e=>{e.target.style.borderColor="rgba(var(--ink),0.12)";}}/>
+          </div>
+        </div>
+        {nada?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{fase==="recibido"?t.no_history:t.no_flights}</p>:
         visibles.map(([k,l])=>{
-          const fs=activeFlights.filter(f=>faseVuelo(f)===k);if(fs.length===0)return fase===k?<p key={k} style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:null;const c=stColors[k];
+          const fs=de(k);if(fs.length===0)return null;const c=stColors[k];
           return <div key={k} style={{marginBottom:24}}>
             {fase==="todos"&&<p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:c,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:`0 0 8px ${c}`}}/>{l}<span style={{color:"rgba(var(--ink),0.4)",fontWeight:600}}>· {fs.length}</span></p>}
             <div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>
           </div>;})}
       </>;})()}
-
-    {/* TAB 3: Histórico — solo vuelos recibidos */}
-    {tab==="history"&&!selFlight&&<>
-      <p style={{fontSize:12,color:"rgba(var(--ink),0.45)",margin:"0 0 16px"}}>{t.history_hint}</p>
-      {historyFlights.length===0?<p style={{textAlign:"center",color:"rgba(var(--ink),0.4)",padding:"3rem 0"}}>{t.no_history}</p>:
-      <div style={{display:"grid",gap:10}}>{historyFlights.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
-    </>}
 
     {/* Flight detail (shared by active_flights + history) */}
     {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
@@ -1211,6 +1274,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const porCli={};pkgsP.forEach(p=>{const k=p.clients?.client_code||p.operations?.clients?.client_code||"—";if(!porCli[k])porCli[k]={k,nombre:p.clients?.first_name||p.operations?.clients?.first_name||"",n:0,kg:0};porCli[k].n++;porCli[k].kg+=pesos(p).bruto;});
       const top=Object.values(porCli).sort((a,b)=>b.n-a.n).slice(0,6);
       const f1=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:1});
+      const facturado=despachados.reduce((a,f)=>a+Number(f.total_cost_usd||0),0);
+      const cobrado=account.filter(m=>(m.type==="anticipo"||m.type==="refund")&&inPeriod(m.date)).reduce((a,m)=>a+Number(m.amount_received_usd!=null?m.amount_received_usd:m.amount_usd||0),0);
       const KPI=({label,value,sub,color})=><div className="ac-card" style={{background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.06)",borderRadius:14,padding:"16px 18px"}}>
         <p style={{fontSize:10,fontWeight:700,color:"rgba(var(--ink),0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{label}</p>
         <p style={{fontSize:26,fontWeight:800,color:color||"var(--tx)",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{value}</p>
@@ -1223,8 +1288,11 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:18}}>
           <KPI label={t.stats_period_pkgs} value={pkgsP.length} sub={`${f1(kgP)} kg · ${t.stats_avg_kg.toLowerCase()} ${f1(kgProm)}`}/>
-          <KPI label={t.stats_flights_dispatched} value={despachados.length} sub={`${f1(kgEnv)} ${t.stats_kg_shipped.toLowerCase()}`} color="var(--blue)"/>
           <KPI label={t.stats_avg_days} value={diasProm==null?"—":f1(diasProm)} sub={t.stats_avg_days_hint} color="var(--gold)"/>
+          <KPI label={t.stats_kg_shipped} value={`${f1(kgEnv)} kg`} sub={`${despachados.length} ${t.stats_flights_dispatched.toLowerCase()}`} color="var(--blue)"/>
+          <KPI label={t.stats_billed} value={usdF(facturado)} sub={t.stats_billed_hint} color="var(--green)"/>
+          <KPI label={t.stats_collected} value={usdF(cobrado)} sub={t.stats_collected_hint} color="var(--green)"/>
+          <KPI label={t.stat_balance||"Saldo CC"} value={usdF(balance)} color={balance>=0?"var(--green)":"var(--red)"}/>
           <KPI label={t.stats_photo_pct} value={pkgsP.length?`${Math.round(conFoto/pkgsP.length*100)}%`:"—"} sub={pkgsP.length?`${pkgsP.length-conFoto} ${t.pkg_no_photo_plural||"sin foto"}`:t.stats_no_data} color={pkgsP.length&&conFoto/pkgsP.length<0.8?"var(--amber)":"var(--green)"}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr)",gap:14,marginBottom:14}} className="ac-stats-2">
