@@ -76,8 +76,15 @@ const clearSession=()=>{try{localStorage.removeItem("ac_agent_s");}catch(e){}};
 // i18n
 const I18N={
   es:{
+    tl_presented:"Presentado",
+    pickup_delay:"Pick-up del courier",
+    pickup_waiting:"sin pick-up",
+    eta:"ETA",
+    days_short:"d",
+    flights_no_photo:"vuelo(s) sin la foto del detalle de exportación — subila antes de que llegue",
+    show_them:"Ver",
     search_flights:"Buscar vuelo, tracking u operación…",
-    photo_missing_alert:"Falta la foto del desglose de bultos del courier",
+    photo_missing_alert:"Falta la foto del detalle de exportación de los bultos",
     attach:"Adjuntar",
     tl_created:"Creado",
     tl_invoice:"Factura OK",
@@ -406,8 +413,15 @@ const I18N={
     processing:"Procesando…",
   },
   zh:{
+    tl_presented:"已提交",
+    pickup_delay:"快递取件",
+    pickup_waiting:"尚未取件",
+    eta:"预计到达",
+    days_short:"天",
+    flights_no_photo:"个航班缺少出口明细截图 — 请在到达前上传",
+    show_them:"查看",
     search_flights:"搜索航班、单号或操作…",
-    photo_missing_alert:"缺少快递公司的包裹明细截图",
+    photo_missing_alert:"缺少包裹出口明细的截图",
     attach:"上传",
     tl_created:"创建",
     tl_invoice:"发票确认",
@@ -945,6 +959,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [fase,setFase]=useState("preparando"); // solapa de Vuelos
   const [flightSearch,setFlightSearch]=useState("");
   const [soloSinFoto,setSoloSinFoto]=useState(false);
+  const [soloSinFotoVuelo,setSoloSinFotoVuelo]=useState(false);
   const [grpCerrados,setGrpCerrados]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ac_agent_grp")||"[]"));}catch(e){return new Set();}});
   const toggleGrp=(k)=>setGrpCerrados(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);try{localStorage.setItem("ac_agent_grp",JSON.stringify([...n]));}catch(e){}return n;});
 
@@ -952,7 +967,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     const [pk,fl,fo,acc,rp]=await Promise.all([
       dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,status,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(status,operation_code)"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(status,operation_code,eta)"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"})
     ]);
@@ -1071,37 +1086,43 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     const r=await dq("rpc/set_flight_dispatch_photo",{method:"POST",token,body:{p_flight_id:f.id,p_url:url}});
     if(r===false||(r&&r.message)){toast(r?.message||t.upload_failed,"error");return;}
     setFlights(prev=>prev.map(x=>x.id===f.id?{...x,dispatch_photo_url:url}:x));toast(t.photo_ok||"Foto guardada","success");};
-  const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
+  // ETA del vuelo = la ETA más próxima de sus operaciones (igual que el admin)
+  const etaVuelo=(f)=>flightOps.filter(fo=>fo.flight_id===f.id).map(fo=>fo.operations?.eta).filter(Boolean).sort()[0]||null;
+  // Demora de pick-up: días entre el despacho (tracking) y el primer evento del courier; si todavía no pasó, los días que lleva esperando
+  const demoraPickup=(f)=>{if(!f.dispatched_at)return null;const fin=f.carrier_pickup_at?new Date(f.carrier_pickup_at):new Date();const d=(fin-new Date(f.dispatched_at))/86400000;return {dias:Math.max(0,d),hecho:!!f.carrier_pickup_at};};
+  const colorDemora=(d)=>d<2?"var(--green)":d<=3?"var(--amber)":"var(--red)";
+  // Orden dentro de cada fase: primero los que todavía no tienen pick-up (más nuevos arriba), después por ETA más próxima
+  const ordenarVuelos=(fs)=>[...fs].sort((a,b)=>{
+    const pa=!!a.dispatched_at&&!a.carrier_pickup_at,pb=!!b.dispatched_at&&!b.carrier_pickup_at;
+    if(pa!==pb)return pa?-1:1;
+    const ea=etaVuelo(a),eb=etaVuelo(b);
+    if(ea!==eb){if(!ea)return 1;if(!eb)return -1;return ea<eb?-1:1;}
+    return String(b.flight_code||"").localeCompare(String(a.flight_code||""));
+  });
+  const FlightCard=({f})=>{
     const fase=faseVuelo(f);const c=stColors[fase]||stColors[f.status];
     const isReady=fase==="listo",isWaiting=fase==="preparando",live=fase!=="recibido";
     const despachado=f.status!=="preparando";
-    const faltaFoto=despachado&&!f.dispatch_photo_url;
-    // Línea de tiempo: creado → factura OK → tracking (despacho) → pick-up del courier → recibido, con la demora entre pasos
-    const pasos=[];
-    pasos.push([t.tl_created,f.created_at,null]);
-    if(f.invoice_presented_at)pasos.push([t.tl_invoice,f.invoice_presented_at,diasEntre(f.created_at,f.invoice_presented_at)]);
-    if(f.dispatched_at)pasos.push([t.tl_tracking,f.dispatched_at,diasEntre(f.invoice_presented_at||f.created_at,f.dispatched_at)]);
-    if(f.dispatched_at&&f.carrier_pickup_at)pasos.push([t.tl_pickup,f.carrier_pickup_at,diasEntre(f.dispatched_at,f.carrier_pickup_at)]);
-    if(f.received_at)pasos.push([t.tl_received,f.received_at,diasEntre(f.carrier_pickup_at||f.dispatched_at,f.received_at)]);
-    const opCodes=ops.map(o=>o.operations?.operation_code).filter(Boolean);
+    const faltaFoto=despachado&&f.status!=="recibido"&&!f.dispatch_photo_url;
+    const dem=despachado?demoraPickup(f):null;
+    const eta=despachado?etaVuelo(f):null;
+    const Pill=({children,color,title,solid})=><span title={title} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:999,color:solid?"#0A1628":color,background:solid?color:`color-mix(in srgb, ${color} 14%, transparent)`,border:`1px solid ${solid?"transparent":`color-mix(in srgb, ${color} 45%, transparent)`}`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6}}>{children}</span>;
     return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card ac-card" style={{cursor:"pointer",background:"rgba(var(--ink),0.028)",border:`1px solid ${faltaFoto?"rgba(239,68,68,0.45)":isReady?"rgba(34,197,94,0.4)":"rgba(var(--ink),0.07)"}`,borderLeft:`3px solid ${c}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       {f.dispatch_photo_url&&<a href={f.dispatch_photo_url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} title={t.dispatch_photo} style={{flexShrink:0}}><img src={f.dispatch_photo_url} alt="" style={{width:56,height:56,objectFit:"cover",borderRadius:10,border:"1px solid rgba(var(--ink),0.15)",display:"block"}}/></a>}
       <div style={{flex:1,minWidth:240}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
           <span style={{fontSize:15,fontWeight:800,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
           <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,color:c,background:`${c}18`,border:`1px solid ${c}55`,textTransform:"uppercase",letterSpacing:"0.06em",display:"inline-flex",alignItems:"center",gap:6}}><span className={live?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:c}}/>{faseLabel(fase)}</span>
-          <span style={{fontSize:11.5,color:"rgba(var(--ink),0.5)",fontFamily:"'JetBrains Mono',monospace"}}>{opCodes.length?opCodes.slice(0,4).join(" · ")+(opCodes.length>4?` +${opCodes.length-4}`:""):`${ops.length} ops`}</span>
           {isWaiting&&<span style={{fontSize:11,fontWeight:700,color:"var(--amber)"}}>{t.waiting_invoice}</span>}
           {f.status==="preparando"&&f.requested_carrier&&<span style={{fontSize:11,fontWeight:700,color:"var(--blue)",padding:"2px 9px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {f.requested_carrier==="FEDEX"?"FedEx (÷6000)":f.requested_carrier}</span>}
         </div>
-        <p className="ac-tl">{pasos.map(([l,d,dd],k)=><span key={k}>{l} <b>{fechaCorta(d)}</b>{dd!=null&&dd>0&&<span className="d">+{dd} d</span>}</span>)}
-          {f.dispatched_at&&!f.carrier_pickup_at&&!f.received_at&&<span style={{color:"var(--amber)",fontWeight:700}}>{t.tl_pickup_pending}</span>}
-        </p>
-        <p style={{fontSize:11.5,color:"rgba(var(--ink),0.5)",margin:"5px 0 0",display:"flex",gap:12,flexWrap:"wrap"}}>
-          {(f.international_carrier||f.international_tracking)&&<span style={{fontFamily:"'JetBrains Mono',monospace"}}>{[f.international_carrier,f.international_tracking].filter(Boolean).join(" · ")}</span>}
-          {f.total_weight_kg&&<span>{Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:1})} kg</span>}
-          {f.destination_address&&<span>📍 {f.destination_address}</span>}
-        </p>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          {f.invoice_presented_at?<Pill color="var(--gold)">📄 {t.tl_presented} · {fechaCorta(f.invoice_presented_at)}</Pill>:<span style={{fontSize:11.5,color:"rgba(var(--ink),0.5)"}}>{t.tl_created} {fechaCorta(f.created_at)}</span>}
+          {dem&&<Pill color={colorDemora(dem.dias)} title={dem.hecho?`${t.tl_pickup} ${fechaCorta(f.carrier_pickup_at)}`:t.tl_pickup_pending}>🚚 {t.pickup_delay} · {dem.dias<1&&dem.hecho?"<1":Math.round(dem.dias)} {t.days_short}{!dem.hecho&&<span style={{fontWeight:600,opacity:0.85}}>· {t.pickup_waiting}</span>}</Pill>}
+          {eta&&<Pill color="var(--blue)">🛬 {t.eta} · {fechaCorta(eta)}</Pill>}
+          {fase==="recibido"&&f.received_at&&<Pill color="var(--green)">✓ {t.tl_received} · {fechaCorta(f.received_at)}</Pill>}
+          {(f.international_carrier||f.international_tracking)&&<span style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",fontFamily:"'JetBrains Mono',monospace"}}>{[f.international_carrier,f.international_tracking].filter(Boolean).join(" · ")}</span>}
+        </div>
         {faltaFoto&&<div onClick={e=>e.stopPropagation()} style={{marginTop:10,padding:"8px 12px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"var(--red)",flex:1,minWidth:200}}>⚠ {t.photo_missing_alert}</span>
           <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:"var(--red)",color:"#fff",cursor:"pointer"}}>📎 {t.attach}<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoVuelo(f,e.target.files?.[0]);e.target.value="";}}/></label>
@@ -1222,14 +1243,21 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const FASES=[["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs],["recibido",t.tab_history]];
       const todos=[...activeFlights,...historyFlights];
       const q=flightSearch.trim().toLowerCase();
-      const coincide=(f)=>{if(!q)return true;if(String(f.flight_code||"").toLowerCase().includes(q))return true;if(String(f.international_tracking||"").toLowerCase().includes(q))return true;return flightOps.some(fo=>fo.flight_id===f.id&&String(fo.operations?.operation_code||"").toLowerCase().includes(q));};
-      const de=(k)=>todos.filter(f=>faseVuelo(f)===k&&coincide(f));
+      const coincide=(f)=>{if(soloSinFotoVuelo&&!(f.status==="despachado"&&!f.dispatch_photo_url))return false;if(!q)return true;if(String(f.flight_code||"").toLowerCase().includes(q))return true;if(String(f.international_tracking||"").toLowerCase().includes(q))return true;return flightOps.some(fo=>fo.flight_id===f.id&&String(fo.operations?.operation_code||"").toLowerCase().includes(q));};
+      const de=(k)=>ordenarVuelos(todos.filter(f=>faseVuelo(f)===k&&coincide(f)));
       const visibles=FASES.filter(([k])=>fase==="todos"||fase===k);
       const nada=visibles.every(([k])=>de(k).length===0);
+      const sinFoto=activeFlights.filter(f=>f.status==="despachado"&&!f.dispatch_photo_url);
       return <>
+        {sinFoto.length>0&&<div className="ac-alerta" style={{marginBottom:14}}>
+          <span style={{fontSize:16}}>📷</span>
+          <span style={{flex:1,fontSize:13,fontWeight:700}}>{sinFoto.length} {t.flights_no_photo}</span>
+          <button onClick={()=>{setFase("todos");setFlightSearch("");setSoloSinFotoVuelo(true);}} style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>{t.show_them} →</button>
+        </div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",marginBottom:12}}>
-          {FASES.map(([k,l])=><button key={k} className={`ac-chip${fase===k?" on":""}`} onClick={()=>setFase(k)}><span style={{width:7,height:7,borderRadius:"50%",background:stColors[k],display:"inline-block"}}/>{l}<span className="n">{de(k).length}</span></button>)}
-          <button className={`ac-chip${fase==="todos"?" on":""}`} onClick={()=>setFase("todos")}>{t.phase_all}<span className="n">{todos.filter(coincide).length}</span></button>
+          {FASES.map(([k,l])=><button key={k} className={`ac-chip${fase===k?" on":""}`} onClick={()=>{setFase(k);setSoloSinFotoVuelo(false);}}><span style={{width:7,height:7,borderRadius:"50%",background:stColors[k],display:"inline-block"}}/>{l}<span className="n">{de(k).length}</span></button>)}
+          <button className={`ac-chip${fase==="todos"?" on":""}`} onClick={()=>{setFase("todos");setSoloSinFotoVuelo(false);}}>{t.phase_all}<span className="n">{todos.filter(coincide).length}</span></button>
+          {soloSinFotoVuelo&&<button className="ac-chip on" onClick={()=>setSoloSinFotoVuelo(false)} title={t.clear_filter}>📷 {t.filter_no_photo} ✕</button>}
         </div>
         <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
           <div style={{position:"relative",width:"min(460px,100%)"}}>
