@@ -687,6 +687,8 @@ const THEME_CSS=`
   --bg:radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.14), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(29,78,216,0.05), transparent 50%), #F3F5F9}
 .ac-ag[data-theme="light"] .ac-hover-card:hover{box-shadow:0 12px 32px rgba(10,22,40,0.10),0 0 0 1px rgba(184,149,106,0.3)}
 .ac-ag[data-theme="light"] .ac-card{background:#fff!important;box-shadow:0 1px 2px rgba(10,22,40,0.04),0 8px 24px -12px rgba(10,22,40,0.12)}
+.ac-ag[data-theme="light"] .ac-logo{filter:brightness(0.1)!important}
+.ac-ag[data-theme="light"] .ac-login-card{background:rgba(255,255,255,0.86)!important;box-shadow:0 20px 50px rgba(10,22,40,0.12)!important}
 .ac-ag[data-theme="light"] input,.ac-ag[data-theme="light"] textarea,.ac-ag[data-theme="light"] select{color-scheme:light}
 .ac-ag ::selection{background:rgba(184,149,106,0.35)}
 .ac-isla{position:sticky;top:10px;z-index:30;margin:12px auto 0;max-width:1200px;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 18px;border-radius:22px;background:var(--isla);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid rgba(var(--ink),0.1);box-shadow:0 12px 40px -10px rgba(0,0,0,0.35)}
@@ -796,10 +798,10 @@ function AuthScreen({onLogin,lang,setLang,t}){
     <div style={{position:"absolute",bottom:"-15%",left:"-8%",width:540,height:540,background:"radial-gradient(circle, rgba(184,149,106,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
     <div style={{maxWidth:420,width:"100%",position:"relative",zIndex:1,animation:"ac_fade_in 400ms ease-out"}}>
       <div style={{textAlign:"center",marginBottom:24}}>
-        <img src={LOGO} alt="AC" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
+        <img src={LOGO} alt="AC" className="ac-logo" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
       </div>
       <div style={{textAlign:"center",marginBottom:18}}><LangToggle lang={lang} setLang={setLang}/></div>
-      <div style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(var(--ink),0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(var(--ink),0.028)",position:"relative",overflow:"hidden"}}>
+      <div className="ac-login-card" style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(var(--ink),0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(var(--ink),0.028)",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
         <h2 style={{fontSize:22,fontWeight:700,color:"var(--tx)",margin:"0 0 6px",textAlign:"center"}}>{t.login_title}</h2>
         <p style={{fontSize:13,color:"rgba(var(--ink),0.4)",margin:"0 0 22px",textAlign:"center"}}>{t.login_subtitle}</p>
@@ -1712,7 +1714,7 @@ function SimpleShell({children,lang,setLang,t,onLogout,token,theme,setTheme,tabs
   return <div style={{minHeight:"100vh",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
     <OfflineStatusBar token={token} lang={lang}/>
     <div className="ac-isla">
-      <img src={LOGO} alt="Argencargo" style={{height:26,objectFit:"contain",flexShrink:0,filter:light?"brightness(0.1)":"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
+      <img src={LOGO} alt="Argencargo" className="ac-logo" style={{height:26,objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
       {tabs?<div className="ac-isla-tabs">{tabs.map(tb=><button key={tb.k} className={`ac-isla-tab${tab===tb.k?" on":""}`} onClick={()=>setTab(tb.k)}>{tb.l}{tb.n!==undefined&&tb.n>0&&<span className="n">{tb.n}</span>}</button>)}</div>:<div style={{flex:1}}/>}
       <div className="ac-isla-ctl">
         {token&&<NotifBell token={token} t={t}/>}
