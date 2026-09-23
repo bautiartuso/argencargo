@@ -9442,7 +9442,7 @@ function AgentsPanel({token}){
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,budget_taxes,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,budget_taxes,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"}),
@@ -10290,10 +10290,30 @@ function AgentsPanel({token}){
         {aliPend.length>0&&<AlibabaPendingBanner flights={aliPend} token={token} onDone={load}/>}
         {aliPay.length>0&&<AlipayPendingBanner flights={aliPay} token={token} onDone={load}/>}
       </>;})()}
-      {/* Sub-tabs En operación / Recibidos */}
-      <div style={{display:"flex",gap:6,marginBottom:14,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,width:"fit-content"}}>
+      {/* Sub-tabs En operación / Recibidos + ingresos estimados de lo que está en el aire */}
+      {(()=>{
+        // Ingreso puro (no ganancia) de los vuelos en operación: presupuesto de cada op; a los RI no
+        // se les suma la parte impositiva porque los impuestos los pagan ellos. Sin costos, sin ganancia.
+        const activeIds=new Set(activeFlights.map(f=>f.id));const vistas=new Set();let total=0,cobrado=0,sinPres=0;
+        flightOps.forEach(fo=>{if(!activeIds.has(fo.flight_id)||!fo.operation_id||vistas.has(fo.operation_id))return;vistas.add(fo.operation_id);const o=fo.operations;if(!o)return;
+          const ri=o.clients?.tax_condition==="responsable_inscripto";const ing=Math.max(0,Number(o.budget_total||0)-(ri?Number(o.budget_taxes||0):0));
+          if(!(Number(o.budget_total||0)>0))sinPres++;total+=ing;if(o.is_collected)cobrado+=ing;});
+        const pend=total-cobrado;
+        return <div style={{display:"flex",gap:12,marginBottom:14,alignItems:"stretch",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,width:"fit-content"}}>
         {[{k:"active",l:"En operación",n:activeFlights.length,c:"#60a5fa"},{k:"received",l:"Recibidos",n:receivedFlights.length,c:"#22c55e"}].map(st=>{const isActive=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:7,background:isActive?`linear-gradient(135deg, ${st.c}33, ${st.c}1A)`:"transparent",color:isActive?st.c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,boxShadow:isActive?`inset 0 0 0 1px ${st.c}55`:"none"}}>{st.l}<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,background:isActive?`${st.c}33`:"rgba(255,255,255,0.08)",color:isActive?st.c:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
       </div>
+      <div title="Presupuestos de las operaciones de los vuelos en operación. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:16,padding:"6px 16px",background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10}}>
+        <div>
+          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Ingresos estimados · en el aire</p>
+          <p style={{fontSize:18,fontWeight:800,color:"#22c55e",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(total)}</p>
+        </div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,0.55)",lineHeight:1.5,borderLeft:"1px solid rgba(255,255,255,0.1)",paddingLeft:14}}>
+          <div>Cobrado <strong style={{color:"#fff"}}>{usd(cobrado)}</strong></div>
+          <div>Pendiente <strong style={{color:pend>0?"#fbbf24":"#fff"}}>{usd(pend)}</strong>{sinPres>0&&<span style={{color:"#f87171",marginLeft:8}}>· {sinPres} op{sinPres!==1?"s":""} sin presupuesto</span>}</div>
+        </div>
+      </div>
+      </div>;})()}
       {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
