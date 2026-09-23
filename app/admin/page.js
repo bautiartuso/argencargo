@@ -10308,9 +10308,10 @@ function AgentsPanel({token}){
           <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Ingresos estimados · en el aire</p>
           <p style={{fontSize:18,fontWeight:800,color:"#22c55e",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(total)}</p>
         </div>
-        <div style={{fontSize:11,color:"rgba(255,255,255,0.55)",lineHeight:1.5,borderLeft:"1px solid rgba(255,255,255,0.1)",paddingLeft:14}}>
-          <div>Cobrado <strong style={{color:"#fff"}}>{usd(cobrado)}</strong></div>
-          <div>Pendiente <strong style={{color:pend>0?"#fbbf24":"#fff"}}>{usd(pend)}</strong>{sinPres>0&&<span style={{color:"#f87171",marginLeft:8}}>· {sinPres} op{sinPres!==1?"s":""} sin presupuesto</span>}</div>
+        <div style={{borderLeft:"1px solid rgba(255,255,255,0.1)",paddingLeft:14}}>
+          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Pendiente de cobro</p>
+          <p style={{fontSize:18,fontWeight:800,color:pend>0?"#fbbf24":"#fff",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(pend)}</p>
+          {sinPres>0&&<p style={{fontSize:10.5,color:"#f87171",margin:"3px 0 0"}}>{sinPres} op{sinPres!==1?"s":""} sin presupuesto</p>}
         </div>
       </div>
       </div>;})()}
