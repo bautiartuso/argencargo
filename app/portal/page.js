@@ -3,8 +3,9 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { PROVINCIAS } from "../../lib/provincias";
-import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
+import NuevasTarifas from "./components/NuevasTarifas";
 import { useT, LANGS } from "../../lib/i18n-portal";
 import SupportPage from "./components/SupportPage";
 
@@ -1300,7 +1301,7 @@ function RatesPage({token,client}){
   const _tnow=Date.now();const tariffsNow=tariffs.filter(t=>(t.effective_from==null||Date.parse(t.effective_from)<=_tnow)&&(t.effective_to==null||_tnow<Date.parse(t.effective_to)));
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>{tr("common.loading")}</p>;
   return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>{tr("rates.title")}</h2>
-    {serviciosC(tr).map(svc=>{const rates=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="rate");const specials=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
+    {serviciosC(tr).map(svc=>{const rates=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="rate"&&tarifaAplica(t,client?.tax_condition==="responsable_inscripto"));const specials=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
     return <div key={svc.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{svc.label}</h3>{svc.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"4px 10px",background:"rgba(255,255,255,0.028)",borderRadius:6}}>{svc.info}</span>}</div>
       {hideRanges(svc.key)?<div style={{textAlign:"center",padding:"16px 0"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>{tr("rates.varies")}</p><p style={{fontSize:14,fontWeight:600,color:IC,margin:0}}>{tr("rates.askForQuote")}</p></div>:
@@ -1484,7 +1485,7 @@ function CalculatorPage({token,client,preset}){
   // Por debajo de esa densidad de valor no conviene marítimo (costos fijos de despacho + tránsito
   // comen el ahorro vs aéreo/courier). Ej: 0,5 m³ → mín. USD 125; 3 m³ → mín. USD 750.
   // Peso facturable mínimo para aéreo desde China (canal A Courier y canal B Integral): 5 kg.
-  const MIN_KG_AEREO_CHINA=5;
+  const MIN_KG_AEREO_CHINA=minKgAereoDe("China"); // 10 kg desde el 25/09/2026 (antes 5)
   // Courier comercial desde USA (habilitado 12/09/2026): misma tarifa que China, mínimo 25 kg.
   const MIN_KG_AEREO_USA=25;
   const isRestricted=products.some(p=>{
@@ -1498,7 +1499,7 @@ function CalculatorPage({token,client,preset}){
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   // Cotización nueva → tarifa vigente HOY (ignora versiones históricas).
   const tariffNowOk=t=>{const n=Date.now();return (t.effective_from==null||Date.parse(t.effective_from)<=n)&&(t.effective_to==null||n<Date.parse(t.effective_to));};
-  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
+  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t)&&tarifaAplica(t,client?.tax_condition==="responsable_inscripto"));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
 
   const calculateSpain=()=>{
@@ -1617,7 +1618,7 @@ function CalculatorPage({token,client,preset}){
     const overweightPkg=pkgs.find(pk=>toN(pk.weight)>=46);
     if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,minKgAereo);const fleteRate=getFleteRate("aereo_a_china",facturableBill);const flete=facturableBill*fleteRate;
       const certFlete=isRI?(totWeight*certAerReal):(facturableBill*certAerFict);
-      const seguro=(totalFob+certFlete)*0.01;const battExtra=hasBattery?facturableBill*(isRI?2:1):0; // 11/09/2026: USD 2/kg RI, USD 1/kg monotributista o consumidor final
+      const seguro=(totalFob+certFlete)*0.01;const battExtra=hasBattery?facturableBill*bateriaUsdKg(isRI):0; // desde 25/09/2026: USD 1/kg para todos
       const validProds=products.filter(p=>toN(p.unit_price)>0);
       const taxUnitPrices=floorTaxUnitPrice(validProds);
       const taxFob=validProds.reduce((s,p,i)=>s+taxUnitPrices[i]*(toN(p.quantity)||1),0);
@@ -1794,7 +1795,7 @@ function CalculatorPage({token,client,preset}){
   // China y USA comparten todo el flujo: NCM, pregunta de baterias y Courier comercial.
   const isChina=origin==="China"||origin==="USA";
   const isRI=client?.tax_condition==="responsable_inscripto";
-  const battRate=isRI?2:1;
+  const battRate=bateriaUsdKg(isRI);
   const flagOf=o=>o==="China"?"🇨🇳":o==="España"?"🇪🇸":"🇺🇸";
   const chTitle=ch=>({aereo_a_china:[t("calc.air"),"Courier comercial"],maritimo_a_china:[t("calc.sea"),"Carga FCL/LCL"],maritimo_b:[t("calc.sea"),"Integral AC"],aereo_b_spain:[t("calc.air"),"Integral AC"],aereo_b_usa:[t("calc.air"),"Integral AC"]})[ch.key]||[ch.key?.includes("aereo")?t("calc.air"):t("calc.sea"),ch.name];
   const resetAll=()=>{setResults(null);setOrigin("");setStep(0);setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:"",product_ids:null}]);setNoDims(false);setDelivery("oficina");setHasBattery(null);setExpandedCh(null);savedQuoteIdRef.current=null;if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});};
@@ -2974,7 +2975,8 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   useEffect(()=>{const h=(e)=>{if(e?.detail){setPage(e.detail);setSelOp(null);}};if(typeof window!=="undefined")window.addEventListener("ac_nav",h);return()=>{if(typeof window!=="undefined")window.removeEventListener("ac_nav",h);};},[]);
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
-    {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} mCargo={mCargo}/>}</>}
+    <NuevasTarifas t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/>
+    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} mCargo={mCargo}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>{setSelOp(null);loadOps();}}/>}
     {page==="deposito"&&<>
       <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>

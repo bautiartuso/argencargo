@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, tarifaAplica } from "../../lib/calc";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -1809,14 +1809,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Aéreo: peso facturable (pf) con mínimo (China 5 kg / USA 25 kg). Marítimo LCL: mínimo 1 m³.
       // Espejo de lib/calc.js — esta copia inline se había quedado sin los mínimos y el
       // "Total a abonar" difería del presupuesto guardado (AC-0328, 11/08).
-      const aereoMinKg=op.origin==="USA"?25:5;
-      const fleteAmt=op.channel?.includes("aereo")?Math.max(pf,aereoMinKg):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const tRefMs=op.created_at?Date.parse(op.created_at):Date.now();
+      const aereoMinKg=minKgAereoDe(op.origin,tRefMs);
+      const fleteAmt=op.channel?.includes("aereo")?Math.max(pf,aereoMinKg):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const tActive=t=>(t.effective_from==null||Date.parse(t.effective_from)<=tRefMs)&&(t.effective_to==null||tRefMs<Date.parse(t.effective_to));
-      const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk&&t.type==="rate"&&tActive(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
+      const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk&&t.type==="rate"&&tActive(t)&&tarifaAplica(t,isRI));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
       const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
       // Recargo baterías solo en aéreo A (Courier Comercial): USD 2/kg si es RI, USD 1/kg monotributista o consumidor final (11/09/2026)
-      if(op.channel==="aereo_blanco"&&op.has_battery){battAuto=fleteAmt*(isRI?2:1);flete+=battAuto;}
+      if(op.channel==="aereo_blanco"&&op.has_battery){battAuto=fleteAmt*bateriaUsdKg(isRI,tRefMs);flete+=battAuto;}
       // CIF: RI sees real, others see ficticio. Marítimo always ficticio.
       const isAereoOp=op.channel?.includes("aereo");
       const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
@@ -6692,7 +6692,7 @@ function Calculator({token,clients}){
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   // Cotización nueva → tarifa vigente HOY (ignora versiones históricas con effective_to pasado).
   const tariffNowOk=t=>{const n=Date.now();return (t.effective_from==null||Date.parse(t.effective_from)<=n)&&(t.effective_to==null||n<Date.parse(t.effective_to));};
-  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return{rate:getEffRate(r),cost:Number(r.cost||0)};}return rates.length?{rate:getEffRate(rates[rates.length-1]),cost:Number(rates[rates.length-1].cost||0)}:{rate:0,cost:0};};
+  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t)&&tarifaAplica(t,client?.tax_condition==="responsable_inscripto"));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return{rate:getEffRate(r),cost:Number(r.cost||0)};}return rates.length?{rate:getEffRate(rates[rates.length-1]),cost:Number(rates[rates.length-1].cost||0)}:{rate:0,cost:0};};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
 
   const classifyProduct=async(idx)=>{const p=products[idx];if(!p.description?.trim())return;
@@ -6731,14 +6731,14 @@ function Calculator({token,clients}){
       const sumItems=(items,k)=>items.reduce((s,it)=>s+(it[k]||0),0);
 
       // Aéreo Courier Comercial (A) — omitido si hay marca. Mínimo facturable: 5 kg China, 25 kg USA.
-      if(!hasBrand&&fact>0){const factBill=Math.max(fact,origin==="USA"?25:5);const{rate,cost}=getFleteRate("aereo_a_china",factBill);const flete=factBill*rate;const fCost=factBill*cost;
+      if(!hasBrand&&fact>0){const factBill=Math.max(fact,minKgAereoDe(origin));const{rate,cost}=getFleteRate("aereo_a_china",factBill);const flete=factBill*rate;const fCost=factBill*cost;
         const certFlFict=factBill*certAerFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
         const certFlReal=totWeight*certAerReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
         const validProds=products.filter(p=>Number(p.unit_price)>0);
         const itemsFict=validProds.map(p=>calcItemTax(p,certFlFict,false,cifFict));
         const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,false,cifReal));
         const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
-        const battExtra=hasBattery?factBill*(client?.tax_condition==="responsable_inscripto"?2:1):0;const gananciaImp=impFict-impReal;
+        const battExtra=hasBattery?factBill*bateriaUsdKg(client?.tax_condition==="responsable_inscripto"):0;const gananciaImp=impFict-impReal;
         // Recargo por sobrepeso: USD 35 por pieza (>24 kg reales o girth L+2A+2H > 260 cm)
         const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1),gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:origin==="USA"?"3-5 días hábiles":"7-10 días",isBlanco:true,
@@ -13894,7 +13894,7 @@ function AdminCalculator({token}){
     let pf=0,totCBM=0,totGW=0;
     pks.forEach(p=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
     const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-    const aereoMinKg=isUSA?25:5;
+    const aereoMinKg=minKgAereoDe(origin);
     const certFlRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
     const certFl=isAereo?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
     const seguro=(totFob+certFl)*0.01;
