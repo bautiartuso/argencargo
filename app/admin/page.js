@@ -10394,7 +10394,7 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Estado","⚠","Clientes","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+            {["Código","Estado","⚠","Clientes","Destinatario","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
           <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
@@ -10449,6 +10449,7 @@ function AgentsPanel({token}){
             </td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{warns.length===0?"":<span style={{display:"inline-flex",gap:3,flexDirection:"column"}}>{warns.map(wn=><span key={wn.t} title={wn.title} style={{fontSize:8.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:`${wn.c}1C`,color:wn.c,border:`1px solid ${wn.c}55`,letterSpacing:"0.05em",cursor:"help"}}>{wn.t}</span>)}</span>}</td>
             <td style={{padding:"10px 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",fontFamily:"monospace",letterSpacing:"0.02em",textAlign:"center"}} title={clientCodes.join(" / ")}>{clientCodes.length>0?clientCodes.join(" / "):"—"}</td>
+            <td title={[f.dest_name,f.dest_tax_id].filter(Boolean).join(" · ")} style={{padding:"10px 8px",fontSize:12,color:f.dest_name?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.3)",textAlign:"center",maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.dest_name||"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
             <td style={{padding:"10px 8px",color:pierdo?"#ff5252":gano?"#4ade80":"rgba(255,255,255,0.6)",fontWeight:(pierdo||gano)?800:400,textShadow:pierdo?"0 0 10px rgba(255,82,82,0.55)":"none",whiteSpace:"nowrap",textAlign:"center"}} title={pierdo?`El agente declaró ${kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:2})} kg y el sistema factura ${pesoFact.toLocaleString("es-AR",{maximumFractionDigits:2})} kg — estás pagando más kg de los que cobrás`:gano?"El facturable supera el kg declarado por el agente":""}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
@@ -10467,7 +10468,7 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
           </tr>;})}</tbody>
           <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.35)",background:"rgba(0,0,0,0.25)"}}>
-            <td colSpan={4} style={{padding:"9px 8px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"right"}}>Σ {shownFlights.length} vuelo{shownFlights.length!==1?"s":""}</td>
+            <td colSpan={5} style={{padding:"9px 8px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"right"}}>Σ {shownFlights.length} vuelo{shownFlights.length!==1?"s":""}</td>
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",fontVariantNumeric:"tabular-nums"}}>{tot.bultos||"—"}</td>
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{tot.peso>0?`${tot.peso.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`:"—"}</td>
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{tot.kgVuelo>0?`${tot.kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`:"—"}</td>
