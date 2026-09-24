@@ -10149,7 +10149,7 @@ function AgentsPanel({token}){
               const factDiv=(div,redondeo)=>opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v)*q;return s2+(redondeo?Math.ceil(f*2)/2:f);},0);
               const f5=factDiv(5000,false),f6=factDiv(6000,true);
               const kgTxt=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";
-              const volBadge=(f)=>grossW>0&&f>grossW*1.15?<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg, factura ${f.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{display:"inline-block",verticalAlign:"middle",fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,background:"rgba(251,191,36,0.14)",color:"#fbbf24",marginLeft:6,cursor:"help",lineHeight:1.5,whiteSpace:"nowrap"}}>▲{Math.round((f/grossW-1)*100)}%</span>:null;
+              const volBadge=(f)=>grossW>0&&f>grossW*1.15?<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg, factura ${f.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{color:"#fbbf24",fontSize:10,marginLeft:4,cursor:"help",verticalAlign:"1px"}}>▲</span>:null;
               const lockedByAgent=canSelect&&selAgentId&&o.created_by_agent_id!==selAgentId;
               // Alerta DIE 0% para canal aéreo blanco (canal A): puede ser legítimo pero el admin tiene que revisarlo manual.
               const isAereoA=o.channel==="aereo_blanco";
@@ -10192,7 +10192,7 @@ function AgentsPanel({token}){
                 })()}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(grossW)}</td>
-                <td style={{padding:"10px 12px",color:"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
+                <td style={{padding:"10px 12px",color:grossW>0&&f5>grossW*1.15?"#fbbf24":"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
               </tr>
