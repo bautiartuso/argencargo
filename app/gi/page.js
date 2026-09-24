@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, tablaDesaduanaje } from "../../lib/calc";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
 import { comprimirImagen } from "../../lib/img";
@@ -1316,7 +1316,7 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
         const iibbR=tasaODefault(p.iibb_rate,TASA_IIBB);
         ivaAdic=bi*ivaAdR;iigg=bi*iiggR;iibb=bi*iibbR;total+=ivaAdic+iigg+iibb;
       } else {
-        const tbl=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+        const tbl=tablaDesaduanaje(Date.now());
         let d=120;for(const [m,a] of tbl){if(cifTotal<m){d=a;break;}}
         desemb=(d*pct)*1.21;total+=desemb;
       }

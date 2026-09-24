@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { PROVINCIAS } from "../../lib/provincias";
-import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
 import { useT, LANGS } from "../../lib/i18n-portal";
@@ -1584,7 +1584,7 @@ function CalculatorPage({token,client,preset}){
       const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);volWeightTotal+=vol;
       return{bruto,vol,fact,isVolumetric:vol>bruto};});
     facturable=pkgDetails.reduce((s,p)=>s+p.fact,0);
-    const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
+    const getDesembolso=(cif)=>{const t=tablaDesaduanaje(Date.now());for(const[max,amt]of t)if(cif<max)return amt;return 120;};
     const isRI=client?.tax_condition==="responsable_inscripto";
     const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
     const certMarFict=config.cert_flete_maritimo_ficticio||100;

@@ -52,6 +52,7 @@ export default function NuevasTarifas({ t, client, onVerTarifas, soloBanner }) {
       <ul style={{ margin: "16px 0 0", paddingLeft: 18, color: "rgba(255,255,255,0.75)", fontSize: 13, lineHeight: 1.7 }}>
         <li>{t("tarifas26.min")}</li>
         <li>{t("tarifas26.batt")}</li>
+        <li>{t("tarifas26.desad")}</li>
         <li><strong style={{ color: "#fff" }}>{t("tarifas26.keep")}</strong></li>
       </ul>
       <div style={{ display: "flex", gap: 10, marginTop: 22, flexWrap: "wrap" }}>

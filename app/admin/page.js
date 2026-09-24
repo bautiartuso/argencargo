@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, tarifaAplica } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -1823,7 +1823,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
       seguro=(totalFob+certFlAmt)*0.01;const cif=totalFob+certFlAmt+seguro;
       // Impuestos per-item sobre CIF proporcional
-      const getDesembolso=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
+      const getDesembolso=(c)=>{const t=tablaDesaduanaje((op?.created_at?Date.parse(op.created_at):Date.now()));for(const[max,amt]of t)if(c<max)return amt;return 120;};
       totalTax=0;
       if(isBlanco){
         // Antidumping calzado: solo afecta la base imponible (DIE/TE/IVA/desaduanaje) — el
@@ -2110,12 +2110,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {isBlanco&&items.length>0&&(()=>{
           const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
           const isAereoOp=op.channel?.includes("aereo");
-          const aereoMinKg=op.origin==="USA"?25:5; // mismo mínimo facturable que lib/calc.js
+          const aereoMinKg=minKgAereoDe(op.origin,op?.created_at?Date.parse(op.created_at):Date.now()); // mismo mínimo facturable que lib/calc.js
           const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
           const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
           const segLocal=(totalFob+certFlAmt)*0.01;
           const cifLocal=totalFob+certFlAmt+segLocal;
-          const getDesembolsoD=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
+          const getDesembolsoD=(c)=>{const t=tablaDesaduanaje((op?.created_at?Date.parse(op.created_at):Date.now()));for(const[max,amt]of t)if(c<max)return amt;return 120;};
           const taxItems=applyAntidumpingFloor(items,config);
           const taxFobL=taxItems!==items?taxItems.reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0):totalFob;
           const taxCifL=taxFobL!==totalFob?taxFobL+certFlAmt+(taxFobL+certFlAmt)*0.01:cifLocal;
@@ -2262,7 +2262,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <Inp label="DIE %" type="number" value={it.import_duty_rate??0} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate??21} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
-            {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>;})()}
+            {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=tablaDesaduanaje((op?.created_at?Date.parse(op.created_at):Date.now()));for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>;})()}
             {isMaritimo&&<><Inp label="IVA Adic. %" type="number" value={it.iva_additional_rate} onChange={v=>chItem(i,"iva_additional_rate",v)} step="0.01" placeholder="20 (por defecto)" small/>
             <Inp label="IIGG %" type="number" value={it.iigg_rate} onChange={v=>chItem(i,"iigg_rate",v)} step="0.01" placeholder="6 (por defecto)" small/>
             <Inp label="IIBB %" type="number" value={it.iibb_rate} onChange={v=>chItem(i,"iibb_rate",v)} step="0.01" placeholder="5 (por defecto)" small/></>}
@@ -4219,7 +4219,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
             const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);
             const cif=(totalFob+certFl)*1.01;
-            const tbl=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+            const tbl=tablaDesaduanaje((op?.created_at?Date.parse(op.created_at):Date.now()));
             let desemb=120;for(const [max,amt] of tbl){if(cif<max){desemb=amt;break;}}
             return desemb*1.21; // desembolso + IVA 21%
           })();
@@ -6709,7 +6709,7 @@ function Calculator({token,clients}){
     if(origin==="China"||origin==="USA"){
       const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
       const certMarReal=config.cert_flete_maritimo_real||50;const certMarFict=config.cert_flete_maritimo_ficticio||100;
-      const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
+      const getDesembolso=(cif)=>{const t=tablaDesaduanaje(Date.now());for(const[max,amt]of t)if(cif<max)return amt;return 120;};
 
       // Peso facturable per-bulto (same as client)
       let fact=0;pkgs.forEach(pk=>{const q=(toN(pk.qty)||1),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);fact+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
@@ -9612,11 +9612,11 @@ function AgentsPanel({token}){
       const isUSA=o.origin==="USA",isRI=client?.tax_condition==="responsable_inscripto";
       let pf=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const bk=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(bk,v);totGW+=bk;});
       const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-      const aereoMinKg=isUSA?25:5;
+      const aereoMinKg=minKgAereoDe(o.origin,o?.created_at?Date.parse(o.created_at):Date.now());
       const certFlRate=isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5);
       const certFl=isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate;
       const seguroB=(totFob+certFl)*0.01;const cif=totFob+certFl+seguroB;
-      const tabla=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+      const tabla=tablaDesaduanaje((o?.created_at?Date.parse(o.created_at):Date.now()));
       const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
       // Antidumping calzado: solo afecta la BASE IMPONIBLE (derechos/tasa/IVA) — el FOB real
       // (totFob, seguro, "Valor FOB" mostrado) no cambia.
@@ -13272,7 +13272,7 @@ function QuotesList({token}){
   };
   // Calcula desaduanaje para aéreo A (tabla desembolso) — CIF-based
   const desembolsoForCif=(cif)=>{
-    const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+    const t=tablaDesaduanaje(Date.now());
     for(const[max,amt] of t)if(cif<max)return amt;
     return 120;
   };
@@ -13899,7 +13899,7 @@ function AdminCalculator({token}){
     const certFl=isAereo?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
     const seguro=(totFob+certFl)*0.01;
     const cif=totFob+certFl+seguro;
-    const tabla=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+    const tabla=tablaDesaduanaje(Date.now());
     const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
     let derechos=0,tasaE=0,iva=0,ivaAdic=0,iigg=0,iibb=0;
     // Antidumping calzado: solo afecta la base imponible (DIE/TE/IVA/desaduanaje) — el
