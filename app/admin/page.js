@@ -8190,6 +8190,46 @@ function ReembalajeVueloModal({flight,token,onClose,onDone}){
   </div>;
 }
 
+// Estética del detalle de vuelo (24/09/2026): cards con título chico en mayúsculas, tiles de datos,
+// pills de estado y secciones que se resumen solas cuando ya están cerradas (destinatario con la
+// factura presentada, impuestos ya prorrateados). Solo presentación: los números salen de lo mismo.
+const FE_LBL={fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)",margin:0};
+function FeCard({title,icon,actions,summary,children,tone,id}){
+  const border=tone==="ok"?"rgba(34,197,94,0.28)":tone==="warn"?"rgba(251,191,36,0.32)":tone==="danger"?"rgba(248,113,113,0.35)":"rgba(255,255,255,0.07)";
+  return <div id={id} style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${border}`,borderRadius:16,padding:"16px 20px",marginBottom:14}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:children?14:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><p style={FE_LBL}>{icon?<span style={{marginRight:6}}>{icon}</span>:null}{title}</p>{summary}</div>
+      {actions?<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{actions}</div>:null}
+    </div>
+    {children}
+  </div>;
+}
+function FeDato({label,value,sub,color,mono,title}){
+  return <div title={title} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"11px 14px",minWidth:0}}>
+    <p style={{...FE_LBL,fontSize:9.5,marginBottom:5}}>{label}</p>
+    <p style={{fontSize:16,fontWeight:800,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums",fontFamily:mono?"'JetBrains Mono','SF Mono',monospace":undefined,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{value}</p>
+    {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"4px 0 0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</p>}
+  </div>;
+}
+const FePill=({children,color="#94a3b8",solid,title})=><span title={title} style={{fontSize:10.5,fontWeight:800,padding:"3px 10px",borderRadius:999,color:solid?"#0A1628":color,background:solid?color:`${color}1f`,border:`1px solid ${solid?"transparent":color+"55"}`,textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6}}>{children}</span>;
+// Línea de tiempo del vuelo: creado → factura presentada → despachado → pick-up → recibido
+function FeTimeline({flight}){
+  const pasos=[["Creado",flight.created_at],["Factura presentada",flight.invoice_presented_at],["Despachado",flight.dispatched_at],["Pick-up courier",flight.carrier_pickup_at],["Recibido en Bs As",flight.received_at]];
+  const ult=pasos.reduce((m,p,i)=>p[1]?i:m,-1);
+  const dias=(a,b)=>a&&b?Math.round((new Date(b)-new Date(a))/86400000):null;
+  return <div style={{display:"flex",alignItems:"flex-start",gap:0,marginBottom:16,overflowX:"auto",paddingBottom:2}}>
+    {pasos.map(([l,d],i)=>{const hecho=!!d;const actual=i===ult;const prev=i>0?pasos[i-1][1]:null;const dd=dias(prev,d);
+      return <div key={l} style={{flex:"1 1 0",minWidth:120,position:"relative"}}>
+        {i<pasos.length-1&&<div style={{position:"absolute",top:6,left:"calc(50% + 8px)",right:"calc(-50% + 8px)",height:2,background:pasos[i+1][1]?"rgba(34,197,94,0.45)":"rgba(255,255,255,0.08)"}}/>}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",gap:5}}>
+          <span style={{width:14,height:14,borderRadius:"50%",background:hecho?(actual?"#22c55e":"rgba(34,197,94,0.55)"):"rgba(255,255,255,0.08)",border:`2px solid ${hecho?"#22c55e":"rgba(255,255,255,0.15)"}`,boxShadow:actual?"0 0 10px rgba(34,197,94,0.55)":"none",boxSizing:"border-box"}}/>
+          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:hecho?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.3)"}}>{l}</span>
+          <span style={{fontSize:11.5,color:hecho?"#fff":"rgba(255,255,255,0.25)",fontVariantNumeric:"tabular-nums"}}>{hecho?formatDateShort(d):"—"}{hecho&&dd!=null&&dd>0&&<span style={{color:"rgba(255,255,255,0.4)",marginLeft:4}}>+{dd} d</span>}</span>
+        </div>
+      </div>;})}
+  </div>;
+}
+
 function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   // Comisión financiera aplicable: solo si el vuelo se pagó con la cuenta corriente del agente.
   const finK=flight.payment_method==="cuenta_corriente"?Number(finRate||0):0;
@@ -8210,7 +8250,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   // Ops del vuelo: buscar en depositOps/allOps, y si no están (porque cambiaron de status), cargar directo
   const [flightOpsData,setFlightOpsData]=useState([]);
   const [flightCliPmts,setFlightCliPmts]=useState([]);
-  const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [impFecha,setImpFecha]=useState(null);const [prorrateando,setProrrateando]=useState(false);
+  const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [impFecha,setImpFecha]=useState(null);const [prorrateando,setProrrateando]=useState(false);const [impEdit,setImpEdit]=useState(false);
   // Impuesto que las ops de este vuelo ya tienen prorrateado de OTROS vuelos (ops partidas).
   const [otrosVuelos,setOtrosVuelos]=useState({});
   useEffect(()=>{(async()=>{
@@ -8730,78 +8770,84 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         {flight.status==="preparando"&&<button onClick={requestDeleteFlight} disabled={deletingFlight} title="Borra el vuelo y devuelve las ops al depósito" style={{fontSize:12,color:"#ff6b6b",background:"rgba(255,80,80,0.08)",border:"1px solid rgba(255,80,80,0.3)",cursor:deletingFlight?"wait":"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,opacity:deletingFlight?0.6:1}}>{deletingFlight?"Eliminando…":"🗑 Eliminar vuelo"}</button>}
       </div>
     </div>
-    <Card title={`${flight.flight_code} — ${a?(a.first_name+" "+(a.last_name||"")):""}`}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-        {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];const label=ready?"listo para enviar":flight.status;return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{label}</span>;})()}
-        <span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{flightOps.length} operaciones</span>
-        {/* Totales del vuelo: bultos, bruto y facturable con el redondeo del agente (misma cuenta que cada fila) */}
-        {(()=>{
-          let nB=0,tBruto=0,tFactAg=0;
-          opsUnique.forEach(o=>{
-            const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);
-            const opDiv=Number(opAgent?.volumetric_divisor)||5000;
-            edPkgs.filter(p=>p.operation_id===o.id).forEach(p=>{
-              const q=Number(p.quantity||1);nB+=q;
-              const bruto=Number(p.gross_weight_kg||0)*q;tBruto+=bruto;
-              const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);
-              const vol=l&&wd&&h?((l*wd*h)/opDiv)*q:0;
-              tFactAg+=Math.ceil(Math.max(bruto,vol)*2)/2;
-            });
-          });
-          const kg=v=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
-          return <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>
-            📦 <strong style={{color:"#fff"}}>{nB} bulto{nB!==1?"s":""}</strong> · bruto <strong style={{color:"rgba(255,255,255,0.8)"}}>{kg(tBruto)}</strong> · facturable agente ↑ <strong style={{color:"#fb923c"}}>{kg(tFactAg)}</strong>
-          </span>;
-        })()}
-      </div>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
-      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
-        {opsUnique.map(o=>{
-          const fo=flightOps.find(x=>x.operation_id===o.id);
-          const pkgs=edPkgs.filter(p=>p.operation_id===o.id);
-          // Divisor volumétrico del agente que creó la op (no del agente del vuelo)
-          const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);
-          const opDiv=Number(opAgent?.volumetric_divisor)||5000;
-          let totBruto=0,totFact=0,totFactAgente=0,totFact6=0,totFact6Agente=0;
-          const pkgRows=pkgs.map(p=>{
-            const q=Number(p.quantity||1);
-            const gw=Number(p.gross_weight_kg||0);
-            const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);
-            const bruto=gw*q;
-            const vol=l&&wd&&h?((l*wd*h)/opDiv)*q:0;
-            const fact=Math.max(bruto,vol);
-            // El agente redondea el facturable de CADA bulto al medio kilo PARA ARRIBA y
-            // cobra eso. Al cliente se le cobra el exacto; esto es para ver cuanto nos
-            // esta metiendo el redondeo en el vuelo.
-            const factAgente=Math.ceil(fact*2)/2;
-            // Facturable con volumetrico a /6000 (divisor que suele usar el agente/carrier
-            // para cobrarnos a nosotros), con su redondeo al medio kilo para arriba.
-            const vol6=(Number(p.length_cm||0)*Number(p.width_cm||0)*Number(p.height_cm||0))/6000*q;
-            const fact6=Math.max(bruto,vol6);
-            const fact6Agente=Math.ceil(fact6*2)/2;
-            totBruto+=bruto;totFact+=fact;totFactAgente+=factAgente;totFact6+=fact6;totFact6Agente+=fact6Agente;
-            return {p,q,bruto,vol,fact,factAgente,fact6,fact6Agente};
-          });
-          return <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:pkgs.length>0?6:0,flexWrap:"wrap",gap:6}}>
-              <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · bruto <strong style={{color:"rgba(255,255,255,0.75)"}} title={`Exacto: ${totBruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`}>{(Math.ceil(totBruto*2)/2).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> · facturable <strong style={{color:IC}} title={`Exacto: ${totFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`}>{(Math.ceil(totFact*2)/2).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> · <span title="Facturable con el redondeo del agente: cada bulto al medio kilo para arriba. Es lo que el agente nos cobra a nosotros; al cliente se le cobra el exacto.">agente ↑ <strong style={{color:totFactAgente>totFact?"#fb923c":"rgba(255,255,255,0.6)"}}>{totFactAgente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong>{totFactAgente>totFact?<strong style={{color:"#fb923c"}}> (+{(totFactAgente-totFact).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg)</strong>:null}</span> · <span title={`Facturable con volumétrico a /6000 (redondeo ↑ por bulto). Exacto: ${totFact6.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`}>/6000 <strong style={{color:"#93c5fd"}}>{totFact6Agente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+    {(()=>{
+      const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];const label=ready?"listo para enviar":flight.status==="despachado"?"en tránsito":flight.status;
+      const kg=v=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+      const n2=v=>v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Totales del vuelo con la misma cuenta que cada fila (divisor del agente que creó la op)
+      let nB=0,tBruto=0,tFact=0,tFactAg=0,tFact6=0;
+      const filasOps=opsUnique.map(o=>{
+        const fo=flightOps.find(x=>x.operation_id===o.id);
+        const pkgs=edPkgs.filter(p=>p.operation_id===o.id);
+        const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);
+        const opDiv=Number(opAgent?.volumetric_divisor)||5000;
+        let totBruto=0,totFact=0,totFactAgente=0,totFact6=0,totFact6Agente=0;
+        const pkgRows=pkgs.map(p=>{
+          const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);
+          const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);
+          const bruto=gw*q;const vol=l&&wd&&h?((l*wd*h)/opDiv)*q:0;const fact=Math.max(bruto,vol);
+          // El agente redondea el facturable de CADA bulto al medio kilo para arriba y cobra eso.
+          const factAgente=Math.ceil(fact*2)/2;
+          const vol6=(l*wd*h)/6000*q;const fact6=Math.max(bruto,vol6);const fact6Agente=Math.ceil(fact6*2)/2;
+          totBruto+=bruto;totFact+=fact;totFactAgente+=factAgente;totFact6+=fact6;totFact6Agente+=fact6Agente;nB+=q;
+          return {p,q,bruto,vol,fact,factAgente,fact6,fact6Agente};
+        });
+        tBruto+=totBruto;tFact+=totFact;tFactAg+=totFactAgente;tFact6+=totFact6Agente;
+        return {o,fo,pkgs,pkgRows,totBruto,totFact,totFactAgente,totFact6,totFact6Agente};
+      });
+      const th={padding:"6px 10px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.38)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
+      const td={padding:"6px 10px",fontSize:11.5,color:"rgba(255,255,255,0.6)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+      return <FeCard title="Información del vuelo" icon="✈️"
+        summary={<><FePill color={c} title={label}><span className={flight.status!=="recibido"?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:c}}/>{label}</FePill>{a&&<span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{a.first_name} {a.last_name||""}{a.country?` · ${a.country}`:""}</span>}</>}
+        actions={<span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"0.03em"}}>{flight.flight_code}</span>}>
+        <FeTimeline flight={flight}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(138px,1fr))",gap:10,marginBottom:16}}>
+          <FeDato label="Operaciones" value={opsUnique.length}/>
+          <FeDato label="Bultos" value={nB}/>
+          <FeDato label="Bruto" value={kg(tBruto)}/>
+          <FeDato label="Facturable" value={kg(tFact)} color={GOLD_LIGHT} sub={`agente ↑ ${kg(tFactAg)}${tFactAg>tFact?` (+${n2(tFactAg-tFact)})`:""}`} title="Máx. bruto vs volumétrico con el divisor del agente. El agente redondea cada bulto al medio kilo para arriba."/>
+          <FeDato label="/6000 ↑" value={kg(tFact6)} color="#93c5fd" title="Facturable con volumétrico a /6000 y redondeo ↑ por bulto (lo que suele cobrar el carrier)"/>
+          <FeDato label="Valor declarado" value={usd(totalDeclaredUSD)} sub={`${items.length} ítem${items.length!==1?"s":""} en factura`}/>
+          {flight.international_carrier&&<FeDato label="Courier" value={flight.international_carrier} sub={flight.international_tracking||null} mono/>}
+          {!esEmpleado()&&Number(flight.total_cost_usd||0)>0&&<FeDato label="Costo agente" value={usd(flight.total_cost_usd)} color="#4ade80" sub={Number(flight.total_weight_kg||0)>0?`${Number(flight.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg · ${usd(Number(flight.total_cost_usd)/Number(flight.total_weight_kg))}/kg`:null}/>}
+        </div>
+        <p style={{...FE_LBL,marginBottom:8}}>Operaciones en este vuelo</p>
+        <div style={{border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,overflow:"hidden"}}>
+          {filasOps.map(({o,fo,pkgs,pkgRows,totBruto,totFact,totFactAgente,totFact6Agente},k)=><div key={o.id} style={{borderTop:k>0?"1px solid rgba(255,255,255,0.06)":"none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",background:"rgba(255,255,255,0.035)"}}>
+              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>
+              <span style={{fontSize:13,color:"#fff",fontWeight:600}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
+              {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"monospace"}}>{o.clients.client_code}</span>}
+              <span style={{flex:1}}/>
+              <span style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",display:"flex",gap:14,flexWrap:"wrap",fontVariantNumeric:"tabular-nums"}}>
+                <span>{pkgs.length} bulto{pkgs.length!==1?"s":""}</span>
+                <span>bruto <strong style={{color:"rgba(255,255,255,0.8)"}}>{kg(totBruto)}</strong></span>
+                <span>facturable <strong style={{color:GOLD_LIGHT}}>{kg(totFact)}</strong></span>
+                <span title="Con el redondeo ↑ al medio kilo del agente">agente ↑ <strong style={{color:totFactAgente>totFact+0.001?"#fb923c":"rgba(255,255,255,0.7)"}}>{kg(totFactAgente)}</strong>{totFactAgente>totFact+0.001&&<span style={{color:"#fb923c"}}> (+{n2(totFactAgente-totFact)})</span>}</span>
+                <span title="Facturable a /6000 con redondeo ↑">/6000 <strong style={{color:"#93c5fd"}}>{kg(totFact6Agente)}</strong></span>
+                {!esEmpleado()&&fo?.cost_share_usd?<span title="Parte del costo del vuelo que le toca a esta op">flete <strong style={{color:"#4ade80"}}>{usd(fo.cost_share_usd)}</strong></span>:null}
+              </span>
             </div>
-            {pkgs.length>0&&<div style={{marginLeft:16,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
-              {pkgRows.map(({p,bruto,vol,fact,factAgente,fact6,fact6Agente})=><div key={p.id} style={{display:"flex",gap:12,padding:"2px 0",flexWrap:"wrap"}}>
-                <span style={{minWidth:30}}>#{p.package_number}</span>
-                <span style={{minWidth:120}}>{p.national_tracking||"—"}</span>
-                {p.length_cm&&p.width_cm&&p.height_cm?<span style={{minWidth:90}}>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</span>:<span style={{minWidth:90}}>—</span>}
-                <span style={{minWidth:90}}>bruto: {bruto>0?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
-                <span style={{minWidth:90}}>vol: {vol>0?`${vol.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
-                <span style={{color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:600}}>facturable: {fact>0?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
-                {fact>0&&<span style={{color:factAgente>fact?"#fb923c":"rgba(255,255,255,0.35)"}}>agente ↑: {factAgente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg{factAgente>fact?` (+${(factAgente-fact).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</span>}
-                {fact6>0&&<span style={{color:"#93c5fd"}} title="Facturable con volumétrico a /6000 y su redondeo ↑ al medio kilo">/6000: {fact6.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg (↑ {fact6Agente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>}
-              </div>)}
-            </div>}
-          </div>;
-        })}
-      </div>
+            {pkgs.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr>
+                <th style={{...th,textAlign:"left",width:44}}>#</th><th style={{...th,textAlign:"left"}}>Tracking</th><th style={{...th,textAlign:"left"}}>Medidas</th><th style={th}>Bruto</th><th style={th}>Vol.</th><th style={th}>Facturable</th><th style={th}>Agente ↑</th><th style={th}>/6000 ↑</th>
+              </tr></thead>
+              <tbody>{pkgRows.map(({p,q,bruto,vol,fact,factAgente,fact6Agente})=><tr key={p.id} style={{borderTop:"1px solid rgba(255,255,255,0.04)"}}>
+                <td style={{...td,textAlign:"left",color:"rgba(255,255,255,0.4)"}}>#{p.package_number}{q>1?` ×${q}`:""}</td>
+                <td style={{...td,textAlign:"left",fontFamily:"'JetBrains Mono',monospace",color:"rgba(255,255,255,0.7)"}}>{p.national_tracking||"—"}</td>
+                <td style={{...td,textAlign:"left"}}>{p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm} × ${p.width_cm} × ${p.height_cm} cm`:"—"}</td>
+                <td style={td}>{bruto>0?n2(bruto):"—"}</td>
+                <td style={{...td,color:vol>bruto?"#fb923c":td.color}}>{vol>0?n2(vol):"—"}</td>
+                <td style={{...td,color:GOLD_LIGHT,fontWeight:700}}>{fact>0?n2(fact):"—"}</td>
+                <td style={{...td,color:factAgente>fact+0.001?"#fb923c":"rgba(255,255,255,0.45)"}}>{fact>0?n2(factAgente):"—"}{factAgente>fact+0.001?<span style={{fontSize:10,marginLeft:4}}>+{n2(factAgente-fact)}</span>:null}</td>
+                <td style={{...td,color:"#93c5fd"}}>{fact6Agente>0?n2(fact6Agente):"—"}</td>
+              </tr>)}</tbody>
+            </table>}
+          </div>)}
+        </div>
+      </FeCard>;
+    })()}
+    <div style={{marginTop:-2}}>
       {/* Reembalaje desde el vuelo: antes del despacho, un pedido por op (sin mezclar clientes) */}
       {flight.status==="preparando"&&flightOps.length>0&&<div style={{marginTop:-6,marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10}}>
         <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>🔄 ¿Conviene reembalar antes de despachar?</span>
@@ -8811,21 +8857,34 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </span>
       </div>}
       {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
-    </Card>
+    </div>
     <div id="fe-card-factura"/>
-    <Card title="Factura de exportación (destinatario + items)" actions={<div style={{display:"flex",gap:8}}><Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn></div>}>
-      <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"12px 14px",marginBottom:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase"}}>📍 Destinatario — dirección de envío</p>
-          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            {savedAddrs.length>0&&<select onChange={e=>{const a=savedAddrs.find(x=>x.id===e.target.value);if(a)applyAddr(a);e.target.value="";}} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
-              <option value="" style={{background:"#142038"}}>Cargar dirección guardada…</option>
-              {savedAddrs.map(a=><option key={a.id} value={a.id} style={{background:"#142038"}}>{a.label}{a.is_default?" ⭐":""}</option>)}
-            </select>}
-            {riClientForDest&&<button onClick={applyRiData} title={`Volver a cargar los datos del cliente RI: ${riClientForDest.company_name||""} · CUIT ${riClientForDest.cuit||"—"}`} style={{padding:"6px 10px",fontSize:11,fontWeight:700,border:"1px solid rgba(96,165,250,0.4)",borderRadius:6,background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>🏢 Usar datos del RI</button>}
-            <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(184,149,106,0.25)",borderRadius:6,background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
+    {(()=>{const cerrada=!!flight.invoice_presented_at;
+      const Linea=({l,v,mono})=><p style={{margin:"0 0 4px",fontSize:13,color:"#fff",display:"flex",gap:10}}><span style={{...FE_LBL,fontSize:9.5,minWidth:64,paddingTop:3}}>{l}</span><span style={{fontFamily:mono?"'JetBrains Mono',monospace":undefined,fontWeight:mono?600:500}}>{v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</span></p>;
+      return <FeCard title="Destinatario" icon="📍" tone={cerrada?"ok":undefined}
+        summary={cerrada?<FePill color="#22c55e" title="Con la factura presentada el destinatario queda fijo. Para cambiarlo, reabrí la factura.">🔒 Factura presentada · {formatDateShort(flight.invoice_presented_at)}</FePill>:null}
+        actions={cerrada?null:          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          {savedAddrs.length>0&&<select onChange={e=>{const a=savedAddrs.find(x=>x.id===e.target.value);if(a)applyAddr(a);e.target.value="";}} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
+            <option value="" style={{background:"#142038"}}>Cargar dirección guardada…</option>
+            {savedAddrs.map(a=><option key={a.id} value={a.id} style={{background:"#142038"}}>{a.label}{a.is_default?" ⭐":""}</option>)}
+          </select>}
+          {riClientForDest&&<button onClick={applyRiData} title={`Volver a cargar los datos del cliente RI: ${riClientForDest.company_name||""} · CUIT ${riClientForDest.cuit||"—"}`} style={{padding:"6px 10px",fontSize:11,fontWeight:700,border:"1px solid rgba(96,165,250,0.4)",borderRadius:6,background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>🏢 Usar datos del RI</button>}
+          <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(184,149,106,0.25)",borderRadius:6,background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
+        </div>}>
+        {cerrada?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+          <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"12px 14px"}}>
+            <p style={{...FE_LBL,marginBottom:8}}>Quién recibe</p>
+            <p style={{fontSize:15,fontWeight:800,color:"#fff",margin:"0 0 6px"}}>{dest.dest_name||flight.dest_name||"—"}</p>
+            <Linea l="CUIT" v={dest.dest_tax_id||flight.dest_tax_id} mono/>
+            <Linea l="Tel." v={dest.dest_phone||flight.dest_phone}/>
+            <Linea l="Email" v={dest.dest_email||flight.dest_email}/>
           </div>
-        </div>
+          <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"12px 14px"}}>
+            <p style={{...FE_LBL,marginBottom:8}}>Dirección de entrega</p>
+            <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 6px",lineHeight:1.35}}>{dest.dest_address||flight.dest_address||flight.destination_address||"—"}</p>
+            <Linea l="CP" v={dest.dest_postal_code||flight.dest_postal_code} mono/>
+          </div>
+        </div>:<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
           <Inp label="Nombre" value={dest.dest_name} onChange={v=>chDest("dest_name",v)} placeholder="Razón social o nombre"/>
           <Inp label="CUIT / Tax ID" value={dest.dest_tax_id} onChange={v=>chDest("dest_tax_id",v)} placeholder="20-12345678-9"/>
@@ -8858,8 +8917,11 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Direcciones guardadas</p>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{savedAddrs.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 8px",fontSize:11,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"rgba(255,255,255,0.6)"}}>{a.label}{a.is_default?" ⭐":""}<button onClick={()=>delAddr(a.id)} style={{marginLeft:4,fontSize:10,padding:"1px 5px",borderRadius:3,border:"none",background:"rgba(255,80,80,0.15)",color:"#ff6b6b",cursor:"pointer"}}>X</button></div>)}</div>
         </div>}
-      </div>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"14px 0 8px",textTransform:"uppercase"}}>📋 Items — HS code + valor declarado</p>
+        </>}
+      </FeCard>;})()}
+    <FeCard title="Factura de exportación" icon="📋"
+      summary={<><FePill color="#94a3b8">{items.length} ítem{items.length!==1?"s":""}</FePill><FePill color="#E8D098">{usd(totalDeclaredUSD)} declarados</FePill>{flight.invoice_presented_at?<FePill color="#22c55e">✓ Presentada {formatDateShort(flight.invoice_presented_at)}</FePill>:<FePill color="#fbbf24">⏳ Sin presentar</FePill>}</>}
+      actions={<Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn>}>
       {items.length===0&&!flight.invoice_presented_at?<div>
         <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items todavía. Agregá manualmente o esperá a que el cliente complete la documentación.</p>
         <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
@@ -8931,7 +8993,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
         {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small disabled={presentando} onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}setPresentando(true);try{await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});await Promise.all(flightOps.map(fo=>dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}})));}finally{setPresentando(false);}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>{presentando?"Presentando…":"✓ Guardar y presentar factura"}</Btn>}
       </div>}
-    </Card>
+    </FeCard>
     {/* Impuestos del vuelo. Se paga un monto unico en pesos al despachante y hay que repartirlo
         entre las ops. El criterio es proporcional al impuesto CALCULADO de cada op (budget_taxes),
         que ya contempla el valor declarado y los % de derechos de cada NCM — por eso una op de 20 kg
@@ -8982,12 +9044,32 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.op.id}`,body:{cost_impuestos_reales:totUsd||r.usd,cost_impuestos_currency:"USD",cost_impuestos_ars:totArs||Math.round(arsPagado*r.pct*100)/100,cost_impuestos_exchange_rate:tcProm,cost_impuestos_method:"efectivo",cost_impuestos_paid_at:fechaPago,cost_impuestos_credit_card_id:null,cost_impuestos_card_closing:null}});
           }
           onFlash(`✓ Impuestos prorrateados entre ${reparto.length} op${reparto.length!==1?"s":""}`);
+          setImpEdit(false);
           onReload();
         }catch(e){alertDialog("Error prorrateando: "+e.message);}
         setProrrateando(false);
       };
       const yaProrrateado=!!flight.impuestos_prorated_at;
-      return <Card title="Impuestos del vuelo">
+      const resumido=yaProrrateado&&!impEdit;
+      return <FeCard title="Impuestos del vuelo" icon="🧾" tone={yaProrrateado?"ok":undefined}
+        summary={yaProrrateado?<FePill color="#22c55e">✓ Prorrateado {formatDateShort(flight.impuestos_prorated_at)}</FePill>:<FePill color="#fbbf24">⏳ Sin cargar</FePill>}
+        actions={resumido?<Btn small variant="secondary" onClick={()=>setImpEdit(true)}>✎ Modificar</Btn>:(yaProrrateado?<Btn small variant="secondary" onClick={()=>setImpEdit(false)}>Cerrar</Btn>:null)}>
+        {resumido?<>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:reparto.length?14:0}}>
+            <FeDato label="Pagado al despachante" value={`$ ${arsPagado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}/>
+            <FeDato label="Tipo de cambio" value={tcUsado.toLocaleString("es-AR",{maximumFractionDigits:2})} sub="ARS por USD"/>
+            <FeDato label="Equivale a" value={`USD ${usdTotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`} color={GOLD_LIGHT}/>
+            <FeDato label="Repartido entre" value={`${reparto.length} op${reparto.length!==1?"s":""}`} sub={excluidas.length?`${excluidas.length} RI afuera`:"proporcional al impuesto calculado"}/>
+          </div>
+          {reparto.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {reparto.map(r=><span key={r.op.id} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",fontSize:12}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,color:GOLD_LIGHT}}>{r.op.operation_code}</span>
+              <span style={{color:"rgba(255,255,255,0.5)"}}>{r.op.clients?.client_code||"—"}</span>
+              <span style={{color:"rgba(255,255,255,0.4)"}}>{(r.pct*100).toLocaleString("es-AR",{maximumFractionDigits:1})}%</span>
+              <strong style={{color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>USD {(r.usd+r.otros).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+            </span>)}
+          </div>}
+        </>:<>
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>
           Cargá lo que pagaste al despachante y se reparte entre las ops del vuelo, proporcional al impuesto calculado de cada una — no por kilos.
         </p>
@@ -9031,7 +9113,8 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           {yaProrrateado&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Último prorrateo: {formatDate(flight.impuestos_prorated_at)}</span>}
           {!puedeProrratear&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{participan.length===0?"Todas las ops del vuelo son de RI — no hay nada que repartir":"Cargá el monto en pesos y el tipo de cambio"}</span>}
         </div>
-      </Card>;
+        </>}
+      </FeCard>;
     })()}
     {/* Detalle financiero del vuelo. SOLO informativo: suma lo que ya aportan las ops, asi que no
         debe entrar en ningun panel financiero (dashboard, libro diario, analytics) porque duplicaria
@@ -9097,9 +9180,9 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           <td style={{padding:"9px 8px",fontSize:13,fontWeight:700,color:res>=0?"#22c55e":"#f87171",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{res>=0?"+":"−"}{money(res)}</td>
         </tr>;
       };
-      const th={padding:"8px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
+      const th={padding:"8px 10px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.38)",textTransform:"uppercase",letterSpacing:"0.08em",textAlign:"right",whiteSpace:"nowrap"};
       if(esEmpleado())return null;
-      return <Card title="Detalle financiero del vuelo">
+      return <FeCard title="Detalle financiero" icon="💰" summary={<><FePill color={resultado>=0?"#22c55e":"#f87171"}>Resultado {signed(resultado)}</FePill><FePill color="#93c5fd" title="Facturado − costo real, si se cobra todo">Estimado {signed(estimadoTot)}</FePill>{sinCobrar.length>0&&<FePill color="#fbbf24">{sinCobrar.length} sin cobrar</FePill>}</>}>
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>
           Suma de las {opsUnique.length} operacion{opsUnique.length!==1?"es":""} del vuelo. Lo cobrado es <strong style={{color:"rgba(255,255,255,0.75)"}}>neto</strong>, ya descontada la comisión de cada transferencia. Es solo informativo — estos números ya los aporta cada op, así que no se suman en Finanzas.{finK>0&&<> El costo del flete incluye la <strong style={{color:"#fb923c"}}>comisión financiera del {(finK*100).toFixed(2).replace(".",",")}%</strong> de los anticipos.</>}
         </p>
@@ -9141,17 +9224,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           </div>
           <p style={{fontSize:22,fontWeight:800,color:resultado>=0?"#22c55e":"#f87171",margin:0,fontVariantNumeric:"tabular-nums"}}>{signed(resultado)}</p>
         </div>
-      </Card>;
+      </FeCard>;
     })()}
-    {(flight.status==="despachado"||flight.status==="recibido")&&<Card title="Datos del despacho (cargados por agente)" actions={!editCost?<Btn small variant="secondary" onClick={openEditCost}>✎ Editar</Btn>:null}>
+    {(flight.status==="despachado"||flight.status==="recibido")&&<FeCard title="Datos del despacho" icon="📦" summary={<FePill color="#60a5fa">cargado por el agente</FePill>} actions={!editCost?<Btn small variant="secondary" onClick={openEditCost}>✎ Editar</Btn>:null}>
       {!editCost?<>
         {(()=>{
           const pagoLbl={cuenta_corriente:"Cuenta corriente",alibaba:"Alibaba",alipay:"Alipay",tarjeta_credito:"Tarjeta de crédito",efectivo:"Efectivo",transferencia:"Transferencia"}[flight.payment_method]||flight.payment_method||"—";
-          const tile=(icon,label,val,sub)=><div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"11px 14px"}}>
-            <p style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",margin:"0 0 5px",textTransform:"uppercase",letterSpacing:"0.07em"}}>{icon} {label}</p>
-            <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0,fontFeatureSettings:'"tnum"',overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</p>
-            {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{sub}</p>}
-          </div>;
+          const tile=(icon,label,val,sub)=><FeDato label={`${icon} ${label}`} value={val} sub={sub}/>;
           return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
             {tile("✈️","Carrier",flight.international_carrier||"—")}
             {tile("🔎","Tracking",<span style={{fontFamily:"monospace"}}>{flight.international_tracking||"—"}</span>)}
@@ -9233,7 +9312,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           <Btn small variant="secondary" onClick={()=>setEditCost(false)} disabled={savingCost}>Cancelar</Btn>
         </div>
       </>}
-    </Card>}
+    </FeCard>}
     {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const isFlightScope=compressState.scope==="flight";const targetMax=target||MAX_INVOICE_ITEMS;const ceiling=Math.max(1,compressState.maxTarget||targetMax);const busy=loading||applying;const reopen=(t)=>isFlightScope?openCompressForFlight(t):openCompressFor(compressState.opId,t,ceiling);const stepBtn=(disabled)=>({width:28,height:28,borderRadius:7,border:`1px solid ${disabled?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.4)"}`,background:disabled?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.12)",color:disabled?"rgba(255,255,255,0.25)":"#fb923c",fontSize:16,fontWeight:800,cursor:disabled?"not-allowed":"pointer",lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,146,60,0.35)",borderRadius:14,padding:"20px 22px",maxWidth:920,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
