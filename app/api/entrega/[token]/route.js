@@ -105,6 +105,16 @@ async function loadDeliveryPricing() {
   return { cfg, localities };
 }
 
+// Excepción por contenedor (maritime_containers.entrega_desde): la carga no se puede coordinar
+// para antes de esa fecha aunque el link ya esté mandado. Devuelve "YYYY-MM-DD" o null.
+async function entregaDesdeDe(opIds) {
+  const ids = (opIds || []).filter(Boolean);
+  if (!ids.length) return null;
+  const r = await sbFetch(`/maritime_shipments?operation_id=in.(${ids.join(",")})&select=maritime_containers(entrega_desde)`);
+  const fechas = (Array.isArray(r.body) ? r.body : []).map((x) => x.maritime_containers?.entrega_desde).filter(Boolean).sort();
+  return fechas.length ? fechas[fechas.length - 1] : null;
+}
+
 export async function GET(req, { params }) {
   if (!SB) return Response.json({ error: "Server config missing" }, { status: 500 });
   const { token } = await params;
@@ -235,8 +245,10 @@ export async function GET(req, { params }) {
     }
   } catch (e) { console.error("[GET entrega] tc", e.message); }
 
+  const deliveryMinDay = await entregaDesdeDe([op.id]).catch(() => null);
   return Response.json({
     tc,
+    delivery_min_day: deliveryMinDay,
     op: {
       operation_code: op.operation_code,
       description: op.description,
@@ -356,6 +368,14 @@ export async function POST(req, { params }) {
 
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
+
+  if ((delivery_choice === "oficina" || delivery_choice === "propio") && delivery_day) {
+    const minDia = await entregaDesdeDe([op.id, ...(Array.isArray(body.extra_ops) ? body.extra_ops.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x)) : [])]).catch(() => null);
+    if (minDia && String(delivery_day) < minDia) {
+      const [y, m, d] = minDia.split("-");
+      return Response.json({ error: `Esta carga se puede coordinar a partir del ${d}/${m}/${y}` }, { status: 400 });
+    }
+  }
 
   // Cargas hermanas seleccionadas para coordinar en la misma visita. Solo cuentan ids que
   // realmente sean cargas listas DEL MISMO CLIENTE — cualquier otra cosa se ignora.

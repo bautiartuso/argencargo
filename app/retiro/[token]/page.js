@@ -325,7 +325,7 @@ export default function EntregaPublica({ params }) {
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
           <OptRow selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} label="Retiro por oficina" meta={`${deliveryInfo.office_address || ""}${deliveryInfo.office_locality ? " · " + deliveryInfo.office_locality : ""}${deliveryInfo.office_hours ? " · " + deliveryInfo.office_hours : ""}`} />
-          {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
+          {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" minDia={data?.delivery_min_day} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
           {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${inferredZone}`} price={"+ " + fmt(deliveryInfo.price)} />}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
@@ -337,7 +337,7 @@ export default function EntregaPublica({ params }) {
               <input value={dirTel} onChange={e => setDirTel(e.target.value)} placeholder="Teléfono de contacto" inputMode="tel" style={contactInputStyle()} />
             </div>
             <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos los datos registrados en tu cuenta — editá lo que necesites.</p>
-            <DiaFranja modo="propio" dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
+            <DiaFranja modo="propio" minDia={data?.delivery_min_day} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
 
@@ -486,7 +486,7 @@ export default function EntregaPublica({ params }) {
 
 // Selector de día (próximos 5 días hábiles) + franja horaria. Las franjas dependen del modo:
 // oficina cada 2 hs (10-18), fletero propio cada 3 hs (10-19).
-function DiaFranja({ modo, dia, setDia, franja, setFranja }) {
+function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia }) {
   const franjas = modo === "oficina"
     ? ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"]
     : ["10:00 a 13:00", "13:00 a 16:00", "16:00 a 19:00"];
@@ -499,6 +499,9 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja }) {
   };
   const dias = [];
   const d = new Date();
+  // Excepción por contenedor: no se puede coordinar antes de minDia → la lista arranca ese día.
+  const desde = minDia ? new Date(minDia + "T12:00:00") : null;
+  if (desde && desde > d) { d.setFullYear(desde.getFullYear(), desde.getMonth(), desde.getDate()); }
   while (dias.length < 5) {
     const dow = d.getDay();
     if (dow >= 1 && dow <= 5) {
@@ -514,6 +517,7 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja }) {
   }
   const chip = (active, disabled) => ({ padding: "9px 6px", borderRadius: 9, cursor: disabled ? "not-allowed" : "pointer", textAlign: "center", border: `1.5px solid ${active ? GOLD_A : LINE}`, background: active ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", boxShadow: active ? "0 3px 10px rgba(184,149,106,0.18)" : "none", opacity: disabled ? 0.35 : 1 });
   return <div style={{ marginTop: 12 }}>
+    {desde && desde > new Date() && <p style={{ fontSize: 11.5, color: MUTED, margin: "0 0 8px", lineHeight: 1.5 }}>Esta carga se puede coordinar a partir del <strong>{["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][desde.getDay()]} {desde.getDate()}/{desde.getMonth() + 1}</strong>.</p>}
     <label style={fieldLblStyle()}>{modo === "oficina" ? "¿Qué día pasás a retirar?" : "¿Qué día querés recibirla?"}</label>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(62px,1fr))", gap: 6, marginBottom: 10 }}>
       {dias.map((x) => <div key={x.iso} onClick={() => { if (x.disabled) return; setDia(x.iso); if (franja && franjaPasada(x.iso, franja)) setFranja(""); }} style={chip(dia === x.iso, x.disabled)}>

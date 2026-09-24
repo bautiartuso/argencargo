@@ -327,6 +327,10 @@ export async function POST(req) {
     // Hoy en Argentina (UTC-3) — un día anterior no sirve para coordinar.
     const hoyAr = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
     if (dia < hoyAr) return Response.json({ error: "El día ya pasó" }, { status: 400 });
+    // Excepción por contenedor (maritime_containers.entrega_desde): no se coordina antes de esa fecha.
+    const cont = await sb(`/maritime_shipments?operation_id=eq.${op.id}&select=maritime_containers(entrega_desde)`);
+    const minDia = (Array.isArray(cont.body) ? cont.body : []).map((x) => x.maritime_containers?.entrega_desde).filter(Boolean).sort().pop();
+    if (minDia && dia < minDia) return Response.json({ error: `${op.operation_code} se puede coordinar a partir del ${minDia.split("-").reverse().join("/")} — ofrecé ese día o posteriores` }, { status: 400 });
     patch.delivery_day = dia;
     patch.delivery_slot = franja;
     cambios.push(`Día y franja → ${dia.split("-").reverse().join("/")} · ${franja}`);
