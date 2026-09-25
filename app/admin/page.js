@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
+import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -5586,7 +5587,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5825,14 +5826,35 @@ function EntregasPanel({token,onOpenOp}){
     w.document.write(html);w.document.close();
   };
 
+  // Recibo de entrega y remito (25/09/2026): media hoja A4 cada uno, ORIGINAL + DUPLICADO por página.
+  const cargarDocs=async(ops)=>{
+    const ids=ops.map(o=>o.id);
+    const [items,pagos,st]=await Promise.all([
+      dq("operation_items",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,description,quantity&order=created_at.asc`}).catch(()=>[]),
+      dq("operation_client_payments",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,payment_date,amount_usd,amount_ars,currency,exchange_rate,payment_method,created_at&order=payment_date.asc`}).catch(()=>[]),
+      dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality,office_address&limit=1"}).catch(()=>[]),
+    ]);
+    const settings=Array.isArray(st)&&st[0]?st[0]:{};
+    return ops.map(o=>{
+      const its=(Array.isArray(items)?items:[]).filter(x=>x.operation_id===o.id);
+      const pg=(Array.isArray(pagos)?pagos:[]).filter(x=>x.operation_id===o.id);
+      const pagado=pg.reduce((a,x)=>a+Number(x.amount_usd||0),0)||usdCollected(o);
+      const total=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.total_anticipos||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0);
+      return {op:o,client:o.clients||{},items:its,bultos:bultosByOp[o.id]||0,pagos:pg,total:Math.max(0,total),pagado,saldo:saldoFor(o),metodo:o.payment_method_chosen||(Array.isArray(o.payment_split)&&o.payment_split[0]?.method)||null,settings};
+    });
+  };
+  const imprimirRecibos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
+  const imprimirRemitos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRemitos(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
+
   // ===== PANEL ENTREGAS v3: pipeline de cards =====
-  const Bloque=({titulo,children,accion})=><div style={{marginBottom:22,border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.02)"}}>
-    <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",background:"rgba(255,255,255,0.025)",flexWrap:"wrap"}}>
-      <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{titulo}</span>
+  const Bloque=({titulo,n,hint,children,accion,tone})=><div style={{marginBottom:16,border:`1px solid ${tone==="warn"?"rgba(251,191,36,0.3)":tone==="danger"?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:16,background:"rgba(255,255,255,0.028)",padding:"14px 16px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:tone==="warn"?"#fbbf24":tone==="danger"?"#f87171":"rgba(255,255,255,0.45)",margin:0}}>{titulo}{n!==undefined&&<span style={{marginLeft:8,padding:"1px 7px",borderRadius:999,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)",fontSize:10}}>{n}</span>}</p>
+      {hint&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>{hint}</span>}
       <span style={{flex:1}}/>
       {accion}
     </div>
-    <div style={{padding:12,display:"flex",flexDirection:"column",gap:8}}>{children}</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>{children}</div>
   </div>;
 
   // Aviso real: /api/notify trigger retiro manda el mail "lista para retirar" y setea delivery_ready_at.
@@ -5902,8 +5924,10 @@ function EntregasPanel({token,onOpenOp}){
     const badge=metodoBadgeDe(o);
     const dias=diasDe(o,contexto==="acobrar"||contexto==="hecha");
     const icono=contexto==="hecha"?"✅":esCarrier?"📮":esEnvio?"🚚":"📦";
-    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"12px 14px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:11,flexWrap:"wrap"}}>
-      <div style={{width:38,height:38,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,background:esEnvio?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${esEnvio?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
+    const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+    const conRecibo=contexto==="porentregar"||contexto==="acobrar"||contexto==="hecha";
+    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:"rgba(255,255,255,0.025)",border:`1px solid ${contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":contexto==="porentregar"?(esEnvio?"#60a5fa":"#B8956A"):contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
+      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:esEnvio?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${esEnvio?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
       <div style={{flex:"1 1 210px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
         <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span>{diaBadge(o)}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
@@ -5927,7 +5951,9 @@ function EntregasPanel({token,onOpenOp}){
           {contexto==="hecha"?"✓ COBRADA":pagada?"✓ PAGADO":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo)}
         </span>
       </div>
-      <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+        {printBtn("📄 Remito",()=>imprimirRemitos([o]),"Imprimir remito (2 copias en A4)")}
+        {conRecibo&&printBtn("🧾 Recibo",()=>imprimirRecibos([o]),"Imprimir recibo de entrega (2 copias en A4)")}
         {contexto==="aviso"&&<>
           <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
@@ -5981,20 +6007,22 @@ function EntregasPanel({token,onOpenOp}){
   const esperando=sinConfirmar.filter(o=>avisadaAt(o)&&!esRiDir(o));
   const hechasFiltradas=hechas.filter(matchesQ);
 
+  const tabPill=(k,l,n,c)=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:9,background:on?`linear-gradient(135deg, ${c}33, ${c}1A)`:"transparent",color:on?c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,fontFamily:"inherit"}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999,background:on?`${c}33`:"rgba(255,255,255,0.08)",color:on?c:"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;};
   const tabBtn=(k,l,n,color)=><button onClick={()=>setTab(k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>{l}{n>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:color||"rgba(255,255,255,0.1)",color:color?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {tabBtn("agenda","📅 Agenda",0)}
-          {tabBtn("avisos","📣 Avisos",sinAviso.length+esperando.length,sinAviso.length>0?"#fbbf24":null)}
-          {tabBtn("acobrar","💰 A cobrar",entregadasSinCobrar.length,entregadasSinCobrar.length>0?"#f87171":null)}
-          {tabBtn("hechas","✓ Hechas",0)}
+      <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+        <h2 style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>Entregas</h2>
+        <div style={{display:"flex",gap:4,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12}}>
+          {tabPill("agenda","En curso",pendientes.length+entregadasSinCobrar.length,"#E8C99B")}
+          {tabPill("hechas","Entregadas",0,"#22c55e")}
         </div>
       </div>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
+      <div style={{position:"relative"}}>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,opacity:0.5,pointerEvents:"none"}}>⌕</span>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente…" style={{padding:"9px 14px 9px 30px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:240,fontFamily:"inherit"}}/>
+      </div>
     </div>
 
     {tab==="agenda"&&(()=>{
@@ -6018,10 +6046,10 @@ function EntregasPanel({token,onOpenOp}){
       const franjaDe=(o)=>o.delivery_slot||"Sin franja";
       const franjas=[...new Set(delDia.map(franjaDe))].sort((a,b)=>{const h=(x)=>x==="Sin franja"?99:Number(x.split(":")[0]);return h(a)-h(b);});
       const fmtDia=(iso)=>{const d=new Date(iso+"T12:00:00");const hoy2=iso===hoyIso;return {top:hoy2?"Hoy":["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()],sub:`${d.getDate()}/${d.getMonth()+1}`};};
-      const statCard=(icon,titulo,valor,sub,color)=><div style={{flex:"1 1 150px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"12px 14px"}}>
-        <p style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",margin:"0 0 5px",textTransform:"uppercase",letterSpacing:"0.07em"}}>{icon} {titulo}</p>
-        <p style={{fontSize:19,fontWeight:800,color:color||"#fff",margin:0,fontFeatureSettings:'"tnum"'}}>{valor}</p>
-        {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{sub}</p>}
+      const statCard=(icon,titulo,valor,sub,color)=><div style={{flex:"1 1 150px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"12px 16px"}}>
+        <p style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.42)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.09em"}}>{icon} {titulo}</p>
+        <p style={{fontSize:20,fontWeight:800,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{valor}</p>
+        {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"5px 0 0"}}>{sub}</p>}
       </div>;
       return <>
         <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
@@ -6041,6 +6069,10 @@ function EntregasPanel({token,onOpenOp}){
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
         </div>
+        {delDia.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+          <Btn small variant="secondary" onClick={()=>imprimirRemitos(delDia)}>📄 Remitos del día ({delDia.length})</Btn>
+          <Btn small variant="secondary" onClick={()=>imprimirRecibos(delDia)}>🧾 Recibos del día ({delDia.length})</Btn>
+        </div>}
         {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
         {franjas.map(f=>{
@@ -6055,33 +6087,30 @@ function EntregasPanel({token,onOpenOp}){
             </div>
           </div>;
         })}
-        {sinFecha.length>0&&<Bloque titulo={<>🗓 Coordinadas sin día elegido <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinFecha.length}</span></>}>
+        {sinFecha.length>0&&<Bloque titulo="🗓 Coordinadas sin día elegido" n={sinFecha.length}>
           {renderConGrupos(sinFecha,"porentregar")}
         </Bloque>}
-        {carriers.length>0&&<Bloque titulo={<>📮 Transportista · para despachar <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {carriers.length}</span></>}
+        {carriers.length>0&&<Bloque titulo="📮 Transportista · para despachar" n={carriers.length}
           accion={<Btn small variant="secondary" onClick={()=>imprimirEtiquetas("carrier_domicilio",carriers)}>🖨 Etiquetas</Btn>}>
           {renderConGrupos(carriers,"porentregar")}
+        </Bloque>}
+
+        <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"22px 0 18px"}}/>
+        <Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="la carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
+          {sinAviso.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nada sin avisar. 👌</p>
+            :[...sinAviso].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(o=><CardOp key={o.id} o={o} contexto="aviso"/>)}
+        </Bloque>
+        <Bloque titulo="⏳ Esperando al cliente" n={esperando.length} hint="avisadas · falta que complete el link">
+          {esperando.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nadie pendiente de responder.</p>
+            :[...esperando].sort((a,b)=>new Date(avisadaAt(a))-new Date(avisadaAt(b))).map(o=><CardOp key={o.id} o={o} contexto="esperando"/>)}
+        </Bloque>
+        {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} tone="danger">
+          {[...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at)-new Date(b.delivery_completed_at)).map(o=><CardOp key={o.id} o={o} contexto="acobrar"/>)}
         </Bloque>}
       </>;
     })()}
 
-    {tab==="avisos"&&<>
-      <Bloque titulo={<>📣 Falta avisar — la carga está lista y el cliente no lo sabe <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinAviso.length}</span></>}>
-        {sinAviso.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"14px 0",fontSize:13,margin:0}}>Nada sin avisar. 👌</p>
-          :[...sinAviso].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(o=><CardOp key={o.id} o={o} contexto="aviso"/>)}
-      </Bloque>
-      <Bloque titulo={<>⏳ Avisadas — esperando que el cliente complete el link <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {esperando.length}</span></>}>
-        {esperando.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"14px 0",fontSize:13,margin:0}}>Nadie pendiente de responder.</p>
-          :[...esperando].sort((a,b)=>new Date(avisadaAt(a))-new Date(avisadaAt(b))).map(o=><CardOp key={o.id} o={o} contexto="esperando"/>)}
-      </Bloque>
-    </>}
-
-    {tab==="acobrar"&&<Bloque titulo={<>💰 Entregadas con saldo pendiente <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {entregadasSinCobrar.length}</span></>}>
-      {entregadasSinCobrar.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"14px 0",fontSize:13,margin:0}}>{q?"Sin resultados.":"Todo lo entregado está cobrado. 💪"}</p>
-        :[...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at)-new Date(b.delivery_completed_at)).map(o=><CardOp key={o.id} o={o} contexto="acobrar"/>)}
-    </Bloque>}
-
-    {tab==="hechas"&&<Bloque titulo={<>✓ Entregadas y cobradas <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· últimas {hechasFiltradas.length}</span></>}>
+    {tab==="hechas"&&<Bloque titulo="✓ Entregadas y cobradas" n={hechasFiltradas.length} hint="últimas 60">
       {hechasFiltradas.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"14px 0",fontSize:13,margin:0}}>Todavía no hay entregas cerradas.</p>
         :hechasFiltradas.map(o=><CardOp key={o.id} o={o} contexto="hecha"/>)}
     </Bloque>}
