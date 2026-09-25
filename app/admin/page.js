@@ -5587,7 +5587,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,description,delivery_receipt_number,labels_printed_at,remito_printed_at,recibo_printed_at,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
+    const sel="id,operation_code,description,origin,delivery_receipt_number,labels_printed_at,remito_printed_at,recibo_printed_at,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5867,14 +5867,18 @@ function EntregasPanel({token,onOpenOp}){
     const ids=ops.map(o=>o.id);
     const pk=await dq("operation_packages",{token,filters:`?operation_id=in.(${ids.join(",")})&select=*&order=package_number.asc`}).catch(()=>[]);
     const lista=Array.isArray(pk)?pk:[];
-    const docs=ops.map(o=>({op:o,client:o.clients||{},packages:lista.filter(p=>p.operation_id===o.id)}));
+    const rutaDe=(o)=>{const c=o.clients||{};const loc=[c.city,c.province].filter(Boolean).join(", ");
+      const destino=o.delivery_choice==="oficina"?"Belgrano, CABA":o.delivery_choice==="propio"?(o.delivery_address||loc||"Domicilio del cliente"):loc||"Argentina";
+      const modalidad=o.delivery_choice==="propio"?"Envío a domicilio":o.delivery_choice==="carrier"?`Transportista${o.carrier_mode?` · ${o.carrier_mode}`:""}`:o.delivery_choice==="oficina"?"Retiro por oficina":"A coordinar";
+      return {origen:o.origin==="USA"?"Estados Unidos":"China",destino,modalidad,mercaderia:o.description||""};};
+    const docs=ops.map(o=>({op:o,client:o.clients||{},packages:lista.filter(p=>p.operation_id===o.id),entrega:rutaDe(o)}));
     const r=printPackageLabelsMulti(docs);
     if(r===null)toast("Estas entregas no tienen bultos cargados","error");
     else if(r===false)toast("El navegador bloqueó la ventana de impresión — permití popups","error");
     else marcarImpreso(ops.filter(o=>lista.some(p=>p.operation_id===o.id)),"labels_printed_at");
   };
   // Tandas pendientes: todas las coordinadas (cualquier día) que todavía no se imprimieron.
-  const pendImpresion=(campo,soloSinCarrier)=>rows.filter(o=>!o.delivery_completed_at&&o.delivery_confirmed_at&&!o[campo]&&(!soloSinCarrier||o.delivery_choice!=="carrier"));
+  const pendImpresion=(campo,soloSinCarrier,tambienSinCoordinar=false)=>rows.filter(o=>!o.delivery_completed_at&&(tambienSinCoordinar||o.delivery_confirmed_at)&&!o[campo]&&(!soloSinCarrier||o.delivery_choice!=="carrier"));
   // Remitos y recibos: todas las entregas salvo las que van por transportista (Via Cargo / Andreani).
   const sinCarrier=(ops)=>ops.filter(o=>o.delivery_choice!=="carrier");
 
@@ -6101,11 +6105,11 @@ function EntregasPanel({token,onOpenOp}){
           {!sinMontos&&efect.length>0&&statCard("💵","En efectivo",usd(sumSaldo(efect)),`${efect.length} cliente${efect.length>1?"s":""}`,"#4ade80")}
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
-          {(()=>{const pE=pendImpresion("labels_printed_at",false),pR=pendImpresion("remito_printed_at",true),pC=pendImpresion("recibo_printed_at",true);
+          {(()=>{const pE=pendImpresion("labels_printed_at",false,true),pR=pendImpresion("remito_printed_at",true),pC=pendImpresion("recibo_printed_at",true);
             const b=(l,n,fn,title)=><button onClick={()=>n>0&&fn()} disabled={n===0} title={title} style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${n>0?"rgba(255,255,255,0.14)":"rgba(255,255,255,0.06)"}`,background:"rgba(255,255,255,0.04)",color:n>0?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.3)",cursor:n>0?"pointer":"default",fontFamily:"inherit",whiteSpace:"nowrap",display:"flex",justifyContent:"space-between",gap:10}}><span>{l}</span><span style={{fontWeight:800,color:n>0?"#fbbf24":"inherit"}}>{n}</span></button>;
             return (pE.length+pR.length+pC.length>0||delDia.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,justifyContent:"center",flex:"0 0 auto"}}>
-              <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Sin imprimir · coordinadas</p>
-              {b("🏷 Etiquetas",pE.length,()=>imprimirEtiquetasBultos(pE),"Etiquetas de todas las entregas coordinadas que todavía no se imprimieron (cualquier día, incluido transportista)")}
+              <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Sin imprimir</p>
+              {b("🏷 Etiquetas",pE.length,()=>imprimirEtiquetasBultos(pE),"Etiquetas de todas las cargas pendientes de entrega (coordinadas o no) que todavía no se imprimieron")}
               {b("📄 Remitos",pR.length,()=>imprimirRemitos(pR),"Remitos de las coordinadas sin imprimir (sin transportista)")}
               {b("🧾 Recibos",pC.length,()=>imprimirRecibos(pC),"Recibos de las coordinadas sin imprimir (sin transportista)")}
             </div>;})()}
