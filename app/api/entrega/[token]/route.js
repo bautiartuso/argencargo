@@ -59,7 +59,7 @@ function saldoOf(op, pagos) {
     - Number(op.credit_applied_usd || 0) - Number(op.discount_applied_usd || 0));
 }
 
-const HERMANA_SEL = "id,operation_code,description,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_day,delivery_slot,delivery_confirmed_at,delivery_group_id";
+const HERMANA_SEL = "id,operation_code,description,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_cost_usd,delivery_day,delivery_slot,delivery_confirmed_at,delivery_group_id";
 
 // Otras cargas LISTAS del mismo cliente (avisadas o entregables, sin entregar todavía):
 // el link las ofrece para coordinar todo en una sola visita.
@@ -435,11 +435,13 @@ export async function POST(req, { params }) {
 
   // El costo de envío a domicilio es parte de lo que el cliente debe pagar — se suma al
   // budget_total real de la op (no solo a un total mostrado ad-hoc) para que quede reflejado en
-  // Presupuesto y Finanzas, Rentabilidad, cobros, etc. Solo se suma la primera vez que confirma
-  // (si ya había confirmado antes, delivery_confirmed_at ya estaba seteado) para no duplicarlo
-  // si el cliente reenvía el formulario.
-  const alreadyConfirmed = !!op.delivery_confirmed_at;
-  const newBudgetTotal = !alreadyConfirmed && deliveryCost > 0 ? Math.round((bt + deliveryCost) * 100) / 100 : bt;
+  // Presupuesto y Finanzas, Rentabilidad, cobros, etc.
+  // Se trabaja por DIFERENCIA contra lo que ya tenía cargado la op: si el cliente confirmó
+  // primero retiro por oficina (costo 0) y después cambió a envío a domicilio desde el mismo
+  // link, el envío se suma igual; si vuelve a oficina se resta; si reenvía sin cambiar, delta 0.
+  const costoPrevio = Number(op.delivery_cost_usd || 0);
+  const deltaEnvio = Math.round((deliveryCost - costoPrevio) * 100) / 100;
+  const newBudgetTotal = deltaEnvio !== 0 ? Math.round((bt + deltaEnvio) * 100) / 100 : bt;
 
   // Grupo de entrega: N ops que se retiran/reciben en la misma visita. El costo de envío va UNA
   // sola vez (en la op del token); cada op guarda su propio split con SU saldo — nada se fusiona.
@@ -460,6 +462,8 @@ export async function POST(req, { params }) {
       delivery_zone: delivery_choice === "propio" ? deliveryZone : null,
       delivery_address: delivery_choice === "propio" ? (delivery_address || null) : null,
       delivery_cost_usd: 0,
+      // Si la hermana ya tenía un envío cargado de una confirmación anterior, se lo quita del presupuesto.
+      ...(Number(e.op.delivery_cost_usd || 0) > 0 ? { budget_total: Math.round((Number(e.op.budget_total || 0) - Number(e.op.delivery_cost_usd || 0)) * 100) / 100 } : {}),
       payment_method_chosen: payment_method,
       delivery_contact: (delivery_choice === "carrier" || delivery_choice === "propio") ? (delivery_contact || null) : null,
       carrier_mode: delivery_choice === "carrier" ? (carrier_mode || null) : null,

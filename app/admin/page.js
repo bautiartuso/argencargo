@@ -5962,10 +5962,12 @@ function EntregasPanel({token,onOpenOp}){
     const icono=contexto==="hecha"?"✅":esCarrier?"📮":esEnvio?"🚚":"📦";
     const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
     const conRecibo=contexto==="porentregar"||contexto==="acobrar"||contexto==="hecha";
-    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:"rgba(255,255,255,0.025)",border:`1px solid ${contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":contexto==="porentregar"?(esEnvio?"#60a5fa":"#B8956A"):contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
+    const envioVivo=esEnvio&&contexto!=="hecha";
+    const costoEnvio=Number(o.delivery_cost_usd||0);
+    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
       <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:esEnvio?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${esEnvio?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
       <div style={{flex:"1 1 210px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
-        <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span>{diaBadge(o)}</p>
+        <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span>{diaBadge(o)}{envioVivo&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
           <span style={{fontFamily:"monospace",color:"#E8C99B",fontWeight:700}}>{o.operation_code}</span> · {bultos||"?"} bulto{bultos!==1?"s":""}
           {contexto==="aviso"&&<span> · lista hace <b style={{color:dias>3?"#fbbf24":"inherit"}}>{dias} d</b></span>}
@@ -5976,7 +5978,7 @@ function EntregasPanel({token,onOpenOp}){
             return <span style={{marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>{wa}{lk}</span>;})()}
           {contexto==="acobrar"&&<span> · entregada hace <b style={{color:dias>3?"#f87171":"inherit"}}>{dias} d</b></span>}
           {contexto==="hecha"&&o.delivery_completed_at&&<span> · entregada el {new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
-          {esEnvio&&o.delivery_address&&(contexto==="porentregar")&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>📍 {o.delivery_address}{dc.telefono?` · 📞 ${dc.telefono}`:""}</span>}
+          {envioVivo&&o.delivery_address&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"rgba(147,197,253,0.9)",marginTop:2}}>📍 {o.delivery_address}{dc.telefono?` · 📞 ${dc.telefono}`:""}</span>}
           {esCarrier&&contexto==="porentregar"&&<span style={{display:"block"}}>📮 {o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}{dc.nombre?` · recibe ${dc.nombre} ${dc.apellido||""}`:""}</span>}
         </p>
       </div>
@@ -5986,6 +5988,7 @@ function EntregasPanel({token,onOpenOp}){
         <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:contexto==="hecha"?"#22c55e":pagada?"#22c55e":contexto==="acobrar"?"#f87171":"#fbbf24"}}>
           {contexto==="hecha"?"✓ COBRADA":pagada?"✓ PAGADO":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo)}
         </span>
+        {!sinMontos&&envioVivo&&costoEnvio>0&&!pagada&&<span style={{display:"block",fontSize:9.5,color:"rgba(147,197,253,0.8)",marginTop:2}}>incl. envío {usd(costoEnvio)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
         {printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
