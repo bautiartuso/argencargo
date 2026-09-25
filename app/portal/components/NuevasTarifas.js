@@ -1,7 +1,8 @@
 "use client";
 // Aviso de nuevas tarifas aéreas (temporada alta + recargo por combustible, vigentes desde el
-// 25/09/2026). Al entrar al portal aparece una vez como ventana; después queda un banner arriba de
-// Importaciones hasta el 10/10/2026. Las ops abiertas y en tránsito mantienen la tarifa anterior.
+// 25/09/2026). Las primeras TRES veces que el cliente entra al portal aparece como ventana; además
+// queda un banner arriba de Importaciones hasta el 10/10/2026. Las ops abiertas y en tránsito
+// mantienen la tarifa anterior.
 import { useEffect, useState } from "react";
 
 const HASTA = Date.parse("2026-10-10T23:59:59-03:00");
@@ -9,11 +10,10 @@ const KEY = "ac_aviso_tarifas_2026_09";
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8D098";
 
 function Tabla({ t, isRI }) {
-  const filas = [
-    [t("tarifas26.tier1"), "USD 16 / kg"],
-    [t("tarifas26.tier2"), "USD 15 / kg"],
-    [t("tarifas26.tier3"), isRI ? "USD 15 / kg" : "USD 14 / kg"],
-  ];
+  // RI: dos tramos (10-25 · +25). Monotributo / consumidor final: tres (10-25 · 25-100 · +100).
+  const filas = isRI
+    ? [[t("tarifas26.tier1"), "USD 16 / kg"], [t("tarifas26.tier2ri"), "USD 15 / kg"]]
+    : [[t("tarifas26.tier1"), "USD 16 / kg"], [t("tarifas26.tier2"), "USD 15 / kg"], [t("tarifas26.tier3"), "USD 14 / kg"]];
   return <div style={{ border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, overflow: "hidden" }}>
     {filas.map(([l, v], i) => <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "11px 16px", borderTop: i ? "1px solid rgba(255,255,255,0.06)" : "none", fontSize: 14 }}>
       <span style={{ color: "rgba(255,255,255,0.7)" }}>{l}</span><strong style={{ color: "#fff", fontVariantNumeric: "tabular-nums" }}>{v}</strong>
@@ -27,10 +27,14 @@ export default function NuevasTarifas({ t, client, onVerTarifas, soloBanner }) {
   const isRI = client?.tax_condition === "responsable_inscripto";
   useEffect(() => {
     if (!vigente || soloBanner) return;
-    try { if (!localStorage.getItem(KEY)) setAbierto(true); } catch { setAbierto(true); }
+    // Se muestra en las primeras 3 entradas al portal (contador por dispositivo).
+    try {
+      const vistas = Number(localStorage.getItem(KEY) || 0);
+      if (vistas < 3) { localStorage.setItem(KEY, String(vistas + 1)); setAbierto(true); }
+    } catch { setAbierto(true); }
   }, [vigente, soloBanner]);
   if (!vigente) return null;
-  const cerrar = () => { try { localStorage.setItem(KEY, "1"); } catch {} setAbierto(false); };
+  const cerrar = () => setAbierto(false);
 
   if (soloBanner) return <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", marginBottom: 16, borderRadius: 12, background: "linear-gradient(135deg,rgba(184,149,106,0.16),rgba(184,149,106,0.04))", border: "1px solid rgba(184,149,106,0.45)" }}>
     <span style={{ fontSize: 18 }}>✈️</span>
@@ -52,7 +56,6 @@ export default function NuevasTarifas({ t, client, onVerTarifas, soloBanner }) {
       <ul style={{ margin: "16px 0 0", paddingLeft: 18, color: "rgba(255,255,255,0.75)", fontSize: 13, lineHeight: 1.7 }}>
         <li>{t("tarifas26.min")}</li>
         <li>{t("tarifas26.batt")}</li>
-        <li>{t("tarifas26.desad")}</li>
         <li><strong style={{ color: "#fff" }}>{t("tarifas26.keep")}</strong></li>
       </ul>
       <div style={{ display: "flex", gap: 10, marginTop: 22, flexWrap: "wrap" }}>
