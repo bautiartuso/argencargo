@@ -152,13 +152,20 @@ function Inp({label,type="text",value,onChange,placeholder,req,error}){
 const toN=(v)=>{if(v===""||v==null)return 0;const n=Number(String(v).replace(",","."));return isNaN(n)?0:n;};
 // Desplegable propio (regla: nada nativo del navegador). Misma estética que los inputs del portal.
 function Sel({label,value,onChange,options,req,ph}){
-  const [abierto,setAbierto]=useState(false);
+  const [abierto,setAbiertoRaw]=useState(false);
+  const [arriba,setArriba]=useState(false);const [altoMax,setAltoMax]=useState(280);
+  const boxRef=useRef(null);
+  const setAbierto=(v)=>{const next=typeof v==="function"?v(abierto):v;
+    if(next&&boxRef.current){const r=boxRef.current.getBoundingClientRect();const abajo=window.innerHeight-r.bottom-12;const encima=r.top-12;
+      // Abre hacia el lado con más lugar y no mide más que ese espacio, así siempre se ve entero.
+      const haciaArriba=abajo<220&&encima>abajo;setArriba(haciaArriba);setAltoMax(Math.max(150,Math.min(300,(haciaArriba?encima:abajo))));}
+    setAbiertoRaw(next);};
   const ops=options.map(o=>typeof o==="string"?{value:o,label:o}:o);
   const sel=ops.find(o=>o.value===value);
-  return <div style={{marginBottom:14,position:"relative"}}>
+  return <div ref={boxRef} style={{marginBottom:14,position:"relative"}}>
     <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label>
     <button type="button" onClick={()=>setAbierto(v=>!v)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1px solid ${abierto?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.06)",color:sel?"#fff":"rgba(255,255,255,0.45)",outline:"none",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:8,boxShadow:abierto?"0 0 0 3px rgba(184,149,106,0.18)":"none",fontFamily:"inherit"}}><span style={{flex:1}}>{sel?sel.label:(ph||"—")}</span><span style={{fontSize:11,opacity:0.6}}>▾</span></button>
-    {abierto&&<><div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:40}}/><div style={{position:"absolute",left:0,right:0,top:"100%",zIndex:41,marginTop:6,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.5)",maxHeight:280,overflowY:"auto"}}>{ops.map(o=><button key={o.value} type="button" onClick={()=>{onChange(o.value);setAbierto(false);}} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 14px",border:"none",background:o.value===value?"rgba(184,149,106,0.18)":"transparent",color:"#fff",cursor:"pointer",fontSize:14,fontWeight:o.value===value?700:500,fontFamily:"inherit"}}>{o.label}</button>)}</div></>}
+    {abierto&&<><div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:40}}/><div style={{position:"absolute",left:0,right:0,...(arriba?{bottom:"100%",marginBottom:6}:{top:"100%",marginTop:6}),zIndex:41,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.5)",maxHeight:altoMax,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>{ops.map(o=><button key={o.value} type="button" onClick={()=>{onChange(o.value);setAbierto(false);}} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 14px",border:"none",background:o.value===value?"rgba(184,149,106,0.18)":"transparent",color:"#fff",cursor:"pointer",fontSize:14,fontWeight:o.value===value?700:500,fontFamily:"inherit"}}>{o.label}</button>)}</div></>}
   </div>;
 }
 function PBtn({children,onClick,disabled,variant="gold"}){
