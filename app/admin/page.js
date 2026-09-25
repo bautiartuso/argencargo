@@ -6057,27 +6057,34 @@ function EntregasPanel({token,onOpenOp}){
         {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"5px 0 0"}}>{sub}</p>}
       </div>;
       return <>
-        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-          {dias.map(iso=>{const f=fmtDia(iso);const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{padding:"9px 14px",borderRadius:10,cursor:"pointer",textAlign:"center",border:`1.5px solid ${act?GOLD:"rgba(255,255,255,0.1)"}`,background:act?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.02)",minWidth:64}}>
-            <span style={{display:"block",fontSize:12.5,fontWeight:800,color:act?GOLD_LIGHT:"#fff"}}>{f.top}</span>
-            <span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)"}}>{f.sub}</span>
-            {n>0&&<span style={{display:"inline-block",marginTop:3,fontSize:9.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:act?GOLD:"rgba(255,255,255,0.1)",color:act?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}
-          </button>;})}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {dias.map(iso=>{const f=fmtDia(iso);const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"7px 13px",borderRadius:999,cursor:"pointer",border:`1px solid ${act?"transparent":"rgba(255,255,255,0.12)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:act?"#0A1628":"rgba(255,255,255,0.7)",fontFamily:"inherit",fontSize:12,fontWeight:700,transition:"all 150ms"}}>
+              {f.top}<span style={{fontSize:10.5,fontWeight:600,opacity:act?0.75:0.5}}>{f.sub}</span>
+              {n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,background:act?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.1)",color:act?"#0A1628":"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
+            </button>;})}
+          </div>
+          <span style={{flex:1}}/>
+          {delDia.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <Btn small variant="secondary" onClick={()=>imprimirRemitos(delDia)}>📄 Remitos ({delDia.length})</Btn>
+            <Btn small variant="secondary" onClick={()=>imprimirRecibos(delDia)}>🧾 Recibos ({delDia.length})</Btn>
+          </div>}
         </div>
-        {vencidas.length>0&&<div style={{padding:"10px 14px",marginBottom:14,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,fontSize:12.5,color:"#f87171",fontWeight:600}}>
+        {vencidas.length>0&&<div style={{padding:"10px 14px",marginBottom:12,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,fontSize:12.5,color:"#f87171",fontWeight:600}}>
           ⚠️ {vencidas.length} entrega{vencidas.length>1?"s":""} agendada{vencidas.length>1?"s":""} de días anteriores sin marcar: {vencidas.map(o=>o.operation_code).join(", ")}
         </div>}
-        <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
-          {statCard("📦","Entregas del día",String(delDia.length),`${delDia.filter(o=>o.delivery_choice!=="propio").length} retiros · ${delDia.filter(o=>o.delivery_choice==="propio").length} envíos`)}
-          {!sinMontos&&statCard("💰","Por cobrar hoy",usd(totCobrar),pagadas.length>0?`${pagadas.length} ya pagada${pagadas.length>1?"s":""}`:null,"#fbbf24")}
-          {!sinMontos&&efect.length>0&&statCard("💵","En efectivo",usd(sumSaldo(efect)),`${efect.length} cliente${efect.length>1?"s":""}`,"#4ade80")}
-          {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
-          {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
-        </div>
-        {delDia.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:8,flexWrap:"wrap"}}>
-          <Btn small variant="secondary" onClick={()=>imprimirRemitos(delDia)}>📄 Remitos del día ({delDia.length})</Btn>
-          <Btn small variant="secondary" onClick={()=>imprimirRecibos(delDia)}>🧾 Recibos del día ({delDia.length})</Btn>
-        </div>}
+        {delDia.length>0&&(()=>{
+          const Sep=()=><span style={{width:1,height:16,background:"rgba(255,255,255,0.1)"}}/>;
+          const Dato=({l,v,c})=><span style={{display:"inline-flex",alignItems:"baseline",gap:6,whiteSpace:"nowrap"}}><span style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:14,fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+          const retiros=delDia.filter(o=>o.delivery_choice!=="propio").length,envios=delDia.length-retiros;
+          return <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"10px 16px",marginBottom:16,borderRadius:12,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.07)"}}>
+            <Dato l="Entregas" v={delDia.length}/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{retiros} retiro{retiros!==1?"s":""} · {envios} envío{envios!==1?"s":""}</span>
+            {!sinMontos&&<><Sep/><Dato l="Por cobrar" v={usd(totCobrar)} c={totCobrar>0.005?"#fbbf24":"#22c55e"}/>
+              {efect.length>0&&<span style={{fontSize:11.5,color:"#4ade80"}}>💵 {usd(sumSaldo(efect))} · {efect.length}</span>}
+              {transf.length>0&&<span style={{fontSize:11.5,color:"#60a5fa"}}>🏦 {usd(sumSaldo(transf))} · {transf.length}</span>}
+              {cripto.length>0&&<span style={{fontSize:11.5,color:"#c084fc"}}>🪙 {usd(sumSaldo(cripto))} · {cripto.length}</span>}
+              {pagadas.length>0&&<><Sep/><span style={{fontSize:11.5,color:"#22c55e",fontWeight:700}}>✓ {pagadas.length} ya pagada{pagadas.length>1?"s":""}</span></>}</>}
+          </div>;})()}
         {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
         {franjas.map(f=>{
