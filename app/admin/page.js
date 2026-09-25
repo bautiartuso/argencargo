@@ -12730,6 +12730,38 @@ function SeguimientoPanel({token,templates,flash}){
   </div>;
 }
 
+// Aviso de nuevas tarifas aéreas (25/09/2026): a todos los clientes que alguna vez tuvieron una op
+// o tienen bultos en el depósito. Manda /api/admin/aviso-tarifas (registra en email_log, no repite).
+function AvisoTarifasCard({token}){
+  const [info,setInfo]=useState(null);const [busy,setBusy]=useState(false);const [res,setRes]=useState(null);const [testMail,setTestMail]=useState("");
+  const cargar=async()=>{try{const r=await fetch("/api/admin/aviso-tarifas",{headers:{Authorization:`Bearer ${token}`}});setInfo(await r.json());}catch{setInfo(null);}};
+  useEffect(()=>{cargar();},[token]);
+  const post=async(body)=>{const r=await fetch("/api/admin/aviso-tarifas",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify(body)});return r.json();};
+  const probar=async()=>{if(!testMail.includes("@"))return;setBusy(true);const j=await post({test_to:testMail.trim(),test_nombre:"Bautista"});setBusy(false);toast(j.ok?`Prueba enviada a ${testMail}`:`Falló: ${j.error||"?"}`,j.ok?"success":"error");};
+  const enviar=async()=>{
+    if(!info?.pendientes)return;
+    if(!await confirmDialog(`¿Mandar el aviso de nuevas tarifas a ${info.pendientes} cliente${info.pendientes!==1?"s":""}?\n\n${info.ri} son Responsable Inscripto (versión de 2 tramos), el resto monotributo / consumidor final (3 tramos). Los que ya lo recibieron no se repiten.`,{confirmText:"Enviar"}))return;
+    setBusy(true);setRes(null);
+    try{const j=await post({confirm:true});setRes(j);toast(j.ok?`✓ ${j.enviados} mails enviados${j.fallidos?.length?` · ${j.fallidos.length} fallidos`:""}`:`Falló: ${j.error||"?"}`,j.ok?"success":"error");await cargar();}
+    catch(e){toast("Falló: "+e.message,"error");}
+    setBusy(false);
+  };
+  return <div style={{marginBottom:18,padding:"14px 18px",borderRadius:14,background:"rgba(184,149,106,0.07)",border:"1px solid rgba(184,149,106,0.35)",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+    <div style={{flex:"1 1 260px"}}>
+      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:GOLD_LIGHT,margin:0}}>✈️ Aviso · nuevas tarifas del aéreo (25/09)</p>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",margin:"4px 0 0",lineHeight:1.5}}>
+        {info?<>Destinatarios: <strong style={{color:"#fff"}}>{info.total}</strong> clientes con operaciones o bultos ({info.ri} RI) · ya lo recibieron <strong style={{color:"#4ade80"}}>{info.enviados}</strong> · pendientes <strong style={{color:"#fbbf24"}}>{info.pendientes}</strong>{info.sinMail?.length?<span style={{color:"#f87171"}}> · sin mail: {info.sinMail.join(", ")}</span>:null}</>:"Cargando…"}
+      </p>
+      {res?.fallidos?.length>0&&<p style={{fontSize:11.5,color:"#f87171",margin:"6px 0 0"}}>Fallidos: {res.fallidos.join(" · ")}</p>}
+    </div>
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      <input value={testMail} onChange={e=>setTestMail(e.target.value)} placeholder="Probar a un mail…" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",width:190,fontFamily:"inherit"}}/>
+      <Btn small variant="secondary" onClick={probar} disabled={busy||!testMail.includes("@")}>Probar</Btn>
+      <Btn small onClick={enviar} disabled={busy||!info?.pendientes}>{busy?"Enviando…":`📨 Enviar a ${info?.pendientes??"…"}`}</Btn>
+    </div>
+  </div>;
+}
+
 function ComunicacionesPanel({token}){
   const [tab,setTab]=useState("seguimiento");
   const [loading,setLoading]=useState(true);
@@ -12895,6 +12927,7 @@ function ComunicacionesPanel({token}){
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
 
+    <AvisoTarifasCard token={token}/>
     {tab==="enviados"?<EmailLogPanel token={token}/>:tab==="seguimiento"?<SeguimientoPanel token={token} templates={templates} flash={flash}/>:<>
 
     {/* WAs pendientes */}
