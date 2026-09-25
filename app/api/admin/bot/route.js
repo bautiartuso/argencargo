@@ -28,7 +28,14 @@ async function enviarArchivo({ phone, buffer, mime, filename, caption, nombreCli
   const kind = /^image\//.test(mime) ? "image" : "document";
   const mediaId = await uploadWaMedia(buffer, mime, safe);
   if (!mediaId) return { error: "WhatsApp no aceptó el archivo (¿formato o tamaño?)" };
-  let r = await forwardWaMedia(phone, mediaId, kind, caption || "", safe);
+  // Con la ventana de 24 h cerrada (el cliente no escribió en el último día) el mensaje libre
+  // "sale" ok pero Meta lo rechaza después por webhook ("Re-engagement message"), así que el
+  // fallback a plantilla nunca se disparaba y el cliente no recibía nada (25/09/2026, Lucia).
+  // Se mira la ventana ANTES: cerrada → directo a la plantilla con adjunto.
+  const conv = await sb(`/bot_conversations?phone=eq.${encodeURIComponent(phone)}&select=last_user_at&limit=1`).catch(() => null);
+  const lastUser = Array.isArray(conv?.body) && conv.body[0]?.last_user_at ? Date.parse(conv.body[0].last_user_at) : 0;
+  const ventanaAbierta = lastUser > 0 && Date.now() - lastUser < 23.5 * 3600 * 1000;
+  let r = ventanaAbierta ? await forwardWaMedia(phone, mediaId, kind, caption || "", safe) : null;
   let via = "libre";
   if (!r?.ok) {
     r = await sendWaMediaTemplate(phone, kind === "document" ? "documento_adjunto" : "imagen_adjunta", { kind, mediaId, filename: safe }, [nombreCliente || "Hola", descripcion || (caption ? caption : "un archivo")]);
