@@ -60,7 +60,16 @@ export default async function FacturaPublica({ params }) {
       const mi = await fetch(`${SB_URL}/rest/v1/operation_items?operation_id=eq.${inv.operation_id}&select=description,quantity&order=created_at.asc`, {
         headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` }, cache: "no-store",
       }).then((x) => x.json());
-      mercaderias = (Array.isArray(mi) ? mi : []).filter((m) => (m.description || "").trim()).map((m) => `${m.description.trim()}${Number(m.quantity) > 1 ? ` x${Number(m.quantity)}` : ""}`);
+      // La factura tiene que entrar en UNA hoja: los ítems repetidos se suman, cada uno va en una
+      // línea (se corta con "…" si es larga) y se muestran como máximo 8; el resto queda resumido.
+      const agr = new Map();
+      for (const m of Array.isArray(mi) ? mi : []) {
+        const d = String(m.description || "").trim(); if (!d) continue;
+        const k = d.toLowerCase().replace(/\s+/g, " ");
+        if (!agr.has(k)) agr.set(k, { d, q: 0 });
+        agr.get(k).q += Number(m.quantity || 0);
+      }
+      mercaderias = [...agr.values()].map((m) => `${m.d}${m.q > 1 ? ` x${m.q}` : ""}`);
     } catch {}
   }
 
@@ -138,7 +147,8 @@ export default async function FacturaPublica({ params }) {
             ))}
             {mercaderias.length > 0 && <div style={{ marginTop: 12, padding: "10px 14px", background: "#f7f8fa", border: "1px solid #e2e8f0", borderRadius: 10, WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
               <p style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8", margin: "0 0 5px" }}>Detalle de mercaderías</p>
-              {mercaderias.map((m, i) => <p key={i} style={{ fontSize: 11.5, color: "#334155", margin: "2px 0", lineHeight: 1.45 }}>{i + 1} - {m}</p>)}
+              {mercaderias.slice(0, 8).map((m, i) => <p key={i} title={m} style={{ fontSize: 11, color: "#334155", margin: "2px 0", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i + 1} - {m}</p>)}
+              {mercaderias.length > 8 && <p style={{ fontSize: 10.5, color: "#64748b", margin: "4px 0 0", fontStyle: "italic" }}>… y {mercaderias.length - 8} ítem{mercaderias.length - 8 !== 1 ? "s" : ""} más ({mercaderias.length} en total). El detalle completo está en la operación.</p>}
             </div>}
           </div>
 
