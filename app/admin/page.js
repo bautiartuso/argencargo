@@ -5587,7 +5587,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,description,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
+    const sel="id,operation_code,description,delivery_receipt_number,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5848,7 +5848,12 @@ function EntregasPanel({token,onOpenOp}){
       return {op:o,client:o.clients||{},items:its,bultos:bultosByOp[o.id]||0,pagos:pg,total:Math.max(0,total),pagado,saldo:saldoFor(o),metodo:o.payment_method_chosen||split0?.method||null,monedaElegida,tc,receiptNumber:pg.map(x=>x.receipt_number).filter(Boolean).pop()||null,settings};
     });
   };
-  const imprimirRecibos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
+  const imprimirRecibos=async(ops)=>{if(!ops.length)return;
+    // Número de recibo: se asigna la primera vez que se imprime (misma secuencia que los recibos de pago) y queda fijo.
+    const nros={};
+    for(const o of ops){if(o.delivery_receipt_number){nros[o.id]=o.delivery_receipt_number;continue;}try{const r=await dq("rpc/next_delivery_receipt_number",{method:"POST",token,body:{p_op:o.id}});const n=typeof r==="number"?r:Number(r)||null;if(n){nros[o.id]=n;setRows(p=>p.map(x=>x.id===o.id?{...x,delivery_receipt_number:n}:x));}}catch(e){console.error("nro recibo",e);}}
+    const docs=(await cargarDocs(ops)).map(d=>({...d,receiptNumber:nros[d.op.id]||d.receiptNumber||null}));
+    if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
   const imprimirRemitos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRemitos(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
 
   // ===== PANEL ENTREGAS v3: pipeline de cards =====
