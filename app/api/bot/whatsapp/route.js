@@ -21,10 +21,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_MODEL } from "../../../../lib/anthropic";
 import { tgNotify, logUso, costoClaude } from "../../../../lib/telegram";
+import { waitUntil } from "@vercel/functions";
 
-export const maxDuration = 60;
-// Cuánto se espera a que el cliente termine de escribir antes de contestarle la ráfaga completa.
-const ESPERA_RAFAGA_MS = 7000;
+// La espera de la ráfaga + el agente + el envío corren en segundo plano (waitUntil) después de
+// devolverle el 200 a Meta, así que el límite tiene que cubrir todo eso.
+export const maxDuration = 180;
+// Cuánto se espera desde el ÚLTIMO mensaje del cliente antes de contestarle la ráfaga completa.
+// En WhatsApp la gente escribe de a pedazos con segundos o hasta un minuto entre uno y otro
+// ("Hoy" · "Felipe Vallese 3320"): con 7 s el bot igual contestaba dos veces (25/09/2026).
+const ESPERA_RAFAGA_MS = Math.max(5, Number(process.env.BOT_ESPERA_SEG || 60)) * 1000;
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -567,24 +572,36 @@ export async function POST(req) {
     // (17/09/2026, Dana: una le ofreció reprogramar y la otra le volvió a pedir el día).
     // Ahora el mensaje se encola, se espera un momento y contesta SOLO el último de la ráfaga,
     // con todos los textos juntos en un mismo turno.
-    let textos = [text];
+    const responder = async (textos) => {
+      const history = await loadHistory(phone);
+      const { reply, newHistory } = await runAgent(phone, textos.join("\n"), history);
+      await saveHistory(phone, newHistory);
+      const wamid = await sendWhatsApp(phone, reply);
+      await logMsg(phone, "assistant", reply, { wamid });
+    };
     if (msg.type === "text") {
       const marca = await sb(`/rpc/bot_encolar_entrante`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone, p_text: text }) })
         .then((r) => (typeof r.body === "string" ? r.body : null)).catch(() => null);
       if (marca) {
-        await new Promise((r) => setTimeout(r, ESPERA_RAFAGA_MS));
-        const cola = await sb(`/rpc/bot_tomar_entrantes`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone, p_marca: marca }) })
-          .then((r) => (Array.isArray(r.body) ? r.body : null)).catch(() => null);
-        // Null = llegó otro mensaje después: ese webhook contesta por todos y este se va callado.
-        if (!cola) return Response.json({ ok: true, agrupado: true });
-        textos = cola.filter((t) => String(t || "").trim());
+        // El 200 a Meta sale ya (si no, reintenta el webhook y duplica); la espera sigue atrás.
+        waitUntil((async () => {
+          try {
+            await new Promise((r) => setTimeout(r, ESPERA_RAFAGA_MS));
+            const cola = await sb(`/rpc/bot_tomar_entrantes`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone, p_marca: marca }) })
+              .then((r) => (Array.isArray(r.body) ? r.body : null)).catch(() => null);
+            // Null = llegó otro mensaje después: ese webhook contesta por todos y este se va callado.
+            if (!cola) return;
+            // Si mientras esperábamos un humano tomó la conversación, Argy no contesta.
+            const estadoAhora = await convState(phone);
+            if (estadoAhora.human_mode) return;
+            const textos = cola.filter((t) => String(t || "").trim());
+            if (textos.length) await responder(textos);
+          } catch (e) { console.error("[bot/whatsapp] ráfaga", e.message); }
+        })());
+        return Response.json({ ok: true, encolado: true });
       }
     }
-    const history = await loadHistory(phone);
-    const { reply, newHistory } = await runAgent(phone, textos.join("\n"), history);
-    await saveHistory(phone, newHistory);
-    const wamid = await sendWhatsApp(phone, reply);
-    await logMsg(phone, "assistant", reply, { wamid });
+    await responder([text]);
   } catch (e) {
     console.error("[bot/whatsapp]", e.message);
   }
