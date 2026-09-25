@@ -12733,16 +12733,17 @@ function SeguimientoPanel({token,templates,flash}){
 // Aviso de nuevas tarifas aéreas (25/09/2026): a todos los clientes que alguna vez tuvieron una op
 // o tienen bultos en el depósito. Manda /api/admin/aviso-tarifas (registra en email_log, no repite).
 function AvisoTarifasCard({token}){
-  const [info,setInfo]=useState(null);const [busy,setBusy]=useState(false);const [res,setRes]=useState(null);const [testMail,setTestMail]=useState("");
+  const [info,setInfo]=useState(null);const [busy,setBusy]=useState(false);const [res,setRes]=useState(null);const [testMail,setTestMail]=useState("");const [cant,setCant]=useState("");
   const cargar=async()=>{try{const r=await fetch("/api/admin/aviso-tarifas",{headers:{Authorization:`Bearer ${token}`}});setInfo(await r.json());}catch{setInfo(null);}};
   useEffect(()=>{cargar();},[token]);
   const post=async(body)=>{const r=await fetch("/api/admin/aviso-tarifas",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify(body)});return r.json();};
   const probar=async()=>{if(!testMail.includes("@"))return;setBusy(true);const j=await post({test_to:testMail.trim(),test_nombre:"Bautista"});setBusy(false);toast(j.ok?`Prueba enviada a ${testMail}`:`Falló: ${j.error||"?"}`,j.ok?"success":"error");};
   const enviar=async()=>{
     if(!info?.pendientes)return;
-    if(!await confirmDialog(`¿Mandar el aviso de nuevas tarifas a ${info.pendientes} cliente${info.pendientes!==1?"s":""}?\n\n${info.ri} son Responsable Inscripto (versión de 2 tramos), el resto monotributo / consumidor final (3 tramos). Los que ya lo recibieron no se repiten.`,{confirmText:"Enviar"}))return;
+    const n=Math.min(info.pendientes,Math.max(1,Number(cant)||info.pendientes));
+    if(!await confirmDialog(`¿Mandar el aviso de nuevas tarifas a ${n} cliente${n!==1?"s":""}${n<info.pendientes?` (quedan ${info.pendientes-n} para otra tanda)`:""}?\n\nCada uno recibe la versión de su condición fiscal. Los que ya lo recibieron no se repiten.`,{confirmText:"Enviar"}))return;
     setBusy(true);setRes(null);
-    try{const j=await post({confirm:true});setRes(j);toast(j.ok?`✓ ${j.enviados} mails enviados${j.fallidos?.length?` · ${j.fallidos.length} fallidos`:""}`:`Falló: ${j.error||"?"}`,j.ok?"success":"error");await cargar();}
+    try{const j=await post({confirm:true,limite:n});setRes(j);toast(j.ok?`✓ ${j.enviados} mails enviados${j.fallidos?.length?` · ${j.fallidos.length} fallidos`:""}`:`Falló: ${j.error||"?"}`,j.ok?"success":"error");await cargar();}
     catch(e){toast("Falló: "+e.message,"error");}
     setBusy(false);
   };
@@ -12757,7 +12758,8 @@ function AvisoTarifasCard({token}){
     <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
       <input value={testMail} onChange={e=>setTestMail(e.target.value)} placeholder="Probar a un mail…" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",width:190,fontFamily:"inherit"}}/>
       <Btn small variant="secondary" onClick={probar} disabled={busy||!testMail.includes("@")}>Probar</Btn>
-      <Btn small onClick={enviar} disabled={busy||!info?.pendientes}>{busy?"Enviando…":`📨 Enviar a ${info?.pendientes??"…"}`}</Btn>
+      <input value={cant} onChange={e=>setCant(e.target.value.replace(/\D/g,""))} placeholder={`Cantidad (${info?.pendientes??"…"})`} title="Cuántos mandar en esta tanda (vacío = todos los pendientes)" inputMode="numeric" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",width:120,fontFamily:"inherit"}}/>
+      <Btn small onClick={enviar} disabled={busy||!info?.pendientes}>{busy?"Enviando…":`📨 Enviar ${cant?Math.min(Number(cant),info?.pendientes||0):info?.pendientes??"…"}`}</Btn>
     </div>
   </div>;
 }

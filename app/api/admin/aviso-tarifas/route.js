@@ -64,13 +64,15 @@ export async function POST(req) {
     return Response.json({ ok: r.ok, error: r.error });
   }
   if (body.confirm !== true) return Response.json({ error: "Falta confirm" }, { status: 400 });
+  // Se puede mandar de a tandas (ej. 75 hoy y el resto mañana): los ya enviados no se repiten.
+  const limite = Math.max(1, Math.min(Number(body.limite) || d.pendientes.length, d.pendientes.length));
   let ok = 0, fallidos = [];
-  for (const c of d.pendientes) {
+  for (const c of d.pendientes.slice(0, limite)) {
     const { subject, html } = mailTarifas({ nombre: c.first_name, isRI: c.tax_condition === "responsable_inscripto" });
     const r = await enviarEmail({ to: c.email.trim(), subject, html, trigger: TARIFAS_TRIGGER, client_id: c.id });
     if (r.ok) ok++; else fallidos.push(`${c.client_code}: ${r.error || r.status}`);
     // Resend limita a ~2 envíos por segundo.
     await new Promise((res) => setTimeout(res, 600));
   }
-  return Response.json({ ok: true, enviados: ok, fallidos, sinMail: d.sinMail });
+  return Response.json({ ok: true, enviados: ok, fallidos, restantes: d.pendientes.length - limite, sinMail: d.sinMail });
 }
