@@ -5587,7 +5587,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,description,delivery_receipt_number,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
+    const sel="id,operation_code,description,delivery_receipt_number,labels_printed_at,remito_printed_at,recibo_printed_at,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5848,13 +5848,19 @@ function EntregasPanel({token,onOpenOp}){
       return {op:o,client:o.clients||{},items:its,bultos:bultosByOp[o.id]||0,pagos:pg,total:Math.max(0,total),pagado,saldo:saldoFor(o),metodo:o.payment_method_chosen||split0?.method||null,monedaElegida,tc,receiptNumber:pg.map(x=>x.receipt_number).filter(Boolean).pop()||null,settings};
     });
   };
+  // Marca de impreso (etiquetas / remito / recibo) para no imprimir dos veces desde los botones del día.
+  const marcarImpreso=async(ops,campo)=>{
+    if(!ops.length)return;const now=new Date().toISOString();
+    await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ops.map(o=>o.id).join(",")})`,body:{[campo]:now}}).catch(()=>{});
+    setRows(p=>p.map(r=>ops.some(o=>o.id===r.id)?{...r,[campo]:now}:r));
+  };
   const imprimirRecibos=async(ops)=>{if(!ops.length)return;
     // Número de recibo: se asigna la primera vez que se imprime (misma secuencia que los recibos de pago) y queda fijo.
     const nros={};
     for(const o of ops){if(o.delivery_receipt_number){nros[o.id]=o.delivery_receipt_number;continue;}try{const r=await dq("rpc/next_delivery_receipt_number",{method:"POST",token,body:{p_op:o.id}});const n=typeof r==="number"?r:Number(r)||null;if(n){nros[o.id]=n;setRows(p=>p.map(x=>x.id===o.id?{...x,delivery_receipt_number:n}:x));}}catch(e){console.error("nro recibo",e);}}
     const docs=(await cargarDocs(ops)).map(d=>({...d,receiptNumber:nros[d.op.id]||d.receiptNumber||null}));
-    if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
-  const imprimirRemitos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRemitos(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
+    if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");else marcarImpreso(ops,"recibo_printed_at");};
+  const imprimirRemitos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRemitos(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");else marcarImpreso(ops,"remito_printed_at");};
   // Etiquetas de bultos (100×150, una por bulto): para TODAS las entregas, sea retiro, flete propio o transportista.
   const imprimirEtiquetasBultos=async(ops)=>{
     if(!ops.length)return;
@@ -5865,7 +5871,10 @@ function EntregasPanel({token,onOpenOp}){
     const r=printPackageLabelsMulti(docs);
     if(r===null)toast("Estas entregas no tienen bultos cargados","error");
     else if(r===false)toast("El navegador bloqueó la ventana de impresión — permití popups","error");
+    else marcarImpreso(ops.filter(o=>lista.some(p=>p.operation_id===o.id)),"labels_printed_at");
   };
+  // Tandas pendientes: todas las coordinadas (cualquier día) que todavía no se imprimieron.
+  const pendImpresion=(campo,soloSinCarrier)=>rows.filter(o=>!o.delivery_completed_at&&o.delivery_confirmed_at&&!o[campo]&&(!soloSinCarrier||o.delivery_choice!=="carrier"));
   // Remitos y recibos: todas las entregas salvo las que van por transportista (Via Cargo / Andreani).
   const sinCarrier=(ops)=>ops.filter(o=>o.delivery_choice!=="carrier");
 
@@ -5975,9 +5984,9 @@ function EntregasPanel({token,onOpenOp}){
         </span>
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-        {printBtn("🏷 Etiquetas",()=>imprimirEtiquetasBultos([o]),"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
-        {!esCarrier&&printBtn("📄 Remito",()=>imprimirRemitos([o]),"Imprimir remito (media hoja A4)")}
-        {!esCarrier&&conRecibo&&printBtn("🧾 Recibo",()=>imprimirRecibos([o]),"Imprimir comprobante de entrega + recibo (A4)")}
+        {printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
+        {!esCarrier&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
+        {!esCarrier&&conRecibo&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
         {contexto==="aviso"&&<>
           <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
@@ -6092,11 +6101,14 @@ function EntregasPanel({token,onOpenOp}){
           {!sinMontos&&efect.length>0&&statCard("💵","En efectivo",usd(sumSaldo(efect)),`${efect.length} cliente${efect.length>1?"s":""}`,"#4ade80")}
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
-          {delDia.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,justifyContent:"center",flex:"0 0 auto"}}>
-            <button onClick={()=>imprimirEtiquetasBultos(delDia)} title="Etiquetas de todos los bultos del día (retiros, envíos y transportista)" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🏷 Etiquetas del día</button>
-            <button onClick={()=>imprimirRemitos(sinCarrier(delDia))} title="Remitos del día (sin los envíos por transportista)" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📄 Remitos del día</button>
-            <button onClick={()=>imprimirRecibos(sinCarrier(delDia))} title="Recibos del día (sin los envíos por transportista)" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🧾 Recibos del día</button>
-          </div>}
+          {(()=>{const pE=pendImpresion("labels_printed_at",false),pR=pendImpresion("remito_printed_at",true),pC=pendImpresion("recibo_printed_at",true);
+            const b=(l,n,fn,title)=><button onClick={()=>n>0&&fn()} disabled={n===0} title={title} style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${n>0?"rgba(255,255,255,0.14)":"rgba(255,255,255,0.06)"}`,background:"rgba(255,255,255,0.04)",color:n>0?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.3)",cursor:n>0?"pointer":"default",fontFamily:"inherit",whiteSpace:"nowrap",display:"flex",justifyContent:"space-between",gap:10}}><span>{l}</span><span style={{fontWeight:800,color:n>0?"#fbbf24":"inherit"}}>{n}</span></button>;
+            return (pE.length+pR.length+pC.length>0||delDia.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,justifyContent:"center",flex:"0 0 auto"}}>
+              <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Sin imprimir · coordinadas</p>
+              {b("🏷 Etiquetas",pE.length,()=>imprimirEtiquetasBultos(pE),"Etiquetas de todas las entregas coordinadas que todavía no se imprimieron (cualquier día, incluido transportista)")}
+              {b("📄 Remitos",pR.length,()=>imprimirRemitos(pR),"Remitos de las coordinadas sin imprimir (sin transportista)")}
+              {b("🧾 Recibos",pC.length,()=>imprimirRecibos(pC),"Recibos de las coordinadas sin imprimir (sin transportista)")}
+            </div>;})()}
         </div>
         {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
