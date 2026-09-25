@@ -5,7 +5,7 @@ import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
-import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
+import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
 import { comprimirImagen } from "../../lib/img";
@@ -5855,6 +5855,19 @@ function EntregasPanel({token,onOpenOp}){
     const docs=(await cargarDocs(ops)).map(d=>({...d,receiptNumber:nros[d.op.id]||d.receiptNumber||null}));
     if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
   const imprimirRemitos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRemitos(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
+  // Etiquetas de bultos (100×150, una por bulto): para TODAS las entregas, sea retiro, flete propio o transportista.
+  const imprimirEtiquetasBultos=async(ops)=>{
+    if(!ops.length)return;
+    const ids=ops.map(o=>o.id);
+    const pk=await dq("operation_packages",{token,filters:`?operation_id=in.(${ids.join(",")})&select=*&order=package_number.asc`}).catch(()=>[]);
+    const lista=Array.isArray(pk)?pk:[];
+    const docs=ops.map(o=>({op:o,client:o.clients||{},packages:lista.filter(p=>p.operation_id===o.id)}));
+    const r=printPackageLabelsMulti(docs);
+    if(r===null)toast("Estas entregas no tienen bultos cargados","error");
+    else if(r===false)toast("El navegador bloqueó la ventana de impresión — permití popups","error");
+  };
+  // Remitos y recibos: todas las entregas salvo las que van por transportista (Via Cargo / Andreani).
+  const sinCarrier=(ops)=>ops.filter(o=>o.delivery_choice!=="carrier");
 
   // ===== PANEL ENTREGAS v3: pipeline de cards =====
   const Bloque=({titulo,n,hint,children,accion,tone})=><div style={{marginBottom:16,border:`1px solid ${tone==="warn"?"rgba(251,191,36,0.3)":tone==="danger"?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:16,background:"rgba(255,255,255,0.028)",padding:"14px 16px"}}>
@@ -5962,8 +5975,9 @@ function EntregasPanel({token,onOpenOp}){
         </span>
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-        {printBtn("📄 Remito",()=>imprimirRemitos([o]),"Imprimir remito (2 copias en A4)")}
-        {conRecibo&&printBtn("🧾 Recibo",()=>imprimirRecibos([o]),"Imprimir recibo de entrega (2 copias en A4)")}
+        {printBtn("🏷 Etiquetas",()=>imprimirEtiquetasBultos([o]),"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
+        {!esCarrier&&printBtn("📄 Remito",()=>imprimirRemitos([o]),"Imprimir remito (media hoja A4)")}
+        {!esCarrier&&conRecibo&&printBtn("🧾 Recibo",()=>imprimirRecibos([o]),"Imprimir comprobante de entrega + recibo (A4)")}
         {contexto==="aviso"&&<>
           <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
@@ -6079,8 +6093,9 @@ function EntregasPanel({token,onOpenOp}){
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
           {delDia.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,justifyContent:"center",flex:"0 0 auto"}}>
-            <button onClick={()=>imprimirRemitos(delDia)} title="Imprimir los remitos del día" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📄 Remitos del día</button>
-            <button onClick={()=>imprimirRecibos(delDia)} title="Imprimir los recibos del día" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🧾 Recibos del día</button>
+            <button onClick={()=>imprimirEtiquetasBultos(delDia)} title="Etiquetas de todos los bultos del día (retiros, envíos y transportista)" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🏷 Etiquetas del día</button>
+            <button onClick={()=>imprimirRemitos(sinCarrier(delDia))} title="Remitos del día (sin los envíos por transportista)" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📄 Remitos del día</button>
+            <button onClick={()=>imprimirRecibos(sinCarrier(delDia))} title="Recibos del día (sin los envíos por transportista)" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🧾 Recibos del día</button>
           </div>}
         </div>
         {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
