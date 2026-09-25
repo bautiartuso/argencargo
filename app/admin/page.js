@@ -6021,18 +6021,9 @@ function EntregasPanel({token,onOpenOp}){
   const tabBtn=(k,l,n,color)=><button onClick={()=>setTab(k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>{l}{n>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:color||"rgba(255,255,255,0.1)",color:color?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;
 
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
-      <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-        <h2 style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>Entregas</h2>
-        <div style={{display:"flex",gap:4,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12}}>
-          {tabPill("agenda","En curso",pendientes.length+entregadasSinCobrar.length,"#E8C99B")}
-          {tabPill("hechas","Entregadas",0,"#22c55e")}
-        </div>
-      </div>
-      <div style={{position:"relative"}}>
-        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:13,opacity:0.5,pointerEvents:"none"}}>⌕</span>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente…" style={{padding:"9px 14px 9px 30px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:240,fontFamily:"inherit"}}/>
-      </div>
+    <div style={{display:"flex",alignItems:"center",gap:26,marginBottom:18,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
+      <h2 style={{fontSize:20,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.01em"}}>Entregas</h2>
+      {[["agenda","En curso",pendientes.length+entregadasSinCobrar.length],["hechas","Entregadas",null]].map(([k,l,n])=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 2px 12px",fontSize:12,fontWeight:on?800:700,letterSpacing:"0.08em",textTransform:"uppercase",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,marginBottom:-1,background:"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}}>{n}</span>}</button>;})}
     </div>
 
     {tab==="agenda"&&(()=>{
@@ -6062,18 +6053,11 @@ function EntregasPanel({token,onOpenOp}){
         {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"5px 0 0"}}>{sub}</p>}
       </div>;
       return <>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
             {dias.map(iso=>{const f=fmtDia(iso);const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"7px 13px",borderRadius:999,cursor:"pointer",border:`1px solid ${act?"transparent":"rgba(255,255,255,0.12)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:act?"#0A1628":"rgba(255,255,255,0.7)",fontFamily:"inherit",fontSize:12,fontWeight:700,transition:"all 150ms"}}>
               {f.top}<span style={{fontSize:10.5,fontWeight:600,opacity:act?0.75:0.5}}>{f.sub}</span>
               {n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,background:act?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.1)",color:act?"#0A1628":"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
             </button>;})}
-          </div>
-          <span style={{flex:1}}/>
-          {delDia.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            <Btn small variant="secondary" onClick={()=>imprimirRemitos(delDia)}>📄 Remitos ({delDia.length})</Btn>
-            <Btn small variant="secondary" onClick={()=>imprimirRecibos(delDia)}>🧾 Recibos ({delDia.length})</Btn>
-          </div>}
         </div>
         {vencidas.length>0&&<div style={{padding:"10px 14px",marginBottom:12,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,fontSize:12.5,color:"#f87171",fontWeight:600}}>
           ⚠️ {vencidas.length} entrega{vencidas.length>1?"s":""} agendada{vencidas.length>1?"s":""} de días anteriores sin marcar: {vencidas.map(o=>o.operation_code).join(", ")}
@@ -6089,6 +6073,9 @@ function EntregasPanel({token,onOpenOp}){
               {transf.length>0&&<span style={{fontSize:11.5,color:"#60a5fa"}}>🏦 {usd(sumSaldo(transf))} · {transf.length}</span>}
               {cripto.length>0&&<span style={{fontSize:11.5,color:"#c084fc"}}>🪙 {usd(sumSaldo(cripto))} · {cripto.length}</span>}
               {pagadas.length>0&&<><Sep/><span style={{fontSize:11.5,color:"#22c55e",fontWeight:700}}>✓ {pagadas.length} ya pagada{pagadas.length>1?"s":""}</span></>}</>}
+            <span style={{flex:1}}/>
+            <button onClick={()=>imprimirRemitos(delDia)} title="Imprimir los remitos del día" style={{padding:"5px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>📄 Remitos</button>
+            <button onClick={()=>imprimirRecibos(delDia)} title="Imprimir los recibos del día" style={{padding:"5px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>🧾 Recibos</button>
           </div>;})()}
         {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
