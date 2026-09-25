@@ -6017,13 +6017,29 @@ function EntregasPanel({token,onOpenOp}){
   const esperando=sinConfirmar.filter(o=>avisadaAt(o)&&!esRiDir(o));
   const hechasFiltradas=hechas.filter(matchesQ);
 
+  // Chips de días de la agenda (van en la fila del título): próximos 6 hábiles + los que tengan entregas.
+  const diasChips=(()=>{
+    const conFecha=rows.filter(o=>!o.delivery_completed_at&&o.delivery_confirmed_at&&o.delivery_day);
+    const dias=[];{const d=new Date();while(dias.length<6){const dow=d.getDay();if(dow>=1&&dow<=5){dias.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);}d.setDate(d.getDate()+1);}}
+    conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});dias.sort();
+    const hoyIso=new Date().toISOString().slice(0,10);
+    return dias.map(iso=>{const d=new Date(iso+"T12:00:00");const top=iso===hoyIso?"Hoy":["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()];const sub=`${d.getDate()}/${d.getMonth()+1}`;const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;
+      return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"7px 13px",borderRadius:999,cursor:"pointer",border:`1px solid ${act?"transparent":"rgba(255,255,255,0.12)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:act?"#0A1628":"rgba(255,255,255,0.7)",fontFamily:"inherit",fontSize:12,fontWeight:700,transition:"all 150ms"}}>
+        {top}<span style={{fontSize:10.5,fontWeight:600,opacity:act?0.75:0.5}}>{sub}</span>
+        {n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,background:act?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.1)",color:act?"#0A1628":"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
+      </button>;});
+  })();
   const tabPill=(k,l,n,c)=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:9,background:on?`linear-gradient(135deg, ${c}33, ${c}1A)`:"transparent",color:on?c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,fontFamily:"inherit"}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999,background:on?`${c}33`:"rgba(255,255,255,0.08)",color:on?c:"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;};
   const tabBtn=(k,l,n,color)=><button onClick={()=>setTab(k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>{l}{n>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:color||"rgba(255,255,255,0.1)",color:color?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;
 
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:26,marginBottom:18,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
-      <h2 style={{fontSize:20,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.01em"}}>Entregas</h2>
-      {[["agenda","En curso",pendientes.length+entregadasSinCobrar.length],["hechas","Entregadas",null]].map(([k,l,n])=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"6px 2px 12px",fontSize:12,fontWeight:on?800:700,letterSpacing:"0.08em",textTransform:"uppercase",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,marginBottom:-1,background:"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}}>{n}</span>}</button>;})}
+    <div style={{display:"flex",alignItems:"center",gap:22,marginBottom:16,flexWrap:"wrap"}}>
+      <h2 style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>Entregas</h2>
+      <div style={{display:"flex",gap:18}}>
+        {[["agenda","En curso",pendientes.length+entregadasSinCobrar.length],["hechas","Entregadas",null]].map(([k,l,n])=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"4px 0",fontSize:12,fontWeight:on?800:700,letterSpacing:"0.08em",textTransform:"uppercase",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,background:"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}}>{n}</span>}</button>;})}
+      </div>
+      <span style={{flex:1}}/>
+      {tab==="agenda"&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>{diasChips}</div>}
     </div>
 
     {tab==="agenda"&&(()=>{
@@ -6053,30 +6069,20 @@ function EntregasPanel({token,onOpenOp}){
         {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"5px 0 0"}}>{sub}</p>}
       </div>;
       return <>
-        <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
-            {dias.map(iso=>{const f=fmtDia(iso);const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"7px 13px",borderRadius:999,cursor:"pointer",border:`1px solid ${act?"transparent":"rgba(255,255,255,0.12)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:act?"#0A1628":"rgba(255,255,255,0.7)",fontFamily:"inherit",fontSize:12,fontWeight:700,transition:"all 150ms"}}>
-              {f.top}<span style={{fontSize:10.5,fontWeight:600,opacity:act?0.75:0.5}}>{f.sub}</span>
-              {n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,background:act?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.1)",color:act?"#0A1628":"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
-            </button>;})}
-        </div>
         {vencidas.length>0&&<div style={{padding:"10px 14px",marginBottom:12,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,fontSize:12.5,color:"#f87171",fontWeight:600}}>
           ⚠️ {vencidas.length} entrega{vencidas.length>1?"s":""} agendada{vencidas.length>1?"s":""} de días anteriores sin marcar: {vencidas.map(o=>o.operation_code).join(", ")}
         </div>}
-        {delDia.length>0&&(()=>{
-          const Sep=()=><span style={{width:1,height:16,background:"rgba(255,255,255,0.1)"}}/>;
-          const Dato=({l,v,c})=><span style={{display:"inline-flex",alignItems:"baseline",gap:6,whiteSpace:"nowrap"}}><span style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:14,fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
-          const retiros=delDia.filter(o=>o.delivery_choice!=="propio").length,envios=delDia.length-retiros;
-          return <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"10px 16px",marginBottom:16,borderRadius:12,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.07)"}}>
-            <Dato l="Entregas" v={delDia.length}/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{retiros} retiro{retiros!==1?"s":""} · {envios} envío{envios!==1?"s":""}</span>
-            {!sinMontos&&<><Sep/><Dato l="Por cobrar" v={usd(totCobrar)} c={totCobrar>0.005?"#fbbf24":"#22c55e"}/>
-              {efect.length>0&&<span style={{fontSize:11.5,color:"#4ade80"}}>💵 {usd(sumSaldo(efect))} · {efect.length}</span>}
-              {transf.length>0&&<span style={{fontSize:11.5,color:"#60a5fa"}}>🏦 {usd(sumSaldo(transf))} · {transf.length}</span>}
-              {cripto.length>0&&<span style={{fontSize:11.5,color:"#c084fc"}}>🪙 {usd(sumSaldo(cripto))} · {cripto.length}</span>}
-              {pagadas.length>0&&<><Sep/><span style={{fontSize:11.5,color:"#22c55e",fontWeight:700}}>✓ {pagadas.length} ya pagada{pagadas.length>1?"s":""}</span></>}</>}
-            <span style={{flex:1}}/>
-            <button onClick={()=>imprimirRemitos(delDia)} title="Imprimir los remitos del día" style={{padding:"5px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>📄 Remitos</button>
-            <button onClick={()=>imprimirRecibos(delDia)} title="Imprimir los recibos del día" style={{padding:"5px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>🧾 Recibos</button>
-          </div>;})()}
+        <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"stretch"}}>
+          {statCard("📦","Entregas del día",String(delDia.length),`${delDia.filter(o=>o.delivery_choice!=="propio").length} retiros · ${delDia.filter(o=>o.delivery_choice==="propio").length} envíos`)}
+          {!sinMontos&&statCard("💰","Por cobrar hoy",usd(totCobrar),pagadas.length>0?`${pagadas.length} ya pagada${pagadas.length>1?"s":""}`:null,totCobrar>0.005?"#fbbf24":"#22c55e")}
+          {!sinMontos&&efect.length>0&&statCard("💵","En efectivo",usd(sumSaldo(efect)),`${efect.length} cliente${efect.length>1?"s":""}`,"#4ade80")}
+          {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
+          {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
+          {delDia.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,justifyContent:"center",flex:"0 0 auto"}}>
+            <button onClick={()=>imprimirRemitos(delDia)} title="Imprimir los remitos del día" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📄 Remitos del día</button>
+            <button onClick={()=>imprimirRecibos(delDia)} title="Imprimir los recibos del día" style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🧾 Recibos del día</button>
+          </div>}
+        </div>
         {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
         {franjas.map(f=>{
