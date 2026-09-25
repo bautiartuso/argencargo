@@ -5587,7 +5587,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
+    const sel="id,operation_code,description,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5829,18 +5829,23 @@ function EntregasPanel({token,onOpenOp}){
   // Recibo de entrega y remito (25/09/2026): media hoja A4 cada uno, ORIGINAL + DUPLICADO por página.
   const cargarDocs=async(ops)=>{
     const ids=ops.map(o=>o.id);
-    const [items,pagos,st]=await Promise.all([
+    const [items,pagos,st,blue]=await Promise.all([
       dq("operation_items",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,description,quantity&order=created_at.asc`}).catch(()=>[]),
-      dq("operation_client_payments",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,payment_date,amount_usd,amount_ars,currency,exchange_rate,payment_method,created_at&order=payment_date.asc`}).catch(()=>[]),
+      dq("operation_client_payments",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,payment_date,amount_usd,amount_ars,currency,exchange_rate,payment_method,receipt_number,created_at&order=payment_date.asc`}).catch(()=>[]),
       dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality,office_address&limit=1"}).catch(()=>[]),
+      // Si el cliente eligió pagar en pesos, el recibo sale en pesos al blue del día (venta).
+      fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
     const settings=Array.isArray(st)&&st[0]?st[0]:{};
+    const tc=Number(blue?.venta||0);
     return ops.map(o=>{
       const its=(Array.isArray(items)?items:[]).filter(x=>x.operation_id===o.id);
       const pg=(Array.isArray(pagos)?pagos:[]).filter(x=>x.operation_id===o.id);
       const pagado=pg.reduce((a,x)=>a+Number(x.amount_usd||0),0)||usdCollected(o);
       const total=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.total_anticipos||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0);
-      return {op:o,client:o.clients||{},items:its,bultos:bultosByOp[o.id]||0,pagos:pg,total:Math.max(0,total),pagado,saldo:saldoFor(o),metodo:o.payment_method_chosen||(Array.isArray(o.payment_split)&&o.payment_split[0]?.method)||null,settings};
+      const split0=Array.isArray(o.payment_split)&&o.payment_split[0]?o.payment_split[0]:null;
+      const monedaElegida=split0?.currency||o.cash_arrival_currency||"USD";
+      return {op:o,client:o.clients||{},items:its,bultos:bultosByOp[o.id]||0,pagos:pg,total:Math.max(0,total),pagado,saldo:saldoFor(o),metodo:o.payment_method_chosen||split0?.method||null,monedaElegida,tc,receiptNumber:pg.map(x=>x.receipt_number).filter(Boolean).pop()||null,settings};
     });
   };
   const imprimirRecibos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");};
