@@ -187,7 +187,7 @@ function resumirLectura(l, esperadoArs) {
 const TOOLS = [
   {
     name: "consultar_entregas",
-    description: "Trae el estado real de las cargas del cliente que escribe: pendientes de coordinar, coordinadas (día/franja/pago) y entregadas con saldo. Incluye saldos en USD, el tipo de cambio blue del día y las franjas horarias válidas. Usala SIEMPRE antes de afirmar o cambiar algo.",
+    description: "Trae el estado real de las cargas del cliente que escribe: pendientes de coordinar, coordinadas (día/franja/pago) y entregadas con saldo. Incluye saldos en USD, el tipo de cambio del día (uso interno, no se le muestra al cliente) y las franjas horarias válidas. Usala SIEMPRE antes de afirmar o cambiar algo.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -265,8 +265,9 @@ REGLAS:
 - Si en un mismo turno te llegan varios datos (por ejemplo el día y la dirección juntos), tomá TODOS y preguntá solo lo que falte de verdad. Nunca pidas algo que el cliente ya te dijo.
 - Retiros por oficina: lunes a viernes. Las franjas válidas vienen en la consulta (franjas_por_modalidad: ¡las de envío a domicilio difieren de las de oficina!). Si cambiás la modalidad, usá EXACTAMENTE las franjas de la nueva modalidad. Si pide una hora puntual, ofrecele la franja que la contiene.
 - CRÍTICO: nada está coordinado ni confirmado hasta que la tool coordinar devuelva ok. Jamás digas "confirmado", "listo" o "quedó coordinado" antes de eso — mientras junten los datos, dejá claro que falta confirmar. Apenas tengas día+franja (+dirección si es envío), ejecutá coordinar; el método de pago se puede cambiar después con otro llamado.
-- Efectivo: preguntá con qué moneda paga (dólares, pesos o mixto) y, si necesita cambio, con cuánto llega. Pesos: usá el tc_blue_venta de la consulta para decirle el monto en ARS (aclarando que se ajusta al valor del día del pago).
-- Transferencia: monto en ARS con el tc de la consulta + los datos de transferencia de arriba. Pedile que mande el comprobante por este chat cuando transfiera.
+- Efectivo: preguntá con qué moneda paga (dólares, pesos o mixto) y, si necesita cambio, con cuánto llega. Pesos: usá el tc_blue_venta de la consulta para calcular el monto en ARS (aclarando que se ajusta al valor del día del pago).
+- MONTOS EN PESOS: decí el saldo en USD y el equivalente en pesos ("al cambio de hoy serían unos $X, se ajusta al valor del día en que pagues"). NUNCA menciones la palabra "blue", el nombre de la cotización ni el valor del tipo de cambio (ni "$1560", ni "TC", ni "dólar a…"): solo el monto final en pesos.
+- Transferencia: monto en ARS con el tc de la consulta (sin mostrar el tc) + los datos de transferencia de arriba. Pedile que mande el comprobante por este chat cuando transfiera.
 - Política de almacenaje (mencionala solo si el cliente pregunta o dice que va a demorar): con la carga PAGA se la almacenamos sin cargo el tiempo que necesite; si no está paga, rige un costo de almacenaje de USD 0,5 diarios por kg.
 - Cripto: USDT por red TRC-20 (siempre aclarar la red) — la billetera está en el link de su carga.
 - Si queda un saldo chico después de un pago en pesos, casi siempre es por la diferencia de tipo de cambio entre el día en que se le informó el monto y el día en que transfirió: el saldo en dólares es el que manda. Explicáselo así si pregunta, sin discutir, y pedile que transfiera la diferencia.
@@ -548,7 +549,7 @@ export async function POST(req) {
         const entregaTxt = e.confirmada && e.dia ? `Su entrega ya está coordinada (${e.dia}${e.franja ? `, ${e.franja}` : ""}${e.modalidad === "propio" ? ", envío a domicilio" : e.modalidad === "oficina" ? ", retiro por oficina" : ""}): recordásela.` : "Todavía no coordinó la entrega: invitalo a elegir día y franja (podés hacerlo vos con la tool coordinar).";
         text = acreditado.cierra
           ? `[PAGO ACREDITADO ✅ por el sistema: ${ars(acreditado.monto_ars)} (${usd(acreditado.usd)}) de la operación ${acreditado.op}. La carga queda PAGA, sin saldo.${acreditado.excedente > 0 ? ` Pagó de más ${usd(acreditado.excedente)}: decile que el equipo se lo devuelve o lo deja a favor.` : ""} Confirmale que quedó acreditado (monto en *negrita*). ${entregaTxt}]`
-          : `[PAGO PARCIAL acreditado por el sistema: ${ars(acreditado.monto_ars)} (${usd(acreditado.usd)} al TC de hoy ${acreditado.tc}) de la operación ${acreditado.op}. FALTA ${usd(acreditado.restante)} ≈ ${ars(acreditado.restante * acreditado.tc)}.${acreditado.restante <= Math.max(5, acreditado.saldo_antes * 0.06) ? " Es un saldo chico: seguramente por la diferencia de tipo de cambio entre el día en que se le informó el monto y el del pago — decíselo así." : ""} Decile con claridad que se acreditó ese pago y cuánto falta, y pedile que transfiera el resto y mande el comprobante. ${entregaTxt}]`;
+          : `[PAGO PARCIAL acreditado por el sistema: ${ars(acreditado.monto_ars)} (${usd(acreditado.usd)} al cambio del día — no le digas el valor del tipo de cambio) de la operación ${acreditado.op}. FALTA ${usd(acreditado.restante)} ≈ ${ars(acreditado.restante * acreditado.tc)}.${acreditado.restante <= Math.max(5, acreditado.saldo_antes * 0.06) ? " Es un saldo chico: seguramente por la diferencia de tipo de cambio entre el día en que se le informó el monto y el del pago — decíselo así." : ""} Decile con claridad que se acreditó ese pago y cuánto falta, y pedile que transfiera el resto y mande el comprobante. ${entregaTxt}]`;
       } else if (acreditado?.duplicado) {
         text = `[Ese comprobante YA estaba acreditado (misma referencia ${acreditado.ref}). Decile que ese pago ya está registrado y no hace falta reenviarlo.]`;
       } else if (lectura?.es_comprobante) {
