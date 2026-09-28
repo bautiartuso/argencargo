@@ -15825,12 +15825,14 @@ function MaritimePanel({token,allClients=[]}){
   // Esperando proveedor → En camino al depósito → En depósito → Contenedores → Historial.
   // Toda la lógica de arriba (ops, costos, contenedores, PDF) es la de siempre; esto es solo la vista.
   const [tabMt,setTabMtRaw]=useState(()=>{try{return localStorage.getItem("mt_tab")||"camino";}catch{return "camino";}});
-  const setTabMt=(k)=>{setTabMtRaw(k);setSelectedShipments(new Set());try{localStorage.setItem("mt_tab",k);}catch{}};
+  const setTabMt=(k)=>{setTabMtRaw(k);setSelectedShipments(new Set());setSoloSinValor(false);try{localStorage.setItem("mt_tab",k);}catch{}};
   const [qMt,setQMt]=useState("");
   const [menuMt,setMenuMt]=useState(null); // menú abierto: "pdf" | "cont" | "dep"
   const [subiendoFoto,setSubiendoFoto]=useState(null); // id de la carga que está subiendo foto
   const [fotoGrande,setFotoGrande]=useState(null); // {fotos,i}
   const [contAbiertosMt,setContAbiertosMt]=useState(new Set()); // contenedores desplegados (arrancan plegados)
+  const [soloSinValor,setSoloSinValor]=useState(false);
+  const [pegarEn,setPegarEn]=useState(null); // {id,kind}: dónde va una foto pegada con ⌘V
   useEffect(()=>{
     const act=whs.filter(w=>!w.archived);if(!act.length)return;
     const ok=(n)=>act.some(w=>w.name===n);
@@ -15848,6 +15850,7 @@ function MaritimePanel({token,allClients=[]}){
     if(s.container_id&&activosIds.has(s.container_id))return "contenedores";
     if(esPlaceholder(s))return "esperando";
     if(s.status==="proveedor")return "camino";
+    if(s.status==="en_deposito"&&s.llegada_marcada_por==="admin")return "camino"; // marcaste que llegó: falta el depósito
     return "deposito";
   };
   const depActivos=whs.filter(w=>!w.archived).sort((x,y)=>(Number(x.sort_order)||99)-(Number(y.sort_order)||99));
@@ -15876,22 +15879,37 @@ function MaritimePanel({token,allClients=[]}){
     load();
   };
   const okCorreccion=async(sh)=>{await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{tipo_corregido:false}});setShipments(p=>p.map(x=>x.id===sh.id?{...x,tipo_corregido:false}:x));};
-  const agregarFotos=async(sh,files)=>{
+  const colFoto=(kind)=>kind==="merc"?"fotos_mercaderia":"fotos";
+  const agregarFotos=async(sh,files,kind="bulto")=>{
     const lista=[...(files||[])].filter(f=>f.type?.startsWith("image/"));if(!lista.length)return;
-    setSubiendoFoto(sh.id);
+    setSubiendoFoto(`${sh.id}:${kind}`);
     const urls=[];for(const f of lista){const u=await subirFotoMaritima(token,f);if(u)urls.push(u);}
     setSubiendoFoto(null);
     if(!urls.length){toast("No se pudo subir la foto","error");return;}
-    const fotos=[...(sh.fotos||[]),...urls];
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{fotos}});
-    setShipments(p=>p.map(x=>x.id===sh.id?{...x,fotos}:x));toast(urls.length>1?`${urls.length} fotos subidas`:"Foto subida","success");
+    const col=colFoto(kind);
+    const actual=shipments.find(x=>x.id===sh.id)||sh;
+    const nuevas=[...(actual[col]||[]),...urls];
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{[col]:nuevas}});
+    setShipments(p=>p.map(x=>x.id===sh.id?{...x,[col]:nuevas}:x));toast(`${kind==="merc"?"Foto de la mercadería":"Foto del bulto"} subida`,"success");
   };
-  const quitarFoto=async(sh,url)=>{
+  const quitarFoto=async(sh,url,kind="bulto")=>{
     if(!await confirmDialog("¿Quitar esta foto?"))return;
-    const fotos=(sh.fotos||[]).filter(u=>u!==url);
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{fotos}});
-    setShipments(p=>p.map(x=>x.id===sh.id?{...x,fotos}:x));
+    const col=colFoto(kind);
+    const nuevas=(sh[col]||[]).filter(u=>u!==url);
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{[col]:nuevas}});
+    setShipments(p=>p.map(x=>x.id===sh.id?{...x,[col]:nuevas}:x));
   };
+  // ⌘V / Ctrl+V con una imagen copiada: va a la zona de fotos elegida (la última que tocaste).
+  useEffect(()=>{
+    const onPaste=(e)=>{
+      if(showNew||!pegarEn)return;
+      const files=[...(e.clipboardData?.files||[])].filter(f=>f.type?.startsWith("image/"));
+      if(!files.length)return;
+      const sh=shipments.find(x=>x.id===pegarEn.id);if(!sh)return;
+      e.preventDefault();agregarFotos(sh,files,pegarEn.kind);
+    };
+    window.addEventListener("paste",onPaste);return()=>window.removeEventListener("paste",onPaste);
+  },[pegarEn,showNew,shipments]);
   const copiarLinkDep=async(w)=>{
     if(!w?.share_token){toast("Este depósito no tiene link todavía","error");return;}
     const url=`${window.location.origin}/deposito/${w.share_token}`;
@@ -15927,7 +15945,8 @@ function MaritimePanel({token,allClients=[]}){
     const c=cliMap[sh.client_id];
     const cbm=cbmOf(sh.id),bul=bultosOf(sh.id),val=valorOf(sh.id);
     const isExp=expanded.has(sh.id),isSel=selectedShipments.has(sh.id);
-    const fotos=sh.fotos||[];
+    const fotos=sh.fotos||[],fotosM=sh.fotos_mercaderia||[];
+    const todasF=[...fotos.map(u=>({u,k:"Bulto"})),...fotosM.map(u=>({u,k:"Mercadería"}))];
     const toggleExp=()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;});
     const imp=verPlata?importeOfShip(sh,grupo):0,cost=verPlata?costOfShip(sh):0,gan=imp-cost;
     const fechaRef=etapa==="esperando"||etapa==="camino"?sh.created_at:sh.received_at;
@@ -15939,13 +15958,15 @@ function MaritimePanel({token,allClients=[]}){
     return <div key={sh.id} className="mt-v-fila" style={{background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"}}>
       <div className="mt-v-grid" style={{gridTemplateColumns:COLS,cursor:"pointer"}} onClick={toggleExp}>
         <div onClick={e=>e.stopPropagation()}>{etapa!=="esperando"&&<input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/>}</div>
-        <div onClick={e=>{e.stopPropagation();if(fotos.length)setFotoGrande({fotos,i:0});}}>
-          {fotos.length
-            ?<div style={{width:64,height:64,borderRadius:10,backgroundImage:`url(${fotos[0]})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${MT_BORDE}`,position:"relative",cursor:"zoom-in"}}>{fotos.length>1&&<span style={{position:"absolute",right:3,bottom:3,fontSize:9.5,fontWeight:800,padding:"1px 5px",borderRadius:999,background:"rgba(0,0,0,0.7)",color:"#fff"}}>+{fotos.length-1}</span>}</div>
-            :<label onClick={e=>e.stopPropagation()} title="Subir foto del proveedor" style={{width:64,height:64,borderRadius:10,border:"1px dashed rgba(255,255,255,0.18)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:"rgba(255,255,255,0.35)",fontSize:10,cursor:"pointer"}}>
-              <span style={{fontSize:17}}>{subiendoFoto===sh.id?"⏳":"📷"}</span>{subiendoFoto===sh.id?"":"Foto"}
-              <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{agregarFotos(sh,e.target.files);e.target.value="";}}/>
-            </label>}
+        <div onClick={e=>{e.stopPropagation();if(todasF.length)setFotoGrande({fotos:todasF,i:0});else{setPegarEn({id:sh.id,kind:"bulto"});setExpanded(prev=>new Set(prev).add(sh.id));}}}>
+          {todasF.length
+            ?<div style={{width:64,height:64,borderRadius:10,backgroundImage:`url(${todasF[0].u})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${MT_BORDE}`,position:"relative",cursor:"zoom-in"}}>
+              {fotos.length>0&&fotosM.length>0&&<span style={{position:"absolute",left:3,bottom:3,width:24,height:24,borderRadius:6,backgroundImage:`url(${fotosM[0]})`,backgroundSize:"cover",backgroundPosition:"center",border:"1.5px solid #fff"}}/>}
+              {todasF.length>1&&<span style={{position:"absolute",right:3,top:3,fontSize:9.5,fontWeight:800,padding:"1px 5px",borderRadius:999,background:"rgba(0,0,0,0.7)",color:"#fff"}}>{todasF.length}</span>}
+            </div>
+            :<div title="Subir o pegar fotos" style={{width:64,height:64,borderRadius:10,border:"1px dashed rgba(255,255,255,0.18)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:"rgba(255,255,255,0.35)",fontSize:10,cursor:"pointer"}}>
+              <span style={{fontSize:17}}>📷</span>Fotos
+            </div>}
         </div>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
@@ -15959,7 +15980,7 @@ function MaritimePanel({token,allClients=[]}){
           <div style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:esPlaceholder(sh)?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.62)",marginTop:3,wordBreak:"break-all"}}>{esPlaceholder(sh)?"sin tracking todavía":(sh.tracking_number||"—")}</div>
           <div style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginTop:4,lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
         </div>
-        <div className="mt-v-num" style={{color:val>0?"#4ade80":"rgba(255,255,255,0.3)"}}>{val>0?fusd(val):"—"}</div>
+        <div className="mt-v-num" style={{color:"#4ade80"}}>{val>0?fusd(val):<span title="Esta carga no tiene valor de mercadería cargado" style={pill({fontSize:10.5,padding:"2px 8px",color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor</span>}</div>
         <div className="mt-v-num">{bul||"—"}</div>
         <div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>
         <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
@@ -15975,10 +15996,15 @@ function MaritimePanel({token,allClients=[]}){
             <button onClick={()=>llegoTrackingLegacy(sh)} title="Cargar el tracking real: pasa a En camino y el depósito la ve" style={btnMini("#22c55e")}>✓ Tracking</button>
             <button onClick={()=>reclamarLegacy(sh)} title="Reclamar al cliente por WhatsApp" style={btnMini("#a78bfa")}>📲</button>
           </>}
-          {etapa==="camino"&&<>
-            <button onClick={()=>advanceShipment(sh,"en_deposito")} title="Llegó al depósito (hoy)" style={btnMini("#22c55e")}>✓ Llegó</button>
-            <button onClick={()=>volverAEsperando(sh)} title="Vuelve a Esperando proveedor" style={btnGhost}>↶</button>
-          </>}
+          {etapa==="camino"&&(sh.status==="en_deposito"
+            ?<>
+              <span style={{fontSize:11,fontWeight:700,color:"#93c5fd",textAlign:"right",lineHeight:1.3}}>✓ Marcaste {dd(sh.received_at)}<br/><span style={{color:"#fbbf24"}}>falta el depósito</span></span>
+              <button onClick={()=>advanceShipment(sh,"proveedor")} title="Deshacer: todavía no llegó" style={btnGhost}>↶</button>
+            </>
+            :<>
+              <button onClick={()=>advanceShipment(sh,"en_deposito")} title="Marcar que llegó hoy (el depósito lo confirma)" style={btnMini("#22c55e")}>✓ Llegó</button>
+              <button onClick={()=>volverAEsperando(sh)} title="Vuelve a Esperando proveedor" style={btnGhost}>↶</button>
+            </>)}
           {etapa==="deposito"&&<button onClick={()=>advanceShipment(sh,"proveedor")} title="Volver a En camino al depósito" style={btnGhost}>↶ En camino</button>}
           {etapa==="contenedores"&&<button onClick={()=>quitarDeContenedor(sh)} title="Bajar del contenedor: vuelve a En depósito" style={btnGhost}>↶ Depósito</button>}
           <button onClick={()=>{setEditingId(sh.id);setShowNew(true);}} title="Editar" style={btnMini("#60a5fa",{padding:"5px 9px"})}>✎</button>
@@ -15991,17 +16017,19 @@ function MaritimePanel({token,allClients=[]}){
   const detalleDe=(sh,imp,fotos,bul,shPkgs,shItems)=>{
     return <div style={{padding:"4px 18px 18px 120px",display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.3fr)",gap:18}} className="mt-v-det">
         <div>
-          <p className="mt-v-det-t">Fotos del proveedor</p>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {fotos.map((u,i)=><div key={u} style={{position:"relative"}}>
-              <div onClick={()=>setFotoGrande({fotos,i})} style={{width:84,height:84,borderRadius:10,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",cursor:"zoom-in",border:`1px solid ${MT_BORDE}`}}/>
-              <button onClick={()=>quitarFoto(sh,u)} title="Quitar foto" style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",lineHeight:"20px",padding:0}}>✕</button>
-            </div>)}
-            <label style={{width:84,height:84,borderRadius:10,border:"1px dashed rgba(184,149,106,0.45)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-              <span style={{fontSize:18}}>{subiendoFoto===sh.id?"⏳":"＋"}</span>{subiendoFoto===sh.id?"Subiendo":"Agregar"}
-              <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{agregarFotos(sh,e.target.files);e.target.value="";}}/>
-            </label>
-          </div>
+          {[["bulto","Foto del bulto",sh.fotos||[]],["merc","Foto de la mercadería",sh.fotos_mercaderia||[]]].map(([kind,tit,lst])=>{const activa=pegarEn?.id===sh.id&&pegarEn?.kind===kind;const sub=subiendoFoto===`${sh.id}:${kind}`;const todas=[...(sh.fotos||[]).map(u=>({u,k:"Bulto"})),...(sh.fotos_mercaderia||[]).map(u=>({u,k:"Mercadería"}))];return <div key={kind} onClick={()=>setPegarEn({id:sh.id,kind})} style={{marginBottom:10,padding:"8px 10px",borderRadius:10,border:`1.5px ${activa?"solid":"dashed"} ${activa?"rgba(184,149,106,0.7)":"rgba(255,255,255,0.1)"}`,background:activa?"rgba(184,149,106,0.07)":"transparent",cursor:"pointer"}}>
+            <p className="mt-v-det-t" style={{display:"flex",justifyContent:"space-between",gap:6}}><span>{tit}</span><span style={{color:activa?IC:"rgba(255,255,255,0.35)",textTransform:"none",letterSpacing:0,fontWeight:700}}>{activa?"⌘V para pegar":"tocá y pegá con ⌘V"}</span></p>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {lst.map(u=><div key={u} style={{position:"relative"}}>
+                <div onClick={e=>{e.stopPropagation();setFotoGrande({fotos:todas,i:Math.max(0,todas.findIndex(x=>x.u===u))});}} style={{width:74,height:74,borderRadius:9,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",cursor:"zoom-in",border:`1px solid ${MT_BORDE}`}}/>
+                <button onClick={e=>{e.stopPropagation();quitarFoto(sh,u,kind);}} title="Quitar foto" style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",lineHeight:"20px",padding:0}}>✕</button>
+              </div>)}
+              <label onClick={e=>e.stopPropagation()} style={{width:74,height:74,borderRadius:9,border:"1px dashed rgba(184,149,106,0.45)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:10.5,fontWeight:700,cursor:"pointer"}}>
+                <span style={{fontSize:17}}>{sub?"⏳":"＋"}</span>{sub?"Subiendo":"Subir"}
+                <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{agregarFotos(sh,e.target.files,kind);e.target.value="";}}/>
+              </label>
+            </div>
+          </div>;})}
         </div>
         <div>
           <p className="mt-v-det-t">Bultos ({bul})</p>
@@ -16040,31 +16068,31 @@ function MaritimePanel({token,allClients=[]}){
 
   const TABS=[
     {k:"esperando",ic:"⏳",l:"Esperando proveedor",c:"#a78bfa",lista:etapas.esperando,h:"Pedidos sin tracking. El depósito todavía no los ve."},
-    {k:"camino",ic:"🚚",l:"En camino al depósito",c:"#93c5fd",lista:etapas.camino,h:"Con tracking. El depósito los ve y marca el día que llegan."},
+    {k:"camino",ic:"🕓",l:"Esperando confirmación",c:"#93c5fd",lista:etapas.camino,h:"Con tracking, esperando que el depósito confirme que llegó. Si vos marcás que llegó, queda acá hasta que el depósito lo confirme."},
     {k:"deposito",ic:"📦",l:"En depósito",c:"#4ade80",lista:etapas.deposito,h:"Ya llegaron. Tildalas para subirlas a un contenedor o crear la operación."},
     {k:"contenedores",ic:"🚢",l:"Contenedores",c:IC,lista:etapas.contenedores,h:"Contenedores en viaje a Buenos Aires."},
     {k:"historial",ic:"⚓",l:"Historial",c:"rgba(255,255,255,0.6)",lista:null,h:"Contenedores arribados."},
   ];
   const tabAct=TABS.find(x=>x.k===tabMt)||TABS[1];
-  const listaTab=tabAct.lista?tabAct.lista.filter(coincide):null;
+  const sinValorTab=tabAct.lista?tabAct.lista.filter(s=>!(valorOf(s.id)>0)).length:0;
+  const listaTab=tabAct.lista?tabAct.lista.filter(coincide).filter(s=>!soloSinValor||!(valorOf(s.id)>0)):null;
 
   return <div>
     <style>{`.mt-v-card{container-type:inline-size}.mt-v-grid{display:grid;gap:10px;align-items:center;padding:12px 16px}.mt-v-head{padding:9px 18px;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.07);font-size:10px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.07em}.mt-v-fila{border-bottom:1px solid rgba(255,255,255,0.05);transition:background .12s}.mt-v-fila:hover{background:rgba(255,255,255,0.02)}.mt-v-num{font-size:13px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}.mt-v-det-t{margin:0 0 7px;font-size:10px;font-weight:800;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em}.mt-v-tab{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025);cursor:pointer;font-family:inherit;text-align:left;color:#fff;transition:all .15s;min-width:0}.mt-v-tab:hover{border-color:rgba(184,149,106,0.4)}@container (max-width:1060px){.mt-v-head{display:none}.mt-v-grid{grid-template-columns:26px 64px minmax(0,1fr) minmax(0,1fr) !important}.mt-v-det{padding-left:16px !important;grid-template-columns:1fr !important}}`}</style>
 
     {/* Barra: depósitos + acciones */}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",flex:"1 1 auto",minWidth:0}}>
         <button onClick={()=>{setEditingId(null);setShowNew(true);}} style={{padding:"11px 20px",fontSize:14,fontWeight:900,borderRadius:12,border:"none",cursor:"pointer",fontFamily:"inherit",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:"0 8px 22px rgba(184,149,106,0.3)",whiteSpace:"nowrap"}}>＋ Nuevo pedido</button>
         <span style={{width:1,alignSelf:"stretch",background:"rgba(255,255,255,0.1)",margin:"0 4px"}}/>
-        {depActivos.map(w=>({name:w.name,label:w.name,w})).map(d=>{const on=warehouseFilter===d.name;const n=d.name==="all"?shipments.filter(s=>etapaDe(s)).length:activasPorDep(d.name);return <button key={d.name} onClick={()=>elegirDep(d.name)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"transparent":"rgba(255,255,255,0.1)"}`,background:on?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:on?"#0A1628":"rgba(255,255,255,0.7)",display:"inline-flex",alignItems:"center",gap:6}}>
+        {depActivos.map(w=>{const pr=String(w.name).split(/\s+-\s+/).filter(Boolean);return {name:w.name,label:pr.length>2?pr.slice(0,2).join(" · "):pr.join(" · "),w};}).map(d=>{const on=warehouseFilter===d.name;const n=d.name==="all"?shipments.filter(s=>etapaDe(s)).length:activasPorDep(d.name);return <button key={d.name} onClick={()=>elegirDep(d.name)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"transparent":"rgba(255,255,255,0.1)"}`,background:on?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:on?"#0A1628":"rgba(255,255,255,0.7)",display:"inline-flex",alignItems:"center",gap:6}}>
           {d.w&&<span>{d.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>}{d.label}<span style={{fontSize:10.5,fontWeight:800,padding:"0 6px",borderRadius:999,background:on?"rgba(10,22,40,0.15)":"rgba(255,255,255,0.08)"}}>{n}</span>
         </button>;})}
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",position:"relative"}}>
-        {whSel&&<button onClick={()=>copiarLinkDep(whSel)} title="Copiar el link de la planilla que ve el depósito" style={btnMini("#60a5fa",{padding:"8px 13px",fontSize:12})}>🔗 Link del depósito</button>}
-        {whSel&&<a href={whSel.share_token?`/deposito/${whSel.share_token}`:undefined} target="_blank" rel="noreferrer" title="Ver la planilla como la ve el depósito" style={{...btnGhost,padding:"8px 12px",fontSize:12,textDecoration:"none"}}>👁 Ver como depósito</a>}
-        {whSel&&<button onClick={()=>setMenuMt(menuMt==="pdf"?null:"pdf")} style={{...btnGhost,padding:"8px 12px",fontSize:12}}>📄 PDF ▾</button>}
-        <button onClick={()=>setMenuMt(menuMt==="dep"?null:"dep")} style={{...btnGhost,padding:"8px 12px",fontSize:12}}>⚙ Depósitos ▾</button>
+      <div style={{display:"flex",gap:6,alignItems:"center",position:"relative",marginLeft:"auto"}}>
+        {whSel&&<button onClick={()=>copiarLinkDep(whSel)} title={`Copiar el link de la planilla de ${whSel.name}`} style={btnMini("#60a5fa",{padding:"7px 11px",fontSize:12})}>🔗 Link</button>}
+        {whSel&&<button onClick={()=>setMenuMt(menuMt==="pdf"?null:"pdf")} title="PDF del depósito" style={{...btnGhost,padding:"7px 10px",fontSize:12}}>📄 ▾</button>}
+        <button onClick={()=>setMenuMt(menuMt==="dep"?null:"dep")} title="Depósitos: editar, crear, eliminar" style={{...btnGhost,padding:"7px 10px",fontSize:12}}>⚙ ▾</button>
         {menuMt&&<div onClick={()=>setMenuMt(null)} style={{position:"fixed",inset:0,zIndex:40}}/>}
         {menuMt==="pdf"&&whSel&&<div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:41,minWidth:230,background:"#0F1A2D",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,padding:6,boxShadow:"0 18px 50px rgba(0,0,0,0.55)"}}>
           {[[true,"es","Con valores · Español"],[true,"zh","Con valores · 中文"],[false,"es","Sin valores · Español"],[false,"zh","Sin valores · 中文"]].map(([v,l,txt])=><button key={txt} onClick={()=>{setMenuMt(null);downloadPdf(whSel.name,whSel.origin||"china",l,v);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",fontSize:12.5,border:"none",borderRadius:8,background:"transparent",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>{txt}</button>)}
@@ -16094,6 +16122,7 @@ function MaritimePanel({token,allClients=[]}){
 
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
       <p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:0,flex:1,minWidth:220}}>{tabAct.h}</p>
+      {sinValorTab>0&&<button onClick={()=>setSoloSinValor(v=>!v)} title="Mostrar solo las cargas sin valor de mercadería" style={{padding:"8px 13px",fontSize:12,fontWeight:800,borderRadius:10,cursor:"pointer",fontFamily:"inherit",border:"1px solid rgba(239,68,68,0.6)",background:soloSinValor?"#ef4444":"rgba(239,68,68,0.14)",color:soloSinValor?"#fff":"#fecaca"}}>⚠ {sinValorTab} sin valor cargado{soloSinValor?" · ver todas":""}</button>}
       {tabMt!=="historial"&&<input value={qMt} onChange={e=>setQMt(e.target.value)} placeholder="Buscar cliente, tracking o mercadería" style={{width:300,maxWidth:"100%",padding:"9px 13px",fontSize:13,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>}
       {tabMt==="contenedores"&&<button onClick={()=>setEditingContainer({warehouse:whSel?.name})} style={btnMini("#60a5fa",{padding:"8px 13px",fontSize:12})}>+ 🚢 Nuevo contenedor</button>}
     </div>
@@ -16175,7 +16204,10 @@ function MaritimePanel({token,allClients=[]}){
               <span style={{display:"block",fontSize:14.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{c?.client_code||"—"}</span>
               <span style={{display:"block",fontSize:12.5,color:"rgba(255,255,255,0.75)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?`${c.first_name||""} ${c.last_name||""}`.trim():(sh.client_name_snapshot||"Sin identificar")}</span>
             </div>
-            <div style={{fontSize:13,color:"#fff",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:13,color:"#fff",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
+              {!(valorOf(sh.id)>0)&&<span style={pill({fontSize:10,padding:"1px 7px",marginTop:4,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor cargado</span>}
+            </div>
             <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</div>
             <div className="mt-v-num">{bul||"—"}</div>
             <div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>
@@ -16210,6 +16242,7 @@ function MaritimePanel({token,allClients=[]}){
               <span style={{width:42,height:42,borderRadius:12,background:"rgba(184,149,106,0.16)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🚢</span>
               <div style={{minWidth:0}}>
                 <p style={{margin:0,fontSize:17,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".02em"}}>{c.code}</p>
+                {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:10.5,padding:"1px 8px",marginTop:3,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
                 <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.shipping_line||"Sin naviera"}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
               </div>
             </div>
@@ -16275,7 +16308,8 @@ function MaritimePanel({token,allClients=[]}){
 
     {/* Foto en grande */}
     {fotoGrande&&<div onClick={()=>setFotoGrande(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(5,10,20,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <img src={fotoGrande.fotos[fotoGrande.i]} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"88vh",borderRadius:12}}/>
+      <img src={fotoGrande.fotos[fotoGrande.i].u||fotoGrande.fotos[fotoGrande.i]} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"84vh",borderRadius:12}}/>
+      {fotoGrande.fotos[fotoGrande.i].k&&<span style={{position:"absolute",top:20,left:"50%",transform:"translateX(-50%)",padding:"6px 14px",borderRadius:999,background:"#fff",color:"#0A1628",fontSize:13.5,fontWeight:800}}>{fotoGrande.fotos[fotoGrande.i].k}</span>}
       {fotoGrande.fotos.length>1&&<>
         <button onClick={e=>{e.stopPropagation();setFotoGrande(f=>({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));}} style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.12)",color:"#fff",fontSize:26,cursor:"pointer"}}>‹</button>
         <button onClick={e=>{e.stopPropagation();setFotoGrande(f=>({...f,i:(f.i+1)%f.fotos.length}));}} style={{position:"absolute",right:18,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.12)",color:"#fff",fontSize:26,cursor:"pointer"}}>›</button>
@@ -18327,8 +18361,15 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   // recibirla. Fotos: las del proveedor, que ve el depósito en su planilla (28/09/2026).
   const [tipo,setTipo]=useState(editing?.mercaderia_tipo||"");
   const [fotos,setFotos]=useState(Array.isArray(editing?.fotos)?editing.fotos:[]);
+  const [fotosM,setFotosM]=useState(Array.isArray(editing?.fotos_mercaderia)?editing.fotos_mercaderia:[]);
+  const [zonaFoto,setZonaFoto]=useState("bulto"); // dónde cae una foto pegada con ⌘V
   const [subiendo,setSubiendo]=useState(false);
-  const subirFotos=async(files)=>{const l=[...(files||[])].filter(x=>x.type?.startsWith("image/"));if(!l.length)return;setSubiendo(true);const urls=[];for(const x of l){const u=await subirFotoMaritima(token,x);if(u)urls.push(u);}setSubiendo(false);if(!urls.length){toast("No se pudo subir la foto","error");return;}setFotos(p=>[...p,...urls]);};
+  const subirFotos=async(files,kind)=>{const l=[...(files||[])].filter(x=>x.type?.startsWith("image/"));if(!l.length)return;setSubiendo(true);const urls=[];for(const x of l){const u=await subirFotoMaritima(token,x);if(u)urls.push(u);}setSubiendo(false);if(!urls.length){toast("No se pudo subir la foto","error");return;}(kind==="merc"?setFotosM:setFotos)(p=>[...p,...urls]);toast(kind==="merc"?"Foto de la mercadería agregada":"Foto del bulto agregada","success");};
+  // ⌘V / Ctrl+V con una imagen copiada: se agrega a la zona de fotos elegida.
+  useEffect(()=>{
+    const onPaste=(e)=>{const files=[...(e.clipboardData?.files||[])].filter(x=>x.type?.startsWith("image/"));if(!files.length)return;e.preventDefault();subirFotos(files,zonaFoto);};
+    window.addEventListener("paste",onPaste);return()=>window.removeEventListener("paste",onPaste);
+  },[zonaFoto]);
   // Mientras está "esperando al proveedor" no puede estar recibida ni en contenedor; si ya está
   // subida u operada el toggle no se ofrece (evita bajarla del contenedor sin querer desde acá).
   const puedeAwaiting=!editing?.container_id&&!editing?.operation_id;
@@ -18405,6 +18446,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       notes:notes.trim()||null,
       mercaderia_tipo:tipo||null,
       fotos,
+      fotos_mercaderia:fotosM,
       updated_at:new Date().toISOString(),
     };
     // Si cambia el tipo, la confirmación que había hecho el depósito ya no vale.
@@ -18579,18 +18621,26 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       </div>
     </div>
 
-    {/* Fotos del proveedor */}
+    {/* Fotos: del bulto y de la mercadería. Se suben o se pegan con ⌘V en la zona elegida. */}
     {!awaiting&&<div style={SECC}>
-      {secT(np(),"Fotos del proveedor","Las ve el depósito en su planilla")}
-      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        {fotos.map(u=><div key={u} style={{position:"relative"}}>
-          <div style={{width:92,height:92,borderRadius:10,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",border:"1px solid rgba(255,255,255,0.1)"}}/>
-          <button type="button" onClick={()=>setFotos(p=>p.filter(x=>x!==u))} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",padding:0,lineHeight:"22px"}}>✕</button>
-        </div>)}
-        <label style={{width:92,height:92,borderRadius:10,border:"1.5px dashed rgba(184,149,106,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
-          <span style={{fontSize:20}}>{subiendo?"⏳":"📷"}</span>{subiendo?"Subiendo":"Agregar fotos"}
-          <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{subirFotos(e.target.files);e.target.value="";}}/>
-        </label>
+      {secT(np(),"Fotos","Tocá una zona y pegá con ⌘V, o subilas. Ninguna es obligatoria.")}
+      <div className="mt-mf-2col" style={{gap:12}}>
+        {[["bulto","📦 Foto del bulto",fotos,setFotos],["merc","🧾 Foto de la mercadería",fotosM,setFotosM]].map(([kind,tit,lst,setLst])=>{const act=zonaFoto===kind;return <div key={kind} onClick={()=>setZonaFoto(kind)} style={{padding:"12px",borderRadius:12,cursor:"pointer",border:`1.5px ${act?"solid":"dashed"} ${act?"rgba(184,149,106,0.75)":"rgba(255,255,255,0.14)"}`,background:act?"rgba(184,149,106,0.07)":"transparent"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{tit}</span>
+            <span style={{fontSize:11,fontWeight:700,color:act?IC:"rgba(255,255,255,0.4)"}}>{act?"⌘V pega acá":"tocá para pegar acá"}</span>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {lst.map(u=><div key={u} style={{position:"relative"}}>
+              <div style={{width:84,height:84,borderRadius:10,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",border:"1px solid rgba(255,255,255,0.1)"}}/>
+              <button type="button" onClick={e=>{e.stopPropagation();setLst(p=>p.filter(x=>x!==u));}} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",padding:0,lineHeight:"22px"}}>✕</button>
+            </div>)}
+            <label onClick={e=>{e.stopPropagation();setZonaFoto(kind);}} style={{width:84,height:84,borderRadius:10,border:"1.5px dashed rgba(184,149,106,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              <span style={{fontSize:19}}>{subiendo&&act?"⏳":"＋"}</span>{subiendo&&act?"Subiendo":"Subir"}
+              <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{subirFotos(e.target.files,kind);e.target.value="";}}/>
+            </label>
+          </div>
+        </div>;})}
       </div>
     </div>}
 

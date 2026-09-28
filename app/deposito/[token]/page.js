@@ -24,8 +24,8 @@ const AMBER_BG = "#ffedd5";
 const T = {
   es: {
     sub: "Planilla del depósito",
-    camino: "En camino al depósito", deposito: "En depósito", contenedores: "Contenedores",
-    camino_hint: "Mercadería que el proveedor ya despachó. Cuando llegue, tocá Llegó.",
+    camino: "Esperando confirmación", deposito: "En depósito", contenedores: "Contenedores",
+    camino_hint: "Mercadería que ya viene al depósito. Cuando la tengas, confirmá la llegada.",
     deposito_hint: "Mercadería que ya está en el depósito, lista para cargar en un contenedor.",
     cont_hint: "Contenedores que ya salieron hacia Buenos Aires. Tocá uno para ver su detalle.",
     buscar: "Buscar cliente, tracking o mercadería", todas: "Todas",
@@ -46,11 +46,12 @@ const T = {
     error: "No se pudo guardar. Probá de nuevo.", guardado: "Guardado",
     tarifas: "Tarifas", por_m3: "por m³", desc_regla: (p, m) => `${p}% de descuento si la carga supera ${m} m³`,
     fragil: "Frágil", reenvio: "Reenvío", contenedor: "Contenedor", idioma: "Idioma",
+    confirmar_btn: "Confirmar llegada", marco_ac: (d) => `Argencargo marcó que llegó el ${d}`, foto_bulto: "Bulto", foto_merc: "Mercadería", incl_desc: (p) => `Incluye ${p}% de descuento`,
   },
   zh: {
     sub: "仓库货物表",
-    camino: "运往仓库途中", deposito: "已入仓", contenedores: "集装箱",
-    camino_hint: "供应商已发货的货物。到货后请点击「已到货」。",
+    camino: "待确认到货", deposito: "已入仓", contenedores: "集装箱",
+    camino_hint: "正在送往仓库的货物。收到后请确认到货。",
     deposito_hint: "已在仓库的货物，等待装柜。",
     cont_hint: "已开往布宜诺斯艾利斯的集装箱。点击查看明细。",
     buscar: "搜索客户、快递单号或货物", todas: "全部",
@@ -71,6 +72,7 @@ const T = {
     error: "保存失败，请重试。", guardado: "已保存",
     tarifas: "费率", por_m3: "每立方", desc_regla: (p, m) => `单票超过 ${m} 立方优惠 ${p}%`,
     fragil: "易碎", reenvio: "转运", contenedor: "集装箱", idioma: "语言",
+    confirmar_btn: "确认到货", marco_ac: (d) => `Argencargo 标记 ${d} 已到货`, foto_bulto: "外箱", foto_merc: "货物", incl_desc: (p) => `已含 ${p}% 优惠`,
   },
 };
 
@@ -185,15 +187,21 @@ export default function DepositoPage({ params }) {
     return <button className={`dp-tipo ${cls}`} onClick={() => setTipoModal(c)}>{c.tipo === "blanca" ? "◻" : c.tipo === "negra" ? "◼" : "＋"} {tipoTxt(c.tipo)}</button>;
   };
 
+  const fotosDe = (c) => [...c.fotos.map((u) => ({ u, k: t.foto_bulto })), ...(c.fotos_merc || []).map((u) => ({ u, k: t.foto_merc }))];
   const fila = (c, etapa) => {
     const abierto = abiertos.has(c.id);
+    const fts = fotosDe(c);
+    const inset = c.fotos.length > 0 && (c.fotos_merc || []).length > 0 ? c.fotos_merc[0] : null;
     const toggle = () => setAbiertos((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; });
     const costo = c.costo || {};
     return <div key={c.id} className={`dp-fila${abierto ? " dp-abierta" : ""}`}>
       <div className="dp-grid">
-        <div className="dp-c-foto" onClick={() => { if (c.fotos.length) setFoto({ fotos: c.fotos, i: 0 }); }}>
-          {c.fotos.length
-            ? <div className="dp-foto" style={{ backgroundImage: `url(${c.fotos[0]})` }}>{c.fotos.length > 1 && <span className="dp-foto-n">+{c.fotos.length - 1}</span>}</div>
+        <div className="dp-c-foto" onClick={() => { if (fts.length) setFoto({ fotos: fts, i: 0 }); }}>
+          {fts.length
+            ? <div className="dp-foto" style={{ backgroundImage: `url(${fts[0].u})` }}>
+                {inset && <span className="dp-foto-inset" style={{ backgroundImage: `url(${inset})` }} />}
+                {fts.length > 1 && <span className="dp-foto-n">{fts.length}</span>}
+              </div>
             : <div className="dp-foto dp-foto-vacia"><span style={{ fontSize: 20 }}>📦</span><span style={{ fontSize: 10.5 }}>{t.sin_foto}</span></div>}
         </div>
         <div className="dp-c-rot">
@@ -220,7 +228,12 @@ export default function DepositoPage({ params }) {
             : <small style={{ color: SUB }}>{t.tocar_confirmar}</small>)}
         </div>
         <div className="dp-c-acc">
-          {etapa === "camino" && <button className="dp-btn-llego" onClick={() => setLlegada(c)}>✓ {t.llego}</button>}
+          {etapa === "camino" && (c.marcado_argencargo
+            ? <div className="dp-llego-ok">
+                <small style={{ fontSize: 11.5, color: SUB, textAlign: "right" }}>{t.marco_ac(ddmm(c.marcado_argencargo))}</small>
+                <button className="dp-btn-llego" onClick={() => setLlegada(c)}>✓ {t.confirmar_btn}</button>
+              </div>
+            : <button className="dp-btn-llego" onClick={() => setLlegada(c)}>✓ {t.llego}</button>)}
           {etapa === "deposito" && <div className="dp-llego-ok">
             <span className="dp-est" style={{ color: GREEN_TX, background: GREEN_BG }}>✓ {t.llego_el} {ddmm(c.llego)}</span>
             {c.llego_por_deposito && <button className="dp-link" onClick={() => setDeshacerQ(c)}>{t.deshacer}</button>}
@@ -347,7 +360,7 @@ export default function DepositoPage({ params }) {
               <div className="dp-cont-stats">
                 <span className="dp-cont-dato"><small>{t.bultos}</small><b>{fmtN(s.bultos)}</b></span>
                 <span className="dp-cont-dato"><small>{t.cbm}</small><b>{fmtM3(s.cbm)}</b></span>
-                <span className="dp-cont-costo"><small>{t.costo_cont}</small><b>{fmtUsd(s.costo)}</b></span>
+                <span className="dp-cont-costo"><small>{t.costo_cont}</small><b>{fmtUsd(s.costo)}</b>{todas.some((c) => c.costo?.descuento > 0) && <small style={{ textTransform: "none", letterSpacing: 0 }}>{t.incl_desc(dep.descuento_pct)}</small>}</span>
                 <span className="dp-chev">{abierto ? "▴" : "▾"}</span>
               </div>
             </div>
@@ -383,7 +396,8 @@ export default function DepositoPage({ params }) {
     </Capa>}
 
     {foto && <div onClick={() => setFoto(null)} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(10,22,40,0.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <img src={foto.fotos[foto.i]} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "86vh", borderRadius: 12, boxShadow: "0 30px 80px rgba(0,0,0,0.5)" }} />
+      <img src={foto.fotos[foto.i].u} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "82vh", borderRadius: 12, boxShadow: "0 30px 80px rgba(0,0,0,0.5)" }} />
+      <span style={{ position: "absolute", top: 22, left: "50%", transform: "translateX(-50%)", padding: "6px 14px", borderRadius: 999, background: "#fff", color: INK, fontSize: 14, fontWeight: 800 }}>{foto.fotos[foto.i].k}</span>
       <button onClick={() => setFoto(null)} aria-label="cerrar" style={{ position: "absolute", top: 18, right: 18, width: 42, height: 42, borderRadius: 999, border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 20, cursor: "pointer" }}>✕</button>
       {foto.fotos.length > 1 && <>
         <button onClick={(e) => { e.stopPropagation(); setFoto((f) => ({ ...f, i: (f.i - 1 + f.fotos.length) % f.fotos.length })); }} style={flecha("left")}>‹</button>
@@ -429,19 +443,21 @@ function EleccionTipo({ t, valor, onChange }) {
 
 function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCancel, onOk }) {
   const hoy = hoyLocal();
-  const dias = Array.from({ length: 7 }, (_, i) => menosDias(hoy, i));
-  const [fecha, setFecha] = useState(hoy);
+  const base = Array.from({ length: 7 }, (_, i) => menosDias(hoy, i));
+  const marcada = c.marcado_argencargo ? String(c.marcado_argencargo).slice(0, 10) : null;
+  const dias = marcada && !base.includes(marcada) ? [...base, marcada] : base;
+  const [fecha, setFecha] = useState(marcada || hoy);
   const [tipo, setTipo] = useState(c.tipo || null);
   const [falta, setFalta] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const rate = tipo === "blanca" ? dep.tarifa_blanca : tipo === "negra" ? dep.tarifa_negra : 0;
   const bruto = c.cbm * rate;
   const desc = tipo && dep.descuento_pct > 0 && c.cbm > dep.descuento_min_cbm ? bruto * dep.descuento_pct / 100 : 0;
-  const nombreDia = (iso, i) => i === 0 ? t.hoy : i === 1 ? t.ayer : new Date(iso + "T12:00:00").toLocaleDateString(lang === "zh" ? "zh-CN" : "es-AR", { weekday: "short" });
+  const nombreDia = (iso, i) => iso === hoy ? t.hoy : iso === menosDias(hoy, 1) ? t.ayer : new Date(iso + "T12:00:00").toLocaleDateString(lang === "zh" ? "zh-CN" : "es-AR", { weekday: "short" });
   const confirmar = async () => { if (!tipo) { setFalta(true); return; } setEnviando(true); await onOk(fecha, tipo); setEnviando(false); };
   return <Capa onClose={onCancel}>
     <div style={{ padding: "18px 20px", background: `linear-gradient(135deg, ${NAVY}, ${NAVY_2})`, color: "#fff", display: "flex", gap: 14, alignItems: "center" }}>
-      {c.fotos[0] ? <div style={{ width: 64, height: 64, borderRadius: 12, backgroundImage: `url(${c.fotos[0]})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)" }} /> : <div style={{ width: 64, height: 64, borderRadius: 12, background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>📦</div>}
+      {(c.fotos[0] || (c.fotos_merc || [])[0]) ? <div style={{ width: 64, height: 64, borderRadius: 12, backgroundImage: `url(${c.fotos[0] || c.fotos_merc[0]})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)" }} /> : <div style={{ width: 64, height: 64, borderRadius: 12, background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>📦</div>}
       <div style={{ minWidth: 0 }}>
         <p style={{ margin: 0, fontSize: 12, color: GOLD_B, fontWeight: 700, letterSpacing: "0.04em" }}>{t.confirmar_llegada}</p>
         <p style={{ margin: "3px 0 0", fontSize: 17, fontWeight: 800 }}>{rotulo ? <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginRight: 6 }}>{rotulo}</span> : null}{c.cliente || "—"}</p>
@@ -524,6 +540,7 @@ const CSS = `
 .dp-abierta{background:#fbfaf6}
 .dp-foto{width:88px;height:88px;border-radius:12px;background-size:cover;background-position:center;background-color:#efeae0;position:relative;border:1px solid ${LINE};cursor:zoom-in}
 .dp-foto-vacia{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:${INK};cursor:default}
+.dp-foto-inset{position:absolute;left:5px;bottom:5px;width:34px;height:34px;border-radius:8px;background-size:cover;background-position:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .dp-foto-n{position:absolute;right:5px;bottom:5px;background:rgba(10,22,40,.85);color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px}
 .dp-c-rot{display:flex;flex-direction:column;min-width:0}
 .dp-rot-pre{font-size:10.5px;font-weight:800;color:${INK};letter-spacing:.05em}

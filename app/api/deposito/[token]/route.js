@@ -7,7 +7,7 @@
 // Lo que ve el depósito: código de cliente, tracking, mercadería, valor, bultos, m³, tipo, fotos y
 // lo que cobra ese depósito. Nunca nombres de clientes, tarifas de Argencargo ni ganancias.
 
-import { costoDeposito, esperandoProveedor } from "../../../../lib/deposito";
+import { costoDeposito, esperandoProveedor, llegadaSinConfirmar } from "../../../../lib/deposito";
 import { limitar } from "../../../../lib/ratelimit";
 import { tgNotify } from "../../../../lib/telegram";
 
@@ -26,7 +26,7 @@ const sbFetch = async (path, init = {}) => {
 };
 
 const WH_SEL = "id,name,rotulo,origin,default_cost_per_cbm,cost_cbm_blanca,cost_cbm_negra,descuento_pct,descuento_min_cbm";
-const SH_SEL = "id,shipment_code,tracking_number,product_description,status,awaiting_supplier,received_at,shipped_to_ar_at,container_id,created_at,mercaderia_tipo,tipo_confirmado_at,tipo_corregido,fotos,is_fragile,is_repack,llegada_marcada_por,operation_id,clients(client_code)";
+const SH_SEL = "id,shipment_code,tracking_number,product_description,status,awaiting_supplier,received_at,shipped_to_ar_at,container_id,created_at,mercaderia_tipo,tipo_confirmado_at,tipo_corregido,fotos,fotos_mercaderia,is_fragile,is_repack,llegada_marcada_por,operation_id,clients(client_code)";
 
 async function depositoDe(token) {
   if (!token || !/^[a-z0-9]{16,64}$/i.test(token)) return null;
@@ -66,12 +66,19 @@ export async function GET(req, { params }) {
     items = Array.isArray(iR.body) ? iR.body : [];
   }
 
+  const cbmDe = (id) => pkgs.filter((x) => x.shipment_id === id).reduce((a, x) => a + Number(x.cbm || 0), 0);
+  // m³ de este depósito en cada contenedor: define el descuento por volumen.
+  const cbmCont = {};
+  ships.forEach((s) => { if (s.container_id) cbmCont[s.container_id] = (cbmCont[s.container_id] || 0) + cbmDe(s.id); });
   const cargas = ships.map((s) => {
     const p = pkgs.filter((x) => x.shipment_id === s.id);
     const it = items.filter((x) => x.shipment_id === s.id);
-    const cbm = p.reduce((a, x) => a + Number(x.cbm || 0), 0);
-    const costo = costoDeposito(wh, s.mercaderia_tipo, cbm);
-    const etapa = s.container_id ? "contenedor" : s.status === "en_deposito" ? "deposito" : "camino";
+    const cbm = cbmDe(s.id);
+    const costo = costoDeposito(wh, s.mercaderia_tipo, cbm, s.container_id ? cbmCont[s.container_id] : null);
+    // "Esperando confirmación": lo que el proveedor despachó y lo que Argencargo marcó como llegado
+    // pero el depósito todavía no confirmó.
+    const pendiente = llegadaSinConfirmar(s);
+    const etapa = s.container_id ? "contenedor" : (s.status === "proveedor" || pendiente) ? "camino" : "deposito";
     return {
       id: s.id,
       etapa,
@@ -88,6 +95,8 @@ export async function GET(req, { params }) {
       tipo_confirmado: !!s.tipo_confirmado_at,
       tipo_corregido: !!s.tipo_corregido,
       fotos: Array.isArray(s.fotos) ? s.fotos.filter(Boolean) : [],
+      fotos_merc: Array.isArray(s.fotos_mercaderia) ? s.fotos_mercaderia.filter(Boolean) : [],
+      marcado_argencargo: pendiente ? s.received_at : null,
       fragil: !!s.is_fragile,
       reenvio: !!s.is_repack,
       llego: s.received_at || null,
@@ -135,7 +144,7 @@ export async function POST(req, { params }) {
   let patch = null;
 
   if (accion === "llego") {
-    if (esperandoProveedor(sh) || sh.status !== "proveedor" || sh.container_id) return Response.json({ error: "estado" }, { status: 409 });
+    if (sh.container_id || !(llegadaSinConfirmar(sh) || (sh.status === "proveedor" && !esperandoProveedor(sh)))) return Response.json({ error: "estado" }, { status: 409 });
     const fecha = String(body.fecha || "");
     // China va 11 h adelante de Argentina: se acepta hasta mañana (UTC) y hasta 60 días atrás.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > sumarDias(hoyUtc(), 1) || fecha < sumarDias(hoyUtc(), -60)) return Response.json({ error: "fecha" }, { status: 400 });
