@@ -118,7 +118,16 @@ export default function DepositoPage({ params }) {
       setErr(""); setData(j);
     } catch { setErr("red"); }
   }, [token]);
-  useEffect(() => { cargar(); const iv = setInterval(cargar, 60000); return () => clearInterval(iv); }, [cargar]);
+  // Sincronía con el panel de Argencargo: se actualiza solo cada 10 s con la pestaña visible y al
+  // volver a la pestaña o a la app (en el celu), sin tener que refrescar.
+  useEffect(() => {
+    cargar();
+    const tick = () => { if (document.visibilityState === "visible") cargar(); };
+    const iv = setInterval(tick, 10000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", tick); window.removeEventListener("focus", tick); };
+  }, [cargar]);
 
   const avisar = (txt, ok = true) => { setAviso({ txt, ok }); setTimeout(() => setAviso(null), 2600); };
   const accion = async (body) => {
