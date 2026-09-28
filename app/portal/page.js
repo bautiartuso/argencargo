@@ -1705,7 +1705,7 @@ function CalculatorPage({token,client,preset}){
   const DELIV={oficina:t("calc.pickupOfficeFree"),caba:t("calc.shipCaba"),coordinar:t("calc.deliveryTBD")};
   const [savedMsg,setSavedMsg]=useState("");
   // Tiempo de tránsito por canal (para la lista de resultados y la cotización guardada).
-  const transitOf=ch=>ch?.info||({aereo_a_china:origin==="USA"?"3-5 días hábiles":"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
+  const transitOf=ch=>ch?.info||({aereo_a_china:origin==="USA"?"3-5 días hábiles":"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:origin==="USA"?"40 días":"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
   // Guardado automático (11/09/2026): al llegar a Resultados se guarda UNA cotización con todas las
   // alternativas (channel_alternatives). Si el cliente vuelve atrás y recalcula, se actualiza la misma
   // fila. "Nueva cotización" resetea el id y la próxima crea otra fila.

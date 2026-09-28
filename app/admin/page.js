@@ -13360,7 +13360,7 @@ function QuotesList({token}){
     // USA: Courier comercial + Integral AC. No hay LCL/FCL desde USA.
     if(origin==="USA")return[
       {key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"3-5 días hábiles",type:"aereo_a"},
-      {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"},
+      {key:"maritimo_b",name:"Marítimo Integral AC",info:"40 días",type:"maritimo_b"},
     ];
     // China (default)
     return[
@@ -13736,7 +13736,7 @@ function QuotesList({token}){
       const owPk=editPkgs.find(pk=>Number(pk.weight||0)>=46);
       const ALL3=[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:editOrigin==="USA"?"3-5 días hábiles":"7-10 días hábiles",type:"aereo_a"},
                   {key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días",type:"maritimo_a"},
-                  {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"}];
+                  {key:"maritimo_b",name:"Marítimo Integral AC",info:editOrigin==="USA"?"40 días":"60-70 días",type:"maritimo_b"}];
       const enOrigen=channelsForOrigin(editOrigin).map(c=>c.key);
       const motivoDe=(k)=>{
         if(!enOrigen.includes(k))return `No operamos esta vía desde ${editOrigin}.`;
@@ -14043,7 +14043,7 @@ function AdminCalculator({token}){
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
-    ?[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"3-5 días hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}]
+    ?[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"3-5 días hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"40 días"}]
     :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}];
   const totalFob=products.reduce((s,p)=>s+toN(p.unit_price)*Number(p.quantity||1),0);
   // Los productos que entran en el calculo, con su indice real en products (el filtro corre los
