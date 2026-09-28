@@ -46,6 +46,7 @@ const T = {
     error: "No se pudo guardar. Probá de nuevo.", guardado: "Guardado",
     tarifas: "Tarifas", por_m3: "por m³", desc_regla: (p, m) => `${p}% de descuento si la carga supera ${m} m³`,
     fragil: "Frágil", reenvio: "Reenvío", contenedor: "Contenedor", idioma: "Idioma",
+    otro_dia: "Otro día", meses: ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"], dias_sem: ["L","M","M","J","V","S","D"],
     confirmar_btn: "Confirmar llegada", marco_ac: (d) => `Argencargo marcó que llegó el ${d}`, foto_bulto: "Bulto", foto_merc: "Mercadería", incl_desc: (p) => `Incluye ${p}% de descuento`,
   },
   zh: {
@@ -72,6 +73,7 @@ const T = {
     error: "保存失败，请重试。", guardado: "已保存",
     tarifas: "费率", por_m3: "每立方", desc_regla: (p, m) => `单票超过 ${m} 立方优惠 ${p}%`,
     fragil: "易碎", reenvio: "转运", contenedor: "集装箱", idioma: "语言",
+    otro_dia: "其他日期", meses: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"], dias_sem: ["一","二","三","四","五","六","日"],
     confirmar_btn: "确认到货", marco_ac: (d) => `Argencargo 标记 ${d} 已到货`, foto_bulto: "外箱", foto_merc: "货物", incl_desc: (p) => `已含 ${p}% 优惠`,
   },
 };
@@ -447,6 +449,7 @@ function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCance
   const marcada = c.marcado_argencargo ? String(c.marcado_argencargo).slice(0, 10) : null;
   const dias = marcada && !base.includes(marcada) ? [...base, marcada] : base;
   const [fecha, setFecha] = useState(marcada || hoy);
+  const [cal, setCal] = useState(false);
   const [tipo, setTipo] = useState(c.tipo || null);
   const [falta, setFalta] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -468,11 +471,16 @@ function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCance
     <div style={{ padding: "18px 20px 20px" }}>
       <p className="dp-m-t">{t.fecha_llegada}</p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-        {dias.map((d, i) => { const on = fecha === d; return <button key={d} onClick={() => setFecha(d)} style={{ padding: "8px 12px", borderRadius: 11, cursor: "pointer", fontFamily: "inherit", minWidth: 62, border: on ? `2px solid ${NAVY}` : "1px solid #c9c4b8", background: on ? NAVY : "#fff", color: on ? "#fff" : INK }}>
+        {[...dias, ...(dias.includes(fecha) ? [] : [fecha])].map((d, i) => { const on = fecha === d; return <button key={d} onClick={() => { setFecha(d); setCal(false); }} style={{ padding: "8px 12px", borderRadius: 11, cursor: "pointer", fontFamily: "inherit", minWidth: 62, border: on ? `2px solid ${NAVY}` : "1px solid #c9c4b8", background: on ? NAVY : "#fff", color: on ? "#fff" : INK }}>
           <span style={{ display: "block", fontSize: 11.5, textTransform: "capitalize" }}>{nombreDia(d, i)}</span>
           <span style={{ display: "block", fontSize: 14.5, fontWeight: 800 }}>{ddmm(d)}</span>
         </button>; })}
+        <button onClick={() => setCal((v) => !v)} style={{ padding: "8px 12px", borderRadius: 11, cursor: "pointer", fontFamily: "inherit", minWidth: 62, border: cal ? `2px solid ${NAVY}` : "1px dashed #8a857a", background: "#fff", color: INK }}>
+          <span style={{ display: "block", fontSize: 11.5 }}>📅</span>
+          <span style={{ display: "block", fontSize: 13.5, fontWeight: 800 }}>{t.otro_dia}</span>
+        </button>
       </div>
+      {cal && <Calendario t={t} valor={fecha} min={menosDias(hoy, 60)} max={hoy} onElegir={(d) => { setFecha(d); setCal(false); }} />}
       <p className="dp-m-t" style={{ marginTop: 18 }}>{t.tipo_q}</p>
       {c.tipo && <p style={{ margin: "-2px 0 10px", fontSize: 13.5, color: INK }}>{t.tipo_cargado} <b>{tipoTxt(c.tipo)}</b>. {t.tipo_otro}</p>}
       <EleccionTipo t={t} valor={tipo} onChange={(v) => { setTipo(v); setFalta(false); }} />
@@ -487,6 +495,33 @@ function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCance
       </div>
     </div>
   </Capa>;
+}
+
+// Calendario propio (nunca el del navegador): mes con flechas, días fuera de rango apagados.
+function Calendario({ t, valor, min, max, onElegir }) {
+  const ini = new Date((valor || max) + "T12:00:00");
+  const [mes, setMes] = useState({ y: ini.getFullYear(), m: ini.getMonth() });
+  const iso = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const primero = new Date(mes.y, mes.m, 1);
+  const offset = (primero.getDay() + 6) % 7; // lunes primero
+  const diasMes = new Date(mes.y, mes.m + 1, 0).getDate();
+  const celdas = [...Array(offset).fill(null), ...Array.from({ length: diasMes }, (_, i) => i + 1)];
+  const mover = (k) => setMes((p) => { const d = new Date(p.y, p.m + k, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const puedeAtras = iso(mes.y, mes.m, 1) > min;
+  const puedeAdelante = iso(mes.y, mes.m, diasMes) < max;
+  const flechaSt = (ok) => ({ width: 34, height: 34, borderRadius: 999, border: "1px solid #c9c4b8", background: "#fff", color: INK, fontSize: 17, cursor: ok ? "pointer" : "default", opacity: ok ? 1 : 0.3, fontFamily: "inherit" });
+  return <div style={{ marginTop: 12, padding: 12, borderRadius: 14, border: "1px solid #c9c4b8", background: "#fff" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+      <button onClick={() => puedeAtras && mover(-1)} style={flechaSt(puedeAtras)}>‹</button>
+      <b style={{ fontSize: 15, color: INK }}>{t.meses[mes.m]} {mes.y}</b>
+      <button onClick={() => puedeAdelante && mover(1)} style={flechaSt(puedeAdelante)}>›</button>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+      {t.dias_sem.map((d, i) => <span key={i} style={{ textAlign: "center", fontSize: 11.5, fontWeight: 800, color: INK, padding: "4px 0" }}>{d}</span>)}
+      {celdas.map((d, i) => { if (!d) return <span key={i} />; const v = iso(mes.y, mes.m, d); const ok = v >= min && v <= max; const on = v === valor;
+        return <button key={i} disabled={!ok} onClick={() => onElegir(v)} style={{ height: 38, borderRadius: 10, border: on ? `2px solid ${NAVY}` : "1px solid transparent", background: on ? NAVY : ok ? "#f5f3ee" : "transparent", color: on ? "#fff" : INK, fontSize: 14, fontWeight: 700, cursor: ok ? "pointer" : "default", opacity: ok ? 1 : 0.3, fontFamily: "inherit" }}>{d}</button>; })}
+    </div>
+  </div>;
 }
 
 function ModalTipo({ c, t, tipoTxt, onCancel, onOk }) {
