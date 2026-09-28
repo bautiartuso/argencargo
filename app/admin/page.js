@@ -15830,7 +15830,12 @@ function MaritimePanel({token,allClients=[]}){
   const [menuMt,setMenuMt]=useState(null); // menú abierto: "pdf" | "cont" | "dep"
   const [subiendoFoto,setSubiendoFoto]=useState(null); // id de la carga que está subiendo foto
   const [fotoGrande,setFotoGrande]=useState(null); // {fotos,i}
-  useEffect(()=>{try{const d=localStorage.getItem("mt_dep");if(d)setWarehouseFilter(d);}catch{}},[]);
+  const [contAbiertosMt,setContAbiertosMt]=useState(new Set()); // contenedores desplegados (arrancan plegados)
+  useEffect(()=>{
+    const act=whs.filter(w=>!w.archived);if(!act.length)return;
+    const ok=(n)=>act.some(w=>w.name===n);
+    if(warehouseFilter==="all"||!ok(warehouseFilter)){let d=null;try{d=localStorage.getItem("mt_dep");}catch{}setWarehouseFilter(d&&ok(d)?d:act[0].name);}
+  },[whs,warehouseFilter]);
   const elegirDep=(w)=>{setWarehouseFilter(w);setSelectedShipments(new Set());try{localStorage.setItem("mt_dep",w);}catch{}};
   const cliMap=useMemo(()=>{const m={};allClients.forEach(c=>{m[c.id]=c;});return m;},[allClients]);
 
@@ -15845,7 +15850,7 @@ function MaritimePanel({token,allClients=[]}){
     if(s.status==="proveedor")return "camino";
     return "deposito";
   };
-  const depActivos=whs.filter(w=>!w.archived);
+  const depActivos=whs.filter(w=>!w.archived).sort((x,y)=>(Number(x.sort_order)||99)-(Number(y.sort_order)||99));
   const whSel=warehouseFilter==="all"?null:whByName[warehouseFilter]||null;
   const enDep=(s)=>warehouseFilter==="all"||s.warehouse===warehouseFilter;
   const qn=qMt.trim().toLowerCase();
@@ -15901,11 +15906,21 @@ function MaritimePanel({token,allClients=[]}){
     :<span style={pill({color:"#fbbf24",border:"1px dashed rgba(251,191,36,0.55)"})}>sin tipo</span>;
   const btnMini=(color,extra)=>({padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${color}55`,background:`${color}14`,color,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",...extra});
   const btnGhost={padding:"5px 9px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"};
-  const COLS=verPlata?"26px 64px minmax(200px,2.4fr) 96px 48px 72px 124px 92px 128px 150px":"26px 64px minmax(200px,2.4fr) 96px 48px 72px 124px 92px 150px";
+  const COLS="26px 64px minmax(200px,2.4fr) 96px 48px 72px 168px 92px 150px";
+  const COLS_CONT="26px minmax(150px,1fr) minmax(190px,1.7fr) 168px 56px 76px 190px 128px";
+  // Selector blanca/negra de un clic, en cualquier etapa (lo puede cambiar Bautista o el depósito).
+  const tipoSel=(sh)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:9,padding:2,gap:2}}>
+    {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=sh.mercaderia_tipo===k;return <button key={k} onClick={e=>{e.stopPropagation();setTipoAdmin(sh,k);}} style={{padding:"4px 9px",fontSize:11,fontWeight:800,border:"none",borderRadius:7,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",background:on?(k==="negra"?"#05080f":"#f8fafc"):"transparent",color:on?(k==="negra"?"#fff":"#0A1628"):"rgba(255,255,255,0.45)",boxShadow:on?"0 0 0 1px rgba(184,149,106,0.7)":"none"}}>{l}</button>;})}
+  </div>;
+  const tipoEstado=(sh,etapa)=>sh.tipo_corregido
+    ?<span style={{fontSize:10.5,fontWeight:700,color:"#fb923c",display:"inline-flex",gap:6,alignItems:"center"}}>✎ El depósito lo corrigió <button onClick={e=>{e.stopPropagation();okCorreccion(sh);}} title="Visto: sacar el aviso" style={btnMini("#fb923c",{padding:"1px 7px",fontSize:10})}>OK</button></span>
+    :sh.tipo_confirmado_at?<span style={{fontSize:10.5,fontWeight:700,color:"#4ade80"}}>✓ Depósito confirmó</span>
+    :!sh.mercaderia_tipo?<span style={{fontSize:10.5,fontWeight:700,color:"#fbbf24"}}>Sin tipo</span>
+    :etapa==="camino"?<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>se confirma al llegar</span>:null;
 
   const encabezado=(etapa)=><div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS}}>
     <div/><div>Foto</div><div>Cliente · Tracking · Mercadería</div><div>Valor</div><div>Bultos</div><div>m³</div><div>Tipo</div>
-    <div>{etapa==="esperando"||etapa==="camino"?"Cargado":"Llegó"}</div>{verPlata&&<div>Costo · Ganancia</div>}<div style={{textAlign:"right"}}>Acciones</div>
+    <div>{etapa==="esperando"||etapa==="camino"?"Cargado":"Llegó"}</div><div style={{textAlign:"right"}}>Acciones</div>
   </div>;
 
   const fila=(sh,etapa,grupo)=>{
@@ -15948,21 +15963,13 @@ function MaritimePanel({token,allClients=[]}){
         <div className="mt-v-num">{bul||"—"}</div>
         <div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>
         <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
-          {(usaTipo||sh.mercaderia_tipo)?tipoChip(sh.mercaderia_tipo):<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}
-          {sh.tipo_corregido
-            ?<span style={{fontSize:10.5,fontWeight:700,color:"#fb923c",display:"inline-flex",gap:6,alignItems:"center"}}>✎ Luna lo corrigió <button onClick={()=>okCorreccion(sh)} title="Visto: sacar el aviso" style={btnMini("#fb923c",{padding:"1px 7px",fontSize:10})}>OK</button></span>
-            :sh.tipo_confirmado_at?<span style={{fontSize:10.5,fontWeight:700,color:"#4ade80"}}>✓ Depósito confirmó</span>
-            :(etapa==="camino"&&usaTipo)?<span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)"}}>se confirma al llegar</span>:null}
+          {tipoSel(sh)}{tipoEstado(sh,etapa)}
         </div>
         <div style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
           <span style={{color:"rgba(255,255,255,0.8)",fontWeight:700}}>{dd(fechaRef)}</span>
           {dias!=null&&<span style={{display:"block",fontSize:10.5,color:alerta?"#f87171":"rgba(255,255,255,0.4)",fontWeight:alerta?700:500}}>hace {dias} d</span>}
           {etapa!=="esperando"&&etapa!=="camino"&&sh.llegada_marcada_por==="deposito"&&<span style={{display:"block",fontSize:10,color:"#93c5fd",fontWeight:700}}>marcó el depósito</span>}
         </div>
-        {verPlata&&<div style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
-          <span style={{color:"rgba(255,255,255,0.7)"}}>{cost>0?fusd(cost):<span style={{color:"rgba(255,255,255,0.3)"}}>sin costo</span>}</span>
-          {imp>0&&<span style={{display:"block",fontWeight:800,color:gan>=0?"#4ade80":"#f87171"}}>{gan>=0?"+":""}{fusd(gan)}</span>}
-        </div>}
         <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
           {etapa==="esperando"&&<>
             <button onClick={()=>llegoTrackingLegacy(sh)} title="Cargar el tracking real: pasa a En camino y el depósito la ve" style={btnMini("#22c55e")}>✓ Tracking</button>
@@ -15978,7 +15985,11 @@ function MaritimePanel({token,allClients=[]}){
           <button onClick={()=>delShipment(sh.id)} title="Eliminar" style={btnMini("#f87171",{padding:"5px 9px"})}>🗑</button>
         </div>
       </div>
-      {isExp&&<div style={{padding:"4px 18px 18px 120px",display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.3fr)",gap:18}} className="mt-v-det">
+      {isExp&&detalleDe(sh,imp,fotos,bul,shPkgs,shItems)}
+    </div>;
+  };
+  const detalleDe=(sh,imp,fotos,bul,shPkgs,shItems)=>{
+    return <div style={{padding:"4px 18px 18px 120px",display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.3fr)",gap:18}} className="mt-v-det">
         <div>
           <p className="mt-v-det-t">Fotos del proveedor</p>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -15991,12 +16002,6 @@ function MaritimePanel({token,allClients=[]}){
               <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{agregarFotos(sh,e.target.files);e.target.value="";}}/>
             </label>
           </div>
-          {(usaTipo||sh.mercaderia_tipo)&&<>
-            <p className="mt-v-det-t" style={{marginTop:14}}>Tipo de mercadería</p>
-            <div style={{display:"inline-flex",background:"rgba(255,255,255,0.04)",border:`1px solid ${MT_BORDE}`,borderRadius:10,padding:3,gap:3}}>
-              {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=><button key={k} onClick={()=>setTipoAdmin(sh,k)} style={{padding:"6px 14px",fontSize:12,fontWeight:800,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:sh.mercaderia_tipo===k?(k==="negra"?"#05080f":"#f8fafc"):"transparent",color:sh.mercaderia_tipo===k?(k==="negra"?"#fff":"#0A1628"):"rgba(255,255,255,0.55)",boxShadow:sh.mercaderia_tipo===k?"0 0 0 1px rgba(184,149,106,0.6)":"none"}}>{l}</button>)}
-            </div>
-          </>}
         </div>
         <div>
           <p className="mt-v-det-t">Bultos ({bul})</p>
@@ -16017,8 +16022,7 @@ function MaritimePanel({token,allClients=[]}){
             </span>
           </div>;})()}
         </div>
-      </div>}
-    </div>;
+      </div>;
   };
 
   const totalesDe=(l,grupo)=>{const cbm=sumCbm(l),bul=l.reduce((a,s)=>a+bultosOf(s.id),0),val=l.reduce((a,s)=>a+valorOf(s.id),0);const cost=l.reduce((a,s)=>a+costOfShip(s),0);const imp=verPlata?l.reduce((a,s)=>a+importeOfShip(s,grupo||l),0):0;
@@ -16049,8 +16053,10 @@ function MaritimePanel({token,allClients=[]}){
 
     {/* Barra: depósitos + acciones */}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {[{name:"all",label:"Todos"},...depActivos.map(w=>({name:w.name,label:w.name,w}))].map(d=>{const on=warehouseFilter===d.name;const n=d.name==="all"?shipments.filter(s=>etapaDe(s)).length:activasPorDep(d.name);return <button key={d.name} onClick={()=>elegirDep(d.name)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"transparent":"rgba(255,255,255,0.1)"}`,background:on?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:on?"#0A1628":"rgba(255,255,255,0.7)",display:"inline-flex",alignItems:"center",gap:6}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>{setEditingId(null);setShowNew(true);}} style={{padding:"11px 20px",fontSize:14,fontWeight:900,borderRadius:12,border:"none",cursor:"pointer",fontFamily:"inherit",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:"0 8px 22px rgba(184,149,106,0.3)",whiteSpace:"nowrap"}}>＋ Nuevo pedido</button>
+        <span style={{width:1,alignSelf:"stretch",background:"rgba(255,255,255,0.1)",margin:"0 4px"}}/>
+        {depActivos.map(w=>({name:w.name,label:w.name,w})).map(d=>{const on=warehouseFilter===d.name;const n=d.name==="all"?shipments.filter(s=>etapaDe(s)).length:activasPorDep(d.name);return <button key={d.name} onClick={()=>elegirDep(d.name)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"transparent":"rgba(255,255,255,0.1)"}`,background:on?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:on?"#0A1628":"rgba(255,255,255,0.7)",display:"inline-flex",alignItems:"center",gap:6}}>
           {d.w&&<span>{d.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>}{d.label}<span style={{fontSize:10.5,fontWeight:800,padding:"0 6px",borderRadius:999,background:on?"rgba(10,22,40,0.15)":"rgba(255,255,255,0.08)"}}>{n}</span>
         </button>;})}
       </div>
@@ -16059,7 +16065,6 @@ function MaritimePanel({token,allClients=[]}){
         {whSel&&<a href={whSel.share_token?`/deposito/${whSel.share_token}`:undefined} target="_blank" rel="noreferrer" title="Ver la planilla como la ve el depósito" style={{...btnGhost,padding:"8px 12px",fontSize:12,textDecoration:"none"}}>👁 Ver como depósito</a>}
         {whSel&&<button onClick={()=>setMenuMt(menuMt==="pdf"?null:"pdf")} style={{...btnGhost,padding:"8px 12px",fontSize:12}}>📄 PDF ▾</button>}
         <button onClick={()=>setMenuMt(menuMt==="dep"?null:"dep")} style={{...btnGhost,padding:"8px 12px",fontSize:12}}>⚙ Depósitos ▾</button>
-        <Btn onClick={()=>{setEditingId(null);setShowNew(true);}}>+ Nuevo pedido</Btn>
         {menuMt&&<div onClick={()=>setMenuMt(null)} style={{position:"fixed",inset:0,zIndex:40}}/>}
         {menuMt==="pdf"&&whSel&&<div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:41,minWidth:230,background:"#0F1A2D",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,padding:6,boxShadow:"0 18px 50px rgba(0,0,0,0.55)"}}>
           {[[true,"es","Con valores · Español"],[true,"zh","Con valores · 中文"],[false,"es","Sin valores · Español"],[false,"zh","Sin valores · 中文"]].map(([v,l,txt])=><button key={txt} onClick={()=>{setMenuMt(null);downloadPdf(whSel.name,whSel.origin||"china",l,v);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",fontSize:12.5,border:"none",borderRadius:8,background:"transparent",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>{txt}</button>)}
@@ -16137,45 +16142,106 @@ function MaritimePanel({token,allClients=[]}){
       {listaTab.length>0&&totalesDe(listaTab,tabAct.lista)}
     </>)}
 
-    {/* Contenedores en viaje */}
+    {/* Contenedores en viaje: plegables, con la plata del contenedor y de todo lo que está en el agua */}
     {!lo&&tabMt==="contenedores"&&(()=>{
-      const conts=contActivos.filter(c=>warehouseFilter==="all"||c.warehouse===warehouseFilter);
-      if(conts.length===0)return tarjeta(vacio("No hay contenedores en viaje."));
-      return conts.map(c=>{
+      const conts=contActivos.filter(c=>c.warehouse===warehouseFilter);
+      const ganDe=(lst)=>{const imp=importeContainer(lst);return imp==null?null:imp-costContainer(lst);};
+      const shipsDe=(c)=>shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
+      const ganDep=conts.reduce((a,c)=>a+(ganDe(shipsDe(c))||0),0);
+      const ganAgua=contActivos.reduce((a,c)=>a+(ganDe(shipsDe(c))||0),0);
+      const costoDep=conts.reduce((a,c)=>a+costContainer(shipsDe(c)),0);
+      const resumen=verPlata&&contActivos.length>0&&<div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+        <div style={{flex:"1 1 220px",padding:"14px 18px",borderRadius:14,background:"linear-gradient(135deg,rgba(74,222,128,0.14),rgba(74,222,128,0.04))",border:"1px solid rgba(74,222,128,0.35)"}}>
+          <p style={{margin:0,fontSize:10.5,fontWeight:800,color:"#86efac",textTransform:"uppercase",letterSpacing:".07em"}}>Ganancia estimada en el agua · todos los depósitos</p>
+          <p style={{margin:"3px 0 0",fontSize:24,fontWeight:900,color:ganAgua>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{fusd(ganAgua)}</p>
+          <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>{contActivos.length} contenedor{contActivos.length!==1?"es":""} en viaje</p>
+        </div>
+        {conts.length>0&&conts.length!==contActivos.length&&<div style={{flex:"1 1 220px",padding:"14px 18px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          <p style={{margin:0,fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:".07em"}}>{warehouseFilter}</p>
+          <p style={{margin:"3px 0 0",fontSize:20,fontWeight:900,color:ganDep>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{fusd(ganDep)}</p>
+          <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>Costo de sus contenedores {fusd(costoDep)}</p>
+        </div>}
+      </div>;
+      if(conts.length===0)return <>{resumen}{tarjeta(vacio("No hay contenedores en viaje de este depósito."))}</>;
+      const filaCont=(sh,grupo)=>{
+        const c=cliMap[sh.client_id];const cbm=cbmOf(sh.id),bul=bultosOf(sh.id);
+        const isSel=selectedShipments.has(sh.id),isExp=expanded.has(sh.id);
+        const imp=verPlata?importeOfShip(sh,grupo):0,cost=costOfShip(sh),gan=imp-cost;
+        const toggleExp=()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;});
+        return <div key={sh.id} className="mt-v-fila" style={{background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"}}>
+          <div className="mt-v-grid" style={{gridTemplateColumns:COLS_CONT,cursor:"pointer"}} onClick={toggleExp}>
+            <div onClick={e=>e.stopPropagation()}><input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/></div>
+            <div style={{minWidth:0}}>
+              <span style={{display:"block",fontSize:14.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{c?.client_code||"—"}</span>
+              <span style={{display:"block",fontSize:12.5,color:"rgba(255,255,255,0.75)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?`${c.first_name||""} ${c.last_name||""}`.trim():(sh.client_name_snapshot||"Sin identificar")}</span>
+            </div>
+            <div style={{fontSize:13,color:"#fff",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
+            <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</div>
+            <div className="mt-v-num">{bul||"—"}</div>
+            <div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>
+            <div style={{fontVariantNumeric:"tabular-nums"}}>
+              {verPlata?<>
+                {imp>0&&<span style={{display:"inline-block",padding:"3px 10px",borderRadius:8,fontSize:13.5,fontWeight:900,background:gan>=0?"rgba(74,222,128,0.14)":"rgba(248,113,113,0.14)",color:gan>=0?"#4ade80":"#f87171"}}>{gan>=0?"+":""}{fusd(gan)}</span>}
+                <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.55)",marginTop:3}}>Cobra {imp>0?fusd(imp):"—"} · Costo {cost>0?fusd(cost):"—"}</span>
+              </>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>—</span>}
+            </div>
+            <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <button onClick={()=>quitarDeContenedor(sh)} title="Bajar del contenedor: vuelve a En depósito" style={btnGhost}>↶</button>
+              <button onClick={()=>{setEditingId(sh.id);setShowNew(true);}} title="Editar" style={btnMini("#60a5fa",{padding:"5px 9px"})}>✎</button>
+              <button onClick={()=>delShipment(sh.id)} title="Eliminar" style={btnMini("#f87171",{padding:"5px 9px"})}>🗑</button>
+            </div>
+          </div>
+          {isExp&&detalleDe(sh,imp,sh.fotos||[],bul,packages.filter(p=>p.shipment_id===sh.id),items.filter(it=>it.shipment_id===sh.id))}
+        </div>;
+      };
+      return <>{resumen}{conts.map(c=>{
         const todas=etapas.contenedores.filter(s=>s.container_id===c.id);
         const lista=todas.filter(coincide);
+        const abierto=contAbiertosMt.has(c.id)||(!!qMt.trim()&&lista.length>0);
+        const toggle=()=>setContAbiertosMt(p=>{const n=new Set(p);if(n.has(c.id))n.delete(c.id);else n.add(c.id);return n;});
         const eEta=effEta(c),tb=tbDays(c),delEta=deliveryEtaStr(eEta);
-        const importeC=verPlata?importeContainer(todas):null,costC=costContainer(todas);
-        const dato=(l,v,col)=><span style={{display:"flex",flexDirection:"column",gap:1}}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</span><span style={{fontSize:13.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
-        return <div key={c.id} style={{marginBottom:16}}>{tarjeta(<>
-          <div style={{padding:"15px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",background:"linear-gradient(180deg,rgba(184,149,106,0.1),rgba(184,149,106,0.02))",borderBottom:`1px solid ${MT_BORDE}`}}>
+        const bulC=todas.reduce((a,s)=>a+bultosOf(s.id),0),cbmC=sumCbm(todas),costC=costContainer(todas),ganC=verPlata?ganDe(todas):null;
+        const porTipo=["negra","blanca",null].map(tp=>{const l=todas.filter(s=>(s.mercaderia_tipo||null)===tp);return {tp,n:l.length,cbm:sumCbm(l),cost:l.reduce((a,s)=>a+costOfShip(s),0)};}).filter(x=>x.n>0);
+        const dato=(l,v,col)=><span style={{display:"flex",flexDirection:"column",gap:1}}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</span><span style={{fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+        const plata=(l,v,fg,bg)=><span style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderRadius:10,background:bg}}><span style={{fontSize:10,fontWeight:800,color:fg,textTransform:"uppercase",letterSpacing:".06em",opacity:.85}}>{l}</span><span style={{fontSize:15.5,fontWeight:900,color:fg,fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+        return <div key={c.id} style={{marginBottom:12}}>{tarjeta(<>
+          <div onClick={toggle} style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",cursor:"pointer",background:"linear-gradient(180deg,rgba(184,149,106,0.1),rgba(184,149,106,0.02))",borderBottom:abierto?`1px solid ${MT_BORDE}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
               <span style={{width:42,height:42,borderRadius:12,background:"rgba(184,149,106,0.16)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🚢</span>
               <div style={{minWidth:0}}>
                 <p style={{margin:0,fontSize:17,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".02em"}}>{c.code}</p>
-                <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>{[c.shipping_line,warehouseFilter==="all"?c.warehouse:null].filter(Boolean).join(" · ")||"Sin naviera"}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
+                <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.shipping_line||"Sin naviera"}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
               </div>
             </div>
-            <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
+            <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"center"}}>
               {dato("Salió",dd(c.departed_at))}
               {dato("ETA Bs. As.",dd(eEta),tb>0?"#fb923c":"#93c5fd")}
               {dato("Entrega est.",dd(delEta),"#4ade80")}
-              {dato("Cargas",todas.length)}
-              {dato("m³",fm3(sumCbm(todas)),GOLD_LIGHT)}
-              {verPlata&&importeC!=null&&dato("Ganancia est.",fusd(importeC-costC),importeC-costC>=0?"#4ade80":"#f87171")}
-              <div style={{display:"flex",gap:6}}>
+              {dato("Bultos",bulC)}
+              {dato("m³",fm3(cbmC),GOLD_LIGHT)}
+              {verPlata&&plata("Costo contenedor",fusd(costC),"#fca5a5","rgba(248,113,113,0.12)")}
+              {verPlata&&ganC!=null&&plata("Ganancia est.",fusd(ganC),ganC>=0?"#4ade80":"#f87171",ganC>=0?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)")}
+              <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>
                 <button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Arribó: crea las operaciones y manda los mails de retiro" style={btnMini("#22c55e",{padding:"7px 12px",fontSize:12,opacity:creatingOp?0.5:1,cursor:creatingOp?"wait":"pointer"})}>{creatingOp?"⏳ Creando ops…":"⚓ Arribó"}</button>
                 <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✎</button>
                 <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={btnMini("#f87171",{padding:"7px 10px"})}>🗑</button>
               </div>
+              <span style={{width:30,height:30,borderRadius:999,border:"1px solid rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13}}>{abierto?"▴":"▾"}</span>
             </div>
-            {c.notes&&<p style={{width:"100%",fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:0,fontStyle:"italic"}}>{c.notes}</p>}
+            {porTipo.length>0&&<div style={{width:"100%",display:"flex",gap:"6px 18px",flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.7)"}}>
+              {porTipo.map(x=><span key={x.tp||"x"} style={{display:"inline-flex",alignItems:"center",gap:7}}>
+                {x.tp==="negra"?<span style={pill({fontSize:10.5,padding:"1px 8px",background:"#05080f",color:"#fff",border:"1px solid rgba(255,255,255,0.3)"})}>◼ Negra</span>:x.tp==="blanca"?<span style={pill({fontSize:10.5,padding:"1px 8px",background:"#f8fafc",color:"#0A1628"})}>◻ Blanca</span>:<span style={pill({fontSize:10.5,padding:"1px 8px",color:"#fbbf24",border:"1px dashed rgba(251,191,36,0.55)"})}>Sin tipo</span>}
+                {x.n} carga{x.n!==1?"s":""} · <b style={{color:GOLD_LIGHT}}>{fm3(x.cbm)} m³</b>{verPlata&&x.cost>0&&<> · costo <b style={{color:"#fff"}}>{fusd(x.cost)}</b></>}
+              </span>)}
+            </div>}
+            {c.notes&&<p style={{width:"100%",fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,fontStyle:"italic"}}>{c.notes}</p>}
           </div>
-          {lista.length>0&&encabezado("contenedores")}
-          {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>fila(sh,"contenedores",todas))}
-          {lista.length>0&&totalesDe(lista,todas)}
+          {abierto&&<>
+            {lista.length>0&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
+            {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>filaCont(sh,todas))}
+          </>}
         </>)}</div>;
-      });
+      })}</>;
     })()}
 
     {/* Historial de contenedores arribados */}
@@ -18289,7 +18355,8 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const CHK={display:"flex",alignItems:"center",gap:7,cursor:"pointer",fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)"};
 
   const selectedWh=warehouses.find(w=>w.id===warehouseId);
-  const usaTipo=!!(selectedWh&&(Number(selectedWh.cost_cbm_blanca)>0||Number(selectedWh.cost_cbm_negra)>0));
+  const tarifaTipo=(w,t)=>Number(t==="blanca"?w?.cost_cbm_blanca:w?.cost_cbm_negra)||Number(w?.default_cost_per_cbm)||0;
+  const usaTipo=!!(selectedWh&&tarifaTipo(selectedWh,"blanca")!==tarifaTipo(selectedWh,"negra"));
   const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?((l*w*h)/1000000)*q:0;};
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
 
@@ -18297,7 +18364,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     if(!selectedWh){setErr("Elegí un depósito");return;}
     const itsValidos=its.filter(it=>it.description?.trim());
     if(itsValidos.length===0){setErr("Cargá al menos un producto en Mercadería");return;}
-    if(usaTipo&&!tipo){setErr("Elegí si la mercadería es blanca o negra");return;}
+    if(!awaiting&&usaTipo&&!tipo){setErr("Elegí si la mercadería es blanca o negra");return;}
     setErr("");
     // La descripcion general del pedido se arma con las descripciones de los items.
     const productDescription=itsValidos.map(it=>it.description.trim()).join(" · ");
@@ -18388,24 +18455,43 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     }catch(e){setErr("Error: "+(e?.message||"sin conexión"));setSaving(false);}
   };
 
-  return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.04)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:12}}>
-    <style>{`.mt-mf-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.mt-mf-it{display:grid;grid-template-columns:2.5fr 0.8fr 1fr auto;gap:8px;margin-bottom:6px;align-items:end}.mt-mf-it.sinprecio{grid-template-columns:2.5fr 0.8fr auto}.mt-mf-pk{display:grid;grid-template-columns:0.7fr 1fr 1fr 1fr 0.9fr auto;gap:8px;margin-bottom:6px;align-items:end}@media(max-width:767px){.mt-mf-2col{grid-template-columns:1fr}.mt-mf-it,.mt-mf-it.sinprecio{grid-template-columns:1fr 1fr auto}.mt-mf-desc{grid-column:1/-1}.mt-mf-pk{grid-template-columns:1fr 1fr 1fr}}`}</style>
-    <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{isEdit?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
-    {/* 1. Deposito (sin boton de crear: los depositos se crean desde el panel). Prellenado si viene en editing. */}
-    <Sel label="Depósito" value={warehouseId} onChange={v=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");}} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.filter(w=>!w.archived||w.id===warehouseId).map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
-    {selectedWh?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"-6px 0 12px",fontStyle:"italic"}}>Rótulo del depósito: <span style={{color:IC,fontWeight:600}}>{selectedWh.rotulo}</span></p>}
-    {(usaTipo||tipo)&&<div style={{marginBottom:14}}>
-      <label style={LBL}>Tipo de mercadería</label>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,maxWidth:420}}>
-        {[["negra","◼ Negra",selectedWh?.cost_cbm_negra],["blanca","◻ Blanca",selectedWh?.cost_cbm_blanca]].map(([k,l,tar])=>{const on=tipo===k;return <button key={k} type="button" onClick={()=>setTipo(k)} style={{padding:"11px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:k==="negra"?(on?"#05080f":"rgba(0,0,0,0.3)"):(on?"#f8fafc":"rgba(255,255,255,0.05)"),color:k==="negra"?"#fff":(on?"#0A1628":"rgba(255,255,255,0.85)")}}>
-          <span style={{display:"block",fontSize:13.5,fontWeight:800}}>{l}</span>
-          {Number(tar)>0&&<span style={{display:"block",fontSize:11,opacity:0.65,marginTop:2}}>Depósito USD {Number(tar).toLocaleString("es-AR")}/m³</span>}
+  const elegirWh=(v)=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");};
+  const whOrden=[...warehouses].filter(w=>!w.archived||w.id===warehouseId).sort((a,b)=>(Number(a.sort_order)||99)-(Number(b.sort_order)||99)||String(a.name).localeCompare(String(b.name)));
+  const fmtT=(v)=>`USD ${Number(v).toLocaleString("es-AR")}`;
+  const SECC={padding:"16px 18px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,marginTop:12};
+  const secT=(n,t,sub,der)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <span style={{width:26,height:26,borderRadius:8,background:"rgba(184,149,106,0.16)",color:IC,fontSize:12.5,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center"}}>{n}</span>
+      <div><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{t}</p>{sub&&<p style={{margin:"1px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{sub}</p>}</div>
+    </div>{der}
+  </div>;
+  const btnMas={padding:"6px 12px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontFamily:"inherit"};
+  const puedeCont=isEdit&&!awaiting&&editing?.status!=="proveedor";
+  let paso=0;const np=()=>++paso;
+
+  return <div>
+    <style>{`.mt-mf-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.mt-mf-it{display:grid;grid-template-columns:2.5fr 0.8fr 1fr auto;gap:8px;margin-bottom:6px;align-items:end}.mt-mf-pk{display:grid;grid-template-columns:0.7fr 1fr 1fr 1fr 0.9fr auto;gap:8px;margin-bottom:6px;align-items:end}@media(max-width:767px){.mt-mf-2col{grid-template-columns:1fr}.mt-mf-it{grid-template-columns:1fr 1fr auto}.mt-mf-desc{grid-column:1/-1}.mt-mf-pk{grid-template-columns:1fr 1fr 1fr}}`}</style>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:6}}>
+      <div>
+        <p style={{margin:0,fontSize:11.5,fontWeight:800,color:IC,letterSpacing:".08em",textTransform:"uppercase"}}>Marítimos</p>
+        <h3 style={{fontSize:21,fontWeight:900,color:"#fff",margin:"2px 0 0"}}>{isEdit?`Editar pedido ${editing?.shipment_code||""}`:"Nuevo pedido marítimo"}</h3>
+      </div>
+      <button type="button" onClick={onCancel} aria-label="Cerrar" style={{width:34,height:34,borderRadius:999,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:16,cursor:"pointer"}}>✕</button>
+    </div>
+
+    {/* Depósito: lista propia del sistema, con rótulo y tarifa */}
+    <div style={SECC}>
+      {secT(np(),"Depósito",selectedWh?.rotulo?`Rótulo: ${selectedWh.rotulo}`:"Dónde entrega el proveedor")}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
+        {whOrden.map(w=>{const on=w.id===warehouseId;const tb=tarifaTipo(w,"blanca"),tn=tarifaTipo(w,"negra");return <button key={w.id} type="button" onClick={()=>elegirWh(w.id)} style={{textAlign:"left",padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.1)",background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.03)",color:"#fff"}}>
+          <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13.5,fontWeight:800}}>{w.origin==="usa"?"🇺🇸":"🇨🇳"} {w.name}{on&&<span style={{marginLeft:"auto",color:IC}}>✓</span>}</span>
+          {verCostos&&(tb||tn)>0&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.55)",marginTop:4}}>{tb!==tn?`Negra ${fmtT(tn)} · Blanca ${fmtT(tb)}`:`${fmtT(tn)}`} por m³{Number(w.descuento_pct)>0?` · ${Number(w.descuento_pct)}% +${Number(w.descuento_min_cbm)||0} m³`:""}</span>}
         </button>;})}
       </div>
-      {editing?.tipo_confirmado_at&&<p style={{fontSize:10.5,color:editing?.tipo_corregido?"#fb923c":"#4ade80",margin:"6px 0 0"}}>{editing?.tipo_corregido?"✎ El depósito lo corrigió":"✓ El depósito lo confirmó"}{(editing?.mercaderia_tipo||"")!==tipo?" · si lo cambiás, vuelve a quedar sin confirmar":""}</p>}
-    </div>}
+    </div>
 
-    {/* 2. Cliente — buscador interno (codigo + nombre), no el selector nativo */}
+    <div style={SECC}>
+      {secT(np(),"Cliente",null)}
     <div className="mt-mf-2col">
       <div style={{marginBottom:12,position:"relative"}}>
         <label style={LBL}>Cliente</label>
@@ -18427,90 +18513,99 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
     </div>
 
-    {/* 3. Esperando al proveedor (awaiting_supplier): etapa propia del tablero, sin tracking todavía */}
-    {puedeAwaiting&&<label style={{...CHK,padding:"9px 12px",marginBottom:12,borderRadius:8,background:awaiting?"rgba(168,85,247,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${awaiting?"rgba(168,85,247,0.35)":"rgba(255,255,255,0.08)"}`}}>
-      <input type="checkbox" checked={awaiting} onChange={e=>{setAwaiting(e.target.checked);if(e.target.checked){setReceivedAt("");setContainerId("");}}} style={{accentColor:"#a855f7",width:16,height:16,cursor:"pointer",flexShrink:0}}/>
-      <span>⏳ Todavía no despachó el proveedor <span style={{fontSize:10.5,fontWeight:500,color:"rgba(255,255,255,0.45)"}}>· queda en "Esperando al proveedor" hasta que llegue el tracking</span></span>
-    </label>}
-
-    {/* 4. Seguimiento + recepcion */}
-    <div className="mt-mf-2col">
-      <div>
-        <Inp label={awaiting?"Código de seguimiento (opcional)":"Código de seguimiento"} value={trackingNumber} onChange={setTrackingNumber} placeholder={awaiting?"opcional hasta que el proveedor despache":"SF... / KY..."}/>
-        {!awaiting&&!trackingNumber.trim()&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 10px",fontStyle:"italic"}}>⚠ Sin tracking no se puede seguir la carga. Si el proveedor todavía no despachó, marcá la casilla de arriba.</p>}
-      </div>
-      {!awaiting&&<Inp label="Fecha de recepción en depósito" type="date" value={receivedAt} onChange={setReceivedAt}/>}
     </div>
-    {/* 6. Mercaderia unificada: desc + detalle comercial en una sola grilla (USD c/u solo admin) */}
-    <div style={{marginTop:2,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>🧾 Mercadería</p>
-        <button onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Item</button>
+
+    {/* Esperando al proveedor: interruptor grande. Prendido = solo mercadería y bultos. */}
+    {puedeAwaiting&&<button type="button" onClick={()=>{const v=!awaiting;setAwaiting(v);if(v){setReceivedAt("");setContainerId("");}}} style={{display:"flex",alignItems:"center",gap:14,width:"100%",marginTop:12,padding:"15px 18px",borderRadius:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:`1.5px solid ${awaiting?"rgba(167,139,250,0.75)":"rgba(255,255,255,0.1)"}`,background:awaiting?"linear-gradient(135deg,rgba(167,139,250,0.18),rgba(167,139,250,0.06))":"rgba(255,255,255,0.03)",color:"#fff"}}>
+      <span style={{width:42,height:42,borderRadius:12,background:awaiting?"rgba(167,139,250,0.25)":"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,flexShrink:0}}>⏳</span>
+      <span style={{flex:1,minWidth:0}}>
+        <span style={{display:"block",fontSize:14.5,fontWeight:800}}>El proveedor todavía no despachó</span>
+        <span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.6)",marginTop:2}}>{awaiting?"Queda en Esperando proveedor. Cargá solo la mercadería y, si ya los tenés, los bultos. El tracking lo sumás cuando despache.":"Prendelo si todavía no hay tracking. El depósito no ve el pedido hasta que cargues el tracking."}</span>
+      </span>
+      <span style={{width:48,height:28,borderRadius:999,background:awaiting?"#a78bfa":"rgba(255,255,255,0.15)",position:"relative",flexShrink:0,transition:"background .15s"}}><span style={{position:"absolute",top:3,left:awaiting?23:3,width:22,height:22,borderRadius:999,background:"#fff",transition:"left .15s"}}/></span>
+    </button>}
+
+    {/* Seguimiento + tipo (no aplica mientras espera al proveedor) */}
+    {!awaiting&&<div style={SECC}>
+      {secT(np(),"Seguimiento y tipo","El depósito lo ve con este tracking y confirma el tipo al recibirlo")}
+      <div className="mt-mf-2col" style={{alignItems:"start"}}>
+        <div>
+          <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY... / YT..."/>
+          {!trackingNumber.trim()&&<p style={{fontSize:11,color:"#fbbf24",margin:"-6px 0 6px"}}>Sin tracking el depósito no puede identificar la carga.</p>}
+        </div>
+        <div>
+          <label style={LBL}>Tipo de mercadería{usaTipo?"":" (opcional en este depósito)"}</label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=tipo===k;const tar=tarifaTipo(selectedWh,k);return <button key={k} type="button" onClick={()=>setTipo(on?"":k)} style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:k==="negra"?(on?"#05080f":"rgba(0,0,0,0.3)"):(on?"#f8fafc":"rgba(255,255,255,0.05)"),color:k==="negra"?"#fff":(on?"#0A1628":"rgba(255,255,255,0.85)")}}>
+              <span style={{display:"block",fontSize:13.5,fontWeight:800}}>{l}</span>
+              {verCostos&&tar>0&&<span style={{display:"block",fontSize:11,opacity:0.7,marginTop:2}}>{fmtT(tar)} por m³</span>}
+            </button>;})}
+          </div>
+          {editing?.tipo_confirmado_at&&<p style={{fontSize:10.5,color:editing?.tipo_corregido?"#fb923c":"#4ade80",margin:"6px 0 0"}}>{editing?.tipo_corregido?"✎ El depósito lo corrigió":"✓ El depósito lo confirmó"}{(editing?.mercaderia_tipo||"")!==tipo?" · si lo cambiás vuelve a quedar sin confirmar":""}</p>}
+        </div>
       </div>
+    </div>}
+
+    {/* Mercadería */}
+    <div style={SECC}>
+      {secT(np(),"Mercadería","Descripción, cantidad y precio unitario",<button type="button" onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={btnMas}>+ Producto</button>)}
       {its.map((it,i)=><div key={i} className="mt-mf-it">
         <div className="mt-mf-desc"><Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/></div>
-        <Inp label={i===0?"Cant.":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
-        {<Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>}
-        <button onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>×</button>
+        <Inp label={i===0?"Cantidad":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
+        <Inp label={i===0?"USD por unidad":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>
+        <button type="button" onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>✕</button>
       </div>)}
+      {(()=>{const tot=its.reduce((a,it)=>a+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);return tot>0&&<p style={{margin:"4px 0 0",textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>Valor total <b style={{color:"#4ade80",fontSize:14}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></p>;})()}
     </div>
 
-    {/* 7. Bultos */}
-    <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📦 Bultos</p>
-        <button onClick={()=>setPkgs(p=>[...p,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Bulto</button>
-      </div>
+    {/* Bultos */}
+    <div style={SECC}>
+      {secT(np(),awaiting?"Bultos (si ya los tenés)":"Bultos","Cantidad y medidas en cm",<button type="button" onClick={()=>setPkgs(p=>[...p,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={btnMas}>+ Bulto</button>)}
       {pkgs.map((p,i)=>{const c=cbmLive(p);return <div key={i} className="mt-mf-pk">
         <Inp label={i===0?"Cantidad":""} type="number" value={p.quantity} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} placeholder="1" small/>
-        <Inp label={i===0?"Largo (cm)":""} type="number" value={p.length_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x))} small/>
-        <Inp label={i===0?"Ancho (cm)":""} type="number" value={p.width_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x))} small/>
-        <Inp label={i===0?"Alto (cm)":""} type="number" value={p.height_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x))} small/>
+        <Inp label={i===0?"Largo":""} type="number" value={p.length_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x))} small/>
+        <Inp label={i===0?"Ancho":""} type="number" value={p.width_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x))} small/>
+        <Inp label={i===0?"Alto":""} type="number" value={p.height_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x))} small/>
         <div style={{marginBottom:12}}>
-          {i===0&&<label style={LBL}>CBM</label>}
-          <div style={{padding:"8px 10px",fontSize:13,fontWeight:700,borderRadius:10,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",color:c>0?GOLD_LIGHT:"rgba(255,255,255,0.3)",textAlign:"center",fontFeatureSettings:'"tnum"'}}>{c>0?c.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4}):"—"}</div>
+          {i===0&&<label style={LBL}>m³</label>}
+          <div style={{padding:"8px 10px",fontSize:13,fontWeight:700,borderRadius:10,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",color:c>0?GOLD_LIGHT:"rgba(255,255,255,0.3)",textAlign:"center",fontFeatureSettings:'"tnum"'}}>{c>0?c.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3}):"—"}</div>
         </div>
-        <button onClick={()=>setPkgs(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>×</button>
+        <button type="button" onClick={()=>setPkgs(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>✕</button>
       </div>;})}
-      <div style={{display:"flex",justifyContent:"flex-end",marginTop:6,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginRight:8,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700}}>CBM total</span>
-        <span style={{fontSize:14,fontWeight:800,color:cbmTotal>0?GOLD_LIGHT:"rgba(255,255,255,0.3)",fontFeatureSettings:'"tnum"'}}>{cbmTotal>0?cbmTotal.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4}):"0,0000"} m³</span>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:18,marginTop:4,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>
+        <span>Bultos <b style={{color:"#fff",fontSize:14}}>{pkgs.reduce((a,p)=>a+(p.length_cm&&p.width_cm&&p.height_cm?Math.max(1,Number(p.quantity)||1):0),0)}</b></span>
+        <span>Total <b style={{color:cbmTotal>0?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontSize:14}}>{cbmTotal.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³</b></span>
+        {verCostos&&!awaiting&&cbmTotal>0&&selectedWh&&(()=>{const k=tarifaTipo(selectedWh,tipo||"negra");let tot=cbmTotal*k;const d=Number(selectedWh.descuento_pct)||0;if(tipo&&d>0&&cbmTotal>(Number(selectedWh.descuento_min_cbm)||0))tot*=1-d/100;return <span>Costo depósito <b style={{color:"#fff",fontSize:14}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b>{!tipo&&usaTipo?" (elegí el tipo)":""}</span>;})()}
       </div>
     </div>
 
-    {/* Fotos del proveedor: las ve el depósito en su planilla */}
-    <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
-      <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📷 Fotos del proveedor</p>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+    {/* Fotos del proveedor */}
+    {!awaiting&&<div style={SECC}>
+      {secT(np(),"Fotos del proveedor","Las ve el depósito en su planilla")}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         {fotos.map(u=><div key={u} style={{position:"relative"}}>
-          <div style={{width:78,height:78,borderRadius:9,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",border:"1px solid rgba(255,255,255,0.1)"}}/>
-          <button type="button" onClick={()=>setFotos(p=>p.filter(x=>x!==u))} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",padding:0,lineHeight:"20px"}}>✕</button>
+          <div style={{width:92,height:92,borderRadius:10,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",border:"1px solid rgba(255,255,255,0.1)"}}/>
+          <button type="button" onClick={()=>setFotos(p=>p.filter(x=>x!==u))} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",padding:0,lineHeight:"22px"}}>✕</button>
         </div>)}
-        <label style={{width:78,height:78,borderRadius:9,border:"1px dashed rgba(184,149,106,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-          <span style={{fontSize:18}}>{subiendo?"⏳":"＋"}</span>{subiendo?"Subiendo":"Agregar"}
+        <label style={{width:92,height:92,borderRadius:10,border:"1.5px dashed rgba(184,149,106,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+          <span style={{fontSize:20}}>{subiendo?"⏳":"📷"}</span>{subiendo?"Subiendo":"Agregar fotos"}
           <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{subirFotos(e.target.files);e.target.value="";}}/>
         </label>
       </div>
-    </div>
+    </div>}
 
-    {/* 8. Contenedor (no aplica mientras espera al proveedor) */}
-    <div style={{marginTop:12}}>
-    {selectedWh&&!awaiting&&(()=>{
-      const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");
-      return <div>
-        <Sel label="Contenedor" value={containerId} onChange={setContainerId} options={[{value:"",label:"— Sin contenedor (queda en depósito) —"},...whConts.map(c=>({value:c.id,label:`🚢 ${c.code}${c.shipping_line?` · ${c.shipping_line}`:""}`}))]}/>
-        <p style={{fontSize:10.5,color:containerId?"#60a5fa":"rgba(255,255,255,0.4)",margin:"-6px 0 8px",fontStyle:"italic"}}>{containerId?"Al asignar un contenedor, la carga pasa a 'en tránsito'.":whConts.length===0?"Este depósito no tiene contenedores en tránsito (creá uno desde el panel).":"Sin contenedor: la carga queda en depósito."}</p>
-      </div>;
-    })()}
-    </div>
+    {/* Contenedor: solo al editar una carga que ya está en el depósito */}
+    {puedeCont&&selectedWh&&(()=>{const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");return <div style={SECC}>
+      {secT(np(),"Contenedor","Asignarla la pasa a en viaje; sacarla la devuelve al depósito")}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {[{id:"",code:"Sin contenedor"},...whConts].map(c=>{const on=(containerId||"")===c.id;return <button key={c.id||"none"} type="button" onClick={()=>setContainerId(c.id)} style={{padding:"8px 14px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:12.5,fontWeight:700,border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:on?"rgba(184,149,106,0.12)":"transparent",color:on?"#fff":"rgba(255,255,255,0.7)"}}>{c.id?"🚢 ":""}{c.code}{c.shipping_line?` · ${c.shipping_line}`:""}</button>;})}
+      </div>
+    </div>;})()}
 
-    {/* 9. Costo (no lo ve el empleado; vacio = automatico CBM x tarifa del deposito) */}
-    {verCostos&&<Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Vacío = automático (CBM × tarifa del depósito)"/>}
-
-    {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 6px"}}>✕ {err}</p>}
-    <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
+    {err&&<p style={{fontSize:12.5,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,padding:"9px 12px",margin:"14px 0 0"}}>✕ {err}</p>}
+    <div style={{display:"flex",gap:10,marginTop:16,justifyContent:"flex-end"}}>
       <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
-      <Btn onClick={save} disabled={saving||subiendo}>{saving?"Guardando...":(isEdit?"Guardar cambios":"Crear pedido")}</Btn>
+      <Btn onClick={save} disabled={saving||subiendo}>{saving?"Guardando...":(isEdit?"Guardar cambios":awaiting?"Crear · esperando proveedor":"Crear pedido")}</Btn>
     </div>
   </div>;
 }
