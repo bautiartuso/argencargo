@@ -270,14 +270,14 @@ export default function DepositoPage({ params }) {
     {/* Encabezado */}
     <header style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_2} 100%)`, color: "#fff" }}>
       <div className="dp-wrap" style={{ paddingTop: 18, paddingBottom: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <img src={LOGO} alt="Argencargo" style={{ height: 30, width: "auto" }} />
-        <div style={{ flex: 1, minWidth: 200 }}>
+        <img src={LOGO} alt="Argencargo" className="dp-logo" style={{ height: 30, width: "auto" }} />
+        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "0.01em" }}>{dep.nombre}</p>
           <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "rgba(255,255,255,0.6)" }}>
             {t.sub}{dep.rotulo ? <> · {t.rotulo} <b style={{ color: GOLD_B }}>{dep.rotulo.toUpperCase()}</b></> : null}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="dp-head-acc" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <div style={{ display: "flex", background: "rgba(255,255,255,0.08)", borderRadius: 999, padding: 3, border: "1px solid rgba(255,255,255,0.12)" }}>
             {[["es", "ES"], ["zh", "中文"]].map(([k, l]) => <button key={k} onClick={() => cambiarLang(k)} style={{ padding: "6px 14px", fontSize: 12.5, fontWeight: 700, border: "none", borderRadius: 999, cursor: "pointer", background: lang === k ? `linear-gradient(135deg, ${GOLD}, ${GOLD_B})` : "transparent", color: lang === k ? NAVY : "rgba(255,255,255,0.75)", fontFamily: "inherit" }}>{l}</button>)}
           </div>
@@ -298,7 +298,7 @@ export default function DepositoPage({ params }) {
           <span className="dp-tab-ic">{x.ic}</span>
           <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
             <span className="dp-tab-l">{x.l}</span>
-            <span className="dp-tab-s">{x.k === "contenedores" ? `${x.n} · ${s.n} ${t.cargas}` : `${s.n} ${t.cargas} · ${fmtM3(s.cbm)} ${t.cbm}`}</span>
+            <span className="dp-tab-s">{x.k === "contenedores" ? `${x.n} · ${s.n} ${s.n === 1 ? t.carga : t.cargas}` : `${s.n} ${s.n === 1 ? t.carga : t.cargas} · ${fmtM3(s.cbm)} ${t.cbm}`}</span>
           </span>
         </button>; })}
       </div>
@@ -307,7 +307,7 @@ export default function DepositoPage({ params }) {
 
       {/* Buscador + filtro de tipo */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        <div style={{ flex: 1, minWidth: 220, position: "relative" }}>
+        <div className="dp-buscar" style={{ flex: 1, minWidth: 220, position: "relative" }}>
           <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: MUTED, fontSize: 14 }}>⌕</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.buscar} style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px 11px 34px", fontSize: 14, borderRadius: 12, border: `1px solid ${LINE}`, background: CARD, color: INK, outline: "none", fontFamily: "inherit" }} />
         </div>
@@ -559,8 +559,14 @@ const CSS = `
 }
 @media(max-width:680px){
   .dp-wrap{padding-left:12px;padding-right:12px}
-  .dp-tabs{grid-template-columns:1fr}
-  .dp-tab{padding:11px 14px}
+  .dp-tabs{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .dp-tab{flex-direction:column;align-items:flex-start;gap:7px;padding:10px}
+  .dp-tab-ic{width:30px;height:30px;font-size:15px;border-radius:9px}
+  .dp-tab-l{font-size:12.5px;white-space:normal;line-height:1.2}
+  .dp-tab-s{font-size:10.5px}
+  .dp-logo{height:22px !important}
+  .dp-head-acc{width:100%;justify-content:space-between}
+  .dp-buscar{flex:1 1 100% !important}
   .dp-grid{grid-template-columns:84px 1fr 1fr;grid-template-areas:"f i i" "n1 n2 n3" "n4 t t" "a a a";gap:10px 12px;padding:14px}
   .dp-foto{width:84px;height:84px}
   .dp-c-acc{flex-direction:row;justify-content:space-between;align-items:center}
