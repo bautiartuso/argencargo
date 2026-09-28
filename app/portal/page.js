@@ -1633,8 +1633,8 @@ function CalculatorPage({token,client,preset}){
       const items=validProds.map((p,i)=>calcItemTaxes(p,certFlete,false,totalCif,taxUnitPrices[i]));
       const totalImp=items.reduce((s,it)=>s+it.totalImp,0);
       // Recargo por sobrepeso del courier: USD 35 por pieza si el bulto pesa más de 24 kg o su
-      // girth (largo + 2×ancho + 2×alto) supera 260 cm. Ítem separado, no dentro del flete.
-      const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1);const gw=toN(pk.weight);const l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const girth=l&&w&&h?l+2*(w+h):0;return n+((gw>24||girth>260)?q:0);},0);
+      // girth (lado más largo + 2×(los otros dos)) supera 260 cm. Ítem separado, no dentro del flete.
+      const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1);const gw=toN(pk.weight);const l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const mx=Math.max(l,w,h);const girth=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||girth>260)?q:0);},0);
       const overweightSurcharge=owPieces*35;
       const totalSvc=flete+seguro+battExtra+overweightSurcharge;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:transitoAereo,isBlanco:true,
