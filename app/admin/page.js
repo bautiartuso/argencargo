@@ -13469,17 +13469,17 @@ function QuotesList({token}){
     return true;
   };
   // Editar una cotizacion del portal la convierte en una cotizacion manual: se guarda y se genera
-  // (o regenera) el link publico con 10 dias de validez, listo para mandarle al cliente.
+  // (o regenera) el link publico con 7 dias de validez (28/09/2026, antes 10), listo para mandarle al cliente.
   const guardarYLink=async()=>{
     if(!selQuote)return;
     await saveQuoteEdit();
     const tok=selQuote.public_token||`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
-    const body={public_token:tok,sent_at:new Date().toISOString(),expires_at:new Date(Date.now()+10*864e5).toISOString()};
+    const body={public_token:tok,sent_at:new Date().toISOString(),expires_at:new Date(Date.now()+7*864e5).toISOString()};
     await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});
     setSelQuote(p=>({...p,...body}));setQuotes(ps=>ps.map(x=>x.id===selQuote.id?{...x,...body}:x));
     const url=`https://argencargo.com.ar/presupuesto/${tok}`;
     navigator.clipboard?.writeText(url);
-    toast("Cotización guardada · link copiado, válido 10 días","success");
+    toast("Cotización guardada · link copiado, válido 7 días","success");
   };
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
   const borrarQuotes=async(ids,texto)=>{
@@ -13583,7 +13583,7 @@ function QuotesList({token}){
     if(q.client_selected_channel){const el=alts.find(a=>a.key===q.client_selected_channel);return el?.name||q.channel_name||"";}
     if(alts.length>1)return `Sin elegir · ${alts.map(a=>String(a.key||"").includes("aereo")?"Aéreo":"Marítimo").join(" / ")}`;
     return q.channel_name||"";};
-  const venceQ=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+15*864e5);
+  const venceQ=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+7*864e5);
   const diasQ=q=>Math.ceil((venceQ(q)-Date.now())/864e5);
   const colorDias=d=>d<=5?"#f87171":d<=9?"#fbbf24":"#4ade80";
   const fShort=d=>{const x=new Date(d);return `${String(x.getDate()).padStart(2,"0")}/${String(x.getMonth()+1).padStart(2,"0")}/${String(x.getFullYear()).slice(2)}`;};
@@ -14556,7 +14556,7 @@ function AdminCalculator({token}){
             status:"pending",
             public_token:tok,
             sent_at:new Date().toISOString(),
-            expires_at:new Date(Date.now()+10*24*60*60*1000).toISOString(),
+            expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),
           };
           const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
           const creada=Array.isArray(r)?r[0]:r;
@@ -14570,7 +14570,7 @@ function AdminCalculator({token}){
       };
       return <div style={{marginTop:16,padding:"15px 18px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)"}}>
         <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>🔗 Link para que el cliente elija</p>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"0 0 11px",lineHeight:1.5}}>Guarda esta cotización con las {results.channels.length} opciones y genera un link donde el cliente compara tiempos y precios, y elige. Válido 10 días. Cuando elija te llega el aviso.</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"0 0 11px",lineHeight:1.5}}>Guarda esta cotización con las {results.channels.length} opciones y genera un link donde el cliente compara tiempos y precios, y elige. Válido 7 días. Cuando elija te llega el aviso.</p>
         {linkGenerado
           ?<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <code style={{flex:1,minWidth:220,fontSize:11.5,color:"#93c5fd",background:"rgba(0,0,0,0.25)",padding:"8px 10px",borderRadius:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{linkGenerado}</code>

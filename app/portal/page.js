@@ -2107,7 +2107,7 @@ function QuotesPage({token,client,onEdit,onOpenOp}){
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtDate=d=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
-  const expiryOf=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+15*864e5);
+  const expiryOf=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+7*864e5);
   const isExpired=q=>expiryOf(q).getTime()<Date.now();
   const chTitle=a=>({aereo_a_china:[t("calc.air"),"Courier comercial"],maritimo_a_china:[t("calc.sea"),"Carga FCL/LCL"],maritimo_b:[t("calc.sea"),"Integral AC"],aereo_b_spain:[t("calc.air"),"Integral AC"],aereo_b_usa:[t("calc.air"),"Integral AC"]})[a.key]||[a.key?.includes("aereo")?t("calc.air"):t("calc.sea"),a.name];
   const flagOf=o=>o==="USA"?"🇺🇸":o==="España"?"🇪🇸":"🇨🇳";
