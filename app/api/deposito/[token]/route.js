@@ -106,7 +106,8 @@ export async function GET(req, { params }) {
       descuento_pct: Number(wh.descuento_pct) || 0,
       descuento_min_cbm: Number(wh.descuento_min_cbm) || 0,
     },
-    contenedores: enViaje.map((c) => ({ id: c.id, codigo: c.code, naviera: c.shipping_line || null, salio: c.departed_at || null, eta: c.eta || null })),
+    // ETA a Buenos Aires con la demora del transbordo (igual que el panel y el portal).
+    contenedores: enViaje.map((c) => ({ id: c.id, codigo: c.code, naviera: c.shipping_line || null, salio: c.departed_at || null, eta: c.eta ? (Number(c.transbordo_dias) > 0 ? sumarDias(c.eta, Number(c.transbordo_dias)) : c.eta) : null })),
     cargas,
   }, { headers: { "Cache-Control": "no-store" } });
 }
