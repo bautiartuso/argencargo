@@ -18508,7 +18508,8 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const CHK={display:"flex",alignItems:"center",gap:7,cursor:"pointer",fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)"};
 
   const selectedWh=warehouses.find(w=>w.id===warehouseId);
-  const tarifaTipo=(w,t)=>Number(t==="blanca"?w?.cost_cbm_blanca:w?.cost_cbm_negra)||Number(w?.default_cost_per_cbm)||0;
+  // Sin tipo elegido = tarifa general del depósito (el tipo no es obligatorio).
+  const tarifaTipo=(w,t)=>(t==="blanca"?Number(w?.cost_cbm_blanca):t==="negra"?Number(w?.cost_cbm_negra):0)||Number(w?.default_cost_per_cbm)||0;
   const usaTipo=!!(selectedWh&&tarifaTipo(selectedWh,"blanca")!==tarifaTipo(selectedWh,"negra"));
   const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?((l*w*h)/1000000)*q:0;};
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
@@ -18517,7 +18518,6 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     if(!selectedWh){setErr("Elegí un depósito");return;}
     const itsValidos=its.filter(it=>it.description?.trim());
     if(itsValidos.length===0){setErr("Cargá al menos un producto en Mercadería");return;}
-    if(!awaiting&&usaTipo&&!tipo){setErr("Elegí si la mercadería es blanca o negra");return;}
     setErr("");
     // La descripcion general del pedido se arma con las descripciones de los items.
     const productDescription=itsValidos.map(it=>it.description.trim()).join(" · ");
@@ -18688,7 +18688,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
           {!trackingNumber.trim()&&<p style={{fontSize:11,color:"#fbbf24",margin:"-6px 0 6px"}}>Sin tracking el depósito no puede identificar la carga.</p>}
         </div>
         <div>
-          <label style={LBL}>Tipo de mercadería{usaTipo?"":" (opcional en este depósito)"}</label>
+          <label style={LBL}>Tipo de mercadería (opcional)</label>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=tipo===k;const tar=tarifaTipo(selectedWh,k);return <button key={k} type="button" onClick={()=>setTipo(on?"":k)} style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:k==="negra"?(on?"#05080f":"rgba(0,0,0,0.3)"):(on?"#f8fafc":"rgba(255,255,255,0.05)"),color:k==="negra"?"#fff":(on?"#0A1628":"rgba(255,255,255,0.85)")}}>
               <span style={{display:"block",fontSize:13.5,fontWeight:800}}>{l}</span>
@@ -18729,7 +18729,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       <div style={{display:"flex",justifyContent:"flex-end",gap:18,marginTop:4,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>
         <span>Bultos <b style={{color:"#fff",fontSize:14}}>{pkgs.reduce((a,p)=>a+(p.length_cm&&p.width_cm&&p.height_cm?Math.max(1,Number(p.quantity)||1):0),0)}</b></span>
         <span>Total <b style={{color:cbmTotal>0?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontSize:14}}>{cbmTotal.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³</b></span>
-        {verCostos&&!awaiting&&cbmTotal>0&&selectedWh&&(()=>{const k=tarifaTipo(selectedWh,tipo||"negra");let tot=cbmTotal*k;const d=Number(selectedWh.descuento_pct)||0;if(tipo&&d>0&&cbmTotal>(Number(selectedWh.descuento_min_cbm)||0))tot*=1-d/100;return <span>Costo depósito <b style={{color:"#fff",fontSize:14}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b>{!tipo&&usaTipo?" (elegí el tipo)":""}</span>;})()}
+        {verCostos&&!awaiting&&cbmTotal>0&&selectedWh&&(()=>{const k=tarifaTipo(selectedWh,tipo);let tot=cbmTotal*k;const d=Number(selectedWh.descuento_pct)||0;if(tipo&&d>0&&cbmTotal>(Number(selectedWh.descuento_min_cbm)||0))tot*=1-d/100;return <span>Costo depósito <b style={{color:"#fff",fontSize:14}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b>{!tipo&&usaTipo?" (tarifa general)":""}</span>;})()}
       </div>
     </div>
 
