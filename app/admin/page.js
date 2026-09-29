@@ -8643,18 +8643,31 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   };
   // --- Editar datos de despacho (costo, peso, carrier, tracking) y recalcular cost_share por op ---
   const [editCost,setEditCost]=useState(false);
-  const [costForm,setCostForm]=useState({total_cost_usd:"",total_weight_kg:"",international_carrier:"",international_tracking:"",payment_method:""});
+  const [costForm,setCostForm]=useState({total_cost_usd:"",total_weight_kg:"",cost_per_kg_usd:"",cost_battery:false,cost_brand:false,cost_overweight_pieces:0,international_carrier:"",international_tracking:"",payment_method:""});
+  // Costo por conceptos, igual que lo carga el agente: kg × USD/kg + baterías (USD 10) + marca
+  // (USD 0,70/kg) + sobrepeso (USD 35 por pieza). Cada concepto se redondea antes de sumar.
+  const numF=(v)=>{const n=Number(String(v??"").replace(",","."));return isFinite(n)?n:0;};
+  const costoPorConceptos=(f)=>{const kg=numF(f.total_weight_kg),r=numF(f.cost_per_kg_usd);if(!(kg>0&&r>0))return null;
+    const base=Math.round(kg*r*100)/100,bat=f.cost_battery?10:0,brand=f.cost_brand?Math.round(0.7*kg*100)/100:0,ow=Math.max(0,Math.round(numF(f.cost_overweight_pieces)))*35;
+    return {base,bat,brand,ow,total:Math.round((base+bat+brand+ow)*100)/100};};
   const [savingCost,setSavingCost]=useState(false);
   const [confirmCostModal,setConfirmCostModal]=useState(null); // {newCost, newWeight}
-  const openEditCost=()=>{setCostForm({total_cost_usd:flight.total_cost_usd||"",total_weight_kg:flight.total_weight_kg||"",international_carrier:flight.international_carrier||"",international_tracking:flight.international_tracking||"",payment_method:flight.payment_method||""});setEditCost(true);};
+  const openEditCost=()=>{
+    const kg=Number(flight.total_weight_kg||0),tot=Number(flight.total_cost_usd||0);
+    // Vuelos viejos sin USD/kg guardado: se deduce del total para que al abrir no cambie nada.
+    const extras=(flight.cost_battery?10:0)+(flight.cost_brand?0.7*kg:0)+Number(flight.cost_overweight_pieces||0)*35;
+    const rate=Number(flight.cost_per_kg_usd||0)||(kg>0&&tot>0?Math.round(((tot-extras)/kg)*10000)/10000:"");
+    setCostForm({total_cost_usd:flight.total_cost_usd||"",total_weight_kg:flight.total_weight_kg||"",cost_per_kg_usd:rate,cost_battery:!!flight.cost_battery,cost_brand:!!flight.cost_brand,cost_overweight_pieces:Number(flight.cost_overweight_pieces||0),international_carrier:flight.international_carrier||"",international_tracking:flight.international_tracking||"",payment_method:flight.payment_method||""});setEditCost(true);};
+  // El empleado no ve la plata: su edición conserva el costo que estaba.
+  const costoNuevo=()=>esEmpleado()?Number(flight.total_cost_usd||0):(costoPorConceptos(costForm)?.total||0);
   const requestSaveCost=()=>{
-    const newCost=Number(costForm.total_cost_usd||0);
+    const newCost=costoNuevo();
     const newWeight=Number(costForm.total_weight_kg||0);
     if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
     setConfirmCostModal({newCost,newWeight});
   };
   const saveCost=async()=>{
-    const newCost=Number(costForm.total_cost_usd||0);
+    const newCost=costoNuevo();
     const newWeight=Number(costForm.total_weight_kg||0);
     if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
     // Sin bultos en memoria el reparto daría 0/0 y pisaría cost_share/weight_kg/cost_flete
@@ -8665,6 +8678,15 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     const newCarrier=costForm.international_carrier||null;
     const newTracking=costForm.international_tracking||null;
     const flightPatch={total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:newCarrier,international_tracking:newTracking,payment_method:newPmt};
+    if(!esEmpleado()){
+      flightPatch.cost_per_kg_usd=numF(costForm.cost_per_kg_usd)||null;
+      flightPatch.cost_battery=!!costForm.cost_battery;
+      flightPatch.cost_brand=!!costForm.cost_brand;
+      flightPatch.cost_overweight_pieces=Math.max(0,Math.round(numF(costForm.cost_overweight_pieces)));
+      // Alibaba / Alipay todavía sin completar: el costo base pendiente sigue al nuevo.
+      if(newPmt==="alibaba"&&flight.payment_method==="alibaba"&&flight.awaiting_alibaba_payment)flightPatch.alibaba_base_cost_usd=newCost;
+      if(newPmt==="alipay"&&flight.payment_method==="alipay"&&flight.awaiting_alipay_payment)flightPatch.alipay_base_cost_usd=newCost;
+    }
     // Si admin cambia a 'alibaba' (rookie agent se equivocó), reactivar el flujo pendiente para que se complete via banner HOY
     if(newPmt==="alibaba"&&flight.payment_method!=="alibaba"){
       flightPatch.awaiting_alibaba_payment=true;
@@ -9322,7 +9344,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             [`Tarifa · ${kg.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × ${usd(rate)}/kg`,base,false],
             ...(flight.cost_battery?[["🔋 Baterías",10,true]]:[]),
             ...(brand>0?[[`🏷 Marca · USD 0,70/kg × ${kg.toLocaleString("es-AR",{maximumFractionDigits:2})} kg`,brand,true]]:[]),
-            ...(Number(flight.cost_overweight_pieces||0)>0?[["⚖ Sobrepeso",35,true]]:[]),
+            ...(Number(flight.cost_overweight_pieces||0)>0?[[`⚖ Sobrepeso${Number(flight.cost_overweight_pieces)>1?` · ${flight.cost_overweight_pieces} piezas × USD 35`:""}`,Number(flight.cost_overweight_pieces)*35,true]]:[]),
           ];
           return <div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
             <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Desglose del costo</p>
@@ -9364,22 +9386,49 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
           <p style={{fontSize:11,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ Editar redistribuye el costo entre las {flightOps.length} operaciones del vuelo proporcional al peso de cada una. Se actualiza <code>cost_flete</code> en cada op.</p>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-          {!esEmpleado()&&<Inp label="Costo total (USD)" type="number" step="0.01" value={costForm.total_cost_usd} onChange={v=>setCostForm(p=>({...p,total_cost_usd:v}))}/>}
-          <Inp label="Peso total (kg)" type="number" step="0.01" value={costForm.total_weight_kg} onChange={v=>setCostForm(p=>({...p,total_weight_kg:v}))}/>
-          <Inp label="Carrier" value={costForm.international_carrier} onChange={v=>setCostForm(p=>({...p,international_carrier:v}))}/>
-          <Inp label="Tracking" value={costForm.international_tracking} onChange={v=>setCostForm(p=>({...p,international_tracking:v}))}/>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-          <label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Método de pago</label>
-          <select value={costForm.payment_method||""} onChange={e=>setCostForm(p=>({...p,payment_method:e.target.value}))} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}>
-            <option value="" style={{background:"#142038"}}>—</option>
-            <option value="cuenta_corriente" style={{background:"#142038"}}>Cuenta Corriente</option>
-            <option value="alibaba" style={{background:"#142038"}}>Alibaba (pendiente de completar)</option>
-            <option value="alipay" style={{background:"#142038"}}>Alipay (pendiente de completar)</option>
-          </select>
-        </div>
-        {Number(costForm.total_cost_usd)>0&&totalFactKg>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante (peso facturable {totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg): <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/totalFactKg)}/kg</strong></p>}
+        {(()=>{const cc=costoPorConceptos(costForm);const usdF=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+          const toggle=(k,icon,l,sub)=>{const on=!!costForm[k];return <button type="button" onClick={()=>setCostForm(p=>({...p,[k]:!p[k]}))} style={{flex:"1 1 170px",textAlign:"left",padding:"11px 13px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",border:on?"1.5px solid rgba(251,191,36,0.7)":"1px solid rgba(255,255,255,0.12)",background:on?"rgba(251,191,36,0.1)":"rgba(255,255,255,0.03)",color:"#fff"}}>
+            <span style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:13,fontWeight:800}}>{icon} {l}<span style={{width:34,height:20,borderRadius:999,background:on?"#fbbf24":"rgba(255,255,255,0.18)",position:"relative",flexShrink:0}}><span style={{position:"absolute",top:2,left:on?16:2,width:16,height:16,borderRadius:999,background:"#fff",transition:"left .15s"}}/></span></span>
+            <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3}}>{sub}</span>
+          </button>;};
+          const piezas=Math.max(0,Math.round(numF(costForm.cost_overweight_pieces)));
+          return <>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+              <Inp label="Kg facturables" type="number" step="0.01" value={costForm.total_weight_kg} onChange={v=>setCostForm(p=>({...p,total_weight_kg:v}))}/>
+              {!esEmpleado()&&<Inp label="Costo por kg (USD)" type="number" step="0.01" value={costForm.cost_per_kg_usd} onChange={v=>setCostForm(p=>({...p,cost_per_kg_usd:v}))}/>}
+            </div>
+            {!esEmpleado()&&<>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+                {toggle("cost_battery","🔋","Baterías","+ USD 10 por vuelo")}
+                {toggle("cost_brand","🏷","Marca","+ USD 0,70 por kg")}
+                <div style={{flex:"1 1 170px",padding:"11px 13px",borderRadius:10,border:piezas>0?"1.5px solid rgba(251,191,36,0.7)":"1px solid rgba(255,255,255,0.12)",background:piezas>0?"rgba(251,191,36,0.1)":"rgba(255,255,255,0.03)"}}>
+                  <span style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:13,fontWeight:800,color:"#fff"}}>⚖ Sobrepeso
+                    <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                      <button type="button" onClick={()=>setCostForm(p=>({...p,cost_overweight_pieces:Math.max(0,piezas-1)}))} style={{width:24,height:24,borderRadius:7,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#fff",cursor:"pointer",fontWeight:800}}>−</button>
+                      <b style={{minWidth:16,textAlign:"center"}}>{piezas}</b>
+                      <button type="button" onClick={()=>setCostForm(p=>({...p,cost_overweight_pieces:piezas+1}))} style={{width:24,height:24,borderRadius:7,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#fff",cursor:"pointer",fontWeight:800}}>+</button>
+                    </span>
+                  </span>
+                  <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3}}>USD 35 por pieza</span>
+                </div>
+              </div>
+              <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+                {cc?<>
+                  {[[`Tarifa · ${numF(costForm.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg × ${usdF(numF(costForm.cost_per_kg_usd))}/kg`,cc.base],...(cc.bat?[["🔋 Baterías",cc.bat]]:[]),...(cc.brand?[["🏷 Marca",cc.brand]]:[]),...(cc.ow?[[`⚖ Sobrepeso · ${piezas} × USD 35`,cc.ow]]:[])].map(([l,v],i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"3px 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}><span>{l}</span><span style={{fontWeight:700,color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>{usdF(v)}</span></div>)}
+                  <div style={{display:"flex",justifyContent:"space-between",gap:10,paddingTop:7,marginTop:4,borderTop:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:13,fontWeight:800,color:"#fff"}}>Costo total</span><span style={{fontSize:15,fontWeight:900,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>{usdF(cc.total)}</span></div>
+                  {Math.abs(cc.total-Number(flight.total_cost_usd||0))>0.009&&<p style={{fontSize:11,color:"#fbbf24",margin:"6px 0 0"}}>Antes {usdF(flight.total_cost_usd)} · diferencia {cc.total-Number(flight.total_cost_usd||0)>0?"+":""}{usdF(cc.total-Number(flight.total_cost_usd||0))}{(costForm.payment_method||flight.payment_method)==="cuenta_corriente"?" · se ajusta en la cuenta corriente del agente":""}</p>}
+                </>:<p style={{fontSize:12,color:"#fbbf24",margin:0}}>Cargá los kg facturables y el costo por kg.</p>}
+              </div>
+            </>}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+              <Inp label="Carrier" value={costForm.international_carrier} onChange={v=>setCostForm(p=>({...p,international_carrier:v}))}/>
+              <Inp label="Tracking" value={costForm.international_tracking} onChange={v=>setCostForm(p=>({...p,international_tracking:v}))}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+              <label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",marginRight:4}}>Método de pago</label>
+              {[["cuenta_corriente","Cuenta corriente"],["alibaba","Alibaba (pendiente)"],["alipay","Alipay (pendiente)"]].map(([k,l])=>{const on=costForm.payment_method===k;return <button key={k} type="button" onClick={()=>setCostForm(p=>({...p,payment_method:k}))} style={{padding:"6px 12px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",fontFamily:"inherit",border:on?`1.5px solid ${IC}`:"1px solid rgba(255,255,255,0.14)",background:on?"rgba(184,149,106,0.14)":"transparent",color:on?"#fff":"rgba(255,255,255,0.65)"}}>{l}</button>;})}
+            </div>
+          </>;})()}
         <div style={{display:"flex",gap:8}}>
           <Btn small onClick={requestSaveCost} disabled={savingCost}>{savingCost?"Guardando…":"💾 Guardar y recalcular"}</Btn>
           <Btn small variant="secondary" onClick={()=>setEditCost(false)} disabled={savingCost}>Cancelar</Btn>
