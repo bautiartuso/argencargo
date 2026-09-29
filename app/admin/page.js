@@ -10527,7 +10527,11 @@ function AgentsPanel({token}){
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
             {["Código","Estado","⚠","Clientes","Destinatario","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
-          <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+          <tbody>{(()=>{
+            // Vuelos en operación agrupados (29/09/2026): primero los que faltan despachar, después
+            // por carrier (DHL, FedEx, UPS) y dentro de cada uno CF/monotributo y responsable inscripto.
+            // Recibidos quedan como antes (por fecha de recepción).
+            const filaVuelo=(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
             // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
             const demoraInfo=(()=>{
@@ -10597,7 +10601,36 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
-          </tr>;})}</tbody>
+          </tr>;});
+            if(flightsSubTab==="received")return shownFlights.map(filaVuelo);
+            const esRIv=(f)=>flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.clients?.tax_condition==="responsable_inscripto");
+            const carrierDe=(f)=>{if(f.status==="preparando")return "listo";const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
+            const GR=[{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
+            const porNum=(x,y)=>String(y.flight_code||"").localeCompare(String(x.flight_code||""),undefined,{numeric:true});
+            const out=[];
+            GR.forEach(g=>{
+              const del=shownFlights.filter(f=>carrierDe(f)===g.k).sort(porNum);
+              if(!del.length)return;
+              const kgG=del.reduce((acc,f)=>acc+Number(f.total_weight_kg||0),0);
+              out.push(<tr key={`g-${g.k}`}><td colSpan={14} style={{padding:"16px 14px 8px",background:"rgba(0,0,0,0.28)",borderTop:out.length?"2px solid rgba(255,255,255,0.08)":"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{width:4,height:22,borderRadius:3,background:g.c}}/>
+                  <span style={{fontSize:14,fontWeight:900,color:g.c,letterSpacing:"0.05em",textTransform:"uppercase"}}>{g.l}</span>
+                  <span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:999,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.75)"}}>{del.length} vuelo{del.length!==1?"s":""}</span>
+                  {kgG>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{kgG.toLocaleString("es-AR",{maximumFractionDigits:2})} kg de vuelo</span>}
+                </div>
+              </td></tr>);
+              [["cf","Consumidor final · Monotributo",del.filter(f=>!esRIv(f))],["ri","Responsable inscripto",del.filter(esRIv)]].forEach(([sk,sl,lst])=>{
+                if(!lst.length)return;
+                out.push(<tr key={`s-${g.k}-${sk}`}><td colSpan={14} style={{padding:"7px 14px 7px 30px",background:"rgba(255,255,255,0.02)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                  <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:sk==="ri"?"#60a5fa":"rgba(255,255,255,0.6)"}}>{sk==="ri"?"🧾 ":"👤 "}{sl}</span>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{lst.length}</span>
+                </td></tr>);
+                lst.forEach(f=>out.push(filaVuelo(f)));
+              });
+            });
+            return out;
+          })()}</tbody>
           <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.35)",background:"rgba(0,0,0,0.25)"}}>
             <td colSpan={5} style={{padding:"9px 8px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"right"}}>Σ {shownFlights.length} vuelo{shownFlights.length!==1?"s":""}</td>
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",fontVariantNumeric:"tabular-nums"}}>{tot.bultos||"—"}</td>
