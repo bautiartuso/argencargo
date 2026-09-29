@@ -15872,7 +15872,7 @@ function MaritimePanel({token,allClients=[]}){
   const [llegadaMt,setLlegadaMt]=useState(null); // carga a la que se le marca el día de llegada
   // Sincronía con la planilla del depósito: lo que marca el depósito aparece solo, sin refrescar.
   const ocupadoRef=useRef(false);
-  ocupadoRef.current=!!(showNew||editingWh||editingContainer||costModal||linkingContainer||creatingOp||llegadaMt||selectedShipments.size>0);
+  ocupadoRef.current=!!(showNew||editingWh||editingContainer||costModal||linkingContainer||creatingOp||llegadaMt||subiendoFoto||selectedShipments.size>0);
   useEffect(()=>{
     const tick=()=>{if(document.visibilityState==="visible"&&!ocupadoRef.current)load(true);};
     const iv=setInterval(tick,15000);
@@ -15937,18 +15937,19 @@ function MaritimePanel({token,allClients=[]}){
     const urls=[];for(const f of lista){const u=await subirFotoMaritima(token,f);if(u)urls.push(u);}
     setSubiendoFoto(null);
     if(!urls.length){toast("No se pudo subir la foto","error");return;}
-    const col=colFoto(kind);
-    const actual=shipments.find(x=>x.id===sh.id)||sh;
-    const nuevas=[...(actual[col]||[]),...urls];
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{[col]:nuevas}});
-    setShipments(p=>p.map(x=>x.id===sh.id?{...x,[col]:nuevas}:x));toast(`${kind==="merc"?"Foto de la mercadería":"Foto del bulto"} subida`,"success");
+    // Se agrega en la base de una sola vez (no se manda la lista entera): un refresco automático en
+    // el medio ya no puede hacer perder una foto.
+    const r=await dq("rpc/maritime_agregar_fotos",{method:"POST",token,body:{p_id:sh.id,p_merc:kind==="merc",p_urls:urls}});
+    const fila=Array.isArray(r)?r[0]:null;
+    if(!fila){toast("La foto se subió pero no se pudo guardar en la carga. Probá de nuevo.","error");return;}
+    setShipments(p=>p.map(x=>x.id===sh.id?{...x,fotos:fila.fotos,fotos_mercaderia:fila.fotos_mercaderia}:x));toast(`${kind==="merc"?"Foto de la mercadería":"Foto del bulto"} guardada`,"success");
   };
   const quitarFoto=async(sh,url,kind="bulto")=>{
     if(!await confirmDialog("¿Quitar esta foto?"))return;
-    const col=colFoto(kind);
-    const nuevas=(sh[col]||[]).filter(u=>u!==url);
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{[col]:nuevas}});
-    setShipments(p=>p.map(x=>x.id===sh.id?{...x,[col]:nuevas}:x));
+    const r=await dq("rpc/maritime_quitar_foto",{method:"POST",token,body:{p_id:sh.id,p_merc:kind==="merc",p_url:url}});
+    const fila=Array.isArray(r)?r[0]:null;
+    if(!fila){toast("No se pudo quitar la foto","error");return;}
+    setShipments(p=>p.map(x=>x.id===sh.id?{...x,fotos:fila.fotos,fotos_mercaderia:fila.fotos_mercaderia}:x));
   };
   // ⌘V / Ctrl+V con una imagen copiada: va a la zona de fotos elegida (la última que tocaste).
   useEffect(()=>{

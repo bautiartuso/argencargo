@@ -6,6 +6,7 @@ import { PROVINCIAS } from "../../lib/provincias";
 import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
+import MaritimeCargoCards from "./components/MaritimeCargoCards";
 import { useT, LANGS } from "../../lib/i18n-portal";
 import SupportPage from "./components/SupportPage";
 
@@ -2893,119 +2894,6 @@ function ReferralsPage({token,client}){
 
 // Sección t("mar.title"): cargas que ya están en un contenedor pero
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
-// Cargas marítimas que todavía no son operación (28/09/2026): tarjetas flotantes dentro de "En
-// curso", sin número de operación. Cerradas muestran lo esencial; se despliegan con un toque para
-// ver fotos, tracking, bultos con medidas y la mercadería. En depósito no se dice "depósito": se
-// le avisa al cliente que su carga ya fue cargada y que falta la confirmación del contenedor.
-function MaritimeCargoCards({cargo}){
-  const {t,lang}=useT();
-  const [abiertas,setAbiertas]=useState(()=>new Set());
-  const [foto,setFoto]=useState(null); // {fotos:[{u,k}],i}
-  const [copiado,setCopiado]=useState(null);
-  if(!cargo||cargo.length===0)return null;
-  const SKY="#8CC8F5";
-  const loc=lang==="zh"?"zh-CN":lang==="en"?"en-US":lang==="ru"?"ru-RU":"es-AR";
-  const fD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString(loc,{day:"2-digit",month:"2-digit",year:"numeric"}):null;
-  const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const m3=(v)=>`${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³`;
-  const copiar=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopiado(txt);setTimeout(()=>setCopiado(null),1600);}catch{}};
-  const fotosDe=(c)=>[...(c.fotos||[]).map(u=>({u,k:t("mar2.photoPkg")})),...(c.fotos_merc||[]).map(u=>({u,k:t("mar2.photoGoods")}))];
-  const dato=(l,v,col)=><div style={{minWidth:0}}><p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p></div>;
-  return <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
-    <style>{`.mc-card{transition:transform .18s ease,box-shadow .18s ease}.mc-card:hover{transform:translateY(-2px);box-shadow:0 18px 40px rgba(0,0,0,0.35)}.mc-head{display:grid;grid-template-columns:72px minmax(0,1fr) auto 28px;gap:16px;align-items:center}.mc-datos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.mc-carga{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px}@media(max-width:700px){.mc-head{grid-template-columns:58px minmax(0,1fr) 24px}.mc-total{grid-column:1/-1;text-align:left !important;display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)}.mc-datos{grid-template-columns:repeat(2,minmax(0,1fr))}.mc-carga{grid-template-columns:1fr}}`}</style>
-    {cargo.map(g=>{
-      const abierta=abiertas.has(g.id);
-      const toggle=()=>setAbiertas(p=>{const n=new Set(p);n.has(g.id)?n.delete(g.id):n.add(g.id);return n;});
-      const dep=g.etapa==="deposito";
-      const cargas=Array.isArray(g.cargas)?g.cargas:[];
-      const portada=cargas.map(c=>fotosDe(c)[0]).find(Boolean);
-      const descs=cargas.map(c=>c.descripcion).filter(Boolean);
-      const titulo=descs.length>1?`${descs.length} ${t("mar2.products")} · ${descs.join(", ")}`:(descs[0]||t("mar2.seaCargo"));
-      const acento=dep?"#4ade80":SKY;
-      const chip=dep?t("mar2.stageDepot"):t("mar.inTransit");
-      return <div key={g.id} className="mc-card" style={{borderRadius:18,border:`1px solid ${dep?"rgba(74,222,128,0.28)":"rgba(140,200,245,0.28)"}`,background:dep?"linear-gradient(135deg,rgba(74,222,128,0.08),rgba(255,255,255,0.02) 55%)":"linear-gradient(135deg,rgba(140,200,245,0.09),rgba(255,255,255,0.02) 55%)",boxShadow:"0 10px 30px rgba(0,0,0,0.25)",overflow:"hidden"}}>
-        <div className="mc-head" onClick={toggle} style={{padding:"16px 18px",cursor:"pointer"}}>
-          <div onClick={e=>{if(portada){e.stopPropagation();setFoto({fotos:cargas.flatMap(fotosDe),i:0});}}} style={{width:"100%",aspectRatio:"1",borderRadius:14,background:portada?`url(${portada.u}) center/cover`:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,cursor:portada?"zoom-in":"pointer"}}>{portada?"":"🚢"}</div>
-          <div style={{minWidth:0}}>
-            <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10.5,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:acento,background:`${acento}1f`,border:`1px solid ${acento}55`}}>{chip}</span>
-            <p style={{margin:"7px 0 0",fontSize:15.5,fontWeight:800,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{titulo}</p>
-            <p style={{margin:"3px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.65)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-              {dep?t("mar2.depotTitle"):[g.contenedor&&`${t("mar2.container")} ${g.contenedor}`,g.eta_puerto&&`${t("mar2.eta")} ${fD(g.eta_puerto)}`].filter(Boolean).join(" · ")||t("mar.inTransit")}
-            </p>
-          </div>
-          <div className="mc-total" style={{textAlign:"right"}}>
-            <div>
-              <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.total")}</p>
-              <p style={{margin:"2px 0 0",fontSize:20,fontWeight:900,color:g.total_estimado?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{g.total_estimado?usd(g.total_estimado):t("mar2.toConfirm")}</p>
-            </div>
-            <p style={{margin:"1px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{t("mar2.estimated")}</p>
-          </div>
-          <span style={{width:28,height:28,borderRadius:999,border:"1px solid rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,transform:abierta?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span>
-        </div>
-
-        <div style={{padding:"0 18px 16px"}}>
-          {dep
-            ?<div style={{padding:"12px 14px",borderRadius:12,background:"rgba(74,222,128,0.08)",border:"1px solid rgba(74,222,128,0.25)",display:"flex",gap:12,alignItems:"flex-start"}}>
-              <span style={{fontSize:20,lineHeight:1}}>🕓</span>
-              <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.85)",lineHeight:1.5}}>{t("mar2.depotMsg")}</p>
-            </div>
-            :<div className="mc-datos" style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
-              {dato(t("mar2.eta"),fD(g.eta_puerto)||t("mar2.pending"),g.transbordo?"#fb923c":SKY)}
-              {dato(t("mar2.delivery"),fD(g.entrega_estimada)||t("mar2.pending"),"#4ade80")}
-              {dato(t("mar2.pkgs"),String(g.bultos||0))}
-              {dato(t("mar2.volume"),m3(g.cbm))}
-            </div>}
-          {g.transbordo&&<div style={{marginTop:10,padding:"9px 12px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:10,display:"flex",alignItems:"center",gap:9}}>
-            <span style={{fontSize:16}}>🔄</span>
-            <p style={{fontSize:12,color:"#fdba74",margin:0,lineHeight:1.45}}>{t("mar.transship1")} <b>transbordo en {g.transbordo.lugar}</b>{t("mar.transship2")} <b>{g.transbordo.dias} días</b>{t("mar.transship3")}</p>
-          </div>}
-
-          {abierta&&<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:10}}>
-            {cargas.map(c=>{const fts=fotosDe(c);return <div key={c.id} className="mc-carga" style={{padding:"14px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {fts.length?fts.map((f,i)=><div key={f.u} onClick={()=>setFoto({fotos:fts,i})} style={{position:"relative",width:104,height:104,borderRadius:12,background:`url(${f.u}) center/cover`,border:"1px solid rgba(255,255,255,0.14)",cursor:"zoom-in"}}>
-                  <span style={{position:"absolute",left:6,bottom:6,fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:999,background:"rgba(10,22,40,0.85)",color:"#fff"}}>{f.k}</span>
-                </div>):<div style={{width:104,height:104,borderRadius:12,border:"1px dashed rgba(255,255,255,0.18)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,color:"rgba(255,255,255,0.5)",fontSize:11,textAlign:"center"}}><span style={{fontSize:22}}>📦</span>{t("mar2.noPhoto")}</div>}
-              </div>
-              <div style={{minWidth:0}}>
-                <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>{c.descripcion||t("mar2.seaCargo")}</p>
-                {c.tracking&&<div style={{marginTop:8}}>
-                  <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.tracking")}</p>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:3,flexWrap:"wrap"}}>
-                    <span style={{fontSize:14,fontWeight:700,color:SKY,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.03em",wordBreak:"break-all"}}>{c.tracking}</span>
-                    <button onClick={()=>copiar(c.tracking)} style={{padding:"3px 9px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(140,200,245,0.4)",background:"rgba(140,200,245,0.08)",color:SKY,cursor:"pointer",fontFamily:"inherit"}}>{copiado===c.tracking?`✓ ${t("mar2.copied")}`:t("mar2.copy")}</button>
-                  </div>
-                </div>}
-                {c.productos?.length>1&&<div style={{marginTop:10}}>
-                  <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.goods")}</p>
-                  <p style={{margin:"3px 0 0",fontSize:13,color:"rgba(255,255,255,0.8)"}}>{c.productos.map(p=>`${p.d}${p.q?` ×${p.q}`:""}`).join(" · ")}</p>
-                </div>}
-                <div style={{marginTop:10}}>
-                  <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.pkgDetail")} · {c.bultos} · {m3(c.cbm)}</p>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
-                    {(c.bultos_detalle||[]).length?c.bultos_detalle.map((b,i)=><span key={i} style={{fontSize:12.5,fontWeight:700,padding:"5px 10px",borderRadius:9,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",color:"#fff",fontVariantNumeric:"tabular-nums"}}>{b.qty>1?`${b.qty} × `:""}{b.dims||t("mar2.noDims")}</span>):<span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>{t("mar2.noDims")}</span>}
-                  </div>
-                </div>
-              </div>
-            </div>;})}
-          </div>}
-
-          <button onClick={toggle} style={{marginTop:12,width:"100%",padding:"9px 12px",fontSize:12.5,fontWeight:700,borderRadius:10,border:`1px solid ${acento}44`,background:`${acento}0f`,color:acento,cursor:"pointer",fontFamily:"inherit"}}>{abierta?`▴ ${t("mar2.showLess")}`:`▾ ${t("mar2.showMore")}`}</button>
-        </div>
-      </div>;})}
-
-    {foto&&<div onClick={()=>setFoto(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(5,10,20,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <img src={foto.fotos[foto.i].u} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"82vh",borderRadius:14}}/>
-      <span style={{position:"absolute",top:20,left:"50%",transform:"translateX(-50%)",padding:"6px 14px",borderRadius:999,background:"#fff",color:"#0A1628",fontSize:13.5,fontWeight:800}}>{foto.fotos[foto.i].k}</span>
-      <button onClick={()=>setFoto(null)} aria-label="✕" style={{position:"absolute",top:16,right:16,width:40,height:40,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:18,cursor:"pointer"}}>✕</button>
-      {foto.fotos.length>1&&<>
-        <button onClick={e=>{e.stopPropagation();setFoto(f=>({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));}} style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:26,cursor:"pointer"}}>‹</button>
-        <button onClick={e=>{e.stopPropagation();setFoto(f=>({...f,i:(f.i+1)%f.fotos.length}));}} style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:26,cursor:"pointer"}}>›</button>
-      </>}
-    </div>}
-  </div>;
-}
-
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const {t}=useT();
   const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);
