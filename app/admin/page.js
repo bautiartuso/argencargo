@@ -10154,8 +10154,10 @@ function AgentsPanel({token}){
   const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12,animation:"ac_fade_in 200ms"}}>✓ {msg}</p>}
-    <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
-      {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{tb.l}{tb.n!==undefined&&<span style={{fontSize:10,fontWeight:700,color:active?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+    <div style={{display:"flex",justifyContent:"center",marginBottom:22}}>
+      <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
+        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+      </div>
     </div>
 
     {tab==="deposito"&&(()=>{
@@ -10513,17 +10515,17 @@ function AgentsPanel({token}){
           const ri=o.clients?.tax_condition==="responsable_inscripto";const ing=Math.max(0,Number(o.budget_total||0)-(ri?Number(o.budget_taxes||0):0));
           if(!(Number(o.budget_total||0)>0))sinPres++;total+=ing;if(o.is_collected)cobrado+=ing;});
         const pend=total-cobrado;
-        return <div style={{display:"flex",gap:12,marginBottom:14,alignItems:"stretch",flexWrap:"wrap"}}>
-      <div style={{display:"flex",gap:6,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,width:"fit-content"}}>
-        {[{k:"active",l:"En operación",n:activeFlights.length,c:"#60a5fa"},{k:"received",l:"Recibidos",n:receivedFlights.length,c:"#22c55e"}].map(st=>{const isActive=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:7,background:isActive?`linear-gradient(135deg, ${st.c}33, ${st.c}1A)`:"transparent",color:isActive?st.c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,boxShadow:isActive?`inset 0 0 0 1px ${st.c}55`:"none"}}>{st.l}<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,background:isActive?`${st.c}33`:"rgba(255,255,255,0.08)",color:isActive?st.c:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
+        return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"inline-flex",gap:4,padding:4,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+        {[{k:"active",l:"En operación",n:activeFlights.length},{k:"received",l:"Recibidos",n:receivedFlights.length}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",boxShadow:on?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
       </div>
-      <div title="Presupuestos de las operaciones en vuelos en operación que todavía no se cobraron. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:16,padding:"6px 16px",background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10}}>
+      {<div title="Presupuestos de las operaciones en vuelos en operación que todavía no se cobraron. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:14,padding:"9px 18px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+        <span style={{fontSize:18}}>✈️</span>
         <div>
-          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:0}}>Pendiente de cobro · en el aire</p>
-          <p style={{fontSize:18,fontWeight:800,color:"#fbbf24",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{usd(pend)}</p>
-          {sinPres>0&&<p style={{fontSize:10.5,color:"#f87171",margin:"3px 0 0"}}>{sinPres} op{sinPres!==1?"s":""} sin presupuesto</p>}
+          <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:0}}>Pendiente de cobro en el aire</p>
+          <p style={{fontSize:19,fontWeight:900,color:GOLD_LIGHT,margin:"1px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.15}}>{usd(pend)}{sinPres>0&&<span style={{fontSize:11,fontWeight:700,color:"#fca5a5",marginLeft:10}}>{sinPres} op{sinPres!==1?"s":""} sin presupuesto</span>}</p>
         </div>
-      </div>
+      </div>}
       </div>;})()}
       {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
@@ -10617,17 +10619,13 @@ function AgentsPanel({token}){
               if(!del.length)return;
               const kgG=del.reduce((acc,f)=>acc+Number(f.total_weight_kg||0),0);
               const plegado=vuelosPlegados.has(g.k);const logo=CARRIER_LOGOS[g.k];
-              out.push(<tr key={`g-${g.k}`} onClick={()=>togglePlegado(g.k)} style={{cursor:"pointer"}}><td colSpan={14} style={{padding:"18px 14px",background:"rgba(0,0,0,0.3)",borderTop:out.length?"2px solid rgba(255,255,255,0.08)":"none",borderBottom:plegado?"none":"1px solid rgba(255,255,255,0.06)"}}>
+              out.push(<tr key={`g-${g.k}`} onClick={()=>togglePlegado(g.k)} style={{cursor:"pointer"}}><td colSpan={14} style={{padding:logo?"14px 14px":"9px 14px",background:"rgba(0,0,0,0.3)",borderTop:out.length?"2px solid rgba(255,255,255,0.08)":"none",borderBottom:plegado?"none":"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:14}}>
                   <span/>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>
                     {logo
                       ?<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",height:46,width:160,borderRadius:12,background:logo.bg,boxShadow:`0 6px 18px ${logo.bg}33`}}><svg viewBox={logo.vb} style={{height:g.k==="ups"?34:g.k==="fedex"?26:18,width:"auto",display:"block"}} role="img" aria-label={g.l}><path d={logo.d} fill={logo.fill}/></svg></span>
-                      :<span style={{fontSize:15,fontWeight:900,color:g.c,letterSpacing:"0.06em",textTransform:"uppercase"}}>{g.l}</span>}
-                    <span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",display:"inline-flex",gap:10,alignItems:"center"}}>
-                      <b style={{color:"#fff"}}>{del.length} vuelo{del.length!==1?"s":""}</b>
-                      {kgG>0&&<span>{kgG.toLocaleString("es-AR",{maximumFractionDigits:2})} kg de vuelo</span>}
-                    </span>
+                      :<span style={{fontSize:13.5,fontWeight:900,color:g.c,letterSpacing:"0.08em",textTransform:"uppercase"}}>{g.l}</span>}
                   </div>
                   <span style={{justifySelf:"end",width:32,height:32,borderRadius:999,border:"1px solid rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",transform:plegado?"none":"rotate(180deg)",transition:"transform .2s"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                 </div>
