@@ -10154,11 +10154,40 @@ function AgentsPanel({token}){
   const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12,animation:"ac_fade_in 200ms"}}>✓ {msg}</p>}
-    <div style={{display:"flex",justifyContent:"center",marginBottom:22}}>
+    {(()=>{
+      // Fila superior (29/09/2026): en Vuelos, "En operación / Recibidos" a la izquierda y el
+      // pendiente de cobro en el aire a la derecha, en la misma línea que las solapas.
+      const enVuelos=tab==="flights"&&!selFlight;
+      let izq=null,der=null;
+      if(enVuelos){
+        const act=flights.filter(f=>f.status!=="recibido"),rec=flights.length-act.length;
+        const activeIds=new Set(act.map(f=>f.id));const vistas=new Set();let total=0,cobrado=0,sinPres=0;
+        flightOps.forEach(fo=>{if(!activeIds.has(fo.flight_id)||!fo.operation_id||vistas.has(fo.operation_id))return;vistas.add(fo.operation_id);const o=fo.operations;if(!o)return;
+          const ri=o.clients?.tax_condition==="responsable_inscripto";const ing=Math.max(0,Number(o.budget_total||0)-(ri?Number(o.budget_taxes||0):0));
+          if(!(Number(o.budget_total||0)>0))sinPres++;total+=ing;if(o.is_collected)cobrado+=ing;});
+        const pend=total-cobrado;
+        izq=<div style={{display:"inline-flex",gap:4,padding:4,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+          {[{k:"active",l:"En operación",n:act.length},{k:"received",l:"Recibidos",n:rec}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"9px 16px",fontSize:13,fontWeight:800,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",boxShadow:on?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
+        </div>;
+        der=<div title="Presupuestos de las operaciones en vuelos en operación que todavía no se cobraron. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+          <span style={{fontSize:17}}>✈️</span>
+          <div>
+            <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:0}}>Pendiente de cobro en el aire</p>
+            <p style={{fontSize:18,fontWeight:900,color:GOLD_LIGHT,margin:"1px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.15}}>{usd(pend)}{sinPres>0&&<span style={{fontSize:11,fontWeight:700,color:"#fca5a5",marginLeft:10}}>{sinPres} op{sinPres!==1?"s":""} sin presupuesto</span>}</p>
+          </div>
+        </div>;
+      }
+      return <div className="ag-top" style={{marginBottom:18}}>
+        <style>{`.ag-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}.ag-top>.ag-izq{justify-self:start}.ag-top>.ag-der{justify-self:end}@media(max-width:1250px){.ag-top{grid-template-columns:1fr}.ag-top>*{justify-self:center!important}.ag-top>.ag-centro{order:-1}}`}</style>
+        <div className="ag-izq">{izq}</div>
+        <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
         {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
-    </div>
+            </div>
+        <div className="ag-der">{der}</div>
+      </div>;
+    })()}
 
     {tab==="deposito"&&(()=>{
       // Filtrar: ops que ya están asignadas a un vuelo (despachado o no) NO aparecen acá
@@ -10506,27 +10535,6 @@ function AgentsPanel({token}){
         {aliPend.length>0&&<AlibabaPendingBanner flights={aliPend} token={token} onDone={load}/>}
         {aliPay.length>0&&<AlipayPendingBanner flights={aliPay} token={token} onDone={load}/>}
       </>;})()}
-      {/* Sub-tabs En operación / Recibidos + ingresos estimados de lo que está en el aire */}
-      {(()=>{
-        // Ingreso puro (no ganancia) de los vuelos en operación: presupuesto de cada op; a los RI no
-        // se les suma la parte impositiva porque los impuestos los pagan ellos. Sin costos, sin ganancia.
-        const activeIds=new Set(activeFlights.map(f=>f.id));const vistas=new Set();let total=0,cobrado=0,sinPres=0;
-        flightOps.forEach(fo=>{if(!activeIds.has(fo.flight_id)||!fo.operation_id||vistas.has(fo.operation_id))return;vistas.add(fo.operation_id);const o=fo.operations;if(!o)return;
-          const ri=o.clients?.tax_condition==="responsable_inscripto";const ing=Math.max(0,Number(o.budget_total||0)-(ri?Number(o.budget_taxes||0):0));
-          if(!(Number(o.budget_total||0)>0))sinPres++;total+=ing;if(o.is_collected)cobrado+=ing;});
-        const pend=total-cobrado;
-        return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-      <div style={{display:"inline-flex",gap:4,padding:4,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
-        {[{k:"active",l:"En operación",n:activeFlights.length},{k:"received",l:"Recibidos",n:receivedFlights.length}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",boxShadow:on?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
-      </div>
-      {<div title="Presupuestos de las operaciones en vuelos en operación que todavía no se cobraron. A los RI no se les suma la parte impositiva." style={{display:"flex",alignItems:"center",gap:14,padding:"9px 18px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
-        <span style={{fontSize:18}}>✈️</span>
-        <div>
-          <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:0}}>Pendiente de cobro en el aire</p>
-          <p style={{fontSize:19,fontWeight:900,color:GOLD_LIGHT,margin:"1px 0 0",fontVariantNumeric:"tabular-nums",lineHeight:1.15}}>{usd(pend)}{sinPres>0&&<span style={{fontSize:11,fontWeight:700,color:"#fca5a5",marginLeft:10}}>{sinPres} op{sinPres!==1?"s":""} sin presupuesto</span>}</p>
-        </div>
-      </div>}
-      </div>;})()}
       {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -10613,9 +10621,12 @@ function AgentsPanel({token}){
             const carrierDe=(f)=>{if(f.status==="preparando")return "listo";const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
             const GR=[{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
             const porNum=(x,y)=>String(y.flight_code||"").localeCompare(String(x.flight_code||""),undefined,{numeric:true});
+            // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
+            const rangoEstado=(f)=>{if(f.carrier_delivered_at)return 0;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 1;return 2;};
+            const porEstado=(x,y)=>rangoEstado(x)-rangoEstado(y)||porNum(x,y);
             const out=[];
             GR.forEach(g=>{
-              const del=shownFlights.filter(f=>carrierDe(f)===g.k).sort(porNum);
+              const del=shownFlights.filter(f=>carrierDe(f)===g.k).sort(porEstado);
               if(!del.length)return;
               const kgG=del.reduce((acc,f)=>acc+Number(f.total_weight_kg||0),0);
               const plegado=vuelosPlegados.has(g.k);const logo=CARRIER_LOGOS[g.k];
