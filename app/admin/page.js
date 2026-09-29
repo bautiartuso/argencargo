@@ -8,6 +8,7 @@ import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
+import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 import { comprimirImagen } from "../../lib/img";
 
 // Cuenta para transferencias en pesos. Un solo lugar: antes estaba escrita a mano adentro del
@@ -9630,6 +9631,9 @@ function AgentsPanel({token}){
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(_sub.selFlight||null);
   const [flightsSubTab,setFlightsSubTab]=useState(_sub.flightsSubTab||"active"); // active | received
+  // Bloques de vuelos plegados (listos / DHL / FedEx / UPS), recordados en este navegador.
+  const [vuelosPlegados,setVuelosPlegadosRaw]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ac_vuelos_plegados")||"[]"));}catch{return new Set();}});
+  const togglePlegado=(k)=>setVuelosPlegadosRaw(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);try{localStorage.setItem("ac_vuelos_plegados",JSON.stringify([...n]));}catch{}return n;});
   // Persistir cambios de tab/selFlight/flightsSubTab
   useEffect(()=>{
     if(typeof window==="undefined")return;
@@ -10524,9 +10528,9 @@ function AgentsPanel({token}){
       {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
+          {flightsSubTab==="received"&&<thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
             {["Código","Estado","⚠","Clientes","Destinatario","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
-          </tr></thead>
+          </tr></thead>}
           <tbody>{(()=>{
             // Vuelos en operación agrupados (29/09/2026): primero los que faltan despachar, después
             // por carrier (DHL, FedEx, UPS) y dentro de cada uno CF/monotributo y responsable inscripto.
@@ -10612,14 +10616,24 @@ function AgentsPanel({token}){
               const del=shownFlights.filter(f=>carrierDe(f)===g.k).sort(porNum);
               if(!del.length)return;
               const kgG=del.reduce((acc,f)=>acc+Number(f.total_weight_kg||0),0);
-              out.push(<tr key={`g-${g.k}`}><td colSpan={14} style={{padding:"16px 14px 8px",background:"rgba(0,0,0,0.28)",borderTop:out.length?"2px solid rgba(255,255,255,0.08)":"none"}}>
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <span style={{width:4,height:22,borderRadius:3,background:g.c}}/>
-                  <span style={{fontSize:14,fontWeight:900,color:g.c,letterSpacing:"0.05em",textTransform:"uppercase"}}>{g.l}</span>
-                  <span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:999,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.75)"}}>{del.length} vuelo{del.length!==1?"s":""}</span>
-                  {kgG>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{kgG.toLocaleString("es-AR",{maximumFractionDigits:2})} kg de vuelo</span>}
+              const plegado=vuelosPlegados.has(g.k);const logo=CARRIER_LOGOS[g.k];
+              out.push(<tr key={`g-${g.k}`} onClick={()=>togglePlegado(g.k)} style={{cursor:"pointer"}}><td colSpan={14} style={{padding:"18px 14px",background:"rgba(0,0,0,0.3)",borderTop:out.length?"2px solid rgba(255,255,255,0.08)":"none",borderBottom:plegado?"none":"1px solid rgba(255,255,255,0.06)"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:14}}>
+                  <span/>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>
+                    {logo
+                      ?<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",height:46,width:160,borderRadius:12,background:logo.bg,boxShadow:`0 6px 18px ${logo.bg}33`}}><svg viewBox={logo.vb} style={{height:g.k==="ups"?34:g.k==="fedex"?26:18,width:"auto",display:"block"}} role="img" aria-label={g.l}><path d={logo.d} fill={logo.fill}/></svg></span>
+                      :<span style={{fontSize:15,fontWeight:900,color:g.c,letterSpacing:"0.06em",textTransform:"uppercase"}}>{g.l}</span>}
+                    <span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",display:"inline-flex",gap:10,alignItems:"center"}}>
+                      <b style={{color:"#fff"}}>{del.length} vuelo{del.length!==1?"s":""}</b>
+                      {kgG>0&&<span>{kgG.toLocaleString("es-AR",{maximumFractionDigits:2})} kg de vuelo</span>}
+                    </span>
+                  </div>
+                  <span style={{justifySelf:"end",width:32,height:32,borderRadius:999,border:"1px solid rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",transform:plegado?"none":"rotate(180deg)",transition:"transform .2s"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                 </div>
               </td></tr>);
+              if(plegado)return;
+              out.push(<tr key={`h-${g.k}`} style={{background:"rgba(0,0,0,0.18)"}}>{["Código","Estado","⚠","Clientes","Destinatario","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"9px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr>);
               [["cf","Consumidor final · Monotributo",del.filter(f=>!esRIv(f))],["ri","Responsable inscripto",del.filter(esRIv)]].forEach(([sk,sl,lst])=>{
                 if(!lst.length)return;
                 out.push(<tr key={`s-${g.k}-${sk}`}><td colSpan={14} style={{padding:"7px 14px 7px 30px",background:"rgba(255,255,255,0.02)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
