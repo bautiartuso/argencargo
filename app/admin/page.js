@@ -799,6 +799,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // escribe el admin. {die,te,iva} = impuestos de importación · des = desaduanaje sin IVA ·
   // bat = recargo por baterías · flete = flete sin el recargo.
   const [manualTax,setManualTax]=useState(null);
+  const [fleteRateDraft,setFleteRateDraft]=useState(null); // USD por kg (o m³) tipeado en el presupuesto manual
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
   // Resolucion del saldo al cerrar la OPERACION. La misma pregunta existia solo en el boton
   // "Cerrar cobro" de la solapa Finanzas, asi que cerrando la op desde Estado nunca aparecia y la
@@ -1959,6 +1960,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         if(field==="bat"||field==="flete")handleManualChange("budget_flete",String(rr(toNum(next.flete)+toNum(next.bat))));
         else handleManualChange("budget_taxes",String(rr(toNum(next.die)+toNum(next.te)+toNum(next.iva)+toNum(next.des)*1.21)));};
       const f2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Valor por kg (m³ en marítimo) del flete: al tipearlo, flete = kg facturables × valor.
+      const unidadFlete=op.channel?.includes("aereo")?"kg":"m³";
+      const tarifaFleteInput=(fleteActual,aplicar)=>{
+        const derivada=fleteAmt>0&&toNum(fleteActual)>0?String(Math.round((toNum(fleteActual)/fleteAmt)*100)/100).replace(".",","):"";
+        return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11.5,color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>
+          USD <input type="text" inputMode="decimal" value={fleteRateDraft??derivada} placeholder="0,00" title={`Valor por ${unidadFlete}: el flete se recalcula`} onChange={e=>{const v=e.target.value;if(v!==""&&!/^\d*[.,]?\d*$/.test(v))return;setFleteRateDraft(v);aplicar(String(Math.round(toNum(v)*fleteAmt*100)/100));}} style={{...manualInputStyle,width:78}}/>
+          /{unidadFlete} × {fleteAmt.toLocaleString("es-AR",{maximumFractionDigits:unidadFlete==="kg"?2:3})} {unidadFlete} =
+        </span>;};
       // Estilo común reutilizable (sin redefinir componente — evita remount + pérdida de foco)
       const manualInputStyle={width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
       // Si manual: usamos los valores guardados como los visualizados
@@ -1969,8 +1978,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           {isManual&&!editandoPresu&&<span title="Los valores están cargados a mano, no se recalculan solos" style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.14)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.35)",letterSpacing:"0.07em"}}>MANUAL</span>}
           {editandoPresu
             ?<>
-              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);setManualTax(null);}} style={b("transparent","rgba(255,255,255,0.55)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
-              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);setManualTax(null);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>💾 Guardar</button>
+              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);setManualTax(null);setFleteRateDraft(null);}} style={b("transparent","rgba(255,255,255,0.55)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
+              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);setManualTax(null);setFleteRateDraft(null);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>💾 Guardar</button>
             </>
             :<>
               {isManual&&<button disabled={saving} title="Vuelve a calcular el presupuesto con la lógica del sistema" onClick={async()=>{if(!await confirmDialog("Se van a recalcular todos los valores con la lógica del sistema y se pierde lo que cargaste a mano. ¿Seguir?"))return;await setBudgetMode("auto");}} style={b("transparent","rgba(255,255,255,0.6)","1px solid rgba(255,255,255,0.12)")}>↻ Recalcular automático</button>}
@@ -2072,10 +2081,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Total impuestos (USD)</span><span style={{fontSize:13,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{f2(toNum(op.budget_taxes))}</span></div>
             </>:<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{taxesBilledByArgencargo?"Total Impuestos (USD)":<>Impuestos (USD) <span style={{color:"rgba(96,165,250,0.85)",fontSize:11,fontStyle:"italic"}}>— informativo, el RI paga directo</span></>}</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>}
             {manualTax&&op.channel==="aereo_blanco"?<>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)  <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontStyle:"italic"}}>sin el recargo por baterías</span></span><input type="text" inputMode="decimal" value={manualTax.flete} placeholder="0,00" onChange={e=>handleTaxSplit("flete",e.target.value)} style={manualInputStyle}/></div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)  <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontStyle:"italic"}}>sin el recargo por baterías</span></span><span style={{display:"inline-flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>{tarifaFleteInput(manualTax.flete,(v)=>handleTaxSplit("flete",v))}<input type="text" inputMode="decimal" value={manualTax.flete} placeholder="0,00" onChange={e=>{setFleteRateDraft(null);handleTaxSplit("flete",e.target.value);}} style={manualInputStyle}/></span></div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por baterías (USD)  <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontStyle:"italic"}}>{op.has_battery?`USD ${isRI?2:1}/kg × ${f2(fleteAmt)} kg facturables`:"la carga no lleva baterías"}</span></span><input type="text" inputMode="decimal" value={manualTax.bat} placeholder="0,00" onChange={e=>handleTaxSplit("bat",e.target.value)} style={manualInputStyle}/></div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Total flete (USD)</span><span style={{fontSize:13,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{f2(toNum(manualTax.flete)+toNum(manualTax.bat))}</span></div>
-            </>:            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>}
+            </>:            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><span style={{display:"inline-flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>{tarifaFleteInput(op.budget_flete,(v)=>handleManualChange("budget_flete",v))}<input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>{setFleteRateDraft(null);handleManualChange("budget_flete",e.target.value);}} style={manualInputStyle}/></span></div>}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><input type="text" inputMode="decimal" value={op.budget_seguro??""} placeholder="0,00" onChange={e=>handleManualChange("budget_seguro",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por sobrepeso (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
           </>:<>
