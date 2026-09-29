@@ -1,24 +1,24 @@
 // GET /api/portal/maritime-cargo
-// Cargas marítimas del cliente logueado que YA están asignadas a un contenedor
-// pero TODAVÍA no se convirtieron en operación. Le permite al cliente ver su carga
-// "en camino" antes de que exista la op.
+// Cargas marítimas del cliente logueado que todavía no son operación: las que ya están en el
+// depósito de China y las que viajan en un contenedor (28/09/2026). El portal las muestra en
+// "En curso" como tarjetas.
 //
-// Whitelist estricta. Expone SOLO: descripción, estado, cantidad de bultos,
-// ETA puerto Buenos Aires y entrega estimada (ETA + 2 semanas).
-// NUNCA expone: número/código de contenedor, naviera, tracking, costos,
-// ni datos de otros clientes (se resuelve el cliente desde el JWT, no del request).
+// Whitelist estricta. Expone: descripción, tracking, fotos (bulto y mercadería), bultos con
+// medidas, m³, ETA a Buenos Aires, entrega estimada y total estimado a abonar. El número de
+// contenedor SOLO si el depósito lo muestra al cliente (hoy únicamente Luna 1, el único que
+// carga el número real). NUNCA expone: depósito, naviera, costos ni datos de otros clientes (el
+// cliente sale del JWT, no del request).
 //
-// Las consultas van agrupadas en tandas: antes eran 9 esperas encadenadas contra Supabase
-// y la sección tardaba varios segundos en aparecer en el portal.
+// Rápido a propósito: el pedido de las cargas (con bultos, productos, contenedor y depósito
+// embebidos) sale en paralelo con la verificación del cliente. Antes eran cuatro esperas en fila y
+// la tarjeta aparecía varios segundos después que el resto del portal.
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 
 async function svc(path) {
-  const r = await fetch(`${SB_URL}${path}`, {
-    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` },
-  });
+  const r = await fetch(`${SB_URL}${path}`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` }, cache: "no-store" });
   return r.ok ? r.json() : null;
 }
 
@@ -28,77 +28,60 @@ const addDays = (d, n) => {
   x.setDate(x.getDate() + (Number(n) || 0));
   return x.toISOString().slice(0, 10);
 };
-const plus14 = (d) => addDays(d, 14);
+const r2 = (v) => Math.round(v * 100) / 100;
+const r4 = (v) => Math.round(v * 10000) / 10000;
+const esTrackingReal = (t) => !!t && !/^SEA[A-Z]*$/i.test(String(t).trim());
+
+const SHIP_SEL = [
+  "id,product_description,tracking_number,status,container_id,revenue_manual,created_at,received_at,fotos,fotos_mercaderia",
+  "maritime_packages(bulto_number,quantity,length_cm,width_cm,height_cm,cbm)",
+  "maritime_items(description,quantity,unit_price_usd)",
+  "maritime_containers(id,code,status,eta,transbordo_dias,transbordo_lugar)",
+  "maritime_warehouses(id,mostrar_contenedor_cliente)",
+].join(",");
+// En depósito (sin contenedor) o viajando en un contenedor; nunca lo que todavía espera al proveedor.
+const shipsDe = (cid) => svc(`/rest/v1/maritime_shipments?client_id=eq.${cid}&operation_id=is.null&or=(container_id.not.is.null,status.eq.en_deposito)&select=${SHIP_SEL}&order=created_at.asc`);
 
 export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
   const tok = auth.replace(/^Bearer\s+/i, "").trim();
   if (!tok) return Response.json({ cargo: [] }, { status: 401 });
   const reqClientId = new URL(req.url).searchParams.get("client_id");
+  const idOk = (v) => !!v && /^[0-9a-f-]{36}$/i.test(v);
 
-  // Verificar el JWT → user id.
-  const user = await fetch(`${SB_URL}/auth/v1/user`, {
-    headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` },
-  }).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  const user = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (!user?.id) return Response.json({ cargo: [] }, { status: 401 });
 
-  // Cliente propio (login real de cliente) y, en paralelo, si el que pregunta es admin
-  // (modo preview del portal, donde el token es de admin).
-  const [cl, prof] = await Promise.all([
+  // Verificación del cliente y datos del cliente pedido, en paralelo. Si al final el que pregunta
+  // no puede ver ese cliente, lo traído se descarta.
+  const [cl, prof, shipsPedido, tariffs, ovsPedido] = await Promise.all([
     svc(`/rest/v1/clients?auth_user_id=eq.${user.id}&select=id&limit=1`),
     svc(`/rest/v1/profiles?id=eq.${user.id}&select=role&limit=1`),
+    idOk(reqClientId) ? shipsDe(reqClientId) : Promise.resolve(null),
+    svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`),
+    idOk(reqClientId) ? svc(`/rest/v1/client_tariff_overrides?client_id=eq.${reqClientId}&select=tariff_id,custom_rate`) : Promise.resolve(null),
   ]);
   const ownClientId = Array.isArray(cl) && cl[0]?.id;
   const isAdmin = Array.isArray(prof) && prof[0]?.role === "admin";
-
-  // Cliente efectivo: el propio (cliente real), o el pedido por un admin en preview.
-  // Nunca dejamos que un cliente pida los datos de otro.
   let clientId = ownClientId || null;
-  if (reqClientId && (isAdmin || reqClientId === ownClientId)) clientId = reqClientId;
+  if (idOk(reqClientId) && (isAdmin || reqClientId === ownClientId)) clientId = reqClientId;
   if (!clientId) return Response.json({ cargo: [] });
 
-  // Cargas del cliente que están en un contenedor y todavía no son operación. Las tarifas y
-  // los overrides no dependen de esto, así que van en la misma tanda.
-  const [ships, tariffs, ovs] = await Promise.all([
-    svc(`/rest/v1/maritime_shipments?client_id=eq.${clientId}&operation_id=is.null&container_id=not.is.null&select=id,product_description,status,container_id,revenue_manual&order=created_at.desc`),
-    svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`),
-    svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`),
-  ]);
-  const list = Array.isArray(ships) ? ships : [];
+  let ships = shipsPedido, ovs = ovsPedido;
+  if (clientId !== reqClientId) {
+    [ships, ovs] = await Promise.all([shipsDe(clientId), svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`)]);
+  }
+  // Contenedores que ya arribaron salen: esas cargas pasan a ser operación.
+  const list = (Array.isArray(ships) ? ships : []).filter((s) => s.maritime_containers?.status !== "arribado");
   if (list.length === 0) return Response.json({ cargo: [] });
 
-  // Contenedores (solo eta + status — NUNCA code ni shipping_line), bultos e items: los tres
-  // dependen solo de las cargas ya traídas, así que salen juntos.
-  const contIds = [...new Set(list.map(s => s.container_id).filter(Boolean))];
-  const shipIds = list.map(s => s.id);
-  const [conts, pkgs, its] = await Promise.all([
-    contIds.length ? svc(`/rest/v1/maritime_containers?id=in.(${contIds.join(",")})&select=id,eta,status,transbordo_dias,transbordo_lugar`) : Promise.resolve([]),
-    svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,bulto_number,label,length_cm,width_cm,height_cm,quantity,cbm&order=bulto_number.asc`),
-    svc(`/rest/v1/maritime_items?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,unit_price_usd,quantity`),
-  ]);
-  const contMap = {};
-  (Array.isArray(conts) ? conts : []).forEach(c => { contMap[c.id] = c; });
-
-  const bultos = {}, cbmByShip = {}, pkgsByShip = {};
-  (Array.isArray(pkgs) ? pkgs : []).forEach(p => {
-    bultos[p.shipment_id] = (bultos[p.shipment_id] || 0) + Number(p.quantity || 1);
-    cbmByShip[p.shipment_id] = (cbmByShip[p.shipment_id] || 0) + Number(p.cbm || 0);
-    // Detalle por bulto para la card expandible del portal (solo datos del propio cliente).
-    (pkgsByShip[p.shipment_id] = pkgsByShip[p.shipment_id] || []).push({
-      n: p.bulto_number, label: p.label || null,
-      dims: (p.length_cm && p.width_cm && p.height_cm) ? `${Number(p.length_cm)}×${Number(p.width_cm)}×${Number(p.height_cm)} cm` : null,
-      qty: Number(p.quantity || 1), cbm: Number(p.cbm || 0),
-    });
-  });
-
-  // FOB por carga, para el recargo por valor (mismo criterio que el panel admin).
-  const fobByShip = {};
-  (Array.isArray(its) ? its : []).forEach(it => { fobByShip[it.shipment_id] = (fobByShip[it.shipment_id] || 0) + Number(it.unit_price_usd || 0) * Number(it.quantity || 1); });
+  // Tarifa marítimo integral por rango de m³ (+ override del cliente) y recargo por valor.
   const tList = Array.isArray(tariffs) ? tariffs : [];
-  const mbRates = tList.filter(t => t.type === "rate").map(t => ({ id: t.id, min: Number(t.min_qty || 0), max: t.max_qty != null ? Number(t.max_qty) : Infinity, rate: Number(t.rate || 0) })).sort((a, b) => a.min - b.min);
-  const mbSurch = tList.filter(t => t.type === "surcharge").map(t => ({ min: Number(t.min_qty || 0), rate: Number(t.rate || 0) })).sort((a, b) => b.min - a.min);
+  const mbRates = tList.filter((t) => t.type === "rate").map((t) => ({ id: t.id, min: Number(t.min_qty || 0), max: t.max_qty != null ? Number(t.max_qty) : Infinity, rate: Number(t.rate || 0) })).sort((a, b) => a.min - b.min);
+  const mbSurch = tList.filter((t) => t.type === "surcharge").map((t) => ({ min: Number(t.min_qty || 0), rate: Number(t.rate || 0) })).sort((a, b) => b.min - a.min);
   const ovMap = {};
-  (Array.isArray(ovs) ? ovs : []).forEach(o => { ovMap[o.tariff_id] = Number(o.custom_rate); });
+  (Array.isArray(ovs) ? ovs : []).forEach((o) => { ovMap[o.tariff_id] = Number(o.custom_rate); });
   const fleteRate = (cbm) => {
     for (const r of mbRates) { if (cbm >= r.min && cbm < r.max) return ovMap[r.id] != null ? ovMap[r.id] : r.rate; }
     const last = mbRates[mbRates.length - 1];
@@ -111,49 +94,61 @@ export async function GET(req) {
     return 0;
   };
 
-  // Agrupar por contenedor: todas las cargas del cliente en un mismo contenedor son
-  // UNA sola operación futura → una sola tarjeta. Distinto contenedor → tarjetas separadas.
+  // Una tarjeta por contenedor (esas cargas van a ser UNA operación) y una por depósito para lo
+  // que todavía espera contenedor.
   const groups = {};
-  list.forEach(s => {
-    const cid = s.container_id;
-    if (!groups[cid]) {
-      const c = contMap[cid] || {};
-      const tbDias = Number(c.transbordo_dias || 0);
-      // ETA efectiva = ETA a puerto + demora por transbordo. La entrega = ETA efectiva + 2 semanas.
-      const eEta = tbDias > 0 ? addDays(c.eta, tbDias) : (c.eta || null);
-      groups[cid] = {
-        id: cid,
-        descriptions: [],
-        bultos_detalle: [],
-        bultos: 0,
-        _cbm: 0,
-        _fob: 0,
-        _ships: [],
-        container_status: c.status || null,       // en_transito | arribado
-        eta_puerto: eEta,
-        entrega_estimada: plus14(eEta),
-        transbordo: tbDias > 0 ? { dias: tbDias, lugar: c.transbordo_lugar || "Brasil" } : null,
+  list.forEach((s) => {
+    const c = s.maritime_containers;
+    const key = c ? `c:${c.id}` : `d:${s.maritime_warehouses?.id || "x"}`;
+    if (!groups[key]) {
+      const tb = c ? Number(c.transbordo_dias || 0) : 0;
+      const eta = c ? (tb > 0 ? addDays(c.eta, tb) : (c.eta || null)) : null;
+      groups[key] = {
+        id: key,
+        etapa: c ? "transito" : "deposito",
+        contenedor: c && s.maritime_warehouses?.mostrar_contenedor_cliente ? (c.code || null) : null,
+        eta_puerto: eta,
+        entrega_estimada: addDays(eta, 14),
+        transbordo: tb > 0 ? { dias: tb, lugar: c.transbordo_lugar || "Brasil" } : null,
+        cargas: [], bultos: 0, cbm: 0, _fob: 0, _ships: [],
       };
     }
-    if (s.product_description) groups[cid].descriptions.push(s.product_description);
-    (pkgsByShip[s.id] || []).forEach(pk => groups[cid].bultos_detalle.push({ ...pk, carga: s.product_description || null }));
-    groups[cid].bultos += (bultos[s.id] || 0);
-    groups[cid]._cbm += (cbmByShip[s.id] || 0);
-    groups[cid]._fob += (fobByShip[s.id] || 0);
-    groups[cid]._ships.push({ cbm: cbmByShip[s.id] || 0, revenue_manual: s.revenue_manual != null ? Number(s.revenue_manual) : null });
+    const g = groups[key];
+    const pk = Array.isArray(s.maritime_packages) ? [...s.maritime_packages].sort((a, b) => (a.bulto_number || 0) - (b.bulto_number || 0)) : [];
+    const it = Array.isArray(s.maritime_items) ? s.maritime_items : [];
+    const cbm = pk.reduce((a, p) => a + Number(p.cbm || 0), 0);
+    const bultos = pk.reduce((a, p) => a + Number(p.quantity || 1), 0);
+    g.cargas.push({
+      id: s.id,
+      descripcion: s.product_description || null,
+      tracking: esTrackingReal(s.tracking_number) ? s.tracking_number : null,
+      fotos: Array.isArray(s.fotos) ? s.fotos.filter(Boolean) : [],
+      fotos_merc: Array.isArray(s.fotos_mercaderia) ? s.fotos_mercaderia.filter(Boolean) : [],
+      productos: it.filter((x) => x.description).map((x) => ({ d: x.description, q: Number(x.quantity || 0) })),
+      bultos_detalle: pk.map((p) => ({
+        qty: Number(p.quantity || 1),
+        dims: p.length_cm && p.width_cm && p.height_cm ? `${Number(p.length_cm)} × ${Number(p.width_cm)} × ${Number(p.height_cm)} cm` : null,
+        cbm: r4(Number(p.cbm || 0)),
+      })),
+      bultos, cbm: r4(cbm),
+      llego: s.received_at || null,
+    });
+    g.bultos += bultos;
+    g.cbm += cbm;
+    g._fob += it.reduce((a, x) => a + Number(x.unit_price_usd || 0) * Number(x.quantity || 1), 0);
+    g._ships.push({ cbm, revenue_manual: s.revenue_manual != null ? Number(s.revenue_manual) : null });
   });
 
-  // Total a abonar estimado por contenedor = flete (CBM combinado × rango) + recargo por valor.
-  // Si el admin fijó un "a cobrar" a mano en alguna carga (revenue_manual), esa carga usa ese
-  // valor y las demás su parte del automático prorrateada por CBM — igual que el panel admin.
-  const cargo = Object.values(groups).map(g => {
-    const flete = g._cbm * fleteRate(g._cbm);
-    const auto = flete + surchargeFor(g._fob, g._cbm);
-    const total = Math.round(g._ships.reduce((acc, sh) => acc + (sh.revenue_manual != null ? sh.revenue_manual : (g._cbm > 0 ? auto * (sh.cbm / g._cbm) : auto / Math.max(g._ships.length, 1))), 0) * 100) / 100;
-    const { _cbm, _fob, _ships, ...rest } = g;
-    return { ...rest, total_estimado: total > 0 ? total : null };
+  // Total estimado = flete (m³ combinados × rango) + recargo por valor. Una carga con "a cobrar"
+  // fijado a mano usa ese valor y el resto su parte del automático, igual que el panel admin.
+  const cargo = Object.values(groups).map((g) => {
+    const auto = g.cbm * fleteRate(g.cbm) + surchargeFor(g._fob, g.cbm);
+    const total = r2(g._ships.reduce((acc, sh) => acc + (sh.revenue_manual != null ? sh.revenue_manual : (g.cbm > 0 ? auto * (sh.cbm / g.cbm) : 0)), 0));
+    const { _fob, _ships, ...rest } = g;
+    return { ...rest, cbm: r4(g.cbm), total_estimado: total > 0 ? total : null, descriptions: g.cargas.map((c) => c.descripcion).filter(Boolean) };
   }).sort((a, b) => {
-    // Orden por fecha de llegada (ETA a puerto) ascendente; sin ETA al final.
+    // Primero lo que viaja (por fecha de llegada), después lo que está en depósito.
+    if (a.etapa !== b.etapa) return a.etapa === "transito" ? -1 : 1;
     const ea = a.eta_puerto, eb = b.eta_puerto;
     if (!ea && !eb) return 0;
     if (!ea) return 1;
@@ -161,5 +156,5 @@ export async function GET(req) {
     return ea.localeCompare(eb);
   });
 
-  return Response.json({ cargo });
+  return Response.json({ cargo }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -328,7 +328,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const past=ops.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>String(b.closed_at||b.updated_at||b.created_at||"").localeCompare(String(a.closed_at||a.updated_at||a.created_at||"")));
   const name=client?`${client.first_name} ${client.last_name}`:"";
   const code=client?.client_code||"";
-  const stats=[{l:t("home.totalImports"),v:ops.length,c:"#fff"},{l:t("home.inProgress"),v:act.length,c:GOLD_LIGHT},{l:t("home.completed"),v:past.length,c:"#22c55e"},{l:t("home.reports"),v:null,btn:true}];
+  const stats=[{l:t("home.totalImports"),v:ops.length,c:"#fff"},{l:t("home.inProgress"),v:act.length+mCargo.length,c:GOLD_LIGHT},{l:t("home.completed"),v:past.length,c:"#22c55e"},{l:t("home.reports"),v:null,btn:true}];
   const gd=(o)=>{const d=(o.description||"").trim();if(!d)return o.channel?.includes("maritimo")?t("ol.seaCargo"):o.channel?.includes("aereo")?t("ol.airCargo"):t("ol.import");return d.length>60?(t("imports.consolidated")||"Consolidado"):d;};
   // renderOp con clases .ac-cli-* del mockup (cards alargadas, espaciosas)
   // ── Lista de importaciones (rediseño 13/09/2026): una línea por importación, sin tarjetas ──
@@ -382,11 +382,11 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>;};
   const secTitle=(l,n,muted)=><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,margin:"6px 0 12px"}}><h2 style={{fontSize:14,fontWeight:800,color:muted?"rgba(255,255,255,0.7)":"#fff",margin:0,letterSpacing:"0.14em",textTransform:"uppercase"}}>{l}</h2><span style={{fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,color:muted?"rgba(255,255,255,0.55)":SKY,background:muted?"rgba(255,255,255,0.06)":"rgba(140,200,245,0.14)"}}>{n}</span></div>;
   return <div>
-    <MaritimeCargoSection cargo={mCargo}/>
-    {secTitle(t("ol.inProgress"),act.length)}
-    {act.length>0?<>{head}{act.map(renderRow)}</>:<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"1.6rem 0",fontSize:13}}>{t("ol.emptyActive")}</p>}
+    {secTitle(t("ol.inProgress"),act.length+mCargo.length)}
+    <MaritimeCargoCards cargo={mCargo}/>
+    {act.length>0?<>{head}{act.map(renderRow)}</>:mCargo.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"1.6rem 0",fontSize:13}}>{t("ol.emptyActive")}</p>}
     {past.length>0&&<div style={{marginTop:30}}>{secTitle(t("ol.finished"),past.length,true)}{head}{past.map(renderRow)}</div>}
-    {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"2rem 0",fontSize:13}}>{t("ol.emptyActiveDesc")}</p>}
+    {ops.length===0&&mCargo.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"2rem 0",fontSize:13}}>{t("ol.emptyActiveDesc")}</p>}
   </div>;
 }
 
@@ -2893,64 +2893,116 @@ function ReferralsPage({token,client}){
 
 // Sección t("mar.title"): cargas que ya están en un contenedor pero
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
-function MaritimeCargoSection({cargo}){
-  const {t}=useT();
-  const [openId,setOpenId]=useState(null); // card con el detalle de bultos desplegado
+// Cargas marítimas que todavía no son operación (28/09/2026): tarjetas flotantes dentro de "En
+// curso", sin número de operación. Cerradas muestran lo esencial; se despliegan con un toque para
+// ver fotos, tracking, bultos con medidas y la mercadería. En depósito no se dice "depósito": se
+// le avisa al cliente que su carga ya fue cargada y que falta la confirmación del contenedor.
+function MaritimeCargoCards({cargo}){
+  const {t,lang}=useT();
+  const [abiertas,setAbiertas]=useState(()=>new Set());
+  const [foto,setFoto]=useState(null); // {fotos:[{u,k}],i}
+  const [copiado,setCopiado]=useState(null);
   if(!cargo||cargo.length===0)return null;
-  const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
-  const statusChip=(c)=>c.container_status==="arribado"
-    ?{l:t("mar.arrivedPort"),bg:"rgba(34,197,94,0.12)",fg:"#4ade80"}
-    :{l:t("mar.inTransit"),bg:"rgba(96,165,250,0.12)",fg:"#60a5fa"};
-  const cell=(label,val,col)=><div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</p><p style={{fontSize:14,fontWeight:700,color:col,margin:0,fontVariantNumeric:"tabular-nums"}}>{val}</p></div>;
-  return <div style={{marginBottom:24}}>
-    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-      <h2 style={{fontSize:15,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>{t("mar.titleEmoji")}</h2>
-      <span style={{fontSize:11,fontWeight:700,color:"#60a5fa",background:"rgba(96,165,250,0.12)",padding:"2px 9px",borderRadius:999}}>{cargo.length}</span>
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {cargo.map(c=>{const st=statusChip(c);const descs=Array.isArray(c.descriptions)?c.descriptions:(c.description?[c.description]:[]);const multi=descs.length>1;return <div key={c.id} style={{background:"linear-gradient(135deg,rgba(96,165,250,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(96,165,250,0.18)",borderRadius:14,padding:"16px 18px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:multi?10:12}}>
-          <p style={{fontSize:14.5,fontWeight:700,color:"#fff",margin:0,flex:1,minWidth:0}}>{multi?`${descs.length} productos`:(descs[0]||t("ol.seaCargo"))}</p>
-          <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:6,background:st.bg,color:st.fg,whiteSpace:"nowrap"}}>{st.l}</span>
-        </div>
-        {multi&&<ul style={{margin:"0 0 12px",padding:"0 0 0 2px",listStyle:"none",display:"flex",flexDirection:"column",gap:3}}>
-          {descs.map((d,i)=><li key={i} style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",display:"flex",gap:7}}><span style={{color:"#60a5fa"}}>·</span>{d}</li>)}
-        </ul>}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
-          {cell("⚓ ETA Pto. Buenos Aires",fmtD(c.eta_puerto),c.transbordo?"#fb923c":"#93c5fd")}
-          {cell("📦 Entrega estimada",fmtD(c.entrega_estimada),"#4ade80")}
-          {cell("Bultos",String(c.bultos||0),"#fff")}
-        </div>
-        {c.total_estimado!=null&&<div style={{marginTop:12,padding:"11px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>💵 Total a abonar (estimado)</p>
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{t("mar.subjectToConfirm")}</p>
+  const SKY="#8CC8F5";
+  const loc=lang==="zh"?"zh-CN":lang==="en"?"en-US":lang==="ru"?"ru-RU":"es-AR";
+  const fD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString(loc,{day:"2-digit",month:"2-digit",year:"numeric"}):null;
+  const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const m3=(v)=>`${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³`;
+  const copiar=async(txt)=>{try{await navigator.clipboard.writeText(txt);setCopiado(txt);setTimeout(()=>setCopiado(null),1600);}catch{}};
+  const fotosDe=(c)=>[...(c.fotos||[]).map(u=>({u,k:t("mar2.photoPkg")})),...(c.fotos_merc||[]).map(u=>({u,k:t("mar2.photoGoods")}))];
+  const dato=(l,v,col)=><div style={{minWidth:0}}><p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p></div>;
+  return <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
+    <style>{`.mc-card{transition:transform .18s ease,box-shadow .18s ease}.mc-card:hover{transform:translateY(-2px);box-shadow:0 18px 40px rgba(0,0,0,0.35)}.mc-head{display:grid;grid-template-columns:72px minmax(0,1fr) auto 28px;gap:16px;align-items:center}.mc-datos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.mc-carga{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px}@media(max-width:700px){.mc-head{grid-template-columns:58px minmax(0,1fr) 24px}.mc-total{grid-column:1/-1;text-align:left !important;display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)}.mc-datos{grid-template-columns:repeat(2,minmax(0,1fr))}.mc-carga{grid-template-columns:1fr}}`}</style>
+    {cargo.map(g=>{
+      const abierta=abiertas.has(g.id);
+      const toggle=()=>setAbiertas(p=>{const n=new Set(p);n.has(g.id)?n.delete(g.id):n.add(g.id);return n;});
+      const dep=g.etapa==="deposito";
+      const cargas=Array.isArray(g.cargas)?g.cargas:[];
+      const portada=cargas.map(c=>fotosDe(c)[0]).find(Boolean);
+      const descs=cargas.map(c=>c.descripcion).filter(Boolean);
+      const titulo=descs.length>1?`${descs.length} ${t("mar2.products")} · ${descs.join(", ")}`:(descs[0]||t("mar2.seaCargo"));
+      const acento=dep?"#4ade80":SKY;
+      const chip=dep?t("mar2.stageDepot"):t("mar.inTransit");
+      return <div key={g.id} className="mc-card" style={{borderRadius:18,border:`1px solid ${dep?"rgba(74,222,128,0.28)":"rgba(140,200,245,0.28)"}`,background:dep?"linear-gradient(135deg,rgba(74,222,128,0.08),rgba(255,255,255,0.02) 55%)":"linear-gradient(135deg,rgba(140,200,245,0.09),rgba(255,255,255,0.02) 55%)",boxShadow:"0 10px 30px rgba(0,0,0,0.25)",overflow:"hidden"}}>
+        <div className="mc-head" onClick={toggle} style={{padding:"16px 18px",cursor:"pointer"}}>
+          <div onClick={e=>{if(portada){e.stopPropagation();setFoto({fotos:cargas.flatMap(fotosDe),i:0});}}} style={{width:"100%",aspectRatio:"1",borderRadius:14,background:portada?`url(${portada.u}) center/cover`:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,cursor:portada?"zoom-in":"pointer"}}>{portada?"":"🚢"}</div>
+          <div style={{minWidth:0}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10.5,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:acento,background:`${acento}1f`,border:`1px solid ${acento}55`}}>{chip}</span>
+            <p style={{margin:"7px 0 0",fontSize:15.5,fontWeight:800,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{titulo}</p>
+            <p style={{margin:"3px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.65)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+              {dep?t("mar2.depotTitle"):[g.contenedor&&`${t("mar2.container")} ${g.contenedor}`,g.eta_puerto&&`${t("mar2.eta")} ${fD(g.eta_puerto)}`].filter(Boolean).join(" · ")||t("mar.inTransit")}
+            </p>
           </div>
-          <span style={{fontSize:19,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>USD {Number(c.total_estimado).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-        </div>}
-        {Array.isArray(c.bultos_detalle)&&c.bultos_detalle.length>0&&<div style={{marginTop:12}}>
-          <button onClick={()=>setOpenId(openId===c.id?null:c.id)} style={{width:"100%",padding:"9px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#93c5fd",cursor:"pointer",fontFamily:"inherit"}}>
-            📦 {openId===c.id?t("mar.hidePkgs")+" ▲":t("mar.showPkgs")+" ▼"}
-          </button>
-          {openId===c.id&&<div style={{marginTop:8,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"4px 12px"}}>
-            {c.bultos_detalle.map((b,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:i<c.bultos_detalle.length-1?"1px solid rgba(255,255,255,0.05)":"none",flexWrap:"wrap"}}>
-              <div style={{minWidth:0}}>
-                <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:0}}>Bulto {b.n||i+1}{b.qty>1?` · ×${b.qty}`:""}{b.label?<span style={{fontWeight:500,color:"rgba(255,255,255,0.5)"}}> · {b.label}</span>:""}</p>
-                {b.carga&&c.descriptions?.length>1&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{b.carga}</p>}
-              </div>
-              <div style={{textAlign:"right",whiteSpace:"nowrap"}}>
-                <p style={{fontSize:12.5,fontWeight:700,color:"#93c5fd",margin:0,fontVariantNumeric:"tabular-nums"}}>{b.dims||"—"}</p>
-                {b.cbm>0&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"1px 0 0",fontVariantNumeric:"tabular-nums"}}>{b.cbm.toFixed(4)} m³</p>}
-              </div>
-            </div>)}
+          <div className="mc-total" style={{textAlign:"right"}}>
+            <div>
+              <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.total")}</p>
+              <p style={{margin:"2px 0 0",fontSize:20,fontWeight:900,color:g.total_estimado?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{g.total_estimado?usd(g.total_estimado):t("mar2.toConfirm")}</p>
+            </div>
+            <p style={{margin:"1px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{t("mar2.estimated")}</p>
+          </div>
+          <span style={{width:28,height:28,borderRadius:999,border:"1px solid rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,transform:abierta?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span>
+        </div>
+
+        <div style={{padding:"0 18px 16px"}}>
+          {dep
+            ?<div style={{padding:"12px 14px",borderRadius:12,background:"rgba(74,222,128,0.08)",border:"1px solid rgba(74,222,128,0.25)",display:"flex",gap:12,alignItems:"flex-start"}}>
+              <span style={{fontSize:20,lineHeight:1}}>🕓</span>
+              <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.85)",lineHeight:1.5}}>{t("mar2.depotMsg")}</p>
+            </div>
+            :<div className="mc-datos" style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+              {dato(t("mar2.eta"),fD(g.eta_puerto)||t("mar2.pending"),g.transbordo?"#fb923c":SKY)}
+              {dato(t("mar2.delivery"),fD(g.entrega_estimada)||t("mar2.pending"),"#4ade80")}
+              {dato(t("mar2.pkgs"),String(g.bultos||0))}
+              {dato(t("mar2.volume"),m3(g.cbm))}
+            </div>}
+          {g.transbordo&&<div style={{marginTop:10,padding:"9px 12px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:10,display:"flex",alignItems:"center",gap:9}}>
+            <span style={{fontSize:16}}>🔄</span>
+            <p style={{fontSize:12,color:"#fdba74",margin:0,lineHeight:1.45}}>{t("mar.transship1")} <b>transbordo en {g.transbordo.lugar}</b>{t("mar.transship2")} <b>{g.transbordo.dias} días</b>{t("mar.transship3")}</p>
           </div>}
-        </div>}
-        {c.transbordo&&<div style={{marginTop:12,padding:"9px 12px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:9,display:"flex",alignItems:"center",gap:9}}>
-          <span style={{fontSize:16}}>🔄</span>
-          <p style={{fontSize:12,color:"#fdba74",margin:0,lineHeight:1.45}}>{t("mar.transship1")} <b>transbordo en {c.transbordo.lugar}</b>{t("mar.transship2")} <b>{c.transbordo.dias} días</b>{t("mar.transship3")}</p>
-        </div>}
+
+          {abierta&&<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:10}}>
+            {cargas.map(c=>{const fts=fotosDe(c);return <div key={c.id} className="mc-carga" style={{padding:"14px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {fts.length?fts.map((f,i)=><div key={f.u} onClick={()=>setFoto({fotos:fts,i})} style={{position:"relative",width:104,height:104,borderRadius:12,background:`url(${f.u}) center/cover`,border:"1px solid rgba(255,255,255,0.14)",cursor:"zoom-in"}}>
+                  <span style={{position:"absolute",left:6,bottom:6,fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:999,background:"rgba(10,22,40,0.85)",color:"#fff"}}>{f.k}</span>
+                </div>):<div style={{width:104,height:104,borderRadius:12,border:"1px dashed rgba(255,255,255,0.18)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,color:"rgba(255,255,255,0.5)",fontSize:11,textAlign:"center"}}><span style={{fontSize:22}}>📦</span>{t("mar2.noPhoto")}</div>}
+              </div>
+              <div style={{minWidth:0}}>
+                <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>{c.descripcion||t("mar2.seaCargo")}</p>
+                {c.tracking&&<div style={{marginTop:8}}>
+                  <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.tracking")}</p>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:3,flexWrap:"wrap"}}>
+                    <span style={{fontSize:14,fontWeight:700,color:SKY,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.03em",wordBreak:"break-all"}}>{c.tracking}</span>
+                    <button onClick={()=>copiar(c.tracking)} style={{padding:"3px 9px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(140,200,245,0.4)",background:"rgba(140,200,245,0.08)",color:SKY,cursor:"pointer",fontFamily:"inherit"}}>{copiado===c.tracking?`✓ ${t("mar2.copied")}`:t("mar2.copy")}</button>
+                  </div>
+                </div>}
+                {c.productos?.length>1&&<div style={{marginTop:10}}>
+                  <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.goods")}</p>
+                  <p style={{margin:"3px 0 0",fontSize:13,color:"rgba(255,255,255,0.8)"}}>{c.productos.map(p=>`${p.d}${p.q?` ×${p.q}`:""}`).join(" · ")}</p>
+                </div>}
+                <div style={{marginTop:10}}>
+                  <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{t("mar2.pkgDetail")} · {c.bultos} · {m3(c.cbm)}</p>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                    {(c.bultos_detalle||[]).length?c.bultos_detalle.map((b,i)=><span key={i} style={{fontSize:12.5,fontWeight:700,padding:"5px 10px",borderRadius:9,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",color:"#fff",fontVariantNumeric:"tabular-nums"}}>{b.qty>1?`${b.qty} × `:""}{b.dims||t("mar2.noDims")}</span>):<span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>{t("mar2.noDims")}</span>}
+                  </div>
+                </div>
+              </div>
+            </div>;})}
+          </div>}
+
+          <button onClick={toggle} style={{marginTop:12,width:"100%",padding:"9px 12px",fontSize:12.5,fontWeight:700,borderRadius:10,border:`1px solid ${acento}44`,background:`${acento}0f`,color:acento,cursor:"pointer",fontFamily:"inherit"}}>{abierta?`▴ ${t("mar2.showLess")}`:`▾ ${t("mar2.showMore")}`}</button>
+        </div>
       </div>;})}
-    </div>
+
+    {foto&&<div onClick={()=>setFoto(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(5,10,20,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <img src={foto.fotos[foto.i].u} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"82vh",borderRadius:14}}/>
+      <span style={{position:"absolute",top:20,left:"50%",transform:"translateX(-50%)",padding:"6px 14px",borderRadius:999,background:"#fff",color:"#0A1628",fontSize:13.5,fontWeight:800}}>{foto.fotos[foto.i].k}</span>
+      <button onClick={()=>setFoto(null)} aria-label="✕" style={{position:"absolute",top:16,right:16,width:40,height:40,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:18,cursor:"pointer"}}>✕</button>
+      {foto.fotos.length>1&&<>
+        <button onClick={e=>{e.stopPropagation();setFoto(f=>({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));}} style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:26,cursor:"pointer"}}>‹</button>
+        <button onClick={e=>{e.stopPropagation();setFoto(f=>({...f,i:(f.i+1)%f.fotos.length}));}} style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:26,cursor:"pointer"}}>›</button>
+      </>}
+    </div>}
   </div>;
 }
 
@@ -2963,7 +3015,8 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     const cId=client?.id;
     if(!cId){setLo(false);return;}
     // Cargas marítimas en camino (en contenedor, todavía sin operación) — vía endpoint con whitelist.
-    ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.json()).then(d=>setMCargo(Array.isArray(d?.cargo)?d.cargo:[])).catch(()=>setMCargo([]));
+    // Se espera junto con las operaciones: antes llegaba después y la tarjeta "saltaba" arriba.
+    const mCargoP=ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.json()).then(d=>Array.isArray(d?.cargo)?d.cargo:[]).catch(()=>[]);
     dq("operation_packages",{token,filters:`?client_id=eq.${cId}&operation_id=is.null&select=*&order=created_at.asc`}).then(d=>setDepPkgs(Array.isArray(d)?d:[])).catch(()=>setDepPkgs([]));
     const [r,it,pm,cp,tv]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
@@ -2972,6 +3025,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
       dq("tier_rewards",{token,filters:`?client_id=eq.${cId}&status=eq.pending&select=id`})
     ]);
+    setMCargo(await mCargoP);
     const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(p.client_paid)return;pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
