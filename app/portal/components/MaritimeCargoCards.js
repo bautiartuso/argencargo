@@ -60,7 +60,13 @@ export default function MaritimeCargoCards({cargo}){
           {!dep&&celda(t("mar2.delivery"),fD(g.entrega_estimada)||<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>)}
           {celda(`${t("mar2.pkgs")} · ${t("mar2.volume")}`,<>{g.bultos||0} <span style={{color:SUB,fontWeight:700}}>·</span> {m3(g.cbm)}</>)}
         </div>
-        {g.transbordo&&<p style={{margin:"8px 20px 0",fontSize:12,color:SUB}}>🔄 {t("mar2.transship",{lugar:g.transbordo.lugar,dias:g.transbordo.dias})}</p>}
+        {g.transbordo&&<div style={{margin:"12px 20px 0",padding:"13px 16px",borderRadius:14,background:"linear-gradient(135deg,rgba(232,208,152,0.14),rgba(232,208,152,0.04))",border:"1px solid rgba(232,208,152,0.45)",display:"flex",gap:14,alignItems:"center"}}>
+          <span style={{width:42,height:42,flexShrink:0,borderRadius:12,background:"rgba(232,208,152,0.16)",border:"1px solid rgba(232,208,152,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔄</span>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:14.5,fontWeight:800,color:ORO}}>{t("mar2.tsTitle",{lugar:g.transbordo.lugar})} <span style={{marginLeft:6,fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,background:"rgba(232,208,152,0.2)",color:ORO,whiteSpace:"nowrap"}}>{t("mar2.plusDays",{dias:g.transbordo.dias})}</span></p>
+            <p style={{margin:"4px 0 0",fontSize:13,color:"rgba(255,255,255,0.8)",lineHeight:1.45}}>{t("mar2.tsMsg",{dias:g.transbordo.dias})}</p>
+          </div>
+        </div>}
 
         {/* Detalle desglosado por pedido */}
         {abierta&&<div style={{margin:"16px 20px 0",display:"flex",flexDirection:"column",gap:12}}>
