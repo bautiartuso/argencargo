@@ -168,18 +168,29 @@ export default function DepositoPage({ params }) {
   const rotuloPre = (data?.deposito?.rotulo || "").toUpperCase();
   const tipoTxt = (tp) => (tp === "blanca" ? t.blanca_l : tp === "negra" ? t.negra_l : t.sin_tipo);
 
-  const exportar = () => {
+  // Excel de verdad (.xlsx), no CSV: el CSV lo abría Numbers en la Mac. Números como números.
+  const exportar = async () => {
+    const XLSX = await import("xlsx");
     const conts = Object.fromEntries((data?.contenedores || []).map((c) => [c.id, c.codigo]));
     const lista = tab === "contenedores" ? filtrar(porEtapa.contenedor, false) : filtrar(porEtapa[tab] || []);
     const cols = [...(tab === "contenedores" ? [t.contenedor] : []), t.rotulo, t.mercaderia, t.tracking, t.bultos, t.cbm, `${t.valor} (USD)`, `${t.costo} (USD)`, t.tipo, ...(tab === "camino" ? [] : [t.ingreso])];
-    const esc = (v) => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const filas = lista.map((c) => [...(tab === "contenedores" ? [conts[c.contenedor] || ""] : []), `${rotuloPre} ${c.cliente || ""}`.trim(), c.mercaderia || "", c.tracking || "", c.bultos, c.cbm.toFixed(3), c.valor.toFixed(2), (c.costo?.total || 0).toFixed(2), tipoTxt(c.tipo), ...(tab === "camino" ? [] : [c.llego || ""])]);
-    const csv = "﻿" + [cols, ...filas].map((f) => f.map(esc).join(",")).join("\r\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    a.download = `${(data?.deposito?.nombre || "deposito").replace(/[^\w-]+/g, "_")}_${tab}_${hoyLocal()}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    const filas = lista.map((c) => [
+      ...(tab === "contenedores" ? [conts[c.contenedor] || ""] : []),
+      `${rotuloPre} ${c.cliente || ""}`.trim(), c.mercaderia || "", c.tracking || "",
+      Number(c.bultos) || 0, Math.round(c.cbm * 1000) / 1000, Math.round(c.valor * 100) / 100, Math.round((c.costo?.total || 0) * 100) / 100,
+      tipoTxt(c.tipo), ...(tab === "camino" ? [] : [c.llego ? ddmm(c.llego) : ""]),
+    ]);
+    const s = totales(lista);
+    const off = tab === "contenedores" ? 1 : 0;
+    const total = Array(cols.length).fill("");
+    total[0] = t.cargas.toUpperCase() + `: ${s.n}`;
+    total[3 + off] = s.bultos; total[4 + off] = Math.round(s.cbm * 1000) / 1000; total[5 + off] = Math.round(s.valor * 100) / 100; total[6 + off] = Math.round(s.costo * 100) / 100;
+    const ws = XLSX.utils.aoa_to_sheet([cols, ...filas, [], total]);
+    ws["!cols"] = cols.map((h, i) => ({ wch: i === 1 + off ? 36 : i === 2 + off ? 24 : Math.max(12, String(h).length + 2) }));
+    const wb = XLSX.utils.book_new();
+    const hoja = (tab === "camino" ? t.camino : tab === "deposito" ? t.deposito : t.contenedores).slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, hoja);
+    XLSX.writeFile(wb, `${(data?.deposito?.nombre || "deposito").replace(/[^\w-]+/g, "_")}_${tab}_${hoyLocal()}.xlsx`);
   };
 
   if (err === "link_invalido") return <Centro><p style={{ fontSize: 15, color: INK, margin: 0 }}>{T.es.link_invalido}</p><p style={{ fontSize: 15, color: INK, margin: "8px 0 0" }}>{T.zh.link_invalido}</p></Centro>;
