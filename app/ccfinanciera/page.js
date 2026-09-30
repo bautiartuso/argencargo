@@ -131,6 +131,7 @@ function Dashboard({ token, onLogout }) {
   const [showAdd, setShowAdd] = useState(null);
   const [showShare, setShowShare] = useState(false);
   const [showDollarize, setShowDollarize] = useState(false);
+  const [showCable, setShowCable] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
@@ -157,42 +158,45 @@ function Dashboard({ token, onLogout }) {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
       <ToastStack />
       <div style={{ flexShrink: 0 }}>
-        <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} />
+        <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} onCable={() => setShowCable(true)} />
       </div>
       <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1320, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
-          <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
-          <BalanceCard label="Saldo USD" currency="USD" amount={enriched.totals.usd} />
+          <BalanceCard label="Saldo en pesos (ARS)" currency="ARS" amount={enriched.totals.ars} />
+          <BalanceCard label="Saldo en dólares (USD)" currency="USD" amount={enriched.totals.usd} />
         </section>
 
-        <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 12, width: "fit-content" }}>
+        <div style={{ display: "flex", gap: 3, padding: 4, background: "rgba(0,0,0,0.22)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", marginBottom: 14, width: "fit-content" }}>
           {[{ k: "movs", l: "Movimientos" }, { k: "stats", l: "Estadísticas" }].map((o) => (
-            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "6px 16px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer", background: tab === o.k ? T.gold : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
+            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "8px 18px", fontSize: 13, fontWeight: 800, borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", background: tab === o.k ? T.goldGrad : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
           ))}
         </div>
-
-        <Filtros
-          currency={filterCurrency} setCurrency={setFilterCurrency}
-          type={filterType} setType={setFilterType}
-          from={from} setFrom={setFrom} to={to} setTo={setTo}
-          cuenta={<p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""}{movements.length !== filtered.length ? ` de ${movements.length}` : " totales"}</p>}
-        />
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 30, marginRight: -22, paddingRight: 22 }}>
           {loading ? (
             <p style={{ textAlign: "center", padding: "3rem 0", color: T.textMuted, fontSize: 13 }}>Cargando…</p>
           ) : tab === "stats" ? (
             <Estadisticas stats={stats} />
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: "60px 20px", textAlign: "center", background: T.bgSurface, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
-              <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Sin movimientos con estos filtros</p>
-            </div>
           ) : isMobile ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {filtered.map((m) => <MovimientoTarjeta key={m.id} m={m} acciones={acciones} />)}
+              <div style={{ marginBottom: 4 }}><Filtros
+                currency={filterCurrency} setCurrency={setFilterCurrency}
+                type={filterType} setType={setFilterType}
+                from={from} setFrom={setFrom} to={to} setTo={setTo}
+              /></div>
+              {filtered.length === 0 ? <p style={{ fontSize: 14, color: T.textMuted, textAlign: "center", padding: "40px 0" }}>Sin movimientos con estos filtros</p>
+                : filtered.map((m) => <MovimientoTarjeta key={m.id} m={m} acciones={acciones} />)}
             </div>
           ) : (
-            <div style={{ overflowX: "auto" }}><MovimientosTabla rows={filtered} onEdit={setEditing} acciones={acciones} /></div>
+            <div style={{ overflowX: "auto" }}>
+              <MovimientosTabla rows={filtered} onEdit={setEditing} acciones={acciones} total={filtered.length}
+                toolbar={<Filtros
+                currency={filterCurrency} setCurrency={setFilterCurrency}
+                type={filterType} setType={setFilterType}
+                from={from} setFrom={setFrom} to={to} setTo={setTo}
+              />} />
+              {filtered.length === 0 && <p style={{ fontSize: 14, color: T.textMuted, textAlign: "center", padding: "40px 0" }}>Sin movimientos con estos filtros</p>}
+            </div>
           )}
         </div>
       </main>
@@ -200,6 +204,7 @@ function Dashboard({ token, onLogout }) {
       {showAdd && <MovementModal type={showAdd} token={token} editing={null} onClose={() => setShowAdd(null)} onSaved={() => { setShowAdd(null); load(); }} />}
       {editing && <MovementModal type={editing.type} token={token} editing={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {showShare && <ShareModal token={token} onClose={() => setShowShare(false)} />}
+      {showCable && <CableChinaModal token={token} onClose={() => setShowCable(false)} onSaved={() => { setShowCable(false); load(); }} />}
       {showDollarize && <DollarizeModal token={token} arsBalance={enriched.totals.ars} onClose={() => setShowDollarize(false)} onSaved={() => { setShowDollarize(false); load(); }} />}
     </div>
   );
@@ -225,38 +230,95 @@ function AccionesFila({ m, onEdit, onReload, token }) {
 }
 
 
-function Header({ onLogout, onAdd, onShare, onDollarize }) {
+const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
+
+function Header({ onLogout, onAdd, onShare, onDollarize, onCable }) {
   return (
-    <header style={{ background: "linear-gradient(180deg, #10203C 0%, #0C1830 100%)", borderBottom: "1px solid rgba(184,149,106,0.22)", boxShadow: "0 1px 0 rgba(232,208,152,0.06), 0 10px 30px rgba(0,0,0,0.35)", padding: "16px 22px", position: "sticky", top: 0, zIndex: 10, overflow: "hidden" }}>
-      {/* Glow dorado sutil arriba a la izquierda */}
-      <div style={{ position: "absolute", top: -90, left: -60, width: 320, height: 200, background: "radial-gradient(ellipse, rgba(184,149,106,0.16), transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", position: "relative" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, background: "linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.06))", border: "1px solid rgba(232,208,152,0.35)", boxShadow: "0 0 18px rgba(184,149,106,0.18), inset 0 1px 0 rgba(255,255,255,0.08)" }}>🏦</div>
+    <header style={{ background: "linear-gradient(180deg, #10203C 0%, #0B1729 100%)", borderBottom: "1px solid rgba(184,149,106,0.22)", boxShadow: "0 10px 30px rgba(0,0,0,0.35)", padding: "18px 22px", position: "sticky", top: 0, zIndex: 10, overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: -110, left: -40, width: 380, height: 240, background: "radial-gradient(ellipse, rgba(184,149,106,0.16), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ maxWidth: 1320, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <img src={LOGO} alt="Argencargo" style={{ height: 34, width: "auto" }} />
+          <span style={{ width: 1, height: 38, background: "rgba(255,255,255,0.15)" }} />
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, letterSpacing: "-0.02em", background: "linear-gradient(135deg, #E8D098 20%, #B8956A 60%, #E8D098 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>CC Financiera</h1>
-            <p style={{ fontSize: 11, color: T.textMuted, margin: "2px 0 0", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontWeight: 700, color: "rgba(232,208,152,0.75)", letterSpacing: "0.12em" }}>SOLFIN</span>
-              <span style={{ width: 3, height: 3, borderRadius: "50%", background: "rgba(255,255,255,0.25)", display: "inline-block" }} />
-              Cuenta corriente · ARS y USD
-            </p>
+            <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: "-0.02em", color: "#fff" }}>CC Financiera</h1>
+            <p style={{ fontSize: 12, color: T.textMuted, margin: "2px 0 0" }}><b style={{ color: T.gold, letterSpacing: "0.1em" }}>SOLFIN</b> · Cuenta corriente en ARS y USD</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button onClick={onShare} style={btnGhost}>🔗 Compartir</button>
-          <button onClick={onDollarize} style={{ ...btnGhost, border: `1px solid ${T.green}45`, color: T.green }}>💱 Dolarizar</button>
-          <button onClick={() => onAdd("ingreso")} style={btnIngreso}>+ Ingreso</button>
-          <button onClick={() => onAdd("egreso")} style={btnEgreso}>+ Egreso</button>
-          <button onClick={onLogout} style={btnGhost}>Salir</button>
+          <button onClick={onDollarize} style={btnGhost}>💱 Dolarizar</button>
+          <button onClick={onCable} style={btnCable}>🌏 Cable China</button>
+          <button onClick={() => onAdd("egreso")} style={btnEgreso}>− Egreso</button>
+          <button onClick={() => onAdd("ingreso")} style={btnPrimary}>+ Ingreso</button>
+          <button onClick={onLogout} style={{ ...btnGhost, color: T.textMuted }}>Salir</button>
         </div>
       </div>
     </header>
   );
 }
 
-
-
-
+// Cable China (30/09/2026): transferencia en dólares a China. Se carga el monto a transferir, la
+// comisión (% sobre la transferencia, 2,25 por defecto) y el gasto fijo (USD 40 por defecto),
+// ambos editables. En la CC queda un solo egreso en USD por el total resultante.
+function CableChinaModal({ token, onClose, onSaved }) {
+  const [date, setDate] = useState(todayStr());
+  const [monto, setMonto] = useState("");
+  const [pct, setPct] = useState("2,25");
+  const [fijo, setFijo] = useState("40");
+  const [nota, setNota] = useState("");
+  const [saving, setSaving] = useState(false);
+  const m = parseMontoAr(monto), p = parseMontoAr(pct), f = parseMontoAr(fijo);
+  const comision = Math.round(m * (p / 100) * 100) / 100;
+  const total = Math.round((m + comision + f) * 100) / 100;
+  const soloNum = (set) => (e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) set(v); };
+  const save = async () => {
+    if (!(m > 0)) { toast.error("Cargá el monto a transferir"); return; }
+    setSaving(true);
+    try {
+      await dq("cc_solfin_movements", { method: "POST", token, body: {
+        date, type: "egreso", currency: "USD", amount: total, net_amount: total,
+        description: `Cable China${nota.trim() ? ` · ${nota.trim()}` : ""}`,
+      }});
+      toast.success(`Cable China registrado: ${fmtMoney(total, "USD")}`);
+      onSaved();
+    } catch (e) { toast.error(e.message); setSaving(false); }
+  };
+  const linea = (l, v, c, fuerte) => <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: fuerte ? "10px 0 0" : "4px 0", marginTop: fuerte ? 6 : 0, borderTop: fuerte ? `1px solid ${T.border}` : "none", fontSize: fuerte ? 15 : 13 }}>
+    <span style={{ color: fuerte ? T.text : T.textMuted, fontWeight: fuerte ? 800 : 500 }}>{l}</span>
+    <span style={{ color: c || T.text, fontWeight: fuerte ? 900 : 700, fontVariantNumeric: "tabular-nums" }}>{v}</span>
+  </div>;
+  return (
+    <Modal title="🌏 Cable China" onClose={onClose}>
+      <p style={{ fontSize: 12.5, color: T.textMuted, margin: "0 0 16px", lineHeight: 1.5 }}>Transferencia en dólares a China. La comisión y el gasto fijo se pueden cambiar; en la cuenta queda un solo egreso por el total.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || todayStr())} /></Field>
+        <Field label="Monto a transferir (USD)">
+          <input type="text" inputMode="decimal" value={monto} onChange={soloNum(setMonto)} placeholder="0,00" style={{ ...inputStyle, fontSize: 17, fontWeight: 800 }} autoFocus />
+        </Field>
+        <Field label="Comisión (% sobre la transferencia)">
+          <input type="text" inputMode="decimal" value={pct} onChange={soloNum(setPct)} placeholder="2,25" style={inputStyle} />
+        </Field>
+        <Field label="Gasto fijo (USD)">
+          <input type="text" inputMode="decimal" value={fijo} onChange={soloNum(setFijo)} placeholder="40" style={inputStyle} />
+        </Field>
+      </div>
+      <Field label="Nota (opcional)">
+        <input type="text" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: proveedor de maquinaria" style={inputStyle} />
+      </Field>
+      <div style={{ padding: "12px 16px", borderRadius: 12, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.25)", marginBottom: 6 }}>
+        {linea("Transferencia", fmtMoney(m, "USD"))}
+        {linea(`Comisión ${p.toLocaleString("es-AR", { maximumFractionDigits: 2 })}%`, `+ ${fmtMoney(comision, "USD")}`, T.amber)}
+        {linea("Gasto fijo", `+ ${fmtMoney(f, "USD")}`, T.amber)}
+        {linea("Total que sale de la cuenta", `− ${fmtMoney(total, "USD")}`, T.red, true)}
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+        <button onClick={onClose} style={btnGhost}>Cancelar</button>
+        <button onClick={save} disabled={saving} style={btnCable}>{saving ? "Guardando…" : "🌏 Registrar cable"}</button>
+      </div>
+    </Modal>
+  );
+}
 
 function MovementModal({ type, token, editing, onClose, onSaved }) {
   const isIngreso = type === "ingreso";
@@ -571,8 +633,9 @@ function Inp({ label, value, onChange, type = "text", autoFocus }) {
 }
 
 const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13.5, fontWeight: 500, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgSurfaceHi, color: T.text, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
-const btnPrimary = { padding: "10px 18px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.goldDeep}`, background: T.goldGrad, color: T.bg, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit" };
-const btnGhost = { padding: "9px 14px", fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
+const btnPrimary = { padding: "10px 18px", fontSize: 13, fontWeight: 900, borderRadius: 11, border: "none", background: T.goldGrad, color: "#0A1628", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 6px 18px rgba(184,149,106,0.3)" };
+const btnGhost = { padding: "10px 15px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)", color: T.text, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
+const btnCable = { padding: "10px 16px", fontSize: 13, fontWeight: 800, borderRadius: 11, border: "1px solid rgba(96,165,250,0.5)", background: "rgba(96,165,250,0.12)", color: "#93c5fd", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
 const btnIngreso = { padding: "10px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.green}55`, background: "linear-gradient(135deg, rgba(34,197,94,0.16), rgba(22,163,74,0.10))", color: T.green, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(34,197,94,0.12)" };
-const btnEgreso = { padding: "10px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.red}55`, background: "linear-gradient(135deg, rgba(239,68,68,0.16), rgba(220,38,38,0.10))", color: T.red, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(239,68,68,0.12)" };
+const btnEgreso = { padding: "10px 16px", fontSize: 13, fontWeight: 800, borderRadius: 11, border: `1px solid ${T.red}55`, background: "linear-gradient(135deg, rgba(239,68,68,0.16), rgba(220,38,38,0.10))", color: T.red, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(239,68,68,0.12)" };
 const iconBtn = { padding: "4px 8px", fontSize: 13, borderRadius: 5, border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 };

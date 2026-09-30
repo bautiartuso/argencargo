@@ -46,9 +46,10 @@ export default function SharePage({ params }) {
         <div style={{ position: "absolute", top: -90, left: -60, width: 320, height: 200, background: "radial-gradient(ellipse, rgba(184,149,106,0.16), transparent 70%)", pointerEvents: "none" }} />
         <div style={{ maxWidth: 1320, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, background: "linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.06))", border: "1px solid rgba(232,208,152,0.35)", boxShadow: "0 0 18px rgba(184,149,106,0.18), inset 0 1px 0 rgba(255,255,255,0.08)" }}>🏦</div>
+            <img src="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png" alt="Argencargo" style={{ height: 32, width: "auto" }} />
+            <span style={{ width: 1, height: 36, background: "rgba(255,255,255,0.15)" }} />
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, letterSpacing: "-0.02em", background: "linear-gradient(135deg, #E8D098 20%, #B8956A 60%, #E8D098 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>CC Financiera</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 900, margin: 0, letterSpacing: "-0.02em", color: "#fff" }}>CC Financiera</h1>
               <p style={{ fontSize: 11, color: T.textMuted, margin: "2px 0 0", display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontWeight: 700, color: "rgba(232,208,152,0.75)", letterSpacing: "0.12em" }}>SOLFIN</span>
                 <span style={{ width: 3, height: 3, borderRadius: "50%", background: "rgba(255,255,255,0.25)", display: "inline-block" }} />
@@ -68,35 +69,23 @@ export default function SharePage({ params }) {
 
       <main style={{ maxWidth: 1320, margin: "0 auto", padding: isMobile ? "16px 14px 40px" : "20px 22px 40px" }}>
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
-          <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
-          <BalanceCard label="Saldo USD" currency="USD" amount={enriched.totals.usd} />
+          <BalanceCard label="Saldo en pesos (ARS)" currency="ARS" amount={enriched.totals.ars} />
+          <BalanceCard label="Saldo en dólares (USD)" currency="USD" amount={enriched.totals.usd} />
         </section>
 
-        <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 12, width: "fit-content" }}>
+        <div style={{ display: "flex", gap: 3, padding: 4, background: "rgba(0,0,0,0.22)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", marginBottom: 14, width: "fit-content" }}>
           {[{ k: "movs", l: "Movimientos" }, { k: "stats", l: "Estadísticas" }].map((o) => (
-            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "6px 16px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer", background: tab === o.k ? T.gold : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
+            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "8px 18px", fontSize: 13, fontWeight: 800, borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", background: tab === o.k ? T.goldGrad : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
           ))}
         </div>
 
-        <Filtros
-          currency={filterCurrency} setCurrency={setFilterCurrency}
-          type={filterType} setType={setFilterType}
-          from={from} setFrom={setFrom} to={to} setTo={setTo}
-          cuenta={<p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""}{state.movements.length !== filtered.length ? ` de ${state.movements.length}` : " totales"}</p>}
-        />
-
-        {tab === "stats" ? <Estadisticas stats={stats} />
-          : filtered.length === 0 ? (
-            <div style={{ padding: "60px 20px", textAlign: "center", background: T.bgSurface, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
-              <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Sin movimientos con estos filtros</p>
-            </div>
-          ) : isMobile ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {filtered.map((m) => <MovimientoTarjeta key={m.id} m={m} readOnly />)}
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}><MovimientosTabla rows={filtered} readOnly /></div>
-          )}
+        {(() => {
+          const filtros = <Filtros currency={filterCurrency} setCurrency={setFilterCurrency} type={filterType} setType={setFilterType} from={from} setFrom={setFrom} to={to} setTo={setTo} />;
+          const vacio = <p style={{ fontSize: 14, color: T.textMuted, textAlign: "center", padding: "40px 0" }}>Sin movimientos con estos filtros</p>;
+          if (tab === "stats") return <Estadisticas stats={stats} />;
+          if (isMobile) return <div style={{ display: "flex", flexDirection: "column", gap: 10 }}><div style={{ marginBottom: 4 }}>{filtros}</div>{filtered.length === 0 ? vacio : filtered.map((m) => <MovimientoTarjeta key={m.id} m={m} readOnly />)}</div>;
+          return <div style={{ overflowX: "auto" }}><MovimientosTabla rows={filtered} readOnly total={filtered.length} toolbar={filtros} />{filtered.length === 0 && vacio}</div>;
+        })()}
       </main>
     </div>
   );
