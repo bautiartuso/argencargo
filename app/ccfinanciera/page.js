@@ -290,21 +290,20 @@ function CableChinaModal({ token, onClose, onSaved }) {
   </div>;
   return (
     <Modal title="🌏 Cable China" onClose={onClose}>
-      <p style={{ fontSize: 12.5, color: T.textMuted, margin: "0 0 16px", lineHeight: 1.5 }}>Transferencia en dólares a China. La comisión y el gasto fijo se pueden cambiar; en la cuenta queda un solo egreso por el total.</p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || todayStr())} /></Field>
-        <Field label="Monto a transferir (USD)">
-          <input type="text" inputMode="decimal" value={monto} onChange={soloNum(setMonto)} placeholder="0,00" style={{ ...inputStyle, fontSize: 17, fontWeight: 800 }} autoFocus />
+        <Field label="Monto (USD)">
+          <input type="text" inputMode="decimal" value={monto} onChange={soloNum(setMonto)} placeholder="0,00" style={{ ...campoCable, fontWeight: 800 }} autoFocus />
         </Field>
-        <Field label="Comisión (% sobre la transferencia)">
-          <input type="text" inputMode="decimal" value={pct} onChange={soloNum(setPct)} placeholder="2,25" style={inputStyle} />
+        <Field label="Comisión (%)">
+          <input type="text" inputMode="decimal" value={pct} onChange={soloNum(setPct)} placeholder="2,25" style={campoCable} />
         </Field>
         <Field label="Gasto fijo (USD)">
-          <input type="text" inputMode="decimal" value={fijo} onChange={soloNum(setFijo)} placeholder="40" style={inputStyle} />
+          <input type="text" inputMode="decimal" value={fijo} onChange={soloNum(setFijo)} placeholder="40" style={campoCable} />
         </Field>
       </div>
       <Field label="Nota (opcional)">
-        <input type="text" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: proveedor de maquinaria" style={inputStyle} />
+        <input type="text" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: proveedor de maquinaria" style={campoCable} />
       </Field>
       <div style={{ padding: "12px 16px", borderRadius: 12, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.25)", marginBottom: 6 }}>
         {linea("Transferencia", fmtMoney(m, "USD"))}
@@ -635,6 +634,8 @@ function Inp({ label, value, onChange, type = "text", autoFocus }) {
 const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13.5, fontWeight: 500, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgSurfaceHi, color: T.text, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
 const btnPrimary = { padding: "10px 18px", fontSize: 13, fontWeight: 900, borderRadius: 11, border: "none", background: T.goldGrad, color: "#0A1628", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 6px 18px rgba(184,149,106,0.3)" };
 const btnGhost = { padding: "10px 15px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)", color: T.text, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
+// Mismo alto que el selector de fecha, para que la grilla del cable quede pareja.
+const campoCable = { ...inputStyle, height: 46, fontSize: 15 };
 const btnCable = { padding: "10px 16px", fontSize: 13, fontWeight: 800, borderRadius: 11, border: "1px solid rgba(96,165,250,0.5)", background: "rgba(96,165,250,0.12)", color: "#93c5fd", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
 const btnIngreso = { padding: "10px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.green}55`, background: "linear-gradient(135deg, rgba(34,197,94,0.16), rgba(22,163,74,0.10))", color: T.green, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(34,197,94,0.12)" };
 const btnEgreso = { padding: "10px 16px", fontSize: 13, fontWeight: 800, borderRadius: 11, border: `1px solid ${T.red}55`, background: "linear-gradient(135deg, rgba(239,68,68,0.16), rgba(220,38,38,0.10))", color: T.red, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(239,68,68,0.12)" };
