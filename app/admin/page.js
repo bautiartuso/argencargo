@@ -16059,8 +16059,11 @@ function MaritimePanel({token,allClients=[]}){
   shipments.forEach(s=>{if(!enDep(s))return;const e=etapaDe(s);if(e)etapas[e].push(s);});
   const porFecha=(k)=>(a,b)=>String(a[k]||a.created_at||"").localeCompare(String(b[k]||b.created_at||""));
   etapas.esperando.sort(porFecha("created_at"));etapas.deposito.sort(porFecha("received_at"));
-  // Esperando confirmación: primero las que marcaste que llegaron (la más reciente arriba), después las que siguen viajando.
-  etapas.camino.sort((x,y)=>{const rx=x.status==="en_deposito"?String(x.received_at||""):"",ry=y.status==="en_deposito"?String(y.received_at||""):"";if(rx!==ry)return ry.localeCompare(rx);return String(y.created_at||"").localeCompare(String(x.created_at||""));});
+  // Esperando confirmación: primero las que marcaste que llegaron, de la que llegó hace más tiempo a la
+  // más reciente; después las que siguen viajando, también de la más vieja a la más nueva.
+  etapas.camino.sort((x,y)=>{const mx=x.status==="en_deposito",my=y.status==="en_deposito";if(mx!==my)return mx?-1:1;
+    if(mx)return String(x.received_at||"").localeCompare(String(y.received_at||""))||String(x.created_at||"").localeCompare(String(y.created_at||""));
+    return String(x.created_at||"").localeCompare(String(y.created_at||""));});
   const esNuevo=(sh)=>!!vistosPrevios&&mtEsCamino(sh)&&!vistosPrevios.has(sh.id);
   const nuevosCamino=etapas.camino.filter(esNuevo).length;
   const activasPorDep=(w)=>shipments.filter(s=>s.warehouse===w&&etapaDe(s)).length;
