@@ -2,9 +2,14 @@
 -- Situación del cliente pasa a dos opciones (gestión integral / ya buscó un proveedor), se agrega
 -- "cómo viene la búsqueda" (pendiente, averiguando, cotizado), datos del proveedor con el que se
 -- está hablando, y las notas pasan a ser un historial. Se van email, urgencia y por dónde llegó.
--- Correr en el SQL Editor del proyecto de Argencargo. Se puede correr más de una vez.
+-- Correr en el SQL Editor del proyecto de Argencargo. Se puede correr más de una vez y no
+-- necesita la migración anterior (2026_09_30_argenmaq_busquedas_situacion), que quedó absorbida acá.
 
--- 1. Situación: dos opciones
+-- 1. Situación: dos opciones (crea las columnas si la primera migración no llegó a correr)
+alter table public.cat_busquedas
+  add column if not exists situacion         text not null default 'gestion_integral',
+  add column if not exists proveedores       text,   -- proveedor que encontró el cliente (link, nombre, país)
+  add column if not exists precio_referencia text;   -- precio que le pasaron
 alter table public.cat_busquedas drop constraint if exists cat_busquedas_situacion_check;
 update public.cat_busquedas set situacion = case when situacion in ('con_cotizacion','por_cerrar','ya_busco_proveedor') then 'ya_busco_proveedor' else 'gestion_integral' end;
 alter table public.cat_busquedas alter column situacion set default 'gestion_integral';
