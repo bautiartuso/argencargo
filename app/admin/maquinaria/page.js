@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import { leerAjustes, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
 import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio,Avisos,toast,Logo as LogoImg,BotonTema } from "./ui";
 import { Inicio, Clientes, Ajustes } from "./Otros";
+import { Busquedas } from "./Busquedas";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
 import { Resumen, Libro, Tarifas, CCFinanciera } from "./Finanzas";
@@ -73,6 +74,7 @@ const MENU=[
     {k:"proveedores",l:"Proveedores",i:["M3 21h18","M5 21V7l7-4 7 4v14","M9 21v-6h6v6"]},
   ]},
   {sec:"Comercial",items:[
+    {k:"busquedas",l:"A pedido",i:["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z","M21 21l-4.3-4.3","M11 8v6","M8 11h6"]},
     {k:"clientes",l:"Clientes",i:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.9","M16 3.1a4 4 0 0 1 0 7.8"]},
     {k:"comunicaciones",l:"Comunicaciones",i:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
   ]},
@@ -187,6 +189,7 @@ function Shell({ses,setSes,tema,setTema}){
         :pag==="pedidos"?<Pedidos key={pedidoSel||"lista"} {...ctx} inicialSel={pedidoSel}/>
         :pag==="maquinas"?<Maquinas {...ctx}/>
         :pag==="proveedores"?<Proveedores {...ctx}/>
+        :pag==="busquedas"?<Busquedas {...ctx}/>
         :pag==="clientes"?<Clientes {...ctx}/>
         :pag==="resumen"?<Resumen {...ctx}/>
         :pag==="libro"?<Libro {...ctx}/>
