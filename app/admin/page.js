@@ -15346,6 +15346,21 @@ function AdminDashboard({session,onLogout}){
       {key:"settings",label:"Ajustes",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
     ]},
   ];
+  // Número de pedidos marítimos nuevos (sin ver) en "Esperando confirmación", para el menú.
+  const [mtNuevosNav,setMtNuevosNav]=useState(0);
+  useEffect(()=>{
+    let vivo=true;
+    const contar=async()=>{
+      const r=await dq("maritime_shipments",{token,filters:"?operation_id=is.null&container_id=is.null&select=id,status,awaiting_supplier,tracking_number,container_id,operation_id,llegada_marcada_por"});
+      if(!vivo||!Array.isArray(r))return;
+      const ids=r.filter(mtEsCamino).map(x=>x.id);
+      const v=mtLeerVistos();
+      if(!v){mtGuardarVistos(new Set(ids));setMtNuevosNav(0);return;}
+      setMtNuevosNav(ids.filter(id=>!v.has(id)).length);
+    };
+    contar();const iv=setInterval(contar,60000);window.addEventListener("mt_vistos",contar);
+    return()=>{vivo=false;clearInterval(iv);window.removeEventListener("mt_vistos",contar);};
+  },[token]);
   const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)):navSectionsAll;
   // Backward-compat: si en algún lado se referencia 'nav' como flat list
   const nav=navSections.flatMap(s=>s.items);
@@ -15368,7 +15383,7 @@ function AdminDashboard({session,onLogout}){
     {/* Sidebar nav agrupado por secciones — sentence case, tipografía Inter limpia */}
     <nav style={{flex:1,padding:"10px 10px 14px",overflowY:"auto"}}>{navSections.map(sec=><div key={sec.section} style={{marginTop:16}}>
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
-      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
+      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
     </div>)}</nav>
     <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>AD</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0}}>Admin</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.user.email}</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px 10px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>Cerrar sesión</button></div>
   </>;
@@ -15458,6 +15473,14 @@ function AdminDashboard({session,onLogout}){
 // MARITIME PANEL · pedidos marítimos en tránsito agrupados por depósito y origen.
 // ABM de shipments + bultos + items. Genera PDF por depósito (no mezcla).
 // ═══════════════════════════════════════════════════════════════
+// Pedidos marítimos nuevos en "Esperando confirmación" (30/09/2026): este navegador recuerda qué
+// pedidos ya viste; los que no, llevan la marca NUEVO y suman al número de Marítimos en el menú.
+const MT_VISTOS_KEY="mt_camino_vistos";
+const mtLeerVistos=()=>{try{const v=localStorage.getItem(MT_VISTOS_KEY);return v?new Set(JSON.parse(v)):null;}catch{return null;}};
+const mtGuardarVistos=(set)=>{try{localStorage.setItem(MT_VISTOS_KEY,JSON.stringify([...set]));window.dispatchEvent(new Event("mt_vistos"));}catch{}};
+const mtMarcarVisto=(id)=>{if(!id)return;const v=mtLeerVistos()||new Set();v.add(id);mtGuardarVistos(v);};
+const mtEsCamino=(s)=>!s.operation_id&&!s.container_id&&!esPlaceholder(s)&&(s.status==="proveedor"||(s.status==="en_deposito"&&s.llegada_marcada_por==="admin"));
+
 // Día de llegada al depósito marcado por Argencargo: sugerencias de la última semana u otra fecha
 // con el calendario del sistema. El depósito después lo confirma desde su planilla.
 function ModalLlegadaAdmin({sh,cliente,onCancel,onOk}){
@@ -15556,6 +15579,7 @@ function MaritimePanel({token,allClients=[]}){
     const t=await promptDialog(`Tracking real del proveedor para "${sh.product_description||"la carga"}"`,"");
     if(!t||!t.trim())return;
     await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{tracking_number:t.trim(),awaiting_supplier:false,status:"proveedor"}});
+    mtMarcarVisto(sh.id);
     toast("Tracking cargado: la carga pasa a en camino al depósito","success");load();
   };
   const volverAEsperando=async(sh)=>{
@@ -15982,6 +16006,7 @@ function MaritimePanel({token,allClients=[]}){
   const [fotoGrande,setFotoGrande]=useState(null); // {fotos,i}
   const [contAbiertosMt,setContAbiertosMt]=useState(new Set()); // contenedores desplegados (arrancan plegados)
   const [soloSinValor,setSoloSinValor]=useState(false);
+  const [vistosPrevios,setVistosPrevios]=useState(()=>mtLeerVistos());
   const [pegarEn,setPegarEn]=useState(null); // {id,kind}: dónde va una foto pegada con ⌘V
   const [llegadaMt,setLlegadaMt]=useState(null); // carga a la que se le marca el día de llegada
   // Sincronía con la planilla del depósito: lo que marca el depósito aparece solo, sin refrescar.
@@ -16004,6 +16029,13 @@ function MaritimePanel({token,allClients=[]}){
     if(warehouseFilter==="all"||!ok(warehouseFilter)){let d=null;try{d=localStorage.getItem("mt_dep");}catch{}setWarehouseFilter(d&&ok(d)?d:act[0].name);}
   },[whs,warehouseFilter]);
   const elegirDep=(w)=>{setWarehouseFilter(w);setSelectedShipments(new Set());try{localStorage.setItem("mt_dep",w);}catch{}};
+  useEffect(()=>{
+    if(lo)return;
+    const ids=shipments.filter(mtEsCamino).map(s=>s.id);
+    if(!vistosPrevios){const base=new Set(ids);mtGuardarVistos(base);setVistosPrevios(base);return;}
+    if(tabMt==="camino"){const v=mtLeerVistos()||new Set();ids.forEach(id=>v.add(id));mtGuardarVistos(v);}
+  },[tabMt,shipments,lo]);
+  useEffect(()=>{if(tabMt!=="camino")setVistosPrevios(mtLeerVistos());},[tabMt]);
   const cliMap=useMemo(()=>{const m={};allClients.forEach(c=>{m[c.id]=c;});return m;},[allClients]);
 
   const arrivedIdsMt=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
@@ -16026,7 +16058,11 @@ function MaritimePanel({token,allClients=[]}){
   const etapas={esperando:[],camino:[],deposito:[],contenedores:[]};
   shipments.forEach(s=>{if(!enDep(s))return;const e=etapaDe(s);if(e)etapas[e].push(s);});
   const porFecha=(k)=>(a,b)=>String(a[k]||a.created_at||"").localeCompare(String(b[k]||b.created_at||""));
-  etapas.esperando.sort(porFecha("created_at"));etapas.camino.sort(porFecha("created_at"));etapas.deposito.sort(porFecha("received_at"));
+  etapas.esperando.sort(porFecha("created_at"));etapas.deposito.sort(porFecha("received_at"));
+  // Esperando confirmación: primero las que marcaste que llegaron (la más reciente arriba), después las que siguen viajando.
+  etapas.camino.sort((x,y)=>{const rx=x.status==="en_deposito"?String(x.received_at||""):"",ry=y.status==="en_deposito"?String(y.received_at||""):"";if(rx!==ry)return ry.localeCompare(rx);return String(y.created_at||"").localeCompare(String(x.created_at||""));});
+  const esNuevo=(sh)=>!!vistosPrevios&&mtEsCamino(sh)&&!vistosPrevios.has(sh.id);
+  const nuevosCamino=etapas.camino.filter(esNuevo).length;
   const activasPorDep=(w)=>shipments.filter(s=>s.warehouse===w&&etapaDe(s)).length;
   const sumCbm=(l)=>l.reduce((a,s)=>a+cbmOf(s.id),0);
   const fm3=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3});
@@ -16104,7 +16140,7 @@ function MaritimePanel({token,allClients=[]}){
 
   const encabezado=(etapa)=><div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS}}>
     <div/><div>Foto</div><div>Cliente · Tracking · Mercadería</div><div>Valor</div><div>Bultos</div><div>m³</div><div>Tipo</div>
-    <div>{etapa==="esperando"||etapa==="camino"?"Cargado":"Llegó"}</div><div style={{textAlign:"right"}}>Acciones</div>
+    <div>{etapa==="esperando"?"Cargado":"Llegó"}</div><div style={{textAlign:"right"}}>Acciones</div>
   </div>;
 
   const fila=(sh,etapa,grupo)=>{
@@ -16115,7 +16151,7 @@ function MaritimePanel({token,allClients=[]}){
     const todasF=[...fotos.map(u=>({u,k:"Bulto"})),...fotosM.map(u=>({u,k:"Mercadería"}))];
     const toggleExp=()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;});
     const imp=verPlata?importeOfShip(sh,grupo):0,cost=verPlata?costOfShip(sh):0,gan=imp-cost;
-    const fechaRef=etapa==="esperando"||etapa==="camino"?sh.created_at:sh.received_at;
+    const fechaRef=etapa==="esperando"?sh.created_at:etapa==="camino"?(sh.status==="en_deposito"?sh.received_at:null):sh.received_at;
     const dias=diasDesde(fechaRef);
     const alerta=(etapa==="esperando"&&dias>14)||(etapa==="camino"&&dias>20)||(etapa==="deposito"&&dias>30);
     const whRow=whByName[sh.warehouse];
@@ -16136,6 +16172,7 @@ function MaritimePanel({token,allClients=[]}){
         </div>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+            {esNuevo(sh)&&<span style={pill({fontSize:10,padding:"2px 9px",background:"#ef4444",color:"#fff",letterSpacing:"0.06em",boxShadow:"0 0 0 3px rgba(239,68,68,0.25)"})}>● NUEVO</span>}
             <span style={{fontSize:15.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.02em"}}>{c?.client_code||"—"}</span>
             <span style={{fontSize:12,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>{c?`${c.first_name||""} ${c.last_name||""}`.trim():(sh.client_name_snapshot||"Sin identificar")}</span>
             {warehouseFilter==="all"&&<span style={pill({fontSize:10,padding:"1px 8px",color:"#93c5fd",background:"rgba(96,165,250,0.1)",fontWeight:700})}>{sh.warehouse}</span>}
@@ -16153,7 +16190,7 @@ function MaritimePanel({token,allClients=[]}){
           {tipoSel(sh)}{tipoEstado(sh,etapa)}
         </div>
         <div style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
-          <span style={{color:"rgba(255,255,255,0.8)",fontWeight:700}}>{dd(fechaRef)}</span>
+          {etapa==="camino"&&!fechaRef?<span style={{color:"rgba(255,255,255,0.4)",fontSize:11}}>en viaje<br/><span style={{fontSize:10}}>cargado {dd(sh.created_at)}</span></span>:<span style={{color:"rgba(255,255,255,0.8)",fontWeight:700}}>{dd(fechaRef)}</span>}
           {dias!=null&&<span style={{display:"block",fontSize:10.5,color:alerta?"#f87171":"rgba(255,255,255,0.4)",fontWeight:alerta?700:500}}>hace {dias} d</span>}
           {etapa!=="esperando"&&etapa!=="camino"&&sh.llegada_marcada_por==="deposito"&&<span style={{display:"block",fontSize:10,color:"#93c5fd",fontWeight:700}}>marcó el depósito</span>}
         </div>
@@ -16278,7 +16315,7 @@ function MaritimePanel({token,allClients=[]}){
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
       {TABS.map(x=>{const on=tabMt===x.k;const n=x.k==="historial"?containers.filter(c=>c.status==="arribado"&&(warehouseFilter==="all"||c.warehouse===warehouseFilter)).length:x.lista.length;const sub=x.k==="historial"?`${n} contenedor${n!==1?"es":""}`:x.k==="contenedores"?`${contActivos.filter(c=>warehouseFilter==="all"||c.warehouse===warehouseFilter).length} en viaje · ${n} cargas`:`${n} carga${n!==1?"s":""}${x.k!=="esperando"?` · ${fm3(sumCbm(x.lista))} m³`:""}`;
         return <button key={x.k} onClick={()=>setTabMt(x.k)} className="mt-v-tab" style={on?{background:"rgba(184,149,106,0.12)",borderColor:"rgba(184,149,106,0.55)",boxShadow:"0 8px 24px rgba(0,0,0,0.25)"}:undefined}>
-          <span style={{width:34,height:34,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:on?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.05)",flexShrink:0}}>{x.ic}</span>
+          <span style={{position:"relative",width:34,height:34,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:on?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.05)",flexShrink:0}}>{x.ic}{x.k==="camino"&&nuevosCamino>0&&<span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,padding:"0 5px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10.5,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 0 2px #0F1A2D"}}>{nuevosCamino}</span>}</span>
           <span style={{display:"flex",flexDirection:"column",minWidth:0}}>
             <span style={{fontSize:13,fontWeight:800,color:on?"#fff":"rgba(255,255,255,0.8)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{x.l}</span>
             <span style={{fontSize:11,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",marginTop:1,whiteSpace:"nowrap"}}>{sub}</span>
@@ -18653,7 +18690,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       } else {
         const r=await dq("maritime_shipments",{method:"POST",token,body});
         if(fallo(r)){setErr("No se pudo crear el pedido: "+motivo(r));setSaving(false);return;}
-        shId=r[0].id;setCreatedId(shId);
+        shId=r[0].id;setCreatedId(shId);mtMarcarVisto(shId);
       }
       const validPkgs=pkgs.filter(p=>p.length_cm&&p.width_cm&&p.height_cm).map((p,i)=>({shipment_id:shId,bulto_number:i+1,quantity:Math.max(1,Number(p.quantity)||1),length_cm:Number(p.length_cm),width_cm:Number(p.width_cm),height_cm:Number(p.height_cm)}));
       if(validPkgs.length>0){const r=await dq("maritime_packages",{method:"POST",token,body:validPkgs});if(fallo(r)){setErr("El pedido se guardó pero los bultos no: "+motivo(r)+". Tocá Guardar de nuevo.");setSaving(false);return;}}
