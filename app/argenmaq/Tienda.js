@@ -45,9 +45,9 @@ export function Tarjeta({ m, precios }) {
       <button className={`fav${fav ? " on" : ""}`} onClick={toggleFav} aria-label={t("guardarFav")}><svg width="17" height="17" viewBox="0 0 24 24" fill={fav ? "#fff" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" /></svg></button>
     </div>
     <p className="nom">{m.nombre}</p>
-    {ses && pv
+    {pv
       ? <p className="precio">{fmt(pv.unit)}{pv.q > 1 && <small>{t("desde")} {pv.q} {t("unidades")}</small>}</p>
-      : <p className="precio" style={{ fontSize: 13, fontWeight: 700, color: "var(--gris)", display: "inline-flex", alignItems: "center", gap: 6 }}><Ico d={CANDADO} size={14} />{t("verPrecio")}</p>}
+      : <p className="precio" style={{ fontSize: 13, fontWeight: 700, color: "var(--gris)" }}>{t("precioConfirmar")}</p>}
   </a>;
 }
 
@@ -226,12 +226,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
         </div>
         <h1 style={{ fontSize: "clamp(24px,3vw,34px)", letterSpacing: "-0.03em", lineHeight: 1.1, margin: "0 0 16px" }}>{m.nombre}</h1>
         <div className="cajaPrecio">
-          {!ses && <>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}><Ico d={CANDADO} size={16} />{t("verPrecio")}</p>
-            <p style={{ margin: "6px 0 14px", fontSize: 13.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}.</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><a className="btn y" href={`/cuenta?volver=/m/${m.id}`}>{t("ingresar")}</a><a className="btn" href={`/cuenta?registro=1&volver=/m/${m.id}`}>{t("crear")}</a></div>
-          </>}
-          {ses && <>
+          <>
             <div className="cabPrecio"><p className="lbl" style={{ margin: 0 }}>{t("precioVolumen")}</p><div className="stepper chico" aria-label={t("cantidad")}><button onClick={() => setQty(Math.max(minQ, q - 1))} disabled={q <= minQ} aria-label="−">−</button><input type="number" min={minQ} value={q} onChange={(e) => setQty(Math.max(minQ, Math.round(Number(e.target.value) || minQ)))} /><button onClick={() => setQty(q + 1)} aria-label="+">+</button></div></div>
             {minQ > 1 && <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--gris)" }}>{t("minimo")} {minQ} {t("unidades")}</p>}
             {tramos.length === 0 && unit == null && <p style={{ margin: "10px 0 0", color: "var(--gris)" }}>Precio a confirmar. Consultanos.</p>}
@@ -249,7 +244,7 @@ export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
               <button className="btn y" onClick={agregar} disabled={unit == null}>{enCarrito && enCarrito.qty === q ? t("agregado") : t("agregar")}</button>
               <a className="btn k" href={WA(`Hola ARGENMAQ, consulto por ${m.nombre} (${codigo})`)} target="_blank" rel="noreferrer" style={{ gridColumn: "span 2" }}>{t("consultarWa")}</a>
             </div>
-          </>}
+          </>
         </div>
       </div>
     </div>
@@ -304,7 +299,7 @@ export function CarritoVista({ diasVia: dv }) {
   const setQty = (id, q) => setCarrito((c) => c.map((x) => x.id === id ? { ...x, qty: Math.max(1, Math.round(q) || 1) } : x));
   const confirmar = async () => { setEnviando(true); setErr(""); try { const r = await fetch("/api/argenmaq/pedido", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${ses.token}` }, body: JSON.stringify({ items: lineas.map(({ i, L }) => ({ id: i.id, qty: L.q, modo: L.modo })), pago: { metodo: pago, moneda: enPesos ? "ARS" : "USD", tc: tc || null }, codigo: codigo.trim() || null }) }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "No se pudo enviar"); setHecho(d); setCarrito([]); } catch (e) { setErr(e.message); } setEnviando(false); };
   if (hecho) return <div className="wrap" style={{ padding: "60px 24px", textAlign: "center", maxWidth: 640 }}><span className="tag">{hecho.codigo}</span><h1 className="h2" style={{ margin: "14px 0 10px" }}>¡Pedido recibido!</h1><p style={{ color: "var(--gris)", fontSize: 16, lineHeight: 1.5 }}>Te escribimos por WhatsApp con los datos para el anticipo. Podés seguir el pedido desde <a href="/cuenta" style={{ fontWeight: 800 }}>Mi cuenta</a>.</p><a className="btn y" href="/catalogo" style={{ marginTop: 18 }}>{t("catalogo")}</a></div>;
-  if (!ses) return <div className="wrap" style={{ padding: "60px 24px", maxWidth: 560 }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)", margin: "0 0 16px" }}>{t("verPrecio")}</p><div style={{ display: "flex", gap: 8 }}><a className="btn y" href="/cuenta?volver=/carrito">{t("ingresar")}</a><a className="btn" href="/cuenta?registro=1&volver=/carrito">{t("crear")}</a></div></div>;
+  if (!ses) return <div className="wrap" style={{ padding: "60px 24px", maxWidth: 560 }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)", margin: "0 0 16px" }}>{t("ingresarPedido")}</p><div style={{ display: "flex", gap: 8 }}><a className="btn y" href="/cuenta?volver=/carrito">{t("ingresar")}</a><a className="btn" href="/cuenta?registro=1&volver=/carrito">{t("crear")}</a></div></div>;
   if (carrito.length === 0) return <div className="wrap" style={{ padding: "60px 24px" }}><h1 className="h2" style={{ marginBottom: 12 }}>{t("carrito")}</h1><p style={{ color: "var(--gris)" }}>{t("vacio")} <a href="/catalogo" style={{ fontWeight: 800 }}>{t("catalogo")} →</a></p></div>;
   const PASOS = [t("envio"), t("pago"), t("confirmacion")];
   const idx = paso <= 2 ? 0 : 1;
@@ -441,7 +436,7 @@ function Registro({ sf, guardarSes, t, volver }) {
   if (ok) return <p style={{ fontSize: 15, lineHeight: 1.5 }}>{ok}</p>;
   return <form onSubmit={registrar} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
     <h1 className="h2" style={{ fontSize: 30, gridColumn: "span 2" }}>{t("crear")}</h1>
-    <p style={{ margin: "-4px 0 4px", color: "var(--gris)", fontSize: 14, gridColumn: "span 2" }}>Con la cuenta ves los precios de todas las máquinas. Es la misma cuenta que Argencargo.</p>
+    <p style={{ margin: "-4px 0 4px", color: "var(--gris)", fontSize: 14, gridColumn: "span 2" }}>Con la cuenta hacés el pedido, lo seguís paso a paso y guardás tus máquinas favoritas.</p>
     <CampoTxt f={f} set={set} k="first_name" l="Nombre" /><CampoTxt f={f} set={set} k="last_name" l="Apellido" />
     <CampoTxt f={f} set={set} k="email" l={t("email")} type="email" span /><CampoWa f={f} set={set} />
     <CampoTxt f={f} set={set} k="password" l={t("pass")} type="password" span />
@@ -615,7 +610,7 @@ function Notificaciones({ cliente, dq, t }) {
 
 // ── Cómo funciona ─────────────────────────────────────────────────────────
 export function ComoFunciona() {
-  const P = [["01", "Elegís la máquina", "Entrás al catálogo, ves fotos, descripción y tiempo estimado. Con tu cuenta ves el precio final, puesto en nuestro depósito de CABA."], ["02", "Confirmás y pagás la máquina", "El anticipo es el precio de la máquina. Con eso la fábrica arranca la producción. Tenés 24 horas para arrepentirte."], ["03", "Producción y control", "La fábrica produce; antes de embarcar te mandamos foto o video de tu máquina funcionando."], ["04", "Argencargo la importa", "Flete, seguro y aduana con el equipo de Argencargo. Te avisamos por mail en cada hito y lo seguís desde tu cuenta."], ["05", "Retirás o te la enviamos", "Cuando llega a Buenos Aires se abona la importación contra entrega. Retirás en nuestro depósito sin cargo o te la enviamos a cualquier punto del país (adicional)."]];
+  const P = [["01", "Elegís la máquina", "Entrás al catálogo, ves fotos, descripción y tiempo estimado. Ves el precio final, puesto en nuestro depósito de CABA."], ["02", "Confirmás y pagás la máquina", "El anticipo es el precio de la máquina. Con eso la fábrica arranca la producción. Tenés 24 horas para arrepentirte."], ["03", "Producción y control", "La fábrica produce; antes de embarcar te mandamos foto o video de tu máquina funcionando."], ["04", "Argencargo la importa", "Flete, seguro y aduana con el equipo de Argencargo. Te avisamos por mail en cada hito y lo seguís desde tu cuenta."], ["05", "Retirás o te la enviamos", "Cuando llega a Buenos Aires se abona la importación contra entrega. Retirás en nuestro depósito sin cargo o te la enviamos a cualquier punto del país (adicional)."]];
   return <div className="wrap" style={{ padding: "40px 24px 70px", maxWidth: 820 }}>
     <h1 className="h2" style={{ marginBottom: 8 }}>Cómo funciona</h1><p style={{ color: "var(--gris)", fontSize: 17, margin: "0 0 28px" }}>Una sola operación, de la fábrica a tu taller.</p>
     <div style={{ display: "grid", gap: 12 }}>{P.map(([n, tt, d]) => <div key={n} style={{ display: "grid", gridTemplateColumns: "56px 1fr", gap: 14, padding: "18px 20px", borderRadius: 20, border: "1px solid var(--borde)", background: "var(--card)" }}><span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600, color: "var(--y)" }}>{n}</span><div><b style={{ fontSize: 17, display: "block", marginBottom: 4 }}>{tt}</b><p style={{ margin: 0, color: "var(--gris)", lineHeight: 1.5 }}>{d}</p></div></div>)}</div>

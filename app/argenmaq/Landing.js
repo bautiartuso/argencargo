@@ -90,7 +90,7 @@ export default function Landing({ arbol, destacadas, diasVia }) {
       <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 8 }}><div><h2 className="h2">{x.catT}</h2><p style={{ color: "var(--gris)", fontSize: 17, margin: "6px 0 0" }}>{x.catS}</p></div><a className="btn" href="/catalogo">{x.verCat} →</a></div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "16px 0 18px" }}>{arbol.map((c) => <a key={c.slug} className="chip" href={`/catalogo/${c.slug}`}>{c.nombre}</a>)}</div>
       {destacadas.length > 0 && <div className="carril">{destacadas.map((m) => <Tarjeta key={m.id} m={m} precios={precios} diasVia={diasVia} />)}</div>}
-      <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("verPrecio")}.</p>
+      <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--gris)" }}>{t("precioPuesto")}. {t("envioAdicional")}.</p>
     </div></section>
 
     <section style={{ padding: "50px 0" }}><div className="wrap"><div className="bento">
