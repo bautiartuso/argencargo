@@ -1,7 +1,7 @@
 // GET  /api/entrega/[token] → datos de la operación para la pantalla pública de "carga lista"
 // POST /api/entrega/[token] → cliente confirma envío/retiro + método de pago
 
-import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd } from "../../../../lib/delivery";
+import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, kgDeBultos } from "../../../../lib/delivery";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
@@ -94,6 +94,14 @@ async function loadOpData(token) {
 }
 
 
+// Peso bruto real de los bultos de varias ops (para el recargo por peso del envío a domicilio).
+async function kgDeOps(ids) {
+  const v = (ids || []).filter(Boolean);
+  if (!v.length) return 0;
+  const r = await sbFetch(`/operation_packages?operation_id=in.(${v.join(",")})&select=gross_weight_kg,quantity`);
+  return kgDeBultos(Array.isArray(r.body) ? r.body : []);
+}
+
 async function loadDeliveryPricing() {
   const [configRes, locRes] = await Promise.all([
     sbFetch(`/calc_config?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`),
@@ -151,7 +159,9 @@ export async function GET(req, { params }) {
 
   const client = op.clients || {};
   const match = matchLocality(client.city, client.province, localities);
-  const price = match ? computeDeliveryCostUsd(match, cfg) : null;
+  // El envío se cotiza con el peso de esta op más el de las hermanas que se pueden coordinar juntas.
+  const kgEnvio = kgDeBultos(pkgs) + await kgDeOps((hermanas || []).map((h) => h.id));
+  const price = match ? computeDeliveryCostUsd(match, cfg, kgEnvio) : null;
 
   // Tarifa preferencial: la op la tiene cuando el flete que se le cobra no sale de la tarifa de
   // lista — sea por descuento manual, por tarifa custom del cliente, por volumen o por lo que sea.
@@ -396,7 +406,7 @@ export async function POST(req, { params }) {
   let deliveryCost = 0, deliveryZone = null;
   if (delivery_choice === "propio") {
     if (!match) return Response.json({ error: "No encontramos una zona de envío propio para tu localidad" }, { status: 400 });
-    deliveryCost = computeDeliveryCostUsd(match, cfg);
+    deliveryCost = computeDeliveryCostUsd(match, cfg, await kgDeOps([op.id, ...extraOps.map((x) => x.id)]));
     deliveryZone = match.name;
   }
 

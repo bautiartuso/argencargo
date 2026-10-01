@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
-import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
+import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
@@ -6234,13 +6234,14 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
   // tabla de fletes. Sin esto, pasar una op a "envio a domicilio" desde el admin la dejaba sin
   // direccion y con costo 0.
   const calcularEnvioDelCliente=async()=>{
-    const [cfgR,locR]=await Promise.all([
+    const [cfgR,locR,pkR]=await Promise.all([
       dq("calc_config",{token,filters:`?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`}),
       dq("delivery_localities",{token,filters:"?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc"}),
+      dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=gross_weight_kg,quantity`}),
     ]);
     const cfg={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{cfg[r.key]=Number(r.value);});
     const match=matchLocality(opClient?.city,opClient?.province,Array.isArray(locR)?locR:[]);
-    return {match,costo:match?computeDeliveryCostUsd(match,cfg):0,direccion:direccionDeCliente(opClient)};
+    return {match,costo:match?computeDeliveryCostUsd(match,cfg,kgDeBultos(Array.isArray(pkR)?pkR:[])):0,direccion:direccionDeCliente(opClient)};
   };
 
   const cambiarEntrega=async(nueva)=>{

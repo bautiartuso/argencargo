@@ -21,7 +21,7 @@
 //   delivery_address  dirección de entrega (solo envío propio)
 // Cada cambio deja una nota "🤖 Bot de entregas" en la op para que se vea en el panel.
 
-import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd } from "../../../../lib/delivery";
+import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, kgDeBultos } from "../../../../lib/delivery";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -30,16 +30,19 @@ export const maxDuration = 15;
 
 // Zona y costo del envío propio para la localidad registrada del cliente —
 // mismo cálculo server-side que usa el link (nunca se confía en montos del cliente).
-async function envioDomicilio(client) {
+async function envioDomicilio(client, opIds = []) {
   try {
-    const [cfgRes, locRes] = await Promise.all([
+    const ids = (opIds || []).filter(Boolean);
+    const [cfgRes, locRes, pkRes] = await Promise.all([
       sb(`/calc_config?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`),
       sb(`/delivery_localities?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc`),
+      ids.length ? sb(`/operation_packages?operation_id=in.(${ids.join(",")})&select=gross_weight_kg,quantity`) : Promise.resolve({ body: [] }),
     ]);
+    const kg = kgDeBultos(Array.isArray(pkRes.body) ? pkRes.body : []);
     const cfg = {}; (Array.isArray(cfgRes.body) ? cfgRes.body : []).forEach((r) => { cfg[r.key] = Number(r.value); });
     const match = matchLocality(client?.city, client?.province, Array.isArray(locRes.body) ? locRes.body : []);
     if (!match) return null;
-    return { zona: match.name, costo_usd: computeDeliveryCostUsd(match, cfg) };
+    return { zona: match.name, costo_usd: computeDeliveryCostUsd(match, cfg, kg) };
   } catch { return null; }
 }
 
@@ -174,7 +177,7 @@ export async function GET(req) {
     const ops = Array.isArray(opsRes.body) ? opsRes.body : [];
     const [views, envio] = await Promise.all([
       Promise.all(ops.map(opView)),
-      envioDomicilio(ops[0]?.clients || null),
+      envioDomicilio(ops[0]?.clients || null, ops.filter((o) => !o.delivery_completed_at).map((o) => o.id)),
     ]);
     const c0 = clients[0];
     return Response.json({
@@ -292,7 +295,7 @@ export async function POST(req) {
     }
     const costoActual = Number(op.delivery_cost_usd || 0);
     if (dc === "propio" && op.delivery_choice !== "propio") {
-      const envio = await envioDomicilio(op.clients);
+      const envio = await envioDomicilio(op.clients, [op.id]);
       if (!envio) return Response.json({ error: "La localidad del cliente está fuera de la zona de envío propio — derivar a un asesor" }, { status: 400 });
       patch.delivery_choice = "propio";
       patch.delivery_zone = envio.zona;
