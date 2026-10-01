@@ -1,7 +1,7 @@
 // GET  /api/entrega/[token] → datos de la operación para la pantalla pública de "carga lista"
 // POST /api/entrega/[token] → cliente confirma envío/retiro + método de pago
 
-import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, kgDeBultos } from "../../../../lib/delivery";
+import { DELIVERY_CFG_KEYS, matchLocality, matchDireccion, computeDeliveryCostUsd, kgDeBultos } from "../../../../lib/delivery";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
@@ -130,6 +130,22 @@ export async function GET(req, { params }) {
 
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
+
+  // Cotización rápida del envío a domicilio cuando el cliente cambia localidad o CP en el link
+  // (?cotizar=1&localidad=&cp=&extra=id,id). Mismo cálculo que al confirmar.
+  const qs = new URL(req.url).searchParams;
+  if (qs.get("cotizar")) {
+    const { cfg, localities } = await loadDeliveryPricing();
+    const m = matchDireccion(qs.get("localidad"), qs.get("cp"), localities);
+    const extra = String(qs.get("extra") || "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+    let extraOk = [];
+    if (extra.length) {
+      const r = await sbFetch(`/operations?id=in.(${extra.join(",")})&client_id=eq.${op.client_id}&select=id`);
+      extraOk = (Array.isArray(r.body) ? r.body : []).map((x) => x.id);
+    }
+    const kg = await kgDeOps([op.id, ...extraOk]);
+    return Response.json({ zone: m ? m.name : null, price: m ? computeDeliveryCostUsd(m, cfg, kg) : null });
+  }
   // Registro de apertura del link (primera vez, última vez, cantidad) — lo ven Entregas y Argy.
   sbFetch(`/rpc/link_opened`, { method: "POST", body: JSON.stringify({ p_token: token }) }).catch(() => {});
 
@@ -402,7 +418,11 @@ export async function POST(req, { params }) {
   // nunca se confía en una zona/monto mandado por el cliente.
   const { cfg, localities } = await loadDeliveryPricing();
   const client = op.clients || {};
-  const match = matchLocality(client.city, client.province, localities);
+  // Si el cliente corrigió la dirección en el link, el envío se cotiza con ESA localidad/CP.
+  const dc = delivery_contact && typeof delivery_contact === "object" ? delivery_contact : null;
+  const match = delivery_choice === "propio" && dc && (dc.localidad || dc.cp)
+    ? matchDireccion(dc.localidad, dc.cp, localities)
+    : matchLocality(client.city, client.province, localities);
   let deliveryCost = 0, deliveryZone = null;
   if (delivery_choice === "propio") {
     if (!match) return Response.json({ error: "No encontramos una zona de envío propio para tu localidad" }, { status: 400 });

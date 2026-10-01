@@ -54,6 +54,8 @@ export default function EntregaPublica({ params }) {
   const [confirmed, setConfirmed] = useState(null);
   // Otras cargas listas del mismo cliente: ids seleccionadas para coordinar en la misma visita.
   const [selExtra, setSelExtra] = useState([]);
+  // Cotización del envío con la dirección que el cliente editó (localidad / CP). null = la de la carga.
+  const [cotEnvio, setCotEnvio] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -148,6 +150,22 @@ export default function EntregaPublica({ params }) {
   }, [delivery]);
   useEffect(() => { if (payMethods[0]) setPayment(payMethods[0]); setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payMethods]);
+  // Si el cliente cambia localidad o CP del envío a domicilio, se vuelve a cotizar (con el peso de
+  // las cargas que coordina juntas). Si vuelve a lo registrado, queda la cotización original.
+  useEffect(() => {
+    if (!data || delivery !== "propio") return;
+    const orig = (dirLocalidad || "") === (data.client?.city || "") && (dirCP || "") === (data.client?.postal_code || "") && selExtra.length === 0;
+    if (orig) { setCotEnvio(null); return; }
+    const t = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({ cotizar: "1", localidad: dirLocalidad || "", cp: dirCP || "", extra: selExtra.join(",") });
+        const r = await fetch(`/api/entrega/${token}?${q}`);
+        const d = await r.json();
+        if (r.ok) setCotEnvio({ price: d.price, zone: d.zone });
+      } catch {}
+    }, 500);
+    return () => clearTimeout(t);
+  }, [data, delivery, dirLocalidad, dirCP, selExtra, token]);
   useEffect(() => { setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso, diaEntrega, franjaEntrega, delivery]);
 
@@ -163,7 +181,8 @@ export default function EntregaPublica({ params }) {
   const hasPropio = deliveryInfo.price != null;
   const clientName = `${client.first_name || ""} ${client.last_name || ""}`.trim() || "Cliente";
 
-  const deliveryCost = delivery === "propio" ? deliveryInfo.price : 0;
+  const precioPropio = cotEnvio ? cotEnvio.price : deliveryInfo.price;
+  const deliveryCost = delivery === "propio" ? Number(precioPropio || 0) : 0;
   const debtApp = Number(op.debt_applied_usd || 0);
   const creditApp = Number(op.credit_applied_usd || 0);
   const totAnt = Number(op.total_anticipos || 0);
@@ -190,6 +209,7 @@ export default function EntregaPublica({ params }) {
       if (carrierMode === "domicilio" && !contacto.direccion.trim()) return "Completá la dirección de entrega.";
     }
     if (delivery === "propio" && (!dirCalle.trim() || !dirLocalidad.trim())) return "Completá al menos calle y localidad de la entrega.";
+    if (delivery === "propio" && cotEnvio && cotEnvio.price == null) return "Esa localidad queda fuera de nuestro reparto propio. Elegí retiro por oficina o envío por transportista.";
     if ((delivery === "oficina" || delivery === "propio") && (!diaEntrega || !franjaEntrega)) return delivery === "oficina" ? "Elegí qué día y en qué horario pasás a retirar." : "Elegí qué día y en qué franja querés recibir la entrega.";
     return null;
   };
@@ -326,7 +346,7 @@ export default function EntregaPublica({ params }) {
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
           <OptRow selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} label="Retiro por oficina" meta={`${deliveryInfo.office_address || ""}${deliveryInfo.office_locality ? " · " + deliveryInfo.office_locality : ""}${deliveryInfo.office_hours ? " · " + deliveryInfo.office_hours : ""}`} />
           {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" minDia={data?.delivery_min_day} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
-          {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${inferredZone}`} price={"+ " + fmt(deliveryInfo.price)} />}
+          {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${cotEnvio?.zone || inferredZone}`} price={precioPropio != null ? "+ " + fmt(precioPropio) : "Fuera de zona"} />}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8 }}>
@@ -407,7 +427,7 @@ export default function EntregaPublica({ params }) {
           <div style={{ padding: "15px 17px", borderRadius: 11, background: `linear-gradient(135deg,${GOLD_A},${GOLD_B})`, color: NAVY, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 5px 16px rgba(184,149,106,0.25)" }}>
             <div>
               <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>Total a abonar</p>
-              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${inferredZone}` : "Envío por transportista"}</p>
+              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por transportista"}</p>
             </div>
             {(() => {
               const todoEnPesos = payMethods.length === 1 && tcVenta > 0 && (payMethods[0] === "transferencia" || (payMethods[0] === "efectivo" && cashCurrencyMode === "ARS"));
