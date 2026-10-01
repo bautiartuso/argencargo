@@ -66,12 +66,12 @@ const CSS = `
 .pz-bul.c6n{grid-template-columns:1fr 40px 124px 84px 104px 108px}
 .pz-volx{color:#b45309 !important;font-weight:800}
 .pz-volx sup{color:#d97706;font-size:13px;font-weight:900;margin-left:2px}
-.pz-volbox{margin:14px 0 0;border:1px solid #ecd9a8;background:#fdf6e4;border-radius:12px;padding:15px 17px}
+.pz-volbox{margin:14px 0 0;border:1px solid #e3ddd0;background:#fff;border-radius:12px;padding:15px 17px}
 .pz-volbox h4{margin:0 0 6px;font-size:14px;font-weight:800;color:#1a1a1a;display:flex;align-items:center;gap:7px}
 .pz-volbox h4 b{color:#d97706;font-size:17px}
 .pz-volbox p{margin:0;font-size:13px;line-height:1.55;color:rgba(26,26,26,.72)}
 .pz-volf{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin:13px 0 0}
-.pz-volf .f{background:#fff;border:1px solid #ecd9a8;border-radius:10px;padding:10px 12px;text-align:center}
+.pz-volf .f{background:#f6f3ec;border:1px solid #e3ddd0;border-radius:10px;padding:10px 12px;text-align:center}
 .pz-volf .f span{display:block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:rgba(26,26,26,.45);margin-bottom:4px}
 .pz-volf .f b{font-size:14px;font-weight:800;color:#1a1a1a;font-variant-numeric:tabular-nums}
 .pz-volf .o{font-size:11px;font-weight:800;color:rgba(26,26,26,.4);text-transform:uppercase}
@@ -275,7 +275,6 @@ export default function PresupuestoPage({ params }) {
   // Si pesa más de lo que ocupa (o es solo marítimo) la columna no aporta y se oculta.
   const volManda = hayAereo && totKgVol > totKg + 0.01;
   const colsBul = volManda ? (hayAereo && hayMaritimo ? "c7" : "c6") : (hayAereo && hayMaritimo ? "c6n" : "c5");
-  const ejVol = volManda ? bultos.find((p) => kgVolDe(p) > num(p.weight) + 0.01) : null;
 
   // El mensaje lo manda el cliente desde su WhatsApp: así nos llega la conversación abierta,
   // no solo un aviso interno del sistema.
@@ -419,14 +418,13 @@ export default function PresupuestoPage({ params }) {
                     por volumen y el peso volumétrico no existe. */}
                 {volManda && (
                   <div className="pz-volbox">
-                    <h4><b>*</b> Tu carga se cobra por peso volumétrico</h4>
-                    <p>En el avión se paga por el lugar que ocupa la carga, no solo por lo que pesa. Por eso se compara el peso real con el peso volumétrico y se cobra el mayor de los dos. En tu cotización, la carga ocupa más de lo que pesa.</p>
+                    <h4><b>*</b> El peso volumétrico es mayor al peso bruto</h4>
+                    <p>En los envíos aéreos cada bulto tiene dos pesos: el que marca la balanza (peso bruto) y el que sale de sus medidas (peso volumétrico). Siempre se toma el más alto de los dos, y en tu carga es el volumétrico.</p>
                     <div className="pz-volf">
                       <div className="f"><span>Con las medidas</span><b>Largo × Ancho × Alto (cm) ÷ 5.000</b></div>
                       <div className="o">o</div>
                       <div className="f"><span>Con el volumen</span><b>Volumen (m³) × 200</b></div>
                     </div>
-                    {ejVol && <p className="pz-volej">Ejemplo con tu bulto: {dim(ejVol.length)} × {dim(ejVol.width)} × {dim(ejVol.height)} ÷ 5.000 = <b>{fmtKg(kgVolDe(ejVol))}</b> · {fmtCbm(cbmDe(ejVol))} × 200 = <b>{fmtKg(cbmDe(ejVol) * 200)}</b>. Pesa {fmtKg(num(ejVol.weight))}, así que se cobra {fmtKg(kgVolDe(ejVol))}.</p>}
                   </div>
                 )}
               </div>
