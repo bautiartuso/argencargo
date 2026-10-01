@@ -59,7 +59,9 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
   const [sub, setSub] = useState("");
   const precios = usePrecios(lista.map((m) => m.id));
   const cat = rubro ? arbol.find((c) => c.slug === rubro) : null;
-  const filtradas = lista.filter((m) => (!sub || m.subcategoria === sub) && (!q.trim() || `${m.nombre} ${m.descripcion || ""} ${codigoMaq(m)}`.toLowerCase().includes(q.toLowerCase())));
+  const nombreDe = (slug) => { for (const c of arbol) { if (c.slug === slug) return c.nombre; const s = (c.subs || []).find((x) => x.slug === slug); if (s) return s.nombre; } return ""; };
+  const filtradas = lista.filter((m) => !sub || m.subcategoria === sub)
+    .map((m) => [m, q.trim() ? puntajeBusqueda(m, q, nombreDe) : 1]).filter(([, p]) => p > 0).sort((a, b) => b[1] - a[1]).map(([m]) => m);
   const cuenta = (slug) => lista.filter((m) => m.categoria === slug).length;
   const rubros = arbol.filter((c) => c.slug !== "otros" || cuenta(c.slug) > 0);
   return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
@@ -77,7 +79,7 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
         </div>}
         {cat && !q.trim() && cat.subs.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}><button className={`chip${!sub ? " on" : ""}`} onClick={() => setSub("")}>{t("verTodo")}</button>{cat.subs.map((s) => <button key={s.slug} className={`chip${sub === s.slug ? " on" : ""}`} onClick={() => setSub(sub === s.slug ? "" : s.slug)}>{s.nombre}</button>)}</div>}
         {(cat || q.trim())
-          ? (filtradas.length === 0 ? <p style={{ color: "var(--gris)" }}>{t("sinMaquinas")}</p> : <div className="grilla">{filtradas.map((m) => <Tarjeta key={m.id} m={m} precios={precios} />)}</div>)
+          ? (filtradas.length === 0 ? <p style={{ color: "var(--gris)" }}>{q.trim() ? t("sinResultados") : t("sinMaquinas")}</p> : <div className="grilla">{filtradas.map((m) => <Tarjeta key={m.id} m={m} precios={precios} />)}</div>)
           : arbol.map((c) => { const del = lista.filter((m) => m.categoria === c.slug); if (!del.length) return null; return <section key={c.slug} style={{ marginBottom: 26 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}><h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{c.nombre}</h2><span style={{ fontFamily: MONO, fontSize: 11, color: "var(--gris)" }}>{del.length}</span><span style={{ flex: 1 }} /><a href={`/catalogo/${c.slug}`} style={{ fontSize: 13.5, fontWeight: 700 }}>{t("verTodo")} →</a></div>
             <div className="carril">{del.slice(0, 10).map((m) => <Tarjeta key={m.id} m={m} precios={precios} />)}</div>
@@ -93,6 +95,67 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
 const fmtCm = (v) => (num(v) != null ? `${num(v).toLocaleString("es-AR")} cm` : null);
 const fmtKg = (v) => (num(v) != null ? `${num(v).toLocaleString("es-AR")} kg` : null);
+
+// ── Búsqueda del catálogo ──────────────────────────────────────────────────────────────────
+// No es un "includes" del texto entero: se normaliza (sin acentos ni signos), se sacan las palabras
+// vacías y cada palabra de la consulta tiene que aparecer como raíz de alguna palabra de la máquina
+// ("fiambre" encuentra "fiambrerías", "feteadora" encuentra "feteadoras"). El nombre pesa más que la
+// descripción, y hay un puñado de sinónimos de oficio. Si no coinciden todas las palabras pero sí la
+// mayoría, la máquina igual aparece, más abajo.
+const VACIAS = new Set(["de", "del", "la", "el", "los", "las", "para", "por", "con", "y", "o", "u", "un", "una", "unas", "unos", "en", "a", "al", "maquina", "maquinas", "equipo", "equipos", "machine", "machines", "the", "for", "and", "of", "to", "и", "для", "с"]);
+// Grupos de equivalentes de oficio. Solo nombres que significan lo mismo: "fiambre" no es "cortadora".
+const SINONIMOS = [
+  ["feteadora", "fiambrera", "rebanadora", "slicer"],
+  ["fiambre", "carne"],
+  ["cortadora", "cortador"],
+  ["heladera", "refrigerador", "frigorifico", "exhibidora"],
+  ["freezer", "congelador", "congeladora"],
+  ["amasadora", "mezcladora"],
+  ["sobadora", "laminadora"],
+  ["licuadora", "blender"],
+  ["envasadora", "selladora", "empaquetadora"],
+  ["etiquetadora", "rotuladora"],
+  ["soldadora", "soldador"],
+  ["compresor", "compresora"],
+  ["bordadora", "bordado"],
+  ["helado", "soft"],
+  ["cafe", "cafetera", "espresso"],
+  ["pizza", "pizzera"],
+  ["pollo", "asador", "rotisera", "spiedo"],
+  ["lavadora", "lavarropas"],
+  ["impresora", "plotter"],
+  ["cnc", "router", "fresadora"],
+  ["briqueta", "briquetadora", "pellet", "aserrin", "carbonilla"],
+  ["deshidratador", "deshidratadora", "secadora"],
+];
+const normalizar = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9а-яё]+/g, " ").trim();
+const raiz = (w) => (w.length > 5 && w.endsWith("es") ? w.slice(0, -2) : w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w);
+const palabras = (t) => normalizar(t).split(" ").filter((w) => w && !VACIAS.has(w)).map(raiz);
+// Una palabra "pega" con otra si es su raíz: "fiambre" con "fiambrería", pero no "corta" con "cortadora"
+// ni "soft" con "software" (la corta tiene que ser al menos el 60 % de la larga).
+const pega = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)) && Math.min(a.length, b.length) / Math.max(a.length, b.length) >= 0.6);
+const SIN_RAIZ = SINONIMOS.map((g) => g.map(raiz));
+const sinonimosDe = (w) => { const out = new Set(); SIN_RAIZ.forEach((g) => { if (g.includes(w)) g.forEach((x) => out.add(x)); }); out.delete(w); return [...out]; };
+export function puntajeBusqueda(m, q, nombreCat = () => "") {
+  const consulta = palabras(q);
+  if (!consulta.length) return 1;
+  // Nombre y código pesan 3, rubro 2, descripción 1. Los sinónimos solo valen sobre nombre y rubro.
+  const campos = [[palabras(`${m.nombre} ${codigoMaq(m)}`), 3], [palabras(`${nombreCat(m.categoria)} ${nombreCat(m.subcategoria)}`), 2], [palabras(m.descripcion), 1]];
+  let total = 0, aciertos = 0;
+  for (const w of consulta) {
+    let mejor = 0;
+    const sin = sinonimosDe(w);
+    for (const [ws, peso] of campos) {
+      if (ws.some((x) => pega(x, w))) mejor = Math.max(mejor, peso);
+      else if (peso >= 2 && sin.length && ws.some((x) => sin.includes(x))) mejor = Math.max(mejor, peso / 2);
+    }
+    if (mejor > 0) aciertos++;
+    total += mejor;
+  }
+  // Todas las palabras tienen que pegar; en consultas de 3 o más, puede faltar una (entra más abajo).
+  if (aciertos < consulta.length && !(consulta.length >= 3 && aciertos >= consulta.length - 1)) return 0;
+  return total + (aciertos === consulta.length ? 10 : 0);
+}
 
 export function FichaVista({ m, cats, diasVia: dv, relacionadas }) {
   const { t, fmt, ses, carrito, setCarrito, lang, moneda } = useAM();
