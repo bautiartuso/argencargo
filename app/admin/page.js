@@ -14106,6 +14106,43 @@ function AdminCalculator({token}){
   // (no toca la tarifa general ni la del cliente, solo esta cotización).
   const [rateOverride,setRateOverride]=useState({});const [costOverride,setCostOverride]=useState({}); // costo del agente editable por cotización (USD/kg o USD/m³) // {[chKey]: string}
   const toN=(v)=>{const n=Number(String(v||"").replace(",","."));return isNaN(n)?0:n;};
+  // Borrador (01/10/2026): lo cargado sobrevive a cambiar de sección o recargar la página. Solo
+  // "Nueva cotización" lo borra. Una vez calculada, la cotización se recalcula sola con cada cambio.
+  const CALC_BORRADOR="ac_calc_borrador";
+  const [restaurado,setRestaurado]=useState(false);
+  const [autoCalc,setAutoCalc]=useState(false);
+  const firmaCalc=useRef(null); // productos de la última cuenta: si cambian todos, es otra cotización
+  useEffect(()=>{
+    try{
+      const b=JSON.parse(localStorage.getItem(CALC_BORRADOR)||"null");
+      if(b&&typeof b==="object"){
+        if(b.clientId)setClientId(b.clientId);
+        if(b.clientName)setClientName(b.clientName);
+        if(b.taxCond)setTaxCond(b.taxCond);
+        if(b.origin)setOrigin(b.origin);
+        setHasBrand(!!b.hasBrand);setHasBattery(!!b.hasBattery);
+        if(Array.isArray(b.products)&&b.products.length)setProducts(b.products.map(p=>({...p,classifying:false})));
+        if(Array.isArray(b.pkgs)&&b.pkgs.length){setPkgs(b.pkgs);proxPkId.current=Math.max(0,...b.pkgs.map(p=>Number(p.id)||0))+1;}
+        setRateOverride(b.rateOverride||{});setCostOverride(b.costOverride||{});setDesembolsoOverride(b.desembolsoOverride||{});
+        if(Array.isArray(b.canalesLink))setCanalesLink(b.canalesLink);
+        firmaCalc.current=b.firma||null;
+        if(b.calculado)setAutoCalc(true);
+      }
+    }catch{}
+    setRestaurado(true);
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    if(!restaurado)return;
+    try{localStorage.setItem(CALC_BORRADOR,JSON.stringify({clientId,clientName,taxCond,origin,hasBrand,hasBattery,products:products.map(({classifying,...p})=>p),pkgs,rateOverride,costOverride,desembolsoOverride,canalesLink,firma:firmaCalc.current,calculado:autoCalc}));}catch{}
+  },[restaurado,clientId,clientName,taxCond,origin,hasBrand,hasBattery,products,pkgs,rateOverride,costOverride,desembolsoOverride,canalesLink,autoCalc]);
+  const nuevaCotizacion=()=>{
+    setClientId("");setClientName("");setTaxCond("monotributo");setOrigin("China");setHasBrand(false);setHasBattery(false);
+    setProducts([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
+    proxPkId.current=1;setPkgs([{id:0,qty:"1",length:"",width:"",height:"",weight:""}]);
+    setRateOverride({});setCostOverride({});setDesembolsoOverride({});
+    setResults(null);setLinkGenerado(null);setCanalesLink([]);setAutoCalc(false);firmaCalc.current=null;
+    try{localStorage.removeItem(CALC_BORRADOR);}catch{}
+  };
   // Desglose por canal: mismo math que calc.js, expone los componentes (derechos, tasa estadística, IVA,
   // adicionales marítimos, desaduanaje) para mostrar y permitir override del desaduanaje.
   const computeBreakdown=(chKey,items,pks,client)=>{
@@ -14173,8 +14210,19 @@ function AdminCalculator({token}){
       setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null}:null}:x));
     }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));}
   };
-  const calculate=()=>{
-    const items=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
+  const calculate=(auto)=>{
+    // Tarifas tocadas a mano (USD/kg, USD/m³, costo, desaduanaje): valen para esta cotización.
+    // Si ningún producto de la cuenta anterior sigue estando, es otra cotización y vuelven a las
+    // del sistema (pasaba que quedaba el 500 USD/m³ de la anterior y no se notaba).
+    const norm=(s)=>String(s||"").trim().toLowerCase();
+    const firma=products.map(p=>norm(p.description)).filter(Boolean);
+    const prev=firmaCalc.current;
+    if(Array.isArray(prev)&&prev.length&&firma.length&&!firma.some(a=>prev.some(b=>a===b||a.startsWith(b)||b.startsWith(a)))){
+      setRateOverride({});setCostOverride({});setDesembolsoOverride({});
+    }
+    firmaCalc.current=firma;
+    const pctN=(v,def)=>(v==null||String(v).trim()==="")?def:toN(v);
+    const items=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),import_duty_rate:pctN(p.ncm?.import_duty_rate,0),statistics_rate:pctN(p.ncm?.statistics_rate,0),iva_rate:pctN(p.ncm?.iva_rate,21),iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
     const pks=pkgs.map(p=>({id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
     const client={tax_condition:taxCond};
     const all=channelsForOrigin(origin).map(ch=>{
@@ -14204,8 +14252,21 @@ function AdminCalculator({token}){
     });
     setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery});
     setLinkGenerado(null); // el link anterior quedó viejo: los números cambiaron
-    setCanalesLink(all.filter(c=>!c.notVisibleToClient).map(c=>c.key));
+    // Al recalcular solo se respeta lo que el admin ya eligió mostrar en el link.
+    const def=all.filter(c=>!c.notVisibleToClient).map(c=>c.key);
+    setCanalesLink(prevSel=>{if(!auto)return def;const kept=prevSel.filter(k=>all.some(c=>c.key===k));return kept.length?kept:def;});
+    setAutoCalc(true);
   };
+  const unclassified=!hasBrand?products.filter(p=>toN(p.unit_price)>0&&!p.ncm):[];
+  const bloqueado=totalFob<=0||unclassified.length>0;
+  // Recalcula sola con cada cambio una vez hecha la primera cuenta (antes quedaban números viejos
+  // si se cambiaba un bulto y no se volvía a tocar Calcular).
+  useEffect(()=>{
+    if(!autoCalc||!tariffs.length)return;
+    if(bloqueado){setResults(null);return;}
+    const t=setTimeout(()=>calculate(true),250);
+    return()=>clearTimeout(t);
+  },[autoCalc,bloqueado,products,pkgs,taxCond,origin,hasBrand,hasBattery,clientOverrides,tariffs,config]); // eslint-disable-line react-hooks/exhaustive-deps
   const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const printPdf=(ch,eff)=>{
     const w=window.open("","_blank");if(!w)return;
@@ -14334,7 +14395,10 @@ function AdminCalculator({token}){
   };
   const addProduct=()=>setProducts(p=>[...p,{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
   const rmProduct=(i)=>setProducts(p=>p.length>1?p.filter((_,j)=>j!==i):p);
-  const chProd=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  // Cambiar la descripción borra la NCM: era de otro producto (quedaba la de la cotización anterior).
+  const chProd=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[f]:v,...(f==="description"&&x.ncm?{ncm:null}:{})}:x));
+  // Alícuotas editables a mano (DIE, TE, IVA) sobre lo que sugirió la clasificación.
+  const chNcm=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i&&x.ncm?{...x,ncm:{...x.ncm,[f]:v.replace(/[^\d.,]/g,"")}}:x));
   const addPkg=()=>setPkgs(p=>[...p,{id:proxPkId.current++,qty:"1",length:"",width:"",height:"",weight:""}]);
   // Al borrar un bulto se saca de los productos que viajaban en el, si no quedan apuntando a
   // un bulto que ya no existe y el prorrateo del flete los manda al pozo de "sin asignar".
@@ -14379,322 +14443,431 @@ function AdminCalculator({token}){
     const texto=e.clipboardData?.getData("text")||"";
     if(repartirMedidas(i,texto))e.preventDefault();
   };
-  const inputStyle={width:"100%",padding:"8px 10px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"};
-  const labelStyle={fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const cardOption=(sel)=>({flex:1,padding:"12px",textAlign:"center",borderRadius:10,border:`1.5px solid ${sel?IC:"rgba(255,255,255,0.08)"}`,background:sel?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 150ms"});
-  return <div style={{marginTop:32,padding:"22px 24px",background:"rgba(184,149,106,0.04)",border:"1.5px solid rgba(184,149,106,0.18)",borderRadius:14}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-      <div>
-        <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>🧮 Calculadora rápida (admin)</h3>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>Cotizá una operación con todos los canales y exportá PDF para enviar al cliente.</p>
-      </div>
+  // Lo que se copia es el mensaje entero listo para pegar, no la URL sola. Corto y al hueso
+  // por pedido del usuario (21/09/2026): antes iba un saludo con el nombre y un párrafo
+  // explicando las opciones, y el saludo lo escribe él en el chat igual.
+  const armarMensaje=(url)=>{
+    const vence=new Date(Date.now()+7*24*60*60*1000).toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
+    return ["Tu cotización ya está lista.","",url,"",`Válida hasta el ${vence}.`].join("\n");
+  };
+  const generarLink=async()=>{
+    if(canalesLink.length===0){toast("Elegí al menos una opción para mostrarle al cliente","error");return;}
+    setGenerandoLink(true);
+    const red=(v)=>Math.round(Number(v||0)*100)/100;
+    // Se rearman con el estado de ahora: marcar en que bulto viaja cada producto no cambia
+    // ningun total, asi que no obliga a recalcular, y si leyeramos los de `results` el link
+    // guardaria el reparto de antes de marcarlos.
+    const itemsLink=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
+    const pksLink=pkgs.map(p=>({id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
+    try{
+      const alts=results.channels.filter(c=>canalesLink.includes(c.key)).map(c=>{
+        const bd=c.bd||{};
+        const ovStr=desembolsoOverride[c.key];
+        const desEff=(ovStr!=null&&String(ovStr).trim()!=="")?toN(ovStr):(bd.desembolsoAuto||0);
+        const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(c.key)?rateOverride[c.key]:null;
+        const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
+        const fleteRateEff=hasRateOv?toN(rateOvStr):Number(c.fleteRate||0);
+        const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*fleteRateEff+Number(c.battExtra||0)):Number(c.flete||0);
+        // El recargo por baterías venía sumado dentro del flete y no aparecía en ninguna línea:
+        // el cliente veía un flete inflado sin saber por qué. Va como línea propia debajo.
+        const batEff=Number(c.battExtra||0);
+        let taxEff=0;
+        if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
+        else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
+        const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
+        const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0));
+        // Desglose detallado por linea (mismo nivel de detalle que la card interna del admin)
+        // para que el link lo muestre al expandir la opcion. [label, monto]. El % va en el
+        // label cuando todos los productos comparten la alicuota (si hay mezcla, sin %).
+        const rateU=(fld,def)=>{const set=[...new Set(products.filter(p=>toN(p.unit_price)>0).map(p=>{const v=p.ncm?.[fld];return (v==null||String(v).trim()==="")?def:toN(v);}))];return set.length===1?set[0]:null;};
+        const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
+        let detail=null;
+        if(bd.isBlanco&&bd.isAereo){
+          detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff],["Recargo por baterías",batEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
+        }else if(bd.isBlanco&&bd.isMaritimo){
+          detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
+        }
+        if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
+        // Costo de cada producto puesto en Argentina, con los valores EFECTIVOS de esta
+        // opcion (flete con override, desaduanaje bonificado). La misma cuenta que el portal:
+        // el flete se reparte por peso facturable del bulto donde viaja cada producto y los
+        // impuestos por FOB. impuestosTotal hace que la suma cierre contra totalAbonar.
+        const estEf={flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),seguro:bd.isBlanco?Number(c.seguro||0):0,overweightSurcharge:owEffLink,shipCost:0,taxDetail:{items:c.taxDetail?.items||[]}};
+        const landed=costoPuestoEnArgentina(itemsLink,pksLink,estEf,{impuestosTotal:taxEff,repartirPor:bd.isMaritimo?"volumen":"peso"}).map(r=>({
+          description:r.it.description||"",ncm:r.it.ncm_code||null,qty:r.qty,
+          bultos:pksLink.map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
+          fob:red(r.fob),fobUnit:red(r.fobUnit),tax:red(r.tax),taxUnit:red(r.taxUnit),
+          svc:red(r.svc),svcUnit:red(r.svcUnit),total:red(r.total),totalUnit:red(r.totalUnit),
+        }));
+        return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),fleteRate:fleteRateEff,fleteAmt:Number(c.fleteAmt||0),battExtra:batEff,overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail,landed};
+      });
+      const cli=clientId?allClients.find(c=>c.id===clientId):null;
+      const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);
+      const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
+      const body={
+        client_id:clientId||null,
+        client_name:results.clientName||cli?`${cli?.first_name||""} ${cli?.last_name||""}`.trim()||results.clientName:results.clientName||null,
+        client_code:cli?.client_code||null,
+        origin:results.origin||null,
+        channel_key:barata.key,
+        channel_name:alts.length>1?`${alts.length} opciones (link)`:alts[0].name,
+        // Normalizar coma decimal ("29,2" -> 29.2) antes de guardar: los strings con coma
+        // rompian el editor de la cotizacion (input number no los puede mostrar -> campos
+        // "borrados" y NaN en totales).
+        products:products.map(pr=>({...pr,unit_price:toN(pr.unit_price)||pr.unit_price,quantity:Number(String(pr.quantity??"1").replace(",","."))||1})),
+        packages:pkgs.map(pk=>({id:pk.id,qty:Number(String(pk.qty??"1").replace(",","."))||1,length:toN(pk.length)||null,width:toN(pk.width)||null,height:toN(pk.height)||null,weight:toN(pk.weight)||null})),
+        total_fob:results.totalFob,total_cbm:results.totCBM,
+        total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*(toN(pk.qty)||1),0)||null,
+        total_cost:barata.totalAbonar,
+        channel_alternatives:alts,
+        visible_channels:canalesLink,
+        status:"pending",
+        public_token:tok,
+        sent_at:new Date().toISOString(),
+        expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),
+      };
+      const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+      const creada=Array.isArray(r)?r[0]:r;
+      if(!creada?.id)throw new Error(creada?.message||"No se pudo guardar la cotización");
+      const url=`https://argencargo.com.ar/presupuesto/${tok}`;
+      setLinkGenerado(url);
+      navigator.clipboard?.writeText(armarMensaje(url));
+      toast("Cotización guardada · mensaje copiado","success");
+    }catch(e){alertDialog("Error: "+e.message);}
+    setGenerandoLink(false);
+  };
+  // Estética 01/10/2026: secciones simples, sin textos de ayuda, y en el celular una pantalla
+  // propia (una columna, bultos en tarjeta con etiqueta por campo, acciones a todo el ancho).
+  // Las tres cotizaciones comparten filas (subgrid): total, PDF y costo quedan a la misma altura
+  // aunque una tenga más desglose que otra.
+  const css=`
+.qc{color:#fff;font-variant-numeric:tabular-nums;margin-top:8px}
+.qc *{box-sizing:border-box}
+.qc-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.qc-h{font-size:22px;font-weight:700;margin:0;letter-spacing:-0.02em;color:#fff}
+.qc-sec{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:16px;margin-bottom:12px}
+.qc-g{display:grid;gap:14px}
+.qc-g2{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+.qc-g3{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:14px}
+.qc-lbl{display:block;font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.42);text-transform:uppercase;letter-spacing:.07em;margin:0 0 6px}
+.qc-in{width:100%;height:40px;padding:0 12px;font-size:14px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:rgba(0,0,0,0.22);color:#fff;outline:none;font-family:inherit;transition:border-color .15s}
+.qc-in:focus{border-color:rgba(232,208,152,0.55)}
+.qc-in::placeholder{color:rgba(255,255,255,0.28)}
+.qc-seg{display:flex;gap:3px;padding:3px;height:40px;border-radius:10px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.07)}
+.qc-seg button{flex:1;min-width:0;border:none;border-radius:7px;background:transparent;color:rgba(255,255,255,0.5);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px;transition:background .15s,color .15s}
+.qc-seg button small{font-weight:600;opacity:.65;margin-left:5px;font-size:11px}
+.qc-seg button.on{background:${GOLD_GRADIENT};color:#0A1628}
+.qc-tag{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:9.5px;font-weight:800;padding:3px 7px;border-radius:5px;background:rgba(34,197,94,0.14);color:#4ade80;letter-spacing:.04em;pointer-events:none}
+.qc-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#142038;border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,0.5);z-index:20;max-height:260px;overflow-y:auto}
+.qc-drop>div{padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.qc-drop>div:hover{background:rgba(184,149,106,0.1)}
+.qc-mini{font-size:11px;margin:6px 0 0;font-weight:600;color:${IC}}
+.qc-sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.qc-sh .qc-lbl{margin:0}
+.qc-add{height:30px;padding:0 12px;font-size:12px;font-weight:700;border-radius:8px;border:1px dashed rgba(232,208,152,0.4);background:transparent;color:${IC};cursor:pointer;font-family:inherit}
+.qc-item{padding:10px;border-radius:11px;background:rgba(0,0,0,0.16);border:1px solid rgba(255,255,255,0.05)}
+.qc-item+.qc-item{margin-top:8px}
+.qc-prod{display:grid;gap:8px;align-items:center;grid-template-columns:minmax(0,1fr) 130px 104px auto 34px;grid-template-areas:"d u q n x"}
+.qc-pre{position:relative;min-width:0}
+.qc-pre>span{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:rgba(255,255,255,0.35);pointer-events:none}
+.qc-pre .qc-in{padding-left:44px}
+.qc-ncm{height:40px;padding:0 14px;font-size:12.5px;font-weight:700;border-radius:9px;border:1px solid rgba(167,139,250,0.35);background:rgba(167,139,250,0.1);color:#a78bfa;cursor:pointer;white-space:nowrap;font-family:inherit}
+.qc-ncm.ok{border-color:rgba(74,222,128,0.35);background:rgba(74,222,128,0.08);color:#4ade80}
+.qc-ncm:disabled{opacity:.45;cursor:default}
+.qc-x{width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:rgba(255,255,255,0.4);font-size:17px;cursor:pointer;justify-self:end;font-family:inherit;line-height:1;padding:0}
+.qc-x:hover{color:#f87171;border-color:rgba(248,113,113,0.35)}
+.qc-ncmline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.07)}
+.qc-code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:${IC};margin-right:4px}
+.qc-pct{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 8px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:11px;font-weight:700;color:rgba(255,255,255,0.45)}
+.qc-pct input{width:46px;height:26px;border:none;background:transparent;border-radius:6px;color:#fff;text-align:right;font-size:13px;font-weight:700;padding:0 6px;outline:none;font-family:inherit}
+.qc-pct input:focus{box-shadow:0 0 0 1px rgba(232,208,152,0.55)}
+.qc-ad{padding:4px 9px;border-radius:6px;background:rgba(248,113,113,0.14);color:#f87171;border:1px solid rgba(248,113,113,0.35);font-size:11px;font-weight:800}
+.qc-int{margin-top:10px;padding:9px 12px;border-radius:9px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);font-size:12px;color:rgba(255,255,255,0.75);line-height:1.45}
+.qc-int b{color:#fbbf24}
+.qc-pkhead,.qc-pk{display:grid;gap:8px;grid-template-columns:72px repeat(4,minmax(0,1fr)) 34px minmax(240px,300px)}
+.qc-pkhead{padding:0 11px;margin-bottom:6px}
+.qc-pkhead span{font-size:10px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.06em}
+.qc-pk{align-items:center;grid-template-areas:"c0 c1 c2 c3 c4 x s"}
+.qc-pk.va{grid-template-areas:"c0 c1 c2 c3 c4 x s" "v v v v v v v"}
+.qc-pkt,.qc-ml{display:none}
+.qc-cell{display:block;min-width:0}
+.qc-chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;min-width:0}
+.qc-chip{padding:5px 6px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);text-align:center;min-width:0}
+.qc-chip span{display:block;font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em}
+.qc-chip b{display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qc-chip.on{background:rgba(184,149,106,0.12);border-color:rgba(184,149,106,0.35)}
+.qc-chip.on b{color:${IC}}
+.qc-va{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.07)}
+.qc-va>span{font-size:10px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
+.qc-vab{display:inline-flex;align-items:center;gap:6px;max-width:220px;height:28px;padding:0 11px;font-size:12px;border-radius:20px;cursor:pointer;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.55);font-family:inherit}
+.qc-vab.on{border-color:rgba(184,149,106,0.5);background:rgba(184,149,106,0.15);color:${IC};font-weight:700}
+.qc-vab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qc-tot{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.qc-tot>span{font-size:11.5px;color:rgba(255,255,255,0.5);padding:5px 10px;border-radius:20px;background:rgba(255,255,255,0.04)}
+.qc-tot b{color:#fff;font-weight:700;margin-left:4px}
+.qc-calcrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 16px}
+.qc-calc{height:46px;padding:0 26px;font-size:14px;font-weight:800;border-radius:11px;border:1px solid ${GOLD_DEEP};background:${GOLD_GRADIENT};color:#0A1628;cursor:pointer;box-shadow:${GOLD_GLOW};font-family:inherit}
+.qc-calc:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.qc-warn{font-size:12.5px;font-weight:700;color:#fb923c;margin:0}
+.qc-btn2{height:38px;padding:0 15px;font-size:12.5px;font-weight:700;border-radius:9px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.04);color:#fff;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+.qc-btn2.gold{border-color:rgba(232,208,152,0.45);color:${IC};background:rgba(184,149,106,0.1)}
+.qc-res{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:12px;margin-bottom:12px}
+.qc-card{display:grid;grid-row:span 5;grid-template-rows:subgrid;row-gap:12px;padding:16px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);min-width:0}
+.qc-card.warn{border-color:rgba(251,191,36,0.28)}
+.qc-ctitle{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.qc-cn{font-size:14.5px;font-weight:700;color:${IC};margin:0}
+.qc-ci{font-size:11.5px;color:rgba(255,255,255,0.4);margin:2px 0 0}
+.qc-link{flex-shrink:0;height:26px;padding:0 10px;font-size:11px;font-weight:700;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.4);cursor:pointer;font-family:inherit;white-space:nowrap}
+.qc-link.on{border-color:rgba(96,165,250,0.45);background:rgba(96,165,250,0.12);color:#60a5fa}
+.qc-cwarn{font-size:11.5px;color:#fbbf24;margin:10px 0 0;line-height:1.4;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,0.07)}
+.qc-lines{display:flex;flex-direction:column;gap:7px;align-self:start}
+.qc-l{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;color:rgba(255,255,255,0.6);min-height:24px}
+.qc-l em{font-style:normal;color:rgba(255,255,255,0.35);font-size:11.5px;margin-left:4px;white-space:nowrap}
+.qc-l b{color:#fff;font-weight:600;white-space:nowrap}
+.qc-lr{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+.qc-u{font-size:11px;color:rgba(255,255,255,0.38)}
+.qc-ov{display:inline-flex;align-items:center;gap:3px}
+.qc-ov input{width:62px;height:28px;padding:0 7px;font-size:12.5px;font-weight:700;text-align:right;border-radius:7px;border:1px solid rgba(255,255,255,0.14);background:rgba(0,0,0,0.3);color:#fff;outline:none;font-family:inherit}
+.qc-ov input.on{border-color:${IC};color:${IC};background:rgba(184,149,106,0.12)}
+.qc-ov button{width:22px;height:22px;border:none;border-radius:5px;background:rgba(232,208,152,0.12);color:${IC};cursor:pointer;font-size:12px;padding:0;font-family:inherit}
+.qc-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:12px 14px;border-radius:11px;background:rgba(184,149,106,0.1);border:1px solid rgba(232,208,152,0.25)}
+.qc-total span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,0.55)}
+.qc-total strong{font-size:22px;font-weight:800;color:${IC};letter-spacing:-0.02em;white-space:nowrap}
+.qc-pdf{height:38px;border-radius:9px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.75);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.qc-cost{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:11px;background:rgba(0,0,0,0.18);border:1px dashed rgba(255,255,255,0.1);align-self:start}
+.qc-cost .qc-sum{border-top:1px solid rgba(255,255,255,0.07);padding-top:7px;margin-top:2px}
+.qc-cost .qc-gan span:first-child{font-weight:700;color:rgba(255,255,255,0.75)}
+.qc-linkbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.qc-url{flex:1;min-width:200px;font-size:12px;color:#93c5fd;background:rgba(0,0,0,0.25);padding:11px 12px;border-radius:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qc-acts{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:760px){
+  .qc-g2,.qc-g3{grid-template-columns:minmax(0,1fr)}
+  .qc-seg button small{display:none}
+  .qc-opt.full{display:block}
+  .qc-opt.full .qc-lbl{margin:0 0 6px}
+  .qc-opt.full .qc-seg{width:100%}
+  .qc-prod.solo{grid-template-areas:"d d d" "u q n"}
+  .qc-prod.solo .qc-x{display:none}
+  .qc-ncmline .qc-code{flex-basis:100%}
+  .qc-pct{flex:1;min-width:0}
+  .qc-pct input{width:100%;min-width:0}
+  .qc-g3{gap:10px}
+  .qc-opt{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .qc-opt .qc-lbl{margin:0}
+  .qc-opt .qc-seg{width:66%;flex-shrink:0}
+  .qc-sec{padding:14px;border-radius:13px}
+  .qc-in,.qc-pct input,.qc-ov input{font-size:16px}
+  .qc-prod{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;grid-template-areas:"d d x" "u q n"}
+  .qc-pkhead{display:none}
+  .qc-pk{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-areas:"t t t t x" "c0 c1 c2 c3 c4" "s s s s s";gap:8px 6px}
+  .qc-pk.va{grid-template-areas:"t t t t x" "c0 c1 c2 c3 c4" "s s s s s" "v v v v v"}
+  .qc-pkt{display:block;font-size:12px;font-weight:700;color:rgba(255,255,255,0.55);align-self:center}
+  .qc-ml{display:block;font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.38);text-transform:uppercase;letter-spacing:.04em;margin:0 0 4px;text-align:center}
+  .qc-pk .qc-in{padding:0 4px;text-align:center}
+  .qc-x{width:30px;height:30px}
+  .qc-calcrow .qc-calc,.qc-linkbox .qc-calc{width:100%}
+  .qc-res{grid-template-columns:1fr}
+  .qc-card{grid-row:auto;grid-template-rows:none}
+  .qc-ov input{width:70px;height:32px}
+  .qc-acts{width:100%}
+  .qc-acts>*{flex:1}
+}`;
+  const hayDatos=!!(clientName.trim()||products.some(p=>p.description||p.unit_price)||pkgs.some(p=>p.length||p.weight)||results);
+  const seg=(opts,val,set)=><div className="qc-seg">{opts.map(([v,l])=><button key={String(v)} type="button" className={val===v?"on":""} onClick={()=>set(v)}>{l}</button>)}</div>;
+  // Valor editable solo para esta cotización: dorado cuando se tocó, ↺ vuelve al del sistema.
+  const ovIn=(val,isOv,onCh,onReset)=><span className="qc-ov"><input inputMode="decimal" value={val} onChange={e=>onCh(e.target.value)} className={isOv?"on":""}/>{isOv&&<button type="button" onClick={onReset} title="Volver al valor del sistema">↺</button>}</span>;
+  const sinOv=(set,k)=>()=>set(p=>{const c={...p};delete c[k];return c;});
+  const _gw=pkgs.reduce((s,p)=>s+toN(p.weight)*(toN(p.qty)||1),0);
+  const _pf=pkgs.reduce((s,p)=>{const q=toN(p.qty)||1,gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);
+  return <div className="qc">
+    <style>{css}</style>
+    <div className="qc-head">
+      <h2 className="qc-h">Calculadora</h2>
+      {hayDatos&&<button type="button" className="qc-btn2" onClick={nuevaCotizacion}>Nueva cotización</button>}
     </div>
-    {/* Datos del cliente / régimen */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14,alignItems:"end"}}>
-      <div style={{position:"relative"}}>
-        <label style={labelStyle}>Cliente (texto libre o del sistema)</label>
-        <input value={clientName} onChange={e=>{setClientName(e.target.value);setClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} onBlur={()=>setTimeout(()=>setShowClientList(false),180)} placeholder="Buscá un cliente o escribí un nombre" style={inputStyle}/>
-        {clientId&&<span style={{position:"absolute",right:8,top:30,fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",letterSpacing:"0.04em"}}>DEL SISTEMA</span>}
-        {clientId&&clientOverrides.length>0&&<p style={{fontSize:11,color:IC,margin:"4px 0 0",fontWeight:600}}>Usando {clientOverrides.length} tarifa(s) custom de este cliente</p>}
-        {showClientList&&(()=>{const q=clientName.trim().toLowerCase();const matches=allClients.filter(c=>{if(!q)return true;const s=`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase();return s.includes(q);}).slice(0,8);return matches.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,boxShadow:"0 8px 28px rgba(0,0,0,0.5)",zIndex:5,maxHeight:240,overflowY:"auto"}}>
-          {matches.map(c=>{const name=`${c.first_name||""} ${c.last_name||""}`.trim();const taxLabel=c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Mono":"";return <div key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setClientId(c.id);setClientName(name);if(c.tax_condition==="responsable_inscripto"||c.tax_condition==="monotributo")setTaxCond(c.tax_condition);setShowClientList(false);}} style={{padding:"8px 12px",fontSize:12,color:"#fff",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code||"—"}</strong> <span style={{color:"rgba(255,255,255,0.85)"}}>{name||"(sin nombre)"}</span></span>
-            {taxLabel&&<span style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)"}}>{taxLabel}</span>}
-          </div>;})}
-        </div>;})()}
-      </div>
-      <div>
-        <label style={labelStyle}>Régimen fiscal (declaración del flete)</label>
-        <div style={{display:"flex",gap:6,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:3}}>
-          <button onClick={()=>setTaxCond("responsable_inscripto")} style={{flex:1,padding:"7px 8px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:taxCond==="responsable_inscripto"?GOLD_GRADIENT:"transparent",color:taxCond==="responsable_inscripto"?"#0A1628":"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>Responsable Inscripto · USD 2,5/kg</button>
-          <button onClick={()=>setTaxCond("monotributo")} style={{flex:1,padding:"7px 8px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:taxCond==="monotributo"?GOLD_GRADIENT:"transparent",color:taxCond==="monotributo"?"#0A1628":"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>Monotributista · USD 3,5/kg</button>
+
+    {/* Cliente, régimen y condiciones */}
+    <div className="qc-sec">
+      <div className="qc-g qc-g2">
+        <div>
+          <span className="qc-lbl">Cliente</span>
+          <div style={{position:"relative"}}>
+            <input className="qc-in" value={clientName} onChange={e=>{setClientName(e.target.value);setClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} onBlur={()=>setTimeout(()=>setShowClientList(false),180)} placeholder="Código o nombre" style={clientId?{paddingRight:96}:undefined}/>
+            {clientId&&<span className="qc-tag">DEL SISTEMA</span>}
+            {showClientList&&(()=>{const q=clientName.trim().toLowerCase();const matches=allClients.filter(c=>{if(!q)return true;const s=`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase();return s.includes(q);}).slice(0,8);return matches.length>0&&<div className="qc-drop">
+              {matches.map(c=>{const name=`${c.first_name||""} ${c.last_name||""}`.trim();const taxLabel=c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Mono":"";return <div key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setClientId(c.id);setClientName(name);if(c.tax_condition==="responsable_inscripto"||c.tax_condition==="monotributo")setTaxCond(c.tax_condition);setShowClientList(false);}}>
+                <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code||"—"}</strong> <span style={{color:"rgba(255,255,255,0.85)"}}>{name||"(sin nombre)"}</span></span>
+                {taxLabel&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)"}}>{taxLabel}</span>}
+              </div>;})}
+            </div>;})()}
+          </div>
+          {clientId&&clientOverrides.length>0&&<p className="qc-mini">Con {clientOverrides.length} tarifa{clientOverrides.length>1?"s":""} propia{clientOverrides.length>1?"s":""}</p>}
         </div>
+        <div className="qc-opt full"><span className="qc-lbl">Régimen</span>{seg([["responsable_inscripto",<>Resp. Inscripto<small>2,5/kg</small></>],["monotributo",<>Monotributo<small>3,5/kg</small></>]],taxCond,setTaxCond)}</div>
+      </div>
+      <div className="qc-g qc-g3">
+        <div className="qc-opt"><span className="qc-lbl">Origen</span>{seg([["China","🇨🇳 China"],["USA","🇺🇸 USA"]],origin,setOrigin)}</div>
+        <div className="qc-opt"><span className="qc-lbl">Marca</span>{seg([[false,"Sin marca"],[true,"Con marca"]],hasBrand,setHasBrand)}</div>
+        <div className="qc-opt"><span className="qc-lbl">Batería</span>{seg([[false,"No"],[true,"Sí, litio"]],hasBattery,setHasBattery)}</div>
       </div>
     </div>
-    {/* Origen + flags */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:14}}>
-      <div><label style={labelStyle}>Origen</label><select value={origin} onChange={e=>setOrigin(e.target.value)} style={{...inputStyle,cursor:"pointer"}}><option value="China" style={{background:"#142038"}}>🇨🇳 China</option><option value="USA" style={{background:"#142038"}}>🇺🇸 USA</option></select></div>
-      <div><label style={labelStyle}>Marca</label><div style={{display:"flex",gap:6}}><div onClick={()=>setHasBrand(false)} style={{...cardOption(!hasBrand),padding:"8px"}}><p style={{fontSize:11,fontWeight:700,color:!hasBrand?IC:"rgba(255,255,255,0.6)",margin:0}}>Sin marca</p></div><div onClick={()=>setHasBrand(true)} style={{...cardOption(hasBrand),padding:"8px"}}><p style={{fontSize:11,fontWeight:700,color:hasBrand?IC:"rgba(255,255,255,0.6)",margin:0}}>Con marca</p></div></div></div>
-      <div><label style={labelStyle}>Batería interna</label><div style={{display:"flex",gap:6}}><div onClick={()=>setHasBattery(false)} style={{...cardOption(!hasBattery),padding:"8px"}}><p style={{fontSize:11,fontWeight:700,color:!hasBattery?IC:"rgba(255,255,255,0.6)",margin:0}}>No</p></div><div onClick={()=>setHasBattery(true)} style={{...cardOption(hasBattery),padding:"8px"}}><p style={{fontSize:11,fontWeight:700,color:hasBattery?IC:"rgba(255,255,255,0.6)",margin:0}}>Sí (litio)</p></div></div></div>
-    </div>
+
     {/* Productos */}
-    <div style={{marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><label style={{...labelStyle,marginBottom:0}}>Productos</label><button onClick={addProduct} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>+ Producto</button></div>
-      {products.map((p,i)=><div key={i} style={{padding:"10px 12px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,marginBottom:6,display:"grid",gridTemplateColumns:"2fr 1fr 1fr auto auto",gap:8,alignItems:"center"}}>
-        <input value={p.description} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Descripción" style={inputStyle}/>
-        <input value={p.unit_price} onChange={e=>chProd(i,"unit_price",e.target.value)} placeholder="USD c/u" style={inputStyle}/>
-        <input value={p.quantity} onChange={e=>chProd(i,"quantity",e.target.value)} placeholder="Cant" style={inputStyle}/>
-        <button onClick={()=>classifyOne(i)} disabled={p.classifying||!p.description?.trim()} title="Clasificar NCM con IA" style={{padding:"7px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:p.classifying?"wait":"pointer",whiteSpace:"nowrap",opacity:p.description?.trim()?1:0.5}}>{p.classifying?"…":p.ncm?"✓ NCM":"✨ NCM"}</button>
-        {products.length>1&&<button onClick={()=>rmProduct(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
-        {p.ncm&&<div style={{gridColumn:"1 / -1",fontSize:10.5,color:"rgba(255,255,255,0.55)",fontFamily:"monospace",paddingTop:4,borderTop:"1px dashed rgba(255,255,255,0.06)"}}>NCM <strong style={{color:IC}}>{p.ncm.ncm_code}</strong> · DIE {p.ncm.import_duty_rate}% · TE {p.ncm.statistics_rate}% · IVA {p.ncm.iva_rate}%{p.ncm?.antidumping&&<span title={p.ncm.antidumping.nota||""} style={{marginLeft:10,padding:"2px 8px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)",fontWeight:800,fontFamily:"inherit"}}>⚠ ANTIDUMPING · {p.ncm.antidumping.producto}</span>}</div>}
-        {p.ncm?.intervention?.required&&<div style={{gridColumn:"1 / -1",padding:"9px 12px",background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:8}}>
-          <p style={{fontSize:11,fontWeight:800,color:"#fbbf24",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ Posible intervención: {(p.ncm.intervention.types||[]).join(" · ")||"organismo"}</p>
-          {p.ncm.intervention.reason&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.75)",margin:"4px 0 0",lineHeight:1.45}}>{p.ncm.intervention.reason}</p>}
+    <div className="qc-sec">
+      <div className="qc-sh"><span className="qc-lbl">Productos</span><button type="button" className="qc-add" onClick={addProduct}>+ Producto</button></div>
+      {products.map((p,i)=><div key={i} className="qc-item">
+        <div className={"qc-prod"+(products.length===1?" solo":"")}>
+          <input className="qc-in" style={{gridArea:"d"}} value={p.description} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Descripción"/>
+          <div className="qc-pre" style={{gridArea:"u"}}><span>USD</span><input className="qc-in" inputMode="decimal" value={p.unit_price} onChange={e=>chProd(i,"unit_price",e.target.value)} placeholder="c/u"/></div>
+          <div className="qc-pre" style={{gridArea:"q"}}><span>Cant</span><input className="qc-in" inputMode="numeric" value={p.quantity} onChange={e=>chProd(i,"quantity",e.target.value)} placeholder="1"/></div>
+          <button type="button" className={"qc-ncm"+(p.ncm?" ok":"")} style={{gridArea:"n"}} onClick={()=>classifyOne(i)} disabled={p.classifying||!p.description?.trim()}>{p.classifying?"Buscando…":p.ncm?"✓ NCM":"✨ NCM"}</button>
+          <button type="button" className="qc-x" style={{gridArea:"x",visibility:products.length>1?"visible":"hidden"}} onClick={()=>rmProduct(i)} aria-label="Quitar producto">×</button>
+        </div>
+        {p.ncm&&<div className="qc-ncmline">
+          <span className="qc-code">{p.ncm.ncm_code}</span>
+          {[["import_duty_rate","DIE"],["statistics_rate","TE"],["iva_rate","IVA"]].map(([f,l])=><label key={f} className="qc-pct"><span>{l}</span><input inputMode="decimal" value={p.ncm[f]??""} onChange={e=>chNcm(i,f,e.target.value)}/><span>%</span></label>)}
+          {p.ncm?.antidumping&&<span className="qc-ad" title={p.ncm.antidumping.nota||""}>⚠ ANTIDUMPING · {p.ncm.antidumping.producto}</span>}
         </div>}
+        {p.ncm?.intervention?.required&&<div className="qc-int"><b>⚠ Posible intervención: {(p.ncm.intervention.types||[]).join(" · ")||"organismo"}</b>{p.ncm.intervention.reason&&<div style={{marginTop:3}}>{p.ncm.intervention.reason}</div>}</div>}
       </div>)}
     </div>
+
     {/* Bultos */}
-    <div style={{marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}><label style={{...labelStyle,marginBottom:0}}>Bultos (cm / kg)</label><span style={{fontSize:10.5,color:"rgba(255,255,255,0.38)"}}>Enter salta al campo siguiente · en Largo podés escribir o pegar <strong style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>48x42x39x18</strong> y Enter lo reparte</span></div><button onClick={addPkg} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>+ Bulto</button></div>
-      {/* Inputs angostos y, a la derecha de cada bulto, bruto y volumétrico totales (× cantidad). Pedido 11/09/2026. */}
-      <div style={{display:"grid",gridTemplateColumns:"72px 1fr 1fr 1fr 1fr 34px 330px",gap:8,padding:"0 12px",marginBottom:4}}>{["Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,j)=><span key={j} style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{h}</span>)}</div>
-      {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const bruto=gw*q;const vol=(l&&w&&h)?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);return <div key={i} style={{padding:"8px 12px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,marginBottom:6,display:"grid",gridTemplateColumns:"72px 1fr 1fr 1fr 1fr 34px 330px",gap:8,alignItems:"center"}}>
-        <input data-pk={`${i}-0`} onKeyDown={pkEnter(i,0)} value={pk.qty} onChange={e=>chPkg(i,"qty",e.target.value)} placeholder="1" style={inputStyle}/>
-        <input data-pk={`${i}-1`} onKeyDown={pkEnter(i,1)} onPaste={pkPegar(i)} value={pk.length} onChange={e=>chPkg(i,"length",e.target.value)} placeholder="cm" title="Se puede escribir o pegar todo junto: 48x42x39x18 y Enter lo reparte" style={inputStyle}/>
-        <input data-pk={`${i}-2`} onKeyDown={pkEnter(i,2)} value={pk.width} onChange={e=>chPkg(i,"width",e.target.value)} placeholder="cm" style={inputStyle}/>
-        <input data-pk={`${i}-3`} onKeyDown={pkEnter(i,3)} value={pk.height} onChange={e=>chPkg(i,"height",e.target.value)} placeholder="cm" style={inputStyle}/>
-        <input data-pk={`${i}-4`} onKeyDown={pkEnter(i,4)} value={pk.weight} onChange={e=>chPkg(i,"weight",e.target.value)} placeholder="kg" style={inputStyle}/>
-        <div>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-          {(()=>{const cbm=(l&&w&&h)?((l*w*h)/1000000)*q:0;const brutoGana=bruto>0&&bruto>=vol;const volGana=vol>0&&vol>bruto;return [["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",brutoGana],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",volGana],["m³",cbm>0?`${cbm.toFixed(4)} m³`:"—",false]];})().map(([l,v,hi])=><div key={l} style={{padding:"5px 8px",borderRadius:6,background:hi?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${hi?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.06)"}`,textAlign:"center"}}>
-            <div style={{fontSize:8.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}{q>1?` ×${q}`:""}</div>
-            <div style={{fontSize:12.5,fontWeight:700,color:hi?IC:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</div>
-          </div>)}
-        </div>
-        {/* Que viaja en este bulto. Solo cuando hay mas de un bulto y mas de un producto: con
-            uno solo es obvio y ocupa lugar al vacio. Marcarlo hace que el flete se reparta por
-            peso real y no por FOB, que es lo que cambia el costo puesto en Argentina. */}
-        {pkgs.length>1&&conPrecio.length>1&&<div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",paddingTop:7,marginTop:1,borderTop:"1px dashed rgba(255,255,255,0.07)"}}>
-          <span style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:"0.05em",marginRight:2}}>Viaja acá</span>
-          {conPrecio.map(({p:pr,i:pi})=>{const on=Array.isArray(pr.package_ids)&&pr.package_ids.includes(pk.id);
-            return <button key={pi} onClick={()=>toggleBulto(pi,pk.id)} title={pr.description||`Producto ${pi+1}`} style={{display:"inline-flex",alignItems:"center",gap:5,maxWidth:200,padding:"3px 9px",fontSize:11,fontWeight:on?700:500,borderRadius:20,cursor:"pointer",border:`1px solid ${on?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(184,149,106,0.15)":"transparent",color:on?IC:"rgba(255,255,255,0.55)"}}>
-              <span style={{width:11,height:11,borderRadius:3,flexShrink:0,border:`1.5px solid ${on?IC:"rgba(255,255,255,0.35)"}`,background:on?IC:"transparent",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#0A1628",fontWeight:900,lineHeight:1}}>{on?"✓":""}</span>
-              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pr.description||`Producto ${pi+1}`}</span>
-            </button>;})}
-        </div>}
-      </div>;})}
-      {(()=>{const _gw=pkgs.reduce((s,p)=>s+toN(p.weight)*Number(p.qty||1),0);const _pf=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);return <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>FOB total: <strong style={{color:IC}}>USD {fmt(totalFob)}</strong> · CBM total: <strong style={{color:IC}}>{totCBM.toFixed(4)} m³</strong> · Peso facturable: <strong style={{color:IC}}>{fmt(_pf)} kg</strong> · Peso bruto: <strong style={{color:IC}}>{fmt(_gw)} kg</strong></p>;})()}
-    </div>
-    {/* Calcular */}
-    {(()=>{const unclassified=!hasBrand&&products.filter(p=>toN(p.unit_price)>0&&!p.ncm);const blocked=totalFob<=0||unclassified.length>0;return <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
-      <button onClick={calculate} disabled={blocked} style={{padding:"11px 22px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:blocked?"not-allowed":"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:!blocked?GOLD_GLOW:"none",opacity:blocked?0.5:1}}>Calcular cotización</button>
-      {totalFob<=0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Cargá al menos un producto con precio</span>
-        :unclassified.length>0?<span style={{fontSize:11,fontWeight:600,color:"#fb923c"}}>⚠ {unclassified.length} producto{unclassified.length>1?"s":""} sin clasificar — tocá <strong>✨ NCM</strong> antes de calcular</span>
-        :null}
-    </div>;})()}
-    {/* Resultados */}
-    {results&&<div style={{display:"grid",gridTemplateColumns:`repeat(${Math.max(1,results.channels.length)}, minmax(0, 1fr))`,gap:10,alignItems:"stretch"}}>
-      {results.channels.length===0?<p style={{color:"rgba(255,255,255,0.5)",gridColumn:"1/-1",textAlign:"center",padding:"1rem"}}>Ningún canal aplica con estos datos (chequeá marca, peso por bulto y volumen).</p>:results.channels.map(ch=>{
-        const bd=ch.bd||{};
-        const ovStr=desembolsoOverride[ch.key];
-        const hasOv=ovStr!=null&&String(ovStr).trim()!=="";
-        const desEff=hasOv?toN(ovStr):bd.desembolsoAuto||0;
-        const ivaDesEff=desEff*0.21;
-        // Override manual del USD/kg — solo para Courier Comercial (aereo_a_china).
-        // Tarifa editable por cotizacion: USD/kg en aereo, USD/CBM en los dos maritimos.
-        const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(ch.key)?rateOverride[ch.key]:null;
-        const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
-        const fleteRateEff=hasRateOv?toN(rateOvStr):Number(ch.fleteRate||0);
-        const fleteEff=hasRateOv?(Number(ch.fleteAmt||0)*fleteRateEff+Number(ch.battExtra||0)):Number(ch.flete||0);
-        let effTotalImp=0;
-        if(bd.isBlanco&&bd.isAereo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+ivaDesEff;
-        else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
-        // Recargo por sobrepeso (aéreo): item propio, fuera del flete. En el canal B el
-        // surcharge sigue siendo el recargo por valor (folded en el Servicio Integral).
-        const owEff=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
-        const effTotal=bd.isBlanco
-          ?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff)
-          :(fleteEff+Number(ch.surcharge||0));
-        const rowStyle={display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:11.5,color:"rgba(255,255,255,0.65)"};
-        const valStyle={color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"};
-        return <div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${ch.notVisibleToClient?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,display:"flex",flexDirection:"column"}}>
-          {(()=>{const on=canalesLink.includes(ch.key);return <button onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])} style={{display:"flex",alignItems:"center",gap:7,width:"100%",marginBottom:9,padding:"6px 8px",borderRadius:7,cursor:"pointer",border:`1px solid ${on?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(96,165,250,0.1)":"transparent",textAlign:"left"}}>
-            <span style={{width:15,height:15,flexShrink:0,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:900,border:`1.5px solid ${on?"#60a5fa":"rgba(255,255,255,0.25)"}`,background:on?"#60a5fa":"transparent",color:"#0b1220"}}>{on?"✓":""}</span>
-            <span style={{fontSize:10,fontWeight:700,color:on?"#60a5fa":"rgba(255,255,255,0.4)"}}>{on?"Se muestra en el link":"Oculto en el link"}</span>
-          </button>;})()}
-          <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 4px"}}>{ch.name}</p>
-          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>{ch.info}</p>
-          {ch.notVisibleToClient&&<div title={ch.notVisibleToClient} style={{padding:"6px 10px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:6,marginBottom:10}}>
-            <p style={{fontSize:10,fontWeight:700,color:"#fbbf24",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>⚠ No visible al cliente</p>
-            <p style={{fontSize:10,color:"rgba(251,191,36,0.85)",margin:"3px 0 0",lineHeight:1.4,fontWeight:500}}>{ch.notVisibleToClient}</p>
+    <div className="qc-sec">
+      <div className="qc-sh"><span className="qc-lbl">Bultos</span><button type="button" className="qc-add" onClick={addPkg}>+ Bulto</button></div>
+      <div className="qc-pkhead">{["Cant.","Largo cm","Ancho cm","Alto cm","Peso kg","",""].map((h,j)=><span key={j} style={{textAlign:j<5?"center":"left"}}>{h}</span>)}</div>
+      {pkgs.map((pk,i)=>{
+        const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);
+        const bruto=gw*q,vol=(l&&w&&h)?((l*w*h)/5000)*q:0,cbm=(l&&w&&h)?((l*w*h)/1000000)*q:0;
+        // Qué viaja en este bulto: solo con más de un bulto y más de un producto. Marcarlo
+        // reparte el flete por peso real y no por FOB (cambia el costo puesto en Argentina).
+        const va=pkgs.length>1&&conPrecio.length>1;
+        return <div key={pk.id} className={"qc-item qc-pk"+(va?" va":"")}>
+          <span className="qc-pkt" style={{gridArea:"t"}}>Bulto {i+1}</span>
+          {[["qty","Cant."],["length","Largo"],["width","Ancho"],["height","Alto"],["weight","Kg"]].map(([f,lb],j)=><label key={f} className="qc-cell" style={{gridArea:"c"+j}}>
+            <span className="qc-ml">{lb}</span>
+            <input className="qc-in" style={{textAlign:"center"}} data-pk={`${i}-${j}`} onKeyDown={pkEnter(i,j)} onPaste={j===1?pkPegar(i):undefined} title={j===1?"Podés pegar 48x42x39x18 y Enter lo reparte":undefined} inputMode="decimal" value={pk[f]} onChange={e=>chPkg(i,f,e.target.value)} placeholder={j===0?"1":""}/>
+          </label>)}
+          <button type="button" className="qc-x" style={{gridArea:"x",visibility:pkgs.length>1?"visible":"hidden"}} onClick={()=>rmPkg(i)} aria-label="Quitar bulto">×</button>
+          <div className="qc-chips" style={{gridArea:"s"}}>
+            {[["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",bruto>0&&bruto>=vol],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",vol>0&&vol>bruto],["m³",cbm>0?cbm.toFixed(4):"—",false]].map(([lb,v,on])=><div key={lb} className={"qc-chip"+(on?" on":"")}><span>{lb}{q>1?` ×${q}`:""}</span><b>{v}</b></div>)}
+          </div>
+          {va&&<div className="qc-va" style={{gridArea:"v"}}>
+            <span>Viaja acá</span>
+            {conPrecio.map(({p:pr,i:pi})=>{const on=Array.isArray(pr.package_ids)&&pr.package_ids.includes(pk.id);return <button key={pi} type="button" className={"qc-vab"+(on?" on":"")} onClick={()=>toggleBulto(pi,pk.id)} title={pr.description||`Producto ${pi+1}`}>{on?"✓ ":""}<span>{pr.description||`Producto ${pi+1}`}</span></button>;})}
           </div>}
-          <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
-            {(()=>{const surchFold=bd.isBlanco?0:Number(ch.surcharge||0);const amt=fleteEff+surchFold;const lbl=ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(surchFold>0?"Servicio Integral de importación":"Flete");return amt>0&&<div style={rowStyle}><span>{lbl}</span><span style={valStyle}>USD {fmt(amt)}</span></div>;})()}
-            {owEff>0&&<div style={rowStyle}><span>Recargo por sobrepeso</span><span style={valStyle}>USD {fmt(owEff)}</span></div>}
-            {["aereo_a_china","maritimo_a_china","maritimo_b"].includes(ch.key)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)"}}>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>{ch.key==="aereo_a_china"?"USD/kg":"USD/CBM"} <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(editable, solo esta cotización)</span></span>
-              <div style={{display:"flex",alignItems:"center",gap:4}}>
-                <input value={hasRateOv?rateOvStr:String(Number(ch.fleteRate||0))} onChange={e=>setRateOverride(p=>({...p,[ch.key]:e.target.value}))} style={{width:56,padding:"4px 7px",fontSize:11.5,border:`1px solid ${hasRateOv?IC:"rgba(255,255,255,0.15)"}`,borderRadius:5,background:"rgba(0,0,0,0.3)",color:hasRateOv?IC:"#fff",outline:"none",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums"}}/>
-                {hasRateOv&&<button onClick={()=>setRateOverride(p=>{const c={...p};delete c[ch.key];return c;})} title="Volver a la tarifa del cliente/base" style={{padding:"2px 6px",fontSize:10,borderRadius:4,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↻</button>}
-              </div>
-            </div>}
-            {Number(ch.seguro||0)>0&&<div style={rowStyle}><span>Seguro</span><span style={valStyle}>USD {fmt(ch.seguro)}</span></div>}
-            {bd.isBlanco&&<>
-              {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}
-              {bd.tasaE>0&&<div style={rowStyle}><span>Tasa estadística</span><span style={valStyle}>USD {fmt(bd.tasaE)}</span></div>}
-              {bd.iva>0&&<div style={rowStyle}><span>IVA de Importación</span><span style={valStyle}>USD {fmt(bd.iva)}</span></div>}
-              {bd.isMaritimo&&<>
-                {bd.ivaAdic>0&&<div style={rowStyle}><span>IVA adicional</span><span style={valStyle}>USD {fmt(bd.ivaAdic)}</span></div>}
-                {bd.iigg>0&&<div style={rowStyle}><span>Ganancias (IIGG)</span><span style={valStyle}>USD {fmt(bd.iigg)}</span></div>}
-                {bd.iibb>0&&<div style={rowStyle}><span>Ingresos brutos (IIBB)</span><span style={valStyle}>USD {fmt(bd.iibb)}</span></div>}
-              </>}
-              {bd.isAereo&&<div style={{padding:"7px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)",display:"flex",flexDirection:"column",gap:4}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>Desaduanaje <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(editable)</span></span>
-                  <div style={{display:"flex",alignItems:"center",gap:4}}>
-                    <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>USD</span>
-                    <input value={hasOv?ovStr:String(bd.desembolsoAuto||0)} onChange={e=>setDesembolsoOverride(p=>({...p,[ch.key]:e.target.value}))} style={{width:64,padding:"4px 7px",fontSize:11.5,border:`1px solid ${hasOv?IC:"rgba(255,255,255,0.15)"}`,borderRadius:5,background:"rgba(0,0,0,0.3)",color:hasOv?IC:"#fff",outline:"none",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums"}}/>
-                    {hasOv&&<button onClick={()=>setDesembolsoOverride(p=>{const c={...p};delete c[ch.key];return c;})} title="Volver al automático" style={{padding:"2px 6px",fontSize:10,borderRadius:4,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↻</button>}
-                  </div>
-                </div>
-                {ivaDesEff>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,color:"rgba(255,255,255,0.45)"}}><span>+ IVA 21% sobre desaduanaje</span><span>USD {fmt(ivaDesEff)}</span></div>}
-                {hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01&&<p style={{fontSize:10,color:"#fbbf24",margin:"2px 0 0",fontStyle:"italic"}}>Override (auto: USD {fmt(bd.desembolsoAuto||0)})</p>}
-              </div>}
-            </>}
-            {/* Recargo por valor folded en el Servicio Integral (no se discrimina como fila). */}
-            {/* Detalle del recargo: solo aplica a canales B (no blanco). Si no hay recargo, mostramos
-                el vpu actual y el próximo umbral — para que se entienda por qué no aplicó. */}
-            {!bd.isBlanco&&ch.vpu>0&&<div style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",padding:"4px 0 0",borderTop:"1px dashed rgba(255,255,255,0.05)",marginTop:2}}>
-              USD/{ch.surchargeUnit||"kg"}: <strong style={{color:"#fff",fontWeight:600}}>{fmt(ch.vpu)}</strong>
-              {ch.surchargePct>0
-                ?<span style={{color:GOLD_LIGHT,fontWeight:600,marginLeft:6}}>· Recargo {ch.surchargePct}% aplicado</span>
-                :ch.surchargeNextThreshold
-                  ?<span style={{marginLeft:6}}>· Sin recargo (próximo: {fmt(ch.surchargeNextThreshold)} USD/{ch.surchargeUnit||"kg"} → {ch.surchargeNextRate}%)</span>
-                  :<span style={{marginLeft:6}}>· Sin recargo</span>}
-            </div>}
-          </div>
-          <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.12)",border:`1px solid ${IC}55`,borderRadius:8,marginBottom:10}}>
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total estimado</p>
-            <p style={{fontSize:20,fontWeight:800,color:IC,margin:"2px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {fmt(effTotal)}</p>
-          </div>
-          <button onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})} style={{width:"100%",padding:"9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Exportar PDF cotización</button>
-          {/* Costo estimado (solo admin, pedido 11/09/2026): flete del agente a costo × kg o m³ (editable,
-              default en calc_config cost_*) + impuestos/despacho que pasan al costo en canales A. */}
-          {!esEmpleado()&&(()=>{
-            const isAer=ch.key==="aereo_a_china";
-            const costKey=isAer?"cost_aereo_usd_kg":ch.key==="maritimo_a_china"?"cost_maritimo_a_usd_cbm":"cost_maritimo_b_usd_cbm";
-            const unit=isAer?"kg":"m³";
-            const qty=isAer?Number(ch.fleteAmt||0):Number(ch.cbm||ch.fleteAmt||0);
-            const ovC=costOverride[ch.key];
-            const rate=ovC!=null&&String(ovC).trim()!==""?toN(ovC):Number(config[costKey]||0);
-            const cFlete=qty*rate;
-            const cImp=bd.isBlanco?effTotalImp:0;
-            const costo=cFlete+cImp;const gan=effTotal-costo;const pct=effTotal>0?gan/effTotal*100:0;
-            const row=(l,v,st)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5,padding:"3px 0",...(st||{})}}><span style={{color:"rgba(255,255,255,0.55)"}}>{l}</span><span style={{fontVariantNumeric:"tabular-nums",fontWeight:600,color:"#fff"}}>{v}</span></div>;
-            return <div style={{marginTop:10,padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px dashed rgba(255,255,255,0.14)",borderRadius:8}}>
-              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Costo estimado <span style={{opacity:0.6}}>· solo admin</span></p>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5,padding:"3px 0"}}>
-                <span style={{color:"rgba(255,255,255,0.55)"}}>Flete agente · {isAer?fmt(qty):qty.toFixed(4)} {unit} ×</span>
-                <span style={{display:"inline-flex",alignItems:"center",gap:6}}><input value={ovC??(config[costKey]??"")} onChange={e=>setCostOverride(o=>({...o,[ch.key]:e.target.value}))} placeholder={String(config[costKey]??"")} style={{width:64,padding:"4px 8px",fontSize:12,fontWeight:700,textAlign:"right",borderRadius:6,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.3)",color:"#fff",outline:"none"}}/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)"}}>USD/{unit}</span><strong style={{fontVariantNumeric:"tabular-nums",color:"#fff",minWidth:70,textAlign:"right"}}>USD {fmt(cFlete)}</strong></span>
-              </div>
-              {bd.isBlanco&&row("Impuestos + despacho (pasan al costo)",`USD ${fmt(cImp)}`)}
-              {row("Costo estimado",`USD ${fmt(costo)}`,{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:6})}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:12,padding:"3px 0"}}><span style={{color:"rgba(255,255,255,0.65)",fontWeight:600}}>Ganancia estimada</span><span style={{fontVariantNumeric:"tabular-nums",fontWeight:800,color:gan>=0?"#4ade80":"#f87171"}}>USD {fmt(gan)} <span style={{fontSize:10.5,fontWeight:600,opacity:0.8}}>· {pct.toFixed(0)}%</span></span></div>
-            </div>;
-          })()}
         </div>;
       })}
-    </div>}
+      <div className="qc-tot">
+        <span>FOB<b>USD {fmt(totalFob)}</b></span>
+        <span>Volumen<b>{totCBM.toFixed(4)} m³</b></span>
+        <span>Facturable<b>{fmt(_pf)} kg</b></span>
+        <span>Bruto<b>{fmt(_gw)} kg</b></span>
+      </div>
+    </div>
 
-    {/* Guardar la cotización y generar el link para el cliente. La calculadora exporta PDF por
-        canal, pero el PDF muestra una sola opción: con el link el cliente compara las tres y elige,
-        y la elección vuelve como aviso. */}
-    {results&&results.channels.length>0&&(()=>{
-      // Lo que se copia es el mensaje entero listo para pegar, no la URL sola. Corto y al hueso
-      // por pedido del usuario (21/09/2026): antes iba un saludo con el nombre y un párrafo
-      // explicando las opciones, y el saludo lo escribe él en el chat igual.
-      const armarMensaje=(url)=>{
-        const vence=new Date(Date.now()+10*24*60*60*1000).toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
-        return ["Tu cotización ya está lista.","",url,"",`Válida hasta el ${vence}.`].join("\n");
-      };
-      const generarLink=async()=>{
-        if(canalesLink.length===0){toast("Elegí al menos una opción para mostrarle al cliente","error");return;}
-        setGenerandoLink(true);
-        const red=(v)=>Math.round(Number(v||0)*100)/100;
-        // Se rearman con el estado de ahora: marcar en que bulto viaja cada producto no cambia
-        // ningun total, asi que no obliga a recalcular, y si leyeramos los de `results` el link
-        // guardaria el reparto de antes de marcarlos.
-        const itemsLink=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
-        const pksLink=pkgs.map(p=>({id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
-        try{
-          const alts=results.channels.filter(c=>canalesLink.includes(c.key)).map(c=>{
-            const bd=c.bd||{};
-            const ovStr=desembolsoOverride[c.key];
-            const desEff=(ovStr!=null&&String(ovStr).trim()!=="")?toN(ovStr):(bd.desembolsoAuto||0);
-            const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(c.key)?rateOverride[c.key]:null;
-            const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
-            const fleteRateEff=hasRateOv?toN(rateOvStr):Number(c.fleteRate||0);
-            const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*fleteRateEff+Number(c.battExtra||0)):Number(c.flete||0);
-            // El recargo por baterías venía sumado dentro del flete y no aparecía en ninguna línea:
-            // el cliente veía un flete inflado sin saber por qué. Va como línea propia debajo.
-            const batEff=Number(c.battExtra||0);
-            let taxEff=0;
-            if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
-            else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
-            const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
-            const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0));
-            // Desglose detallado por linea (mismo nivel de detalle que la card interna del admin)
-            // para que el link lo muestre al expandir la opcion. [label, monto]. El % va en el
-            // label cuando todos los productos comparten la alicuota (si hay mezcla, sin %).
-            const rateU=(fld,def)=>{const set=[...new Set(products.filter(p=>toN(p.unit_price)>0).map(p=>{const v=p.ncm?.[fld];return (v==null||v==="")?def:Number(v);}))];return set.length===1?set[0]:null;};
-            const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
-            let detail=null;
-            if(bd.isBlanco&&bd.isAereo){
-              detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff],["Recargo por baterías",batEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
-            }else if(bd.isBlanco&&bd.isMaritimo){
-              detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
-            }
-            if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
-            // Costo de cada producto puesto en Argentina, con los valores EFECTIVOS de esta
-            // opcion (flete con override, desaduanaje bonificado). La misma cuenta que el portal:
-            // el flete se reparte por peso facturable del bulto donde viaja cada producto y los
-            // impuestos por FOB. impuestosTotal hace que la suma cierre contra totalAbonar.
-            const estEf={flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),seguro:bd.isBlanco?Number(c.seguro||0):0,overweightSurcharge:owEffLink,shipCost:0,taxDetail:{items:c.taxDetail?.items||[]}};
-            const landed=costoPuestoEnArgentina(itemsLink,pksLink,estEf,{impuestosTotal:taxEff,repartirPor:bd.isMaritimo?"volumen":"peso"}).map(r=>({
-              description:r.it.description||"",ncm:r.it.ncm_code||null,qty:r.qty,
-              bultos:pksLink.map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
-              fob:red(r.fob),fobUnit:red(r.fobUnit),tax:red(r.tax),taxUnit:red(r.taxUnit),
-              svc:red(r.svc),svcUnit:red(r.svcUnit),total:red(r.total),totalUnit:red(r.totalUnit),
-            }));
-            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),fleteRate:fleteRateEff,fleteAmt:Number(c.fleteAmt||0),battExtra:batEff,overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail,landed};
-          });
-          const cli=clientId?allClients.find(c=>c.id===clientId):null;
-          const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);
-          const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
-          const body={
-            client_id:clientId||null,
-            client_name:results.clientName||cli?`${cli?.first_name||""} ${cli?.last_name||""}`.trim()||results.clientName:results.clientName||null,
-            client_code:cli?.client_code||null,
-            origin:results.origin||null,
-            channel_key:barata.key,
-            channel_name:alts.length>1?`${alts.length} opciones (link)`:alts[0].name,
-            // Normalizar coma decimal ("29,2" -> 29.2) antes de guardar: los strings con coma
-            // rompian el editor de la cotizacion (input number no los puede mostrar -> campos
-            // "borrados" y NaN en totales).
-            products:products.map(pr=>({...pr,unit_price:toN(pr.unit_price)||pr.unit_price,quantity:Number(String(pr.quantity??"1").replace(",","."))||1})),
-            packages:pkgs.map(pk=>({id:pk.id,qty:Number(String(pk.qty??"1").replace(",","."))||1,length:toN(pk.length)||null,width:toN(pk.width)||null,height:toN(pk.height)||null,weight:toN(pk.weight)||null})),
-            total_fob:results.totalFob,total_cbm:results.totCBM,
-            total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*(toN(pk.qty)||1),0)||null,
-            total_cost:barata.totalAbonar,
-            channel_alternatives:alts,
-            visible_channels:canalesLink,
-            status:"pending",
-            public_token:tok,
-            sent_at:new Date().toISOString(),
-            expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),
-          };
-          const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
-          const creada=Array.isArray(r)?r[0]:r;
-          if(!creada?.id)throw new Error(creada?.message||"No se pudo guardar la cotización");
-          const url=`https://argencargo.com.ar/presupuesto/${tok}`;
-          setLinkGenerado(url);
-          navigator.clipboard?.writeText(armarMensaje(url));
-          toast("Cotización guardada · mensaje copiado","success");
-        }catch(e){alertDialog("Error: "+e.message);}
-        setGenerandoLink(false);
-      };
-      return <div style={{marginTop:16,padding:"15px 18px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)"}}>
-        <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>🔗 Link para que el cliente elija</p>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"0 0 11px",lineHeight:1.5}}>Guarda esta cotización con las {results.channels.length} opciones y genera un link donde el cliente compara tiempos y precios, y elige. Válido 7 días. Cuando elija te llega el aviso.</p>
-        {linkGenerado
-          ?<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            <code style={{flex:1,minWidth:220,fontSize:11.5,color:"#93c5fd",background:"rgba(0,0,0,0.25)",padding:"8px 10px",borderRadius:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{linkGenerado}</code>
-            <button onClick={()=>{navigator.clipboard?.writeText(armarMensaje(linkGenerado));toast("Mensaje copiado, pegalo en WhatsApp","success");}} style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>📋 Copiar</button>
-            <a href={linkGenerado} target="_blank" rel="noopener noreferrer" style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>👁 Ver</a>
-          </div>
-          :<Btn small onClick={generarLink} disabled={generandoLink}>{generandoLink?"Guardando…":"🔗 Guardar y generar link"}</Btn>}
-      </div>;
-    })()}
+    {/* Calcular: después de la primera cuenta se recalcula sola con cada cambio */}
+    {!autoCalc&&<div className="qc-calcrow">
+      <button type="button" className="qc-calc" onClick={()=>calculate(false)} disabled={bloqueado}>Calcular cotización</button>
+      {totalFob>0&&unclassified.length>0&&<p className="qc-warn">Falta la NCM de {unclassified.length} producto{unclassified.length>1?"s":""}</p>}
+    </div>}
+    {autoCalc&&bloqueado&&<p className="qc-warn" style={{margin:"0 0 14px"}}>{totalFob<=0?"Falta el precio de los productos":`Falta la NCM de ${unclassified.length} producto${unclassified.length>1?"s":""}`}</p>}
+
+    {/* Resultados */}
+    {results&&(results.channels.length===0
+      ?<p style={{color:"rgba(255,255,255,0.5)",textAlign:"center",padding:"1rem"}}>Ningún canal aplica con estos datos.</p>
+      :<div className="qc-res" style={{"--n":results.channels.length}}>
+        {results.channels.map(ch=>{
+          const bd=ch.bd||{};
+          const ovStr=desembolsoOverride[ch.key];
+          const hasOv=ovStr!=null&&String(ovStr).trim()!=="";
+          const desEff=hasOv?toN(ovStr):bd.desembolsoAuto||0;
+          const ivaDesEff=desEff*0.21;
+          const rateOvStr=rateOverride[ch.key];
+          const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
+          const fleteRateEff=hasRateOv?toN(rateOvStr):Number(ch.fleteRate||0);
+          const batt=Number(ch.battExtra||0);
+          const fleteEff=hasRateOv?(Number(ch.fleteAmt||0)*fleteRateEff+batt):Number(ch.flete||0);
+          let effTotalImp=0;
+          if(bd.isBlanco&&bd.isAereo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+ivaDesEff;
+          else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
+          // Recargo por sobrepeso (aéreo) con fila propia; en el canal B el surcharge es el recargo por valor.
+          const owEff=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
+          const recValor=bd.isBlanco?0:Number(ch.surcharge||0);
+          const effTotal=bd.isBlanco?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff):(fleteEff+recValor);
+          const isAer=ch.key==="aereo_a_china";
+          const unit=isAer?"kg":"m³";
+          const qty=Number(ch.fleteAmt||0);
+          const qtyTxt=isAer?`${fmt(qty)} kg`:`${qty.toFixed(2)} m³`;
+          const L=(lb,v,extra)=><div className="qc-l"><span>{lb}{extra}</span><b>USD {fmt(v)}</b></div>;
+          const on=canalesLink.includes(ch.key);
+          return <div key={ch.key} className={"qc-card"+(ch.notVisibleToClient?" warn":"")}>
+            <div>
+              <div className="qc-ctitle">
+                <div style={{minWidth:0}}><p className="qc-cn">{ch.name}</p><p className="qc-ci">{ch.info}</p></div>
+                <button type="button" className={"qc-link"+(on?" on":"")} onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])}>{on?"✓ En el link":"Fuera del link"}</button>
+              </div>
+              {ch.notVisibleToClient&&<p className="qc-cwarn">⚠ {ch.notVisibleToClient}</p>}
+            </div>
+            <div className="qc-lines">
+              <div className="qc-l">
+                <span>Flete<em>{qtyTxt}</em></span>
+                <span className="qc-lr">{ovIn(hasRateOv?rateOvStr:String(Number(ch.fleteRate||0)),hasRateOv,v=>setRateOverride(p=>({...p,[ch.key]:v})),sinOv(setRateOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(fleteEff-batt)}</b></span>
+              </div>
+              {batt>0&&L("Baterías",batt)}
+              {recValor>0&&L(`Recargo por valor${ch.surchargePct?` ${ch.surchargePct}%`:""}`,recValor)}
+              {owEff>0&&L("Recargo por sobrepeso",owEff)}
+              {Number(ch.seguro||0)>0&&L("Seguro",ch.seguro)}
+              {bd.isBlanco&&<>
+                {bd.derechos>0&&L("Derechos",bd.derechos)}
+                {bd.tasaE>0&&L("Tasa estadística",bd.tasaE)}
+                {bd.iva>0&&L("IVA",bd.iva)}
+                {bd.isMaritimo&&<>
+                  {bd.ivaAdic>0&&L("IVA adicional",bd.ivaAdic)}
+                  {bd.iigg>0&&L("Ganancias",bd.iigg)}
+                  {bd.iibb>0&&L("Ingresos brutos",bd.iibb)}
+                </>}
+                {bd.isAereo&&<>
+                  <div className="qc-l"><span>Desaduanaje</span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOv?ovStr:String(bd.desembolsoAuto||0),hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01,v=>setDesembolsoOverride(p=>({...p,[ch.key]:v})),sinOv(setDesembolsoOverride,ch.key))}</span></div>
+                  {ivaDesEff>0&&L("IVA desaduanaje",ivaDesEff)}
+                </>}
+              </>}
+            </div>
+            <div className="qc-total"><span>Total</span><strong>USD {fmt(effTotal)}</strong></div>
+            <button type="button" className="qc-pdf" onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})}>📄 PDF</button>
+            {/* Costo (solo admin): el costo por rango cargado en Tarifas → Costos de flete. Antes
+                salía de un valor fijo de configuración y el Integral tomaba el mismo que LCL. */}
+            {!esEmpleado()?(()=>{
+              const costKey=isAer?"cost_aereo_usd_kg":ch.key==="maritimo_a_china"?"cost_maritimo_a_usd_cbm":"cost_maritimo_b_usd_cbm";
+              const rateDef=Number(ch.fleteCostRate||0)||Number(config[costKey]||0);
+              const ovC=costOverride[ch.key];
+              const hasC=ovC!=null&&String(ovC).trim()!=="";
+              const rate=hasC?toN(ovC):rateDef;
+              const cFlete=qty*rate;
+              const cImp=bd.isBlanco?effTotalImp:0;
+              const costo=cFlete+cImp;const gan=effTotal-costo;const pct=effTotal>0?gan/effTotal*100:0;
+              return <div className="qc-cost">
+                <div className="qc-l"><span>Costo flete</span><span className="qc-lr">{ovIn(hasC?ovC:String(rateDef),hasC&&Math.abs(rate-rateDef)>0.001,v=>setCostOverride(o=>({...o,[ch.key]:v})),sinOv(setCostOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(cFlete)}</b></span></div>
+                {bd.isBlanco&&L("Impuestos y despacho",cImp)}
+                <div className="qc-l qc-sum"><span>Costo</span><b>USD {fmt(costo)}</b></div>
+                <div className="qc-l qc-gan"><span>Ganancia</span><b style={{color:gan>=0?"#4ade80":"#f87171"}}>USD {fmt(gan)} <span style={{fontSize:11,opacity:0.8}}>· {pct.toFixed(0)}%</span></b></div>
+              </div>;
+            })():<div/>}
+          </div>;
+        })}
+      </div>)}
+
+    {/* Guardar y generar el link para que el cliente elija */}
+    {results&&results.channels.length>0&&<div className="qc-sec qc-linkbox">
+      {linkGenerado?<>
+        <code className="qc-url">{linkGenerado}</code>
+        <div className="qc-acts">
+          <button type="button" className="qc-btn2" onClick={()=>{navigator.clipboard?.writeText(armarMensaje(linkGenerado));toast("Mensaje copiado, pegalo en WhatsApp","success");}}>📋 Copiar</button>
+          <a className="qc-btn2" href={linkGenerado} target="_blank" rel="noopener noreferrer">Ver</a>
+          <button type="button" className="qc-btn2 gold" onClick={nuevaCotizacion}>Nueva cotización</button>
+        </div>
+      </>:<button type="button" className="qc-calc" onClick={generarLink} disabled={generandoLink||canalesLink.length===0}>{generandoLink?"Guardando…":`Guardar y generar link · ${canalesLink.length} opci${canalesLink.length===1?"ón":"ones"}`}</button>}
+    </div>}
   </div>;
 }
 
