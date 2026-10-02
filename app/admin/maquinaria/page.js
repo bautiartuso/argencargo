@@ -124,6 +124,7 @@ function Shell({ses,setSes,tema,setTema}){
   const [tarifas,setTarifas]=useState(null);
   const [gastoCats,setGastoCats]=useState([]);
   const [listo,setListo]=useState(false);
+  const [nBusq,setNBusq]=useState(0);   // búsquedas a pedido nuevas: aviso en el menú
   const cargar=async()=>{try{
     const [c,p,pr,a,aj,pe,mo,cc,gc,tf,cfg]=await Promise.all([
       dq("cat_categorias",{filters:"?select=*&order=orden.asc,nombre.asc"}),
@@ -138,6 +139,7 @@ function Shell({ses,setSes,tema,setTema}){
       dq("tariffs",{filters:"?select=*&order=sort_order.asc"}).catch(()=>[]),
       dq("calc_config",{filters:"?select=*"}).catch(()=>[]),
     ]);
+    dq("cat_busquedas",{filters:"?select=id&estado=eq.nueva"}).then(r=>setNBusq(Array.isArray(r)?r.length:0)).catch(()=>{});
     setCats(Array.isArray(c)?c:[]);setProvs(Array.isArray(p)?p:[]);setProds(Array.isArray(pr)?pr:[]);setAntid(Array.isArray(a)?a:[]);setAjustes(leerAjustes(Array.isArray(aj)?aj:[]));setPedidos(Array.isArray(pe)?pe:[]);setMovs(Array.isArray(mo)?mo:[]);setCcs(Array.isArray(cc)?cc:[]);setGastoCats(Array.isArray(gc)?gc:[]);
     const ajs=leerAjustes(Array.isArray(aj)?aj:[]);
     const config={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{config[r.key]=Number(r.value);});
@@ -160,7 +162,7 @@ function Shell({ses,setSes,tema,setTema}){
   }catch(e){toast(e.message,"error");}setListo(true);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const arbol=useMemo(()=>cats.filter(c=>!c.padre_slug).map(c=>({...c,subs:cats.filter(s=>s.padre_slug===c.slug)})),[cats]);
-  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,pedidos,movs,ccs,ops,tarifas,gastoCats,listo,recargar:cargar,ir};
+  const ctx={ses,dq,token,cats,arbol,provs,setProvs,prods,antid,ajustes,setAjustes,pedidos,movs,ccs,ops,tarifas,gastoCats,listo,recargar:cargar,ir,setNBusq};
 
   const inicial=(ses.user?.email||"?").slice(0,2).toUpperCase();
   return <div>
@@ -171,7 +173,7 @@ function Shell({ses,setSes,tema,setTema}){
       <nav style={{padding:"0 10px",flex:1}}>
         {menu.map(s=><div key={s.sec} style={{marginBottom:14}}>
           <p style={{...LBL,padding:"0 10px",marginBottom:4,fontSize:10}}>{s.sec}</p>
-          {s.items.map(it=>{const on=pag===it.k;return <button key={it.k} className="navi" onClick={()=>ir(it.k)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10,border:"none",background:on?LIMA_SUAVE:"transparent",color:INK,fontSize:13.5,fontWeight:on?800:600,cursor:"pointer",textAlign:"left",marginBottom:1}}><Ico d={it.i} color={on?INK:GRIS}/>{it.l}</button>;})}
+          {s.items.map(it=>{const on=pag===it.k;return <button key={it.k} className="navi" onClick={()=>ir(it.k)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:10,border:"none",background:on?LIMA_SUAVE:"transparent",color:INK,fontSize:13.5,fontWeight:on?800:600,cursor:"pointer",textAlign:"left",marginBottom:1}}><Ico d={it.i} color={on?INK:GRIS}/><span style={{flex:1}}>{it.l}</span>{it.k==="busquedas"&&nBusq>0&&<span title={`${nBusq} ${nBusq===1?"búsqueda nueva":"búsquedas nuevas"}`} style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:LIMA,color:"#15171A",fontFamily:MONO,fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{nBusq}</span>}</button>;})}
         </div>)}
       </nav>
       <div style={{padding:14,borderTop:`1px solid ${BORDE}`,display:"flex",alignItems:"center",gap:10}}>

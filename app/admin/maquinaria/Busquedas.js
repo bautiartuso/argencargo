@@ -42,12 +42,14 @@ const wa=(t)=>{const d=String(t||"").replace(/\D/g,"");return d.length>=8?`https
 const fmtHora=(d)=>d?new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
 const VACIO={cliente:"",contacto:"",descripcion:"",situacion:"gestion_integral",proveedores:"",precio_referencia:""};
 
-export function Busquedas({ses,dq}){
+export function Busquedas({ses,dq,setNBusq}){
   const [lista,setLista]=useState([]);const [cargando,setCargando]=useState(true);
   const [q,setQ]=useState("");const [grupo,setGrupo]=useState("nuevas");const [fSit,setFSit]=useState("");
   const [nuevo,setNuevo]=useState(null);const [sel,setSel]=useState(null);const [guardando,setGuardando]=useState(false);
   const cargar=async()=>{setCargando(true);try{const r=await dq("cat_busquedas",{filters:"?select=*&order=created_at.desc"});setLista(Array.isArray(r)?r:[]);}catch(e){toast(e.message,"error");}setCargando(false);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
+  // El contador del menú sigue a la lista: al cargar una nueva o cambiar un estado se actualiza solo.
+  useEffect(()=>{if(!cargando&&setNBusq)setNBusq(lista.filter(b=>b.estado==="nueva").length);},[lista,cargando]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const crear=async()=>{if(!nuevo.cliente.trim()||!nuevo.descripcion.trim()){toast("Falta el cliente o qué busca","warn");return;}setGuardando(true);try{
     const body={cliente:nuevo.cliente.trim(),contacto:txtONull(nuevo.contacto),descripcion:nuevo.descripcion.trim(),situacion:nuevo.situacion||"gestion_integral",proveedores:nuevo.situacion==="ya_busco_proveedor"?txtONull(nuevo.proveedores):null,precio_referencia:nuevo.situacion==="ya_busco_proveedor"?txtONull(nuevo.precio_referencia):null,creado_por:ses?.user?.id||null};
