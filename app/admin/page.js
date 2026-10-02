@@ -12422,7 +12422,7 @@ function FacturasPanel({token}){
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>hoyAR());const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);});
   // Dashboard v2 (02/10/2026): solapas General / Aéreo A / Marítimo A / Marítimo B y año navegable.
-  const [vista,setVista]=useState("general");const [selYear,setSelYear]=useState(()=>Number(hoyAR().slice(0,4)));const [verTodasOps,setVerTodasOps]=useState(false);
+  const [vista,setVista]=useState("general");const [selYear,setSelYear]=useState(()=>Number(hoyAR().slice(0,4)));const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
   const celu=useEsCelu();
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code,tax_condition)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
@@ -12788,23 +12788,6 @@ function FinanceDashboard({token}){
             </div>}
           </div>:<p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.3)",margin:"6px 0 0",textAlign:"center"}}>Sin pendientes</p>}
         </div>
-        {/* Deuda Tarjeta de Crédito */}
-        <div style={{background:deudaTCArs>0||deudaTCUsd>0?"linear-gradient(135deg,rgba(251,146,60,0.08),rgba(251,146,60,0.02))":"rgba(255,255,255,0.025)",border:`1px solid ${deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"16px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>💳 Deuda Tarjeta de Crédito</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente débito":"Al día ✓"}</p>
-          </div>
-          {(deudaTCUsd>0||deudaTCArs>0)?<div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {deudaTCUsd>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.6)"}}>USD</span>
-              <span style={{fontSize:22,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {deudaTCUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-            </div>}
-            {deudaTCArs>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.6)"}}>ARS</span>
-              <span style={{fontSize:22,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-            </div>}
-          </div>:<p style={{fontSize:22,fontWeight:600,color:"rgba(255,255,255,0.3)",margin:0,textAlign:"center",padding:"10px 0"}}>Sin deuda</p>}
-        </div>
       </div>;
     })()}
 
@@ -12983,11 +12966,19 @@ function FinanceDashboard({token}){
       const gan=neto-costos;const mg=neto>0?gan/neto*100:0;
       const comisiones=filas.reduce((s2,f)=>s2+f.a.comision,0);
       const visibles=CONCEPTOS.filter(([k])=>tot[k].c>0.005||tot[k].k>0.005);
-      const maxBase=Math.max(...visibles.map(([k])=>Math.max(tot[k].c,tot[k].k)),1);
-      const ordenadas=[...filas].sort((x,y)=>y.a.gan-x.a.gan);
-      const mostrar=verTodasOps?ordenadas:ordenadas.slice(0,8);
       const n2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+      const nomCli=o=>o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim()||"—":"—";
+      const COLS="minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 28px";
+      const COLS_CELU="minmax(0,1fr) auto 22px";
       if(filas.length===0)return <Card v2 title={CM[vista]||vista}><p style={{color:"rgba(255,255,255,0.45)",margin:0,fontSize:14}}>No hay operaciones de este servicio cobradas en el período.</p></Card>;
+      // Top clientes del servicio
+      const porCli={};filas.forEach(({o,a})=>{const n=nomCli(o);if(!porCli[n])porCli[n]={n,ops:0,gan:0,neto:0};porCli[n].ops++;porCli[n].gan+=a.gan;porCli[n].neto+=a.neto;});
+      const topCli=Object.values(porCli).sort((x,y)=>y.gan-x.gan).slice(0,5);
+      const topOps=[...filas].sort((x,y)=>y.a.gan-x.a.gan).slice(0,5);
+      const fila5=(clave,izq,sub,g,m)=><div key={clave} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"11px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        <span style={{minWidth:0}}>{izq}<span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span></span>
+        <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:14,fontWeight:800,color:g>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{g>=0?"+":"−"}USD {n2(Math.abs(g))}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.4)"}}>{m.toFixed(0)}% margen</span></span>
+      </div>;
       return <>
         <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4, minmax(0, 1fr))",gap:12,marginBottom:16}}>
           {kpi("Ganancia",usd(gan),gan>=0?"#4ade80":"#f87171",`${mg.toFixed(1)}% de margen`,gan>=0?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)")}
@@ -12996,45 +12987,57 @@ function FinanceDashboard({token}){
           {kpi("Operaciones",String(filas.length),"#fff",`USD ${n2(filas.length?gan/filas.length:0)} de ganancia c/u`)}
         </div>
 
-        <Card v2 title="Ganancia por concepto" sub="Lo que le cobraste al cliente por cada cosa contra lo que te costó">
-          {visibles.map(([k,l])=>{const c=tot[k].c,co=tot[k].k,g=c-co,m=c>0?g/c*100:null;
-            return <div key={k} style={{padding:"14px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:9}}>
-                <span style={{fontSize:15,fontWeight:800,color:"#fff"}}>{l}</span>
-                <span style={{display:"inline-flex",alignItems:"baseline",gap:8}}>
-                  <span style={{fontSize:17,fontWeight:800,color:g>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{g>=0?"+":"−"}USD {n2(Math.abs(g))}</span>
-                  {m!=null&&<span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.45)"}}>{m.toFixed(0)}%</span>}
+        {/* Ganancia por concepto: una fila por concepto; tocándola se ven las operaciones que la
+            forman, de la que más movió a la que menos (para encontrar cargas mal registradas). */}
+        <Card v2 title="Ganancia por concepto">
+          <div style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,padding:"0 6px 9px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            {(celu?["Concepto","Ganancia",""]:["Concepto","Cobrado","Costo","Ganancia",""]).map((h,i)=><span key={i} style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em",textAlign:i?"right":"left"}}>{h}</span>)}
+          </div>
+          {visibles.map(([k,l])=>{const c=tot[k].c,co=tot[k].k,g=c-co,m=c>0?g/c*100:null;const abierto=conceptoAbierto===k;
+            const detalle=abierto?filas.map(({o,a})=>({o,c:a.cobrado[k]||0,k:a.cost[k]||0})).filter(x=>x.c>0.005||x.k>0.005).sort((x,y)=>Math.max(y.c,y.k)-Math.max(x.c,x.k)):[];
+            const mostrar=verTodoConcepto?detalle:detalle.slice(0,10);
+            return <div key={k} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:abierto?"rgba(255,255,255,0.025)":"transparent",borderRadius:abierto?12:0,margin:abierto?"4px 0":0}}>
+              <div onClick={()=>{setConceptoAbierto(abierto?null:k);setVerTodoConcepto(false);}} style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,alignItems:"center",padding:"14px 6px",cursor:"pointer"}}>
+                <span style={{minWidth:0}}>
+                  <span style={{fontSize:14.5,fontWeight:800,color:"#fff"}}>{l}</span>
+                  {celu&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:2}}>cobrado {n2(c)} · costo {n2(co)}</span>}
+                  {/* margen del concepto: cuánto de lo cobrado quedó */}
+                  <span style={{display:"block",height:5,borderRadius:99,background:"rgba(255,255,255,0.06)",marginTop:7,maxWidth:180,overflow:"hidden"}}><span style={{display:"block",height:"100%",width:`${m==null?100:Math.min(100,Math.max(4,Math.abs(m)))}%`,background:g>=0?"linear-gradient(90deg,#22c55e88,#22c55e)":"linear-gradient(90deg,#f8717188,#f87171)",borderRadius:99}}/></span>
                 </span>
+                {!celu&&<span style={{textAlign:"right",fontSize:14,color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>USD {n2(c)}</span>}
+                {!celu&&<span style={{textAlign:"right",fontSize:14,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(co)}</span>}
+                <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:15,fontWeight:800,color:g>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{g>=0?"+":"−"}USD {n2(Math.abs(g))}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.4)"}}>{m==null?"sin cobro":`${m.toFixed(0)}%`}</span></span>
+                <span style={{textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:13,transform:abierto?"rotate(90deg)":"none",transition:"transform 160ms"}}>›</span>
               </div>
-              {/* Barra: verde lo que quedó, rojo lo que costó, sobre lo cobrado. */}
-              <div style={{height:10,borderRadius:99,background:"rgba(255,255,255,0.05)",overflow:"hidden",display:"flex",width:`${Math.max(c,co)/maxBase*100}%`,minWidth:24}}>
-                <div style={{width:`${Math.max(c,co)>0?Math.min(co,Math.max(c,co))/Math.max(c,co)*100:0}%`,background:"linear-gradient(90deg,#f8717188,#f87171)"}}/>
-                {g>0&&<div style={{flex:1,background:"linear-gradient(90deg,#22c55e88,#22c55e)"}}/>}
-              </div>
-              <div style={{display:"flex",gap:18,marginTop:8,fontSize:12.5,color:"rgba(255,255,255,0.55)",flexWrap:"wrap"}}>
-                <span>Cobrado <b style={{color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {n2(c)}</b></span>
-                <span>Costo <b style={{color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(co)}</b></span>
-                {k==="otros"&&c<=0.005&&<span style={{color:"rgba(255,255,255,0.35)"}}>no se le cobra al cliente</span>}
-              </div>
+              {abierto&&<div style={{padding:"0 6px 12px"}}>
+                <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"0 0 6px"}}>{detalle.length} operaci{detalle.length===1?"ón":"ones"} con {l.toLowerCase()} · de la que más movió a la que menos</p>
+                {mostrar.map(({o,c:dc,k:dk})=>{const dg=dc-dk;return <div key={o.id} style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 28px",gap:10,alignItems:"center",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                  <span style={{minWidth:0}}><span style={{fontFamily:"monospace",fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span> <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{nomCli(o)}</span>{celu&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>cobrado {n2(dc)} · costo {n2(dk)}</span>}</span>
+                  {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n2(dc)}</span>}
+                  {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>{n2(dk)}</span>}
+                  <span style={{textAlign:"right",fontSize:12.5,fontWeight:800,color:dg>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{dg>=0?"+":"−"}{n2(Math.abs(dg))}</span>
+                  {!celu&&<span/>}
+                </div>;})}
+                {detalle.length>10&&<button onClick={()=>setVerTodoConcepto(v=>!v)} style={{marginTop:8,height:32,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{verTodoConcepto?"Ver menos":`Ver las ${detalle.length}`}</button>}
+              </div>}
             </div>;})}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"16px 0 2px"}}>
+          <div style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,alignItems:"center",padding:"16px 6px 2px"}}>
             <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total</span>
-            <span style={{fontSize:20,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{gan>=0?"+":"−"}USD {n2(Math.abs(gan))}</span>
+            {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {n2(neto)}</span>}
+            {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(costos)}</span>}
+            <span style={{textAlign:"right",fontSize:18,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{gan>=0?"+":"−"}USD {n2(Math.abs(gan))}</span>
+            <span/>
           </div>
         </Card>
 
-        <Card v2 title="Operaciones" sub={`${filas.length} cobrada${filas.length!==1?"s":""} en el período · de la que más dejó a la que menos`}>
-          <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)",gap:10,padding:"0 4px 8px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-            {(celu?["Operación","Ganancia"]:["Operación","Cobrado","Costo","Ganancia"]).map((h,i)=><span key={h} style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em",textAlign:i?"right":"left"}}>{h}</span>)}
-          </div>
-          {mostrar.map(({o,a})=>{const m=a.neto>0?a.gan/a.neto*100:0;return <div key={o.id} style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)",gap:10,alignItems:"center",padding:"11px 4px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-            <span style={{minWidth:0}}><span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span><span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span></span>
-            {!celu&&<span style={{textAlign:"right",fontSize:13.5,color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums"}}>USD {n2(a.neto)}</span>}
-            {!celu&&<span style={{textAlign:"right",fontSize:13.5,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(a.costos)}</span>}
-            <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:13.5,fontWeight:800,color:a.gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{a.gan>=0?"+":"−"}USD {n2(Math.abs(a.gan))}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.4)"}}>{m.toFixed(0)}%</span></span>
-          </div>;})}
-          {ordenadas.length>8&&<button onClick={()=>setVerTodasOps(v=>!v)} style={{marginTop:12,height:36,padding:"0 16px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{verTodasOps?"Ver menos":`Ver las ${ordenadas.length}`}</button>}
-        </Card>
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:16}}>
+          <Card v2 title="Top 5 operaciones" sub="Las que más ganancia dejaron">
+            {topOps.map(({o,a})=>fila5(o.id,<span style={{fontFamily:"monospace",fontSize:13.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>,nomCli(o),a.gan,a.neto>0?a.gan/a.neto*100:0))}
+          </Card>
+          <Card v2 title="Top 5 clientes" sub={`Por ganancia en ${CM[vista]||vista}`}>
+            {topCli.map((x,i)=>fila5(x.n,<span style={{fontSize:13.5,fontWeight:800,color:"#fff"}}><span style={{color:"rgba(255,255,255,0.35)",marginRight:8}}>{i+1}</span>{x.n}</span>,`${x.ops} operaci${x.ops===1?"ón":"ones"}`,x.gan,x.neto>0?x.gan/x.neto*100:0))}
+          </Card>
+        </div>
       </>;
     })()}
   </div>;
@@ -19567,6 +19570,7 @@ export default function AdminPage(){
   if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
   return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminDashboard session={session} onLogout={logout}/></>;
 }
+
 
 
 
