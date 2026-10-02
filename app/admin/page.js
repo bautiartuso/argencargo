@@ -12764,15 +12764,15 @@ function FinanceDashboard({token}){
           <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"auto 0 0",paddingTop:8}}>Plata real (cobrado − pagado). No incluye por cobrar ni por pagar.</p>
         </div>
         {/* Pendientes — plata que falta entrar/salir, todavía NO es cash */}
-        <div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.06),rgba(251,191,36,0.015))",border:"1px solid rgba(251,191,36,0.22)",borderRadius:14,padding:"16px 20px"}}>
+        <div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.02))",border:"1px solid rgba(96,165,250,0.28)",borderRadius:14,padding:"16px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>⏳ Pendientes (neto)</p>
-            <p style={{fontSize:22,fontWeight:800,color:pendienteNeto>=0?"#fbbf24":"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{pendienteNeto>=0?"+":"−"}{usd(Math.abs(pendienteNeto))}</p>
+            <p style={{fontSize:22,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{pendienteNeto>=0?"+":"−"}{usd(Math.abs(pendienteNeto))}</p>
           </div>
           {(porCobrar>0||porPagar>0)?<div style={{display:"flex",flexDirection:"column",gap:5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
             {pendienteListas>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usd(o.falta)}`).join("\n")}>
-              <span style={{color:"#fbbf24"}}>📦 Por cobrar (listas para retirar)</span>
-              <span style={{color:"#fbbf24",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(pendienteListas)}</span>
+              <span style={{color:"#93c5fd"}}>📦 Por cobrar (listas para retirar)</span>
+              <span style={{color:"#93c5fd",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(pendienteListas)}</span>
             </div>}
             {girosColgados>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>
               <span style={{color:"#fb923c"}}>⚠ Por cobrar (giros sin cobrar)</span>
