@@ -14541,13 +14541,12 @@ function AdminCalculator({token}){
   // Las tres cotizaciones comparten filas (subgrid): total, PDF y costo quedan a la misma altura
   // aunque una tenga más desglose que otra.
   const css=`
-.qc{color:#fff;font-variant-numeric:tabular-nums;margin-top:8px}
+.qc{color:#fff;font-variant-numeric:tabular-nums;margin-top:0}
+.qc-new{height:24px;padding:0 10px;font-size:11.5px;font-weight:700;border-radius:7px;border:1px solid rgba(232,208,152,0.4);background:rgba(184,149,106,0.1);color:${IC};cursor:pointer;font-family:inherit;white-space:nowrap}
 .qc *{box-sizing:border-box}
-.qc-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
-.qc-h{font-size:22px;font-weight:700;margin:0;letter-spacing:-0.02em;color:#fff}
 .qc-sec{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:16px;margin-bottom:12px}
 .qc-g{display:grid;gap:14px}
-.qc-g2{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+.qc-g2{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:end}
 .qc-g3{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:14px}
 .qc-lbl{display:block;font-size:10.5px;font-weight:700;color:rgba(255,255,255,0.42);text-transform:uppercase;letter-spacing:.07em;margin:0 0 6px}
 .qc-in{width:100%;height:40px;padding:0 12px;font-size:14px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:rgba(0,0,0,0.22);color:#fff;outline:none;font-family:inherit;transition:border-color .15s}
@@ -14681,16 +14680,12 @@ function AdminCalculator({token}){
   const _pf=pkgs.reduce((s,p)=>{const q=toN(p.qty)||1,gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);
   return <div className="qc">
     <style>{css}</style>
-    <div className="qc-head">
-      <h2 className="qc-h">Calculadora</h2>
-      {hayDatos&&<button type="button" className="qc-btn2" onClick={nuevaCotizacion}>Nueva cotización</button>}
-    </div>
 
     {/* Cliente, régimen y condiciones */}
     <div className="qc-sec">
       <div className="qc-g qc-g2">
         <div>
-          <span className="qc-lbl">Cliente</span>
+          <div className="qc-sh" style={{marginBottom:6,minHeight:20}}><span className="qc-lbl">Cliente</span>{hayDatos&&<button type="button" className="qc-new" onClick={nuevaCotizacion}>Nueva cotización</button>}</div>
           <div style={{position:"relative"}}>
             <input className="qc-in" value={clientName} onChange={e=>{setClientName(e.target.value);setClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} onBlur={()=>setTimeout(()=>setShowClientList(false),180)} placeholder="Código o nombre" style={clientId?{paddingRight:96}:undefined}/>
             {clientId&&<span className="qc-tag">DEL SISTEMA</span>}
