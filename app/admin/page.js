@@ -14616,8 +14616,14 @@ function AdminCalculator({token}){
 .qc-ctitle{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .qc-cn{font-size:14.5px;font-weight:700;color:${IC};margin:0}
 .qc-ci{font-size:11.5px;color:rgba(255,255,255,0.4);margin:2px 0 0}
-.qc-link{flex-shrink:0;height:26px;padding:0 10px;font-size:11px;font-weight:700;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.4);cursor:pointer;font-family:inherit;white-space:nowrap}
-.qc-link.on{border-color:rgba(96,165,250,0.45);background:rgba(96,165,250,0.12);color:#60a5fa}
+.qc-sw{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;height:42px;padding:0 12px 0 14px;margin:0 0 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.5);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .2s,border-color .2s,color .2s}
+.qc-sw:hover{border-color:rgba(255,255,255,0.2)}
+.qc-sw.on{border-color:rgba(96,165,250,0.5);background:rgba(96,165,250,0.12);color:#93c5fd}
+.qc-sw i{position:relative;flex-shrink:0;width:38px;height:22px;border-radius:22px;background:rgba(255,255,255,0.16);transition:background .2s}
+.qc-sw i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.qc-sw.on i{background:#60a5fa}
+.qc-sw.on i::after{transform:translateX(16px)}
+.qc-card.off>:not(:first-child),.qc-card.off .qc-ctitle,.qc-card.off .qc-cwarn{opacity:.55}
 .qc-cwarn{font-size:11.5px;color:#fbbf24;margin:10px 0 0;line-height:1.4;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,0.07)}
 .qc-lines{display:flex;flex-direction:column;gap:7px;align-self:start}
 .qc-l{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;color:rgba(255,255,255,0.6);min-height:24px}
@@ -14796,11 +14802,14 @@ function AdminCalculator({token}){
           const qtyTxt=isAer?`${fmt(qty)} kg`:`${qty.toFixed(2)} m³`;
           const L=(lb,v,extra)=><div className="qc-l"><span>{lb}{extra}</span><b>USD {fmt(v)}</b></div>;
           const on=canalesLink.includes(ch.key);
-          return <div key={ch.key} className={"qc-card"+(ch.notVisibleToClient?" warn":"")}>
+          return <div key={ch.key} className={"qc-card"+(ch.notVisibleToClient?" warn":"")+(on?"":" off")}>
             <div>
+              {/* Si esta opción va en el link del cliente: barra entera clickeable con interruptor. */}
+              <button type="button" role="switch" aria-checked={on} className={"qc-sw"+(on?" on":"")} onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])}>
+                <span>{on?"Se muestra en el link":"No se muestra en el link"}</span><i/>
+              </button>
               <div className="qc-ctitle">
                 <div style={{minWidth:0}}><p className="qc-cn">{ch.name}</p><p className="qc-ci">{ch.info}</p></div>
-                <button type="button" className={"qc-link"+(on?" on":"")} onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])}>{on?"✓ En el link":"Fuera del link"}</button>
               </div>
               {ch.notVisibleToClient&&<p className="qc-cwarn">⚠ {ch.notVisibleToClient}</p>}
             </div>
@@ -19200,3 +19209,4 @@ export default function AdminPage(){
   if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
   return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminDashboard session={session} onLogout={logout}/></>;
 }
+
