@@ -4,9 +4,10 @@ import { dq, loadSession, clearSession, ac, SB_URL, SB_KEY } from "../../lib/sb-
 import { ToastStack, toast } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { comprimirImagen } from "../../lib/img";
+import { hoyAR } from "../../lib/fecha-ar";
 import {
   T, fmtMoney, fmtDate, useIsMobile, enrichMovements, aplicarFiltros, calcStats,
-  BalanceCard, Filtros, MovimientosTabla, MovimientoTarjeta, Estadisticas,
+  BalanceCard, Filtros, MovimientosTabla, MovimientoTarjeta, Estadisticas, LogoCarrier,
 } from "../../lib/cc-ui";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ export function parseMontoAr(v) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => hoyAR(); // fecha de Argentina (a la noche UTC ya es mañana)
 
 
 export default function CcFinancieraPage() {
@@ -132,6 +133,7 @@ function Dashboard({ token, onLogout }) {
   const [showShare, setShowShare] = useState(false);
   const [showDollarize, setShowDollarize] = useState(false);
   const [showCable, setShowCable] = useState(false);
+  const [showCourier, setShowCourier] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
@@ -157,19 +159,30 @@ function Dashboard({ token, onLogout }) {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
       <ToastStack />
-      <div style={{ flexShrink: 0 }}>
-        <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} onCable={() => setShowCable(true)} />
-      </div>
       <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1320, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
           <BalanceCard label="Saldo en pesos (ARS)" currency="ARS" amount={enriched.totals.ars} />
           <BalanceCard label="Saldo en dólares (USD)" currency="USD" amount={enriched.totals.usd} />
         </section>
 
-        <div style={{ display: "flex", gap: 3, padding: 4, background: "rgba(0,0,0,0.22)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", marginBottom: 14, width: "fit-content" }}>
-          {[{ k: "movs", l: "Movimientos" }, { k: "stats", l: "Estadísticas" }].map((o) => (
-            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "8px 18px", fontSize: 13, fontWeight: 800, borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", background: tab === o.k ? T.goldGrad : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
-          ))}
+        {/* Una sola fila (01/10/2026): solapas a la izquierda y todas las acciones a la derecha.
+            Sin barra de título arriba ni botón de salir. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 3, padding: 4, background: "rgba(0,0,0,0.22)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", width: isMobile ? "100%" : "fit-content", boxSizing: "border-box" }}>
+            {[{ k: "movs", l: "Movimientos" }, { k: "stats", l: "Estadísticas" }].map((o) => (
+              <button key={o.k} onClick={() => setTab(o.k)} style={{ flex: isMobile ? 1 : "none", height: 38, padding: "0 18px", fontSize: 13, fontWeight: 800, borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", background: tab === o.k ? T.goldGrad : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
+            ))}
+          </div>
+          <div style={{ display: isMobile ? "grid" : "flex", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, flexWrap: "wrap", alignItems: "center", width: isMobile ? "100%" : "auto" }}>
+            <button onClick={() => setShowShare(true)} style={btnBar}>🔗 Compartir</button>
+            <button onClick={() => setShowDollarize(true)} style={btnBar}>💱 Dolarizar</button>
+            <button onClick={() => setShowCable(true)} style={{ ...btnBar, ...btnCableTone }}>🌏 Cable China</button>
+            <button onClick={() => setShowCourier(true)} style={{ ...btnBar, ...btnCourierTone }}>
+              <span style={{ display: "inline-flex", gap: 3 }}>{["dhl", "fedex", "ups"].map((k) => <LogoCarrier key={k} k={k} size={isMobile ? 20 : 18} />)}</span>{!isMobile && " Courier"}
+            </button>
+            <button onClick={() => setShowAdd("egreso")} style={{ ...btnBar, ...btnEgresoTone }}>− Egreso</button>
+            <button onClick={() => setShowAdd("ingreso")} style={{ ...btnBar, ...btnIngresoTone }}>+ Ingreso</button>
+          </div>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 30, marginRight: -22, paddingRight: 22 }}>
@@ -204,6 +217,7 @@ function Dashboard({ token, onLogout }) {
       {showAdd && <MovementModal type={showAdd} token={token} editing={null} onClose={() => setShowAdd(null)} onSaved={() => { setShowAdd(null); load(); }} />}
       {editing && <MovementModal type={editing.type} token={token} editing={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {showShare && <ShareModal token={token} onClose={() => setShowShare(false)} />}
+      {showCourier && <CourierModal token={token} onClose={() => setShowCourier(false)} onSaved={() => { setShowCourier(false); load(); }} />}
       {showCable && <CableChinaModal token={token} onClose={() => setShowCable(false)} onSaved={() => { setShowCable(false); load(); }} />}
       {showDollarize && <DollarizeModal token={token} arsBalance={enriched.totals.ars} onClose={() => setShowDollarize(false)} onSaved={() => { setShowDollarize(false); load(); }} />}
     </div>
@@ -232,29 +246,61 @@ function AccionesFila({ m, onEdit, onReload, token }) {
 
 const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 
-function Header({ onLogout, onAdd, onShare, onDollarize, onCable }) {
+// Courier (01/10/2026): transferencia a DHL, FedEx o UPS. Es un egreso por el monto y nada más
+// (sin comisión). Queda "Transferencia a FedEx" y en el libro sale con el logo de la empresa.
+const COURIERS = [{ k: "dhl", l: "DHL" }, { k: "fedex", l: "FedEx" }, { k: "ups", l: "UPS" }];
+function CourierModal({ token, onClose, onSaved }) {
+  const [date, setDate] = useState(todayStr());
+  const [carrier, setCarrier] = useState(null);
+  const [currency, setCurrency] = useState("ARS");
+  const [monto, setMonto] = useState("");
+  const [nota, setNota] = useState("");
+  const [saving, setSaving] = useState(false);
+  const m = parseMontoAr(monto);
+  const nombre = COURIERS.find((c) => c.k === carrier)?.l;
+  const save = async () => {
+    if (!carrier) { toast.error("Elegí a qué courier fue la transferencia"); return; }
+    if (!(m > 0)) { toast.error("Cargá el monto"); return; }
+    setSaving(true);
+    try {
+      await dq("cc_solfin_movements", { method: "POST", token, body: {
+        date, type: "egreso", currency, amount: m, net_amount: m,
+        description: `Transferencia a ${nombre}${nota.trim() ? ` · ${nota.trim()}` : ""}`,
+      }});
+      toast.success(`Transferencia a ${nombre}: ${fmtMoney(m, currency)}`);
+      onSaved();
+    } catch (e) { toast.error(e.message); setSaving(false); }
+  };
+  const seg = (on) => ({ flex: 1, height: 46, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 800, border: `1px solid ${on ? "rgba(232,208,152,0.6)" : "rgba(255,255,255,0.12)"}`, background: on ? "rgba(184,149,106,0.15)" : "rgba(255,255,255,0.03)", color: on ? T.gold : T.textMuted });
   return (
-    <header style={{ background: "linear-gradient(180deg, #10203C 0%, #0B1729 100%)", borderBottom: "1px solid rgba(184,149,106,0.22)", boxShadow: "0 10px 30px rgba(0,0,0,0.35)", padding: "18px 22px", position: "sticky", top: 0, zIndex: 10, overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: -110, left: -40, width: 380, height: 240, background: "radial-gradient(ellipse, rgba(184,149,106,0.16), transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ maxWidth: 1320, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", position: "relative" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <img src={LOGO} alt="Argencargo" style={{ height: 34, width: "auto" }} />
-          <span style={{ width: 1, height: 38, background: "rgba(255,255,255,0.15)" }} />
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: "-0.02em", color: "#fff" }}>CC Financiera</h1>
-            <p style={{ fontSize: 12, color: T.textMuted, margin: "2px 0 0" }}><b style={{ color: T.gold, letterSpacing: "0.1em" }}>SOLFIN</b> · Cuenta corriente en ARS y USD</p>
-          </div>
+    <Modal title="Transferencia a courier" onClose={onClose}>
+      <Field label="Courier">
+        <div style={{ display: "flex", gap: 8 }}>
+          {COURIERS.map((c) => <button key={c.k} type="button" onClick={() => setCarrier(c.k)} style={{ ...seg(carrier === c.k), display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9 }}><LogoCarrier k={c.k} size={26} />{c.l}</button>)}
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={onShare} style={btnGhost}>🔗 Compartir</button>
-          <button onClick={onDollarize} style={btnGhost}>💱 Dolarizar</button>
-          <button onClick={onCable} style={btnCable}>🌏 Cable China</button>
-          <button onClick={() => onAdd("egreso")} style={btnEgreso}>− Egreso</button>
-          <button onClick={() => onAdd("ingreso")} style={btnPrimary}>+ Ingreso</button>
-          <button onClick={onLogout} style={{ ...btnGhost, color: T.textMuted }}>Salir</button>
-        </div>
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || todayStr())} /></Field>
+        <Field label="Moneda">
+          <div style={{ display: "flex", gap: 6 }}>{["ARS", "USD"].map((c) => <button key={c} type="button" onClick={() => setCurrency(c)} style={seg(currency === c)}>{c}</button>)}</div>
+        </Field>
       </div>
-    </header>
+      <Field label={`Monto (${currency})`}>
+        <input type="text" inputMode="decimal" value={monto} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setMonto(v); }} placeholder="0,00" style={{ ...campoCable, fontWeight: 800 }} autoFocus />
+      </Field>
+      <Field label="Nota (opcional)">
+        <input type="text" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: vuelo AC-0227" style={campoCable} />
+      </Field>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 12, background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.25)", marginBottom: 6 }}>
+        {carrier ? <LogoCarrier k={carrier} size={34} /> : <span style={{ width: 34, height: 34, borderRadius: 8, border: "1px dashed rgba(255,255,255,0.2)", flexShrink: 0 }} />}
+        <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.text }}>{nombre ? `Transferencia a ${nombre}` : "Elegí el courier"}</span>
+        <span style={{ fontSize: 15, fontWeight: 900, color: T.red, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>− {fmtMoney(m, currency)}</span>
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+        <button onClick={onClose} style={btnGhost}>Cancelar</button>
+        <button onClick={save} disabled={saving} style={btnEgreso}>{saving ? "Guardando…" : "Registrar egreso"}</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -632,6 +678,12 @@ function Inp({ label, value, onChange, type = "text", autoFocus }) {
 }
 
 const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13.5, fontWeight: 500, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgSurfaceHi, color: T.text, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+// Botones de la fila de acciones: misma altura y forma, cada uno con su tono.
+const btnBar = { height: 40, minWidth: 0, overflow: "hidden", padding: "0 12px", fontSize: 13, fontWeight: 800, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: T.text, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, boxSizing: "border-box" };
+const btnCableTone = { border: "1px solid rgba(96,165,250,0.45)", background: "rgba(96,165,250,0.1)", color: "#93c5fd" };
+const btnCourierTone = { border: "1px solid rgba(232,208,152,0.35)", background: "rgba(184,149,106,0.08)", color: "#E8D098" };
+const btnEgresoTone = { border: "1px solid rgba(248,113,113,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171" };
+const btnIngresoTone = { border: "none", background: T.goldGrad, color: "#0A1628" };
 const btnPrimary = { padding: "10px 18px", fontSize: 13, fontWeight: 900, borderRadius: 11, border: "none", background: T.goldGrad, color: "#0A1628", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 6px 18px rgba(184,149,106,0.3)" };
 const btnGhost = { padding: "10px 15px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)", color: T.text, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
 // Mismo alto que el selector de fecha, para que la grilla del cable quede pareja.
@@ -640,3 +692,4 @@ const btnCable = { padding: "10px 16px", fontSize: 13, fontWeight: 800, borderRa
 const btnIngreso = { padding: "10px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.green}55`, background: "linear-gradient(135deg, rgba(34,197,94,0.16), rgba(22,163,74,0.10))", color: T.green, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(34,197,94,0.12)" };
 const btnEgreso = { padding: "10px 16px", fontSize: 13, fontWeight: 800, borderRadius: 11, border: `1px solid ${T.red}55`, background: "linear-gradient(135deg, rgba(239,68,68,0.16), rgba(220,38,38,0.10))", color: T.red, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 0 14px rgba(239,68,68,0.12)" };
 const iconBtn = { padding: "4px 8px", fontSize: 13, borderRadius: 5, border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 };
+
