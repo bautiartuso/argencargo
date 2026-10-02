@@ -5,6 +5,7 @@ import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 import { comprimirImagen } from "../../lib/img";
+import { hoyAR } from "../../lib/fecha-ar";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1132,7 +1133,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     </div>;};
 
   // Stats hero — paquetes hoy / total depósito / vuelos preparando / saldo CC
-  const todayISO=new Date().toISOString().slice(0,10);
+  const todayISO=hoyAR();
   const pkgsToday=packages.filter(p=>String(p.created_at||"").slice(0,10)===todayISO).length;
   const noPhotoCount=depositPkgsAll.filter(p=>!p.photo_url).length;
   const greeting=(()=>{const h=new Date().getHours();return h<12?(t.greet_morning||"Buen día"):h<19?(t.greet_afternoon||"Buenas tardes"):(t.greet_night||"Buenas noches");})();
@@ -1583,7 +1584,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     // 3. Registrar pago según método
     if(pmtMethod==="cuenta_corriente"){
       // CC: descontar del saldo del agente (anticipo ya dado)
-      await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:c,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
+      await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:c,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:hoyAR()}});
     }
     // Para Alibaba: NO se registra finance_entry todavía. El admin completa el método de tarjeta y ahí se crea el gasto real.
     // Notification #4: notify admin about flight dispatched

@@ -9,6 +9,7 @@ import NuevasTarifas from "./components/NuevasTarifas";
 import MaritimeCargoCards from "./components/MaritimeCargoCards";
 import { useT, LANGS } from "../../lib/i18n-portal";
 import SupportPage from "./components/SupportPage";
+import { hoyAR } from "../../lib/fecha-ar";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1215,7 +1216,7 @@ function ProfilePage({client,token}){
         const rows=opsArr.map(o=>[o.operation_code,`"${(o.description||"").replace(/"/g,'""')}"`,o.origin||"",chLbl[o.channel]||o.channel||"",stLbl[o.status]||o.status||"",o.created_at?o.created_at.slice(0,10):"",o.delivered_at?o.delivered_at.slice(0,10):"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No"].join(","));
         const csv=[headers.join(","),...rows].join("\n");
         const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
-        const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`mis-importaciones-${client.client_code}-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);
+        const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`mis-importaciones-${client.client_code}-${hoyAR()}.csv`;a.click();URL.revokeObjectURL(url);
       } else {
         // PDF: imprimir HTML simple
         const total=opsArr.reduce((s,o)=>s+Number(o.budget_total||0),0);

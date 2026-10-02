@@ -5,6 +5,7 @@ import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
@@ -139,7 +140,7 @@ const needsClassification=(it)=>!isValidNcmCode(it.ncm_code)||it.import_duty_rat
 const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
 // Versión corta para tablas: "14/04/26"
 const formatDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
-const formatDateInput=(d)=>{if(!d)return"";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/))return s;return new Date(d).toISOString().split("T")[0];};
+const formatDateInput=(d)=>{if(!d)return"";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/))return s;return isoAR(d);};
 
 function Inp({label,type="text",value,onChange,placeholder,small,step,marks}){const isNum=type==="number";const isDate=type==="date";const isMoney=isNum&&step==="0.01";const [focused,setFocused]=useState(false);if(isDate){return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label><DatePicker value={value} onChange={onChange} placeholder={placeholder||"Seleccionar fecha"} small={small} marks={marks}/></div>;}
   // Para inputs monetarios: cuando no está focuseado, mostrar máximo 2 decimales (la data subyacente no cambia hasta blur)
@@ -290,7 +291,7 @@ function OperationsList({token,onSelect,onNew}){
     const csv=[headers.join(",")].concat(rows.map(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"";const gan=calcGan(o);return [o.operation_code,`"${cn.replace(/"/g,'""')}"`,`"${(o.description||"").replace(/"/g,'""')}"`,o.channel||"",o.status||"",o.eta||"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No",gan.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})].join(",");})).join("\n");
     const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");a.href=url;a.download=`operaciones_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+    const a=document.createElement("a");a.href=url;a.download=`operaciones_${hoyAR()}.csv`;a.click();
     URL.revokeObjectURL(url);
   };
   const runBulk=async()=>{
@@ -301,7 +302,7 @@ function OperationsList({token,onSelect,onNew}){
       if(bulkAction.action==="setStatus"){
         await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{status:bulkAction.value}});
       } else if(bulkAction.action==="markCollected"){
-        await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{is_collected:true,collection_date:new Date().toISOString().slice(0,10)}});
+        await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{is_collected:true,collection_date:hoyAR()}});
       } else if(bulkAction.action==="delete"){
         // Igual que deleteOp individual: limpiar primero las tablas hijas con FK sin cascade
         // (operation_packages bloquea con 409 si no). items y tracking_events ya son CASCADE,
@@ -777,8 +778,8 @@ function OperationNotesPanel({opId,token}){
 }
 
 function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
-  const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:hoyAR(),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
+  const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:hoyAR(),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
   // flightInfo: solo GI, alimenta la fila virtual de flete en Costos. opFlight: cualquier canal,
   // se usa para saber si la op ya tiene vuelo asignado (criterio del cartel de NCM faltante).
@@ -848,7 +849,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Formulario inline de cobro (no modal). La moneda se deriva del metodo: transferencia -> ARS,
   // cripto -> USD, efectivo -> la elige el admin. destino solo aplica a transferencias en ARS:
   // "financiera" entra a la CC de SOLFIN (genera movimiento), "propia" va a cuenta propia.
-  const [newCobro,setNewCobro]=useState({monto:"",metodo:"transferencia",moneda:"USD",comision:"2,5",tc:"",fecha:new Date().toISOString().slice(0,10),receipt_url:"",receipt_name:"",receipt_kb:0,destino:"financiera"});
+  const [newCobro,setNewCobro]=useState({monto:"",metodo:"transferencia",moneda:"USD",comision:"2,5",tc:"",fecha:hoyAR(),receipt_url:"",receipt_name:"",receipt_kb:0,destino:"financiera"});
   const [savingCobro,setSavingCobro]=useState(false);
   const [uploadingReceipt,setUploadingReceipt]=useState(false);
   // Badge de destino ARS + miniatura del comprobante, para las tablas de cobros de la op.
@@ -2392,7 +2393,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
           setOp(p=>({...p,cost_producto_usd:newTotal}));
         }
-        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",exchange_rate:"",type:"payment"});
+        setNewSupPmt({payment_date:hoyAR(),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",exchange_rate:"",type:"payment"});
         load();
         flash(isRefund
           ?(arsCashDolarized?`Reembolso ARS registrado (USD ${usdFromArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:isArs?"Reembolso ARS TC registrado — se dolariza al cerrar tarjeta":"Reembolso registrado")
@@ -3004,7 +3005,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:true,collected_amount:newTotalCli,collection_date:newCliPmt.payment_date,collection_method:newCliPmt.payment_method,collection_currency:newCliPmt.currency||"USD"}});
               setOp(p=>({...p,is_collected:true,collected_amount:newTotalCli,collection_date:newCliPmt.payment_date}));
             }
-            setNewCliPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
+            setNewCliPmt({payment_date:hoyAR(),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
             load();
             flash(newTotalCli>=totalIngreso?"Pago registrado — op cobrada ✓":"Pago registrado");
           };
@@ -3198,7 +3199,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               flash(`Saldo a favor registrado: +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
             }
           }
-          setNewCliPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
+          setNewCliPmt({payment_date:hoyAR(),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
           load();
           flash(newTotal>=budgetTot?"Pago registrado — op cobrada ✓":"Anticipo registrado");
         };
@@ -3216,7 +3217,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const closeWithDiscount=async()=>{
           if(saldoCli<=0.01)return;
           if(!await confirmDialog(`Estás por cerrar esta op con un DESCUENTO de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nEl cliente pagó USD ${totalCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} sobre un presupuesto de USD ${budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. La diferencia NO queda como deuda — queda como descuento intencional registrado en la op.\n\n¿Confirmás?`))return;
-          const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10),discount_applied_usd:saldoCli};
+          const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:hoyAR(),discount_applied_usd:saldoCli};
           if(clientPayments.length>0){opUpdate.collection_method=clientPayments[clientPayments.length-1].payment_method;opUpdate.collection_currency=clientPayments[clientPayments.length-1].currency||"USD";}
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
           setOp(p=>({...p,...opUpdate}));
@@ -3225,7 +3226,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const registerDebt=async()=>{
           if(saldoCli<=0.01||!op.client_id)return;
           if(!await confirmDialog(`El cliente quedó debiendo USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
-          const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10)};
+          const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:hoyAR()};
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
           await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-saldoCli,description:`Deuda pendiente de ${op.operation_code}`});
           setOp(p=>({...p,...opUpdate}));
@@ -3325,7 +3326,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const totalACobrar=budgetEffective;
           const dif=Math.round((cobradoAhora-totalACobrar)*100)/100; // + pagó de más, − de menos
           const lastPmt=clientPayments.length>0?clientPayments[clientPayments.length-1]:null;
-          const base={is_collected:true,collection_date:op.collection_date||lastPmt?.payment_date||new Date().toISOString().slice(0,10)};
+          const base={is_collected:true,collection_date:op.collection_date||lastPmt?.payment_date||hoyAR()};
           if(lastPmt)base.collection_method=lastPmt.payment_method||op.collection_method||"transferencia";
 
           let extra={};
@@ -3460,7 +3461,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             // al presupuesto, un excedente quedaría sin resolver (le pasó a AC-0315 con USD 14,15).
             await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
             setOp(p=>({...p,...upd}));
-            setNewCobro({monto:"",metodo:newCobro.metodo,moneda:newCobro.moneda,comision:newCobro.comision,tc:newCobro.tc,fecha:new Date().toISOString().slice(0,10),receipt_url:"",receipt_name:"",receipt_kb:0,destino:newCobro.destino});
+            setNewCobro({monto:"",metodo:newCobro.metodo,moneda:newCobro.moneda,comision:newCobro.comision,tc:newCobro.tc,fecha:hoyAR(),receipt_url:"",receipt_name:"",receipt_kb:0,destino:newCobro.destino});
             await load();
             const restante=Math.round((budgetEffective-newTotal)*100)/100;
             flash(restante>0.01
@@ -3604,7 +3605,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </select>)}
           {newCobro.metodo==="transferencia"&&fld("Comisión transferencia %",<input inputMode="decimal" placeholder="2,5" value={newCobro.comision} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,comision:v}));}} style={inpStyle}/>)}
           {esArsCobro&&fld("Tipo de cambio (ARS/USD)",<input inputMode="decimal" placeholder="Ej: 1450" value={newCobro.tc} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,tc:v}));}} style={inpStyle}/>)}
-          {fld("Fecha de cobro",<DatePicker value={newCobro.fecha} onChange={v=>setNewCobro(p=>({...p,fecha:v||new Date().toISOString().slice(0,10)}))}/>)}
+          {fld("Fecha de cobro",<DatePicker value={newCobro.fecha} onChange={v=>setNewCobro(p=>({...p,fecha:v||hoyAR()}))}/>)}
         </div>
 
         {esArsCobro&&nMonto>0&&nTc>0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px"}}>
@@ -3731,7 +3732,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             // No hay vuelo CC que la cubra → mantener deducción por op.
             const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&flight_id=is.null&select=id,amount_usd`});
             if(!Array.isArray(existing)||existing.length===0){
-              await dq("agent_account_movements",{method:"POST",token,body:{agent_id:op.created_by_agent_id,type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:new Date().toISOString().slice(0,10)}});
+              await dq("agent_account_movements",{method:"POST",token,body:{agent_id:op.created_by_agent_id,type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:hoyAR()}});
             } else if(Number(existing[0].amount_usd)!==fleteAmt){
               await dq("agent_account_movements",{method:"PATCH",token,filters:`?id=eq.${existing[0].id}`,body:{amount_usd:fleteAmt,description:`Flete ${op.operation_code}`}});
             }
@@ -3759,13 +3760,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             // Cash (efectivo o transferencia): re-dollarizar SIEMPRE con los valores actuales.
             const rate=Number(op.cost_impuestos_exchange_rate||0);
             if(rate>0){const usdAmt=Math.round((impArs/rate)*100)/100;
-              const paidDate=op.cost_impuestos_paid_at||new Date().toISOString().slice(0,10);
+              const paidDate=op.cost_impuestos_paid_at||hoyAR();
               const feBody={date:paidDate,type:"gasto",description:`Impuestos ${op.operation_code} (ARS ${impArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:impArs,exchange_rate:rate,currency:"USD",payment_method:impMethod,is_paid:true,auto_generated:true,operation_id:id};
               if(existsImp){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImp[0].id}`,body:feBody});}
               else{await dq("finance_entries",{method:"POST",token,body:feBody});}
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_impuestos_reales:usdAmt}});setOp(p=>({...p,cost_impuestos_reales:usdAmt}));}
           } else if(!existsImp){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,credit_card_id:op.cost_impuestos_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
+            await dq("finance_entries",{method:"POST",token,body:{date:hoyAR(),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,credit_card_id:op.cost_impuestos_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
           } else {
             // TC: actualizar el monto ARS, fecha de cierre y tarjeta si cambiaron
             await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImp[0].id}`,body:{amount_ars:impArs,card_closing_date:op.cost_impuestos_card_closing,credit_card_id:op.cost_impuestos_credit_card_id||null}});
@@ -3781,13 +3782,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           if(docIsCash){
             const rate=Number(op.cost_gasto_doc_exchange_rate||0);
             if(rate>0){const usdAmt=Math.round((docArs/rate)*100)/100;
-              const paidDate=op.cost_gasto_doc_paid_at||new Date().toISOString().slice(0,10);
+              const paidDate=op.cost_gasto_doc_paid_at||hoyAR();
               const feBody={date:paidDate,type:"gasto",description:`Gasto documental ${op.operation_code} (ARS ${docArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:docArs,exchange_rate:rate,currency:"USD",payment_method:docMethod,is_paid:true,auto_generated:true,operation_id:id};
               if(existsDoc){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existDoc[0].id}`,body:feBody});}
               else{await dq("finance_entries",{method:"POST",token,body:feBody});}
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_gasto_documental:usdAmt}});setOp(p=>({...p,cost_gasto_documental:usdAmt}));}
           } else if(!existsDoc){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
+            await dq("finance_entries",{method:"POST",token,body:{date:hoyAR(),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
           } else {
             await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existDoc[0].id}`,body:{amount_ars:docArs,card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null}});
           }
@@ -3817,7 +3818,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_impuestos_reales:iUsd}});
               setOp(p=>({...p,cost_impuestos_reales:iUsd}));
               const existImpUsd=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Impuestos*&auto_generated=eq.true&select=id`});
-              const paidDateUsd=op.cost_impuestos_paid_at||new Date().toISOString().slice(0,10);
+              const paidDateUsd=op.cost_impuestos_paid_at||hoyAR();
               const feBody={date:paidDateUsd,type:"gasto",description:`Impuestos ${op.operation_code} (USD)`,amount:iUsd,currency:"USD",payment_method:op.cost_impuestos_method||"transferencia",is_paid:true,auto_generated:true,operation_id:id};
               if(Array.isArray(existImpUsd)&&existImpUsd[0]?.id){
                 await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImpUsd[0].id}`,body:feBody});
@@ -3839,12 +3840,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             const exist=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.${cfg.descPattern}*&auto_generated=eq.true&select=id`});
             const existsId=Array.isArray(exist)&&exist[0]?.id;
             if(isTC&&arsAmt>0&&op[`${cfg.prefix}_card_closing`]){
-              const feBody={date:new Date().toISOString().slice(0,10),type:"gasto",description:`${cfg.label} ${op.operation_code}`,amount_ars:arsAmt,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op[`${cfg.prefix}_card_closing`],credit_card_id:op[`${cfg.prefix}_credit_card_id`]||null,is_paid:false,auto_generated:true,operation_id:id};
+              const feBody={date:hoyAR(),type:"gasto",description:`${cfg.label} ${op.operation_code}`,amount_ars:arsAmt,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op[`${cfg.prefix}_card_closing`],credit_card_id:op[`${cfg.prefix}_credit_card_id`]||null,is_paid:false,auto_generated:true,operation_id:id};
               if(existsId)await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existsId}`,body:{amount_ars:arsAmt,card_closing_date:op[`${cfg.prefix}_card_closing`],credit_card_id:op[`${cfg.prefix}_credit_card_id`]||null}});
               else await dq("finance_entries",{method:"POST",token,body:feBody});
             } else if(isCash&&cur==="ARS"&&arsAmt>0&&rate>0){
               const usdAmt=Math.round((arsAmt/rate)*100)/100;
-              const paidDate=op[`${cfg.prefix}_paid_at`]?String(op[`${cfg.prefix}_paid_at`]).slice(0,10):new Date().toISOString().slice(0,10);
+              const paidDate=op[`${cfg.prefix}_paid_at`]?String(op[`${cfg.prefix}_paid_at`]).slice(0,10):hoyAR();
               const feBody={date:paidDate,type:"gasto",description:`${cfg.label} ${op.operation_code} (ARS ${arsAmt.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:arsAmt,exchange_rate:rate,currency:"USD",payment_method:m,is_paid:true,auto_generated:true,operation_id:id};
               if(existsId)await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existsId}`,body:feBody});
               else await dq("finance_entries",{method:"POST",token,body:feBody});
@@ -3853,7 +3854,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             } else if(isCash&&cur==="USD"&&Number(op[cfg.prefix]||0)>0){
               // USD directo: cost_X ya guardado por costBody. Solo creamos/updateamos la entry consolidada.
               const usdAmt=Number(op[cfg.prefix]||0);
-              const paidDate=op[`${cfg.prefix}_paid_at`]?String(op[`${cfg.prefix}_paid_at`]).slice(0,10):new Date().toISOString().slice(0,10);
+              const paidDate=op[`${cfg.prefix}_paid_at`]?String(op[`${cfg.prefix}_paid_at`]).slice(0,10):hoyAR();
               const feBody={date:paidDate,type:"gasto",description:`${cfg.label} ${op.operation_code}`,amount:usdAmt,currency:"USD",payment_method:m,is_paid:true,auto_generated:true,operation_id:id};
               if(existsId)await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existsId}`,body:feBody});
               else await dq("finance_entries",{method:"POST",token,body:feBody});
@@ -3899,7 +3900,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             const lastPaidDate=allPayments.filter(p=>p.is_paid).map(p=>p.paid_at||p.payment_date).sort().pop();
             await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal,cost_producto_paid:allPaid,cost_producto_paid_at:lastPaidDate||null,cost_producto_method:newSupPmt.payment_method}});
             setOp(p=>({...p,cost_producto_usd:newTotal,cost_producto_paid:allPaid,cost_producto_paid_at:lastPaidDate||null,cost_producto_method:newSupPmt.payment_method}));
-            setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
+            setNewSupPmt({payment_date:hoyAR(),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
             load();
             flash("Pago registrado");
           };
@@ -4914,7 +4915,7 @@ function StudioPanel({token}){
               <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
               <div style={{display:"flex",gap:6,justifyContent:"center"}}>
                 {[
-                  {t:"Programar: elegir día y hora",ic:<IcoCalendario/>,col:"#E8C99B",fn:()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0}),show:true},
+                  {t:"Programar: elegir día y hora",ic:<IcoCalendario/>,col:"#E8C99B",fn:()=>setSched({p,date:isoAR(Date.now()+86400000),hour:10,min:0}),show:true},
                   {t:"Subir ahora a Instagram",ic:<IcoInstagram/>,col:"#f472b6",fn:async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");},show:igOk&&p.kind!=="linkedin"},
                   {t:"Publicar ahora en LinkedIn",ic:<IcoLinkedin/>,col:"#38bdf8",fn:async()=>{if(await confirmDialog(`¿Publicar ahora en LinkedIn como ${p.li_author==="pagina"?"la página":"vos"}?`))act("publish_now",{id:p.id},"Publicada en LinkedIn");},show:liOk&&p.kind==="linkedin"},
                   {t:"Descargar la imagen",ic:<IcoDescarga/>,col:"#60a5fa",fn:()=>{const a=document.createElement("a");a.href=p.image_url;a.download="";a.target="_blank";a.rel="noreferrer";a.click();},show:!!p.image_url},
@@ -4933,7 +4934,7 @@ function StudioPanel({token}){
             {calSel.caption&&<p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.55)",whiteSpace:"pre-wrap",maxHeight:120,overflow:"auto"}}>{calSel.caption}</p>}
             {calSel.publish_error&&<p style={{margin:"0 0 8px",fontSize:11,color:"#f87171"}}>{calSel.kind==="linkedin"?"LinkedIn":"Instagram"}: {calSel.publish_error}</p>}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {calSel.status!=="published"&&<Btn small onClick={()=>{setSched({p:calSel,date:new Date(calSel.scheduled_at).toISOString().slice(0,10),hour:new Date(calSel.scheduled_at).getHours(),min:Math.round(new Date(calSel.scheduled_at).getMinutes()/15)*15%60});setCalSel(null);}} disabled={!!busy}>📅 Cambiar fecha</Btn>}
+              {calSel.status!=="published"&&<Btn small onClick={()=>{setSched({p:calSel,date:isoAR(calSel.scheduled_at),hour:new Date(calSel.scheduled_at).getHours(),min:Math.round(new Date(calSel.scheduled_at).getMinutes()/15)*15%60});setCalSel(null);}} disabled={!!busy}>📅 Cambiar fecha</Btn>}
               {calSel.status!=="published"&&igOk&&calSel.kind!=="linkedin"&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?")){await act("publish_now",{id:calSel.id},"Publicada en Instagram");setCalSel(null);}}} disabled={!!busy}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><IcoInstagram/> Subir ahora</span></Btn>}
               {calSel.status!=="published"&&liOk&&calSel.kind==="linkedin"&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en LinkedIn?")){await act("publish_now",{id:calSel.id},"Publicada en LinkedIn");setCalSel(null);}}} disabled={!!busy}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><IcoLinkedin/> Publicar ahora</span></Btn>}
               {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("unschedule",{id:calSel.id},"Vuelve a Sin programar");setCalSel(null);}} disabled={!!busy}>Quitar del calendario</Btn>}
@@ -5330,7 +5331,7 @@ function BlogPanel({token}){
 // empleado/bot no tenga que abrir la operacion. NO cierra la op salvo cobro exacto (is_collected).
 function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onClose,onSaved}){
   const celu=useEsCelu();
-  const hoy=new Date().toISOString().slice(0,10);
+  const hoy=hoyAR();
   const metodoIni=(Array.isArray(op.payment_split)&&op.payment_split[0]?.method)||op.payment_method_chosen||"efectivo";
   const efIni=Array.isArray(op.payment_split)?op.payment_split.find(p=>p.method==="efectivo"):null;
   const [metodo,setMetodo]=useState(metodoIni);
@@ -5520,7 +5521,7 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
 function CoordinarModal({op,token,onClose,onSaved}){
   const celu=useEsCelu();
   const [entrega,setEntrega]=useState(op.delivery_choice||"oficina");
-  const [dia,setDia]=useState(op.delivery_day||new Date().toISOString().slice(0,10));
+  const [dia,setDia]=useState(op.delivery_day||hoyAR());
   const [franja,setFranja]=useState(op.delivery_slot||"");
   const [metodo,setMetodo]=useState(op.payment_method_chosen||"efectivo");
   const [direccion,setDireccion]=useState(op.delivery_address||"");
@@ -5558,7 +5559,7 @@ function CoordinarModal({op,token,onClose,onSaved}){
       </div>
       {entrega==="propio"&&<div style={{marginBottom:12}}><label style={lbl}>Dirección de entrega</label><input value={direccion} onChange={e=>setDireccion(e.target.value)} placeholder="Calle, piso, localidad" style={inp}/></div>}
       {entrega!=="carrier"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 10px"}}>
-        <div style={{marginBottom:12,gridColumn:"1 / -1"}}><label style={lbl}>Día</label><DatePicker value={dia} onChange={v=>setDia(v||new Date().toISOString().slice(0,10))}/></div>
+        <div style={{marginBottom:12,gridColumn:"1 / -1"}}><label style={lbl}>Día</label><DatePicker value={dia} onChange={v=>setDia(v||hoyAR())}/></div>
         <div style={{marginBottom:12,gridColumn:"1 / -1"}}><label style={lbl}>Franja</label>
           {/* Botones propios en vez del desplegable del navegador. */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
@@ -5594,7 +5595,7 @@ function EntregasPanel({token,onOpenOp}){
   const [cobroModal,setCobroModal]=useState(null); // {op, soloCobro} — cobro/entrega desde cards
   const [coordinarModal,setCoordinarModal]=useState(null); // op a coordinar a mano
   const [hechas,setHechas]=useState([]); // historial reciente: entregadas y cobradas
-  const [diaAgenda,setDiaAgenda]=useState(new Date().toISOString().slice(0,10));
+  const [diaAgenda,setDiaAgenda]=useState(hoyAR());
   const usd=v=>sinMontos?"—":`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   // Universo: dos tramos.
@@ -5958,7 +5959,7 @@ function EntregasPanel({token,onOpenOp}){
   };
   const diaBadge=(o)=>{
     if(!o.delivery_day)return null;
-    const hoyIso=new Date().toISOString().slice(0,10);
+    const hoyIso=hoyAR();
     const d=new Date(o.delivery_day+"T12:00:00");
     const lbl=o.delivery_day===hoyIso?"HOY":`${["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
     const vencida=o.delivery_day<hoyIso;
@@ -6136,7 +6137,7 @@ function EntregasPanel({token,onOpenOp}){
     const conFecha=rows.filter(o=>!o.delivery_completed_at&&o.delivery_confirmed_at&&o.delivery_day);
     const dias=[];{const d=new Date();while(dias.length<6){const dow=d.getDay();if(dow>=1&&dow<=5){dias.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);}d.setDate(d.getDate()+1);}}
     conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});dias.sort();
-    const hoyIso=new Date().toISOString().slice(0,10);
+    const hoyIso=hoyAR();
     return dias.map(iso=>{const d=new Date(iso+"T12:00:00");const top=iso===hoyIso?"Hoy":["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()];const sub=`${d.getDate()}/${d.getMonth()+1}`;const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;
       return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{display:"inline-flex",flexShrink:0,whiteSpace:"nowrap",alignItems:"center",gap:7,padding:celu?"9px 14px":"7px 13px",borderRadius:999,cursor:"pointer",border:`1px solid ${act?"transparent":"rgba(255,255,255,0.12)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:act?"#0A1628":"rgba(255,255,255,0.7)",fontFamily:"inherit",fontSize:12,fontWeight:700,transition:"all 150ms"}}>
         {top}<span style={{fontSize:10.5,fontWeight:600,opacity:act?0.75:0.5}}>{sub}</span>
@@ -6167,7 +6168,7 @@ function EntregasPanel({token,onOpenOp}){
       }
       conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});
       dias.sort();
-      const hoyIso=new Date().toISOString().slice(0,10);
+      const hoyIso=hoyAR();
       const delDia=conFecha.filter(o=>o.delivery_day===diaAgenda);
       const vencidas=conFecha.filter(o=>o.delivery_day<hoyIso&&!o.delivery_completed_at);
       const totCobrar=delDia.reduce((s2,o)=>s2+saldoFor(o),0);
@@ -7178,7 +7179,7 @@ function HolidaysCard({token}){
     setSaving(false);load();
   };
   const del=async(id)=>{if(!await confirmDialog("¿Eliminar este feriado?"))return;await dq("holidays_calendar",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
-  const todayISO=new Date().toISOString().slice(0,10);
+  const todayISO=hoyAR();
   const upcoming=holidays.filter(h=>h.end_date>=todayISO);
   const past=holidays.filter(h=>h.end_date<todayISO);
   return <Card title="🌍 Calendario de feriados (China / USA / España)" actions={<Btn small onClick={()=>setShowForm(true)}>+ Nuevo feriado</Btn>}>
@@ -7301,7 +7302,7 @@ function FinancePanel({token}){
   const [confirmDel,setConfirmDel]=useState(null);
   // Filtros del libro diario
   const [ledFrom,setLedFrom]=useState("");const [ledTo,setLedTo]=useState("");const [ledType,setLedType]=useState("");const [ledSearch,setLedSearch]=useState("");const [ledOrigen,setLedOrigen]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
+  const [newEntry,setNewEntry]=useState({date:hoyAR(),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [cardDebt,setCardDebt]=useState({usd:[],ars:[],pmts:[]});
@@ -7377,7 +7378,7 @@ function FinancePanel({token}){
     }
     if(r?.id||Array.isArray(r)||editingId){
       load();setShowAdd(false);setEditingId(null);
-      setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
+      setNewEntry({date:hoyAR(),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
       flash(editingId?"Gasto actualizado":"Gasto agregado");
     }
   };
@@ -7386,7 +7387,7 @@ function FinancePanel({token}){
     setEditingId(e.id);
     setShowAdd(true);
     setNewEntry({
-      date:e.date?String(e.date).slice(0,10):new Date().toISOString().slice(0,10),
+      date:e.date?String(e.date).slice(0,10):hoyAR(),
       category:e.category||"",
       detail:e.detail||"",
       amount:e.amount?String(e.amount):"",
@@ -7399,7 +7400,7 @@ function FinancePanel({token}){
     });
     setTimeout(()=>{const el=document.querySelector('[data-entry-form]');if(el)el.scrollIntoView({behavior:"smooth",block:"start"});},50);
   };
-  const cancelEdit=()=>{setShowAdd(false);setEditingId(null);setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});};
+  const cancelEdit=()=>{setShowAdd(false);setEditingId(null);setNewEntry({date:hoyAR(),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});};
   const askDelete=(e)=>{
     const monto=e.currency==="ARS"&&e.amount_ars?`ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:`USD ${Number(e.amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     setConfirmDel({id:e.id,categoria:CAT_LBL[e.category||"otros"],detalle:e.detail,monto,fecha:e.date});
@@ -7676,7 +7677,7 @@ function FinancePanel({token}){
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(-1)}>📊 Cierre mes anterior</Btn>
         <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(0)}>📊 Cierre mes actual</Btn>
-        {tab==="fixed"&&<Btn onClick={()=>{setEditingId(null);setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});setShowAdd(true);}} small>+ Nuevo gasto</Btn>}
+        {tab==="fixed"&&<Btn onClick={()=>{setEditingId(null);setNewEntry({date:hoyAR(),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});setShowAdd(true);}} small>+ Nuevo gasto</Btn>}
       </div>
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
@@ -7941,7 +7942,7 @@ function FinancePanel({token}){
       // Totales por tarjeta para mostrar arriba.
       const totalsPorTarjeta={};
       sortedGroups.forEach(g=>{const k=g.card?.id||"sin_tarjeta";if(!totalsPorTarjeta[k]){totalsPorTarjeta[k]={card:g.card,total:0,totalArs:0,count:0};}totalsPorTarjeta[k].total+=g.items.reduce((s,it)=>s+Number(it.amt||0),0);totalsPorTarjeta[k].totalArs+=g.items.reduce((s,it)=>s+Number(it.amtArs||0),0);totalsPorTarjeta[k].count+=g.items.length;});
-      const todayStr=new Date().toISOString().slice(0,10);
+      const todayStr=hoyAR();
       const nowIso=()=>new Date().toISOString();
       const markPaid=async(item)=>{
         if(!await confirmDialog(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
@@ -8838,7 +8839,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         if(exId){
           await dq("agent_account_movements",{method:"PATCH",token,filters:`?id=eq.${exId}`,body:{amount_usd:newCost,description:`Costo vuelo ${flight.flight_code}`}});
         } else if(flight.agent_id){
-          await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:newCost,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
+          await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:newCost,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:hoyAR()}});
         }
       } else if(exId){
         // Cambió de cuenta_corriente a otro método → eliminar deducción huérfana
@@ -9225,7 +9226,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         setProrrateando(true);
         try{
           await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{cost_impuestos_ars:arsPagado,cost_impuestos_exchange_rate:tcUsado,cost_impuestos_usd:Math.round(usdTotal*100)/100,impuestos_prorated_at:new Date().toISOString()}});
-          const fechaPago=impFecha||new Date().toISOString().slice(0,10);
+          const fechaPago=impFecha||hoyAR();
           // El impuesto se guarda por VUELO (flight_operations.tax_share_*) y el costo de la op es la
           // suma de todos sus vuelos. Una op partida en dos vuelos acumula los dos despachos en vez de
           // que el ultimo prorrateo borre el anterior (caso AC-0047, FL-0028 + FL-0095).
@@ -9275,7 +9276,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:14}}>
           <Inp label="Pagado (ARS)" value={impArs??(flight.cost_impuestos_ars??"")} onChange={v=>setImpArs(v)} placeholder="1.000.000"/>
           <Inp label="TC ARS/USD" value={impTc??(flight.cost_impuestos_exchange_rate??"")} onChange={v=>setImpTc(v)} placeholder="1500"/>
-          <Inp label="Fecha de pago" type="date" value={impFecha??new Date().toISOString().slice(0,10)} onChange={v=>setImpFecha(v)}/>
+          <Inp label="Fecha de pago" type="date" value={impFecha??hoyAR()} onChange={v=>setImpFecha(v)}/>
           <div>
             <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Equivale a</label>
             <div style={{padding:"9px 11px",fontSize:14,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.22)",color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>
@@ -9653,7 +9654,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
 }
 
 function AnticipoForm({token,agentId,onSaved}){
-  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [date,setDate]=useState(hoyAR());
   const [amount,setAmount]=useState("");
   const [received,setReceived]=useState("");
   const [desc,setDesc]=useState("");
@@ -9682,7 +9683,7 @@ function AnticipoForm({token,agentId,onSaved}){
 }
 
 function RefundForm({token,agentId,onSaved}){
-  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [date,setDate]=useState(hoyAR());
   const [amount,setAmount]=useState("");
   const [desc,setDesc]=useState("");
   const [saving,setSaving]=useState(false);
@@ -11032,14 +11033,14 @@ function AlipayPendingBanner({flights,token,onDone}){
   const [open,setOpen]=useState(null);
   const [method,setMethod]=useState("tarjeta_credito");
   const [closing,setClosing]=useState("");
-  const [paidAt,setPaidAt]=useState(new Date().toISOString().slice(0,10));
+  const [paidAt,setPaidAt]=useState(hoyAR());
   const [realCostInput,setRealCostInput]=useState("");
   const [creditCardId,setCreditCardId]=useState("");
   const [saving,setSaving]=useState(false);
   const flight=flights.find(f=>f.id===open);
   const base=flight?Number(flight.alipay_base_cost_usd||0):0;
   useEffect(()=>{if(open)setRealCostInput(String(base));},[open,base]);
-  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(new Date().toISOString().slice(0,10));setRealCostInput(String(Number(f.alipay_base_cost_usd||0)));};
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(hoyAR());setRealCostInput(String(Number(f.alipay_base_cost_usd||0)));};
   const complete=async(flight)=>{
     if(method==="tarjeta_credito"&&!closing){alertDialog("Falta fecha de cierre de tarjeta");return;}
     if(method==="tarjeta_credito"&&!creditCardId){alertDialog("Elegí qué tarjeta de crédito usaste");return;}
@@ -11102,7 +11103,7 @@ function AlibabaPendingBanner({flights,token,onDone}){
   const [open,setOpen]=useState(null); // flight.id que está siendo completado
   const [method,setMethod]=useState("tarjeta_credito");
   const [closing,setClosing]=useState("");
-  const [paidAt,setPaidAt]=useState(new Date().toISOString().slice(0,10));
+  const [paidAt,setPaidAt]=useState(hoyAR());
   const [realCostInput,setRealCostInput]=useState("");
   const [userEdited,setUserEdited]=useState(false);
   const [creditCardId,setCreditCardId]=useState("");
@@ -11112,7 +11113,7 @@ function AlibabaPendingBanner({flights,token,onDone}){
   const autoCost=Math.round(base*1.03*(method==="tarjeta_credito"?1.012:1)*100)/100;
   // Auto-calcular cuando cambia el método o el flight, salvo que el usuario haya editado manualmente.
   useEffect(()=>{if(!userEdited&&open)setRealCostInput(String(autoCost));},[autoCost,open,userEdited]);
-  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(new Date().toISOString().slice(0,10));setUserEdited(false);};
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(hoyAR());setUserEdited(false);};
   const complete=async(flight)=>{
     if(method==="tarjeta_credito"&&!closing){alertDialog("Falta fecha de cierre de tarjeta");return;}
     if(method==="tarjeta_credito"&&!creditCardId){alertDialog("Elegí qué tarjeta de crédito usaste");return;}
@@ -11631,7 +11632,7 @@ function DashboardKPIs({token}){
     const ingresosMes=monthOps.reduce((s,x)=>s+Number(x.budget_total||0),0);
     const fiveDaysAgo=new Date(now-5*86400000).toISOString();
     const staleOps=o.filter(x=>!finalStates.includes(x.status)&&x.updated_at&&x.updated_at<fiveDaysAgo);
-    const todayStr=now.toISOString().slice(0,10);
+    const todayStr=isoAR(now);
     const transitStates=["en_transito","en_aduana","preparando_envio"];
     const etaPassed=o.filter(x=>x.eta&&x.eta<todayStr&&transitStates.includes(x.status));
     // Nuevas alertas
@@ -11904,7 +11905,7 @@ function AgpForm({token,allClients,editing,onClose,onSaved}){
   const e0=editing||{};
   const [f,setF]=useState({
     client_id:e0.client_id||"",
-    date:e0.date||new Date().toISOString().slice(0,10),
+    date:e0.date||hoyAR(),
     description:e0.description||"",
     client_amount_usd:e0.client_amount_usd??"",
     client_paid:!!e0.client_paid,
@@ -12246,15 +12247,15 @@ function FacturasPanel({token}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>new Date().toISOString().slice(0,10));const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return m.toISOString().slice(0,10);});
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${new Date().toISOString().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>hoyAR());const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);});
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
-  const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
+  const today=isoAR(now);const weekAgo=isoAR(now-7*86400000);
   const parseLocalDate=(d)=>{const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return{y:Number(y),m:Number(m)-1,d:Number(day),ds:s};}return{y:0,m:0,d:0,ds:""};};
   // Día y semana seleccionables (cualquier día / cualquier semana, no solo hoy / esta).
   const addDaysStr=(ds,n)=>{const[y,m,d]=String(ds).split("-").map(Number);const dt=new Date(Date.UTC(y,m-1,d));dt.setUTCDate(dt.getUTCDate()+n);return dt.toISOString().slice(0,10);};
-  const mondayOfToday=()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return m.toISOString().slice(0,10);};
+  const mondayOfToday=()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);};
   const weekEnd=addDaysStr(selWeekMon,6);
   const MN3=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   const fmtDM=(ds)=>{const[,mm,dd]=String(ds).split("-").map(Number);return `${dd} ${MN3[mm-1]}`;};
@@ -12446,7 +12447,7 @@ function FinanceDashboard({token}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Dashboard Financiero</h2>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{[{k:"day",l:"Día"},{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);if(p.k==="day")setSelDay(new Date().toISOString().slice(0,10));if(p.k==="week")setSelWeekMon(mondayOfToday());}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{[{k:"day",l:"Día"},{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);if(p.k==="day")setSelDay(hoyAR());if(p.k==="week")setSelWeekMon(mondayOfToday());}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
         {period==="day"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
           <button onClick={()=>setSelDay(d=>addDaysStr(d,-1))} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
           <DatePicker value={selDay} onChange={v=>{if(v&&v<=today)setSelDay(v);}} small/>
@@ -13306,7 +13307,7 @@ function AdminTasks({token}){
   const [dayOffset,setDayOffset]=useState(0);
   const [showOverdue,setShowOverdue]=useState(true);
 
-  const todayStr=new Date().toISOString().slice(0,10);
+  const todayStr=hoyAR();
   const ymd=(date)=>date.toISOString().slice(0,10);
   const addDays=(date,n)=>{const d=new Date(date);d.setDate(d.getDate()+n);return d;};
   const todayDate=new Date();todayDate.setHours(0,0,0,0);
@@ -15140,7 +15141,7 @@ function GiAdminPanel({token,clients}){
     if(!await confirmDialog(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}?`))return;
     setPaying(true);
     const now=new Date().toISOString();
-    const today=new Date().toISOString().slice(0,10);
+    const today=hoyAR();
     for(const id of earningIds){
       const earn=earnings.find(e=>e.id===id);
       const commission=Number(earn?.commission_usd||0);
@@ -15258,7 +15259,7 @@ function GiAdminPanel({token,clients}){
       if(typeof code!=="string"||!code.startsWith("GI-")){
         throw new Error("No se pudo generar código de solicitud (RPC). Recargá la página.");
       }
-      const expDate=new Date(Date.now()+Number(form.expiresIn||7)*86400000).toISOString().slice(0,10);
+      const expDate=isoAR(Date.now()+Number(form.expiresIn||7)*86400000);
       const inserted=await dq("gi_quote_requests",{method:"POST",token,body:{
         request_code:code,
         client_id:form.clientId,
@@ -15835,7 +15836,7 @@ function MaritimePanel({token,allClients=[]}){
   //  Cualquier estado → estado anterior (reversible)
   const advanceShipment=async(sh,toStatus)=>{
     const body={status:toStatus};
-    const today=new Date().toISOString().slice(0,10);
+    const today=hoyAR();
     if(toStatus==="en_deposito"&&!sh.received_at){body.received_at=today;body.llegada_marcada_por="admin";body.llegada_marcada_at=new Date().toISOString();}
     if(toStatus==="en_camino_ar"&&!sh.shipped_to_ar_at)body.shipped_to_ar_at=today;
     if(toStatus==="proveedor"){body.received_at=null;body.shipped_to_ar_at=null;body.llegada_marcada_por=null;body.llegada_marcada_at=null;body.tipo_confirmado_at=null;}
@@ -16212,7 +16213,7 @@ function MaritimePanel({token,allClients=[]}){
     setCreatingOp(true);
     try{
       const body={status};
-      if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
+      if(status==="arribado")body.arrived_at=hoyAR();
       if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
       await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
       let extra="";
@@ -18625,7 +18626,7 @@ function MtxAnalisisInner({ctx}){
 }
 
 function MaritimeCostModal({data,token,onClose,onSaved}){
-  const today=new Date().toISOString().slice(0,10);
+  const today=hoyAR();
   const [rows,setRows]=useState(()=>(data.ops||[]).map(o=>({...o,amount:o.cost_flete?String(o.cost_flete):"",cur:"USD",tc:"",fecha:today,guia:""})));
   const [saving,setSaving]=useState(false);
   const [tot,setTot]=useState({amount:"",cur:"USD",tc:""});
@@ -18713,7 +18714,7 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
   // se elige acá mismo en vez de fallar el insert con warehouse null.
   const [whName,setWhName]=useState(editing?.warehouse||warehouse||"");
   const [shippingLine,setShippingLine]=useState(editing?.shipping_line||"");
-  const [departedAt,setDepartedAt]=useState(editing?.departed_at||new Date().toISOString().slice(0,10));
+  const [departedAt,setDepartedAt]=useState(editing?.departed_at||hoyAR());
   const [eta,setEta]=useState(editing?.eta||"");
   const [notes,setNotes]=useState(editing?.notes||"");
   const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
@@ -18903,7 +18904,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       const maxN=r.reduce((m,s)=>{const n=parseInt(String(s.shipment_code||"").replace(/\D/g,""),10);return Number.isFinite(n)&&n>m?n:m;},0);
       code=`#${maxN+1}`;
     }
-    const hoy=new Date().toISOString().slice(0,10);
+    const hoy=hoyAR();
     // Contenedor: solo válido si pertenece al depósito elegido y la carga no está esperando al proveedor.
     const newCont=!awaiting&&containers.some(c=>c.id===containerId&&c.warehouse===selectedWh.name)?containerId:null;
     const prevCont=editing?.container_id||null;

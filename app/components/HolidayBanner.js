@@ -4,6 +4,7 @@
 // El cliente puede dismissear por sesión.
 
 import { useState, useEffect } from "react";
+import { hoyAR } from "../../lib/fecha-ar";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -40,7 +41,7 @@ export default function HolidayBanner() {
 
     // Fetch feriados
     (async () => {
-      const todayISO = new Date().toISOString().slice(0, 10);
+      const todayISO = hoyAR();
       try {
         const r = await fetch(`${SB_URL}/rest/v1/holidays_calendar?end_date=gte.${todayISO}&order=start_date.asc`, {
           headers: { apikey: SB_KEY },
