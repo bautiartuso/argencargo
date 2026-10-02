@@ -145,7 +145,8 @@ export async function GET(req) {
     const auto = g.cbm * fleteRate(g.cbm) + surchargeFor(g._fob, g.cbm);
     const total = r2(g._ships.reduce((acc, sh) => acc + (sh.revenue_manual != null ? sh.revenue_manual : (g.cbm > 0 ? auto * (sh.cbm / g.cbm) : 0)), 0));
     const { _fob, _ships, ...rest } = g;
-    return { ...rest, cbm: r4(g.cbm), total_estimado: total > 0 ? total : null, descriptions: g.cargas.map((c) => c.descripcion).filter(Boolean) };
+    // En depósito el total no se manda: se informa recién cuando la carga sube al contenedor.
+    return { ...rest, cbm: r4(g.cbm), total_estimado: g.etapa === "deposito" ? null : (total > 0 ? total : null), descriptions: g.cargas.map((c) => c.descripcion).filter(Boolean) };
   }).sort((a, b) => {
     // Primero lo que viaja (por fecha de llegada), después lo que está en depósito.
     if (a.etapa !== b.etapa) return a.etapa === "transito" ? -1 : 1;
