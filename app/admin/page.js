@@ -7,6 +7,7 @@ import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCl
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
+import { repartirDeudas } from "../../lib/reparto-deudas";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
@@ -1132,6 +1133,17 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // para que el excedente del cliente refleje el nuevo presupuesto.
   // Maritimo B: los items cargados en el panel Maritimos (desc/cantidad/unitario) son la fuente
   // del valor de mercaderia. Se leen de las cargas linkeadas a esta op.
+  // Reparto de pagos de deuda vieja entre las ops del cliente (lib/reparto-deudas): la op que cobró
+  // la deuda de otra se queda con lo suyo y el resto vuelve a la que había quedado corta.
+  const [repartoDeuda,setRepartoDeuda]=useState(null);
+  useEffect(()=>{if(!initOp.client_id)return;let vivo=true;(async()=>{
+    const os=await dq("operations",{token,filters:`?client_id=eq.${initOp.client_id}&select=id,operation_code,client_id,status,closed_at,collection_date,created_at,budget_total,discount_applied_usd,total_anticipos,credit_applied_usd,debt_applied_usd,collected_amount,collection_currency,collection_exchange_rate`});
+    const lista=Array.isArray(os)?os:[];
+    if(!lista.some(o=>Number(o.debt_applied_usd||0)>0)){if(vivo)setRepartoDeuda(null);return;}
+    const pg=await dq("operation_client_payments",{token,filters:`?operation_id=in.(${lista.map(o=>o.id).join(",")})&select=operation_id,amount_usd`});
+    const m={};(Array.isArray(pg)?pg:[]).forEach(p=>{(m[p.operation_id]=m[p.operation_id]||[]).push(p);});
+    if(vivo)setRepartoDeuda(repartirDeudas(lista,m));
+  })();return()=>{vivo=false;};},[initOp.id,initOp.client_id,token]);
   const [mbItems,setMbItems]=useState([]);
   useEffect(()=>{if(initOp.channel!=="maritimo_negro")return;let vivo=true;(async()=>{
     const ships=await dq("maritime_shipments",{token,filters:`?operation_id=eq.${initOp.id}&select=id`});
@@ -3183,7 +3195,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // cobradas, y ahi la pantalla inventaba plata: AC-0324 cerro sin cobrar un peso y mostraba
       // un cobro de 707,53 con una ganancia de 152,48 que nunca existio.
       const opCerrada=op.status==="operacion_cerrada"||op.status==="cancelada";
-      const cobroReal=cobroUsd+creditApplied;
+      // Deuda vieja: lo que esta op cobró por deuda de otra se le resta, y lo que otra op cobró por
+      // la deuda de esta se le suma (lib/reparto-deudas).
+      const recibeDeuda=Number(repartoDeuda?.recibe?.[op.id]||0);const cedeDeuda=Number(repartoDeuda?.cede?.[op.id]||0);
+      const movsDeuda=(repartoDeuda?.movimientos||[]).filter(m=>m.a===op.id||m.de===op.id);
+      const cobroReal=cobroUsd+creditApplied+recibeDeuda-cedeDeuda;
       const cobro=(op.is_collected||opCerrada)?cobroReal:(cobroReal||presupuesto);
       const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
       // La comisión de la financiera se guarda en CADA cobro (cada transferencia puede tener su %),
@@ -4251,7 +4267,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <div style={{background:"rgba(34,197,94,0.06)",borderRadius:14,padding:"14px 16px",border:"1px solid rgba(34,197,94,0.22)"}}><p style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",letterSpacing:"0.1em"}}>COBRO NETO</p><p style={{fontSize:23,fontWeight:800,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           <div style={{background:"rgba(255,80,80,0.06)",borderRadius:14,padding:"14px 16px",border:"1px solid rgba(255,80,80,0.22)"}}><p style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",letterSpacing:"0.1em"}}>COSTOS</p><p style={{fontSize:23,fontWeight:800,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
         </div>
-        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión financiera (${comisionPctShown}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
+        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión financiera (${comisionPctShown}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{movsDeuda.length>0&&<div style={{margin:"8px 0 4px",padding:"10px 14px",borderRadius:10,background:"rgba(96,165,250,0.07)",border:"1px solid rgba(96,165,250,0.25)",fontSize:12.5,color:"rgba(255,255,255,0.75)",lineHeight:1.55}}>
+          {recibeDeuda>0.005&&<div><b style={{color:"#93c5fd"}}>+USD {recibeDeuda.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> que el cliente pagó después, junto con {[...new Set(movsDeuda.filter(m=>m.a===op.id).map(m=>m.deCodigo))].join(", ")}. Ya cuentan en el cobro de esta operación.</div>}
+          {cedeDeuda>0.005&&<div><b style={{color:"#93c5fd"}}>−USD {cedeDeuda.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> de este cobro eran deuda de {[...new Set(movsDeuda.filter(m=>m.de===op.id).map(m=>m.aCodigo))].join(", ")} y van a esa operación.</div>}
+        </div>}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
         {costProducto>0&&<>{rw("Costo producto",costProducto,false,"#c084fc")}<div style={{height:6}}/></>}
         {(()=>{
           // Bloques presu vs costo real por concepto. Si el cobro neto al cliente difiere del
@@ -12442,6 +12461,9 @@ function FinanceDashboard({token}){
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const periodOps=filterByPeriod(closedOps,"closed_at");
 
+  // Pagos de deuda vieja repartidos entre las ops de cada cliente (lib/reparto-deudas).
+  const pagosRep={};(clientPmts||[]).forEach(p=>{(pagosRep[p.operation_id]=pagosRep[p.operation_id]||[]).push(p);});
+  const reparto=repartirDeudas(ops,pagosRep);
   const calcGan=(o)=>{
     // Op perdida en aduana: ingreso 0, queda como pérdida operativa (-costos).
     let baseIng;
@@ -12460,7 +12482,7 @@ function FinanceDashboard({token}){
       // al presupuesto — mismo criterio que el otro calcGan() y que el KPI de caja de arriba.
       const extraCharge=Number(o.extra_charge_usd||0);
       const cashForOp=extraCharge>0.01?cash:(bt>0?Math.min(cash,bt):cash);
-      baseIng=cashForOp+Number(o.credit_applied_usd||0);
+      baseIng=cashForOp+Number(o.credit_applied_usd||0)+Number(reparto.recibe[o.id]||0);
     } else {
       baseIng=Number(o.budget_total||0);
     }
@@ -12495,7 +12517,7 @@ function FinanceDashboard({token}){
     const cash=pagado>0?pagado:(o.collection_currency==="ARS"&&legRate>0?legRaw/legRate:legRaw);
     const bt=Number(o.budget_total||0);
     const cashOp=Number(o.extra_charge_usd||0)>0.01?cash:(bt>0?Math.min(cash,bt):cash);
-    const cobro=cashOp+Number(o.credit_applied_usd||0);
+    const cobro=cashOp+Number(o.credit_applied_usd||0)+Number(reparto.recibe[o.id]||0);
     const comPagos=pagos.reduce((s2,x)=>{const pct=Number(x.commission_pct||0);if(pct<=0)return s2;const r=Number(x.exchange_rate||0);return s2+(x.currency==="ARS"&&r>0?(Number(x.amount_ars||0)*pct/100)/r:Number(x.amount_usd||0)*pct/100);},0);
     const comision=comPagos>0?comPagos:(o.collection_method==="transferencia"?cashOp*Number(o.collection_fee_pct||0)/100:0);
     const neto=cobro-comision;
