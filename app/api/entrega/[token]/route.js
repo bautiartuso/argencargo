@@ -238,6 +238,35 @@ export async function GET(req, { params }) {
       if (Math.abs(suma - bTaxes) <= 0.05) taxDetail = { productos, extras };
     }
   } catch (e) { console.error("[GET entrega] taxDetail", e.message); }
+  // Respaldo (02/10/2026): si el recálculo por producto no cuadra (presupuesto manual, piso
+  // antidumping del calzado, etc.) se muestra el desglose guardado en budget_tax_detail, en
+  // totales. Solo si suma lo que se cobra de impuestos: nunca un desglose que no cierre.
+  if (!taxDetail) {
+    try {
+      const td = op.budget_tax_detail && typeof op.budget_tax_detail === "object" ? op.budget_tax_detail : null;
+      const bTaxes = Number(op.budget_taxes || 0);
+      if (td && bTaxes > 0 && [td.derechos, td.tasaE, td.iva].some((v) => Number(v) > 0)) {
+        const r2 = (v) => Math.round(Number(v || 0) * 100) / 100;
+        const des = Number(td.desembolso || 0);
+        const ivaDes = td.ivaDesembolso != null ? Number(td.ivaDesembolso) : des * 0.21;
+        const filas = [["Derechos de importación", td.derechos], ["Tasa estadística", td.tasaE], ["IVA de importación", td.iva], ["Desaduanaje", des], ["IVA 21% sobre desaduanaje", ivaDes]]
+          .map(([l, v]) => [l, r2(v)]).filter(([, v]) => v > 0.005);
+        const suma = filas.reduce((a, [, v]) => a + v, 0);
+        if (Math.abs(suma - bTaxes) <= 0.05) taxDetail = { productos: [], extras: filas };
+      }
+    } catch (e) { console.error("[GET entrega] taxDetail respaldo", e.message); }
+  }
+  // Flete aéreo: valor por kilo × kg facturables (el recargo por baterías va aparte), para que el
+  // cliente vea cuánto paga por kilo y no solo el total.
+  let fleteDetalle = null;
+  {
+    const bFl = Number(op.budget_flete || 0);
+    const bat = Number(op.budget_tax_detail?.battExtra || 0);
+    const minKg = String(op.origin || "China") === "USA" ? 25 : 5;
+    if (String(op.channel || "").includes("aereo") && bFl > 0 && pesoFacturable >= minKg) {
+      fleteDetalle = { usd_por_kg: Math.round(((bFl - bat) / pesoFacturable) * 100) / 100, kg: Math.round(pesoFacturable * 100) / 100, bateria: Math.round(bat * 100) / 100 };
+    }
+  }
 
   let preferential = null;
   try {
@@ -249,7 +278,7 @@ export async function GET(req, { params }) {
       const bracket = tar.find((t) => pesoFacturable >= Number(t.min_qty || 0) && (t.max_qty == null || pesoFacturable < Number(t.max_qty)));
       if (bracket) {
         const listaKg = Number(bracket.rate || 0);
-        const efectivoKg = bFlete / pesoFacturable;
+        const efectivoKg = (bFlete - Number(op.budget_tax_detail?.battExtra || 0)) / pesoFacturable;
         // Margen del 1% para no marcar como preferencial una diferencia de redondeo.
         if (listaKg > 0 && efectivoKg < listaKg * 0.99) {
           preferential = { usd_por_kg: Math.round(efectivoKg * 100) / 100, lista_usd_por_kg: listaKg };
@@ -313,6 +342,7 @@ export async function GET(req, { params }) {
     hermanas,
     client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "", street: client.street || "", floor_apt: client.floor_apt || "", city: client.city || "" },
     tax_detail: taxDetail,
+    flete_detalle: fleteDetalle,
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
     preferential,
     delivery: {

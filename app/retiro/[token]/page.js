@@ -42,7 +42,7 @@ export default function EntregaPublica({ params }) {
   const [payAmounts, setPayAmounts] = useState({}); // montos por método (el último seleccionado absorbe el resto)
   const [cashCurrencyMode, setCashCurrencyMode] = useState("USD"); // USD | ARS | mixto (solo efectivo)
   const [formError, setFormError] = useState("");
-  const [taxOpen, setTaxOpen] = useState(false); // solapita del desglose de impuestos
+  const [taxOpen, setTaxOpen] = useState(true); // desglose de impuestos: abierto de entrada (02/10/2026)
   const [cashMixUsd, setCashMixUsd] = useState(""); // efectivo "un poco de cada": cuánto USD (opcional)
   const [cashMixArs, setCashMixArs] = useState(""); // y cuánto ARS (opcional)
   // Si paga (parte) en efectivo: con cuánto llega, para tener el cambio listo.
@@ -291,7 +291,18 @@ export default function EntregaPublica({ params }) {
             {!isBlanco && <div style={factStyle()}><div style={factLblStyle()}>Bultos</div><div style={factValStyle()}>{cargo.bultos}</div></div>}
           </div>
           {isBlanco && <div style={{ marginTop: 12, paddingTop: 4, borderTop: `1px solid ${LINE}` }}>
-            {op.budget_flete > 0 && <div style={rowStyle()}><span>Flete Internacional</span><span style={rowValStyle()}>{fmt(op.budget_flete)}</span></div>}
+            {op.budget_flete > 0 && (() => {
+              // Valor por kilo a la vista (y si es preferencial, contra el de lista); baterías aparte.
+              const fd = data.flete_detalle; const pref = data.preferential;
+              const n2 = (v) => Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              return <>
+                <div style={rowStyle()}>
+                  <span>Flete Internacional{fd && <span style={{ display: "block", fontSize: 11, color: MUTED, marginTop: 2 }}>USD {n2(fd.usd_por_kg)} por kg × {Number(fd.kg).toLocaleString("es-AR")} kg{pref && <> · <b style={{ color: "#1e7d4f" }}>tarifa preferencial</b> <s style={{ opacity: 0.7 }}>USD {n2(pref.lista_usd_por_kg)}</s></>}</span>}</span>
+                  <span style={{ ...rowValStyle(), whiteSpace: "nowrap", paddingLeft: 12 }}>{fmt(Number(op.budget_flete) - Number(fd?.bateria || 0))}</span>
+                </div>
+                {fd?.bateria > 0 && <div style={rowStyle()}><span>Recargo por baterías</span><span style={rowValStyle()}>{fmt(fd.bateria)}</span></div>}
+              </>;
+            })()}
             {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <>
               <div style={{ ...rowStyle(), cursor: data.tax_detail ? "pointer" : "default" }} onClick={() => data.tax_detail && setTaxOpen(v => !v)}>
                 <span>Impuestos &amp; Aduana{data.tax_detail && <span style={{ marginLeft: 6, fontSize: 10, color: GOLD_A, fontWeight: 700 }}>{taxOpen ? "ocultar ▲" : "ver desglose ▼"}</span>}</span>
