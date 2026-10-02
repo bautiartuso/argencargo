@@ -1875,6 +1875,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const billedTaxInline=(op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes)?totalTax:0;
       totalAbonar=isBlanco?(billedTaxInline+flete+seguro+surcharge+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
       }
+      // UN SOLO PRESUPUESTO (02/10/2026): el guardado en la operación (budget_*) es el que usan
+      // Entrega, Rentabilidad, el link de retiro y el portal. Esta tarjeta lo recalculaba en vivo y,
+      // cuando el guardado estaba congelado (el cliente ya coordinó) o quedó viejo, mostraba otro
+      // número (AC-0211: 228,95 acá contra 208,73 en todo lo demás). Ahora muestra el guardado y,
+      // si el cálculo de hoy da distinto, avisa la diferencia con un botón para actualizarlo.
+      const calcVivo={totalTax,flete,seguro,surcharge,totalAbonar};
+      const usarGuardado=!hasStoredBudget&&op.budget_mode!=="manual"&&Number(op.budget_total||0)>0&&Math.abs(totalAbonar-Number(op.budget_total||0))>0.01;
+      if(usarGuardado){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
+      const difPresu=usarGuardado?Math.round((calcVivo.totalAbonar-totalAbonar)*100)/100:0;
       // Solo en aereo A el RI paga los impuestos directo; en maritimo A siempre los cobra Argencargo.
       const taxesBilledByArgencargo=op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes;
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
@@ -2029,12 +2038,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>;})()}
         {/* Aereo A: recargo por baterias, como toggle discreto adentro del presupuesto (antes era
             un selector gigante en General). Cambiarlo recalcula el presupuesto al toque. */}
-        {op.channel==="aereo_blanco"&&<div onClick={async()=>{if(saving)return;const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?"Recargo por baterías activado (USD 2/kg)":"Recargo por baterías quitado");setSaving(false);}} style={{marginBottom:14,padding:"9px 14px",background:op.has_battery?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${op.has_battery?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:11,cursor:saving?"wait":"pointer",userSelect:"none",transition:"all 160ms"}}>
+        {op.channel==="aereo_blanco"&&<div onClick={async()=>{if(saving)return;const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?`Recargo por baterías activado (USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg)`:"Recargo por baterías quitado");setSaving(false);}} style={{marginBottom:14,padding:"9px 14px",background:op.has_battery?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${op.has_battery?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:11,cursor:saving?"wait":"pointer",userSelect:"none",transition:"all 160ms"}}>
           <div style={{width:36,height:20,background:op.has_battery?"linear-gradient(135deg,#fb923c,#f97316)":"rgba(255,255,255,0.12)",borderRadius:999,position:"relative",transition:"all 200ms",flexShrink:0}}>
             <div style={{position:"absolute",top:2,left:op.has_battery?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 200ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
           </div>
           <span style={{fontSize:12.5,fontWeight:op.has_battery?700:600,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.6)"}}>⚡ La carga contiene baterías</span>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{op.has_battery?"Recargo USD 2/kg facturable aplicado":"Sin recargo"}</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{op.has_battery?`Recargo USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg facturable aplicado`:"Sin recargo"}</span>
         </div>}
         {/* Aéreo A sin productos: el presupuesto que se ve acá es un cálculo en vivo (flete + seguro)
             que NO se guarda en la base — queda USD 0 y así lo ven el link de retiro y el bot
@@ -2121,6 +2130,18 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               </div>
             :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
         </div>
+        {difPresu!==0&&!editandoPresu&&(()=>{
+          const d=(a,b)=>Math.round((Number(a||0)-Number(b||0))*100)/100;
+          const fu=(v)=>`${v>0?"+":"−"}USD ${Math.abs(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+          const partes=[["flete",d(calcVivo.flete,flete)],["impuestos",d(calcVivo.totalTax,totalTax)],["seguro",d(calcVivo.seguro,seguro)],["recargo por valor",d(calcVivo.surcharge,surcharge)]].filter(([,v])=>Math.abs(v)>0.01);
+          return <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"11px 14px",margin:"4px 0 12px",borderRadius:10,background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.3)"}}>
+            <div style={{flex:"1 1 260px",fontSize:12.5,color:"rgba(255,255,255,0.75)",lineHeight:1.5}}>
+              <b style={{color:"#fbbf24"}}>Con los datos de hoy el presupuesto daría USD {calcVivo.totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> ({fu(difPresu)}{partes.length?`: ${partes.map(([l,v])=>`${l} ${fu(v)}`).join(" · ")}`:""}).
+              {" "}{op.delivery_confirmed_at?"Quedó el de arriba porque el cliente ya coordinó con ese total.":"El vigente es el de arriba."}
+            </div>
+            <button disabled={saving} onClick={async()=>{if(!await confirmDialog(`¿Actualizar el presupuesto a USD ${calcVivo.totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}? Cambia lo que se le cobra al cliente en todos lados.`))return;setSaving(true);await autoSyncBudget(true);await reloadOp();setSaving(false);flash("Presupuesto actualizado");}} style={{padding:"8px 14px",fontSize:12,fontWeight:800,borderRadius:8,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:saving?"wait":"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>Actualizar presupuesto</button>
+          </div>;
+        })()}
         {/* Desglose impositivo con CIF (pedido 02/08): la formula abierta, item por item. Es el
             calculo estimado del sistema; si el presupuesto esta en manual o con despacho real
             cargado, lo que vale es lo guardado y esto queda como referencia. */}
