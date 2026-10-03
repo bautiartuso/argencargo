@@ -1634,10 +1634,10 @@ function CalculatorPage({token,client,preset}){
       const totalCif=taxFob+certFlete+(taxFob+certFlete)*0.01;
       const items=validProds.map((p,i)=>calcItemTaxes(p,certFlete,false,totalCif,taxUnitPrices[i]));
       const totalImp=items.reduce((s,it)=>s+it.totalImp,0);
-      // Recargo por sobrepeso del courier: USD 35 por pieza si el bulto pesa más de 24 kg o su
+      // Recargo por sobrepeso del courier: USD 40 por pieza si el bulto pesa más de 24 kg o su
       // girth (lado más largo + 2×(los otros dos)) supera 260 cm. Ítem separado, no dentro del flete.
       const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1);const gw=toN(pk.weight);const l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const mx=Math.max(l,w,h);const girth=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||girth>260)?q:0);},0);
-      const overweightSurcharge=owPieces*35;
+      const overweightSurcharge=owPieces*40; // USD 40 por pieza desde el 03/10/2026
       const totalSvc=flete+seguro+battExtra+overweightSurcharge;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:transitoAereo,isBlanco:true,
         flete,seguro,battExtra,overweightSurcharge,owPieces,totalImp,totalSvc,total:totalImp+totalSvc,items,

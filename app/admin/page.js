@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
@@ -1920,9 +1920,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       }
       // Marítimo Integral: mínimo de servicio USD 100 (mismo ajuste que lib/calc.js).
       if(op.channel==="maritimo_negro"){const svcMin=flete+surcharge;if(svcMin>0&&svcMin<100)flete+=100-svcMin;}
-      // Recargo por sobrepeso (aéreo): USD 35 por pieza si el bulto pesa >24 kg reales o su
+      // Recargo por sobrepeso (aéreo): USD 40 por pieza (35 antes del 03/10/2026) si el bulto pesa >24 kg reales o su
       // girth (lado más largo + 2×(los otros dos)) supera 260 cm. Ítem aparte, espejo de lib/calc.js.
-      if(isAereoOp){const ow=pkgs.reduce((n,pk)=>{const q=Number(pk.quantity||1),gw=Number(pk.gross_weight_kg||0),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0);const mx=Math.max(l,w,h);const g=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||g>260)?q:0);},0);if(ow>0)surcharge=ow*35;}
+      if(isAereoOp){const ow=pkgs.reduce((n,pk)=>{const q=Number(pk.quantity||1),gw=Number(pk.gross_weight_kg||0),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0);const mx=Math.max(l,w,h);const g=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||g>260)?q:0);},0);if(ow>0)surcharge=ow*sobrepesoUsdPieza(tRefMs);}
       const deliveryCostInline=Number(op.delivery_cost_usd||0);
       const billedTaxInline=(op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes)?totalTax:0;
       totalAbonar=isBlanco?(billedTaxInline+flete+seguro+surcharge+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
@@ -7111,8 +7111,8 @@ function Calculator({token,clients}){
         const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,false,cifReal));
         const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
         const battExtra=hasBattery?factBill*bateriaUsdKg(client?.tax_condition==="responsable_inscripto"):0;const gananciaImp=impFict-impReal;
-        // Recargo por sobrepeso: USD 35 por pieza (>24 kg reales o girth con el lado más largo + 2×(otros dos) > 260 cm)
-        const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1),gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const mx=Math.max(l,w,h);const g=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
+        // Recargo por sobrepeso: USD 40 por pieza (>24 kg reales o girth con el lado más largo + 2×(otros dos) > 260 cm)
+        const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1),gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const mx=Math.max(l,w,h);const g=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*sobrepesoUsdPieza();
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:origin==="USA"?"3-5 días hábiles":"7-10 días",isBlanco:true,
           flete,fCost,seguro:segFict,battExtra,overweightSurcharge,totalImp:impFict,totalSvc:flete+segFict+battExtra+overweightSurcharge,total:impFict+flete+segFict+battExtra+overweightSurcharge,
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),

@@ -16,8 +16,8 @@ const TXT = {
     kgDesde: "Desde kg", kgHasta: "Hasta kg", usdKg: "USD / kg", oMas: "o más", agregar: "+ Agregar rango",
     rangos: "Rangos", volum: "volumétrico", sinTarifa: "Sin tarifa cargada",
     extras: "Adicionales",
-    bateria: "Mercadería con baterías", marca: "Mercadería con marca", sobrepeso: "Sobrepeso",
-    remota: "Zona remota", remotaMin: "Zona remota · mínimo",
+    bateria: "Mercaderías que contienen baterías", marca: "Mercaderías con marcas registradas", sobrepeso: "Bultos con sobrepeso",
+    remota: "Área remota de envío", remotaMin: "Mínimo",
     porEnvio: "por envío", porKg: "por kg", porBulto: "por bulto", minimo: "mínimo",
     guardar: "Guardar tarifas", guardando: "Guardando…", guardado: "Tarifas guardadas", error: "No se pudieron guardar",
     cargando: "Cargando…", actualizado: "Actualizado",
@@ -26,8 +26,8 @@ const TXT = {
     kgDesde: "起始 kg", kgHasta: "截止 kg", usdKg: "USD / kg", oMas: "以上", agregar: "+ 添加区间",
     rangos: "区间", volum: "体积重", sinTarifa: "未设置运价",
     extras: "附加费",
-    bateria: "带电池货物", marca: "品牌货物", sobrepeso: "超重",
-    remota: "偏远地区", remotaMin: "偏远地区 · 最低",
+    bateria: "含电池货物", marca: "含注册商标货物", sobrepeso: "超重包裹",
+    remota: "偏远地区派送", remotaMin: "最低",
     porEnvio: "每票", porKg: "每 kg", porBulto: "每件", minimo: "最低",
     guardar: "保存运价", guardando: "保存中…", guardado: "运价已保存", error: "保存失败",
     cargando: "加载中…", actualizado: "更新于",
@@ -54,7 +54,15 @@ const nk = (v) => Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits
 const caja = { background: INK(0.035), border: `1px solid ${INK(0.09)}`, borderRadius: 16, padding: "16px", minWidth: 0 };
 const inp = { width: "100%", height: 40, padding: "0 10px", fontSize: 15, fontWeight: 700, boxSizing: "border-box", border: `1px solid ${INK(0.14)}`, borderRadius: 9, background: INK(0.05), color: TX, outline: "none", fontFamily: "inherit", textAlign: "right", fontVariantNumeric: "tabular-nums" };
 const lbl = { fontSize: 10.5, fontWeight: 800, color: INK(0.45), textTransform: "uppercase", letterSpacing: "0.07em" };
-const CSS = `.ta-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}.ta-col{display:flex;flex-direction:column;gap:12px;min-width:0}@media(max-width:900px){.ta-cols{grid-template-columns:1fr}}`;
+const CSS = `.ta-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}.ta-col{display:flex;flex-direction:column;gap:12px;min-width:0}.ta-ext{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}@media(max-width:1100px){.ta-ext{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:900px){.ta-cols{grid-template-columns:1fr}}@media(max-width:560px){.ta-ext{grid-template-columns:1fr}}`;
+// Adicionales en tarjetas (03/10/2026), con los títulos de la planilla del agente. El área remota
+// lleva dos valores juntos: USD por kg y el mínimo.
+const TARJ_EXTRAS = [
+  { titulo: "bateria", campos: [["bateria_usd_total", "porEnvio"]] },
+  { titulo: "marca", campos: [["marca_usd_kg", "porKg"]] },
+  { titulo: "sobrepeso", campos: [["sobrepeso_usd_pieza", "porBulto"]] },
+  { titulo: "remota", campos: [["remota_usd_kg", "porKg"], ["remota_min_usd", "minimo"]] },
+];
 
 // Divisor del volumétrico bien visible: "÷ 5.000" en una pastilla dorada.
 function Divisor({ div, t }) {
@@ -146,20 +154,22 @@ export function TarifasAgenteEditor({ token, lang = "es", onSaved, agentUserId =
           </div>
         ))}
       </div>
-      <div style={{ ...caja, padding: "20px 22px", marginBottom: 18 }}>
-        <p style={{ fontSize: 17, fontWeight: 800, color: TX, margin: "0 0 16px", textAlign: "center" }}>{t.extras}</p>
-        <div style={{ maxWidth: 620, margin: "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          {EXTRAS.map(([k, lk, uk]) => (
-            <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 140px 84px", gap: 12, alignItems: "center" }}>
-              <span style={{ fontSize: 14.5, fontWeight: 700, color: TX }}>{t[lk]}</span>
-              <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, color: INK(0.4), pointerEvents: "none" }}>USD</span>
-                <input inputMode="decimal" value={d.extras[k]} onChange={(e) => setExtra(k, e.target.value)} placeholder="0" style={{ ...inp, paddingLeft: 44, color: GOLD }} />
+      <p style={{ fontSize: 17, fontWeight: 800, color: TX, margin: "4px 0 12px", textAlign: "center" }}>{t.extras}</p>
+      <div className="ta-ext" style={{ marginBottom: 20 }}>
+        {TARJ_EXTRAS.map((x) => (
+          <div key={x.titulo} style={{ ...caja, display: "flex", flexDirection: "column", gap: 12 }}>
+            <span style={{ fontSize: 14.5, fontWeight: 800, color: TX, lineHeight: 1.3, minHeight: 38 }}>{t[x.titulo]}</span>
+            {x.campos.map(([k, uk]) => (
+              <div key={k} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 11.5, fontWeight: 800, color: INK(0.4), pointerEvents: "none" }}>USD</span>
+                  <input inputMode="decimal" value={d.extras[k]} onChange={(e) => setExtra(k, e.target.value)} placeholder="0" style={{ ...inp, height: 44, fontSize: 17, paddingLeft: 48, color: GOLD }} />
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: INK(0.55), minWidth: 62 }}>{t[uk]}</span>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: INK(0.55) }}>{t[uk]}</span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ))}
       </div>
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <button type="button" onClick={guardar} disabled={guardando} style={{ height: 48, padding: "0 34px", borderRadius: 12, border: "1px solid #B8956A", background: "linear-gradient(135deg,#B8956A 0%,#E8D098 50%,#B8956A 100%)", color: "#0A1628", fontWeight: 900, fontSize: 15, cursor: guardando ? "wait" : "pointer", fontFamily: "inherit" }}>{guardando ? t.guardando : t.guardar}</button>
@@ -200,12 +210,17 @@ export function TarifasAgenteResumen({ tarifas }) {
           </div>
         ))}
       </div>
-      {extras.length > 0 && <div style={{ ...caja, padding: "14px 18px" }}>
-        <p style={{ fontSize: 14, fontWeight: 800, color: TX, margin: "0 0 10px", textAlign: "center" }}>{t.extras}</p>
-        <div style={{ maxWidth: 560, margin: "0 auto" }}>
-          {extras.map(([k, lk, uk]) => <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "6px 0", fontSize: 13.5 }}><span style={{ color: INK(0.7) }}>{t[lk]}</span><span><b style={{ color: GOLD, fontVariantNumeric: "tabular-nums" }}>USD {n2(e[k])}</b> <span style={{ color: INK(0.5) }}>{t[uk]}</span></span></div>)}
+      {extras.length > 0 && <>
+        <p style={{ fontSize: 14, fontWeight: 800, color: TX, margin: "4px 0 10px", textAlign: "center" }}>{t.extras}</p>
+        <div className="ta-ext">
+          {TARJ_EXTRAS.filter((x) => x.campos.some(([k]) => e[k] != null)).map((x) => (
+            <div key={x.titulo} style={{ ...caja, padding: "13px 15px" }}>
+              <p style={{ fontSize: 13, fontWeight: 800, color: TX, margin: "0 0 8px", lineHeight: 1.3 }}>{t[x.titulo]}</p>
+              {x.campos.filter(([k]) => e[k] != null).map(([k, uk]) => <p key={k} style={{ margin: "2px 0 0", fontSize: 13.5 }}><b style={{ color: GOLD, fontVariantNumeric: "tabular-nums" }}>USD {n2(e[k])}</b> <span style={{ color: INK(0.55) }}>{t[uk]}</span></p>)}
+            </div>
+          ))}
         </div>
-      </div>}
+      </>}
       {tarifas.actualizado && <p style={{ fontSize: 12, color: INK(0.45), margin: "10px 0 0" }}>{t.actualizado} {new Date(tarifas.actualizado).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>}
     </div>
   );
