@@ -9240,14 +9240,23 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       </FeCard>;
     })()}
     <div style={{marginTop:-2}}>
-      {/* Reembalaje desde el vuelo: antes del despacho, un pedido por op (sin mezclar clientes) */}
-      {flight.status==="preparando"&&flightOps.length>0&&<div style={{marginTop:-6,marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10}}>
-        <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>🔄 ¿Conviene reembalar antes de despachar?</span>
-        <Btn small variant="secondary" onClick={()=>setReembalaje(true)}>Pedir reembalaje al agente</Btn>
-        <span style={{flexBasis:"100%",display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.65)",flexWrap:"wrap"}}>✈️ Courier pedido al agente:
-          {[["","Sin pedir"],["DHL","DHL"],["FEDEX","FedEx ÷6000"],["UPS","UPS ÷6000"]].map(([v,l])=><button key={v||"none"} onClick={()=>updateFlight({requested_carrier:v||null})} title={v==="FEDEX"?"FedEx con volumétrico a 6000":v==="DHL"?"DHL":v==="UPS"?"UPS con volumétrico a 6000":"El agente elige"} style={{padding:"4px 10px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${(flight.requested_carrier||"")===v?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:(flight.requested_carrier||"")===v?"rgba(96,165,250,0.18)":"transparent",color:(flight.requested_carrier||"")===v?"#93c5fd":"rgba(255,255,255,0.6)"}}>{l}</button>)}
-        </span>
-      </div>}
+      {/* Courier pedido al agente (03/10/2026): botones con el logo y el divisor del volumétrico.
+          El reembalaje ya no se pide desde el vuelo: se pide sobre los bultos en depósito. */}
+      {flight.status==="preparando"&&flightOps.length>0&&(()=>{
+        const actual=flight.requested_carrier||"";
+        // "FEDEX" y "UPS" sin divisor son vuelos viejos: equivalen a ÷6000.
+        const norm=actual==="FEDEX"?"FEDEX_6000":actual==="UPS"?"UPS_6000":actual;
+        const logo=(k,size)=>{const L=CARRIER_LOGOS[k];return <span style={{width:size,height:size,borderRadius:Math.round(size/4.5),background:L.bg,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg viewBox={L.vb} style={{width:size*0.8,height:size*0.8}} preserveAspectRatio="xMidYMid meet"><path d={L.d} fill={L.fill}/></svg></span>;};
+        const OPC=[["",null,null],["DHL","dhl",null],["FEDEX_5000","fedex",5000],["FEDEX_6000","fedex",6000],["UPS_5000","ups",5000],["UPS_6000","ups",6000]];
+        return <div style={{marginTop:-6,marginBottom:14,padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)"}}>
+          <p style={{fontSize:13.5,fontWeight:800,color:"#fff",margin:"0 0 10px"}}>Courier pedido al agente</p>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {OPC.map(([v,k,div])=>{const on=norm===v;return <button key={v||"none"} type="button" onClick={async()=>{const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{requested_carrier:v||null}});if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar el courier: ${r.message||r.code}`,"error");return;}onReload();}} title={!v?"El agente elige":k==="dhl"?"DHL":`${k==="fedex"?"FedEx":"UPS"} con volumétrico ÷${div}`} style={{display:"inline-flex",alignItems:"center",gap:8,height:40,padding:k?"0 12px 0 6px":"0 14px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,border:`1px solid ${on?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(96,165,250,0.16)":"rgba(255,255,255,0.03)",color:on?"#93c5fd":"rgba(255,255,255,0.7)",boxShadow:on?"0 0 0 3px rgba(96,165,250,0.12)":"none",transition:"all 150ms"}}>
+              {k?<>{logo(k,28)}{div?<span style={{fontVariantNumeric:"tabular-nums"}}>÷{div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
+            </button>;})}
+          </div>
+        </div>;
+      })()}
       {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
     </div>
     <div id="fe-card-factura"/>
