@@ -9943,7 +9943,7 @@ function AgentsPanel({token}){
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,budget_taxes,budget_flete,budget_seguro,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,channel,ri_argencargo_collects_taxes,budget_total,budget_taxes,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"}),
@@ -10450,14 +10450,17 @@ function AgentsPanel({token}){
         const act=flights.filter(f=>f.status!=="recibido"),rec=flights.length-act.length;
         const activeIds=new Set(act.map(f=>f.id));const vistas=new Set();let total=0,cobrado=0,sinPres=0;
         flightOps.forEach(fo=>{if(!activeIds.has(fo.flight_id)||!fo.operation_id||vistas.has(fo.operation_id))return;vistas.add(fo.operation_id);const o=fo.operations;if(!o)return;
-          // Solo flete + seguro (03/10/2026): los impuestos no son plata "en el aire" del vuelo.
-          const ing=Math.max(0,Number(o.budget_flete||0)+Number(o.budget_seguro||0));
+          // Todo menos impuestos (03/10/2026): flete, seguro, sobrepeso, envío… Al total se le resta
+          // la parte impositiva solo si está incluida (al RI que paga directo no se le cobra).
+          const ri=o.clients?.tax_condition==="responsable_inscripto";
+          const impEnTotal=o.channel!=="aereo_blanco"||!ri||!!o.ri_argencargo_collects_taxes;
+          const ing=Math.max(0,Number(o.budget_total||0)-(impEnTotal?Number(o.budget_taxes||0):0));
           if(!(Number(o.budget_total||0)>0))sinPres++;total+=ing;if(o.is_collected)cobrado+=ing;});
         const pend=total-cobrado;
         izq=<div style={{display:"inline-flex",gap:4,padding:4,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
           {[{k:"active",l:"En operación",n:act.length},{k:"received",l:"Recibidos",n:rec}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"9px 16px",fontSize:13,fontWeight:800,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",boxShadow:on?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
         </div>;
-        der=<div title="Flete + seguro de las operaciones en vuelos en operación que todavía no se cobraron (sin impuestos)." style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+        der=<div title="Lo que falta cobrar de las operaciones en vuelos en operación, sin los impuestos (flete, seguro, sobrepeso, envío)." style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
           <span style={{fontSize:17}}>✈️</span>
           <div>
             <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:0}}>Pendiente de cobro en el aire</p>
