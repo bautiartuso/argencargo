@@ -56,7 +56,7 @@ const aEdicion = (data) => {
 };
 
 // Editor del agente.
-export function TarifasAgenteEditor({ token, lang = "es", onSaved }) {
+export function TarifasAgenteEditor({ token, lang = "es", onSaved, agentUserId = null }) {
   const t = TXT[lang] || TXT.es;
   const [d, setD] = useState(null);
   const [actualizado, setActualizado] = useState(null);
@@ -64,9 +64,13 @@ export function TarifasAgenteEditor({ token, lang = "es", onSaved }) {
   const [msg, setMsg] = useState(null);
   useEffect(() => {
     fetch("/api/agente/tarifas", { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json()).then((j) => { setD(aEdicion(j?.tarifas)); setActualizado(j?.tarifas?.actualizado || null); })
+      .then((r) => r.json()).then((j) => {
+        // Admin mirando el editor de un agente: la ruta devuelve todos y se toma el elegido.
+        const tar = agentUserId ? (j?.agentes || []).find((a) => a.auth_user_id === agentUserId)?.tarifas : j?.tarifas;
+        setD(aEdicion(tar)); setActualizado(tar?.actualizado || null);
+      })
       .catch(() => setD(aEdicion(null)));
-  }, [token]);
+  }, [token, agentUserId]);
   if (!d) return <p style={{ color: INK(0.5), textAlign: "center", padding: "2rem 0" }}>{t.cargando}</p>;
   const soloNum = (v) => v === "" || /^[\d.,]*$/.test(v);
   const setFila = (sk, i, campo, v) => { if (!soloNum(v)) return; setD((p) => ({ ...p, servicios: { ...p.servicios, [sk]: p.servicios[sk].map((f, j) => (j === i ? { ...f, [campo]: v } : f)) } })); };
@@ -76,7 +80,7 @@ export function TarifasAgenteEditor({ token, lang = "es", onSaved }) {
   const guardar = async () => {
     setGuardando(true); setMsg(null);
     try {
-      const r = await fetch("/api/agente/tarifas", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(d) });
+      const r = await fetch("/api/agente/tarifas", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(agentUserId ? { ...d, agent_user_id: agentUserId } : d) });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "error");
       setD(aEdicion(j.tarifas)); setActualizado(j.tarifas?.actualizado || null);
@@ -168,6 +172,29 @@ export function TarifasAgenteResumen({ tarifas }) {
       </div>
       {extras.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{extras.map(([l, val]) => <span key={l} style={{ fontSize: 12.5, padding: "6px 11px", borderRadius: 9, background: INK(0.05), border: `1px solid ${INK(0.09)}`, color: INK(0.7) }}>{l}: <b style={{ color: TX }}>{val}</b></span>)}</div>}
       {tarifas.notas && <p style={{ fontSize: 12.5, color: INK(0.6), margin: "10px 0 0", whiteSpace: "pre-wrap" }}>📝 {tarifas.notas}</p>}
+    </div>
+  );
+}
+
+// Admin dentro del panel del agente (03/10/2026): elige un agente y ve el mismo editor que él,
+// para chequear cómo las cargan. Las tarifas las carga cada agente; esto es para revisarlas.
+export function TarifasAgenteAdmin({ token, lang = "es" }) {
+  const [agentes, setAgentes] = useState(null);
+  const [sel, setSel] = useState(null);
+  useEffect(() => {
+    fetch("/api/agente/tarifas", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json()).then((j) => { const l = j?.agentes || []; setAgentes(l); if (l[0]) setSel(l[0].auth_user_id); })
+      .catch(() => setAgentes([]));
+  }, [token]);
+  if (agentes == null) return <p style={{ color: INK(0.5), textAlign: "center", padding: "2rem 0" }}>Cargando…</p>;
+  if (agentes.length === 0) return <p style={{ color: INK(0.5), textAlign: "center", padding: "2rem 0" }}>No hay agentes aprobados.</p>;
+  return (
+    <div>
+      <div style={{ ...caja, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14, borderColor: "rgba(232,208,152,0.35)" }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: GOLD, marginRight: 6 }}>Vista admin · estás viendo lo que carga</span>
+        {agentes.map((a) => { const on = sel === a.auth_user_id; return <button key={a.auth_user_id} type="button" onClick={() => setSel(a.auth_user_id)} style={{ height: 34, padding: "0 14px", borderRadius: 10, border: `1px solid ${on ? "rgba(232,208,152,0.6)" : INK(0.12)}`, background: on ? "rgba(184,149,106,0.18)" : "transparent", color: on ? GOLD : INK(0.7), fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{`${a.first_name || ""} ${a.last_name || ""}`.trim() || a.email}{a.tarifas ? "" : " · sin cargar"}</button>; })}
+      </div>
+      {sel && <TarifasAgenteEditor key={sel} token={token} lang={lang} agentUserId={sel} />}
     </div>
   );
 }

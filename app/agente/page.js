@@ -5,7 +5,7 @@ import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 import { comprimirImagen } from "../../lib/img";
-import { TarifasAgenteEditor } from "../components/TarifasAgente";
+import { TarifasAgenteEditor, TarifasAgenteAdmin } from "../components/TarifasAgente";
 import { hoyAR } from "../../lib/fecha-ar";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -1293,7 +1293,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
     {tab==="tarifas"&&(esAdmin
-      ?<p style={{color:"rgba(var(--ink),0.55)",textAlign:"center",padding:"2rem 0"}}>Acá cada agente carga y actualiza sus tarifas con su usuario. Las de todos se ven en el admin → Depósito → Agentes.</p>
+      ?<TarifasAgenteAdmin token={token} lang={lang}/>
       :<TarifasAgenteEditor token={token} lang={lang}/>)}
     {tab==="stats"&&(()=>{
       const volDivS=Number(signup?.volumetric_divisor)||5000;
