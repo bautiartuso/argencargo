@@ -1293,7 +1293,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
     {tab==="tarifas"&&(esAdmin
-      ?<p style={{color:"rgba(var(--ink),0.55)",textAlign:"center",padding:"2rem 0"}}>Las tarifas de cada agente se ven en el admin → Depósito → Agentes.</p>
+      ?<p style={{color:"rgba(var(--ink),0.55)",textAlign:"center",padding:"2rem 0"}}>Acá cada agente carga y actualiza sus tarifas con su usuario. Las de todos se ven en el admin → Depósito → Agentes.</p>
       :<TarifasAgenteEditor token={token} lang={lang}/>)}
     {tab==="stats"&&(()=>{
       const volDivS=Number(signup?.volumetric_divisor)||5000;

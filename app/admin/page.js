@@ -9905,9 +9905,9 @@ function RefundForm({token,agentId,onSaved}){
   </div>;
 }
 
-function AgentesTab({signups,ST,lo,token,approve,reject}){
+function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
   const [tarifas,setTarifas]=useState(null); // {auth_user_id: tarifas}
-  const [abiertos,setAbiertos]=useState(()=>new Set());
+  const [abiertos,setAbiertos]=useState({}); // {signupId: "cc"|"tar"|null}
   useEffect(()=>{(async()=>{try{const r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();const m={};(j?.agentes||[]).forEach(a=>{m[a.auth_user_id]=a.tarifas||null;});setTarifas(m);}catch(e){setTarifas({});}})();},[token]);
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>;
   if(signups.length===0)return <p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes.</p>;
@@ -9915,7 +9915,7 @@ function AgentesTab({signups,ST,lo,token,approve,reject}){
   const lista=[...signups].sort((a,b)=>(orden[a.status]??3)-(orden[b.status]??3));
   const btn=(c)=>({height:34,padding:"0 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${c}55`,background:`${c}1a`,color:c,cursor:"pointer",fontFamily:"inherit"});
   return <div style={{display:"flex",flexDirection:"column",gap:12}}>
-    {lista.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};const t=tarifas?.[s.auth_user_id];const abierto=abiertos.has(s.id)||s.status==="approved"&&lista.filter(x=>x.status==="approved").length===1;
+    {lista.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};const t=tarifas?.[s.auth_user_id];const sec=abiertos[s.id]||null;const saldo=s.status==="approved"&&saldoDe?saldoDe(s):null;
       const nServ=t?Object.values(t.servicios||{}).filter(f=>Array.isArray(f)&&f.length).length:0;
       return <div key={s.id} style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,padding:"16px 20px"}}>
         <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -9926,9 +9926,14 @@ function AgentesTab({signups,ST,lo,token,approve,reject}){
           </div>
           {s.status==="pending"&&<div style={{display:"flex",gap:8}}><button onClick={()=>approve(s)} style={btn("#22c55e")}>✓ Aprobar</button><button onClick={()=>reject(s)} style={btn("#f87171")}>✕ Rechazar</button></div>}
           {s.status==="rejected"&&<button onClick={()=>approve(s)} style={btn("#22c55e")}>Reactivar</button>}
-          {s.status==="approved"&&<button onClick={()=>setAbiertos(p=>{const n=new Set(p);n.has(s.id)?n.delete(s.id):n.add(s.id);return n;})} style={{...btn("#E8D098"),display:"inline-flex",alignItems:"center",gap:8}}>Tarifas {tarifas==null?"…":t?`· ${nServ}/5 servicios`:"· sin cargar"} <span style={{transform:abierto?"rotate(90deg)":"none",transition:"transform 150ms"}}>›</span></button>}
+          {s.status==="approved"&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {ccDe&&<button onClick={()=>setAbiertos(p=>({...p,[s.id]:sec==="cc"?null:"cc"}))} style={{...btn(saldo!=null&&saldo<0?"#f87171":"#4ade80"),...(sec==="cc"?{boxShadow:"0 0 0 2px rgba(255,255,255,0.15)"}:{})}}>Cuenta corriente{saldo!=null?` · USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:""}</button>}
+            <button onClick={()=>setAbiertos(p=>({...p,[s.id]:sec==="tar"?null:"tar"}))} style={{...btn("#E8D098"),...(sec==="tar"?{boxShadow:"0 0 0 2px rgba(255,255,255,0.15)"}:{})}}>Tarifas {tarifas==null?"…":t?`· ${nServ}/5 servicios`:"· sin cargar"}</button>
+          </div>}
         </div>
-        {s.status==="approved"&&abierto&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+        {s.status==="approved"&&sec==="cc"&&ccDe&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>{ccDe(s)}</div>}
+        {s.status==="approved"&&sec==="tar"&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"0 0 12px"}}>Las carga y actualiza {s.first_name||"el agente"} desde su panel → Tarifas.</p>
           {tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>}
         </div>}
       </div>;})}
@@ -10477,6 +10482,32 @@ function AgentsPanel({token}){
   // Referencia estable: si se filtra inline en el JSX, cada re-render del panel (un flash, un
   // timer) le pasa un array nuevo al editor y su useEffect resetea los items en edición.
   const invoiceItemsForSel=useMemo(()=>flight?invoiceItems.filter(i=>i.flight_id===flight.id):[],[invoiceItems,flight?.id]);
+    // Cuenta corriente de un agente (03/10/2026): se muestra dentro de la solapa Agentes.
+    const ccDeAgente=(a)=>{const bal=agentBalance(a.auth_user_id);const movs=accMovements.filter(m=>m.agent_id===a.auth_user_id);return <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
+          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:"14px 18px",border:"1px solid rgba(34,197,94,0.15)"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>SALDO</p><p style={{fontSize:22,fontWeight:700,color:bal>0?"#22c55e":bal<0?"#ff6b6b":"#fff",margin:0}}>{usd(bal)}</p></div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.55)"}} title="Divisor para peso volumétrico (cm³ ÷ divisor). Estándar 5000, algunos couriers usan 6000.">
+              <span>Vol ÷</span>
+              <span style={{display:"inline-flex",gap:3,padding:3,borderRadius:9,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)"}}>{[5000,6000].map(v=>{const on=Number(a.volumetric_divisor||5000)===v;return <button key={v} type="button" onClick={async()=>{if(on)return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${a.id}`,body:{volumetric_divisor:v}});load();flash(`Divisor de ${a.first_name}: ${v}`);}} style={{height:28,padding:"0 10px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:on?GOLD_GRADIENT:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.6)"}}>{v}</button>;})}</span>
+            </label>
+            <Btn small onClick={()=>{setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id);setShowRefundForm(null);}}>+ Cargar anticipo</Btn>
+            <Btn small variant="secondary" onClick={()=>{setShowRefundForm(showRefundForm===a.auth_user_id?null:a.auth_user_id);setShowAnticipoForm(null);}}>↩ Devolución</Btn>
+          </div>
+        </div>
+        {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
+        {showRefundForm===a.auth_user_id&&<RefundForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowRefundForm(null);load();flash("Devolución cargada");}}/>}
+        {movs.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Fecha","Tipo","Monto","Descripción","Vuelo"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
+            <td style={{padding:"8px 12px"}}>{(()=>{const cfg=m.type==="anticipo"?{lbl:"ANTICIPO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}:m.type==="refund"?{lbl:"DEVOLUCIÓN",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{lbl:"DEDUCCIÓN",bg:"rgba(255,80,80,0.15)",fg:"#ff6b6b"};return <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:cfg.bg,color:cfg.fg}}>{cfg.lbl}</span>;})()}</td>
+            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{(()=>{const isCredit=m.type==="anticipo"||m.type==="refund";const monto=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return `${isCredit?"+":"-"}${usd(monto)}`;})()}</td>
+            <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
+            <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
+          </tr>;})}</tbody>
+        </table>:<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,textAlign:"center",padding:"1rem 0"}}>Sin movimientos</p>}
+</div>;};
   const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12,animation:"ac_fade_in 200ms"}}>✓ {msg}</p>}
@@ -10512,7 +10543,7 @@ function AgentsPanel({token}){
         <div className="ag-izq">{izq}</div>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
-        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
             </div>
         <div className="ag-der">{der}</div>
@@ -10998,37 +11029,6 @@ function AgentsPanel({token}){
 
     {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} finRate={finRateOf(flight.agent_id)} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
-    {tab==="accounts"&&<div>
-      {approvedAgents.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes aprobados</p>:
-      approvedAgents.map(a=>{const bal=agentBalance(a.auth_user_id);const movs=accMovements.filter(m=>m.agent_id===a.auth_user_id);return <Card key={a.id} title={`${a.first_name} ${a.last_name||""} — ${a.email}`}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
-          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:"14px 18px",border:"1px solid rgba(34,197,94,0.15)"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>SALDO</p><p style={{fontSize:22,fontWeight:700,color:bal>0?"#22c55e":bal<0?"#ff6b6b":"#fff",margin:0}}>{usd(bal)}</p></div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.55)"}} title="Divisor para peso volumétrico (cm³ ÷ divisor). Estándar 5000, algunos couriers usan 6000.">
-              <span>Vol ÷</span>
-              <select defaultValue={a.volumetric_divisor||5000} onChange={async(e)=>{const v=parseInt(e.target.value);await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${a.id}`,body:{volumetric_divisor:v}});load();flash(`Divisor de ${a.first_name} ahora /${v}`);}} style={{padding:"4px 8px",fontSize:11,background:"rgba(255,255,255,0.06)",color:"#fff",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,cursor:"pointer"}}>
-                <option value="5000" style={{background:"#142038"}}>5000</option>
-                <option value="6000" style={{background:"#142038"}}>6000</option>
-              </select>
-            </label>
-            <Btn small onClick={()=>{setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id);setShowRefundForm(null);}}>+ Cargar anticipo</Btn>
-            <Btn small variant="secondary" onClick={()=>{setShowRefundForm(showRefundForm===a.auth_user_id?null:a.auth_user_id);setShowAnticipoForm(null);}}>↩ Devolución</Btn>
-          </div>
-        </div>
-        {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
-        {showRefundForm===a.auth_user_id&&<RefundForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowRefundForm(null);load();flash("Devolución cargada");}}/>}
-        {movs.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Fecha","Tipo","Monto","Descripción","Vuelo"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-          <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
-            <td style={{padding:"8px 12px"}}>{(()=>{const cfg=m.type==="anticipo"?{lbl:"ANTICIPO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}:m.type==="refund"?{lbl:"DEVOLUCIÓN",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{lbl:"DEDUCCIÓN",bg:"rgba(255,80,80,0.15)",fg:"#ff6b6b"};return <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:cfg.bg,color:cfg.fg}}>{cfg.lbl}</span>;})()}</td>
-            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{(()=>{const isCredit=m.type==="anticipo"||m.type==="refund";const monto=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return `${isCredit?"+":"-"}${usd(monto)}`;})()}</td>
-            <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
-            <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
-          </tr>;})}</tbody>
-        </table>:<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,textAlign:"center",padding:"1rem 0"}}>Sin movimientos</p>}
-      </Card>;})}
-    </div>}
     {tab==="orphans"&&<>
       {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
@@ -11060,7 +11060,7 @@ function AgentsPanel({token}){
     </>}
     {/* Agentes (03/10/2026, ex Solicitudes): una tarjeta por agente con sus datos y sus tarifas por
         servicio (las carga cada agente desde su panel → Tarifas). Las solicitudes nuevas se aprueban acá. */}
-    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject}/>}
+    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject} ccDe={esEmpleado()?null:ccDeAgente} saldoDe={esEmpleado()?null:(a=>agentBalance(a.auth_user_id))}/>}
     {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const suelto=!movePkgState.fromOp;const fromCl=suelto?(movePkgState.pkg.clients||null):movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
