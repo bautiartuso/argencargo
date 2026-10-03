@@ -16089,6 +16089,17 @@ async function subirFotoMaritima(token,file){
   }catch(e){console.error("foto maritima",e);return null;}
 }
 
+// "A cobrar" cargado a mano en Marítimos → presupuesto de la op (02/10/2026). Antes la op se creaba
+// con la tarifa (o se recalculaba sola al abrirla) y se perdía el precio pactado a mano: a Clara Font
+// (AC-0251) y a Maximiliano Míguez se les cobró la tarifa de lista. Si alguna carga tiene a cobrar
+// a mano, la op nace en presupuesto MANUAL con la suma de lo de cada carga (las automáticas, su
+// parte de la tarifa) para que el sync automático no lo pise.
+const presuManualMaritimo=(ships,importeDe)=>{
+  if(!(ships||[]).some(s=>s.revenue_manual!=null))return null;
+  const t=Math.round(ships.reduce((a,s)=>a+(Number(importeDe(s))||0),0)*100)/100;
+  if(!(t>0))return null;
+  return {budget_mode:"manual",budget_total:t,budget_flete:t,budget_surcharge:0,budget_seguro:0,budget_taxes:0};
+};
 function MaritimePanel({token,allClients=[]}){
   const [shipments,setShipments]=useState([]);
   const [packages,setPackages]=useState([]);
@@ -16193,6 +16204,7 @@ function MaritimePanel({token,allClients=[]}){
         description:desc||null,
         international_tracking:trackings||null,
       };
+      {const pm=presuManualMaritimo(selObjs,s=>importeOfShip(s,selObjs));if(pm)Object.assign(opBody,pm);}
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id){alertDialog("Error creando la operación.");setCreatingOp(false);return;}
@@ -16475,6 +16487,7 @@ function MaritimePanel({token,allClients=[]}){
       const costoOp=Math.round(ships.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
       const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0),
         ...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{})};
+      {const pm=presuManualMaritimo(ships,s=>importeOfShip(s,ships));if(pm)Object.assign(opBody,pm);}
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id)continue;
@@ -16486,7 +16499,7 @@ function MaritimePanel({token,allClients=[]}){
       // Mail "lista para retirar" al cliente (igual que cualquier op que pasa a entregada).
       try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
       const cbmOp=mPkgs.reduce((a,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);return a+(l&&w&&h?(l*w*h/1000000)*q:0);},0);
-      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(opBody.budget_total||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
       created++;
     }
     return {msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
@@ -17930,6 +17943,7 @@ function MaritimePanel2({token,allClients=[]}){
       const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const costoOp=Math.round(selObjs.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
       const opBody={operation_code:newCode,client_id:clientId,channel:"maritimo_negro",...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{}),status:"entregada",closed_at:new Date().toISOString(),origin:selObjs[0].origin==="usa"?"USA":"China",description:desc||null,international_tracking:trackings||null};
+      {const pm=presuManualMaritimo(selObjs,s=>money.importeOfShip(s,selObjs));if(pm)Object.assign(opBody,pm);}
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id){alertDialog(`Error creando la operación: ${mtErr(r,"")}`);return;}
@@ -17978,6 +17992,7 @@ function MaritimePanel2({token,allClients=[]}){
       const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const costoOp=Math.round(ships.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
       const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0),...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{})};
+      {const pm=presuManualMaritimo(ships,s=>money.importeOfShip(s,ships));if(pm)Object.assign(opBody,pm);}
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id){toast(`No se pudo crear la op de ${client.client_code||cid}: ${mtErr(r,"error")}`,"error");continue;}
@@ -17988,7 +18003,7 @@ function MaritimePanel2({token,allClients=[]}){
       for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
       try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
       const cbmOp=mPkgs.reduce((a,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);return a+(l&&w&&h?(l*w*h/1000000)*q:0);},0);
-      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(opBody.budget_total||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
       created++;
     }
     return{msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
