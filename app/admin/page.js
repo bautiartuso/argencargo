@@ -1856,7 +1856,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           if(merchVal>0&&amtForVpu>0){
             const vpu=merchVal/amtForVpu;
             const surchs=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty||0)-Number(a.min_qty||0));
-            for(const s of surchs){if(vpu>=Number(s.min_qty||0)){surchargePct=Number(s.rate||0);break;}}
+            for(const s of surchs){if(vpu>=Number(s.min_qty||0)){const ovS=(clientOverrides||[]).find(o=>o.tariff_id===s.id);surchargePct=ovS?Number(ovS.custom_rate):Number(s.rate||0);break;}}
           }
         }
       } else {
@@ -1913,7 +1913,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         if(merchVal>0&&amtForVpu>0){
           const vpu=merchVal/amtForVpu;
           const surchs=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty||0)-Number(a.min_qty||0));
-          for(const s of surchs){if(vpu>=Number(s.min_qty||0)){surchargePct=Number(s.rate||0);surcharge=Math.round(merchVal*(surchargePct/100)*100)/100;break;}}
+          for(const s of surchs){if(vpu>=Number(s.min_qty||0)){const ovS=(clientOverrides||[]).find(o=>o.tariff_id===s.id);surchargePct=ovS?Number(ovS.custom_rate):Number(s.rate||0);surcharge=Math.round(merchVal*(surchargePct/100)*100)/100;break;}}
         }
       }
       // Marítimo Integral: mínimo de servicio USD 100 (mismo ajuste que lib/calc.js).
@@ -16319,13 +16319,14 @@ function MaritimePanel({token,allClients=[]}){
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.quantity||1),0);
   // Tarifa marítimo_b (USD/m³) según el RANGO de CBM, con override del cliente.
   const mbRatesSorted=mtTariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min);
-  const mbSurchSorted=mtTariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
+  const mbSurchSorted=mtTariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({id:t.id,min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
   const fleteRateForCbm=(cbm,overrides)=>{
     for(const r of mbRatesSorted){if(cbm>=r.min&&cbm<r.max){const ov=(overrides||[]).find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):r.rate;}}
     const last=mbRatesSorted[mbRatesSorted.length-1];return last?last.rate:0;
   };
   // Recargo por valor (canal B): si vpu = FOB/CBM supera el umbral, cobra ese % del FOB.
-  const surchargeForValue=(fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
+  // El % del tramo lo pisa la tarifa propia del cliente si tiene una (antes la ignoraba).
+  const surchargeForValue=(fob,cbm,ov)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min){const o=(ov||[]).find(x=>x.tariff_id===s.id);const pct=o?Number(o.custom_rate):s.rate;return Math.round(fob*(pct/100)*100)/100;}}return 0;};
   // Importe a cobrar por CLIENTE en un contenedor: se trata como UNA operación (CBM combinado
   // de sus cargas × rango + recargo). Devuelve un mapa {client_id: importe}.
   const clientImportes=(list)=>{
@@ -16336,7 +16337,7 @@ function MaritimePanel({token,allClients=[]}){
       const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const fob=items.filter(it=>sids.has(it.shipment_id)).reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       const overrides=mtOverrides[cid]||[];
-      out[cid]=cbm*fleteRateForCbm(cbm,overrides)+surchargeForValue(fob,cbm);
+      out[cid]=cbm*fleteRateForCbm(cbm,overrides)+surchargeForValue(fob,cbm,overrides);
     });
     return out;
   };
@@ -17178,10 +17179,11 @@ function mtMoney({tariffs,overrides,pkgByShip,itemsByShip,shipments,containers})
   const bultosOf=(shId)=>(pkgByShip[shId]||[]).reduce((s,p)=>s+Number(p.quantity||1),0);
   // Tarifa marítimo_b (USD/m³) según el RANGO de CBM, con override del cliente.
   const mbRatesSorted=tariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min);
-  const mbSurchSorted=tariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
+  const mbSurchSorted=tariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({id:t.id,min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
   const fleteRateForCbm=(cbm,ov)=>{for(const r of mbRatesSorted){if(cbm>=r.min&&cbm<r.max){const o=(ov||[]).find(x=>x.tariff_id===r.id);return o?Number(o.custom_rate):r.rate;}}const last=mbRatesSorted[mbRatesSorted.length-1];return last?last.rate:0;};
   // Recargo por valor (canal B): si vpu = FOB/CBM supera el umbral, cobra ese % del FOB.
-  const surchargeForValue=(fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
+  // El % del tramo lo pisa la tarifa propia del cliente si tiene una (antes la ignoraba).
+  const surchargeForValue=(fob,cbm,ov)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min){const o=(ov||[]).find(x=>x.tariff_id===s.id);const pct=o?Number(o.custom_rate):s.rate;return Math.round(fob*(pct/100)*100)/100;}}return 0;};
   // Importe por CLIENTE en un contenedor: una sola operación (CBM combinado × rango + recargo).
   const clientImportes=(list)=>{
     const byCli={};(list||[]).forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
@@ -17189,7 +17191,7 @@ function mtMoney({tariffs,overrides,pkgByShip,itemsByShip,shipments,containers})
     Object.entries(byCli).forEach(([cid,ships])=>{
       const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const fob=ships.reduce((s,sh)=>s+(itemsByShip[sh.id]||[]).reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0),0);
-      out[cid]=cbm*fleteRateForCbm(cbm,overrides[cid]||[])+surchargeForValue(fob,cbm);
+      out[cid]=cbm*fleteRateForCbm(cbm,overrides[cid]||[])+surchargeForValue(fob,cbm,overrides[cid]||[]);
     });
     return out;
   };
@@ -18281,10 +18283,10 @@ const mtxEsPlaceholder=(sh)=>sh?.awaiting_supplier===true||(sh?.status==="provee
 // cargan aparte en el historial) y hace falta valuar "cuánto se estimó" para compararlo con lo real.
 const mtxRates=(tariffs)=>({
   rates:(tariffs||[]).filter(t=>t.service_key==="maritimo_b"&&t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min),
-  surch:(tariffs||[]).filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min),
+  surch:(tariffs||[]).filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({id:t.id,min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min),
 });
 const mtxFleteRate=(R,cbm,overrides)=>{for(const r of R.rates){if(cbm>=r.min&&cbm<r.max){const ov=(overrides||[]).find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):r.rate;}}const last=R.rates[R.rates.length-1];return last?last.rate:0;};
-const mtxSurcharge=(R,fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of R.surch){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
+const mtxSurcharge=(R,fob,cbm,ov)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of R.surch){if(vpu>=s.min){const o=(ov||[]).find(x=>x.tariff_id===s.id);const pct=o?Number(o.custom_rate):s.rate;return Math.round(fob*(pct/100)*100)/100;}}return 0;};
 // Importe estimado por carga de una lista (mapa id → USD). Por cliente: CBM combinado × tarifa del rango
 // + recargo por FOB, prorrateado por CBM; revenue_manual pisa la parte de esa carga.
 const mtxImporteEstPorCarga=(list,{tariffs,overrides,cbmOf,fobOf})=>{
@@ -18294,7 +18296,7 @@ const mtxImporteEstPorCarga=(list,{tariffs,overrides,cbmOf,fobOf})=>{
   Object.entries(byCli).forEach(([cid,ships])=>{
     const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
     const fob=ships.reduce((s,sh)=>s+fobOf(sh.id),0);
-    const imp=cbm*mtxFleteRate(R,cbm,(overrides||{})[cid]||[])+mtxSurcharge(R,fob,cbm);
+    const imp=cbm*mtxFleteRate(R,cbm,(overrides||{})[cid]||[])+mtxSurcharge(R,fob,cbm,(overrides||{})[cid]||[]);
     ships.forEach(sh=>{out[sh.id]=sh.revenue_manual!=null?(Number(sh.revenue_manual)||0):(cbm>0?imp*(cbmOf(sh.id)/cbm):imp/ships.length);});
   });
   return out;

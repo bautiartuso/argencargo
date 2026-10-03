@@ -79,7 +79,7 @@ export async function GET(req) {
   // Tarifa marítimo integral por rango de m³ (+ override del cliente) y recargo por valor.
   const tList = Array.isArray(tariffs) ? tariffs : [];
   const mbRates = tList.filter((t) => t.type === "rate").map((t) => ({ id: t.id, min: Number(t.min_qty || 0), max: t.max_qty != null ? Number(t.max_qty) : Infinity, rate: Number(t.rate || 0) })).sort((a, b) => a.min - b.min);
-  const mbSurch = tList.filter((t) => t.type === "surcharge").map((t) => ({ min: Number(t.min_qty || 0), rate: Number(t.rate || 0) })).sort((a, b) => b.min - a.min);
+  const mbSurch = tList.filter((t) => t.type === "surcharge").map((t) => ({ id: t.id, min: Number(t.min_qty || 0), rate: Number(t.rate || 0) })).sort((a, b) => b.min - a.min);
   const ovMap = {};
   (Array.isArray(ovs) ? ovs : []).forEach((o) => { ovMap[o.tariff_id] = Number(o.custom_rate); });
   const fleteRate = (cbm) => {
@@ -90,7 +90,7 @@ export async function GET(req) {
   const surchargeFor = (fob, cbm) => {
     if (!(fob > 0 && cbm > 0)) return 0;
     const vpu = fob / cbm;
-    for (const s of mbSurch) { if (vpu >= s.min) return Math.round(fob * (s.rate / 100) * 100) / 100; }
+    for (const s of mbSurch) { if (vpu >= s.min) { const pct = ovMap[s.id] != null ? ovMap[s.id] : s.rate; return Math.round(fob * (pct / 100) * 100) / 100; } }
     return 0;
   };
 
