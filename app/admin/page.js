@@ -9252,7 +9252,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         return <div style={{marginTop:-6,marginBottom:14}}>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             {OPC.map(([v,k,div])=>{const on=norm===v;return <button key={v||"none"} type="button" onClick={async()=>{const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{requested_carrier:v||null}});if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar el courier: ${r.message||r.code}`,"error");return;}onReload();}} title={!v?"El agente elige":k==="dhl"?"DHL":`${k==="fedex"?"FedEx":"UPS"} con volumétrico ÷${div}`} style={{display:"inline-flex",alignItems:"center",gap:10,height:52,padding:k?"0 14px 0 7px":"0 18px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,border:`1px solid ${on?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(96,165,250,0.16)":"rgba(255,255,255,0.03)",color:on?"#93c5fd":"rgba(255,255,255,0.7)",boxShadow:on?"0 0 0 3px rgba(96,165,250,0.12)":"none",transition:"all 150ms"}}>
-              {k?<><CarrierLogo k={k} alto={38}/>{div?<span style={{fontSize:15,fontWeight:900,fontVariantNumeric:"tabular-nums"}}>÷{div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
+              {k?<><CarrierLogo k={k} alto={38}/>{div?<span style={{fontSize:15,fontWeight:900,fontVariantNumeric:"tabular-nums"}}>÷ {div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
             </button>;})}
           </div>
         </div>;
@@ -9906,36 +9906,35 @@ function RefundForm({token,agentId,onSaved}){
 }
 
 function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
+  // Agentes (03/10/2026): son pocos, así que todo va desplegado. Por agente: datos, cuenta corriente
+  // (saldo, anticipos, devoluciones y movimientos) y sus tarifas (las carga el agente desde su panel).
   const [tarifas,setTarifas]=useState(null); // {auth_user_id: tarifas}
-  const [abiertos,setAbiertos]=useState({}); // {signupId: "cc"|"tar"|null}
   useEffect(()=>{(async()=>{try{const r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();const m={};(j?.agentes||[]).forEach(a=>{m[a.auth_user_id]=a.tarifas||null;});setTarifas(m);}catch(e){setTarifas({});}})();},[token]);
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>;
   if(signups.length===0)return <p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes.</p>;
   const orden={pending:0,approved:1,rejected:2};
   const lista=[...signups].sort((a,b)=>(orden[a.status]??3)-(orden[b.status]??3));
   const btn=(c)=>({height:34,padding:"0 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${c}55`,background:`${c}1a`,color:c,cursor:"pointer",fontFamily:"inherit"});
-  return <div style={{display:"flex",flexDirection:"column",gap:12}}>
-    {lista.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};const t=tarifas?.[s.auth_user_id];const sec=abiertos[s.id]||null;const saldo=s.status==="approved"&&saldoDe?saldoDe(s):null;
-      const nServ=t?Object.values(t.servicios||{}).filter(f=>Array.isArray(f)&&f.length).length:0;
-      return <div key={s.id} style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,padding:"16px 20px"}}>
+  const seccion=(titulo,hijo)=><div style={{marginTop:18,paddingTop:18,borderTop:"1px solid rgba(255,255,255,0.07)"}}><p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>{titulo}</p>{hijo}</div>;
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {lista.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};const t=tarifas?.[s.auth_user_id];const aprobado=s.status==="approved";const saldo=aprobado&&saldoDe?saldoDe(s):null;
+      return <div key={s.id} style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"20px 22px"}}>
         <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-          <div style={{width:44,height:44,borderRadius:12,background:"rgba(184,149,106,0.14)",border:"1px solid rgba(184,149,106,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,color:GOLD_LIGHT,flexShrink:0}}>{(s.first_name||"?").trim().charAt(0).toUpperCase()}</div>
-          <div style={{flex:"1 1 220px",minWidth:0}}>
-            <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>{s.first_name||"—"} {s.last_name||""} <span style={{fontSize:11,fontWeight:800,padding:"3px 9px",borderRadius:6,marginLeft:6,color:st.c,background:`${st.c}18`,border:`1px solid ${st.c}40`,verticalAlign:2}}>{st.l}</span></p>
-            <p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{s.email} · {s.country==="China"?"🇨🇳":(s.country==="USA"||s.country==="Estados Unidos")?"🇺🇸":"🌐"} {s.country||"—"} · {s.language==="zh"?"中文":"Español"} · desde {formatDate(s.created_at)}</p>
+          <div style={{width:52,height:52,borderRadius:14,background:"rgba(184,149,106,0.14)",border:"1px solid rgba(184,149,106,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:GOLD_LIGHT,flexShrink:0}}>{(s.first_name||"?").trim().charAt(0).toUpperCase()}</div>
+          <div style={{flex:"1 1 240px",minWidth:0}}>
+            <p style={{fontSize:19,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>{s.first_name||"—"} {s.last_name||""} <span style={{fontSize:11,fontWeight:800,padding:"3px 9px",borderRadius:6,marginLeft:6,color:st.c,background:`${st.c}18`,border:`1px solid ${st.c}40`,verticalAlign:3}}>{st.l}</span></p>
+            <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{s.email} · {s.country==="China"?"🇨🇳":(s.country==="USA"||s.country==="Estados Unidos")?"🇺🇸":"🌐"} {s.country||"—"} · {s.language==="zh"?"中文":"Español"} · desde {formatDate(s.created_at)}</p>
           </div>
+          {saldo!=null&&<div style={{textAlign:"right"}}>
+            <p style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Cuenta corriente</p>
+            <p style={{fontSize:24,fontWeight:900,color:saldo<0?"#f87171":"#4ade80",margin:"2px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"1px 0 0"}}>{saldo<0?"le debés al agente":"crédito a favor"}</p>
+          </div>}
           {s.status==="pending"&&<div style={{display:"flex",gap:8}}><button onClick={()=>approve(s)} style={btn("#22c55e")}>✓ Aprobar</button><button onClick={()=>reject(s)} style={btn("#f87171")}>✕ Rechazar</button></div>}
           {s.status==="rejected"&&<button onClick={()=>approve(s)} style={btn("#22c55e")}>Reactivar</button>}
-          {s.status==="approved"&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {ccDe&&<button onClick={()=>setAbiertos(p=>({...p,[s.id]:sec==="cc"?null:"cc"}))} style={{...btn(saldo!=null&&saldo<0?"#f87171":"#4ade80"),...(sec==="cc"?{boxShadow:"0 0 0 2px rgba(255,255,255,0.15)"}:{})}}>Cuenta corriente{saldo!=null?` · USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:""}</button>}
-            <button onClick={()=>setAbiertos(p=>({...p,[s.id]:sec==="tar"?null:"tar"}))} style={{...btn("#E8D098"),...(sec==="tar"?{boxShadow:"0 0 0 2px rgba(255,255,255,0.15)"}:{})}}>Tarifas {tarifas==null?"…":t?`· ${nServ}/5 servicios`:"· sin cargar"}</button>
-          </div>}
         </div>
-        {s.status==="approved"&&sec==="cc"&&ccDe&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>{ccDe(s)}</div>}
-        {s.status==="approved"&&sec==="tar"&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"0 0 12px"}}>Las carga y actualiza {s.first_name||"el agente"} desde su panel → Tarifas.</p>
-          {tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>}
-        </div>}
+        {aprobado&&ccDe&&seccion("Movimientos de la cuenta",ccDe(s))}
+        {aprobado&&seccion(<>Tarifas <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>· las carga {s.first_name||"el agente"} desde su panel</span></>,tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>)}
       </div>;})}
   </div>;
 }
@@ -10485,7 +10484,7 @@ function AgentsPanel({token}){
     // Cuenta corriente de un agente (03/10/2026): se muestra dentro de la solapa Agentes.
     const ccDeAgente=(a)=>{const bal=agentBalance(a.auth_user_id);const movs=accMovements.filter(m=>m.agent_id===a.auth_user_id);return <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
-          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:"14px 18px",border:"1px solid rgba(34,197,94,0.15)"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>SALDO</p><p style={{fontSize:22,fontWeight:700,color:bal>0?"#22c55e":bal<0?"#ff6b6b":"#fff",margin:0}}>{usd(bal)}</p></div>
+          <span/>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.55)"}} title="Divisor para peso volumétrico (cm³ ÷ divisor). Estándar 5000, algunos couriers usan 6000.">
               <span>Vol ÷</span>
