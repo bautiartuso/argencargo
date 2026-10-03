@@ -16809,7 +16809,9 @@ function MaritimePanel({token,allClients=[]}){
           {verPlata&&(()=>{const esManual=sh.revenue_manual!=null;return <div style={{marginTop:12,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",padding:"9px 11px",background:"rgba(0,0,0,0.2)",border:`1px solid ${MT_BORDE}`,borderRadius:10}}>
             <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>Costo
               <input key={`${sh.id}-${sh.cost_estimado??""}`} type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" title={sh.cost_manual?"Cargado a mano. Borrá el campo para volver al automático.":`Automático: m³ × USD ${Number(sh.cost_per_cbm||0)} del depósito${sh.mercaderia_tipo?` (${sh.mercaderia_tipo})`:""}`} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))saveShipCost(sh,e.target.value);}} style={{width:88,padding:"5px 8px",fontSize:12.5,borderRadius:7,border:`1px solid ${sh.cost_manual?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.15)"}`,background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit"}}/>
-              <span style={{fontSize:9.5,fontWeight:700,color:sh.cost_manual?"#fbbf24":"rgba(255,255,255,0.35)"}}>{sh.cost_manual?"a mano":"auto"}</span>
+              {sh.cost_manual
+                ?<button type="button" onClick={()=>saveShipCost(sh,"")} title="Volver al costo automático (m³ × tarifa del depósito)" style={{fontSize:10.5,fontWeight:800,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>a mano · ↺ auto</button>
+                :<span style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)"}}>auto</span>}
             </span>
             <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>A cobrar
               <input key={`${sh.id}-rev-${sh.revenue_manual??""}`} type="number" step="any" defaultValue={esManual?sh.revenue_manual:Math.round(imp*100)/100} placeholder="0" title={esManual?"Cargado a mano. Borrá el campo para volver al automático.":"Automático: tarifa × m³ del cliente."} onBlur={e=>{const v=String(e.target.value).trim();const auto=String(Math.round(imp*100)/100);if(esManual?v!==String(sh.revenue_manual):(v!==""&&v!==auto))saveShipRevenue(sh,v);else if(esManual&&v==="")saveShipRevenue(sh,"");}} style={{width:88,padding:"5px 8px",fontSize:12.5,borderRadius:7,border:`1px solid ${esManual?"rgba(251,191,36,0.4)":"rgba(74,222,128,0.3)"}`,background:"rgba(0,0,0,0.25)",color:"#4ade80",fontWeight:700,fontFamily:"inherit"}}/>
@@ -19222,11 +19224,10 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     if(isEdit&&(editing?.mercaderia_tipo||"")!==(tipo||"")){body.tipo_confirmado_at=null;body.tipo_corregido=false;}
     // Costo: solo lo manda el admin. El empleado no ve el campo y si lo mandara vacío pisaría con
     // null un costo manual cargado por Bautista.
-    if(verCostos){
-      // Vacio = automatico (lo calcula el trigger con la tarifa del deposito).
-      body.cost_estimado=costEst.trim()===""?null:Number(costEst.replace(",","."));
-      body.cost_manual=costEst.trim()!=="";
-    }
+    // El formulario ya no edita el costo (02/10/2026). Antes mandaba siempre el costo que tenía
+    // precargado y lo marcaba "a mano": cada vez que se editaba un pedido (tipo, fotos…) el costo
+    // automático quedaba congelado sin que nadie lo tocara. Solo se manda al crear, en automático.
+    if(verCostos&&!isEdit){body.cost_estimado=null;body.cost_manual=false;}
     // Regla única de estado: proveedor (esperando / en camino) → en_deposito (con received_at)
     // → en_camino_ar (⇔ contenedor). Al crear se manda siempre el status; al editar solo cuando
     // el form cambia algo que lo determina.
