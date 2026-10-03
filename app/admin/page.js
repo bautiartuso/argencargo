@@ -6,6 +6,8 @@ import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import CarrierLogo from "../components/CarrierLogo";
+import { TarifasAgenteResumen } from "../components/TarifasAgente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
@@ -9246,13 +9248,11 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         const actual=flight.requested_carrier||"";
         // "FEDEX" y "UPS" sin divisor son vuelos viejos: equivalen a ÷6000.
         const norm=actual==="FEDEX"?"FEDEX_6000":actual==="UPS"?"UPS_6000":actual;
-        const logo=(k,size)=>{const L=CARRIER_LOGOS[k];return <span style={{width:size,height:size,borderRadius:Math.round(size/4.5),background:L.bg,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg viewBox={L.vb} style={{width:size*0.8,height:size*0.8}} preserveAspectRatio="xMidYMid meet"><path d={L.d} fill={L.fill}/></svg></span>;};
         const OPC=[["",null,null],["DHL","dhl",null],["FEDEX_5000","fedex",5000],["FEDEX_6000","fedex",6000],["UPS_5000","ups",5000],["UPS_6000","ups",6000]];
-        return <div style={{marginTop:-6,marginBottom:14,padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)"}}>
-          <p style={{fontSize:13.5,fontWeight:800,color:"#fff",margin:"0 0 10px"}}>Courier pedido al agente</p>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {OPC.map(([v,k,div])=>{const on=norm===v;return <button key={v||"none"} type="button" onClick={async()=>{const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{requested_carrier:v||null}});if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar el courier: ${r.message||r.code}`,"error");return;}onReload();}} title={!v?"El agente elige":k==="dhl"?"DHL":`${k==="fedex"?"FedEx":"UPS"} con volumétrico ÷${div}`} style={{display:"inline-flex",alignItems:"center",gap:8,height:40,padding:k?"0 12px 0 6px":"0 14px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,border:`1px solid ${on?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(96,165,250,0.16)":"rgba(255,255,255,0.03)",color:on?"#93c5fd":"rgba(255,255,255,0.7)",boxShadow:on?"0 0 0 3px rgba(96,165,250,0.12)":"none",transition:"all 150ms"}}>
-              {k?<>{logo(k,28)}{div?<span style={{fontVariantNumeric:"tabular-nums"}}>÷{div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
+        return <div style={{marginTop:-6,marginBottom:14}}>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {OPC.map(([v,k,div])=>{const on=norm===v;return <button key={v||"none"} type="button" onClick={async()=>{const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{requested_carrier:v||null}});if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar el courier: ${r.message||r.code}`,"error");return;}onReload();}} title={!v?"El agente elige":k==="dhl"?"DHL":`${k==="fedex"?"FedEx":"UPS"} con volumétrico ÷${div}`} style={{display:"inline-flex",alignItems:"center",gap:10,height:52,padding:k?"0 14px 0 7px":"0 18px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,border:`1px solid ${on?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(96,165,250,0.16)":"rgba(255,255,255,0.03)",color:on?"#93c5fd":"rgba(255,255,255,0.7)",boxShadow:on?"0 0 0 3px rgba(96,165,250,0.12)":"none",transition:"all 150ms"}}>
+              {k?<><CarrierLogo k={k} alto={38}/>{div?<span style={{fontSize:15,fontWeight:900,fontVariantNumeric:"tabular-nums"}}>÷{div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
             </button>;})}
           </div>
         </div>;
@@ -9905,6 +9905,36 @@ function RefundForm({token,agentId,onSaved}){
   </div>;
 }
 
+function AgentesTab({signups,ST,lo,token,approve,reject}){
+  const [tarifas,setTarifas]=useState(null); // {auth_user_id: tarifas}
+  const [abiertos,setAbiertos]=useState(()=>new Set());
+  useEffect(()=>{(async()=>{try{const r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();const m={};(j?.agentes||[]).forEach(a=>{m[a.auth_user_id]=a.tarifas||null;});setTarifas(m);}catch(e){setTarifas({});}})();},[token]);
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>;
+  if(signups.length===0)return <p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes.</p>;
+  const orden={pending:0,approved:1,rejected:2};
+  const lista=[...signups].sort((a,b)=>(orden[a.status]??3)-(orden[b.status]??3));
+  const btn=(c)=>({height:34,padding:"0 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${c}55`,background:`${c}1a`,color:c,cursor:"pointer",fontFamily:"inherit"});
+  return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    {lista.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};const t=tarifas?.[s.auth_user_id];const abierto=abiertos.has(s.id)||s.status==="approved"&&lista.filter(x=>x.status==="approved").length===1;
+      const nServ=t?Object.values(t.servicios||{}).filter(f=>Array.isArray(f)&&f.length).length:0;
+      return <div key={s.id} style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,padding:"16px 20px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{width:44,height:44,borderRadius:12,background:"rgba(184,149,106,0.14)",border:"1px solid rgba(184,149,106,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,color:GOLD_LIGHT,flexShrink:0}}>{(s.first_name||"?").trim().charAt(0).toUpperCase()}</div>
+          <div style={{flex:"1 1 220px",minWidth:0}}>
+            <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>{s.first_name||"—"} {s.last_name||""} <span style={{fontSize:11,fontWeight:800,padding:"3px 9px",borderRadius:6,marginLeft:6,color:st.c,background:`${st.c}18`,border:`1px solid ${st.c}40`,verticalAlign:2}}>{st.l}</span></p>
+            <p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{s.email} · {s.country==="China"?"🇨🇳":(s.country==="USA"||s.country==="Estados Unidos")?"🇺🇸":"🌐"} {s.country||"—"} · {s.language==="zh"?"中文":"Español"} · desde {formatDate(s.created_at)}</p>
+          </div>
+          {s.status==="pending"&&<div style={{display:"flex",gap:8}}><button onClick={()=>approve(s)} style={btn("#22c55e")}>✓ Aprobar</button><button onClick={()=>reject(s)} style={btn("#f87171")}>✕ Rechazar</button></div>}
+          {s.status==="rejected"&&<button onClick={()=>approve(s)} style={btn("#22c55e")}>Reactivar</button>}
+          {s.status==="approved"&&<button onClick={()=>setAbiertos(p=>{const n=new Set(p);n.has(s.id)?n.delete(s.id):n.add(s.id);return n;})} style={{...btn("#E8D098"),display:"inline-flex",alignItems:"center",gap:8}}>Tarifas {tarifas==null?"…":t?`· ${nServ}/5 servicios`:"· sin cargar"} <span style={{transform:abierto?"rotate(90deg)":"none",transition:"transform 150ms"}}>›</span></button>}
+        </div>
+        {s.status==="approved"&&abierto&&<div style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          {tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>}
+        </div>}
+      </div>;})}
+  </div>;
+}
+
 function AgentsPanel({token}){
   // Persistimos también la sub-tab (depósito/vuelos/cc agentes/...) y el vuelo seleccionado
   // para que al recargar dentro del panel de agentes volvamos al mismo subview.
@@ -10482,7 +10512,7 @@ function AgentsPanel({token}){
         <div className="ag-izq">{izq}</div>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
-        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
             </div>
         <div className="ag-der">{der}</div>
@@ -11028,30 +11058,9 @@ function AgentsPanel({token}){
         </table>
       </div>}
     </>}
-    {tab==="signups"&&(lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>:signups.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay solicitudes de agentes</p>:
-    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-          {["Nombre","Email","País","Idioma","Estado","Registrado","Acciones"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
-        </tr></thead>
-        <tbody>{signups.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};return <tr key={s.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <td style={{padding:"12px 14px",color:"#fff"}}>{s.first_name||"—"} {s.last_name||""}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)",fontSize:12}}>{s.email}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{s.country==="China"?"🇨🇳":(s.country==="USA"||s.country==="Estados Unidos")?"🇺🇸":"🌐"} {s.country||"—"}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{s.language==="zh"?"中文":"ES"}</td>
-          <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span></td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(s.created_at)}</td>
-          <td style={{padding:"12px 14px"}}>
-            {s.status==="pending"&&<div style={{display:"flex",gap:6}}>
-              <button onClick={()=>approve(s)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.25)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>✓ Aprobar</button>
-              <button onClick={()=>reject(s)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>✕ Rechazar</button>
-            </div>}
-            {s.status==="approved"&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Activo</span>}
-            {s.status==="rejected"&&<button onClick={()=>approve(s)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.25)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>Reactivar</button>}
-          </td>
-        </tr>;})}</tbody>
-      </table>
-    </div>)}
+    {/* Agentes (03/10/2026, ex Solicitudes): una tarjeta por agente con sus datos y sus tarifas por
+        servicio (las carga cada agente desde su panel → Tarifas). Las solicitudes nuevas se aprueban acá. */}
+    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject}/>}
     {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const suelto=!movePkgState.fromOp;const fromCl=suelto?(movePkgState.pkg.clients||null):movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>

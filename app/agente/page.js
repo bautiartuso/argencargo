@@ -5,6 +5,7 @@ import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 import { comprimirImagen } from "../../lib/img";
+import { TarifasAgenteEditor } from "../components/TarifasAgente";
 import { hoyAR } from "../../lib/fecha-ar";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -209,6 +210,7 @@ const I18N={
     tab_active_flights:"Vuelos",
     tab_history:"Recibidos",
     tab_stats:"Estadísticas",
+    tab_tarifas:"Tarifas",
     tab_account:"Cuenta corriente",
     flight:"Vuelo",
     flight_status_preparando:"Preparando",
@@ -546,6 +548,7 @@ const I18N={
     tab_active_flights:"航班",
     tab_history:"已接收",
     tab_stats:"统计",
+    tab_tarifas:"运价",
     tab_account:"往来账户",
     flight:"航班",
     flight_status_preparando:"准备中",
@@ -1058,6 +1061,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean));
   const depositPkgsAll=packages.filter(p=>{
     if(!p.operation_id)return true;                       // suelto: el cliente todavia no armo la importacion
+    // Los bultos de operaciones marítimas no son del agente aéreo (AC-0014 marítimo A aparecía acá).
+    if(String(p.operations?.channel||"").includes("maritimo"))return false;
     if(flightOpIds.has(p.operation_id))return false;       // ya esta cargado en un vuelo
     return EN_DEPOSITO.has(String(p.operations?.status||""));
   });
@@ -1147,6 +1152,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const tabsIsla=[
     {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length},
     {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
+    {k:"tarifas",l:t.tab_tarifas},
     {k:"stats",l:t.tab_stats},
     {k:"account",l:t.tab_account},
   ];
@@ -1285,6 +1291,10 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
 
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
+    {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
+    {tab==="tarifas"&&(esAdmin
+      ?<p style={{color:"rgba(var(--ink),0.55)",textAlign:"center",padding:"2rem 0"}}>Las tarifas de cada agente se ven en el admin → Depósito → Agentes.</p>
+      :<TarifasAgenteEditor token={token} lang={lang}/>)}
     {tab==="stats"&&(()=>{
       const volDivS=Number(signup?.volumetric_divisor)||5000;
       const pesos=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const v=l&&w&&h?((l*w*h)/volDivS)*q:0;return {bruto:gw,vol:v,fact:Math.max(gw,v)};};
