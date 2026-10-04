@@ -24,6 +24,16 @@ export const CONTACTO = {
   cuit: "",                              // ej.: "30-xxxxxxxx-x"
 };
 
+// Redes del pie. Las que no tienen link todavía se ven apagadas, con "Próximamente".
+// ⚠️ COMPLETAR: LinkedIn, Facebook, TikTok y YouTube cuando estén creadas.
+export const REDES = {
+  instagram: "https://www.instagram.com/argenmac_/",
+  linkedin: "",
+  facebook: "",
+  tiktok: "",
+  youtube: "",
+};
+
 export const LINKS_LEGALES = [
   { href: "/legal", t: "Aviso legal" },
   { href: "/privacidad", t: "Política de privacidad" },
