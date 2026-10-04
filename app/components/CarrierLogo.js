@@ -14,7 +14,7 @@ export default function CarrierLogo({ k, alto = 34, radio }) {
   const hh = alto * (ESCALA[k] || 0.6);
   const ww = h > 0 ? hh * (w / h) : hh;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: alto, minWidth: Math.max(ww + alto * 0.7, alto), padding: `0 ${Math.round(alto * 0.32)}px`, borderRadius: radio ?? Math.round(alto / 4), background: L.bg, boxSizing: "border-box", flexShrink: 0 }}>
+    <span className="ac-noinv" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: alto, minWidth: Math.max(ww + alto * 0.7, alto), padding: `0 ${Math.round(alto * 0.32)}px`, borderRadius: radio ?? Math.round(alto / 4), background: L.bg, boxSizing: "border-box", flexShrink: 0 }}>
       <svg viewBox={L.vb} style={{ height: hh, width: ww, display: "block" }} preserveAspectRatio="xMidYMid meet"><path d={L.d} fill={L.fill} /></svg>
     </span>
   );

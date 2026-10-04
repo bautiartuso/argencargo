@@ -121,7 +121,10 @@ function Login({ onLogin }) {
   );
 }
 
-function Dashboard({ token, onLogout }) {
+// embebido (04/10/2026): se muestra como solapa dentro del admin, sin pantalla completa.
+export function CcFinancieraPanel({ token }) { return <Dashboard token={token} embebido />; }
+
+function Dashboard({ token, onLogout, embebido }) {
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterCurrency, setFilterCurrency] = useState("all");
@@ -157,9 +160,9 @@ function Dashboard({ token, onLogout }) {
   const acciones = (m) => <AccionesFila m={m} onEdit={setEditing} onReload={load} token={token} />;
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
-      <ToastStack />
-      <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1320, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
+    <div style={embebido ? { color: T.text } : { height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
+      {!embebido && <ToastStack />}
+      <main style={embebido ? { width: "100%" } : { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1320, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
           <BalanceCard label="Saldo en pesos (ARS)" currency="ARS" amount={enriched.totals.ars} />
           <BalanceCard label="Saldo en dólares (USD)" currency="USD" amount={enriched.totals.usd} />
@@ -185,7 +188,7 @@ function Dashboard({ token, onLogout }) {
           </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 30, marginRight: -22, paddingRight: 22 }}>
+        <div style={embebido ? { paddingBottom: 30 } : { flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 30, marginRight: -22, paddingRight: 22 }}>
           {loading ? (
             <p style={{ textAlign: "center", padding: "3rem 0", color: T.textMuted, fontSize: 13 }}>Cargando…</p>
           ) : tab === "stats" ? (

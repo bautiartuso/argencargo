@@ -10,6 +10,7 @@ import CarrierLogo from "../components/CarrierLogo";
 import { TarifasAgenteResumen } from "../components/TarifasAgente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
+import { CcFinancieraPanel } from "../ccfinanciera/page";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
@@ -16000,6 +16001,14 @@ function GiAdminPanel({token,clients}){
 }
 
 function AdminDashboard({session,onLogout}){
+  // Modo claro / oscuro del admin (04/10/2026). El admin está pintado en oscuro a mano en miles de
+  // lugares, así que el claro invierte la pantalla entera (html) y vuelve a invertir fotos, logos y
+  // banderas para que se vean con sus colores. Se recuerda en este navegador.
+  const [temaAdmin,setTemaAdmin]=useState(()=>{try{return localStorage.getItem("ac_admin_tema")==="claro"?"claro":"oscuro";}catch{return "oscuro";}});
+  useEffect(()=>{const h=document.documentElement;h.classList.toggle("ac-claro",temaAdmin==="claro");try{localStorage.setItem("ac_admin_tema",temaAdmin);}catch{}return()=>h.classList.remove("ac-claro");},[temaAdmin]);
+  const btnTema=<button onClick={()=>setTemaAdmin(t=>t==="claro"?"oscuro":"claro")} aria-label="Modo claro u oscuro" title={temaAdmin==="claro"?"Pasar a modo oscuro":"Pasar a modo claro"} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"8px 10px",marginBottom:8,fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.65)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em"}}>{temaAdmin==="claro"
+    ?<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Modo oscuro</>
+    :<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Modo claro</>}</button>;
   // Estado de navegación persistido en localStorage para que al recargar (F5 / Cmd+R) el admin
   // vuelva exactamente al mismo lugar (página, op/cliente/vuelo seleccionado).
   const readNav=()=>{if(typeof window==="undefined")return null;try{return JSON.parse(localStorage.getItem("ac_admin_nav")||"null");}catch{return null;}};
@@ -16064,7 +16073,7 @@ function AdminDashboard({session,onLogout}){
       {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
       {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
       {key:"facturas",label:"Facturación",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M9 13h6","M9 17h4"]},
-      {key:"ccfin",label:"CC Financiera",href:"/ccfinanciera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
+      {key:"ccfin",label:"CC Financiera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
     ]},
     {section:"Gestión Integral",items:[
       {key:"gi_requests",label:"Cotizaciones GI",p:["M12 2L4 8l8 14 8-14-8-6z","M4 8h16","M12 2v20"]},
@@ -16112,11 +16121,14 @@ function AdminDashboard({session,onLogout}){
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
       {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
     </div>)}</nav>
-    <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>AD</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0}}>Admin</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.user.email}</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px 10px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>Cerrar sesión</button></div>
+    <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>AD</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0}}>Admin</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.user.email}</p></div></div>{btnTema}<button onClick={onLogout} style={{width:"100%",padding:"8px 10px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>Cerrar sesión</button></div>
   </>;
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
+      html.ac-claro{filter:invert(1) hue-rotate(180deg);background:#0A1628}
+      html.ac-claro img,html.ac-claro video,html.ac-claro canvas,html.ac-claro iframe,html.ac-claro .ac-noinv{filter:invert(1) hue-rotate(180deg)}
+      html.ac-claro .ac-noinv img{filter:none}
       @media(max-width:900px){
         .ac-fe-sticky{top:58px}
         .ac-admin-sidebar-desktop{display:none!important}
@@ -16187,6 +16199,7 @@ function AdminDashboard({session,onLogout}){
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
+      {page==="ccfin"&&<CcFinancieraPanel token={token}/>}
       {page==="facturas"&&<FacturasPanel token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
