@@ -82,7 +82,12 @@ html,body{overflow-x:clip!important}
 .amq .despMenu img{width:22px;height:16px;object-fit:cover;border-radius:4px;box-shadow:0 0 0 1px rgba(0,0,0,0.12)}
 .amq .despMenu small{font-family:${MONO};font-size:11px;color:var(--gris)}
 .amq .despMenu button.on{background:var(--suave);font-weight:800}
-.amq .menuMovil{display:none}
+.amq .menuMovil{display:none}.amq .catMovil{display:none}
+.amq .btnHoja{display:flex;align-items:center;justify-content:center;height:48px;border-radius:14px;border:1.5px solid var(--borde);background:var(--card);color:var(--ink);font-size:14px;font-weight:800}
+.amq .btnHoja:first-child{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.amq .hojaCuenta{display:grid;gap:4px}
+.amq .hojaCuenta a,.amq .hojaCuenta button{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:12px;border:none;background:transparent;color:var(--ink);font-family:inherit;font-weight:700;font-size:15px;cursor:pointer;text-align:left}
+.amq .hojaCuenta a:active,.amq .hojaCuenta button:active{background:var(--suave)}
 .amq .hojaVelo{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);display:flex;align-items:flex-end;animation:hojaFade 160ms ease-out}
 .amq .hoja{width:100%;max-height:88vh;overflow-y:auto;background:var(--card);border-radius:26px 26px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,0.2);animation:hojaSube 220ms cubic-bezier(.2,.8,.2,1)}
 .amq .hojaCab{display:flex;align-items:center;justify-content:center;position:relative;height:40px;margin-bottom:6px}.amq .hojaCab .manija{width:40px;height:5px;border-radius:999px;background:var(--borde)}.amq .hojaCab .ico{position:absolute;right:0;top:4px}
@@ -272,6 +277,7 @@ html,body{overflow-x:clip!important}
 .amq .isla .btn.s{padding:7px 11px;font-size:12px}
 .amq .isla .ico{width:34px;height:34px}
 .amq .menuMovil{display:inline-flex;color:var(--ink);border-color:var(--borde)}
+.amq .isla .cuentaIsla,.amq .isla .vacioFuera{display:none}.amq .isla .catMovil{display:inline-flex}
 .amq .buscaIsla{order:3;flex-basis:100%;max-width:none;margin:0}.amq .buscaIsla input{height:38px}.amq .buscaIsla svg{top:11px}
 .amq .grupoWrap{padding:8px 10px 0}
 .amq footer{padding:40px 0 22px}.amq footer .wrap{grid-template-columns:1fr 1fr;gap:30px 20px}.amq footer .marca{grid-column:1/-1}.amq footer .contacto{grid-column:1/-1}.amq footer .abajo{flex-direction:column;gap:6px}
@@ -497,9 +503,10 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
             {desp === "lang" && <><div className="despVelo" onClick={() => setDesp(null)} /><div className="menuPerfil despMenu" role="menu">{IDIOMAS.map(([k, l]) => <button key={k} className={lang === k ? "on" : ""} onClick={() => { setLang(k); setDesp(null); }}><img src={bandera(k)} alt="" /><span>{l}</span></button>)}</div></>}
           </div>
           <button className={`pillIso tema ${tema === "oscuro" ? "dia" : "noche"}`} onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")} aria-label="Tema">{tema === "oscuro" ? <Ico d={["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={15} /> : <Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={15} />}</button>
-          <a className="ico" href="/carrito" title={t("carrito")} style={{ position: "relative" }} onClick={(e) => { e.preventDefault(); setOrden(true); }}><Ico d={["M6 6h15l-1.5 8H7.5z", "M6 6L5 3H2", "M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"]} size={16} />{n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--y)", color: "#15171A", fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "1px 6px" }}>{n}</span>}</a>
-          {!ses && <a className="btn s y" href="/cuenta">{t("ingresar")}</a>}
-          {ses && <div style={{ position: "relative" }}>
+          <a className={`ico carritoIsla${!enTienda && n === 0 ? " vacioFuera" : ""}`} href="/carrito" title={t("carrito")} style={{ position: "relative" }} onClick={(e) => { e.preventDefault(); setOrden(true); }}><Ico d={["M6 6h15l-1.5 8H7.5z", "M6 6L5 3H2", "M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"]} size={16} />{n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--y)", color: "#15171A", fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "1px 6px" }}>{n}</span>}</a>
+          {!enTienda && <a className="btn s y catMovil" href="/catalogo">{t("catalogo")}</a>}
+          {!ses && <a className="btn s y cuentaIsla" href="/cuenta">{t("ingresar")}</a>}
+          {ses && <div className="cuentaIsla" style={{ position: "relative" }}>
             <button className="btn s y" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu}>{cliente?.first_name || t("cuenta")}</button>
             {menu && <><div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 44 }} /><div className="menuPerfil" role="menu">
               <a href="/cuenta"><Ico d={["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"]} size={18} />{t("cuenta")}</a>
@@ -531,6 +538,14 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
         <div className="hojaOpc">{MONEDAS.map(([k, l]) => <button key={k} className={moneda === k ? "on" : ""} onClick={() => setMoneda(k)}><img src={bandera(k)} alt="" />{l}</button>)}</div>
         <p className="lbl">{t("temaL")}</p>
         <div className="hojaOpc">{[["claro", t("claro"), SOL], ["oscuro", t("oscuro"), LUNA]].map(([k, l, d]) => <button key={k} className={tema === k ? "on" : ""} onClick={() => setTema(k)}><Ico d={d} size={17} />{l}</button>)}</div>
+        <p className="lbl">{t("cuenta")}</p>
+        {!ses
+          ? <div className="hojaOpc"><a className="btnHoja" href="/cuenta">{t("ingresar")}</a><a className="btnHoja" href="/cuenta?registro=1">{t("crear")}</a></div>
+          : <div className="hojaCuenta">
+            <a href="/cuenta"><Ico d={["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"]} size={18} />{cliente?.first_name ? `${t("cuenta")} · ${cliente.first_name}` : t("cuenta")}</a>
+            <a href="/cuenta?s=pedidos"><Ico d={["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z", "M3.3 7l8.7 5 8.7-5", "M12 22V12"]} size={18} />{t("misPedidos")}</a>
+            <button onClick={() => { setHoja(false); salir(); window.location.href = "/"; }}><Ico d={["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"]} size={18} />{t("cerrarSesion")}</button>
+          </div>}
       </div>
     </div>}
     {checkout ? null : <footer>
