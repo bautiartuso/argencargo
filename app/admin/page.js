@@ -7348,7 +7348,7 @@ function AuditLogCard({token}){
       <span style={{color:"rgba(255,255,255,0.7)"}}>{val===null?"vacío":typeof val==="object"?JSON.stringify(val):String(val)}</span>
     </div>;
   };
-  return <Card title={`📜 Histórico de cambios (${filtered.length})`}>
+  return <Card v2 title="Actividad" sub={`${filtered.length} cambios`}>
     <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Registro automático de todos los cambios en operaciones, vuelos, pagos, clientes, tarifas y finanzas. Útil para debugging y rastrear quién hizo qué cuándo.</p>
 
     <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
@@ -7392,11 +7392,7 @@ function CreditCardPicker({token,value,onChange,label="Tarjeta",small=true,requi
   useEffect(()=>{(async()=>{const r=await dq("credit_cards",{token,filters:"?active=eq.true&select=id,name,brand&order=brand.asc,name.asc"});setCards(Array.isArray(r)?r:[]);})();},[token]);
   useEffect(()=>{if(!value&&cards.length===1)onChange(cards[0].id);},[cards,value,onChange]);
   return <div>
-    <label style={{fontSize:small?10:11,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}{required?" *":""}</label>
-    <select value={value||""} onChange={e=>onChange(e.target.value||null)} style={{width:"100%",padding:small?"7px 10px":"9px 12px",fontSize:12.5,border:`1px solid ${required&&!value?"rgba(255,80,80,0.4)":"rgba(255,255,255,0.1)"}`,borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
-      <option value="" style={{background:"#142038"}}>— Elegir tarjeta —</option>
-      {cards.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>{(c.brand==="visa"?"VISA · ":c.brand==="mastercard"?"MC · ":c.brand==="amex"?"AMEX · ":"")+c.name}</option>)}
-    </select>
+    <Sel label={`${label}${required?" *":""}`} value={value||""} onChange={v=>onChange(v||null)} options={[{value:"",label:"Elegir tarjeta…"},...cards.map(c=>({value:c.id,label:(c.brand==="visa"?"VISA · ":c.brand==="mastercard"?"MC · ":c.brand==="amex"?"AMEX · ":"")+c.name}))]}/>
     {cards.length===0&&<p style={{fontSize:10,color:"#fbbf24",margin:"4px 0 0"}}>⚠ No hay tarjetas cargadas — andá a Ajustes para crear una.</p>}
   </div>;
 }
@@ -7406,10 +7402,7 @@ function CreditCardPicker({token,value,onChange,label="Tarjeta",small=true,requi
 function AssignCardSelect({token,value,onAssign}){
   const [cards,setCards]=useState([]);
   useEffect(()=>{(async()=>{const r=await dq("credit_cards",{token,filters:"?active=eq.true&select=id,name,brand&order=brand.asc,name.asc"});setCards(Array.isArray(r)?r:[]);})();},[token]);
-  return <select value={value||""} onChange={e=>onAssign(e.target.value||null)} style={{padding:"5px 8px",fontSize:11,border:`1px solid ${value?"rgba(255,255,255,0.12)":"rgba(251,146,60,0.45)"}`,borderRadius:6,background:value?"rgba(255,255,255,0.06)":"rgba(251,146,60,0.08)",color:value?"#fff":"#fb923c",cursor:"pointer",fontWeight:600}}>
-    <option value="" style={{background:"#142038"}}>{value?"— Quitar tarjeta —":"⚠ Asignar tarjeta…"}</option>
-    {cards.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>{(c.brand==="visa"?"VISA · ":c.brand==="mastercard"?"MC · ":c.brand==="amex"?"AMEX · ":"")+c.name}</option>)}
-  </select>;
+  return <div style={{minWidth:170,marginBottom:-12}}><Sel value={value||""} onChange={v=>onAssign(v||null)} options={[{value:"",label:value?"Quitar tarjeta":"Asignar tarjeta…"},...cards.map(c=>({value:c.id,label:(c.brand==="visa"?"VISA · ":c.brand==="mastercard"?"MC · ":c.brand==="amex"?"AMEX · ":"")+c.name}))]}/></div>;
 }
 
 function CreditCardsCard({token}){
@@ -7435,19 +7428,12 @@ function CreditCardsCard({token}){
   const del=async(c)=>{if(!await confirmDialog(`¿Eliminar la tarjeta "${c.name}"? Los gastos asignados a ella quedarán sin tarjeta. Si tiene historial, mejor desactivala en vez de borrarla.`))return;await dq("credit_cards",{method:"DELETE",token,filters:`?id=eq.${c.id}`});load();};
   const brandIcon=(b)=>b==="visa"?"💳 VISA":b==="mastercard"?"💳 Mastercard":b==="amex"?"💳 Amex":"💳 Otro";
   const brandColor=(b)=>b==="visa"?"#1a1f71":b==="mastercard"?"#eb001b":b==="amex"?"#006fcf":"#666";
-  return <Card title="Tarjetas de crédito" actions={<Btn small onClick={startNew}>+ Nueva tarjeta</Btn>}>
+  return <Card v2 title="Tarjetas de crédito" actions={<Btn small variant="gold" onClick={startNew}>+ Nueva tarjeta</Btn>}>
     <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Lista de tarjetas para asignar a cada gasto pagado con TC. La <strong style={{color:"#fff"}}>fecha de cierre se carga en cada gasto puntual</strong> (varía mes a mes según feriados / fin de semana).</p>
     {editId&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
       <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px",marginBottom:10}}>
         <Inp label="Nombre (ej. Mastercard Galicia)" value={form.name} onChange={v=>setForm(p=>({...p,name:v}))}/>
-        <div><label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",margin:"0 0 4px"}}>Marca</label>
-          <select value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))} style={{width:"100%",padding:"7px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}>
-            <option value="visa" style={{background:"#142038"}}>VISA</option>
-            <option value="mastercard" style={{background:"#142038"}}>Mastercard</option>
-            <option value="amex" style={{background:"#142038"}}>American Express</option>
-            <option value="otro" style={{background:"#142038"}}>Otra</option>
-          </select>
-        </div>
+        <Sel label="Marca" value={form.brand} onChange={v=>setForm(p=>({...p,brand:v}))} options={[{value:"visa",label:"VISA"},{value:"mastercard",label:"Mastercard"},{value:"amex",label:"American Express"},{value:"otro",label:"Otra"}]}/>
       </div>
       <Inp label="Notas (opcional)" value={form.notes} onChange={v=>setForm(p=>({...p,notes:v}))}/>
       {msg&&<p style={{fontSize:11,color:"#ff6b6b",margin:"6px 0"}}>{msg}</p>}
@@ -7492,7 +7478,7 @@ function HolidaysCard({token}){
   const todayISO=hoyAR();
   const upcoming=holidays.filter(h=>h.end_date>=todayISO);
   const past=holidays.filter(h=>h.end_date<todayISO);
-  return <Card title="🌍 Calendario de feriados (China / USA / España)" actions={<Btn small onClick={()=>setShowForm(true)}>+ Nuevo feriado</Btn>}>
+  return <Card v2 title="Feriados" sub="China · Estados Unidos · España" actions={<Btn small variant="gold" onClick={()=>setShowForm(true)}>+ Nuevo feriado</Btn>}>
     <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Banner preventivo en el portal cliente. Le avisa al cliente sobre feriados próximos del país de origen para que planifique sus envíos. La alerta aparece N días antes según configures.</p>
     {showForm&&<div style={{padding:"14px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10,marginBottom:14}}>
       <h4 style={{fontSize:12,fontWeight:700,color:"#60a5fa",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Nuevo feriado</h4>
@@ -7556,37 +7542,51 @@ function AdminSettings({token,session}){
     const r=await sf("/auth/v1/user",{method:"PUT",body:JSON.stringify({password:newPw}),headers:{Authorization:`Bearer ${token}`}});
     if(r?.error){setErr(r.error.message||"Error al cambiar contraseña");setLo(false);return;}
     setMsg("Contraseña cambiada exitosamente");setCurPw("");setNewPw("");setConfPw("");setLo(false);};
-  return <div>
-    <Card title="Cambiar contraseña">
-      <div style={{maxWidth:400}}>
-        <Inp label="Contraseña actual" type="password" value={curPw} onChange={setCurPw} placeholder="••••••••"/>
-        <Inp label="Nueva contraseña" type="password" value={newPw} onChange={setNewPw} placeholder="Mínimo 6 caracteres"/>
-        <Inp label="Confirmar nueva contraseña" type="password" value={confPw} onChange={setConfPw} placeholder="Repetí la nueva contraseña"/>
-        {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px",padding:"8px 12px",background:"rgba(255,80,80,0.1)",borderRadius:8}}>{err}</p>}
-        {msg&&<p style={{fontSize:12,color:"#22c55e",margin:"0 0 12px",padding:"8px 12px",background:"rgba(34,197,94,0.1)",borderRadius:8}}>{msg}</p>}
-        <Btn onClick={changePw} disabled={lo}>{lo?"Cambiando...":"Cambiar contraseña"}</Btn>
-      </div>
-    </Card>
-    <Card title="Información de la cuenta">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EMAIL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{session.user.email}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ROL</p><p style={{fontSize:14,color:IC,margin:0,fontWeight:600}}>Administrador</p></div>
-      </div>
-    </Card>
-    <HolidaysCard token={token}/>
-    <CreditCardsCard token={token}/>
-    <AuditLogCard token={token}/>
-    <Card title="Retención de fotos de bultos">
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Las fotos cargadas por los agentes ocupan espacio en Storage. Se borran automáticamente <strong style={{color:"#fff"}}>N días después</strong> de cerrarse la operación. La limpieza corre todos los días a las 3am.</p>
-      <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",maxWidth:520}}>
-        <div style={{flex:1,minWidth:180}}><Inp label="Días después del cierre de op" type="number" value={photoDays} onChange={setPhotoDays} small/></div>
-        <Btn small onClick={savePhotoDays} disabled={photoSaving}>{photoSaving?"Guardando...":"Guardar"}</Btn>
-        <Btn small variant="secondary" onClick={runCleanupNow}>▶ Ejecutar ahora</Btn>
-      </div>
-      {photoMsg&&<p style={{fontSize:11,color:photoMsg.startsWith("✅")?"#22c55e":"#ff6b6b",margin:"8px 0 0"}}>{photoMsg}</p>}
-      {cleanupMsg&&<p style={{fontSize:11,color:cleanupMsg.startsWith("✅")?"#22c55e":cleanupMsg.startsWith("❌")?"#ff6b6b":"rgba(255,255,255,0.6)",margin:"8px 0 0"}}>{cleanupMsg}</p>}
-      <p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"10px 0 0",fontStyle:"italic"}}>Sugerencia: 90 días. Mínimo recomendado 30, máximo razonable 365.</p>
-    </Card>
+  // Ajustes (04/10/2026): secciones en una columna lateral (arriba en el celu) y una por vez.
+  const celu=useEsCelu();
+  const [sec,setSec]=useState("cuenta");
+  const SECS=[
+    {k:"cuenta",l:"Cuenta",d:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"]},
+    {k:"feriados",l:"Feriados",d:["M3 5h18v16H3z","M3 10h18","M8 3v4","M16 3v4"]},
+    {k:"tarjetas",l:"Tarjetas",d:["M3 7h18v12H3z","M3 11h18","M7 15h3"]},
+    {k:"fotos",l:"Fotos de bultos",d:["M4 7h3l2-3h6l2 3h3v13H4z","M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"]},
+    {k:"actividad",l:"Actividad",d:["M22 12h-4l-3 9L9 3l-3 9H2"]},
+  ];
+  const ico=d=><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x,i)=><path key={i} d={x}/>)}</svg>;
+  const menu=<nav style={celu?{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginBottom:14}:{display:"flex",flexDirection:"column",gap:4,position:"sticky",top:16}}>
+    {SECS.map(x=>{const on=sec===x.k;return <button key={x.k} onClick={()=>setSec(x.k)} style={{display:"flex",alignItems:"center",gap:10,flex:"0 0 auto",padding:celu?"9px 14px":"11px 14px",borderRadius:12,border:`1px solid ${on?"rgba(184,149,106,0.45)":celu?"rgba(255,255,255,0.08)":"transparent"}`,background:on?"rgba(184,149,106,0.14)":celu?"rgba(255,255,255,0.03)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.65)",fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textAlign:"left",whiteSpace:"nowrap"}}>{ico(x.d)}{x.l}</button>;})}
+  </nav>;
+  const dato=(l,v,c)=><div><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 5px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</p><p style={{fontSize:14.5,color:c||"#fff",margin:0,fontWeight:600,wordBreak:"break-all"}}>{v}</p></div>;
+  return <div style={celu?{}:{display:"grid",gridTemplateColumns:"210px minmax(0,1fr)",gap:24,alignItems:"start"}}>
+    {menu}
+    <div style={{minWidth:0}}>
+      {sec==="cuenta"&&<>
+        <Card v2 title="Tu cuenta">
+          <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:16}}>{dato("Email",session.user.email)}{dato("Rol","Administrador",GOLD_LIGHT)}</div>
+        </Card>
+        <Card v2 title="Contraseña">
+          <div style={{maxWidth:420}}>
+            <Inp label="Contraseña actual" type="password" value={curPw} onChange={setCurPw} placeholder="••••••••"/>
+            <Inp label="Nueva contraseña" type="password" value={newPw} onChange={setNewPw} placeholder="Mínimo 6 caracteres"/>
+            <Inp label="Repetir nueva contraseña" type="password" value={confPw} onChange={setConfPw}/>
+            {err&&<p style={{fontSize:12.5,color:"#ff6b6b",margin:"0 0 12px",padding:"9px 12px",background:"rgba(255,80,80,0.1)",borderRadius:10}}>{err}</p>}
+            {msg&&<p style={{fontSize:12.5,color:"#4ade80",margin:"0 0 12px",padding:"9px 12px",background:"rgba(34,197,94,0.1)",borderRadius:10}}>{msg}</p>}
+            <Btn variant="gold" onClick={changePw} disabled={lo} fullWidth={celu}>{lo?"Cambiando...":"Cambiar contraseña"}</Btn>
+          </div>
+        </Card>
+      </>}
+      {sec==="feriados"&&<HolidaysCard token={token}/>}
+      {sec==="tarjetas"&&<CreditCardsCard token={token}/>}
+      {sec==="actividad"&&<AuditLogCard token={token}/>}
+      {sec==="fotos"&&<Card v2 title="Fotos de bultos" sub="Se borran solas después del cierre de la operación">
+        <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",maxWidth:540}}>
+          <div style={{flex:1,minWidth:180}}><Inp label="Días después del cierre" type="number" value={photoDays} onChange={setPhotoDays}/></div>
+          <div style={{marginBottom:12,display:"flex",gap:8}}><Btn variant="gold" onClick={savePhotoDays} disabled={photoSaving}>{photoSaving?"Guardando...":"Guardar"}</Btn><Btn variant="secondary" onClick={runCleanupNow}>Limpiar ahora</Btn></div>
+        </div>
+        {photoMsg&&<p style={{fontSize:12,color:photoMsg.startsWith("✅")?"#4ade80":"#ff6b6b",margin:"4px 0 0"}}>{photoMsg}</p>}
+        {cleanupMsg&&<p style={{fontSize:12,color:cleanupMsg.startsWith("✅")?"#4ade80":cleanupMsg.startsWith("❌")?"#ff6b6b":"rgba(255,255,255,0.6)",margin:"4px 0 0"}}>{cleanupMsg}</p>}
+      </Card>}
+    </div>
   </div>;
 }
 
