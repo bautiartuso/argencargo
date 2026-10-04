@@ -2390,7 +2390,7 @@ function AccountPage({token,client,onRestartTutorial}){
       dq("operation_items",{token,filters:`?select=operation_id,quantity,unit_price_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
       // Ops NO-GI con status="entregada" (lista para retirar) y aún no marcadas como cobradas → saldo pendiente
-      dq("operations",{token,filters:`?client_id=eq.${client.id}&status=eq.entregada&service_type=neq.gestion_integral&is_collected=eq.false&select=id,operation_code,description,eta,status,channel,service_type,budget_total,total_anticipos,collected_amount,collection_currency,collection_exchange_rate&order=created_at.desc`}),
+      dq("operations",{token,filters:`?client_id=eq.${client.id}&status=eq.entregada&service_type=neq.gestion_integral&is_collected=eq.false&select=id,operation_code,description,eta,status,channel,service_type,budget_total,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd,collected_amount,collection_currency,collection_exchange_rate&order=created_at.desc`}),
       // Cobros del cliente para esas ops entregada
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,status,service_type,is_collected)&operations.client_id=eq.${client.id}&operations.status=eq.entregada&operations.service_type=neq.gestion_integral&operations.is_collected=eq.false`}),
       // Gestión de pagos (client_amount_usd) para esas ops entregada — se suma al total a abonar
@@ -2423,7 +2423,9 @@ function AccountPage({token,client,onRestartTutorial}){
       const pms=entregadaPmtMgmtList.filter(p=>p.operation_id===o.id);
       const pmtTot=pms.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
       const ant=Number(o.total_anticipos||0);
-      const total=bt+Math.max(0,pmtTot-ant);
+      // Mismo criterio que el admin (04/10/2026): suma la deuda de ops anteriores que se pasó a esta
+      // y descuenta el saldo a favor aplicado y el descuento. Antes la deuda arrastrada no aparecía.
+      const total=bt+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0)+Math.max(0,pmtTot-ant);
       const saldo=Math.max(0,total-cobrado);
       return {id:o.id,code:o.operation_code,desc:o.description||"",eta:o.eta,status:o.status,channel:o.channel,isGI:false,total,cobrado,saldo,pct:total>0?Math.min(100,(cobrado/total)*100):0};
     }).filter(x=>x.saldo>0.01);
