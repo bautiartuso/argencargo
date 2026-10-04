@@ -479,7 +479,7 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
         <div className="col contacto">
           <h4>{t("contacto")}</h4>
           {CONTACTO.mail ? <a href={`mailto:${CONTACTO.mail}`}>{CONTACTO.mail}</a> : <span className="pend">Mail · {t("pendiente")}</span>}
-          <div className="tel"><span>{t("atencion")}</span>{CONTACTO.atencion ? <a href={WA("Hola ARGENMAQ")} target="_blank" rel="noreferrer">{CONTACTO.atencion}</a> : <em>{t("pendiente")}</em>}</div>
+          <div className="tel"><span>{t("atencion")}</span>{CONTACTO.atencion ? <a href={`https://wa.me/${CONTACTO.atencion.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">{CONTACTO.atencion}</a> : <em>{t("pendiente")}</em>}</div>
           <div className="tel"><span>{t("ventas")}</span>{CONTACTO.ventas ? <a href={`https://wa.me/${CONTACTO.ventas.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">{CONTACTO.ventas}</a> : <em>{t("pendiente")}</em>}</div>
           <h5>{t("oficinaBA")}</h5>
           <p>{t("lunVie")} · {CONTACTO.horario || t("pendiente")}</p>

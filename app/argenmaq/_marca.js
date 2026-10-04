@@ -9,16 +9,17 @@ export const GRIS = "#5B6066";
 export const BORDE = "#E6E7EA";
 export const SUAVE = "#F4F5F7";
 
-export const WA_NUM = "5491125088580";
+// WhatsApp de ventas: botón flotante, "Consultar por WhatsApp" y todos los links comerciales.
+export const WA_NUM = "5491134136014";
 export const wa = (m) => `https://wa.me/${WA_NUM}?text=${encodeURIComponent(m)}`;
 
 // Datos de contacto del pie de página. Lo que esté vacío se muestra como "Pendiente".
-// ⚠️ COMPLETAR: mail, teléfono de ventas, horario y CUIT.
+// ⚠️ COMPLETAR: CUIT.
 export const CONTACTO = {
-  mail: "",                              // ej.: "ventas@argenmaq.com.ar"
-  atencion: "+54 9 11 2508-8580",        // WhatsApp de atención (el mismo del botón flotante)
-  ventas: "",                            // ej.: "+54 9 11 xxxx-xxxx"
-  horario: "",                           // ej.: "9:00 a 18:00 hs"
+  mail: "info@argencargo.com.ar",
+  atencion: "+54 9 11 2508-8580",        // WhatsApp de atención (posventa, seguimiento)
+  ventas: "+54 9 11 3413-6014",         // el mismo número que WA_NUM
+  horario: "10:00 a 18:00 hs",
   oficina: "Virrey Loreto 2428, Belgrano",
   cuit: "",                              // ej.: "30-xxxxxxxx-x"
 };
