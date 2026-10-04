@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa } from "../../lib/calc";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
@@ -6986,7 +6986,7 @@ const TARIFAS_ORIGENES=[
     {key:"maritimo_b",nombre:"Marítimo · Integral AC",unit:"m³"}]},
   {k:"usa",flag:"🇺🇸",nombre:"Estados Unidos",minKg:"Mínimo aéreo 25 kg",svcs:[
     {key:"aereo_a_china",nombre:"Aéreo · Courier comercial",unit:"kg",comparte:"Misma tarifa que China"},
-    {key:"maritimo_b",nombre:"Marítimo · Integral AC",unit:"m³",comparte:"Misma tarifa que China"}]},
+    {key:"maritimo_b",nombre:"Marítimo · Integral AC",unit:"m³",comparte:"Precio de venta igual que China",costoUsa:true}]},
   {k:"pkbd",flag:"🇵🇰 🇧🇩",nombre:"Pakistán y Bangladesh",minKg:"Mínimo aéreo 50 kg",svcs:[
     {key:"aereo_a_pk_bd",nombre:"Aéreo · Courier comercial",unit:"kg"}]},
 ];
@@ -7035,7 +7035,24 @@ function TariffsManager({token}){
     :<div key={t.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 96px 96px minmax(0,1fr) 34px",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>{campo(t,"label","text")}{campo(t,"rate")}{campo(t,"cost")}{campo(t,"notes","text")}{btnX(t)}</div>;
   const encabezado=!celu&&<div style={{display:"grid",gridTemplateColumns:COLS,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={cab}>Rango</span><span style={{...cab,textAlign:"right"}}>Desde</span><span style={{...cab,textAlign:"right"}}>Hasta</span><span style={{...cab,textAlign:"right"}}>Precio</span><span style={{...cab,textAlign:"right"}}>Costo</span><span style={{...cab,textAlign:"right"}}>Margen</span><span/></div>;
   const sub=(titulo,boton)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"18px 0 8px"}}><p style={{margin:0,fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{titulo}</p>{boton}</div>;
-  const servicio=svc=>{const filas=tariffs.filter(t=>t.service_key===svc.key&&tNowOk(t));
+  // Costo del Marítimo Integral desde USA (calc_config.costo_maritimo_b_usa; si no está, USD 2.000).
+  const [costoUsa,setCostoUsa]=useState(null);
+  useEffect(()=>{(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.costo_maritimo_b_usa&select=*"});setCostoUsa(Array.isArray(r)&&r[0]?String(r[0].value):"2000");})();},[token]);
+  const saveCostoUsa=async(v)=>{const val=Number(v)||0;const ex=await dq("calc_config",{token,filters:"?key=eq.costo_maritimo_b_usa&select=key"});
+    const r=Array.isArray(ex)&&ex.length?await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.costo_maritimo_b_usa",body:{value:val}}):await dq("calc_config",{method:"POST",token,body:{key:"costo_maritimo_b_usa",value:val}});
+    if(r?.code){flash("No se pudo guardar");return;}flash("Guardado");};
+  const servicioUsaMarB=svc=>{const rangos=tariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="rate"&&tNowOk(t)).sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0));const c=Number(costoUsa)||0;
+    return <Card v2 key={"usa-"+svc.key} title={svc.nombre} sub={`Por m³ · ${svc.comparte}`}>
+      <div style={{maxWidth:260,marginBottom:14}}><p style={{...cab,margin:"0 0 5px"}}>Costo desde USA · USD/m³</p><input type="number" step="0.01" value={costoUsa??""} onChange={e=>setCostoUsa(e.target.value)} onBlur={e=>saveCostoUsa(e.target.value)} style={{...inp,textAlign:"right"}}/></div>
+      {!celu&&<div style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 80px 80px 96px 96px 90px",gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["Rango","Desde","Hasta","Precio","Costo","Margen"].map((h,i)=><span key={h} style={{...cab,textAlign:i?"right":"left"}}>{h}</span>)}</div>}
+      {rangos.map(t=>{const m=Number(t.rate||0)-c;const v=x=>x==null||x===""?"∞":Number(x).toLocaleString("es-AR");
+        return celu
+          ?<div key={t.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",gap:10,fontSize:13}}><span style={{color:"#fff",fontWeight:600}}>{t.label}</span><span style={{color:"rgba(255,255,255,0.7)"}}>{fmtM(t.rate)} · <b style={{color:m>0?"#4ade80":"#ff6b6b"}}>{fmtM(m)}</b></span></div>
+          :<div key={t.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 80px 80px 96px 96px 90px",gap:8,alignItems:"center",padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",fontSize:13,fontVariantNumeric:"tabular-nums"}}>
+            <span style={{color:"#fff"}}>{t.label}</span><span style={{textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{v(t.min_qty)}</span><span style={{textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{v(t.max_qty)}</span><span style={{textAlign:"right",color:"#fff"}}>{fmtM(t.rate)}</span><span style={{textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{fmtM(c)}</span><span style={{textAlign:"right",fontWeight:800,color:m>0?"#4ade80":"#ff6b6b"}}>{fmtM(m)}</span>
+          </div>;})}
+    </Card>;};
+  const servicio=svc=>{if(svc.costoUsa)return servicioUsaMarB(svc);const filas=tariffs.filter(t=>t.service_key===svc.key&&tNowOk(t));
     const rangos=filas.filter(t=>t.type==="rate").sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0)||String(a.tax_scope||"").localeCompare(String(b.tax_scope||"")));
     const esp=filas.filter(t=>t.type==="special");const rec=filas.filter(t=>t.type==="surcharge").sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0));
     return <Card v2 key={svc.key} title={svc.nombre} sub={`Por ${svc.unit}${svc.comparte?` · ${svc.comparte}`:""}`} actions={<Btn small variant="secondary" onClick={()=>addTariff(svc.key,"rate",svc.unit==="m³"?"cbm":"kg")}>+ Rango</Btn>}>
@@ -15305,7 +15322,7 @@ function AdminCalculator({token}){
                 salía de un valor fijo de configuración y el Integral tomaba el mismo que LCL. */}
             {!esEmpleado()?(()=>{
               const costKey=isAer?"cost_aereo_usd_kg":ch.key==="maritimo_a_china"?"cost_maritimo_a_usd_cbm":"cost_maritimo_b_usd_cbm";
-              const rateDef=Number(ch.fleteCostRate||0)||Number(config[costKey]||0);
+              const rateDef=ch.key==="maritimo_b"&&results?.origin==="USA"?costoMaritimoBUsa(config):(Number(ch.fleteCostRate||0)||Number(config[costKey]||0));
               const ovC=costOverride[ch.key];
               const hasC=ovC!=null&&String(ovC).trim()!=="";
               const rate=hasC?toN(ovC):rateDef;
