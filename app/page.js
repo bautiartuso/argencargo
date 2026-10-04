@@ -100,52 +100,6 @@ export default function Landing(){
       </div>
     </section>
 
-    {/* SERVICIOS */}
-    <section id="servicios" style={{padding:"80px 24px",scrollMarginTop:100,background:`linear-gradient(180deg,${NAVY}15 0%,transparent 100%)`}}>
-      <div style={{maxWidth:1100,margin:"0 auto"}}>
-        <p style={{fontSize:13,fontWeight:700,color:AC,textAlign:"center",marginBottom:8,letterSpacing:"0.1em"}}>CANALES DE ENVÍO</p>
-        <h2 style={{fontSize:"clamp(22px, 3.5vw, 34px)",fontWeight:800,textAlign:"center",margin:"0 0 12px"}}>El canal que mejor se adapte a tu negocio</h2>
-        <p style={{fontSize:15,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:"0 auto 48px",maxWidth:500}}>Te asesoramos para que elijas la opción que más te conviene.</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20}}>
-          {[
-            {icon:"⚡",title:"Courier Aéreo",tag:"Rápido",points:["El canal más ágil","Régimen simplificado — sin tramiterío extra","Ideal para reposición de stock y muestras","Disponible desde China y USA"],color:"#e2a93b"},
-            {icon:"🚢",title:"Marítimo",tag:"Gran volumen",points:["Consolidado (LCL) o contenedor completo (FCL)","El menor costo por unidad para grandes cargas","Tiempos y costos según consulta","Para quienes planifican con anticipación"],color:"#5BA0D9"},
-          ].map(s=><div key={s.title} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"28px 24px",position:"relative"}}>
-            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${s.color},transparent)`}}/>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:28}}>{s.icon}</span>
-                <h3 style={{fontSize:20,fontWeight:700,margin:0}}>{s.title}</h3>
-              </div>
-              <span style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:20,background:`${s.color}15`,color:s.color,border:`1px solid ${s.color}30`}}>{s.tag}</span>
-            </div>
-            {s.points.map(p=><p key={p} style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",paddingLeft:16,position:"relative"}}><span style={{position:"absolute",left:0,color:s.color}}>•</span>{p}</p>)}
-            <div style={{marginTop:16}}><a href={waL(`Hola, quiero info sobre ${s.title}`)} target="_blank" style={{fontSize:12,fontWeight:600,color:s.color,textDecoration:"none"}}>Consultar sobre {s.title} →</a></div>
-          </div>)}
-        </div>
-      </div>
-    </section>
-
-    {/* PROCESO */}
-    <section id="como-funciona" style={{padding:"80px 24px"}}>
-      <div style={{maxWidth:800,margin:"0 auto"}}>
-        <p style={{fontSize:13,fontWeight:700,color:AC,textAlign:"center",marginBottom:8,letterSpacing:"0.1em"}}>CÓMO FUNCIONA</p>
-        <h2 style={{fontSize:"clamp(22px, 3.5vw, 34px)",fontWeight:800,textAlign:"center",margin:"0 0 48px"}}>Importar con nosotros es así de simple</h2>
-        {[
-          {n:"01",title:"Nos contactás y cotizamos",desc:"Nos decís qué querés traer. Te armamos una cotización con todos los costos desglosados. Sin compromiso."},
-          {n:"02",title:"Tu proveedor envía al depósito",desc:"Le pasás la dirección de nuestro depósito en China (o USA). Cuando la mercadería llega, te confirmamos."},
-          {n:"03",title:"Nos encargamos de todo el envío",desc:"Transporte internacional, documentación, seguimiento y gestión de aduana. Vos te enfocás en tu negocio."},
-          {n:"04",title:"Tu mercadería está lista",desc:"Te avisamos cuando llegó. Retirás en nuestra oficina o te la enviamos a domicilio. Vos elegís."},
-        ].map(s=><div key={s.n} style={{display:"flex",gap:20,marginBottom:36,alignItems:"flex-start"}}>
-          <div style={{flexShrink:0,width:44,height:44,borderRadius:10,background:`linear-gradient(135deg,${AC},${NAVY})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800}}>{s.n}</div>
-          <div>
-            <h3 style={{fontSize:17,fontWeight:700,margin:"0 0 6px"}}>{s.title}</h3>
-            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",lineHeight:1.6,margin:0}}>{s.desc}</p>
-          </div>
-        </div>)}
-      </div>
-    </section>
-
     {/* CALCULADORA BANNER */}
     <section style={{padding:"60px 24px",background:`linear-gradient(135deg,${NAVY}40,${AC}15)`}}>
       <div style={{maxWidth:700,margin:"0 auto",textAlign:"center"}}>
@@ -154,24 +108,6 @@ export default function Landing(){
         <p style={{fontSize:15,color:"rgba(255,255,255,0.55)",margin:"0 0 24px",lineHeight:1.6}}>Dentro de nuestro portal tenés una calculadora para cotizar tus cargas de forma gratuita. Ingresá los datos de tu producto y obtené el costo estimado al instante.</p>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 24px"}}>No necesitás ser importador registrado. Creá tu cuenta gratis y empezá a cotizar.</p>
         <a href="/portal" style={{display:"inline-block",padding:"14px 32px",fontSize:15,fontWeight:700,borderRadius:10,background:`linear-gradient(135deg,${AC},${NAVY})`,color:"#fff",textDecoration:"none"}}>Ir a la calculadora →</a>
-      </div>
-    </section>
-
-    {/* DIFERENCIADORES */}
-    <section id="quienes-somos" style={{padding:"60px 24px",scrollMarginTop:100}}>
-      <div style={{maxWidth:1000,margin:"0 auto"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
-          {[
-            {icon:"🇦🇷",title:"Empresa argentina",desc:"Oficina en Buenos Aires. Atención directa, sin intermediarios."},
-            {icon:"🇨🇳",title:"Depósito en China y USA",desc:"Recibimos tu mercadería directo del proveedor en origen."},
-            {icon:"📱",title:"Tu propio portal",desc:"Seguimiento online, documentación y estado de cada operación."},
-            {icon:"🤝",title:"Te acompañamos",desc:"Desde la primera consulta hasta que tenés tu carga. Siempre."},
-          ].map(f=><div key={f.title} style={{padding:20,background:"rgba(255,255,255,0.02)",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)"}}>
-            <p style={{fontSize:28,margin:"0 0 10px"}}>{f.icon}</p>
-            <h4 style={{fontSize:14,fontWeight:700,margin:"0 0 4px"}}>{f.title}</h4>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0,lineHeight:1.5}}>{f.desc}</p>
-          </div>)}
-        </div>
       </div>
     </section>
 
