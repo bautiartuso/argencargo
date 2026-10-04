@@ -11,6 +11,7 @@ import { TarifasAgenteResumen } from "../components/TarifasAgente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
 import { CcFinancieraPanel } from "../ccfinanciera/page";
+import MailPanel from "./MailPanel";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
@@ -16013,7 +16014,8 @@ function AdminDashboard({session,onLogout}){
   // vuelva exactamente al mismo lugar (página, op/cliente/vuelo seleccionado).
   const readNav=()=>{if(typeof window==="undefined")return null;try{return JSON.parse(localStorage.getItem("ac_admin_nav")||"null");}catch{return null;}};
   const initNav=readNav()||{};
-  const [page,setPage]=useState(initNav.page||"operations");
+  // Vuelta del permiso de Gmail (/admin?mail=ok): abre la solapa Email.
+  const [page,setPage]=useState(()=>{try{if(new URLSearchParams(window.location.search).get("mail"))return "mail";}catch{}return initNav.page||"operations";});
   const [selOp,setSelOp]=useState(initNav.selOp||null);
   const [selOpTab,setSelOpTab]=useState(null); // solapa inicial al entrar a una op desde otro panel (ej. "Entregas")
   const [selClient,setSelClient]=useState(initNav.selClient||null);
@@ -16060,6 +16062,7 @@ function AdminDashboard({session,onLogout}){
     {section:"Comercial",items:[
       {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
       {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
+      {key:"mail",label:"Email",p:["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
       {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
@@ -16215,6 +16218,7 @@ function AdminDashboard({session,onLogout}){
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="ccfin"&&<CcFinancieraPanel token={token}/>}
+      {page==="mail"&&<MailPanel token={token}/>}
       {page==="facturas"&&<FacturasPanel token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
