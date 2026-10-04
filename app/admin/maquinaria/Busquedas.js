@@ -38,6 +38,11 @@ const GRUPOS=[
   {k:"todas",l:"Todas",f:()=>true},
 ];
 export const codigoBusq=(b)=>`BQ-${String(b.numero||0).padStart(5,"0")}`;
+// Los pedidos que llegan del formulario público de repuestos traen una primera línea "[Repuesto] · Email: … · Zona: …".
+const esRepuesto=(b)=>String(b?.descripcion||"").startsWith("[Repuesto]");
+const datosRepuesto=(b)=>{const [cab,...resto]=String(b?.descripcion||"").split("\n");const m=(k)=>(cab.match(new RegExp(k+": ([^·]+)"))||[])[1]?.trim()||"";return {email:m("Email"),zona:m("Zona"),texto:resto.join("\n").trim()};};
+const textoDe=(b)=>esRepuesto(b)?datosRepuesto(b).texto:b.descripcion;
+const ChipRep=()=><Chip l="Repuesto" c="#15171A" bg={LIMA}/>;
 const wa=(t)=>{const d=String(t||"").replace(/\D/g,"");return d.length>=8?`https://wa.me/${d.startsWith("54")||d.length>10?d:"54"+d}`:null;};
 const fmtHora=(d)=>d?new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
 const VACIO={cliente:"",contacto:"",descripcion:"",situacion:"gestion_integral",proveedores:"",precio_referencia:""};
@@ -96,9 +101,9 @@ export function Busquedas({ses,dq,setNBusq}){
       <thead><tr>{["Código","Cliente","Contacto","Qué busca","Situación","Búsqueda","Estado"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
       <tbody>{visibles.map(x=><tr key={x.id} className="fila" onClick={()=>setSel(x.id)} style={{cursor:"pointer"}}>
         <td style={{...TD,whiteSpace:"nowrap"}}><span style={{fontFamily:MONO,fontSize:12.5,color:GRIS}}>{codigoBusq(x)}</span><span style={{display:"block",fontSize:11.5,color:GRIS,marginTop:2}}>{fmtFecha(x.created_at)}</span></td>
-        <td style={{...TD,fontWeight:800}}>{x.cliente}</td>
+        <td style={{...TD,fontWeight:800}}>{x.cliente}{esRepuesto(x)&&<span style={{display:"block",marginTop:4}}><ChipRep/></span>}</td>
         <td style={{...TD,fontFamily:MONO,fontSize:12.5,whiteSpace:"nowrap"}}>{x.contacto||"—"}</td>
-        <td style={{...TD,maxWidth:380}}><span style={{display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden",lineHeight:1.4}}>{x.descripcion}</span></td>
+        <td style={{...TD,maxWidth:380}}><span style={{display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden",lineHeight:1.4}}>{textoDe(x)}</span></td>
         <td style={TD}><ChipSit s={x.situacion}/></td>
         <td style={TD}><ChipAv a={x.avance}/></td>
         <td style={TD}><ChipEst e={x.estado}/></td>
@@ -128,7 +133,7 @@ function Detalle({b,ses,dq,onVolver,guardar,borrar}){
     <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap",margin:"0 0 18px"}}>
       <Btn small onClick={onVolver}>← A pedido</Btn>
       <div style={{flex:1,minWidth:240}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontWeight:800,fontSize:22,letterSpacing:"-0.02em"}}>{b.cliente}</span><span style={{fontFamily:MONO,fontSize:12,color:GRIS}}>{codigoBusq(b)}</span><ChipSit s={b.situacion}/><ChipEst e={b.estado}/></div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontWeight:800,fontSize:22,letterSpacing:"-0.02em"}}>{b.cliente}</span><span style={{fontFamily:MONO,fontSize:12,color:GRIS}}>{codigoBusq(b)}</span>{esRepuesto(b)&&<ChipRep/>}<ChipSit s={b.situacion}/><ChipEst e={b.estado}/></div>
         <p style={{margin:"4px 0 0",fontFamily:MONO,fontSize:11.5,color:GRIS,letterSpacing:"0.02em"}}>Cargada {fmtFecha(b.created_at)} · Última novedad {fmtFecha(b.updated_at)}</p>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -156,7 +161,8 @@ function Detalle({b,ses,dq,onVolver,guardar,borrar}){
         :<div style={{display:"grid",gap:12,fontSize:14}}>
           <div><p style={{...LBL,marginBottom:2}}>Cliente</p><b style={{fontSize:15}}>{b.cliente}</b></div>
           <div><p style={{...LBL,marginBottom:2}}>Teléfono / WhatsApp</p>{b.contacto?<a href={link||undefined} target="_blank" rel="noreferrer" style={{fontFamily:MONO,fontSize:15,fontWeight:700,color:INK,textDecoration:"none"}}>{b.contacto}</a>:<span>—</span>}</div>
-          <div><p style={{...LBL,marginBottom:2}}>Qué busca</p><p style={{margin:0,lineHeight:1.55,whiteSpace:"pre-wrap"}}>{b.descripcion}</p></div>
+          {esRepuesto(b)&&(datosRepuesto(b).email||datosRepuesto(b).zona)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div><p style={{...LBL,marginBottom:2}}>Email</p><span>{datosRepuesto(b).email||"—"}</span></div><div><p style={{...LBL,marginBottom:2}}>Zona</p><span>{datosRepuesto(b).zona||"—"}</span></div></div>}
+          <div><p style={{...LBL,marginBottom:2}}>{esRepuesto(b)?"Qué repuesto busca":"Qué busca"}</p><p style={{margin:0,lineHeight:1.55,whiteSpace:"pre-wrap"}}>{textoDe(b)}</p></div>
           <div style={{borderTop:`1px solid ${BORDE}`,paddingTop:12}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}><p style={{...LBL,marginBottom:0}}>Situación</p>{SITUACIONES.map(x=><Pill key={x.k} small on={(b.situacion||"gestion_integral")===x.k} onClick={async()=>{if(b.situacion!==x.k&&await guardar(b.id,{situacion:x.k}))toast(x.l);}}>{x.l}</Pill>)}</div>
             {b.situacion==="ya_busco_proveedor"&&<div style={{display:"grid",gap:8,marginBottom:10}}>
