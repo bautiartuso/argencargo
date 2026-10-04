@@ -1,6 +1,5 @@
 "use client";
 import MarcoLanding from "../components/MarcoLanding";
-import { Cierre } from "../components/SeccionesLanding";
 
 const WA = "5491125088580";
 const waL = (m) => `https://wa.me/${WA}?text=${encodeURIComponent(m)}`;
@@ -11,10 +10,9 @@ const SERVICIOS = [
     titulo: "Flete aéreo",
     bajada: "La forma más rápida de traer tu mercadería. Ideal para reposición de stock, muestras y envíos que no pueden esperar.",
     puntos: [
-      "Tu proveedor manda a nuestro depósito de origen y te avisamos cuando llega.",
       "Si le comprás a varios proveedores, juntamos todo en un solo envío.",
       "Nos ocupamos de la aduana: vos no hacés ningún trámite.",
-      "Lo seguís desde tu portal y lo retirás en nuestra oficina o te lo llevamos.",
+      "Lo seguís desde tu portal y lo retirás en nuestra oficina o te lo llevamos a domicilio.",
     ],
     ico: ["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"],
     wa: "Hola! Quiero consultar por flete aéreo",
@@ -25,7 +23,6 @@ const SERVICIOS = [
     bajada: "Para cargas grandes, el menor costo por unidad. Pensado para quienes planifican sus compras con anticipación.",
     puntos: [
       "Carga consolidada (compartís el contenedor) o contenedor completo.",
-      "Recibimos lo de tus proveedores en nuestro depósito y armamos tu carga.",
       "Despacho de aduana y entrega en destino a cargo nuestro.",
       "Seguís cada etapa desde tu portal, del depósito hasta que llega.",
     ],
@@ -39,7 +36,6 @@ const SERVICIOS = [
     puntos: [
       "Pagos a proveedores de China y de otros países.",
       "Te confirmamos cada pago con su comprobante.",
-      "Lo coordinamos junto con el envío de tu mercadería.",
       "Un solo equipo para pagar, traer y entregar.",
     ],
     ico: ["M3 7h18v12H3z", "M3 11h18", "M7 15h3", "M16 15h2"],
@@ -84,7 +80,7 @@ export default function Servicios() {
   return <div style={{ fontFamily: "'Segoe UI',system-ui,-apple-system,sans-serif" }}><MarcoLanding>
     <style dangerouslySetInnerHTML={{ __html: CSS }} />
     <main className="srvAC">
-      <div className="cab"><p>SERVICIOS</p><h1>Lo que hacemos por tu importación</h1></div>
+      <div className="cab"><h1>Servicios</h1></div>
       <div className="srvLista">
         {SERVICIOS.map((s) => <section key={s.k} id={s.k} className="srvCard">
           <div className="izq">
@@ -99,6 +95,5 @@ export default function Servicios() {
         </section>)}
       </div>
     </main>
-    <Cierre wa={waL("Hola! Quiero cotizar una importación")} mail="info@argencargo.com.ar" />
   </MarcoLanding></div>;
 }

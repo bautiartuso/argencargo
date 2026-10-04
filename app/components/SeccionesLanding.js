@@ -1,7 +1,7 @@
 "use client";
 // Secciones finales de la landing (04/10/2026):
 // · Dudas: "Lo que otros complican, nosotros lo simplificamos" + las preguntas frecuentes en 6 tarjetas.
-// · Cierre: "Contanos qué necesitás importar" a todo el ancho, con foto de fondo, WhatsApp y mail.
+// · Cierre: "Contanos qué necesitás importar" con WhatsApp y mail (sin foto: no le gustó).
 import { useEffect, useRef, useState } from "react";
 
 export const DUDAS = [
@@ -36,18 +36,19 @@ const CSS = `
 .dudCard p{margin:0;font-size:14.5px;line-height:1.6;color:var(--txt2)}
 @media(max-width:900px){.dudGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.dudAC{padding:24px 16px 64px}.dudAC h2{margin-bottom:28px}.dudGrid{grid-template-columns:1fr;gap:12px}.dudCard{padding:20px 18px}}
-.cieAC{position:relative;overflow:hidden;padding:120px 24px;text-align:center;color:#fff;background:#0A1223}
-.cieAC .foto{position:absolute;inset:0;background:url(/landing/ship_sunset.jpg) center 60%/cover no-repeat;transform:scale(1.04)}
-.cieAC .velo{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,14,28,0.78),rgba(10,18,35,0.62) 50%,rgba(7,14,28,0.84)),rgba(21,45,84,0.2)}
-.cieAC .in{position:relative;max-width:760px;margin:0 auto}
-.cieAC h2{margin:0 0 18px;font-size:clamp(34px,5vw,62px);line-height:1.02;font-weight:900;letter-spacing:-0.01em;text-transform:uppercase}
-.cieAC p{margin:0 auto 34px;max-width:560px;font-size:17px;line-height:1.6;color:rgba(255,255,255,0.75)}
+@media (prefers-reduced-motion: reduce){.dudCard{opacity:1;transform:none;transition:none}}
+`;
+
+const CSS_CIERRE = `
+.cieAC{padding:24px 24px 72px;text-align:center;color:var(--ink)}
+.cieAC .in{max-width:760px;margin:0 auto;padding-top:56px;border-top:1px solid var(--supB)}
+.cieAC h2{margin:0 0 14px;font-size:clamp(30px,4.4vw,52px);line-height:1.04;font-weight:900;letter-spacing:-0.01em;text-transform:uppercase}
+.cieAC p{margin:0 auto 28px;max-width:540px;font-size:17px;line-height:1.6;color:var(--txt2)}
 .cieBtns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
 .cieBtns a{display:inline-flex;align-items:center;justify-content:center;gap:10px;height:56px;padding:0 30px;border-radius:999px;font-weight:800;font-size:16px;text-decoration:none;transition:transform 120ms}
 .cieBtns a:hover{transform:translateY(-2px)}
-.cieBtns .wa{background:#fff;color:#0A1223}.cieBtns .ml{border:1.5px solid rgba(255,255,255,0.35);color:#fff}
-@media(max-width:640px){.cieAC{padding:84px 20px}.cieBtns{flex-direction:column}.cieBtns a{width:100%;height:52px;font-size:15px}}
-@media (prefers-reduced-motion: reduce){.dudCard{opacity:1;transform:none;transition:none}}
+.cieBtns .wa{background:var(--ink);color:var(--bg)}.cieBtns .ml{border:1.5px solid var(--supB);color:var(--ink)}
+@media(max-width:640px){.cieAC{padding:8px 16px 56px}.cieAC .in{padding-top:40px}.cieBtns{flex-direction:column}.cieBtns a{width:100%;height:52px;font-size:15px}}
 `;
 
 export function Dudas() {
@@ -78,7 +79,7 @@ export function Dudas() {
 
 export function Cierre({ wa, mail }) {
   return <section className="cieAC" aria-label="Contacto">
-    <div className="foto" /><div className="velo" />
+    <style dangerouslySetInnerHTML={{ __html: CSS_CIERRE }} />
     <div className="in">
       <h2>Contanos qué necesitás importar</h2>
       <p>Escribinos y te armamos la cotización con el costo final. Sin compromiso, sin vueltas.</p>
