@@ -26,7 +26,7 @@ const SECCIONES = [
     t: "2. Qué incluye el servicio",
     p: [
       "ARGENMAQ selecciona la máquina en fábrica, coordina su producción, controla la calidad antes del embarque y gestiona la importación y la entrega en Argentina a través de ARGENCARGO.",
-      "El precio informado como “puesto en tu puerta” incluye la máquina, el flete internacional, los impuestos de importación y la entrega en la dirección declarada por el Usuario, salvo que el presupuesto indique expresamente otra cosa.",
+      "El precio publicado es puesto en el depósito de ARGENMAQ en la Ciudad Autónoma de Buenos Aires e incluye la máquina, el flete internacional, los impuestos de importación y la gestión, salvo que el presupuesto indique expresamente otra cosa. El envío hasta la dirección del Usuario, la instalación y la puesta en marcha no están incluidos y se cotizan por separado.",
       "No incluye, salvo mención expresa: obra civil, instalación eléctrica, puesta en marcha, capacitación, accesorios opcionales, ni maniobras especiales de descarga (grúa, montacargas, aperturas).",
     ],
   },
@@ -72,7 +72,7 @@ const SECCIONES = [
   {
     t: "8. Entrega y recepción",
     p: [
-      "La entrega se realiza en la dirección declarada por el Usuario, que es responsable de su exactitud y de que el acceso permita el ingreso de la máquina.",
+      "La máquina se entrega en el depósito de ARGENMAQ en la Ciudad Autónoma de Buenos Aires. Si el Usuario contrata el envío, la entrega se realiza en la dirección declarada, y el Usuario es responsable de su exactitud y de que el acceso permita el ingreso de la máquina.",
       "Al recibir, el Usuario debe verificar el estado del embalaje y de la unidad. Los daños visibles de transporte deben reclamarse en el momento de la entrega, con fotos, dejando constancia en el remito.",
       "Los faltantes o daños no visibles deben reclamarse dentro de los cinco (5) días corridos de recibida la máquina.",
     ],
