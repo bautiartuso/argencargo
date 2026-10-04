@@ -135,6 +135,15 @@ export default function MarcoLanding({ children }) {
       if (tm === "claro" || tm === "oscuro") setTemaSt(tm);
     } catch {}
   }, []);
+  // El fondo de la página (y la barra de desplazamiento del navegador) toma el color del tema:
+  // si no, el costado se veía blanco con la landing en oscuro.
+  useEffect(() => {
+    const h = document.documentElement;
+    const antes = { bg: h.style.background, cs: h.style.colorScheme };
+    h.style.background = tema === "claro" ? "#F4F6FA" : "#0A1223";
+    h.style.colorScheme = tema === "claro" ? "light" : "dark";
+    return () => { h.style.background = antes.bg; h.style.colorScheme = antes.cs; };
+  }, [tema]);
   const setLang = (l) => { setLangSt(l); setMenuLang(false); try { localStorage.setItem(LANG_KEY, l); } catch {} };
   const setTema = (v) => { setTemaSt(v); try { localStorage.setItem(TEMA_KEY, v); } catch {} };
   const t = (k) => (T[lang] || T.es)[k] || T.es[k] || k;

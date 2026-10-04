@@ -15,6 +15,7 @@ const CSS = `
 .calcAC .kick{font-size:12.5px;font-weight:800;letter-spacing:0.14em;color:var(--cel);margin:0 0 14px}
 .calcAC h2{font-size:clamp(30px,3.6vw,46px);line-height:1.08;font-weight:800;letter-spacing:-0.025em;margin:0 0 18px}
 .calcAC .txt{font-size:17px;line-height:1.65;color:var(--txt2);margin:0 0 30px;max-width:470px}
+.calcAC .txt p{margin:0 0 14px}.calcAC .txt p:last-child{margin:0}
 .calcAC .cta{display:inline-flex;align-items:center;gap:10px;height:54px;padding:0 28px;border-radius:14px;background:#3B7DD8;color:#fff;font-weight:800;font-size:16px;text-decoration:none;box-shadow:0 10px 26px rgba(59,125,216,0.35);transition:transform 120ms}
 .calcAC .cta:hover{transform:translateY(-2px)}
 .calcAC .escena{position:relative;padding:28px 10px}
@@ -24,7 +25,7 @@ const CSS = `
 .calcAC .base{height:14px;margin:0 -6%;border-radius:0 0 18px 18px;background:linear-gradient(180deg,#3A4352,#232A36);box-shadow:0 18px 30px rgba(0,0,0,0.25)}
 .calcAC .base:before{content:"";display:block;width:16%;height:5px;margin:0 auto;border-radius:0 0 8px 8px;background:#1A1F28}
 .calcAC .uiTop{display:flex;align-items:center;justify-content:space-between;padding:1.1em 1.6em;border-bottom:1px solid rgba(255,255,255,0.07)}
-.calcAC .uiTop b{font-size:1.15em;letter-spacing:0.04em}.calcAC .uiTop span{font-size:0.85em;font-weight:700;padding:0.45em 1em;border-radius:99em;background:rgba(59,125,216,0.2);color:#9CC3F0}
+.calcAC .uiLogo{display:inline-flex;align-items:center;gap:0.5em}.calcAC .uiLogo img:first-child{height:1.5em;width:auto}.calcAC .uiLogo img:last-child{height:0.85em;width:auto}.calcAC .uiTop .uiPill{font-size:0.85em;font-weight:700;padding:0.45em 1em;border-radius:99em;background:rgba(59,125,216,0.2);color:#9CC3F0}
 .calcAC .uiCuerpo{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:1.4em;padding:1.4em 1.6em}
 .calcAC .campo{margin:0 0 0.85em}.calcAC .campo i{display:block;font-style:normal;font-size:0.72em;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.45);margin:0 0 0.35em}
 .calcAC .campo div{padding:0.6em 0.8em;border-radius:0.5em;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);font-size:0.95em;font-weight:600}
@@ -65,13 +66,13 @@ export default function CalcLanding() {
       <div>
         <p className="kick">GRATIS · DESDE NUESTRO PORTAL</p>
         <h2>Calculadora de importación</h2>
-        <p className="txt">Desde nuestro portal tenés una calculadora gratuita para cotizar tus cargas. Ingresá los datos del producto y obtené el costo estimado al instante. No necesitás ser importador registrado.</p>
+        <div className="txt"><p>Dentro de nuestro portal tenés una calculadora gratuita para cotizar tus envíos.</p><p>Ingresá los datos del producto y obtené el costo al instante.</p><p>No necesitás ser importador registrado.</p></div>
         <a className="cta" href="/portal"><Ico d={CALC} />Calculadora</a>
       </div>
       <div className="escena" aria-hidden="true">
         <div className="compu">
           <div className="pantalla"><div className="ui">
-            <div className="uiTop"><b>ARGENCARGO</b><span>Calculadora</span></div>
+            <div className="uiTop"><span className="uiLogo"><img src="/argencargo/isotipo-blanco.png" alt="" /><img src="/argencargo/texto-blanco.png" alt="Argencargo" /></span><span className="uiPill">Calculadora</span></div>
             <div className="uiCuerpo">
               <div>
                 <div className="campo"><i>Producto</i><div>Auriculares bluetooth</div></div>
