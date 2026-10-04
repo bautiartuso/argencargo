@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { LD_ORGANIZATION, LD_WEBSITE } from "../lib/ld-argencargo";
 import MarcoLanding from "./components/MarcoLanding";
+import MapaRutas from "./components/MapaRutas";
 
 const WA="5491125088580";
 const AC="#3B7DD8";
@@ -44,54 +45,17 @@ export default function Landing(){
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_WEBSITE)}}/>
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_FAQ)}}/>
 
-    {/* HERO */}
-    <section style={{minHeight:"calc(100vh - 140px)",display:"flex",alignItems:"center",padding:"40px 24px 60px",background:`radial-gradient(ellipse at 20% 50%, ${NAVY}40 0%, transparent 60%)`}}>
-      <div style={{maxWidth:1200,margin:"0 auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:60,alignItems:"center"}} className="hero-grid">
-        <div>
-          <div style={{display:"inline-flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-            <span style={{padding:"5px 12px",borderRadius:20,background:"rgba(59,125,216,0.1)",border:"1px solid rgba(59,125,216,0.2)",fontSize:12,fontWeight:600,color:AC}}>🇨🇳 China</span>
-            <span style={{padding:"5px 12px",borderRadius:20,background:"rgba(59,125,216,0.1)",border:"1px solid rgba(59,125,216,0.2)",fontSize:12,fontWeight:600,color:AC}}>🇺🇸 Estados Unidos</span>
-            <span style={{padding:"5px 12px",borderRadius:20,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>→ 🇦🇷 Argentina</span>
-          </div>
-          <h1 style={{fontSize:"clamp(28px, 4.5vw, 48px)",fontWeight:800,lineHeight:1.12,margin:"0 0 20px"}}>
-            Tu operación de<br/>importación,
-            <span style={{color:AC}}> resuelta</span>
-          </h1>
-          <p style={{fontSize:17,color:"rgba(255,255,255,0.55)",lineHeight:1.7,margin:"0 0 12px",maxWidth:480}}>
-            Somos el equipo que se ocupa de que tu carga llegue. Aéreo, marítimo, aduana, seguimiento — todo en un solo lugar.
-          </p>
-          <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:"0 0 32px",maxWidth:480}}>
-            No necesitás ser importador registrado. Nosotros te guiamos en todo.
-          </p>
-          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:40}}>
-            <a href="/portal" style={{padding:"14px 28px",fontSize:15,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${AC},${NAVY})`,color:"#fff",textDecoration:"none"}}>Cotizar gratis →</a>
-            <a href={waL("Hola, quiero info para importar")} target="_blank" rel="noopener" style={{padding:"14px 28px",fontSize:15,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"#fff",textDecoration:"none",display:"flex",alignItems:"center",gap:8}}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-              Hablar con un asesor
-            </a>
-          </div>
-          <div style={{display:"flex",gap:32,flexWrap:"wrap"}}>
-            {[{n:"Tracking real",l:"Seguí tu carga online"},{n:"Todos los canales",l:"Aéreo · Marítimo"},{n:"Sin requisitos",l:"No necesitás ser importador"}].map(s=>
-              <div key={s.l}><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>{s.n}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{s.l}</p></div>
-            )}
-          </div>
-        </div>
-        <div style={{background:"rgba(255,255,255,0.03)",borderRadius:20,border:"1px solid rgba(255,255,255,0.08)",padding:"28px 24px",position:"relative",overflow:"hidden"}} className="hero-dash">
-          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${AC},#22c55e,transparent)`}}/>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 16px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Portal de seguimiento</p>
-          {[
-            {code:"AC-0047",status:"En tránsito",color:"#60a5fa",info:"Guangzhou → Bs As",via:"Aéreo"},
-            {code:"AC-0045",status:"En aduana",color:"#fbbf24",info:"Shanghai → Bs As",via:"Marítimo"},
-            {code:"AC-0042",status:"Listo para retirar",color:"#22c55e",info:"Miami → Bs As",via:"Courier"},
-          ].map(s=><div key={s.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            <div><span style={{fontFamily:"monospace",fontWeight:700,fontSize:13,color:"#fff"}}>{s.code}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginLeft:8}}>{s.info}</span></div>
-            <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:s.color,background:`${s.color}15`,border:`1px solid ${s.color}30`}}>{s.status}</span>
-          </div>)}
-          <div style={{marginTop:16,padding:"14px",background:`${NAVY}30`,borderRadius:10,textAlign:"center"}}>
-            <p style={{fontSize:13,color:AC,fontWeight:600,margin:0}}>Cada cliente tiene su propio portal de seguimiento</p>
-          </div>
+    {/* HERO (04/10/2026): el título y el mapa de rutas hacia Argentina. */}
+    <section className="heroAC">
+      <div className="heroTxt">
+        <h1>Logística internacional para <span>negocios argentinos</span>.</h1>
+        <p>Traemos tu mercadería desde China, Estados Unidos y Europa. Flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.</p>
+        <div className="heroBtns">
+          <a className="b1" href="/portal">Cotizá gratis</a>
+          <a className="b2" href={waL("Hola, quiero info para importar")} target="_blank" rel="noopener">Hablar con un asesor</a>
         </div>
       </div>
+      <div className="heroMapa"><MapaRutas /></div>
     </section>
 
     {/* DOLOR → SOLUCIÓN */}
@@ -251,6 +215,6 @@ export default function Landing(){
       <svg width="30" height="30" viewBox="0 0 24 24" fill="#0a1223" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
     </a>
 
-    <style>{`@media(max-width:768px){.hero-grid{grid-template-columns:1fr!important;gap:32px!important;}.hero-dash{display:none!important;}}html{scroll-behavior:smooth;}*{box-sizing:border-box;}`}</style>
+    <style>{`.heroAC{max-width:1180px;margin:0 auto;padding:56px 24px 40px;display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:28px;align-items:center}.heroAC h1{font-size:clamp(34px,4.6vw,58px);line-height:1.04;font-weight:800;letter-spacing:-0.025em;margin:0 0 20px}.heroAC h1 span{color:#74ACDF}.heroAC p{font-size:17px;line-height:1.6;color:rgba(255,255,255,0.62);margin:0 0 28px;max-width:470px}.heroBtns{display:flex;gap:12px;flex-wrap:wrap}.heroBtns a{display:inline-flex;align-items:center;justify-content:center;height:52px;padding:0 26px;border-radius:14px;font-weight:800;font-size:15.5px;text-decoration:none}.heroBtns .b1{background:#fff;color:#0a1223}.heroBtns .b2{border:1.5px solid rgba(255,255,255,0.16);color:#fff}@media(max-width:900px){.heroAC{grid-template-columns:1fr;padding:22px 20px 28px;gap:6px}.heroMapa{order:-1;margin:0 -12px}.heroAC h1{font-size:34px;margin-bottom:14px}.heroAC p{font-size:15.5px;margin-bottom:22px}.heroBtns{flex-direction:column}.heroBtns a{height:50px}}@media(max-width:768px){.hero-grid{grid-template-columns:1fr!important;gap:32px!important;}.hero-dash{display:none!important;}}html{scroll-behavior:smooth;}*{box-sizing:border-box;}`}</style>
   </MarcoLanding></div>;
 }
