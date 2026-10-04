@@ -76,13 +76,13 @@ html,body{overflow-x:clip!important}
 .amq .pillIso{height:36px;padding:0 12px 0 9px;border-radius:999px;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:${MONO};font-size:11.5px;font-weight:700;letter-spacing:0.02em;transition:border-color 120ms,background 120ms}
 .amq .pillIso:hover{border-color:var(--ink)}
 .amq .desp{position:relative}
-.amq .pillIso.ancha{padding:0 10px 0 9px;gap:7px}.amq .pillIso.ancha span{font-family:inherit;font-size:13px;font-weight:700;letter-spacing:0}.amq .pillIso.ancha svg{color:var(--gris)}
+.amq .pillIso.ancha{padding:0 10px 0 9px;gap:7px}.amq .pillIso.ancha span{font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:0}.amq .pillIso.ancha svg{color:var(--gris)}
 .amq .despVelo{position:fixed;inset:0;z-index:44}
 .amq .despMenu{width:200px;left:auto;right:0}
 .amq .despMenu img{width:22px;height:16px;object-fit:cover;border-radius:4px;box-shadow:0 0 0 1px rgba(0,0,0,0.12)}
 .amq .despMenu small{font-family:${MONO};font-size:11px;color:var(--gris)}
 .amq .despMenu button.on{background:var(--suave);font-weight:800}
-.amq .menuMovil{display:none}.amq .catMovil{display:none}
+.amq .menuMovil{display:none}.amq .catMovil{display:none}.amq .linksCel{display:none}.amq .soloMovil{display:none}.amq .soloMovil hr{border:none;border-top:1px solid var(--borde);margin:6px 4px}
 .amq .btnHoja{display:flex;align-items:center;justify-content:center;height:48px;border-radius:14px;border:1.5px solid var(--borde);background:var(--card);color:var(--ink);font-size:14px;font-weight:800}
 .amq .btnHoja:first-child{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 .amq .hojaCuenta{display:grid;gap:4px}
@@ -273,11 +273,23 @@ html,body{overflow-x:clip!important}
 .amq .isla{flex-wrap:wrap;height:auto;padding:8px 10px 8px 12px;gap:8px 10px;border-radius:26px}
 .amq .isla>a:first-child img:first-child{height:24px!important}.amq .isla>a:first-child img:last-child{height:13px!important}.amq .isla>a:first-child span{gap:6px!important}
 .amq .isla>div:last-child{margin-left:auto;gap:6px}
-.amq .isla .desp,.amq .isla .pillIso.tema,.amq .nav .links{display:none}
+.amq .isla.tienda .desp,.amq .isla.tienda .pillIso.tema,.amq .nav .links{display:none}
+.amq .isla.info{padding:10px 10px 10px 14px;gap:10px;border-radius:24px}
+.amq .isla.info .despMon,.amq .isla.info .menuMovil{display:none!important}
+.amq .isla.info>div:last-child{display:contents!important}
+.amq .isla.info .desp:not(.despMon){margin-left:auto}
+.amq .isla.info .pillIso{height:34px}.amq .isla.info .pillIso.tema{width:34px;display:inline-flex}
+.amq .isla.info .catMovil{order:3;flex-basis:100%;height:46px;border-radius:14px;font-size:15.5px;gap:9px}
+.amq .isla.info .soloMovil{display:block}
+.amq .linksCel{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 10px 0}
+.amq .linksCel a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:13px 6px 12px;border-radius:18px;background:var(--suave);border:1px solid var(--borde);color:var(--ink);font-size:13px;font-weight:800;text-align:center;line-height:1.15}
+.amq .linksCel a.on{background:var(--ysuave);border-color:var(--y)}
+.amq .linksCel a:active{transform:scale(0.97)}
 .amq .isla .btn.s{padding:7px 11px;font-size:12px}
 .amq .isla .ico{width:34px;height:34px}
 .amq .menuMovil{display:inline-flex;color:var(--ink);border-color:var(--borde)}
 .amq .isla .cuentaIsla,.amq .isla .vacioFuera{display:none}.amq .isla .catMovil{display:inline-flex}
+.amq .isla.info .vacioFuera{display:none}
 .amq .buscaIsla{order:3;flex-basis:100%;max-width:none;margin:0}.amq .buscaIsla input{height:38px}.amq .buscaIsla svg{top:11px}
 .amq .grupoWrap{padding:8px 10px 0}
 .amq footer{padding:40px 0 22px}.amq footer .wrap{grid-template-columns:1fr 1fr;gap:30px 20px}.amq footer .marca{grid-column:1/-1}.amq footer .contacto{grid-column:1/-1}.amq footer .abajo{flex-direction:column;gap:6px}
@@ -484,7 +496,7 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
       <a className="argc" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="ARGENCARGO"><img className="iso" src={inv ? "/argencargo/isotipo.png" : "/argencargo/isotipo-blanco.png"} alt="" /><img className="txt" src={inv ? "/argencargo/texto.png" : "/argencargo/texto-blanco.png"} alt="ARGENCARGO" /></a>
     </div></div>}
     {!checkout && <header className="nav">
-      <div className="isla">
+      <div className={`isla ${enTienda ? "tienda" : "info"}`}>
         <a href="/" style={{ display: "flex", alignItems: "center" }}><Logo /></a>
         {enTienda
           ? <form className="buscaIsla" action="/catalogo" method="get" role="search"><Ico d={LUPA} size={16} /><input name="q" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("buscar")} aria-label={t("buscar")} /></form>
@@ -494,17 +506,17 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
             <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos"><Ico d={["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.9", "M16 3.1a4 4 0 0 1 0 7.8"]} size={17} />{t("quienes")}</a>
           </nav>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div className="desp">
+          <div className="desp despMon">
             <button className="pillIso ancha" onClick={() => setDesp(desp === "mon" ? null : "mon")} aria-haspopup="menu" aria-expanded={desp === "mon"} aria-label={t("monedaL")}><img src={bandera(moneda)} alt="" /><span>{moneda === "USD" ? t("dolares") : t("pesos")}</span><Ico d={CHEV} size={14} /></button>
             {desp === "mon" && <><div className="despVelo" onClick={() => setDesp(null)} /><div className="menuPerfil despMenu" role="menu">{MONEDAS.map(([k, l, c]) => <button key={k} className={moneda === k ? "on" : ""} onClick={() => { setMoneda(k); setDesp(null); }}><img src={bandera(k)} alt="" /><span style={{ flex: 1 }}>{l}</span><small>{c}</small></button>)}</div></>}
           </div>
           <div className="desp">
             <button className="pillIso ancha" onClick={() => setDesp(desp === "lang" ? null : "lang")} aria-haspopup="menu" aria-expanded={desp === "lang"} aria-label={t("idioma")}><img src={bandera(lang)} alt="" /><span>{IDIOMAS.find(([k]) => k === lang)?.[1]}</span><Ico d={CHEV} size={14} /></button>
-            {desp === "lang" && <><div className="despVelo" onClick={() => setDesp(null)} /><div className="menuPerfil despMenu" role="menu">{IDIOMAS.map(([k, l]) => <button key={k} className={lang === k ? "on" : ""} onClick={() => { setLang(k); setDesp(null); }}><img src={bandera(k)} alt="" /><span>{l}</span></button>)}</div></>}
+            {desp === "lang" && <><div className="despVelo" onClick={() => setDesp(null)} /><div className="menuPerfil despMenu" role="menu">{IDIOMAS.map(([k, l]) => <button key={k} className={lang === k ? "on" : ""} onClick={() => { setLang(k); setDesp(null); }}><img src={bandera(k)} alt="" /><span>{l}</span></button>)}<div className="soloMovil"><hr />{MONEDAS.map(([k, l, c]) => <button key={k} className={moneda === k ? "on" : ""} onClick={() => { setMoneda(k); setDesp(null); }}><img src={bandera(k)} alt="" /><span style={{ flex: 1 }}>{l}</span><small>{c}</small></button>)}</div></div></>}
           </div>
           <button className={`pillIso tema ${tema === "oscuro" ? "dia" : "noche"}`} onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")} aria-label="Tema">{tema === "oscuro" ? <Ico d={["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]} size={15} /> : <Ico d={["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"]} size={15} />}</button>
           <a className={`ico carritoIsla${!enTienda && n === 0 ? " vacioFuera" : ""}`} href="/carrito" title={t("carrito")} style={{ position: "relative" }} onClick={(e) => { e.preventDefault(); setOrden(true); }}><Ico d={["M6 6h15l-1.5 8H7.5z", "M6 6L5 3H2", "M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"]} size={16} />{n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--y)", color: "#15171A", fontSize: 10, fontWeight: 800, borderRadius: 999, padding: "1px 6px" }}>{n}</span>}</a>
-          {!enTienda && <a className="btn s y catMovil" href="/catalogo">{t("catalogo")}</a>}
+          {!enTienda && <a className="btn y catMovil" href="/catalogo"><Ico d={["M3 3h7v7H3z", "M14 3h7v7h-7z", "M3 14h7v7H3z", "M14 14h7v7h-7z"]} size={17} />{t("catalogo")}</a>}
           {!ses && <a className="btn s y cuentaIsla" href="/cuenta">{t("ingresar")}</a>}
           {ses && <div className="cuentaIsla" style={{ position: "relative" }}>
             <button className="btn s y" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu}>{cliente?.first_name || t("cuenta")}</button>
@@ -522,6 +534,10 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
       {/* Rubros en desfile continuo debajo de la isla (dentro de una máquina), como las categorías de B2Box. */}
       {franja?.length > 0 && <div className="franja"><div className="franjaPista">{[...franja, ...franja].map((c, i) => <a key={`${c.slug}-${i}`} className="chip" href={`/catalogo/${c.slug}`}>{c.nombre}</a>)}</div></div>}
     </header>}
+    {!checkout && !enTienda && <nav className="linksCel">
+      <a className={actual === "como" ? "on" : ""} href="/como-funciona"><Ico d={["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M12 16v-4", "M12 8h.01"]} size={19} />{t("como")}</a>
+      <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos"><Ico d={["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.9", "M16 3.1a4 4 0 0 1 0 7.8"]} size={19} />{t("quienes")}</a>
+    </nav>}
     {orden && <PanelOrden onCerrar={cerrarOrden} />}
     {children}
     {hoja && <div className="hojaVelo" onClick={() => setHoja(false)}>
