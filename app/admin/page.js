@@ -7606,6 +7606,7 @@ const FIXED_CATS=[
 const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",obra_social:"Obra Social",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
 const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",obra_social:"#14b8a6",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
 function FinancePanel({token}){
+  const celu=useEsCelu();
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
   // Editar gasto: id del registro siendo editado (null = nuevo). Confirm delete: payload {id, label, date} del modal lindo.
   const [editingId,setEditingId]=useState(null);
@@ -7981,25 +7982,29 @@ function FinancePanel({token}){
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
   };
+  // Libro diario (04/10/2026, rediseño visual): KPIs, pestañas segmentadas, filas en vez de tablas y
+  // tarjetas en el celu. Los cálculos no cambiaron.
+  const kpiF=(l,v,c)=><div style={{padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)"}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px"}}>{l}</p><p style={{fontSize:celu?16:20,fontWeight:800,color:c,margin:0,fontVariantNumeric:"tabular-nums"}}>{v}</p></div>;
+  const nDeuda=cardDebt.usd.length+cardDebt.pmts.length+(cardDebt.supTcUsd||[]).length+(cardDebt.fleteTcOps||[]).length;
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
-      
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(-1)}>📊 Cierre mes anterior</Btn>
-        <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(0)}>📊 Cierre mes actual</Btn>
-        {tab==="fixed"&&<Btn onClick={()=>{setEditingId(null);setNewEntry({date:hoyAR(),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});setShowAdd(true);}} small>+ Nuevo gasto</Btn>}
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:10,marginBottom:16}}>
+      {kpiF("Ingresos",usd(ledgerIngresos),"#4ade80")}
+      {kpiF("Costos de operaciones",usd(ledgerGastosOp),"#ff8a8a")}
+      {kpiF("Gastos del negocio",usd(ledgerGastosFijos),"#fdba74")}
+      {kpiF("Ganancia neta",usd(ganancia),ganancia>=0?"#4ade80":"#ff6b6b")}
+    </div>
+    <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto",flex:celu?"1 1 100%":"0 0 auto"}}>
+        {[{k:"fixed",l:"Gastos del negocio"},{k:"ledger",l:"Libro diario"},{k:"dollar",l:"Dolarización"},{k:"tcdebt",l:nDeuda>0?`Deuda tarjeta · ${nDeuda}`:"Deuda tarjeta"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{flex:celu?"0 0 auto":"0 0 auto",padding:"8px 14px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:tab===t.k?"rgba(184,149,106,0.22)":"transparent",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.l}</button>)}
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:celu?0:"auto"}}>
+        <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(-1)}>Cierre mes anterior</Btn>
+        <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(0)}>Cierre del mes</Btn>
+        {tab==="fixed"&&<Btn small variant="gold" onClick={()=>{setEditingId(null);setNewEntry({date:hoyAR(),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});setShowAdd(true);}}>+ Nuevo gasto</Btn>}
       </div>
     </div>
-    {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:20}}>
-      <div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.12)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>INGRESOS</p><p style={{fontSize:20,fontWeight:700,color:"#22c55e",margin:0}}>{usd(ledgerIngresos)}</p></div>
-      <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>COSTOS OPS</p><p style={{fontSize:20,fontWeight:700,color:"#ff6b6b",margin:0}}>{usd(ledgerGastosOp)}</p></div>
-      <div style={{background:"rgba(251,146,60,0.04)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GASTOS NEGOCIO</p><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(ledgerGastosFijos)}</p></div>
-      <div style={{background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.18)":"rgba(255,80,80,0.18)"}`,borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GANANCIA NETA</p><p style={{fontSize:20,fontWeight:700,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0}}>{usd(ganancia)}</p></div>
-    </div>
-    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length+(cardDebt.supTcUsd||[]).length+(cardDebt.fleteTcOps||[]).length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
-    {showAdd&&tab==="fixed"&&<Card title={editingId?"✎ Editar gasto":"+ Nuevo gasto"} data-entry-form>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
+    {showAdd&&tab==="fixed"&&<Card v2 title={editingId?"Editar gasto":"Nuevo gasto"} data-entry-form>
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
         <Sel label="Categoría" value={newEntry.category} onChange={v=>setNewEntry(p=>({...p,category:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:c.l}))} ph="— Elegí una categoría —"/>
         <Sel label="Método" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"efectivo",label:"Efectivo"}]}/>
@@ -8026,26 +8031,32 @@ function FinancePanel({token}){
       <div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addEntry}>{editingId?"Guardar cambios":"Guardar"}</Btn><Btn variant="secondary" onClick={cancelEdit}>Cancelar</Btn></div>
     </Card>}
     {tab==="fixed"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
-        {FIXED_CATS.map(c=><div key={c.k} style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${CAT_COLOR[c.k]}33`,borderRadius:10,padding:"10px 14px"}}><p style={{fontSize:10,fontWeight:700,color:CAT_COLOR[c.k],margin:"0 0 4px"}}>{c.l.split(" ")[0].toUpperCase()}</p><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{usd(fijosByCategory[c.k]||0)}</p></div>)}
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(5,minmax(0,1fr))",gap:8,marginBottom:16}}>
+        {FIXED_CATS.map(c=><div key={c.k} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderLeft:`3px solid ${CAT_COLOR[c.k]}`,borderRadius:12,padding:"11px 14px"}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 4px"}}>{c.l}</p><p style={{fontSize:15,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd(fijosByCategory[c.k]||0)}</p></div>)}
       </div>
-      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>{["Fecha","Categoría","Detalle","Monto","Pago",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-          <tbody>{entries.map(e=><tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(e.date)}</td>
-            <td style={{padding:"10px 12px"}}><span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:`${CAT_COLOR[e.category||"otros"]}22`,color:CAT_COLOR[e.category||"otros"]}}>{CAT_LBL[e.category||"otros"]}</span></td>
-            <td style={{padding:"10px 12px",color:"#fff"}}>{e.detail||"—"}</td>
-            <td style={{padding:"10px 12px",fontWeight:700,color:"#ff6b6b"}}>-{usd(Number(e.amount||0))}</td>
-            <td style={{padding:"10px 12px",fontSize:10,color:"rgba(255,255,255,0.4)"}}>{e.payment_method==="tarjeta_credito"?"TC":e.payment_method==="tarjeta_debito"?"TD":e.payment_method==="transferencia"?"TRF":"EF"}</td>
-            <td style={{padding:"10px 12px"}}><div style={{display:"flex",gap:6}}>
-              <button onClick={()=>startEdit(e)} title="Editar" style={{fontSize:10,padding:"3px 9px",borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontWeight:600}}>✎ Editar</button>
-              <button onClick={()=>askDelete(e)} title="Eliminar" style={{fontSize:10,padding:"3px 9px",borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>🗑 Eliminar</button>
-            </div></td>
-          </tr>)}</tbody>
-        </table>
-        {entries.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin gastos cargados. Agregá Meta ads, Vercel, Claude, salarios, etc.</p>}
-      </div>
+      {entries.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin gastos cargados.</p>
+      :<div style={{display:"flex",flexDirection:"column",gap:celu?8:0,background:celu?"transparent":"rgba(255,255,255,0.02)",borderRadius:14,border:celu?"none":"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        {entries.map(e=>{const metodo=e.payment_method==="tarjeta_credito"?"Tarjeta de crédito":e.payment_method==="tarjeta_debito"?"Débito":e.payment_method==="transferencia"?"Transferencia":"Efectivo";
+          const chip=<span style={{fontSize:11,padding:"3px 9px",borderRadius:999,fontWeight:700,background:`${CAT_COLOR[e.category||"otros"]}22`,color:CAT_COLOR[e.category||"otros"],whiteSpace:"nowrap"}}>{CAT_LBL[e.category||"otros"]}</span>;
+          const btns=<div style={{display:"flex",gap:6}}>
+            <button onClick={()=>startEdit(e)} title="Editar" style={{height:32,padding:"0 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Editar</button>
+            <button onClick={()=>askDelete(e)} title="Borrar" style={{height:32,width:32,borderRadius:8,border:"1px solid rgba(255,80,80,0.25)",background:"transparent",color:"#ff8a8a",fontSize:15,cursor:"pointer"}}>×</button>
+          </div>;
+          const monto=<span style={{fontSize:14.5,fontWeight:800,color:"#ff8a8a",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usd(Number(e.amount||0))}</span>;
+          if(celu)return <div key={e.id} style={{padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>{chip}{monto}</div>
+            <p style={{margin:"8px 0 2px",fontSize:13.5,color:"#fff",fontWeight:600}}>{e.detail||"—"}</p>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{formatDate(e.date)} · {metodo}</span>{btns}</div>
+          </div>;
+          return <div key={e.id} style={{display:"grid",gridTemplateColumns:"130px 170px minmax(0,1fr) 130px 140px auto",gap:14,alignItems:"center",padding:"11px 18px",borderBottom:"1px solid rgba(255,255,255,0.045)"}}>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>{formatDate(e.date)}</span>
+            <span>{chip}</span>
+            <span style={{fontSize:13.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.detail||"—"}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{metodo}</span>
+            <span style={{textAlign:"right"}}>{monto}</span>
+            {btns}
+          </div>;})}
+      </div>}
       {/* Modal lindo de confirmación de eliminación */}
       {confirmDel&&<div onClick={()=>setConfirmDel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
@@ -8089,22 +8100,13 @@ function FinancePanel({token}){
       return <>
         {/* Barra de filtros */}
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14,padding:"12px 14px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
-          <input value={ledSearch} onChange={e=>setLedSearch(e.target.value)} placeholder="🔍 Buscar por descripción..." style={{flex:1,minWidth:200,padding:"8px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
-          <DatePicker value={ledFrom} onChange={v=>setLedFrom(v||"")} placeholder="Desde" small/>
-          <span style={{color:"rgba(255,255,255,0.35)",fontSize:12}}>→</span>
-          <DatePicker value={ledTo} onChange={v=>setLedTo(v||"")} placeholder="Hasta" small/>
-          <select value={ledType} onChange={e=>setLedType(e.target.value)} style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",cursor:"pointer"}}>
-            <option value="" style={{background:"#142038"}}>Todos los tipos</option>
-            <option value="ingreso" style={{background:"#142038"}}>Solo ingresos</option>
-            <option value="gasto" style={{background:"#142038"}}>Solo gastos</option>
-          </select>
-          <select value={ledOrigen} onChange={e=>setLedOrigen(e.target.value)} style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",cursor:"pointer"}}>
-            <option value="" style={{background:"#142038"}}>Todos los orígenes</option>
-            <option value="op" style={{background:"#142038"}}>Operación</option>
-            <option value="pmt" style={{background:"#142038"}}>Gestión de pagos</option>
-            <option value="agente" style={{background:"#142038"}}>Anticipo agente</option>
-            <option value="manual" style={{background:"#142038"}}>Gasto fijo</option>
-          </select>
+          <input value={ledSearch} onChange={e=>setLedSearch(e.target.value)} placeholder="Buscar" style={{flex:1,minWidth:celu?"100%":200,padding:"8px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,width:celu?"100%":340}}>
+            <DatePicker value={ledFrom} onChange={v=>setLedFrom(v||"")} placeholder="Desde" small/>
+            <DatePicker value={ledTo} onChange={v=>setLedTo(v||"")} placeholder="Hasta" small/>
+          </div>
+          <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}>{[["","Todo"],["ingreso","Ingresos"],["gasto","Gastos"]].map(([k,l])=><button key={k} onClick={()=>setLedType(k)} style={{padding:"6px 12px",fontSize:12,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:ledType===k?"rgba(184,149,106,0.22)":"transparent",color:ledType===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",fontFamily:"inherit"}}>{l}</button>)}</div>
+          <div style={{minWidth:180,marginBottom:-12}}><Sel value={ledOrigen} onChange={setLedOrigen} options={[{value:"",label:"Todos los orígenes"},{value:"op",label:"Operación"},{value:"pmt",label:"Gestión de pagos"},{value:"agente",label:"Anticipo agente"},{value:"manual",label:"Gasto fijo"}]}/></div>
           {hasFilters&&<button onClick={clear} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Limpiar</button>}
         </div>
         {/* Subtotales del filtro */}
@@ -8114,20 +8116,25 @@ function FinancePanel({token}){
           <span style={{color:"#ff6b6b"}}>Gastos: <strong>{usd(subGst)}</strong></span>
           <span style={{color:subIng-subGst>=0?"#22c55e":"#ff6b6b"}}>Neto: <strong>{usd(subIng-subGst)}</strong></span>
         </div>}
-        <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>{["Fecha","Tipo","Origen","Descripción","Detalle","Monto"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-            <tbody>{ledFiltered.map((l,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-              <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{l.date==="—"?"—":formatDate(l.date)}</td>
-              <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:700,background:l.type==="ingreso"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="ingreso"?"INGRESO":"GASTO"}</span></td>
-              <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.028)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"Operación":l.origen==="pmt"?"Gestión de pagos":l.origen==="agente"?"Anticipo agente":"Gasto fijo"}</span></td>
-              <td style={{padding:"10px 12px",color:"#fff"}}>{l.desc}</td>
-              <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{l.detail||(l.cat?CAT_LBL[l.cat]:"")}</td>
-              <td style={{padding:"10px 12px",fontWeight:700,color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="gasto"?"-":""}{usd(l.amount)}</td>
-            </tr>)}</tbody>
-          </table>
-          {ledFiltered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>{ledger.length===0?"No hay movimientos":"No hay movimientos con esos filtros"}</p>}
-        </div>
+        {ledFiltered.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>{ledger.length===0?"No hay movimientos":"No hay movimientos con esos filtros"}</p>
+        :<div style={{display:"flex",flexDirection:"column",gap:celu?8:0,background:celu?"transparent":"rgba(255,255,255,0.02)",borderRadius:14,border:celu?"none":"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+          {ledFiltered.map((l,i)=>{const ing=l.type==="ingreso";const origen=l.origen==="op"?"Operación":l.origen==="pmt"?"Gestión de pagos":l.origen==="agente"?"Anticipo agente":"Gasto fijo";const det=l.detail||(l.cat?CAT_LBL[l.cat]:"");
+            const monto=<span style={{fontSize:14.5,fontWeight:800,color:ing?"#4ade80":"#ff8a8a",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{ing?"+":"−"}{usd(l.amount)}</span>;
+            const punto=<span style={{width:8,height:8,borderRadius:"50%",background:ing?"#22c55e":"#f87171",flexShrink:0}}/>;
+            if(celu)return <div key={i} style={{padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.5)"}}>{punto}{l.date==="—"?"—":formatDate(l.date)} · {origen}</span>{monto}</div>
+              <p style={{margin:"6px 0 0",fontSize:13.5,color:"#fff",fontWeight:600}}>{l.desc}</p>
+              {det&&<p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{det}</p>}
+            </div>;
+            return <div key={i} style={{display:"grid",gridTemplateColumns:"16px 130px 140px minmax(0,1fr) minmax(0,0.8fr) 150px",gap:12,alignItems:"center",padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.045)"}}>
+              {punto}
+              <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>{l.date==="—"?"—":formatDate(l.date)}</span>
+              <span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.5)"}}>{origen}</span>
+              <span style={{fontSize:13.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.desc}</span>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.4)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{det}</span>
+              <span style={{textAlign:"right"}}>{monto}</span>
+            </div>;})}
+        </div>}
       </>;
     })())}
     {tab==="dollar"&&(()=>{
