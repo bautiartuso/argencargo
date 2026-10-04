@@ -6116,10 +6116,11 @@ function EntregasPanel({token,onOpenOp,vista}){
     const bultos=bultosByOp[o.id]||0;
     const badge=metodoBadgeDe(o);
     const dias=diasDe(o,contexto==="acobrar"||contexto==="hecha");
-    const icono=contexto==="hecha"?"✅":esCarrier?"📮":esEnvio?"🚚":"📦";
+    const icono=contexto==="hecha"?"✅":esCarrier?"📮":esEnvio&&contexto!=="acobrar"?"🚚":"📦";
     const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
     const conRecibo=contexto==="porentregar"||contexto==="acobrar"||contexto==="hecha";
-    const envioVivo=esEnvio&&contexto!=="hecha";
+    // Ya entregada (hecha o con saldo): el envío a domicilio ya pasó, sin el azul ni el camioncito.
+    const envioVivo=esEnvio&&contexto!=="hecha"&&contexto!=="acobrar";
     const costoEnvio=Number(o.delivery_cost_usd||0);
     const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
     if(celu){
@@ -6162,7 +6163,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       </div>;
     }
     return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
-      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:esEnvio?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${esEnvio?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
+      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:envioVivo?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
       <div style={{flex:"1 1 210px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
         <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{enCliente?<span style={{fontFamily:"monospace",color:"#E8C99B"}}>{o.operation_code}</span>:<>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span></>}{diaBadge(o)}{envioVivo&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
