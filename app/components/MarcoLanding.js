@@ -149,7 +149,7 @@ export default function MarcoLanding({ children }) {
       {/* Barra del grupo: se va al scrollear. */}
       <div className="grupoWrap"><div className="grupo">
         <a className="on argc" href="/" aria-label="ARGENCARGO"><img className="iso" src={claro ? "/argencargo/isotipo-blanco.png" : "/argencargo/isotipo.png"} alt="" /><img className="txt" src={claro ? "/argencargo/texto-blanco.png" : "/argencargo/texto.png"} alt="ARGENCARGO" /></a>
-        <a className="am" href={AM_URL} aria-label="ARGENMAQ"><img className="iso" src={claro ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" /><img className="txt" src={claro ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" /></a>
+        <a className="am" href={AM_URL} target="_blank" rel="noopener noreferrer" aria-label="ARGENMAQ"><img className="iso" src={claro ? "/argenmaq/isotipo-blanco.png" : "/argenmaq/isotipo.png"} alt="" /><img className="txt" src={claro ? "/argenmaq/texto-blanco.png" : "/argenmaq/texto.png"} alt="ARGENMAQ" /></a>
       </div></div>
 
       {/* Isla: queda pegada arriba. */}
