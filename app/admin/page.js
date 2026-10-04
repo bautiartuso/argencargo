@@ -163,12 +163,12 @@ function Inp({label,type="text",value,onChange,placeholder,small,step,marks}){co
 // misma API. La lista va por portal al body y en posición fija: así no la recorta una tarjeta con
 // overflow ni la corre un contenedor con backdrop-filter.
 function Sel({label,value,onChange,options,ph}){
-  const [abierto,setAbierto]=useState(false);const [pos,setPos]=useState(null);const ref=useRef(null);
+  const [abierto,setAbierto]=useState(false);const [pos,setPos]=useState(null);const ref=useRef(null);const listaRef=useRef(null);
   const opts=(options||[]).map(o=>typeof o==="string"?{value:o,label:o}:o);
   const lista=ph?[{value:"",label:ph},...opts]:opts;
   const actual=opts.find(o=>String(o.value)===String(value??""));
   const abrir=()=>{const r=ref.current?.getBoundingClientRect();if(!r)return;const alto=Math.min(300,lista.length*38+8);const abajo=window.innerHeight-r.bottom>alto+8||r.top<alto+8;setPos({left:r.left,width:Math.max(r.width,160),top:abajo?r.bottom+4:r.top-alto-4,maxH:alto});setAbierto(true);};
-  useEffect(()=>{if(!abierto)return;const cerrar=()=>setAbierto(false);window.addEventListener("scroll",cerrar,true);window.addEventListener("resize",cerrar);return()=>{window.removeEventListener("scroll",cerrar,true);window.removeEventListener("resize",cerrar);};},[abierto]);
+  useEffect(()=>{if(!abierto)return;const cerrar=(e)=>{if(e&&e.type==="scroll"&&listaRef.current&&(e.target===listaRef.current||listaRef.current.contains(e.target)))return;setAbierto(false);};window.addEventListener("scroll",cerrar,true);window.addEventListener("resize",cerrar);return()=>{window.removeEventListener("scroll",cerrar,true);window.removeEventListener("resize",cerrar);};},[abierto]);
   return <div style={{marginBottom:12}}>
     {label&&<label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>}
     <button ref={ref} type="button" onClick={()=>abierto?setAbierto(false):abrir()} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:`1px solid ${abierto?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.04)",color:actual&&String(actual.value)!==""?"#fff":"rgba(255,255,255,0.45)",outline:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",boxShadow:abierto?"0 0 0 3px rgba(184,149,106,0.18)":"none",transition:"border-color 160ms, box-shadow 160ms"}}>
@@ -177,7 +177,7 @@ function Sel({label,value,onChange,options,ph}){
     </button>
     {abierto&&pos&&typeof document!=="undefined"&&createPortal(<>
       <div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:4999}}/>
-      <div style={{position:"fixed",left:pos.left,top:pos.top,width:pos.width,maxHeight:pos.maxH,overflowY:"auto",zIndex:5000,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:11,boxShadow:"0 16px 40px rgba(0,0,0,0.5)",padding:4,boxSizing:"border-box",fontFamily:"inherit"}}>
+      <div ref={listaRef} style={{position:"fixed",left:pos.left,top:pos.top,width:pos.width,maxHeight:pos.maxH,overflowY:"auto",overscrollBehavior:"contain",zIndex:5000,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:11,boxShadow:"0 16px 40px rgba(0,0,0,0.5)",padding:4,boxSizing:"border-box",fontFamily:"inherit"}}>
         {lista.map(o=>{const on=String(o.value)===String(value??"");return <div key={String(o.value)} onClick={()=>{onChange(String(o.value));setAbierto(false);}} style={{padding:"9px 10px",fontSize:13,borderRadius:7,cursor:"pointer",color:on?GOLD_LIGHT:"#fff",background:on?"rgba(184,149,106,0.14)":"transparent",fontWeight:on?700:500}} onMouseEnter={e=>{if(!on)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!on)e.currentTarget.style.background="transparent";}}>{o.label}</div>;})}
       </div>
     </>,document.body)}
@@ -312,11 +312,17 @@ function AdminLogin({onLogin}){
 const OPS_FILTERS_KEY="ac_ops_filters";
 const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSON.parse(localStorage.getItem(OPS_FILTERS_KEY)||"{}")||{};}catch{return{};}};
 
-function OperationsList({token,onSelect,onNew}){
+// Operaciones + Entregas en un solo panel (04/10/2026): cuatro etapas (En proceso · Para entregar ·
+// Entregadas · Cerradas) y un buscador arriba que busca en todas. "Para entregar" y "Entregadas" son
+// el panel de Entregas tal cual (avisos, agenda por día, cobros).
+function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   const celu=useEsCelu();
+  const [etapa,setEtapa]=useState(()=>{try{return localStorage.getItem("ac_ops_etapa")||"proceso";}catch{return "proceso";}});
+  useEffect(()=>{try{localStorage.setItem("ac_ops_etapa",etapa);}catch{}},[etapa]);
+  const [subEtapa,setSubEtapa]=useState("");
   const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [cliComByOp,setCliComByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [lo,setLo]=useState(true);
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
-  const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
+  const [fStatuses,setFStatuses]=useState([]);
   const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
   const [fOrigin,setFOrigin]=useState(()=>loadOpsFilters().fOrigin||""); // "" | "China" | "USA"
   const [fEta,setFEta]=useState(()=>loadOpsFilters().fEta||""); // YYYY-MM-DD
@@ -495,17 +501,27 @@ function OperationsList({token,onSelect,onNew}){
   const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA",noNcm:"Sin NCM"};
   const attIds=attFilter&&attArrays[attFilter]?new Set(attArrays[attFilter].map(o=>o.id)):null;
   const toggleAtt=(k)=>setAttFilter(f=>f===k?null:k);
-  const AttCard=({n,label,color,onClick,active})=><button onClick={onClick} style={{flex:"1 1 160px",minWidth:140,padding:"14px 16px",background:active?`${color}28`:n>0?`${color}10`:"rgba(255,255,255,0.02)",border:`1.5px solid ${active?color:n>0?color+"50":"rgba(255,255,255,0.05)"}`,boxShadow:active?`0 0 0 1px ${color}, 0 4px 16px ${color}30`:"none",borderRadius:12,cursor:n>0?"pointer":"default",textAlign:"left",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}20`;}} onMouseLeave={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}10`;}}>
-    <p style={{fontSize:24,fontWeight:800,color:n>0?color:"rgba(255,255,255,0.25)",margin:0,fontVariantNumeric:"tabular-nums"}}>{n}</p>
-    <p style={{fontSize:11,color:n>0?"#fff":"rgba(255,255,255,0.4)",margin:"2px 0 0",fontWeight:600,letterSpacing:"0.02em"}}>{label}{active&&<span style={{marginLeft:6,fontSize:10,color}}>✓ filtrando</span>}</p>
-  </button>;
+  const AttCard=({n,label,color,onClick,active})=>n>0||active?<button onClick={onClick} style={{display:"inline-flex",alignItems:"center",gap:8,height:36,padding:"0 14px 0 12px",borderRadius:999,border:`1.5px solid ${active?color:color+"55"}`,background:active?`${color}2A`:`${color}12`,color:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:12.5,fontWeight:700}}><b style={{fontSize:14,color}}>{n}</b>{label}{active&&<span style={{fontSize:11,color}}>✕</span>}</button>:null;
+  const etapaDe=o=>{if(["operacion_cerrada","cancelada"].includes(o.status))return "cerradas";if(o.delivery_completed_at)return (calcSaldo(o)||0)>0.005?"entregar":"entregadas";if(o.status==="entregada"||o.delivery_ready_at)return "entregar";return "proceso";};
+  const nEtapa=k=>ops.filter(o=>etapaDe(o)===k).length;
+  const buscando=search.trim().length>0;
+  const ETAPAS=[{k:"proceso",l:"En proceso",c:"#60a5fa"},{k:"entregar",l:"Para entregar",c:"#22c55e"},{k:"entregadas",l:"Entregadas",c:"#a78bfa"},{k:"cerradas",l:"Cerradas",c:"#94a3b8"}];
+  const SUB=[{k:"",l:"Todas"},{k:"pendiente",l:"Proveedor"},{k:"en_deposito_origen",l:"Depósito"},{k:"en_preparacion",l:"Preparación"},{k:"en_transito",l:"En tránsito"},{k:"arribo_argentina",l:"Arribó"},{k:"en_aduana",l:"Aduana"}];
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
-      
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Btn variant="gold" onClick={onNew}>+ Nueva operación</Btn>
+    <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center"}}>
+      <div style={{position:"relative",flex:1,minWidth:0}}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="2" strokeLinecap="round" style={{position:"absolute",left:15,top:"50%",transform:"translateY(-50%)"}}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={celu?"Buscar operación o cliente":"Buscar por código, cliente o descripción"} style={{width:"100%",height:48,padding:"0 40px 0 44px",fontSize:14.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
+        {buscando&&<button onClick={()=>setSearch("")} aria-label="Limpiar búsqueda" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:28,height:28,borderRadius:"50%",border:"none",background:"rgba(255,255,255,0.1)",color:"#fff",cursor:"pointer",fontSize:13}}>✕</button>}
       </div>
+      <Btn variant="gold" onClick={onNew}>{celu?"+ Nueva":"+ Nueva operación"}</Btn>
     </div>
+    {!buscando&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:8,marginBottom:18}}>
+      {ETAPAS.map(e=>{const on=etapa===e.k;const n=e.k==="entregadas"?null:nEtapa(e.k);return <button key={e.k} onClick={()=>setEtapa(e.k)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:celu?"12px 14px":"14px 18px",borderRadius:14,border:`1.5px solid ${on?e.c:"rgba(255,255,255,0.08)"}`,background:on?`${e.c}1F`:"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+        <span style={{display:"flex",alignItems:"center",gap:8,fontSize:celu?13:14,fontWeight:800}}><span style={{width:8,height:8,borderRadius:"50%",background:e.c,flexShrink:0}}/>{e.l}</span>
+        {n!=null&&<span style={{fontSize:celu?15:18,fontWeight:800,color:on?e.c:"rgba(255,255,255,0.55)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
+      </button>;})}
+    </div>}
     {selectedIds.size>0&&<div style={{display:"flex",gap:10,marginBottom:14,padding:"12px 16px",background:`linear-gradient(90deg, rgba(184,149,106,0.18), rgba(184,149,106,0.06))`,border:`1.5px solid ${GOLD}`,borderRadius:12,alignItems:"center",flexWrap:"wrap"}}>
       <span style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.02em"}}>{selectedIds.size} seleccionada{selectedIds.size>1?"s":""}</span>
       <button onClick={clearSelection} style={{fontSize:11,padding:"4px 10px",border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",borderRadius:6,cursor:"pointer",fontWeight:600}}>Deseleccionar</button>
@@ -517,7 +533,7 @@ function OperationsList({token,onSelect,onNew}){
     </div>}
     {/* NCM faltante: cartel imposible de ignorar. Sin la clasificación no se puede
         presentar factura ni despachar, así que se muestra arriba de todo y bien grande. */}
-    {noNcmOps.length>0&&<div style={{marginBottom:18,padding:"18px 22px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.20),rgba(239,68,68,0.06))",border:"2px solid #ef4444",boxShadow:"0 0 0 1px rgba(239,68,68,0.4), 0 8px 30px rgba(239,68,68,0.22)"}}>
+    {(buscando||etapa==="proceso")&&noNcmOps.length>0&&<div style={{marginBottom:18,padding:"18px 22px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.20),rgba(239,68,68,0.06))",border:"2px solid #ef4444",boxShadow:"0 0 0 1px rgba(239,68,68,0.4), 0 8px 30px rgba(239,68,68,0.22)"}}>
       <style>{"@keyframes ncmPulse{0%,100%{opacity:1}50%{opacity:.45}}"}</style>
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <span style={{fontSize:34,lineHeight:1,animation:"ncmPulse 1.4s ease-in-out infinite"}}>⚠️</span>
@@ -534,7 +550,7 @@ function OperationsList({token,onSelect,onNew}){
         </div>
       </div>
     </div>}
-    {attentionTotal>0&&<div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+    {!buscando&&etapa==="proceso"&&attentionTotal>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
       <AttCard n={staleOps.length} label="Estancadas" color="#f87171" active={attFilter==="stale"} onClick={()=>{if(staleOps.length)toggleAtt("stale");}}/>
       <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" active={attFilter==="noBudget"} onClick={()=>{if(noBudgetOps.length)toggleAtt("noBudget");}}/>
       <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" active={attFilter==="noEta"} onClick={()=>{if(noEtaOps.length)toggleAtt("noEta");}}/>
@@ -544,11 +560,8 @@ function OperationsList({token,onSelect,onNew}){
       <span style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>Filtrando: {attLabels[attFilter]} <span style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>({attArrays[attFilter]?.length||0})</span></span>
       <button onClick={()=>setAttFilter(null)} style={{fontSize:11,padding:"4px 11px",border:"1px solid rgba(255,255,255,0.18)",background:"transparent",color:"rgba(255,255,255,0.7)",borderRadius:6,cursor:"pointer",fontWeight:600}}>✕ Mostrar todas</button>
     </div>}
-    <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-      <div style={{flex:celu?"1 1 100%":1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción" style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
-      <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fStatuses.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fStatuses.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estado${fStatuses.length>1?"s":""}`:"Todos los estados"} ▼</button>
-        {showStatusDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:200}}>{STATUSES.map(s=><label key={s} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fStatuses.includes(s)} onChange={()=>toggleStatus(s)}/><span style={{fontSize:12,color:SM[s].c,fontWeight:600}}>{SM[s].l}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFStatuses([]);setShowStatusDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar filtros</button></div></div>}
-      </div>
+    {(buscando||etapa==="proceso"||etapa==="cerradas")&&<div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+      {!buscando&&etapa==="proceso"&&<div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto",maxWidth:"100%",flex:celu?"1 1 100%":"0 1 auto"}}>{SUB.map(x=>{const on=subEtapa===x.k;const n=x.k?ops.filter(o=>o.status===x.k&&etapaDe(o)==="proceso").length:null;return <button key={x.k} onClick={()=>setSubEtapa(x.k)} style={{flex:"0 0 auto",padding:"7px 12px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:on?"rgba(184,149,106,0.22)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.6)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{x.l}{n?<span style={{marginLeft:5,opacity:0.7}}>{n}</span>:null}</button>;})}</div>}
       <div style={{position:"relative"}}><button onClick={()=>setShowChannelDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fChannels.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fChannels.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fChannels.length>0?`${fChannels.length} canal${fChannels.length>1?"es":""}`:"Todos los canales"} ▼</button>
         {showChannelDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:180}}>{CHANNELS.map(c=><label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fChannels.includes(c)} onChange={()=>toggleChannel(c)}/><span style={{fontSize:12,color:"#fff",fontWeight:600}}>{CM[c]}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFChannels([]);setShowChannelDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar canales</button></div></div>}
       </div>
@@ -559,7 +572,7 @@ function OperationsList({token,onSelect,onNew}){
         {fEta&&<button onClick={()=>setFEta("")} title="Limpiar ETA" style={{padding:"6px 9px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>}
       </div>
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
-    </div>
+    </div>}
     {lo?<SkeletonTable rows={10} cols={7}/>:(()=>{
     // Filtro por tarjeta de atención (si hay una activa, limita la lista a esa categoría).
     const baseSorted=attIds?sorted.filter(o=>attIds.has(o.id)):sorted;
@@ -628,10 +641,18 @@ function OperationsList({token,onSelect,onNew}){
     const safePage=Math.min(pageClosed,totalPagesClosed);
     const closedPaged=closed.slice((safePage-1)*CLOSED_PER_PAGE,safePage*CLOSED_PER_PAGE);
     const renderPagination=()=>{if(totalPagesClosed<=1)return null;const pages=[];const maxVisible=7;let start=Math.max(1,safePage-3);let end=Math.min(totalPagesClosed,start+maxVisible-1);if(end-start<maxVisible-1)start=Math.max(1,end-maxVisible+1);for(let i=start;i<=end;i++)pages.push(i);const btnStyle=(active,disabled)=>({minWidth:32,height:32,padding:"0 10px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1px solid ${active?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.08)"}`,background:active?"rgba(184,149,106,0.14)":"transparent",color:disabled?"rgba(255,255,255,0.2)":active?GOLD_LIGHT:"rgba(255,255,255,0.65)",cursor:disabled?"not-allowed":"pointer",transition:"all 150ms",display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.45)",letterSpacing:"0.03em"}}>Mostrando {(safePage-1)*CLOSED_PER_PAGE+1}–{Math.min(safePage*CLOSED_PER_PAGE,closed.length)} de {closed.length}</span><div style={{display:"flex",gap:4,alignItems:"center"}}><button disabled={safePage===1} onClick={()=>setPageClosed(safePage-1)} style={btnStyle(false,safePage===1)}>←</button>{start>1&&<><button onClick={()=>setPageClosed(1)} style={btnStyle(false)}>1</button>{start>2&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}</>}{pages.map(p=><button key={p} onClick={()=>setPageClosed(p)} style={btnStyle(p===safePage)}>{p}</button>)}{end<totalPagesClosed&&<>{end<totalPagesClosed-1&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}<button onClick={()=>setPageClosed(totalPagesClosed)} style={btnStyle(false)}>{totalPagesClosed}</button></>}<button disabled={safePage===totalPagesClosed} onClick={()=>setPageClosed(safePage+1)} style={btnStyle(false,safePage===totalPagesClosed)}>→</button></div></div>;};
-    return <>{ready.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>Listas para retirar <span style={{color:"rgba(34,197,94,0.85)",marginLeft:4}}>({ready.length})</span></h3>{renderTable(ready,false)}</>}
-    {inProgress.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:ready.length>0?"32px 0 14px":"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones en curso <span style={{color:GOLD_LIGHT,marginLeft:4}}>({inProgress.length})</span></h3>{renderTable(inProgress,false)}</>}
-    {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
-    {active.length===0&&closed.length===0&&(()=>{const hasFilters=search||fStatuses.length>0||fChannels.length>0||attFilter;return <EmptyState icon="box" title={hasFilters?"Sin resultados":"No hay operaciones"} description={hasFilters?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={hasFilters?null:"+ Nueva operación"} ctaOnClick={hasFilters?null:onNew}/>;})()}</>;})()}
+    const titulo=(t,n,c)=><h3 style={{fontSize:12,fontWeight:700,color:c||"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t} <span style={{color:GOLD_LIGHT,marginLeft:4}}>({n})</span></h3>;
+    if(buscando){
+      const res=baseSorted;
+      return res.length===0?<EmptyState icon="box" title="Sin resultados" description={`Ninguna operación coincide con "${search}".`}/>:<>{titulo("Resultados",res.length)}{renderTable(res,false)}</>;
+    }
+    if(etapa==="entregar"||etapa==="entregadas")return <EntregasPanel token={token} onOpenOp={onOpenEntrega||onSelect} vista={etapa==="entregar"?"agenda":"hechas"}/>;
+    if(etapa==="cerradas")return closed.length===0?<EmptyState icon="box" title="No hay operaciones cerradas"/>:<>
+      <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:4}}>{titulo("Cerradas",closed.length)}{totalGanancia!==0&&<span style={{fontSize:12.5,fontWeight:800,color:totalGanancia>0?"#22c55e":"#ff6b6b"}}>Ganancia USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</div>
+      {renderTable(closedPaged,true)}{renderPagination()}</>;
+    const enProceso=active.filter(o=>etapaDe(o)==="proceso"&&(!subEtapa||o.status===subEtapa));
+    return enProceso.length===0?<EmptyState icon="box" title="No hay operaciones en proceso" cta="+ Nueva operación" ctaOnClick={onNew}/>:renderTable(enProceso,false);
+  })()}
 
     {bulkAction&&<div onClick={()=>!bulkRunning&&setBulkAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${bulkAction.action==="delete"?"rgba(255,80,80,0.5)":bulkAction.action==="markCollected"?"rgba(34,197,94,0.5)":"rgba(184,149,106,0.5)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%"}}>
@@ -5684,7 +5705,7 @@ function CoordinarModal({op,token,onClose,onSaved}){
   </div>;
 }
 
-function EntregasPanel({token,onOpenOp}){
+function EntregasPanel({token,onOpenOp,vista}){
   // Empleado: coordina la entrega pero no ve montos — solo el estado (cobrada o no).
   const sinMontos=false; // el empleado ve los montos del cliente (no ve costos ni ganancia)
   // En el celular el panel es otro (01/10/2026): tarjetas en columna con acciones grandes y sin
@@ -5695,7 +5716,8 @@ function EntregasPanel({token,onOpenOp}){
   const [bultosByOp,setBultosByOp]=useState({});const [cobrosByOp,setCobrosByOp]=useState({});
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
-  const [tab,setTab]=useState("agenda"); // agenda | pendientes | entregadas
+  const [tab,setTab]=useState(vista||"agenda"); // agenda | pendientes | entregadas
+  useEffect(()=>{if(vista)setTab(vista);},[vista]);
   const [cobroModal,setCobroModal]=useState(null); // {op, soloCobro} — cobro/entrega desde cards
   const [coordinarModal,setCoordinarModal]=useState(null); // op a coordinar a mano
   const [hechas,setHechas]=useState([]); // historial reciente: entregadas y cobradas
@@ -6254,9 +6276,9 @@ function EntregasPanel({token,onOpenOp}){
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:celu?16:22,marginBottom:celu?12:16,flexWrap:"wrap"}}>
       
-      <div style={{display:"flex",gap:18}}>
+      {!vista&&<div style={{display:"flex",gap:18}}>
         {[["agenda","En curso",pendientes.length+entregadasSinCobrar.length],["hechas","Entregadas",null]].map(([k,l,n])=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"4px 0",fontSize:12,fontWeight:on?800:700,letterSpacing:"0.08em",textTransform:"uppercase",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,background:"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}}>{n}</span>}</button>;})}
-      </div>
+      </div>}
       <span style={{flex:1}}/>
       {tab==="agenda"&&!celu&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>{diasChips}</div>}
     </div>
@@ -16015,7 +16037,7 @@ function AdminDashboard({session,onLogout}){
   const readNav=()=>{if(typeof window==="undefined")return null;try{return JSON.parse(localStorage.getItem("ac_admin_nav")||"null");}catch{return null;}};
   const initNav=readNav()||{};
   // Vuelta del permiso de Gmail (/admin?mail=ok): abre la solapa Email.
-  const [page,setPage]=useState(()=>{try{if(new URLSearchParams(window.location.search).get("mail"))return "mail";}catch{}return initNav.page||"operations";});
+  const [page,setPage]=useState(()=>{try{if(new URLSearchParams(window.location.search).get("mail"))return "mail";}catch{}return initNav.page==="entregas"?"operations":(initNav.page||"operations");});
   const [selOp,setSelOp]=useState(initNav.selOp||null);
   const [selOpTab,setSelOpTab]=useState(null); // solapa inicial al entrar a una op desde otro panel (ej. "Entregas")
   const [selClient,setSelClient]=useState(initNav.selClient||null);
@@ -16060,7 +16082,6 @@ function AdminDashboard({session,onLogout}){
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
     {section:"Comercial",items:[
-      {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
       {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
       {key:"mail",label:"Email",p:["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
@@ -16197,7 +16218,7 @@ function AdminDashboard({session,onLogout}){
       </div>
       <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
-      {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
+      {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)} onOpenEntrega={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
@@ -16207,8 +16228,6 @@ function AdminDashboard({session,onLogout}){
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
       {page==="tickets"&&<TicketsPanel token={token} allClients={allClients}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
-      {page==="entregas"&&!selOp&&<EntregasPanel token={token} onOpenOp={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
-      {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="bot"&&<BotPanel token={token}/>}
       {page==="studio"&&<StudioPanel token={token}/>}
       {page==="blog"&&<BlogPanel token={token}/>}

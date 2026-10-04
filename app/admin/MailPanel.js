@@ -4,6 +4,7 @@
 // Redactar con varios adjuntos y arrastrar y soltar. En el celu: carpetas → lista → mensaje.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../../lib/ui";
+import CarrierLogo from "../components/CarrierLogo";
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8C99B";
 const MAX_ADJ = 3.2 * 1024 * 1024; // límite de Vercel para el cuerpo de la request (~4,5 MB en base64)
@@ -99,7 +100,9 @@ export default function MailPanel({ token }) {
 
   const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }];
   const elegir = (k) => { setCarpeta(k); if (celu) setVista("lista"); };
-  const itemNav = (k, l, ic, n) => { const on = carpeta === k; return <button key={k} onClick={() => elegir(k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.16)" : "transparent", color: on ? GOLD_LIGHT : "rgba(255,255,255,0.72)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}><Ico d={ic} />{l}{n > 0 && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 999, background: "rgba(184,149,106,0.25)", color: GOLD_LIGHT }}>{n}</span>}</button>; };
+  // Carpetas de DHL, FedEx y UPS: con el logo de la empresa en vez del ícono de carpeta.
+  const marca = (l) => { const x = String(l || "").toLowerCase(); return x === "dhl" ? "dhl" : x === "fedex" ? "fedex" : x === "ups" ? "ups" : null; };
+  const itemNav = (k, l, ic, n) => { const on = carpeta === k; const mk = ic === I.carpeta ? marca(l) : null; return <button key={k} onClick={() => elegir(k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.16)" : "transparent", color: on ? GOLD_LIGHT : "rgba(255,255,255,0.72)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>{mk ? <CarrierLogo k={mk} alto={24} radio={6} /> : <><Ico d={ic} />{l}</>}{n > 0 && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 999, background: "rgba(184,149,106,0.25)", color: GOLD_LIGHT }}>{n}</span>}</button>; };
 
   const panelCarpetas = <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
     <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ height: 44, marginBottom: 12, borderRadius: 12, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Redactar</button>
