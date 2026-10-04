@@ -257,9 +257,10 @@ const CSS = `
 .amq .bc .grilla{position:absolute;inset:0;z-index:-1;background-image:linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px);background-size:34px 34px}
 
 /* Parte del grupo Argencargo */
-.amq .argBanda{display:grid;grid-template-columns:auto 1fr auto;gap:34px;align-items:center;padding:32px 36px;border-radius:26px;border:1px solid var(--borde);background:var(--suave)}
-.amq .argBanda .logo{display:inline-flex;align-items:center;gap:10px}.amq .argBanda .logo img.iso{height:34px}.amq .argBanda .logo img.txt{height:20px}
-.amq .argBanda .logo img.oscuro{display:none}.amq[data-tema="oscuro"] .argBanda .logo img.oscuro{display:inline}.amq[data-tema="oscuro"] .argBanda .logo img.claro{display:none}
+.amq .argBanda{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:40px;align-items:center;padding:32px 40px;border-radius:26px;border:1px solid var(--borde);background:var(--suave)}
+.amq .argBanda .logo{display:flex;align-items:center;justify-content:center;padding-right:40px;border-right:1px solid var(--borde)}
+.amq .argBanda .logo img{width:170px;height:auto;display:block}
+.amq .argBanda .logo img.oscuro{display:none}.amq[data-tema="oscuro"] .argBanda .logo img.oscuro{display:block}.amq[data-tema="oscuro"] .argBanda .logo img.claro{display:none}
 .amq .argBanda .lbl{margin-bottom:6px}
 .amq .argBanda h3{margin:0 0 8px;font-size:22px;letter-spacing:-0.02em}
 .amq .argBanda p{margin:0;font-size:15.5px;line-height:1.55;color:var(--gris);max-width:640px}
@@ -297,7 +298,9 @@ const CSS = `
   .amq .hCabeza{text-align:left}
   .amq .bento{grid-template-columns:1fr 1fr;grid-auto-rows:230px}
   .amq .busca{grid-template-columns:1fr;padding:32px 24px}
-  .amq .argBanda{grid-template-columns:1fr;gap:18px;padding:26px 22px}.amq .argBanda .acc{grid-template-columns:1fr 1fr}
+  .amq .argBanda{grid-template-columns:minmax(0,1fr);gap:20px;padding:26px 22px;text-align:center}
+  .amq .argBanda .logo{padding:0 0 20px;border-right:none;border-bottom:1px solid var(--borde)}.amq .argBanda .logo img{width:150px}
+  .amq .argBanda p{max-width:none}.amq .argBanda .acc{grid-template-columns:minmax(0,1fr)}.amq .argBanda .acc .btn{white-space:normal}
 }
 @media(max-width:600px){
   .amq .bento{grid-template-columns:1fr;grid-auto-rows:220px;gap:10px}
@@ -330,7 +333,7 @@ const TXT = {
     ],
     catT: "Catálogo de productos", catS: "Precio final puesto en nuestro depósito de CABA.", verTodo: "Ver catálogo completo",
     porQue: "Por qué ARGENMAQ",
-    arg: { k: "PARTE DEL GRUPO ARGENCARGO", t: "Detrás de ARGENMAQ está Argencargo.", p: "Argencargo importa desde China todos los días, con equipo propio en Buenos Aires: flete, seguro, aduana y entrega. ARGENMAQ es su división de maquinaria, así que tu máquina viaja con quienes ya lo hacen todos los días.", ops: "Ya son más de {n} operaciones.", b1: "Conocer Argencargo", b2: "Quiénes somos" },
+    arg: { k: "PARTE DEL GRUPO ARGENCARGO", t: "Detrás de ARGENMAQ está Argencargo.", p: "Argencargo es una empresa de logística internacional y despacho de aduana con base en Buenos Aires: coordina el flete, el seguro y la aduana de cada importación. ARGENMAQ es su división de maquinaria, así que tu máquina viaja con un equipo que se dedica a esto.", ops: "Ya son más de {n} operaciones.", b1: "Conocer Argencargo", b2: "Quiénes somos" },
     b: { precio: ["Precio final", "PUESTO EN CABA", "Máquina, flete y aduana en un solo número."], dos: ["Pagás en dos cuotas", "ANTICIPO + SALDO", "La segunda cuota, cuando llega."], v220: ["Lista para usar", "220 V · 50 HZ", "Todas se importan a 220 V. Llegan listas para usar."], seg: ["Seguimiento", "PRODUCCIÓN → EMBARQUE → ADUANA → ENTREGA", "Sabés dónde está tu máquina."], resp: ["Respaldo", "ARGENMAQ SIEMPRE PRESENTE", "Si algo pasa, hablás con nosotros, no con la fábrica."] },
     buscaT: ["¿No encontrás la máquina", "que buscás?"], buscaP: "Te la conseguimos. Contanos qué necesitás y te pasamos el precio final puesta en Argentina.",
     buscaB: "Pedila por WhatsApp", buscaWa: "Hola ARGENMAQ, estoy buscando una máquina que no está en el catálogo", rep: "¿Buscás un repuesto?",
@@ -357,7 +360,7 @@ const TXT = {
     ],
     catT: "Product catalog", catS: "Final price delivered to our Buenos Aires warehouse.", verTodo: "See full catalog",
     porQue: "Why ARGENMAQ",
-    arg: { k: "PART OF THE ARGENCARGO GROUP", t: "Argencargo is behind ARGENMAQ.", p: "Argencargo imports from China every day with its own team in Buenos Aires: freight, insurance, customs and delivery. ARGENMAQ is its machinery division, so your machine travels with people who do this every day.", ops: "Over {n} operations so far.", b1: "About Argencargo", b2: "About us" },
+    arg: { k: "PART OF THE ARGENCARGO GROUP", t: "Argencargo is behind ARGENMAQ.", p: "Argencargo is an international freight forwarding and customs brokerage company based in Buenos Aires: it handles freight, insurance and customs for every import. ARGENMAQ is its machinery division, so your machine travels with a team that does this for a living.", ops: "Over {n} operations so far.", b1: "About Argencargo", b2: "About us" },
     b: { precio: ["Final price", "LANDED IN BUENOS AIRES", "Machine, freight and customs in one number."], dos: ["Two instalments", "DEPOSIT + BALANCE", "The second one, when it arrives."], v220: ["Ready to use", "220 V · 50 HZ", "Every machine is imported at 220 V. Ready to use."], seg: ["Tracking", "PRODUCTION → SHIPPING → CUSTOMS → DELIVERY", "You know where your machine is."], resp: ["Backing", "ARGENMAQ ALWAYS THERE", "If anything happens, you talk to us, not the factory."] },
     buscaT: ["Can't find the machine", "you need?"], buscaP: "We'll source it. Tell us what you need and we'll send you the final landed price in Argentina.",
     buscaB: "Ask on WhatsApp", buscaWa: "Hi ARGENMAQ, I'm looking for a machine that isn't in the catalog", rep: "Looking for a spare part?",
@@ -384,7 +387,7 @@ const TXT = {
     ],
     catT: "Каталог товаров", catS: "Итоговая цена с доставкой на наш склад в Буэнос-Айресе.", verTodo: "Весь каталог",
     porQue: "Почему ARGENMAQ",
-    arg: { k: "ЧАСТЬ ГРУППЫ ARGENCARGO", t: "За ARGENMAQ стоит Argencargo.", p: "Argencargo ежедневно импортирует из Китая силами своей команды в Буэнос-Айресе: фрахт, страховка, таможня и доставка. ARGENMAQ — её подразделение по оборудованию.", ops: "Уже более {n} операций.", b1: "Об Argencargo", b2: "О нас" },
+    arg: { k: "ЧАСТЬ ГРУППЫ ARGENCARGO", t: "За ARGENMAQ стоит Argencargo.", p: "Argencargo — компания международной логистики и таможенного оформления из Буэнос-Айреса: фрахт, страховка и таможня для каждого импорта. ARGENMAQ — её подразделение по оборудованию.", ops: "Уже более {n} операций.", b1: "Об Argencargo", b2: "О нас" },
     b: { precio: ["Итоговая цена", "НА СКЛАДЕ В БУЭНОС-АЙРЕСЕ", "Машина, фрахт и таможня — одна цифра."], dos: ["Два платежа", "АВАНС + ОСТАТОК", "Второй — по прибытии."], v220: ["Готова к работе", "220 В · 50 ГЦ", "Все машины — на 220 В."], seg: ["Отслеживание", "ПРОИЗВОДСТВО → ОТГРУЗКА → ТАМОЖНЯ → ДОСТАВКА", "Вы знаете, где ваша машина."], resp: ["Поддержка", "ARGENMAQ ВСЕГДА РЯДОМ", "Если что-то случится, вы говорите с нами, а не с заводом."] },
     buscaT: ["Не нашли нужную", "машину?"], buscaP: "Найдём. Расскажите, что нужно, и мы назовём итоговую цену с доставкой в Аргентину.",
     buscaB: "Написать в WhatsApp", buscaWa: "Здравствуйте, ARGENMAQ! Ищу машину, которой нет в каталоге", rep: "Ищете запчасть?",
@@ -431,10 +434,10 @@ export default function Landing({ destacadas, total, diasVia, ops }) {
 
     <section style={{ padding: "0 0 40px" }}><div className="wrap"><div className="argBanda">
       <a className="logo" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="Argencargo">
-        <img className="iso claro" src="/argencargo/isotipo.png" alt="" /><img className="txt claro" src="/argencargo/texto.png" alt="Argencargo" />
-        <img className="iso oscuro" src="/argencargo/isotipo-blanco.png" alt="" /><img className="txt oscuro" src="/argencargo/texto-blanco.png" alt="Argencargo" />
+        <img className="claro" src="/argencargo/logo-apilado.png" alt="Argencargo" />
+        <img className="oscuro" src="/argencargo/logo-apilado-blanco.png" alt="Argencargo" />
       </a>
-      <div>
+      <div className="txt">
         <p className="lbl">{x.arg.k}</p>
         <h3>{x.arg.t}</h3>
         <p>{x.arg.p}{ops ? ` ${x.arg.ops.replace("{n}", ops.toLocaleString("es-AR"))}` : ""}</p>
