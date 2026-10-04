@@ -6185,9 +6185,10 @@ function EntregasPanel({token,onOpenOp,vista}){
         {!sinMontos&&envioVivo&&costoEnvio>0&&!pagada&&<span style={{display:"block",fontSize:9.5,color:"rgba(147,197,253,0.8)",marginTop:2}}>incl. envío {usd(costoEnvio)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-        {printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
-        {!esCarrier&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
-        {!esCarrier&&conRecibo&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
+        {/* Entregadas con saldo: ya no se imprime nada, solo cobrar. */}
+        {contexto!=="acobrar"&&printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
+        {contexto!=="acobrar"&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
+        {contexto!=="acobrar"&&conRecibo&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
         {contexto==="aviso"&&<>
           <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
@@ -6376,17 +6377,17 @@ function EntregasPanel({token,onOpenOp,vista}){
         </Bloque>}
 
         <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"22px 0 18px"}}/>
-        <Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="La carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
+        {sinAviso.length>0&&<Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="La carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
           {sinAviso.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nada sin avisar. 👌</p>
             :renderPorCliente([...sinAviso].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"aviso")}
-        </Bloque>
+        </Bloque>}
+        {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} hint={sinMontos?null:`Deben ${usd(entregadasSinCobrar.reduce((a,o)=>a+saldoFor(o),0))} en total`} tone="danger">
+          {renderPorCliente([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at||a.delivery_ready_at||a.created_at)-new Date(b.delivery_completed_at||b.delivery_ready_at||b.created_at)),"acobrar")}
+        </Bloque>}
         <Bloque titulo="⏳ Esperando al cliente" n={esperando.length} hint="Avisadas · falta que completen el link" tone="wait">
           {esperando.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nadie pendiente de responder.</p>
             :renderPorCliente([...esperando].sort((a,b)=>new Date(avisadaAt(a))-new Date(avisadaAt(b))),"esperando")}
         </Bloque>
-        {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} hint={sinMontos?null:`Deben ${usd(entregadasSinCobrar.reduce((a,o)=>a+saldoFor(o),0))} en total`} tone="danger">
-          {renderPorCliente([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at||a.delivery_ready_at||a.created_at)-new Date(b.delivery_completed_at||b.delivery_ready_at||b.created_at)),"acobrar")}
-        </Bloque>}
       </>;
     })()}
 
