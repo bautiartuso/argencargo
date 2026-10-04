@@ -16,7 +16,7 @@ const DATOS = {
   grupo: "Empresa del grupo ARGENCARGO",
   domicilio: "Virrey Loreto 2428, Belgrano, Ciudad Autónoma de Buenos Aires, Argentina",
   whatsapp: "+54 9 11 2508-8580",
-  actividad: "Venta e importación de maquinaria industrial: selección de fábrica en origen, control de calidad, importación y entrega en Argentina.",
+  actividad: "Venta e importación de maquinaria industrial: selección de fábrica en origen, importación y entrega en Argentina.",
 };
 
 const FILAS = [

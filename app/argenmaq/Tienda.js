@@ -608,13 +608,3 @@ function Notificaciones({ cliente, dq, t }) {
   </>;
 }
 
-// ── Cómo funciona ─────────────────────────────────────────────────────────
-export function ComoFunciona() {
-  const P = [["01", "Elegís la máquina", "Entrás al catálogo, ves fotos, descripción y tiempo estimado. Ves el precio final, puesto en nuestro depósito de CABA."], ["02", "Confirmás y pagás la máquina", "El anticipo es el precio de la máquina. Con eso la fábrica arranca la producción. Tenés 24 horas para arrepentirte."], ["03", "Producción y control", "La fábrica produce; antes de embarcar te mandamos foto o video de tu máquina funcionando."], ["04", "Argencargo la importa", "Flete, seguro y aduana con el equipo de Argencargo. Te avisamos por mail en cada hito y lo seguís desde tu cuenta."], ["05", "Retirás o te la enviamos", "Cuando llega a Buenos Aires se abona la importación contra entrega. Retirás en nuestro depósito sin cargo o te la enviamos a cualquier punto del país (adicional)."]];
-  return <div className="wrap" style={{ padding: "40px 24px 70px", maxWidth: 820 }}>
-    <h1 className="h2" style={{ marginBottom: 8 }}>Cómo funciona</h1><p style={{ color: "var(--gris)", fontSize: 17, margin: "0 0 28px" }}>Una sola operación, de la fábrica a tu taller.</p>
-    <div style={{ display: "grid", gap: 12 }}>{P.map(([n, tt, d]) => <div key={n} style={{ display: "grid", gridTemplateColumns: "56px 1fr", gap: 14, padding: "18px 20px", borderRadius: 20, border: "1px solid var(--borde)", background: "var(--card)" }}><span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600, color: "var(--y)" }}>{n}</span><div><b style={{ fontSize: 17, display: "block", marginBottom: 4 }}>{tt}</b><p style={{ margin: 0, color: "var(--gris)", lineHeight: 1.5 }}>{d}</p></div></div>)}</div>
-    <div style={{ marginTop: 26, padding: "20px 22px", borderRadius: 20, background: "var(--suave)" }}><b>Lo que no incluye</b><p style={{ margin: "6px 0 0", color: "var(--gris)", lineHeight: 1.5 }}>Envío a domicilio, instalación y puesta en marcha (podemos ayudarte con un técnico), obra civil y maniobras especiales de descarga. La garantía es la del fabricante; ante cualquier inconveniente ARGENMAQ está presente y cada caso se evalúa, con un tope máximo reembolsable. Los tiempos son estimados.</p></div>
-    <div style={{ marginTop: 22 }}><a className="btn y" href="/catalogo">Ver el catálogo</a></div>
-  </div>;
-}

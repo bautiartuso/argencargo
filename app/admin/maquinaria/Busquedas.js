@@ -15,7 +15,7 @@ const avanceDe=(k)=>AVANCES.find(e=>e.k===k)||AVANCES[0];
 const ChipAv=({a})=>{const x=avanceDe(a);return <Chip l={x.l} c={x.c} bg={x.bg}/>;};
 // Situación del cliente: quiere que nos ocupemos de todo, o ya tiene un proveedor en vista.
 export const SITUACIONES=[
-  {k:"gestion_integral",l:"Gestión integral",c:INK,bg:SUAVE,d:"Quiere que nos ocupemos de todo",tip:"Buscá la máquina en fábricas y ofrecé el precio final puesto en CABA, con video funcionando antes de embarcar. Nadie le mostró nada todavía."},
+  {k:"gestion_integral",l:"Gestión integral",c:INK,bg:SUAVE,d:"Quiere que nos ocupemos de todo",tip:"Buscá la máquina en fábricas y ofrecé el precio final puesto en CABA, en dos cuotas y con fecha estimada de llegada. Nadie le mostró nada todavía."},
   {k:"ya_busco_proveedor",l:"Ya buscó un proveedor",c:"#15171A",bg:LIMA,d:"Ya tiene una publicación o un proveedor en vista",tip:"Pedile el link o el nombre del proveedor y qué precio le pasaron. Cotizá esa misma máquina con el precio final puesto y la importación pagada al recibir: le sacás el riesgo de girar a China a ciegas."},
 ];
 const situacionDe=(k)=>SITUACIONES.find(e=>e.k===k)||SITUACIONES[0];

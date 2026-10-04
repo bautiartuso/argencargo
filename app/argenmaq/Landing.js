@@ -24,7 +24,7 @@ const TILDE = ["M5 12l5 5L20 7"];
 const FLECHA = ["M5 12h14", "M13 6l6 6-6 6"];
 
 // ── Gráfico de cada paso (lado derecho de la tarjeta) ─────────────────────────────────────
-function VisualPaso({ i, x, fotos }) {
+export function VisualPaso({ i, x, fotos }) {
   const v = x.vis[i];
   const cab = <div className="vpCab"><span className="pill"><i />{v.estado}</span></div>;
   if (i === 0) return <div className="vp">{cab}
@@ -136,6 +136,48 @@ function Oferta({ maquinas, precios, dv, x }) {
   </div>;
 }
 
+// Estilos de los gráficos de cada paso: los usan la landing y Cómo funciona.
+export const CSS_VP = `
+.amq .vp{width:100%;display:grid;gap:10px}
+.amq .vpCab{display:flex;justify-content:flex-end;margin-bottom:4px}
+.amq .vp .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid #3A3D42;font-size:13px;font-weight:700;color:var(--y)}
+.amq .vp .pill i{width:7px;height:7px;border-radius:50%;background:var(--y);animation:pulso 1.6s infinite}
+.amq .vpFila{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:14px;background:#24272B;border:1px solid #2F3237;font-size:14.5px;font-weight:600;color:#E4E6E8;animation:hFila 500ms both}
+.amq .vpFila svg{color:#7BD88F;flex-shrink:0}
+.amq .vpFila em{margin-left:auto;font-style:normal;font-family:${MONO};font-size:11px;letter-spacing:0.1em;color:var(--y)}
+.amq .vpFila.curso{border-color:rgba(255,210,0,0.45)}
+.amq .vpFila .punto{width:9px;height:9px;border-radius:50%;background:var(--y);flex-shrink:0;animation:pulso 1.6s infinite}
+.amq .vpFila .vacio{width:9px;height:9px;border-radius:50%;border:1.5px solid #5B6066;flex-shrink:0}
+.amq .vpFila:not(.ok):not(.curso){color:#7E848A}
+.amq .vpGrilla{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.amq .vpMaq{position:relative;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background:#2B2E33;border:2px solid transparent;opacity:0.55}
+.amq .vpMaq img{width:100%;height:100%;object-fit:cover;display:block}
+.amq .vpMaq.on{border-color:var(--y);opacity:1;animation:hElige 600ms 200ms both}
+.amq .vpTilde{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:var(--y);color:#15171A;display:flex;align-items:center;justify-content:center}
+.amq .vpTotal{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-radius:14px;background:var(--y);color:#15171A;margin-top:4px}
+.amq .vpTotal span{font-family:${MONO};font-size:11.5px;letter-spacing:0.1em;font-weight:600}
+.amq .vpTotal b{font-size:18px;letter-spacing:-0.01em}
+.amq .vpLbl{margin:0;font-family:${MONO};font-size:11px;letter-spacing:0.12em;color:#9DA3A9}
+.amq .vpBarra{position:relative;height:40px;border-radius:999px;background:#2B2E33;overflow:hidden;display:grid;grid-template-columns:57% 43%}
+.amq .vpBarra i{position:absolute;inset:0 43% 0 0;background:var(--y);border-radius:999px;transform-origin:left;animation:hLlena 900ms 200ms both}
+.amq .vpBarra span{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;font-family:${MONO};font-weight:700;font-size:13px}
+.amq .vpBarra span:first-of-type{color:#15171A}.amq .vpBarra span:last-of-type{color:#9DA3A9}
+.amq .vpEtq{display:grid;grid-template-columns:57% 43%;font-size:13px;margin-bottom:4px}
+.amq .vpEtq b{color:var(--y)}.amq .vpEtq span{color:#9DA3A9;text-align:center}
+.amq .vpRuta{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding:16px 18px;border-radius:14px;background:#24272B;border:1px solid #2F3237}
+.amq .vpRuta span{display:block;font-family:${MONO};font-size:10.5px;letter-spacing:0.12em;color:#9DA3A9}
+.amq .vpRuta b{font-size:16px}
+.amq .vpRuta .linea{position:relative;height:2px;background:repeating-linear-gradient(90deg,#5B6066 0 6px,transparent 6px 12px)}
+.amq .vpRuta .linea i{position:absolute;top:-5px;left:0;width:12px;height:12px;border-radius:50%;background:var(--y);box-shadow:0 0 0 5px rgba(255,210,0,0.2);animation:hBarco 3.2s ease-in-out infinite alternate}
+.amq .vp220{display:flex;align-items:center;justify-content:space-between;padding:18px;border-radius:14px;border:1px dashed rgba(255,210,0,0.5)}
+.amq .vp220 b{font-family:${MONO};font-size:28px;color:var(--y)}
+.amq .vp220 span{font-size:14px;color:#E4E6E8;font-weight:700}
+@keyframes hFila{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+@keyframes hLlena{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes hElige{0%{transform:scale(0.94)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
+@keyframes hBarco{from{left:0}to{left:calc(100% - 12px)}}
+`;
+
 const CSS = `
 /* Hero */
 .amq .hero{padding:56px 0 20px}
@@ -192,40 +234,7 @@ const CSS = `
 .amq .hTexto li{display:flex;align-items:center;gap:12px;font-size:15px;color:#E4E6E8}
 .amq .hTexto li:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--y);flex-shrink:0}
 .amq .hVisual{background:#1C1E21;border-left:1px solid #2B2E33;padding:clamp(22px,2.6vw,34px);display:flex;align-items:center}
-.amq .vp{width:100%;display:grid;gap:10px}
-.amq .vpCab{display:flex;justify-content:flex-end;margin-bottom:4px}
-.amq .vp .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid #3A3D42;font-size:13px;font-weight:700;color:var(--y)}
-.amq .vp .pill i{width:7px;height:7px;border-radius:50%;background:var(--y);animation:pulso 1.6s infinite}
-.amq .vpFila{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:14px;background:#24272B;border:1px solid #2F3237;font-size:14.5px;font-weight:600;color:#E4E6E8;animation:hFila 500ms both}
-.amq .vpFila svg{color:#7BD88F;flex-shrink:0}
-.amq .vpFila em{margin-left:auto;font-style:normal;font-family:${MONO};font-size:11px;letter-spacing:0.1em;color:var(--y)}
-.amq .vpFila.curso{border-color:rgba(255,210,0,0.45)}
-.amq .vpFila .punto{width:9px;height:9px;border-radius:50%;background:var(--y);flex-shrink:0;animation:pulso 1.6s infinite}
-.amq .vpFila .vacio{width:9px;height:9px;border-radius:50%;border:1.5px solid #5B6066;flex-shrink:0}
-.amq .vpFila:not(.ok):not(.curso){color:#7E848A}
-.amq .vpGrilla{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.amq .vpMaq{position:relative;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background:#2B2E33;border:2px solid transparent;opacity:0.55}
-.amq .vpMaq img{width:100%;height:100%;object-fit:cover;display:block}
-.amq .vpMaq.on{border-color:var(--y);opacity:1;animation:hElige 600ms 200ms both}
-.amq .vpTilde{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:var(--y);color:#15171A;display:flex;align-items:center;justify-content:center}
-.amq .vpTotal{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-radius:14px;background:var(--y);color:#15171A;margin-top:4px}
-.amq .vpTotal span{font-family:${MONO};font-size:11.5px;letter-spacing:0.1em;font-weight:600}
-.amq .vpTotal b{font-size:18px;letter-spacing:-0.01em}
-.amq .vpLbl{margin:0;font-family:${MONO};font-size:11px;letter-spacing:0.12em;color:#9DA3A9}
-.amq .vpBarra{position:relative;height:40px;border-radius:999px;background:#2B2E33;overflow:hidden;display:grid;grid-template-columns:57% 43%}
-.amq .vpBarra i{position:absolute;inset:0 43% 0 0;background:var(--y);border-radius:999px;transform-origin:left;animation:hLlena 900ms 200ms both}
-.amq .vpBarra span{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;font-family:${MONO};font-weight:700;font-size:13px}
-.amq .vpBarra span:first-of-type{color:#15171A}.amq .vpBarra span:last-of-type{color:#9DA3A9}
-.amq .vpEtq{display:grid;grid-template-columns:57% 43%;font-size:13px;margin-bottom:4px}
-.amq .vpEtq b{color:var(--y)}.amq .vpEtq span{color:#9DA3A9;text-align:center}
-.amq .vpRuta{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding:16px 18px;border-radius:14px;background:#24272B;border:1px solid #2F3237}
-.amq .vpRuta span{display:block;font-family:${MONO};font-size:10.5px;letter-spacing:0.12em;color:#9DA3A9}
-.amq .vpRuta b{font-size:16px}
-.amq .vpRuta .linea{position:relative;height:2px;background:repeating-linear-gradient(90deg,#5B6066 0 6px,transparent 6px 12px)}
-.amq .vpRuta .linea i{position:absolute;top:-5px;left:0;width:12px;height:12px;border-radius:50%;background:var(--y);box-shadow:0 0 0 5px rgba(255,210,0,0.2);animation:hBarco 3.2s ease-in-out infinite alternate}
-.amq .vp220{display:flex;align-items:center;justify-content:space-between;padding:18px;border-radius:14px;border:1px dashed rgba(255,210,0,0.5)}
-.amq .vp220 b{font-family:${MONO};font-size:28px;color:var(--y)}
-.amq .vp220 span{font-size:14px;color:#E4E6E8;font-weight:700}
+${CSS_VP}
 .amq .hLinea{display:grid;grid-template-columns:repeat(5,1fr);margin-top:24px;position:relative}
 .amq .hLinea button{position:relative;background:none;border:none;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;color:#15171A;font-family:inherit}
 .amq .hLinea button:not(:last-child):after{content:"";position:absolute;top:20px;left:calc(50% + 28px);right:calc(-50% + 28px);height:2px;background:rgba(21,23,26,0.2)}
@@ -279,10 +288,6 @@ const CSS = `
 @keyframes llenarDos{0%{transform:scaleX(0)}45%,100%{transform:scaleX(0.59)}}
 @keyframes trazo{0%{stroke-dashoffset:320}70%,100%{stroke-dashoffset:0}}
 @keyframes hEntra{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-@keyframes hFila{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
-@keyframes hLlena{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-@keyframes hElige{0%{transform:scale(0.94)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
-@keyframes hBarco{from{left:0}to{left:calc(100% - 12px)}}
 
 @media(max-width:1100px){.amq .hTexto p{font-size:15px}.amq .hTexto ul{gap:7px}}
 @media(max-width:900px){
@@ -310,7 +315,7 @@ const CSS = `
 @media(prefers-reduced-motion:reduce){.amq .bc .anim *,.amq .hSolo,.amq .vpFila,.amq .vpBarra i,.amq .vpMaq.on,.amq .vpRuta .linea i{animation:none!important}}
 `;
 
-const TXT = {
+export const TXT_LANDING = {
   es: {
     h1a: "Maquinaria de China,", h1b: "puesta en tu negocio.",
     sub: "Importación llave en mano: elegís la máquina, ves el precio final y nosotros nos encargamos de la fábrica, la aduana y la entrega.",
@@ -318,9 +323,9 @@ const TXT = {
     of: { tag: "PRECIO FINAL EN ARGENTINA", puesto: "puesta en CABA", c1: "1ª cuota · hoy", c2: "2ª cuota · al recibir", llega: "Llega aprox." },
     pasosT: "Una sola operación, de la fábrica en China a tu negocio.",
     pasos: [
-      { etiqueta: "Elegís tu máquina", titulo: "Encontrás la máquina para tu oficio", texto: "Recorrés el catálogo con fotos, ficha técnica y video. Si no está, nos decís cuál buscás y la conseguimos.", items: ["Fotos y video reales", "Ficha técnica completa", "Máquinas a pedido"] },
+      { etiqueta: "Elegís tu máquina", titulo: "Encontrás la máquina para tu oficio", texto: "Recorrés el catálogo con fotos, ficha técnica y video. Si no está, nos decís cuál buscás y la conseguimos.", items: ["Fotos, video y ficha técnica", "Más de 15 rubros", "Máquinas a pedido"] },
       { etiqueta: "Ves el precio final", titulo: "Un solo número, puesto en Argentina", texto: "El precio incluye la máquina, el flete, la aduana y la entrega en nuestro depósito de CABA. Sin costos escondidos.", items: ["Máquina, flete y aduana", "En dólares o en pesos", "Mejor precio por cantidad"] },
-      { etiqueta: "Confirmás con el anticipo", titulo: "Con la primera cuota, la fábrica arranca", texto: "Pagás el anticipo y la fábrica produce tu máquina. Antes de embarcar te mandamos un video funcionando.", items: ["Primera cuota al confirmar", "24 horas para arrepentirte", "Video antes de embarcar"] },
+      { etiqueta: "Confirmás con el anticipo", titulo: "Con la primera cuota, la fábrica arranca", texto: "Pagás el anticipo, que es el precio de la máquina, y la fábrica la produce. Desde ese momento ves la fecha estimada de llegada en tu cuenta.", items: ["Primera cuota al confirmar", "24 horas para arrepentirte", "Fecha estimada de llegada"] },
       { etiqueta: "Viaja a Argentina", titulo: "Nos ocupamos de toda la importación", texto: "Flete, seguro y aduana corren por nuestra cuenta. Seguís cada paso desde tu cuenta y te avisamos en cada etapa.", items: ["Seguimiento online", "Aviso en cada etapa", "Despacho de aduana incluido"] },
       { etiqueta: "La recibís lista", titulo: "Pagás el saldo y la ponés a trabajar", texto: "Cuando llega a Buenos Aires pagás la segunda cuota. La retirás sin cargo o te la enviamos a todo el país.", items: ["Segunda cuota al recibir", "Retiro sin cargo en CABA", "Envío a todo el país"] },
     ],
@@ -328,7 +333,7 @@ const TXT = {
       { estado: "Máquina elegida", filas: ["Agregada al carrito"] },
       { estado: "Precio final", filas: ["Máquina en fábrica", "Flete internacional", "Aduana e impuestos", "Entrega en CABA"], incluido: "INCLUIDO", total: "PRECIO FINAL", unico: "Un solo número" },
       { estado: "En producción", cuotas: "DOS CUOTAS", hoy: "Anticipo · hoy", alRecibir: "Saldo · al recibir", filas: ["Anticipo acreditado", "Producción en fábrica"], enCurso: "EN CURSO" },
-      { estado: "En viaje", origen: "ORIGEN", destino: "DESTINO", filas: ["Video aprobado y embarcada", "En tránsito", "Aduana y entrega"], enCurso: "EN CURSO" },
+      { estado: "En viaje", origen: "ORIGEN", destino: "DESTINO", filas: ["Embarcada en China", "En tránsito", "Aduana y entrega"], enCurso: "EN CURSO" },
       { estado: "Entregada", filas: ["Llegó a Buenos Aires", "Saldo pagado", "Retiro o envío a tu taller"], enCurso: "HOY", lista: "Lista para trabajar" },
     ],
     catT: "Catálogo de productos", catS: "Precio final puesto en nuestro depósito de CABA.", verTodo: "Ver catálogo completo",
@@ -345,9 +350,9 @@ const TXT = {
     of: { tag: "FINAL PRICE IN ARGENTINA", puesto: "landed in Buenos Aires", c1: "1st instalment · today", c2: "2nd · on delivery", llega: "Arrives approx." },
     pasosT: "One operation, from the factory in China to your business.",
     pasos: [
-      { etiqueta: "Pick your machine", titulo: "Find the machine for your trade", texto: "Browse the catalog with photos, specs and video. If it's not there, tell us what you need and we'll source it.", items: ["Real photos and video", "Full spec sheet", "Machines on request"] },
+      { etiqueta: "Pick your machine", titulo: "Find the machine for your trade", texto: "Browse the catalog with photos, specs and video. If it's not there, tell us what you need and we'll source it.", items: ["Photos, video and specs", "Over 15 trades", "Machines on request"] },
       { etiqueta: "See the final price", titulo: "One number, landed in Argentina", texto: "The price includes the machine, freight, customs and delivery to our Buenos Aires warehouse. No hidden costs.", items: ["Machine, freight and customs", "In dollars or pesos", "Better price by quantity"] },
-      { etiqueta: "Confirm with a deposit", titulo: "The first instalment starts the factory", texto: "You pay the deposit and the factory builds your machine. Before shipping we send you a video of it running.", items: ["First instalment on confirmation", "24 hours to change your mind", "Video before shipping"] },
+      { etiqueta: "Confirm with a deposit", titulo: "The first instalment starts the factory", texto: "You pay the deposit, which is the machine price, and the factory builds it. From then on you see the estimated arrival date in your account.", items: ["First instalment on confirmation", "24 hours to change your mind", "Estimated arrival date"] },
       { etiqueta: "It ships to Argentina", titulo: "We handle the whole import", texto: "Freight, insurance and customs are on us. Follow every step from your account; we notify you at each stage.", items: ["Online tracking", "Updates at every stage", "Customs clearance included"] },
       { etiqueta: "You get it ready", titulo: "Pay the balance and put it to work", texto: "When it reaches Buenos Aires you pay the second instalment. Pick it up free of charge or we ship nationwide.", items: ["Second instalment on delivery", "Free pickup in Buenos Aires", "Nationwide shipping"] },
     ],
@@ -355,7 +360,7 @@ const TXT = {
       { estado: "Machine selected", filas: ["Added to cart"] },
       { estado: "Final price", filas: ["Machine at factory", "International freight", "Customs and taxes", "Delivery in Buenos Aires"], incluido: "INCLUDED", total: "FINAL PRICE", unico: "One number" },
       { estado: "In production", cuotas: "TWO INSTALMENTS", hoy: "Deposit · today", alRecibir: "Balance · on delivery", filas: ["Deposit received", "Factory production"], enCurso: "IN PROGRESS" },
-      { estado: "In transit", origen: "ORIGIN", destino: "DESTINATION", filas: ["Video approved, shipped", "In transit", "Customs and delivery"], enCurso: "IN PROGRESS" },
+      { estado: "In transit", origen: "ORIGIN", destino: "DESTINATION", filas: ["Shipped from China", "In transit", "Customs and delivery"], enCurso: "IN PROGRESS" },
       { estado: "Delivered", filas: ["Arrived in Buenos Aires", "Balance paid", "Pickup or delivery"], enCurso: "TODAY", lista: "Ready to work" },
     ],
     catT: "Product catalog", catS: "Final price delivered to our Buenos Aires warehouse.", verTodo: "See full catalog",
@@ -372,9 +377,9 @@ const TXT = {
     of: { tag: "ИТОГОВАЯ ЦЕНА В АРГЕНТИНЕ", puesto: "в Буэнос-Айресе", c1: "1-й платёж · сегодня", c2: "2-й · при получении", llega: "Прибытие ≈" },
     pasosT: "Одна операция: с завода в Китае в ваш бизнес.",
     pasos: [
-      { etiqueta: "Выбираете машину", titulo: "Найдите машину для вашего дела", texto: "Каталог с фото, характеристиками и видео. Если нужной нет — скажите, и мы её найдём.", items: ["Реальные фото и видео", "Полные характеристики", "Машины под заказ"] },
+      { etiqueta: "Выбираете машину", titulo: "Найдите машину для вашего дела", texto: "Каталог с фото, характеристиками и видео. Если нужной нет — скажите, и мы её найдём.", items: ["Фото, видео и характеристики", "Более 15 отраслей", "Машины под заказ"] },
       { etiqueta: "Видите итоговую цену", titulo: "Одна цифра с доставкой в Аргентину", texto: "В цену входят машина, фрахт, таможня и доставка на наш склад в Буэнос-Айресе. Без скрытых расходов.", items: ["Машина, фрахт и таможня", "В долларах или песо", "Дешевле при объёме"] },
-      { etiqueta: "Вносите аванс", titulo: "Первый платёж — и завод начинает", texto: "Вы платите аванс, завод производит машину. Перед отгрузкой присылаем видео её работы.", items: ["Первый платёж при подтверждении", "24 часа на отказ", "Видео перед отгрузкой"] },
+      { etiqueta: "Вносите аванс", titulo: "Первый платёж — и завод начинает", texto: "Вы платите аванс — это цена машины, — и завод её производит. С этого момента в аккаунте видна ориентировочная дата прибытия.", items: ["Первый платёж при подтверждении", "24 часа на отказ", "Ориентировочная дата прибытия"] },
       { etiqueta: "Едет в Аргентину", titulo: "Весь импорт — на нас", texto: "Фрахт, страховка и таможня — наша забота. Следите за каждым этапом в аккаунте.", items: ["Онлайн-отслеживание", "Уведомления на каждом этапе", "Таможня включена"] },
       { etiqueta: "Получаете готовой", titulo: "Платите остаток и запускаете", texto: "По прибытии в Буэнос-Айрес вносите второй платёж. Самовывоз бесплатно или доставка по стране.", items: ["Второй платёж при получении", "Бесплатный самовывоз", "Доставка по стране"] },
     ],
@@ -382,7 +387,7 @@ const TXT = {
       { estado: "Машина выбрана", filas: ["Добавлена в корзину"] },
       { estado: "Итоговая цена", filas: ["Машина на заводе", "Международный фрахт", "Таможня и налоги", "Доставка в Буэнос-Айрес"], incluido: "ВКЛЮЧЕНО", total: "ИТОГО", unico: "Одна цифра" },
       { estado: "В производстве", cuotas: "ДВА ПЛАТЕЖА", hoy: "Аванс · сегодня", alRecibir: "Остаток · при получении", filas: ["Аванс получен", "Производство"], enCurso: "ИДЁТ" },
-      { estado: "В пути", origen: "ОТКУДА", destino: "КУДА", filas: ["Видео одобрено, отгружено", "В пути", "Таможня и доставка"], enCurso: "ИДЁТ" },
+      { estado: "В пути", origen: "ОТКУДА", destino: "КУДА", filas: ["Отгружено из Китая", "В пути", "Таможня и доставка"], enCurso: "ИДЁТ" },
       { estado: "Доставлено", filas: ["Прибыла в Буэнос-Айрес", "Остаток оплачен", "Самовывоз или доставка"], enCurso: "СЕГОДНЯ", lista: "Готова к работе" },
     ],
     catT: "Каталог товаров", catS: "Итоговая цена с доставкой на наш склад в Буэнос-Айресе.", verTodo: "Весь каталог",
@@ -396,7 +401,7 @@ const TXT = {
 
 export default function Landing({ destacadas, total, diasVia, ops }) {
   const { lang } = useAM();
-  const x = TXT[lang] || TXT.es;
+  const x = TXT_LANDING[lang] || TXT_LANDING.es;
   const precios = usePrecios(destacadas.map((m) => m.id));
   const fotos = destacadas.map(primeraFoto).filter(Boolean);
   const b = x.b;
