@@ -27,7 +27,7 @@ html,body{overflow-x:clip!important}
 .amq .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
 .amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
 .amq .nav .links{display:flex;gap:22px;font-size:14.5px;font-weight:600;color:var(--gris);flex:1;justify-content:center}
-.amq .nav .links a.on{color:var(--ink)}
+.amq .nav .links a.on{color:var(--ink)}.amq .nav .links svg{display:none}
 .amq .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border-radius:999px;font-weight:800;font-size:14.5px;border:1px solid var(--borde);background:var(--card);color:var(--ink);cursor:pointer;transition:transform 120ms;white-space:nowrap}
 .amq .btn:hover{transform:translateY(-1px)}.amq .btn.y{background:var(--y);border-color:var(--y);color:var(--yink)}.amq .btn.k{background:var(--ink);border-color:var(--ink);color:var(--bg)}.amq .btn.s{padding:9px 14px;font-size:13px}
 .amq .ico{width:36px;height:36px;border-radius:50%;border:1px solid var(--borde);background:transparent;color:var(--gris);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-family:${MONO};font-size:11px;font-weight:600}
@@ -233,8 +233,16 @@ html,body{overflow-x:clip!important}
 .amq .isla .pillIso.tema,.amq .isla .pillIso:nth-child(2){display:none}
 .amq .isla .btn.s{padding:7px 11px;font-size:12px}
 .amq .buscaIsla{order:3;flex-basis:100%;max-width:none;margin:0}.amq .buscaIsla input{height:38px}.amq .buscaIsla svg{top:11px}
-.amq .nav .links{display:flex;order:3;flex-basis:100%;justify-content:space-between;gap:10px;font-size:13px;padding:0 8px 2px}
-.amq .grupoWrap{padding:8px 10px 0}.amq .grupo a{width:150px;height:34px}
+.amq .nav .links{display:grid;grid-template-columns:repeat(3,1fr);order:3;flex-basis:100%;gap:6px;padding:0;margin:0 -2px 2px}
+.amq .nav .links a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:10px 4px 9px;border-radius:16px;background:var(--suave);border:1px solid var(--borde);color:var(--ink);font-size:12.5px;font-weight:800;letter-spacing:-0.01em;text-align:center;line-height:1.15}
+.amq .nav .links a svg{display:block;color:var(--ink)}
+.amq .nav .links a.on{background:var(--ysuave);border-color:var(--y)}
+.amq .nav .links a:active{transform:scale(0.97)}
+.amq .grupoWrap{padding:8px 10px 0}
+.amq .grupo{display:grid;grid-template-columns:1fr 1fr;gap:0;width:100%;max-width:420px;padding:4px;border-radius:999px;background:#15171A;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
+.amq .grupo a{width:auto;height:34px;padding:0 8px;gap:6px;box-shadow:none;border-width:1.5px;min-width:0}
+.amq .grupo a:not(.on){border-color:transparent}
+.amq .grupo .iso{height:17px}.amq .grupo .txt{height:11px}.amq .grupo .argc .iso{height:14px}.amq .grupo .argc .txt{height:9px}
 }
 `;
 
@@ -422,9 +430,9 @@ export function Marco({ actual, children, conGrupo, franja, checkout }) {
         {enTienda
           ? <form className="buscaIsla" action="/catalogo" method="get" role="search"><Ico d={LUPA} size={16} /><input name="q" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("buscar")} aria-label={t("buscar")} /></form>
           : <nav className="links">
-            <a className={actual === "catalogo" ? "on" : ""} href="/catalogo">{t("catalogo")}</a>
-            <a className={actual === "como" ? "on" : ""} href="/como-funciona">{t("como")}</a>
-            <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos">{t("quienes")}</a>
+            <a className={actual === "catalogo" ? "on" : ""} href="/catalogo"><Ico d={["M3 3h7v7H3z", "M14 3h7v7h-7z", "M3 14h7v7H3z", "M14 14h7v7h-7z"]} size={17} />{t("catalogo")}</a>
+            <a className={actual === "como" ? "on" : ""} href="/como-funciona"><Ico d={["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M12 16v-4", "M12 8h.01"]} size={17} />{t("como")}</a>
+            <a className={actual === "quienes" ? "on" : ""} href="/quienes-somos"><Ico d={["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.9", "M16 3.1a4 4 0 0 1 0 7.8"]} size={17} />{t("quienes")}</a>
           </nav>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button className="pillIso" onClick={() => setMoneda(moneda === "USD" ? "ARS" : "USD")} aria-label="Moneda"><img src={bandera(moneda)} alt="" /><span>{moneda === "USD" ? "US$" : "AR$"}</span></button>
