@@ -503,20 +503,20 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   const ORIGENES_F=[{v:"",l:"Todos"},{v:"China",l:"China",f:"🇨🇳"},{v:"USA",l:"USA",f:"🇺🇸"},{v:"Pakistán",l:"Pakistán",f:"🇵🇰"},{v:"Bangladesh",l:"Bangladesh",f:"🇧🇩"}];
   const chipF=(on)=>({display:"inline-flex",alignItems:"center",gap:6,height:34,padding:"0 13px",borderRadius:999,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.09)"}`,background:on?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flex:"0 0 auto"});
   return <div>
-    <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center"}}>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)",gap:4,padding:5,marginBottom:14,borderRadius:18,opacity:buscando?0.45:1,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.07)"}}>
+      {ETAPAS.map(e=>{const on=etapaOk===e.k;const n=nEtapa(e.k);return <button key={e.k} onClick={()=>{setEtapa(e.k);setSearch("");}} style={{display:"flex",flexDirection:celu?"column":"row",alignItems:"center",justifyContent:"center",gap:celu?4:10,padding:celu?"10px 4px":"13px 16px",borderRadius:14,border:"none",background:on?`linear-gradient(180deg,${e.c}33,${e.c}14)`:"transparent",boxShadow:on?`inset 0 0 0 1.5px ${e.c}88, 0 6px 22px ${e.c}26`:"none",color:on?"#fff":"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit",transition:"all 160ms"}}>
+        <span style={{fontSize:celu?13:14.5,fontWeight:800,letterSpacing:"-0.01em"}}>{e.l}</span>
+        {e.k!=="finalizadas"&&<span style={{minWidth:24,height:22,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,fontVariantNumeric:"tabular-nums",background:on?e.c:"rgba(255,255,255,0.08)",color:on?"#0A1628":"rgba(255,255,255,0.6)"}}>{n}</span>}
+      </button>;})}
+    </div>
+    <div style={{display:"flex",gap:10,marginBottom:18,alignItems:"center"}}>
       <div style={{position:"relative",flex:1,minWidth:0}}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="2" strokeLinecap="round" style={{position:"absolute",left:15,top:"50%",transform:"translateY(-50%)"}}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={celu?"Buscar operación o cliente":"Buscar por código, cliente o descripción"} style={{width:"100%",height:48,padding:"0 40px 0 44px",fontSize:14.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
         {buscando&&<button onClick={()=>setSearch("")} aria-label="Limpiar búsqueda" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:28,height:28,borderRadius:"50%",border:"none",background:"rgba(255,255,255,0.1)",color:"#fff",cursor:"pointer",fontSize:13}}>✕</button>}
       </div>
-      <Btn variant="gold" onClick={onNew}>{celu?"+ Nueva":"+ Nueva operación"}</Btn>
+      <button onClick={onNew} style={{flexShrink:0,minWidth:celu?112:240,height:48,padding:"0 22px",borderRadius:14,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",fontSize:14.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>{celu?"+ Nueva":"+ Nueva operación"}</button>
     </div>
-    {!buscando&&<div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)",gap:4,padding:5,marginBottom:18,borderRadius:18,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.07)"}}>
-      {ETAPAS.map(e=>{const on=etapaOk===e.k;const n=nEtapa(e.k);return <button key={e.k} onClick={()=>setEtapa(e.k)} style={{display:"flex",flexDirection:celu?"column":"row",alignItems:"center",justifyContent:"center",gap:celu?4:10,padding:celu?"10px 4px":"13px 16px",borderRadius:14,border:"none",background:on?`linear-gradient(180deg,${e.c}33,${e.c}14)`:"transparent",boxShadow:on?`inset 0 0 0 1.5px ${e.c}88, 0 6px 22px ${e.c}26`:"none",color:on?"#fff":"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit",transition:"all 160ms"}}>
-        <span style={{fontSize:celu?13:14.5,fontWeight:800,letterSpacing:"-0.01em"}}>{e.l}</span>
-        {e.k!=="finalizadas"&&<span style={{minWidth:24,height:22,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,fontVariantNumeric:"tabular-nums",background:on?e.c:"rgba(255,255,255,0.08)",color:on?"#0A1628":"rgba(255,255,255,0.6)"}}>{n}</span>}
-      </button>;})}
-    </div>}
     {selectedIds.size>0&&<div style={{display:"flex",gap:10,marginBottom:14,padding:"12px 16px",background:`linear-gradient(90deg, rgba(184,149,106,0.18), rgba(184,149,106,0.06))`,border:`1.5px solid ${GOLD}`,borderRadius:12,alignItems:"center",flexWrap:"wrap"}}>
       <span style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.02em"}}>{selectedIds.size} seleccionada{selectedIds.size>1?"s":""}</span>
       <button onClick={clearSelection} style={{fontSize:11,padding:"4px 10px",border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",borderRadius:6,cursor:"pointer",fontWeight:600}}>Deseleccionar</button>
@@ -634,7 +634,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
       const res=baseSorted;
       return res.length===0?<EmptyState icon="box" title="Sin resultados" description={`Ninguna operación coincide con "${search}".`}/>:<>{titulo("Resultados",res.length)}{renderTable(res,false)}</>;
     }
-    if(etapaOk==="arribadas")return <EntregasPanel token={token} onOpenOp={onOpenEntrega||onSelect} vista="agenda"/>;
+    if(etapaOk==="arribadas")return null;
     if(etapaOk==="finalizadas")return closed.length===0?<EmptyState icon="box" title="No hay operaciones finalizadas"/>:<>
       {totalGanancia!==0&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><span style={{fontSize:12.5,fontWeight:800,color:totalGanancia>0?"#22c55e":"#ff6b6b"}}>Ganancia USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
       {renderTable(closedPaged,true)}{renderPagination()}</>;
@@ -642,6 +642,8 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
     return enProceso.length===0?<EmptyState icon="box" title="No hay operaciones en proceso" cta="+ Nueva operación" ctaOnClick={onNew}/>:renderTable(enProceso,false);
   })()}
 
+    {/* Arribadas queda montada (oculta) para que al tocarla ya esté cargada. */}
+    <div style={{display:!buscando&&etapaOk==="arribadas"?"block":"none"}}><EntregasPanel token={token} onOpenOp={onOpenEntrega||onSelect} vista="agenda"/></div>
     {bulkAction&&<div onClick={()=>!bulkRunning&&setBulkAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${bulkAction.action==="delete"?"rgba(255,80,80,0.5)":bulkAction.action==="markCollected"?"rgba(34,197,94,0.5)":"rgba(184,149,106,0.5)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%"}}>
         <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>
@@ -5790,8 +5792,12 @@ function EntregasPanel({token,onOpenOp,vista}){
     return s.includes(q.trim().toLowerCase());
   };
   const filtered=rows.filter(matchesQ);
-  const pendientes=filtered.filter(o=>!o.delivery_completed_at);
-  const entregadasSinCobrar=filtered.filter(o=>o.delivery_completed_at&&!o.is_collected);
+  // RI con entrega directa: el courier la deja en el domicilio del cliente, así que no se coordina ni
+  // se imprime nada; se ve con las entregadas que deben (04/10/2026, caso Julio Cortino).
+  const esRiDir=o=>o.ri_entrega_directa!==false&&(o.ri_entrega_directa===true||o.clients?.tax_condition==="responsable_inscripto");
+  const pendientesTodas=filtered.filter(o=>!o.delivery_completed_at);
+  const pendientes=pendientesTodas.filter(o=>!esRiDir(o));
+  const entregadasSinCobrar=[...filtered.filter(o=>o.delivery_completed_at&&!o.is_collected),...pendientesTodas.filter(o=>esRiDir(o)&&saldoFor(o)>0.005)];
   const sinConfirmar=pendientes.filter(o=>!o.delivery_confirmed_at);
   const confirmadas=pendientes.filter(o=>o.delivery_confirmed_at);
 
@@ -6011,7 +6017,9 @@ function EntregasPanel({token,onOpenOp,vista}){
     else marcarImpreso(ops.filter(o=>lista.some(p=>p.operation_id===o.id)),"labels_printed_at");
   };
   // Tandas pendientes: todas las coordinadas (cualquier día) que todavía no se imprimieron.
-  const pendImpresion=(campo,soloSinCarrier,tambienSinCoordinar=false)=>rows.filter(o=>!o.delivery_completed_at&&(tambienSinCoordinar||o.delivery_confirmed_at)&&!o[campo]&&(!soloSinCarrier||o.delivery_choice!=="carrier"));
+  // Etiquetas, remitos y recibos: todas las que están para entregar (coordinadas o no), salvo las RI
+  // que el courier deja directo en el domicilio.
+  const pendImpresion=(campo)=>rows.filter(o=>!o.delivery_completed_at&&!esRiDir(o)&&!o[campo]);
   // Remitos y recibos: todas las entregas salvo las que van por transportista (Via Cargo / Andreani).
   const sinCarrier=(ops)=>ops.filter(o=>o.delivery_choice!=="carrier");
 
@@ -6248,7 +6256,6 @@ function EntregasPanel({token,onOpenOp,vista}){
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
-  const esRiDir=o=>o.ri_entrega_directa!==false&&(o.ri_entrega_directa===true||o.clients?.tax_condition==="responsable_inscripto");
   // Avisada = tiene delivery_ready_at o el aviso ya salió (mail/WA del bot): que el bot le haya
   // escrito al cliente cuenta como avisada aunque la marca haya quedado sin setear (AC-0124).
   const avisadaAt=o=>o.delivery_ready_at||o.sent_notifications?.wa_retiro||o.sent_notifications?.email_retiro||null;
@@ -6333,13 +6340,13 @@ function EntregasPanel({token,onOpenOp,vista}){
           {!sinMontos&&efect.length>0&&statCard("💵","En efectivo",usd(sumSaldo(efect)),`${efect.length} cliente${efect.length>1?"s":""}`,"#4ade80")}
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
-          {(()=>{const pE=pendImpresion("labels_printed_at",false,true),pR=pendImpresion("remito_printed_at",true),pC=pendImpresion("recibo_printed_at",true);
+          {(()=>{const pE=pendImpresion("labels_printed_at"),pR=pendImpresion("remito_printed_at"),pC=pendImpresion("recibo_printed_at");
             const b=(l,n,fn,title,todas)=><button onClick={async()=>{if(n>0)return fn();if(todas&&todas.length&&await confirmDialog(`No queda nada sin imprimir. ¿Volver a imprimir ${l.replace(/^\S+\s/,"")} de las ${todas.length} pendientes?`,{confirmText:"Reimprimir"}))fn(todas);}} disabled={n===0&&!(todas&&todas.length)} title={n===0?`${title} · sin pendientes: click para reimprimir todas`:title} style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${n>0?"rgba(255,255,255,0.14)":"rgba(255,255,255,0.06)"}`,background:"rgba(255,255,255,0.04)",color:n>0?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.3)",cursor:n>0?"pointer":"default",fontFamily:"inherit",whiteSpace:"nowrap",display:"flex",justifyContent:"space-between",gap:10}}><span>{l}</span><span style={{fontWeight:800,color:n>0?"#fbbf24":"inherit"}}>{n}</span></button>;
             return (pE.length+pR.length+pC.length>0||delDia.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,justifyContent:"center",flex:"0 0 auto"}}>
               <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Sin imprimir</p>
               {b("🏷 Etiquetas",pE.length,(t)=>imprimirEtiquetasBultos(t||pE),"Etiquetas de todas las cargas pendientes de entrega (coordinadas o no) que todavía no se imprimieron",pendientes)}
-              {b("📄 Remitos",pR.length,(t)=>imprimirRemitos(t||pR),"Remitos de las coordinadas sin imprimir (sin transportista)",sinCarrier(confirmadas))}
-              {b("🧾 Recibos",pC.length,(t)=>imprimirRecibos(t||pC),"Recibos de las coordinadas sin imprimir (sin transportista)",sinCarrier(confirmadas))}
+              {b("📄 Remitos",pR.length,(t)=>imprimirRemitos(t||pR),"Remitos sin imprimir de las cargas para entregar",pendientes)}
+              {b("🧾 Recibos",pC.length,(t)=>imprimirRecibos(t||pC),"Recibos sin imprimir de las cargas para entregar",pendientes)}
             </div>;})()}
         </div>}
         {!celu&&(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
@@ -6378,7 +6385,7 @@ function EntregasPanel({token,onOpenOp,vista}){
             :renderPorCliente([...esperando].sort((a,b)=>new Date(avisadaAt(a))-new Date(avisadaAt(b))),"esperando")}
         </Bloque>
         {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} hint={sinMontos?null:`Deben ${usd(entregadasSinCobrar.reduce((a,o)=>a+saldoFor(o),0))} en total`} tone="danger">
-          {renderPorCliente([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at)-new Date(b.delivery_completed_at)),"acobrar")}
+          {renderPorCliente([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at||a.delivery_ready_at||a.created_at)-new Date(b.delivery_completed_at||b.delivery_ready_at||b.created_at)),"acobrar")}
         </Bloque>}
       </>;
     })()}

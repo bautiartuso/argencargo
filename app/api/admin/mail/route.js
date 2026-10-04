@@ -119,9 +119,12 @@ function armarMime({ de, para, cc, asunto, texto, adjuntos = [], enRespuestaA, r
 // filtro si faltan y barre lo que haya quedado en la bandeja.
 const AUTO = [
   { nombre: "DHL", q: "from:dhl" },
-  { nombre: "FedEx", q: "from:fedex" },
+  // FedEx: también el reclamo 875399955921 (hilos que Bautista respondió desde su casilla).
+  { nombre: "FedEx", q: "from:fedex OR subject:875399955921" },
   { nombre: "UPS", q: "from:ups" },
   { nombre: "WhatsApp", q: "from:whatsapp OR subject:whatsapp" },
+  // Informes DMARC diarios (Google, Microsoft, Yahoo…): no hace falta leerlos.
+  { nombre: "DMARC", q: 'from:dmarc OR subject:"Report domain"' },
 ];
 const SIN_AUTO = AUTO.map((a) => `-label:${a.nombre}`).join(" ");
 
@@ -232,6 +235,10 @@ export async function POST(req) {
       const [l, f] = await Promise.all([gm("/labels"), gm("/settings/filters").catch(() => ({}))]);
       const labels = l.labels || [];
       let movidos = 0;
+      // Lo que hoy se ve en la bandeja, para mover también los hilos enteros: si un hilo tiene un mail
+      // de FedEx, las respuestas propias de ese hilo van a la misma carpeta.
+      const bandeja = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(`{in:inbox in:spam} ${SIN_AUTO}`)}`).catch(() => ({}));
+      const enBandeja = bandeja.messages || [];
       for (const a of AUTO) {
         let label = labels.find((x) => x.name.toLowerCase() === a.nombre.toLowerCase());
         if (!label) label = await gm("/labels", { method: "POST", body: JSON.stringify({ name: a.nombre, labelListVisibility: "labelShow", messageListVisibility: "show" }) }).catch(() => null);
@@ -239,7 +246,9 @@ export async function POST(req) {
         const tiene = (f.filter || []).some((x) => x.criteria?.query === a.q && (x.action?.addLabelIds || []).includes(label.id));
         if (!tiene) await gm("/settings/filters", { method: "POST", body: JSON.stringify({ criteria: { query: a.q }, action: { addLabelIds: [label.id], removeLabelIds: ["INBOX"] } }) }).catch(() => {});
         const ex = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(`(${a.q}) {in:inbox in:spam}`)}`).catch(() => ({}));
-        const ids = (ex.messages || []).map((m) => m.id);
+        const hilos = await gm(`/messages?maxResults=500&q=${encodeURIComponent(a.q)}`).catch(() => ({}));
+        const deHilo = new Set((hilos.messages || []).map((m) => m.threadId));
+        const ids = [...new Set([...(ex.messages || []).map((m) => m.id), ...enBandeja.filter((m) => deHilo.has(m.threadId)).map((m) => m.id)])];
         if (ids.length) { await gm("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids, addLabelIds: [label.id], removeLabelIds: ["INBOX", "SPAM"] }) }).catch(() => {}); movidos += ids.length; }
       }
       return json({ ok: true, movidos });

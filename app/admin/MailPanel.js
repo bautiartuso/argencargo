@@ -1,7 +1,7 @@
 "use client";
 // Solapa Email del admin (04/10/2026). Habla con /api/admin/mail (API de Gmail).
 // Bandeja (incluye spam), Enviados, Borradores y carpetas propias con filtros. DHL, FedEx, UPS y
-// WhatsApp son automáticas: el servidor crea los filtros y saca esos mails de la bandeja.
+// WhatsApp (y los informes DMARC) son automáticas: el servidor crea los filtros y saca esos mails de la bandeja.
 // Redactar con varios adjuntos y arrastrar y soltar. En el celu: carpetas → lista → mensaje.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../../lib/ui";
@@ -9,7 +9,7 @@ import CarrierLogo from "../components/CarrierLogo";
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8C99B";
 const MAX_ADJ = 3.2 * 1024 * 1024; // límite de Vercel para el cuerpo de la request (~4,5 MB en base64)
-const AUTO = ["DHL", "FedEx", "UPS", "WhatsApp"];
+const AUTO = ["DHL", "FedEx", "UPS", "WhatsApp", "DMARC"];
 
 const useCelu = () => { const [c, setC] = useState(false); useEffect(() => { const f = () => setC(window.innerWidth < 760); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []); return c; };
 const Ico = ({ d, s = 17 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x, i) => <path key={i} d={x} />)}</svg>;
