@@ -311,6 +311,7 @@ const OPS_FILTERS_KEY="ac_ops_filters";
 const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSON.parse(localStorage.getItem(OPS_FILTERS_KEY)||"{}")||{};}catch{return{};}};
 
 function OperationsList({token,onSelect,onNew}){
+  const celu=useEsCelu();
   const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [cliComByOp,setCliComByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [lo,setLo]=useState(true);
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
   const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
@@ -508,10 +509,7 @@ function OperationsList({token,onSelect,onNew}){
       <button onClick={clearSelection} style={{fontSize:11,padding:"4px 10px",border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",borderRadius:6,cursor:"pointer",fontWeight:600}}>Deseleccionar</button>
       <span style={{flex:1}}/>
       <button onClick={()=>exportCSV(ops.filter(o=>selectedIds.has(o.id)))} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>📥 Exportar CSV</button>
-      <select onChange={e=>{if(e.target.value){setBulkAction({action:"setStatus",value:e.target.value});e.target.value="";}}} defaultValue="" style={{padding:"7px 12px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
-        <option value="" style={{background:"#142038"}}>↻ Cambiar estado…</option>
-        {STATUSES.map(s=><option key={s} value={s} style={{background:"#142038"}}>{SM[s].l}</option>)}
-      </select>
+      <div style={{minWidth:180,marginBottom:-12}}><Sel value="" onChange={v=>{if(v)setBulkAction({action:"setStatus",value:v});}} options={[{value:"",label:"Cambiar estado…"},...STATUSES.map(st=>({value:st,label:SM[st].l}))]}/></div>
       <button onClick={()=>setBulkAction({action:"markCollected"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💰 Marcar cobradas</button>
       <button onClick={()=>setBulkAction({action:"delete"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(255,80,80,0.4)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>🗑 Eliminar</button>
     </div>}
@@ -545,18 +543,14 @@ function OperationsList({token,onSelect,onNew}){
       <button onClick={()=>setAttFilter(null)} style={{fontSize:11,padding:"4px 11px",border:"1px solid rgba(255,255,255,0.18)",background:"transparent",color:"rgba(255,255,255,0.7)",borderRadius:6,cursor:"pointer",fontWeight:600}}>✕ Mostrar todas</button>
     </div>}
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-      <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+      <div style={{flex:celu?"1 1 100%":1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción" style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
       <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fStatuses.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fStatuses.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estado${fStatuses.length>1?"s":""}`:"Todos los estados"} ▼</button>
         {showStatusDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:200}}>{STATUSES.map(s=><label key={s} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fStatuses.includes(s)} onChange={()=>toggleStatus(s)}/><span style={{fontSize:12,color:SM[s].c,fontWeight:600}}>{SM[s].l}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFStatuses([]);setShowStatusDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar filtros</button></div></div>}
       </div>
       <div style={{position:"relative"}}><button onClick={()=>setShowChannelDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fChannels.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fChannels.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fChannels.length>0?`${fChannels.length} canal${fChannels.length>1?"es":""}`:"Todos los canales"} ▼</button>
         {showChannelDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:180}}>{CHANNELS.map(c=><label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fChannels.includes(c)} onChange={()=>toggleChannel(c)}/><span style={{fontSize:12,color:"#fff",fontWeight:600}}>{CM[c]}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFChannels([]);setShowChannelDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar canales</button></div></div>}
       </div>
-      <select value={fOrigin} onChange={e=>setFOrigin(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fOrigin?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fOrigin?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
-        <option value="" style={{background:"#142038"}}>Todos los orígenes</option>
-        <option value="China" style={{background:"#142038"}}>🇨🇳 China</option>
-        <option value="USA" style={{background:"#142038"}}>🇺🇸 USA</option>
-      </select>
+      <div style={{minWidth:170,marginBottom:-12}}><Sel value={fOrigin} onChange={setFOrigin} options={[{value:"",label:"Todos los orígenes"},{value:"China",label:"🇨🇳 China"},{value:"USA",label:"🇺🇸 USA"},{value:"Pakistán",label:"🇵🇰 Pakistán"},{value:"Bangladesh",label:"🇧🇩 Bangladesh"}]}/></div>
       <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>ETA</span>
         <DatePicker value={fEta} onChange={v=>setFEta(v||"")} placeholder="ETA" small/>
@@ -574,7 +568,26 @@ function OperationsList({token,onSelect,onNew}){
     const inProgress=active.filter(o=>o.status!=="entregada");
     const closed=baseSorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=String(a.collection_date||a.closed_at||"").slice(0,10);const db=String(b.collection_date||b.closed_at||"").slice(0,10);return db.localeCompare(da);});
     const totalGanancia=closed.reduce((s,o)=>s+calcGan(o),0);
-    const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+    // En el celu (04/10/2026): tarjetas en vez de tabla. Código, estado y saldo arriba; cliente y
+    // descripción abajo. Tocar abre la op.
+    const renderCards=(rows,showGanancia)=>rows.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay operaciones</p>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const saldo=showGanancia?null:calcSaldo(op);const gan=showGanancia?calcGan(op):0;
+        return <div key={op.id} role="button" tabIndex={0} onClick={()=>onSelect(op)} style={{padding:"13px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",borderLeft:`3px solid ${st.c}`,cursor:"pointer"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:13.5,letterSpacing:"0.03em"}}>{op.operation_code}{op.service_type==="gestion_integral"&&<span style={{marginLeft:6,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:5,background:GOLD_GRADIENT,color:"#0A1628",fontFamily:"inherit"}}>GI</span>}</span>
+            <span style={{fontSize:13.5,fontWeight:800,fontVariantNumeric:"tabular-nums",color:showGanancia?(gan>0?"#4ade80":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)"):saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#4ade80":GOLD_LIGHT}}>{showGanancia?(gan?`USD ${gan.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"):saldo===null?"—":saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</span>
+          </div>
+          <p style={{margin:"6px 0 0",fontSize:14,fontWeight:700,color:"#fff"}}>{cn}</p>
+          {op.description&&<p style={{margin:"2px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description}</p>}
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:9,flexWrap:"wrap"}}>
+            <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{st.l}</span>
+            <span style={{fontSize:11,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.6)"}}>{CM[op.channel]||op.channel}</span>
+            {!showGanancia&&op.eta&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginLeft:"auto"}}>ETA {formatDateShort(op.eta)}</span>}
+            {showGanancia&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginLeft:"auto"}}>{formatDateShort(op.collection_date||op.closed_at)}</span>}
+          </div>
+        </div>;})}
+    </div>;
+    const renderTable=(rows,showGanancia)=>celu?renderCards(rows,showGanancia):<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
           <th style={{padding:"14px 12px",width:36}}><input type="checkbox" checked={rows.length>0&&rows.every(o=>selectedIds.has(o.id))} onChange={()=>{if(rows.every(o=>selectedIds.has(o.id))){setSelectedIds(p=>{const n=new Set(p);rows.forEach(o=>n.delete(o.id));return n;});}else{setSelectedIds(p=>{const n=new Set(p);rows.forEach(o=>n.add(o.id));return n;});}}} title="Seleccionar todas las visibles" style={{cursor:"pointer",accentColor:GOLD}}/></th>
