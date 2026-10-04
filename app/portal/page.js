@@ -2441,29 +2441,21 @@ function AccountPage({token,client,onRestartTutorial}){
   })();},[client?.id,token]);
   const fmtDate=d=>{try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
   const isCredit=balance>0;const isDebt=balance<0;
-  // Cuenta corriente (04/10/2026): saldo grande con dos datos al lado (pagado y pendiente) y el
-  // historial agrupado por mes.
+  // Cuenta corriente (04/10/2026): saldo grande y el historial agrupado por mes.
   const usd2=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const totPagado=timeline.filter(x=>["op_cobro","op_anticipo","gpi_cobro"].includes(x.type)).reduce((a,x)=>a+Math.max(0,Number(x.amount||0)),0);
-  const totPendiente=pendingOps.reduce((a,x)=>a+Number(x.saldo||0),0);
   const balColor=isCredit?"#22c55e":isDebt?"#ef4444":"#fff";
   return <div>
     <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <h2 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("acc.title")}</h2>
       {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"7px 12px",fontSize:12,fontWeight:600,borderRadius:999,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>🎓 {t("acc.tutorialAgain")}</button>}
     </div>
-    <div className="acc-hero" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr)",gap:12,marginBottom:24}}>
+    <div className="acc-hero" style={{marginBottom:24}}>
       <div style={{padding:"24px 26px",borderRadius:18,background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.14), rgba(255,255,255,0.02))":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.14), rgba(255,255,255,0.02))":"linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":isDebt?"rgba(239,68,68,0.35)":"rgba(255,255,255,0.09)"}`}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
         <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":""}{usd2(balance)}</p>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0",lineHeight:1.5}}>{isCredit?t("acc.creditNote"):isDebt?t("acc.debtNote"):t("acc.noPending")}</p>
       </div>
-      <div style={{display:"grid",gridTemplateRows:"1fr 1fr",gap:12}}>
-        <div style={{padding:"16px 18px",borderRadius:16,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>Pagado</p><p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd2(totPagado)}</p></div>
-        <div style={{padding:"16px 18px",borderRadius:16,background:totPendiente>0?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${totPendiente>0?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.08)"}`}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>{t("acc.pendingPayments")}</p><p style={{fontSize:20,fontWeight:800,color:totPendiente>0?"#fb923c":"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd2(totPendiente)}</p></div>
-      </div>
     </div>
-    <style>{`@media(max-width:768px){.acc-hero{grid-template-columns:1fr!important}.acc-hero>div:last-child{grid-template-rows:none!important;grid-template-columns:1fr 1fr}}`}</style>
     {/* Pendientes de pago (ops GI activas + ops entregadas con saldo) */}
     {pendingOps.length>0&&<div style={{marginBottom:24}}>
       <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.pendingPayments")}</h3>
