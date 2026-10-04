@@ -121,7 +121,6 @@ export default function Landing(){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:20}}>
           {[
             {icon:"⚡",title:"Courier Aéreo",tag:"Rápido",points:["El canal más ágil","Régimen simplificado — sin tramiterío extra","Ideal para reposición de stock y muestras","Disponible desde China y USA"],color:"#e2a93b"},
-            {icon:"✈️",title:"Carga Aérea",tag:"Volumen medio",points:["Para envíos de mayor tamaño por avión","Mejor costo por kilo que courier","Documentación formal incluida","Para importadores que mueven volumen regular"],color:"#3B7DD8"},
             {icon:"🚢",title:"Marítimo",tag:"Gran volumen",points:["Consolidado (LCL) o contenedor completo (FCL)","El menor costo por unidad para grandes cargas","Tiempos y costos según consulta","Para quienes planifican con anticipación"],color:"#5BA0D9"},
           ].map(s=><div key={s.title} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"28px 24px",position:"relative"}}>
             <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${s.color},transparent)`}}/>

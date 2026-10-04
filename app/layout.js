@@ -12,7 +12,7 @@ export const metadata = {
     default: 'Argencargo — Importá desde China a Argentina',
     template: '%s | Argencargo',
   },
-  description: 'Importaciones desde China y Estados Unidos a Argentina: courier, flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.',
+  description: 'Importaciones desde China a Argentina. Flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.',
   keywords: ['importar desde china','courier china argentina','importaciones china','flete china argentina','envio china argentina','courier aereo china','importar usa argentina','aduana importacion','argencargo'],
   authors: [{ name: 'Argencargo' }],
   applicationName: 'Argencargo',
@@ -28,7 +28,7 @@ export const metadata = {
   },
   openGraph: {
     title: 'Argencargo — Importá desde China a Argentina',
-    description: 'Importaciones desde China y Estados Unidos a Argentina: courier, flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.',
+    description: 'Importaciones desde China a Argentina. Flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.',
     url: SITE_URL,
     siteName: 'Argencargo',
     type: 'website',
@@ -38,7 +38,7 @@ export const metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Argencargo — Importá desde China a Argentina',
-    description: 'Importaciones desde China y Estados Unidos a Argentina: courier, flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.',
+    description: 'Importaciones desde China a Argentina. Flete aéreo y marítimo, despacho de aduana y seguimiento en tiempo real.',
     // images omitido → Next usa app/twitter-image.js o cae al opengraph-image.js
   },
   robots: {
