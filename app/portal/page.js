@@ -128,7 +128,6 @@ const CN_SECTIONS=[
   ]},
   {section:"Servicios",skey:"nav.sec.services",items:[
     {key:"payments",tkey:"nav.payments",label:"Pagos internacionales",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
-    {key:"services",tkey:"nav.services",label:"Soluciones",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},
   ]},
   {section:"Mi cuenta",skey:"nav.sec.account",items:[
     {key:"account",tkey:"nav.account",label:"Cuenta corriente",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},
@@ -2442,23 +2441,29 @@ function AccountPage({token,client,onRestartTutorial}){
   })();},[client?.id,token]);
   const fmtDate=d=>{try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
   const isCredit=balance>0;const isDebt=balance<0;
+  // Cuenta corriente (04/10/2026): saldo grande con dos datos al lado (pagado y pendiente) y el
+  // historial agrupado por mes.
+  const usd2=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const totPagado=timeline.filter(x=>["op_cobro","op_anticipo","gpi_cobro"].includes(x.type)).reduce((a,x)=>a+Math.max(0,Number(x.amount||0)),0);
+  const totPendiente=pendingOps.reduce((a,x)=>a+Number(x.saldo||0),0);
+  const balColor=isCredit?"#22c55e":isDebt?"#ef4444":"#fff";
   return <div>
-    <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-      <div>
-        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("acc.title")}</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>{t("acc.subtitle")}</p>
+    <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <h2 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("acc.title")}</h2>
+      {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"7px 12px",fontSize:12,fontWeight:600,borderRadius:999,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>🎓 {t("acc.tutorialAgain")}</button>}
+    </div>
+    <div className="acc-hero" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr)",gap:12,marginBottom:24}}>
+      <div style={{padding:"24px 26px",borderRadius:18,background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.14), rgba(255,255,255,0.02))":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.14), rgba(255,255,255,0.02))":"linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":isDebt?"rgba(239,68,68,0.35)":"rgba(255,255,255,0.09)"}`}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
+        <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":""}{usd2(balance)}</p>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0",lineHeight:1.5}}>{isCredit?t("acc.creditNote"):isDebt?t("acc.debtNote"):t("acc.noPending")}</p>
       </div>
-      {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.03em",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.15)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}}>🎓 {t("acc.tutorialAgain")}</button>}
+      <div style={{display:"grid",gridTemplateRows:"1fr 1fr",gap:12}}>
+        <div style={{padding:"16px 18px",borderRadius:16,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>Pagado</p><p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd2(totPagado)}</p></div>
+        <div style={{padding:"16px 18px",borderRadius:16,background:totPendiente>0?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${totPendiente>0?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.08)"}`}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>{t("acc.pendingPayments")}</p><p style={{fontSize:20,fontWeight:800,color:totPendiente>0?"#fb923c":"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd2(totPendiente)}</p></div>
+      </div>
     </div>
-    {/* Hero balance */}
-    <div style={{padding:"26px 30px",background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(255,255,255,0.02) 100%)":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isCredit?"rgba(34,197,94,0.4)":isDebt?"rgba(239,68,68,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:16,marginBottom:22,boxShadow:isCredit?"0 0 28px rgba(34,197,94,0.15)":isDebt?"0 0 28px rgba(239,68,68,0.15)":"none",position:"relative",overflow:"hidden"}}>
-      {(isCredit||isDebt)&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isCredit?"linear-gradient(90deg, #22c55e, #10b981)":"linear-gradient(90deg, #ef4444, #dc2626)"}}/>}
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
-      <p style={{fontSize:44,fontWeight:800,color:isCredit?"#22c55e":isDebt?"#ef4444":"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":""}USD {balance.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-      {isCredit&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>{t("acc.creditNote")}</p>}
-      {isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>{t("acc.debtNote")}</p>}
-      {!isCredit&&!isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>{t("acc.noPending")}</p>}
-    </div>
+    <style>{`@media(max-width:768px){.acc-hero{grid-template-columns:1fr!important}.acc-hero>div:last-child{grid-template-rows:none!important;grid-template-columns:1fr 1fr}}`}</style>
     {/* Pendientes de pago (ops GI activas + ops entregadas con saldo) */}
     {pendingOps.length>0&&<div style={{marginBottom:24}}>
       <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.pendingPayments")}</h3>
@@ -2491,25 +2496,26 @@ function AccountPage({token,client,onRestartTutorial}){
           </div>
         </div>;})}
       </div>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>{t("acc.balanceUpdates")}</p>
     </div>}
 
     {/* Historial */}
     <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.history")}</h3>
     {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:timeline.length===0?
       <EmptyState icon="document" title={t("acc.emptyTitle")} description={t("acc.emptyDesc")}/>
-      :<div style={{display:"flex",flexDirection:"column",gap:2,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
-      {timeline.map(t=>{const amt=t.amount;const isPos=amt>0;const color=MOV_COLORS[t.type]||"#fff";const label=MOV_LABELS[t.type]||t.type;return <div key={t.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:3,flexWrap:"wrap"}}>
-            <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:`${color}14`,color,border:`1px solid ${color}35`,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</span>
-            {t.op_code&&<span style={{fontSize:11,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{t.op_code}</span>}
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{t.date?fmtDate(t.date):"—"}</span>
+      :<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {Object.entries(timeline.reduce((g,x)=>{const k=String(x.date||"").slice(0,7)||"—";(g[k]=g[k]||[]).push(x);return g;},{})).map(([mes,items])=><div key={mes}>
+        <p style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>{mes==="—"?"Sin fecha":(x=>x.charAt(0).toUpperCase()+x.slice(1))(new Date(mes+"-15T12:00:00").toLocaleDateString("es-AR",{month:"long",year:"numeric"}))}</p>
+        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
+        {items.map(mv=>{const amt=mv.amount;const isPos=amt>0;const color=MOV_COLORS[mv.type]||"#fff";const label=MOV_LABELS[mv.type]||mv.type;return <div key={mv.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderBottom:"1px solid rgba(255,255,255,0.045)"}}>
+          <span style={{width:34,height:34,flexShrink:0,borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",background:`${color}18`,color,fontSize:15,fontWeight:800}}>{isPos?"↓":"↑"}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff"}}>{label}{mv.op_code&&<span style={{marginLeft:8,fontSize:11.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{mv.op_code}</span>}</p>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mv.date?fmtDate(mv.date):"—"}{mv.description?` · ${mv.description}`:""}</p>
           </div>
-          {t.description&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",margin:0}}>{t.description}</p>}
+          <span style={{fontSize:15,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{isPos?"+":"−"}USD {Math.abs(amt).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        </div>;})}
         </div>
-        <span style={{fontSize:16,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{isPos?"+":""}USD {Math.abs(amt).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-      </div>;})}
+      </div>)}
     </div>}
   </div>;
 }
@@ -2712,7 +2718,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .mob-header{display:flex!important}
         .mob-close{display:block!important}
         .desktop-notif-bar{display:none!important}
-        .main-content{margin-left:0!important;padding-top:60px!important;padding-bottom:74px!important;overflow-x:hidden!important}
+        .main-content{margin-left:0!important;padding-top:calc(60px + env(safe-area-inset-top))!important;padding-bottom:calc(74px + env(safe-area-inset-bottom))!important;overflow-x:hidden!important}
         .main-inner{padding:16px!important;max-width:100vw!important;box-sizing:border-box!important}
         .ac-mob-bottom-nav{display:flex!important}
         .mob-overlay{display:block!important}
@@ -2776,15 +2782,16 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
       }
     `}</style>
     {/* Mobile header */}
-    <div className="mob-header" style={{display:"none",position:"fixed",top:0,left:0,right:0,height:56,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.08)",alignItems:"center",justifyContent:"space-between",padding:"0 16px",zIndex:20}}>
-      <button onClick={()=>setMobOpen(true)} style={{background:"none",border:"none",color:"#fff",fontSize:22,cursor:"pointer",padding:4}}>☰</button>
-      <img src={LOGO} alt="AC" style={{height:30}}/>
+    {/* Encabezado del celu (04/10/2026): respeta el notch (safe-area) y el menú pasó a la barra de abajo,
+        donde se alcanza con el pulgar; arriba quedaba tapado. */}
+    <div className="mob-header" style={{display:"none",position:"fixed",top:0,left:0,right:0,height:"calc(56px + env(safe-area-inset-top))",paddingTop:"env(safe-area-inset-top)",boxSizing:"border-box",background:"rgba(10,22,40,0.92)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.08)",alignItems:"center",justifyContent:"space-between",paddingLeft:16,paddingRight:16,zIndex:20}}>
+      <img src={LOGO} alt="AC" style={{height:28}}/>
       <div style={{display:"flex",alignItems:"center",gap:8}}>{token&&<NotifBell token={token}/>}{code&&<span style={{fontSize:12,fontWeight:700,color:IC,fontFamily:"monospace"}}>{code}</span>}</div>
     </div>
     {/* Mobile overlay */}
     {mobOpen&&<div className="mob-overlay" style={{display:"none",position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:25}} onClick={()=>setMobOpen(false)}/>}
     {/* Mobile sidebar */}
-    {mobOpen&&<div className="mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,background:"rgba(10,22,40,0.98)",borderRight:"1px solid rgba(255,255,255,0.08)",flexDirection:"column",zIndex:30,overflow:"auto"}}>{sidebarContent}</div>}
+    {mobOpen&&<div className="mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,paddingTop:"env(safe-area-inset-top)",paddingBottom:"env(safe-area-inset-bottom)",boxSizing:"border-box",background:"rgba(10,22,40,0.98)",borderRight:"1px solid rgba(255,255,255,0.08)",flexDirection:"column",zIndex:30,overflow:"auto"}}>{sidebarContent}</div>}
     {/* Desktop sidebar */}
     <div className="sidebar-desktop" style={{width:240,position:"fixed",top:0,left:0,bottom:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>{sidebarContent}</div>
     <div className="main-content" style={{marginLeft:240,minHeight:"100vh",position:"relative",zIndex:1}}>
@@ -2792,7 +2799,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
       <div className="main-inner" style={{maxWidth:1200,margin:"0 auto",padding:"30px 32px"}}>{children}</div></div>
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
     {/* Bottom nav mobile (≤768px) — 5 acciones más usadas. El resto via "más" → sidebar */}
-    <nav className="ac-mob-bottom-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:25,background:"rgba(10,22,40,0.95)",backdropFilter:"blur(18px)",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"6px 8px 10px",justifyContent:"space-around",alignItems:"flex-start",overflow:"visible"}}>
+    <nav className="ac-mob-bottom-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:25,background:"rgba(10,22,40,0.95)",backdropFilter:"blur(18px)",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"6px 8px calc(10px + env(safe-area-inset-bottom))",justifyContent:"space-around",alignItems:"flex-start",overflow:"visible"}}>
       {/* Tres accesos (18/09/2026): importaciones · calculadora (centro, elevada) · depósito.
           Cotizaciones salió de acá — se llega desde el menú. "Más" también: abría el mismo
           menú que el ☰ del encabezado, así que era un botón de cuatro para lo mismo.
@@ -2802,7 +2809,12 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         {key:"imports",ic:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"],l:t("nav.imports")},
         {key:"calculator",ic:["M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z","M8.5 6.5h7v3.2h-7z","M9 14h.01","M12 14h.01","M15 14h.01","M9 18h.01","M12 18h.01","M15 18h.01"],l:t("nav.calculator"),centro:true},
         {key:"deposito",ic:["M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z","M9 21V12h6v9","M3 9h18"],l:t("nav.deposito")},
+        {key:"__menu",ic:["M4 6h16","M4 12h16","M4 18h16"],l:"Menú"},
       ].map(it=>{const active=page===it.key;
+        if(it.key==="__menu")return <button key={it.key} onClick={()=>setMobOpen(true)} style={{position:"relative",flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 4px",background:"transparent",border:"none",color:mobOpen?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer",borderRadius:8}}>
+          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.ic.map((d,i)=><path key={i} d={d}/>)}</svg>
+          <span style={{fontSize:10,fontWeight:500,letterSpacing:"0.02em"}}>{it.l}</span>
+        </button>;
         if(it.centro)return <button key={it.key} onClick={()=>setPage(it.key)} aria-label={it.l} style={{flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:0,background:"transparent",border:"none",cursor:"pointer"}}>
           <span style={{width:46,height:46,marginTop:-16,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:GOLD_GRADIENT,border:`1px solid ${GOLD_DEEP}`,boxShadow:active?"0 6px 20px rgba(232,208,152,0.45)":"0 5px 16px rgba(0,0,0,0.4)",color:"#0A1628",flexShrink:0}}>
             <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.ic.map((d,i)=><path key={i} d={d}/>)}</svg>
@@ -3283,12 +3295,8 @@ export default function Page(){
   };
   if(restoring)return <><ToastStack/><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div></>;
   if(session&&profile)return <><ToastStack/><DialogHost/>
-    {adminPreview&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"linear-gradient(90deg, rgba(184,149,106,0.95), rgba(232,208,152,0.95))",color:"#0A1628",padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,fontSize:12,fontWeight:700,letterSpacing:"0.04em",boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      <span>{t("auth.previewMode")} <strong>{client?.first_name} {client?.last_name} ({client?.client_code})</strong></span>
-      <button onClick={()=>{if(typeof window!=="undefined")window.close();}} style={{marginLeft:8,padding:"4px 12px",fontSize:11,fontWeight:700,background:"rgba(10,22,40,0.85)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",letterSpacing:"0.04em"}}>Cerrar</button>
-    </div>}
-    <div style={{paddingTop:adminPreview?38:0}}><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout} onRestartTutorial={()=>setShowTutorial(true)}/></div>
+    {/* Vista previa desde el admin: sin barra arriba, para ver el portal tal cual lo ve el cliente (04/10/2026). */}
+    <div><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout} onRestartTutorial={()=>setShowTutorial(true)}/></div>
     {(showTutorial||(client&&!adminPreview&&!client.tutorial_completed))&&<TutorialOverlay client={client} token={session.token} onClose={()=>setShowTutorial(false)} onComplete={()=>setClient(c=>c?{...c,tutorial_completed:true}:c)}/>}
     {client&&!adminPreview&&client.tutorial_completed&&client.announcement_seen!==ANUNCIO_KEY&&<AnnouncementModal client={client} token={session.token} onClose={()=>setClient(c=>c?{...c,announcement_seen:ANNOUNCEMENT.key}:c)}/>}
   </>;
