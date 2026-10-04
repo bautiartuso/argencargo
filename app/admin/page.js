@@ -12031,11 +12031,15 @@ function OperationalAnalytics({token}){
 // Cada gestión tiene dos patas: lo que cobrás al cliente y el giro que hacés al exterior. La
 // ganancia es la diferencia, y es lo único que entra al libro diario — el bruto solo pasa por la
 // cuenta. Las históricas conservan de qué op salieron; las nuevas son independientes.
+// Gestión de pagos (04/10/2026, rediseño): lista de tarjetas con las dos patas (cobro al cliente y
+// giro al exterior) a la vista, y un formulario por pasos con interruptores y botones en lugar de
+// checkboxes y desplegables. La lógica (cerrada, ganancia, libro diario) no cambió.
 function AgpPanel({token,allClients}){
+  const celu=useEsCelu();
   const [rows,setRows]=useState([]);
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
-  const [filtro,setFiltro]=useState("todas"); // todas | pendientes | cerradas
+  const [filtro,setFiltro]=useState("pendientes"); // todas | pendientes | cerradas
   const [editing,setEditing]=useState(null); // objeto o "nuevo"
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -12062,94 +12066,64 @@ function AgpPanel({token,allClients}){
     return s.includes(q.trim().toLowerCase());
   };
   const filtered=rows.filter(p=>matches(p)&&(filtro==="todas"||(filtro==="cerradas"?cerrada(p):!cerrada(p))));
-  const totCobrado=filtered.reduce((s,p)=>s+cobradoDe(p),0);
-  const totGirado=filtered.reduce((s,p)=>s+salidaDe(p),0);
-  const totGanancia=filtered.reduce((s,p)=>s+(cerrada(p)?gananciaDe(p):0),0);
   const pendientes=rows.filter(p=>!cerrada(p));
+  const cerradasF=filtered.filter(cerrada);
+  const totGanancia=cerradasF.reduce((s,p)=>s+gananciaDe(p),0);
+  const porCobrar=pendientes.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+  const porGirar=pendientes.filter(p=>!giroOk(p)).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
 
-  const del=async(p)=>{
-    if(!await confirmDialog(`¿Eliminar la gestión ${p.agp_code}?\n\nSe borra también su movimiento del libro diario.`))return;
-    await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
-    toast("Gestión eliminada","success");
-    load();
-  };
-
-  const th={padding:"9px 10px",textAlign:"left",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"};
-  const td={padding:"10px",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"};
-  const stat=(lbl,val,color)=><div style={{flex:"1 1 150px",padding:"12px 14px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:11}}>
-    <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>{lbl}</p>
-    <p style={{fontSize:17,fontWeight:800,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{val}</p>
+  const kpi=(lbl,val,color)=><div style={{padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)"}}>
+    <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px"}}>{lbl}</p>
+    <p style={{fontSize:celu?17:20,fontWeight:800,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{val}</p>
   </div>;
+  const paso=(ok,lbl,warn)=><span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:700,padding:"4px 10px 4px 6px",borderRadius:999,background:ok?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:ok?"#4ade80":"#fbbf24",whiteSpace:"nowrap"}}>
+    <span style={{width:16,height:16,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,background:ok?"#22c55e":"transparent",border:ok?"none":"1.5px solid #fbbf24",color:"#0A1628"}}>{ok?"✓":""}</span>{warn||lbl}
+  </span>;
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
-      <div>
-        
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>Giros al exterior por cuenta del cliente. Al panel financiero solo entra la ganancia, no el monto que pasa.</p>
-      </div>
-      <Btn variant="gold" onClick={()=>setEditing("nuevo")}>+ Nueva gestión</Btn>
-    </div>
-
-    <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:16}}>
-      {stat("Cobrado al cliente",usd(totCobrado))}
-      {stat("Girado + comisión",usd(totGirado),"#ff9b9b")}
-      {stat("Ganancia (cerradas)",usd(totGanancia),totGanancia>=0?"#22c55e":"#f87171")}
-      {stat("Pendientes",String(pendientes.length),pendientes.length?"#fbbf24":"rgba(255,255,255,0.4)")}
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:10,marginBottom:16}}>
+      {kpi("Pendientes",String(pendientes.length),pendientes.length?"#fbbf24":"rgba(255,255,255,0.45)")}
+      {kpi("Por cobrar",usd(porCobrar))}
+      {kpi("Por girar",usd(porGirar),"#ff9b9b")}
+      {kpi(filtro==="pendientes"?"Ganancia cerradas":"Ganancia",usd(filtro==="pendientes"?rows.filter(cerrada).reduce((s,p)=>s+gananciaDe(p),0):totGanancia),"#4ade80")}
     </div>
 
     <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-      <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
-        {[{k:"todas",l:"Todas"},{k:"pendientes",l:"⏳ Pendientes"},{k:"cerradas",l:"✓ Cerradas"}].map(o=>
-          <button key={o.k} onClick={()=>setFiltro(o.k)} style={{padding:"6px 13px",fontSize:12,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:filtro===o.k?GOLD_GRADIENT:"transparent",color:filtro===o.k?"#0A1628":"rgba(255,255,255,0.55)"}}>{o.l}</button>)}
+      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",flex:celu?"1 1 100%":"0 0 auto"}}>
+        {[{k:"pendientes",l:"Pendientes"},{k:"cerradas",l:"Cerradas"},{k:"todas",l:"Todas"}].map(o=>
+          <button key={o.k} onClick={()=>setFiltro(o.k)} style={{flex:1,padding:"8px 14px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:filtro===o.k?"rgba(184,149,106,0.22)":"transparent",color:filtro===o.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",fontFamily:"inherit"}}>{o.l}</button>)}
       </div>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por AGP, cliente u op..." style={{flex:1,minWidth:200,padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar AGP, cliente u operación" style={{flex:1,minWidth:celu?0:220,height:40,padding:"0 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.1)",borderRadius:11,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",boxSizing:"border-box"}}/>
+      <Btn variant="gold" onClick={()=>setEditing("nuevo")}>+ Nueva gestión</Btn>
     </div>
 
     {filtered.length===0
-      ?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2.5rem 0"}}>{q||filtro!=="todas"?"Sin resultados con este filtro.":"Todavía no hay gestiones de pago cargadas."}</p>
-      :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.02)"}}>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:940}}>
-            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.025)"}}>
-              <th style={{...th,width:96}}>Código</th>
-              <th style={{...th,width:88}}>Fecha</th>
-              <th style={th}>Cliente</th>
-              <th style={th}>Detalle</th>
-              <th style={{...th,textAlign:"right",width:120}}>Cobrado</th>
-              <th style={{...th,textAlign:"right",width:120}}>Girado</th>
-              <th style={{...th,textAlign:"right",width:110}}>Ganancia</th>
-              <th style={{...th,width:130}}>Estado</th>
-              <th style={{...th,width:70}}></th>
-            </tr></thead>
-            <tbody>
-              {filtered.map(p=>{
-                const cl=p.clients;const cerr=cerrada(p);const gan=gananciaDe(p);
-                return <tr key={p.id} onClick={()=>setEditing(p)} style={{cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)"}}
-                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.035)";}}
-                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-                  <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:GOLD_LIGHT}}>{p.agp_code||"—"}</td>
-                  <td style={{...td,color:"rgba(255,255,255,0.55)"}}>{p.date?formatDate(p.date):"—"}</td>
-                  <td style={{...td,color:"#fff",maxWidth:190,overflow:"hidden",textOverflow:"ellipsis"}}>{cl?`${cl.first_name||""} ${cl.last_name||""}`.trim():"—"}{cl?.client_code&&<span style={{marginLeft:7,fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{cl.client_code}</span>}</td>
-                  <td style={{...td,color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{p.description||"—"}{p.operations?.operation_code&&<span style={{marginLeft:7,fontSize:10,color:"rgba(255,255,255,0.3)"}}>· de {p.operations.operation_code}</span>}</td>
-                  <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(cobradoDe(p))}</td>
-                  <td style={{...td,textAlign:"right",color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>{usd(salidaDe(p))}</td>
-                  <td style={{...td,textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:cerr?(gan>=0?"#22c55e":"#f87171"):"rgba(255,255,255,0.3)"}}>{cerr?usd(gan):"—"}</td>
-                  <td style={td}>
-                    <span style={{display:"inline-flex",gap:4,flexWrap:"wrap"}}>
-                      <span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:p.client_paid?"rgba(34,197,94,0.14)":"rgba(251,191,36,0.12)",color:p.client_paid?"#22c55e":"#fbbf24"}}>{p.client_paid?"✓ cobrado":"sin cobrar"}</span>
-                      <span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:giroOk(p)?"rgba(34,197,94,0.14)":"rgba(251,191,36,0.12)",color:giroOk(p)?"#22c55e":"#fbbf24"}}>{giroOk(p)?"✓ girado":tarjetaPend(p)?"TC sin debitar":"sin girar"}</span>
-                    </span>
-                  </td>
-                  <td style={{...td,textAlign:"right"}} onClick={e=>e.stopPropagation()}>
-                    <button onClick={()=>del(p)} title="Eliminar gestión" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.65)",cursor:"pointer",fontSize:15,padding:"0 4px"}}>×</button>
-                  </td>
-                </tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
+      ?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2.5rem 0"}}>{q?"Sin resultados.":filtro==="pendientes"?"No hay gestiones pendientes.":"No hay gestiones."}</p>
+      :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {filtered.map(p=>{
+          const cl=p.clients;const cerr=cerrada(p);const gan=gananciaDe(p);
+          const nombre=cl?`${cl.first_name||""} ${cl.last_name||""}`.trim():"—";
+          const cab=<div style={{minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,fontSize:12.5,color:GOLD_LIGHT}}>{p.agp_code||"—"}</span>
+              <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>{p.date?formatDate(p.date):""}</span>
+              {p.operations?.operation_code&&<span style={{fontSize:10.5,fontWeight:700,padding:"2px 7px",borderRadius:5,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.55)"}}>{p.operations.operation_code}</span>}
+            </div>
+            <p style={{margin:"4px 0 0",fontSize:14.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</p>
+            {p.description&&<p style={{margin:"2px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description}</p>}
+          </div>;
+          const pasos=<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{paso(!!p.client_paid,p.client_paid?"Cobrado":"Sin cobrar")}{paso(giroOk(p),giroOk(p)?"Girado":"Sin girar",tarjetaPend(p)&&p.giro_status==="confirmado"?"Tarjeta sin debitar":null)}</div>;
+          const montos=<div style={{textAlign:"right"}}>
+            <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(cobradoDe(p))}</p>
+            <p style={{margin:"3px 0 0",fontSize:12,fontWeight:700,fontVariantNumeric:"tabular-nums",color:cerr?(gan>=0?"#4ade80":"#f87171"):"rgba(255,255,255,0.35)"}}>{cerr?`Ganancia ${usd(gan)}`:`Giro ${usd(salidaDe(p))}`}</p>
+          </div>;
+          return <button key={p.id} onClick={()=>setEditing(p)} style={{all:"unset",cursor:"pointer",display:"grid",gridTemplateColumns:celu?"1fr auto":"minmax(0,1fr) auto 190px",gap:celu?"10px 12px":18,alignItems:"center",padding:celu?"14px 14px":"14px 18px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:`1px solid ${cerr?"rgba(255,255,255,0.06)":"rgba(251,191,36,0.18)"}`,boxSizing:"border-box",transition:"background 140ms"}}
+            onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.055)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";}}>
+            {cab}{celu?montos:pasos}{celu?<div style={{gridColumn:"1 / -1"}}>{pasos}</div>:montos}
+          </button>;
+        })}
       </div>}
 
     {editing&&<AgpForm token={token} allClients={allClients} editing={editing==="nuevo"?null:editing} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null);load();}}/>}
@@ -12159,6 +12133,7 @@ function AgpPanel({token,allClients}){
 // Alta / edición de una gestión de pagos. Las dos patas (cobro al cliente y giro) se cargan por
 // separado porque no pasan al mismo tiempo: primero cobrás, después girás.
 function AgpForm({token,allClients,editing,onClose,onSaved}){
+  const celu=useEsCelu();
   const e0=editing||{};
   const [f,setF]=useState({
     client_id:e0.client_id||"",
@@ -12178,15 +12153,17 @@ function AgpForm({token,allClients,editing,onClose,onSaved}){
     notes:e0.notes||"",
   });
   const [saving,setSaving]=useState(false);
+  const [borrar,setBorrar]=useState(false);
   const ch=(k)=>(v)=>setF(p=>({...p,[k]:v}));
   const n=(v)=>Number(String(v??"").replace(",","."))||0;
   const cobrado=f.client_paid?(n(f.client_paid_amount_usd)||n(f.client_amount_usd)):n(f.client_amount_usd);
   const salida=n(f.giro_amount_usd)+n(f.cost_comision_giro);
   const ganancia=Math.round((cobrado-salida)*100)/100;
+  const fmt=v=>Math.abs(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
   const save=async()=>{
-    if(!f.client_id){alertDialog("Elegí el cliente");return;}
-    if(n(f.client_amount_usd)<=0){alertDialog("Cargá el monto que le cobrás al cliente");return;}
+    if(!f.client_id){toast("Elegí el cliente","error");return;}
+    if(n(f.client_amount_usd)<=0){toast("Cargá el monto que le cobrás al cliente","error");return;}
     setSaving(true);
     try{
       const body={
@@ -12213,66 +12190,88 @@ function AgpForm({token,allClients,editing,onClose,onSaved}){
       }
       toast(editing?"Gestión actualizada":`Gestión ${body.agp_code||""} creada`,"success");
       onSaved();
-    }catch(err){alertDialog("Error: "+err.message);}
+    }catch(err){toast("Error: "+err.message,"error");}
     setSaving(false);
   };
+  const del=async()=>{
+    setSaving(true);
+    await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${editing.id}`});
+    toast("Gestión eliminada","success");setSaving(false);onSaved();
+  };
 
-  const sub=(t)=><p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"18px 0 10px",textTransform:"uppercase",letterSpacing:"0.07em"}}>{t}</p>;
-  return <div onClick={()=>!saving&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
-    <div onClick={ev=>ev.stopPropagation()} style={{background:"linear-gradient(160deg,#142038,#0e1a2c)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:"22px 24px",width:"min(680px,100%)",margin:"auto"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-        <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0}}>{editing?`Gestión ${editing.agp_code||""}`:"Nueva gestión de pagos"}</h3>
-        <button onClick={()=>!saving&&onClose()} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
-      </div>
-      {editing?.operations?.operation_code&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Vino de la operación {editing.operations.operation_code}</p>}
+  const seg=(opciones,val,on)=><div style={{display:"flex",gap:3,padding:3,borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)",marginBottom:12}}>{opciones.map(([v,l])=><button key={v} type="button" onClick={()=>on(v)} style={{flex:1,padding:"8px 6px",fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:val===v?"rgba(184,149,106,0.24)":"transparent",color:val===v?GOLD_LIGHT:"rgba(255,255,255,0.6)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}</div>;
+  const toggle=(on,lbl,set)=><button type="button" onClick={()=>set(!on)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,width:"100%",height:46,padding:"0 14px",marginBottom:12,borderRadius:11,border:`1px solid ${on?"rgba(34,197,94,0.45)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:on?"#4ade80":"rgba(255,255,255,0.75)",fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxSizing:"border-box"}}>
+    <span>{lbl}</span>
+    <span style={{position:"relative",width:40,height:23,borderRadius:23,background:on?"#22c55e":"rgba(255,255,255,0.18)",transition:"background .2s",flexShrink:0}}><span style={{position:"absolute",top:3,left:on?20:3,width:17,height:17,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/></span>
+  </button>;
+  const lbl=t=><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>{t}</p>;
+  const bloque=(num,titulo,listo,children)=><section style={{marginTop:14,padding:"16px 16px 4px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:`1px solid ${listo?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.08)"}`}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+      <span style={{width:24,height:24,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:listo?"#22c55e":"rgba(184,149,106,0.2)",color:listo?"#0A1628":GOLD_LIGHT}}>{listo?"✓":num}</span>
+      <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>{titulo}</p>
+    </div>
+    {children}
+  </section>;
+  const dos=celu?"1fr":"1fr 1fr";
+  const giroListo=f.giro_status==="confirmado"&&!(f.giro_payment_method==="tarjeta_credito"&&!f.giro_tarjeta_paid);
 
-      {sub("Datos")}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:"0 12px"}}>
-        <Sel label="Cliente" value={f.client_id} onChange={ch("client_id")} options={[{value:"",label:"Elegir cliente…"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} — ${c.first_name||""} ${c.last_name||""}`.trim()}))]} small/>
-        <Inp label="Fecha" type="date" value={f.date} onChange={ch("date")} small/>
-        <Inp label="Detalle" value={f.description} onChange={ch("description")} placeholder="Ej: pago a proveedor Shenzhen" small/>
-      </div>
-
-      {sub("Lo que le cobrás al cliente")}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"0 12px"}}>
-        <Inp label="Monto acordado USD *" type="number" value={f.client_amount_usd} onChange={ch("client_amount_usd")} step="0.01" small/>
-        <Sel label="Forma de cobro" value={f.client_payment_method} onChange={ch("client_payment_method")} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]} small/>
-        {f.client_paid&&<Inp label="Cobrado realmente USD" type="number" value={f.client_paid_amount_usd} onChange={ch("client_paid_amount_usd")} step="0.01" placeholder="igual al acordado" small/>}
-        {f.client_paid&&<Inp label="Fecha del cobro" type="date" value={f.client_paid_date} onChange={ch("client_paid_date")} small/>}
-      </div>
-      <label style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",marginTop:6}}>
-        <input type="checkbox" checked={f.client_paid} onChange={ev=>ch("client_paid")(ev.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
-        <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>El cliente ya pagó</span>
-      </label>
-
-      {sub("El giro al exterior")}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"0 12px"}}>
-        <Inp label="Monto girado USD" type="number" value={f.giro_amount_usd} onChange={ch("giro_amount_usd")} step="0.01" small/>
-        <Inp label="Comisión del giro USD" type="number" value={f.cost_comision_giro} onChange={ch("cost_comision_giro")} step="0.01" small/>
-        <Sel label="Estado" value={f.giro_status} onChange={ch("giro_status")} options={[{value:"pendiente",label:"Pendiente"},{value:"confirmado",label:"Confirmado"}]} small/>
-        <Sel label="Forma de pago" value={f.giro_payment_method} onChange={ch("giro_payment_method")} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"tarjeta_credito",label:"Tarjeta de crédito"}]} small/>
-        <Inp label="Fecha del giro" type="date" value={f.giro_date} onChange={ch("giro_date")} small/>
-      </div>
-      {f.giro_payment_method==="tarjeta_credito"&&<label style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",marginTop:6}}>
-        <input type="checkbox" checked={f.giro_tarjeta_paid} onChange={ev=>ch("giro_tarjeta_paid")(ev.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
-        <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>La tarjeta ya se debitó <span style={{color:"rgba(255,255,255,0.45)"}}>(hasta que no se debite, la ganancia no cuenta)</span></span>
-      </label>}
-
-      <div style={{marginTop:16,padding:"13px 16px",borderRadius:11,background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.22)":"rgba(255,80,80,0.22)"}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+  return <div onClick={()=>!saving&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:celu?"stretch":"flex-start",justifyContent:"center",padding:celu?0:20,overflowY:"auto"}}>
+    <div onClick={ev=>ev.stopPropagation()} style={{background:"linear-gradient(160deg,#142038,#0e1a2c)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:18,padding:celu?"18px 16px 24px":"22px 24px",width:celu?"100%":"min(640px,100%)",margin:celu?0:"auto",boxSizing:"border-box",minHeight:celu?"100%":undefined}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
         <div>
-          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:0}}>Ganancia de la gestión</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>USD {cobrado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} cobrado − USD {salida.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} girado + comisión</p>
+          <h3 style={{fontSize:18,fontWeight:800,color:"#fff",margin:0}}>{editing?(editing.agp_code||"Gestión"):"Nueva gestión"}</h3>
+          {editing?.operations?.operation_code&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>De la operación {editing.operations.operation_code}</p>}
         </div>
-        <p style={{fontSize:20,fontWeight:800,color:ganancia>=0?"#22c55e":"#f87171",margin:0,fontVariantNumeric:"tabular-nums"}}>{ganancia<0?"−":""}USD {Math.abs(ganancia).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+        <button onClick={()=>!saving&&onClose()} aria-label="Cerrar" style={{width:36,height:36,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:18,cursor:"pointer",lineHeight:1}}>×</button>
       </div>
-      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"8px 0 0",fontStyle:"italic"}}>Al libro diario entra solo esta ganancia, y recién cuando el cliente pagó y el giro salió. El monto que pasa por la cuenta no se cuenta como ingreso.</p>
 
-      <div style={{marginTop:14}}>
-        <Inp label="Notas (opcional)" value={f.notes} onChange={ch("notes")} small/>
+      <div style={{display:"grid",gridTemplateColumns:dos,gap:"0 12px",marginTop:16}}>
+        <Sel label="Cliente" value={f.client_id} onChange={ch("client_id")} options={[{value:"",label:"Elegir cliente…"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} — ${c.first_name||""} ${c.last_name||""}`.trim()}))]}/>
+        <Inp label="Fecha" type="date" value={f.date} onChange={ch("date")}/>
       </div>
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
-        <Btn variant="secondary" small onClick={()=>!saving&&onClose()}>Cancelar</Btn>
-        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":editing?"Guardar cambios":"✓ Crear gestión"}</Btn>
+      <Inp label="Detalle" value={f.description} onChange={ch("description")} placeholder="Pago a proveedor…"/>
+
+      {bloque(1,"Cobro al cliente",!!f.client_paid,<>
+        <div style={{display:"grid",gridTemplateColumns:dos,gap:"0 12px"}}>
+          <Inp label="Monto USD" type="number" value={f.client_amount_usd} onChange={ch("client_amount_usd")} step="0.01"/>
+          <div>{lbl("Forma de cobro")}{seg([["transferencia","Transferencia"],["efectivo","Efectivo"],["cripto","Cripto"]],f.client_payment_method,ch("client_payment_method"))}</div>
+        </div>
+        {toggle(f.client_paid,"El cliente pagó",ch("client_paid"))}
+        {f.client_paid&&<div style={{display:"grid",gridTemplateColumns:dos,gap:"0 12px"}}>
+          <Inp label="Cobrado USD" type="number" value={f.client_paid_amount_usd} onChange={ch("client_paid_amount_usd")} step="0.01" placeholder={String(f.client_amount_usd||"")}/>
+          <Inp label="Fecha del cobro" type="date" value={f.client_paid_date} onChange={ch("client_paid_date")}/>
+        </div>}
+      </>)}
+
+      {bloque(2,"Giro al exterior",giroListo,<>
+        <div style={{display:"grid",gridTemplateColumns:dos,gap:"0 12px"}}>
+          <Inp label="Monto girado USD" type="number" value={f.giro_amount_usd} onChange={ch("giro_amount_usd")} step="0.01"/>
+          <Inp label="Comisión USD" type="number" value={f.cost_comision_giro} onChange={ch("cost_comision_giro")} step="0.01"/>
+        </div>
+        {lbl("Forma de pago")}{seg([["transferencia","Transferencia"],["efectivo","Efectivo"],["tarjeta_credito","Tarjeta"]],f.giro_payment_method,ch("giro_payment_method"))}
+        {toggle(f.giro_status==="confirmado","El giro salió",v=>ch("giro_status")(v?"confirmado":"pendiente"))}
+        {f.giro_status==="confirmado"&&<Inp label="Fecha del giro" type="date" value={f.giro_date} onChange={ch("giro_date")}/>}
+        {f.giro_payment_method==="tarjeta_credito"&&toggle(f.giro_tarjeta_paid,"La tarjeta ya se debitó",ch("giro_tarjeta_paid"))}
+      </>)}
+
+      <div style={{marginTop:14}}><Inp label="Notas" value={f.notes} onChange={ch("notes")}/></div>
+
+      <div style={{marginTop:4,padding:"14px 16px",borderRadius:14,background:ganancia>=0?"rgba(34,197,94,0.07)":"rgba(255,80,80,0.07)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.25)":"rgba(255,80,80,0.25)"}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+        <div>
+          <p style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0}}>Ganancia</p>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",margin:"3px 0 0",fontVariantNumeric:"tabular-nums"}}>USD {fmt(cobrado)} − USD {fmt(salida)}</p>
+        </div>
+        <p style={{fontSize:22,fontWeight:800,color:ganancia>=0?"#4ade80":"#f87171",margin:0,fontVariantNumeric:"tabular-nums"}}>{ganancia<0?"−":""}USD {fmt(ganancia)}</p>
+      </div>
+
+      <div style={{display:"flex",gap:8,justifyContent:"space-between",alignItems:"center",marginTop:16,flexWrap:"wrap"}}>
+        {editing?(borrar
+          ?<button onClick={del} disabled={saving} style={{height:38,padding:"0 14px",borderRadius:10,border:"1px solid rgba(255,80,80,0.5)",background:"rgba(255,80,80,0.18)",color:"#ff8a8a",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Confirmar: borrar gestión</button>
+          :<button onClick={()=>setBorrar(true)} style={{height:38,padding:"0 4px",border:"none",background:"transparent",color:"rgba(255,120,120,0.75)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Borrar</button>):<span/>}
+        <div style={{display:"flex",gap:8,flex:celu?"1 1 100%":"0 0 auto"}}>
+          <Btn variant="secondary" onClick={()=>!saving&&onClose()} fullWidth={celu}>Cancelar</Btn>
+          <Btn variant="gold" onClick={save} disabled={saving} fullWidth={celu}>{saving?"Guardando…":editing?"Guardar":"Crear gestión"}</Btn>
+        </div>
       </div>
     </div>
   </div>;
