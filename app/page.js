@@ -1,24 +1,15 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { LD_ORGANIZATION, LD_WEBSITE } from "../lib/ld-argencargo";
 import MarcoLanding from "./components/MarcoLanding";
 import MapaRutas from "./components/MapaRutas";
 import CalcLanding from "./components/CalcLanding";
+import { Dudas, Cierre, DUDAS } from "./components/SeccionesLanding";
 
 const WA="5491125088580";
-const AC="#3B7DD8";
-const NAVY="#152D54";
-const BG="#0a1223";
 const waL=(m)=>`https://wa.me/${WA}?text=${encodeURIComponent(m)}`;
 
-const FAQ=[
-          {q:"¿Necesito ser importador registrado?",a:"No. Para courier no necesitás ningún registro especial. Para carga formal te asesoramos en todo el proceso."},
-          {q:"¿Cuándo pago?",a:"Pagás cuando tu mercadería está en Argentina y lista para retirar. No antes."},
-          {q:"¿Puedo importar desde Estados Unidos?",a:"Sí. Operamos envíos desde China y USA, por vía aérea y marítima."},
-          {q:"¿Cómo sigo el estado de mi carga?",a:"Tenés un portal online con tracking real. Ves dónde está tu mercadería en todo momento."},
-          {q:"¿Puedo traer cualquier producto?",a:"Casi todo. Hay restricciones para alimentos, medicamentos y materiales peligrosos. Consultanos y te confirmamos."},
-          {q:"¿Hacen entregas a domicilio?",a:"Sí. Podés retirar en nuestra oficina de Buenos Aires o coordinar envío a domicilio si lo necesitás."},
-];
+const FAQ=DUDAS.map(d=>({q:d.q,a:d.a}));
 
 // Reseñas de Google copiadas a mano (04/10/2026, ordenadas por "Valoración más alta"; 4,8 ★ con 53 opiniones).
 // Cuando estén GOOGLE_PLACES_API_KEY y GOOGLE_PLACE_ID en Vercel, /api/reviews las puede traer solas.
@@ -39,7 +30,6 @@ const GOOGLE_G=<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true
 const LD_FAQ={"@context":"https://schema.org","@type":"FAQPage",mainEntity:FAQ.map(f=>({"@type":"Question",name:f.q,acceptedAnswer:{"@type":"Answer",text:f.a}}))};
 
 export default function Landing(){
-  const [faq,setFaq]=useState(null);
   // Si el cliente llega al root con hash de Supabase (recovery / signup confirm) o con error en
   // query string (ej. ?error=access_denied), reenviar a /portal preservando todo. Pasa cuando
   // Supabase Site URL apunta a "/" en vez de "/portal", o cuando el redirect_to no está whitelisted.
@@ -84,55 +74,11 @@ export default function Landing(){
     {/* CALCULADORA (04/10/2026): texto + compu con la calculadora del portal. */}
     <CalcLanding />
 
-    {/* Lo de abajo es la landing vieja: siempre oscura hasta rehacerla. */}
-    <div style={{background:BG,color:"#fff"}}>
-    {/* DOLOR → SOLUCIÓN */}
-    <section style={{padding:"80px 24px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
-      <div style={{maxWidth:900,margin:"0 auto",textAlign:"center"}}>
-        <h2 style={{fontSize:"clamp(22px, 3.5vw, 34px)",fontWeight:800,margin:"0 0 40px"}}>Lo que otros complican, nosotros lo simplificamos</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:20,textAlign:"left"}}>
-          {[
-            {pain:"\"No tengo idea cuánto me va a salir\"",fix:"Cotización detallada antes de mover un dedo. Todos los costos claros desde el inicio — flete, impuestos, gestión. Sin sorpresas."},
-            {pain:"\"Me da miedo que se trabe en aduana\"",fix:"Nos encargamos de toda la gestión aduanera. Si surge algún tema, lo resolvemos y te mantenemos informado paso a paso."},
-            {pain:"\"No sé en qué estado está mi carga\"",fix:"Tenés un portal donde ves exactamente dónde está tu mercadería. Tracking real del courier internacional, actualizado automáticamente."},
-          ].map(s=><div key={s.pain} style={{padding:24,background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)"}}>
-            <p style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.65)",margin:"0 0 12px",fontStyle:"italic"}}>{s.pain}</p>
-            <div style={{width:32,height:2,background:AC,borderRadius:2,marginBottom:12}}/>
-            <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",lineHeight:1.6,margin:0}}>{s.fix}</p>
-          </div>)}
-        </div>
-      </div>
-    </section>
+    {/* DUDAS (04/10/2026): lo que otros complican + preguntas frecuentes, en 6 tarjetas. */}
+    <Dudas />
 
-    {/* FAQ */}
-    <section style={{padding:"60px 24px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
-      <div style={{maxWidth:700,margin:"0 auto"}}>
-        <h2 style={{fontSize:"clamp(20px, 3vw, 28px)",fontWeight:800,textAlign:"center",margin:"0 0 32px"}}>Preguntas frecuentes</h2>
-        {FAQ.map((f,i)=><div key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-          <button onClick={()=>setFaq(faq===i?null:i)} aria-expanded={faq===i} style={{width:"100%",padding:"16px 0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",color:"#fff",fontSize:15,fontWeight:600,textAlign:"left"}}>
-            {f.q}<span style={{fontSize:18,color:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:12}}>{faq===i?"−":"+"}</span>
-          </button>
-          {faq===i&&<p style={{fontSize:14,color:"rgba(255,255,255,0.5)",lineHeight:1.7,margin:"0 0 16px"}}>{f.a}</p>}
-        </div>)}
-      </div>
-    </section>
-
-    {/* CTA FINAL */}
-    <section style={{padding:"80px 24px",textAlign:"center",background:`radial-gradient(ellipse at 50% 80%, ${NAVY}20 0%, transparent 60%)`}}>
-      <div style={{maxWidth:550,margin:"0 auto"}}>
-        <h2 style={{fontSize:"clamp(24px, 4vw, 36px)",fontWeight:800,margin:"0 0 12px"}}>¿Querés empezar?</h2>
-        <p style={{fontSize:16,color:"rgba(255,255,255,0.5)",margin:"0 0 32px"}}>Escribinos y armamos tu cotización. Sin compromiso, sin requisitos.</p>
-        <div style={{display:"flex",gap:14,justifyContent:"center",flexWrap:"wrap"}}>
-          <a href={waL("Hola! Quiero cotizar una importación")} target="_blank" rel="noopener" style={{display:"inline-flex",alignItems:"center",gap:10,padding:"16px 32px",fontSize:16,fontWeight:700,borderRadius:12,background:"#25D366",color:"#0a1223",textDecoration:"none",boxShadow:"0 4px 20px rgba(37,211,102,0.3)"}}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="#0a1223" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-            WhatsApp
-          </a>
-          <a href="/portal" style={{padding:"16px 32px",fontSize:16,fontWeight:700,borderRadius:12,border:`1.5px solid ${AC}40`,background:`${AC}10`,color:AC,textDecoration:"none"}}>Crear cuenta gratis</a>
-        </div>
-      </div>
-    </section>
-
-    </div>
+    {/* CIERRE (04/10/2026): a todo el ancho con foto, WhatsApp y mail. */}
+    <Cierre wa={waL("Hola! Quiero cotizar una importación")} mail="info@argencargo.com.ar" />
 
     {/* WA FLOTANTE */}
     <a href={waL("Hola! Quiero info sobre importaciones")} target="_blank" rel="noopener" aria-label="Escribinos por WhatsApp" title="Escribinos por WhatsApp" style={{position:"fixed",bottom:24,right:24,width:60,height:60,borderRadius:"50%",background:"#25D366",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 20px rgba(37,211,102,0.4)",zIndex:99}}>
