@@ -6979,6 +6979,34 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
 // Tarifas (04/10/2026): ordenadas por origen y, dentro de cada origen, por servicio. Cada servicio
 // muestra sus rangos con precio, costo y margen juntos y se edita en el lugar (se guarda al salir
 // del campo). Debajo: certificación de flete y antidumping.
+// Medidas antidumping origen China relevadas el 04/10/2026 (Boletín Oficial, CNCE, MECON). Las que
+// no tienen medida quedan inactivas: dejan de avisar. Se aplican con el botón de la tarjeta.
+const AD_RELEVAMIENTO=[
+  {ncm:"64",activo:true,medida_tipo:"valor_criterio",valor:15.70,unidad:"USD/par",resolucion:"Res. 915/2021 MDP",vigencia_hasta:"2026-12-14",nota:"Valor FOB mínimo de exportación: se paga la diferencia entre USD 15,70 y el FOB declarado. Res. 531/2026 excluye el deportivo desmontado sin cuero natural."},
+  {ncm:"5209",activo:true,medida_tipo:"valor_criterio",valor:3.93,unidad:"USD/m",resolucion:"Res. 326/2022 MDP",vigencia_hasta:"2027-04-27",nota:"Denim tradicional (también 5208.43, 5210.49.10, 5211.42). FOB mínimo por metro lineal."},
+  {ncm:"8414.51",activo:true,medida_tipo:"ad_valorem",valor:164,unidad:"%",resolucion:"Res. 978/2023 MECON",vigencia_hasta:"2028-07-13",nota:"164% sobre FOB (también 8414.59.90)."},
+  {ncm:"8509.40",activo:true,medida_tipo:"valor_criterio",valor:26.08,unidad:"USD/u",resolucion:"Res. 1303/2024 MECON",vigencia_hasta:"2026-12-04",nota:"Licuadora USD 26,08 · batidora de mano USD 21,07 · procesadora manual USD 23,60. Multiprocesadoras (8509.40.50): 202,79% (Res. 90/2022, hasta 25/02/2027)."},
+  {ncm:"9607",activo:true,medida_tipo:"valor_criterio",valor:13.5,unidad:"USD/kg",resolucion:"Res. 1280/2024 MECON",vigencia_hasta:"2027-11-29",nota:"Cierres de poliéster USD 13,5/kg · metálicos 28,7 · plásticos 12,8. Cintas: bronce/aluminio 12,5 · nylon/poliéster 7,5 · plástico 6,6."},
+  {ncm:"8712",activo:true,medida_tipo:"valor_criterio",valor:68,unidad:"USD/u",resolucion:"Res. 165/2021 MDP",vigencia_hasta:"2026-05-10",nota:"Venció el 10/05/2026 y no se encontró renovación: verificar. Rodado 24/26 sin cambios USD 68 (r.10/12 USD 32 · r.14 46 · r.16 58 · r.20 61 · r.24/26 con cambios 91)."},
+  {ncm:"8516.40",activo:true,medida_tipo:"derecho_especifico",valor:13.22,unidad:"USD/u",resolucion:"Res. 244/2015 · Res. 483/2021 MDP",vigencia_hasta:"2026-08-19",nota:"Venció el 19/08/2026 y no se encontró renovación: verificar. Plancha seca USD 13,22 · a vapor USD 15,41."},
+  {ncm:"6911",activo:true,medida_tipo:"derecho_especifico",valor:3.71,unidad:"USD/kg",resolucion:"Res. 986/2015 · Res. 549/2021 MDP",vigencia_hasta:"2026-09-15",nota:"Venció el 15/09/2026 y no se encontró renovación: verificar."},
+  {ncm:"6912",activo:true,medida_tipo:"derecho_especifico",valor:3.71,unidad:"USD/kg",resolucion:"Res. 986/2015 · Res. 549/2021 MDP",vigencia_hasta:"2026-09-15",nota:"Venció el 15/09/2026 y no se encontró renovación: verificar."},
+  {ncm:"4011",activo:false,nota:"Sin medida: la Res. 221/2011 venció hace años."},
+  {ncm:"5407",activo:false,nota:"Sin medida para China."},
+  {ncm:"6907",activo:false,resolucion:"Res. 1272/2026",nota:"Medida suspendida mientras dura la revisión (Res. 1272/2026, agosto 2026)."},
+  {ncm:"7013",activo:false,nota:"Sin medida: la Res. 608/2014 venció cerca de 2019."},
+  {ncm:"7318",activo:false,nota:"Sin medida para China."},
+  {ncm:"7615.10",activo:false,nota:"Sin medida para China."},
+  {ncm:"8215",activo:false,resolucion:"Res. 812/2026",nota:"El 48% de la Res. 386/2024 está suspendido mientras dura la revisión (Res. 812/2026)."},
+  {ncm:"8301.10",activo:false,nota:"Sin medida vigente."},
+  {ncm:"8467.29",activo:false,nota:"Sin medida para amoladoras (solo hubo una para bordeadoras/cortacésped)."},
+  {ncm:"8482",activo:false,resolucion:"Res. 784/2026",nota:"Medida eliminada por la Res. 784/2026 (27/05/2026)."},
+  {ncm:"8508.11",activo:false,resolucion:"Res. 201/2023",nota:"Investigación cerrada sin medidas."},
+  {ncm:"8516.31",activo:false,nota:"Sin medida para China."},
+  {ncm:"8516.50",activo:false,resolucion:"Res. 300/2024 SIC",nota:"La medida venció en 2022 y la nueva investigación se cerró sin medidas."},
+  {ncm:"8536.20",activo:false,nota:"Sin medida para China."},
+  {ncm:"9617",activo:false,resolucion:"Res. 835/2025 MECON",nota:"Medida eliminada (26/06/2025)."},
+];
 const TARIFAS_ORIGENES=[
   {k:"china",flag:"🇨🇳",nombre:"China",minKg:"Mínimo aéreo 10 kg",svcs:[
     {key:"aereo_a_china",nombre:"Aéreo · Courier comercial",unit:"kg"},
@@ -7072,8 +7100,19 @@ function TariffsManager({token}){
   useEffect(()=>{(async()=>{const r=await dq("antidumping_ncm",{token,filters:"?select=*&order=ncm_prefix.asc"});setAdRows(Array.isArray(r)?r:[]);})();},[token]);
   const saveAdRow=async(id,patchAd)=>{await dq("antidumping_ncm",{method:"PATCH",token,filters:`?id=eq.${id}`,body:patchAd});flash("Guardado");};
   const MEDIDAS=[{value:"",label:"—"},{value:"derecho_especifico",label:"Derecho específico"},{value:"valor_criterio",label:"Valor criterio"},{value:"ad_valorem",label:"Ad valorem"}];
-  const UNIDADES=[{value:"",label:"—"},{value:"USD/kg",label:"USD/kg"},{value:"USD/u",label:"USD/u"},{value:"USD/par",label:"USD/par"},{value:"USD/m2",label:"USD/m²"},{value:"%",label:"%"}];
+  const UNIDADES=[{value:"",label:"—"},{value:"USD/kg",label:"USD/kg"},{value:"USD/u",label:"USD/u"},{value:"USD/par",label:"USD/par"},{value:"USD/m2",label:"USD/m²"},{value:"USD/m",label:"USD/metro"},{value:"%",label:"%"}];
   const [verTodasAd,setVerTodasAd]=useState(false);
+  const [cargandoAd,setCargandoAd]=useState(false);
+  // Piso de calzado (calc_config.antidumping_calzado_usd_par): base imponible mínima por par para DIE/TE/IVA.
+  const [pisoCalzado,setPisoCalzado]=useState("");
+  useEffect(()=>{(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.antidumping_calzado_usd_par&select=*"});if(Array.isArray(r)&&r[0])setPisoCalzado(String(r[0].value));})();},[token]);
+  const savePiso=async(v)=>{const r=await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.antidumping_calzado_usd_par",body:{value:Number(v)}});if(r?.code){flash("No se pudo guardar");return;}flash("Guardado");};
+  const aplicarRelevamiento=async()=>{setCargandoAd(true);let ok=0,mal=0;
+    for(const m of AD_RELEVAMIENTO){const row=adRows.find(r=>r.ncm_prefix===m.ncm);if(!row)continue;
+      const body=m.activo?{activo:true,medida_tipo:m.medida_tipo,valor:m.valor,unidad:m.unidad,resolucion:m.resolucion,vigencia_hasta:m.vigencia_hasta,nota:m.nota}:{activo:false,medida_tipo:null,valor:null,unidad:null,resolucion:m.resolucion||null,vigencia_hasta:null,nota:m.nota};
+      const r=await dq("antidumping_ncm",{method:"PATCH",token,filters:`?id=eq.${row.id}`,body});if(r?.code)mal++;else ok++;}
+    const r=await dq("antidumping_ncm",{token,filters:"?select=*&order=ncm_prefix.asc"});if(Array.isArray(r))setAdRows(r);
+    setCargandoAd(false);flash(mal?`No se pudieron guardar ${mal}`:`${ok} posiciones actualizadas`);};
 
   const o=TARIFAS_ORIGENES.find(x=>x.k===origen)||TARIFAS_ORIGENES[0];
   return <div>
@@ -7095,14 +7134,15 @@ function TariffsManager({token}){
       ].map(f=>{const c=certConfig.find(x=>x.key===f.k);return <div key={f.k}><p style={{...cab,margin:"0 0 5px"}}>{f.l}</p><input type="number" step="0.1" value={c?.value??""} onChange={e=>setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x))} onBlur={e=>saveCertConfig(f.k,e.target.value)} style={inp}/></div>;})}</div>
     </Card>
 
-    <Card v2 title="Antidumping" sub={`${adRows.filter(r=>r.activo).length} posiciones · origen China`} actions={<Btn small variant="ghost" onClick={()=>setVerTodasAd(v=>!v)}>{verTodasAd?"Ver solo vigentes":"Ver también sin medida"}</Btn>}>
+    <Card v2 title="Antidumping" sub={`${adRows.filter(r=>r.activo).length} posiciones · origen China`} actions={<>{adRows.some(r=>r.activo&&(r.valor==null||r.valor===""))&&<Btn small variant="gold" disabled={cargandoAd} onClick={aplicarRelevamiento}>{cargandoAd?"Cargando…":"Cargar resoluciones vigentes"}</Btn>}<Btn small variant="ghost" onClick={()=>setVerTodasAd(v=>!v)}>{verTodasAd?"Ver solo vigentes":"Ver también sin medida"}</Btn></>}>
+      <div style={{maxWidth:280,marginBottom:16}}><p style={{...cab,margin:"0 0 5px"}}>Piso calzado para impuestos · USD/par</p><input type="number" step="0.01" value={pisoCalzado} onChange={e=>setPisoCalzado(e.target.value)} onBlur={e=>savePiso(e.target.value)} style={{...inp,textAlign:"right"}}/></div>
       {!celu&&<div style={{display:"grid",gridTemplateColumns:"88px minmax(0,1.4fr) 170px 90px 110px minmax(0,1fr)",gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["NCM","Producto","Medida","Valor","Unidad","Resolución"].map(h=><span key={h} style={cab}>{h}</span>)}</div>}
       {adRows.filter(r=>verTodasAd||r.activo).map(r=>{const falta=r.activo&&(r.valor==null||r.valor==="");
         const medida=<Sel value={r.medida_tipo||""} onChange={v=>{const x=v||null;setAdRows(p=>p.map(y=>y.id===r.id?{...y,medida_tipo:x}:y));saveAdRow(r.id,{medida_tipo:x});}} options={MEDIDAS}/>;
         const unidad=<Sel value={r.unidad||""} onChange={v=>{const x=v||null;setAdRows(p=>p.map(y=>y.id===r.id?{...y,unidad:x}:y));saveAdRow(r.id,{unidad:x});}} options={UNIDADES}/>;
         const valor=<input type="number" step="0.01" value={r.valor??""} placeholder="—" onChange={e=>setAdRows(p=>p.map(y=>y.id===r.id?{...y,valor:e.target.value}:y))} onBlur={e=>saveAdRow(r.id,{valor:e.target.value===""?null:Number(e.target.value)})} style={{...inp,textAlign:"right",marginBottom:12}}/>;
         const resol=<input value={r.resolucion||""} placeholder="Res. …" onChange={e=>setAdRows(p=>p.map(y=>y.id===r.id?{...y,resolucion:e.target.value}:y))} onBlur={e=>saveAdRow(r.id,{resolucion:e.target.value||null})} style={{...inp,marginBottom:12}}/>;
-        const prod=<span style={{fontSize:12.5,color:r.activo?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.4)"}}>{r.producto}{falta&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",fontWeight:800}}>SIN MONTO</span>}{!r.activo&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.5)",fontWeight:800}}>SIN MEDIDA</span>}</span>;
+        const prod=<span style={{fontSize:12.5,color:r.activo?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.4)"}}>{r.producto}{falta&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",fontWeight:800}}>SIN MONTO</span>}{!r.activo&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.5)",fontWeight:800}}>SIN MEDIDA</span>}{r.activo&&r.vigencia_hasta&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:r.vigencia_hasta<hoyAR()?"rgba(248,113,113,0.15)":"rgba(255,255,255,0.06)",color:r.vigencia_hasta<hoyAR()?"#f87171":"rgba(255,255,255,0.55)",fontWeight:800}}>{r.vigencia_hasta<hoyAR()?"VENCIDA ":"VENCE "}{r.vigencia_hasta.split("-").reverse().join("/")}</span>}{r.nota&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:3,lineHeight:1.4}}>{r.nota}</span>}</span>;
         if(celu)return <div key={r.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",opacity:r.activo?1:0.6}}>
           <p style={{margin:"0 0 8px"}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT,fontWeight:700,fontSize:12.5,marginRight:8}}>{r.ncm_prefix}</span>{prod}</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 8px"}}>{medida}{unidad}{valor}{resol}</div>
@@ -12330,7 +12370,7 @@ function FacturasPanel({token}){
       setFacturables((Array.isArray(ops)?ops:[]).filter(o=>!conFactura.has(o.id)&&Number(o.budget_total)>0));
     }catch{setFacturables([]);}
   };
-  useEffect(()=>{if(modal)loadFacturables();},[modal]);
+  useEffect(()=>{if(!lo)loadFacturables();},[lo,rows.length]);
   const COND={1:"IVA Responsable Inscripto",4:"IVA Sujeto Exento",5:"Consumidor Final",6:"Responsable Monotributo",7:"Sujeto No Categorizado",13:"Monotributista Social"};
   const load=async()=>{setLo(true);try{const r=await fetch("/api/facturas",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json());setRows(r.facturas||[]);setConfigured(r.configured!==false);}catch{}setLo(false);};
   useEffect(()=>{load();},[token]);
@@ -12424,111 +12464,121 @@ function FacturasPanel({token}){
       }
     }catch(e){setErr("Error: "+e.message);setEmitiendo(false);}
   };
-  const inp={width:"100%",padding:"9px 11px",fontSize:13.5,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"};
-  const lb={display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"10px 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"};
+  // Diseño (04/10/2026): arriba lo facturado del mes y las operaciones que faltan facturar (se
+  // tocan y abren la factura precargada); abajo las facturas como tarjetas. El alta es por pasos,
+  // sin desplegables ni checkboxes nativos.
+  const celu=useEsCelu();
+  const inp={width:"100%",height:42,padding:"0 12px",fontSize:13.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"};
+  const lb={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",margin:"12px 0 5px",textTransform:"uppercase",letterSpacing:"0.06em"};
   const arsF=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const nroF=f=>f.numero?`${String(f.punto_venta).padStart(5,"0")}-${String(f.numero).padStart(8,"0")}`:"—";
+  const mesAct=hoyAR().slice(0,7);
+  const delMes=rows.filter(f=>f.status==="emitida"&&String(f.fecha||"").slice(0,7)===mesAct);
+  const totMes=delMes.reduce((a,f)=>a+Number(f.importe||0),0);
+  const abrirOp=code=>{setModal(true);setErr("");setOpCode(code);setTimeout(()=>traerOp(code),30);};
+  const mandarWa=async(f)=>{if(!await confirmDialog(`¿Mandar la factura ${nroF(f)} por WhatsApp al cliente?`))return;try{const x=await fetch("/api/admin/bot",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"factura",invoice_id:f.id})});const j=await x.json().catch(()=>({}));if(!x.ok)throw new Error(j?.error||`HTTP ${x.status}`);toast("Factura enviada por WhatsApp","success");load();}catch(e){toast("No se pudo enviar: "+e.message,"error");}};
+  const kpi=(l,v,c)=><div style={{padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)"}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px"}}>{l}</p><p style={{fontSize:celu?17:20,fontWeight:800,color:c||"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{v}</p></div>;
+  const chipEstado=f=><span title={f.error_detalle||""} style={{justifySelf:"start",fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:f.status==="emitida"?"rgba(34,197,94,0.12)":f.status==="error"?"rgba(248,113,113,0.12)":"rgba(255,255,255,0.06)",color:f.status==="emitida"?"#4ade80":f.status==="error"?"#f87171":"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>{f.status==="emitida"?"Emitida":f.status==="error"?"Error":f.status}</span>;
+  const iconBtn=(t,on,txt)=><button title={t} onClick={on} style={{height:34,minWidth:34,padding:"0 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+  const seg=(opts,val,on)=><div style={{display:"flex",gap:3,padding:3,borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)"}}>{opts.map(([v,l])=><button key={v} type="button" onClick={()=>on(v)} style={{flex:1,height:34,fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:val===v?"rgba(184,149,106,0.24)":"transparent",color:val===v?GOLD_LIGHT:"rgba(255,255,255,0.6)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}</div>;
+  const paso=(n,t)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"20px 0 4px"}}><span style={{width:24,height:24,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:"rgba(184,149,106,0.2)",color:GOLD_LIGHT}}>{n}</span><p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>{t}</p></div>;
+
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-      <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>ARCA · Factura C</span>
-      <Btn onClick={()=>{setModal(true);setErr("");}}>🧾 Nueva factura</Btn>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(3,minmax(0,1fr)) auto",gap:10,marginBottom:16,alignItems:"stretch"}}>
+      <div style={{gridColumn:celu?"1 / -1":"auto"}}>{kpi("Facturado este mes",`$ ${arsF(totMes)}`)}</div>
+      {kpi("Facturas del mes",String(delMes.length))}
+      {kpi("Por facturar",String(facturables.length),facturables.length?"#fbbf24":"rgba(255,255,255,0.45)")}
+      <div style={{display:"flex",alignItems:"center",gridColumn:celu?"1 / -1":"auto"}}><Btn variant="gold" fullWidth={celu} onClick={()=>{setModal(true);setErr("");}}>+ Nueva factura</Btn></div>
     </div>
-    {!configured&&<div style={{padding:"12px 16px",marginBottom:14,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.35)",borderRadius:10,fontSize:12.5,color:"#fbbf24",lineHeight:1.6}}>
-      ⚠ ARCA sin conectar todavía: faltan cargar el certificado y el CUIT en Vercel (ARCA_CUIT, ARCA_CERT, ARCA_KEY).
-    </div>}
-    {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>
-    :rows.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"3rem 0",fontSize:13}}>Todavía no hay facturas emitidas.</p>
-    :<div style={{display:"flex",flexDirection:"column",gap:8}}>
-      {rows.map(f=><div key={f.id} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 14px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:11,flexWrap:"wrap"}}>
-        <div style={{flex:"1 1 220px",minWidth:0}}>
-          <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{f.receptor_nombre||"Consumidor Final"} {f.environment!=="produccion"&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:5,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",marginLeft:6}}>PRUEBA</span>}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
-            <span style={{fontFamily:"monospace",color:"#E8C99B"}}>{f.numero?`${String(f.punto_venta).padStart(5,"0")}-${String(f.numero).padStart(8,"0")}`:"—"}</span>
-            {" · "}{new Date(f.fecha+"T12:00:00Z").toLocaleDateString("es-AR",{timeZone:"UTC"})}
-            {f.operations?.operation_code&&<> · {f.operations.operation_code}</>}
-          </p>
-        </div>
-        <span style={{fontSize:13.5,fontWeight:800,color:"#fff",fontFeatureSettings:'"tnum"'}}>$ {arsF(f.importe)}</span>
-        <span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:f.status==="emitida"?"rgba(34,197,94,0.12)":f.status==="error"?"rgba(248,113,113,0.12)":"rgba(255,255,255,0.06)",color:f.status==="emitida"?"#4ade80":f.status==="error"?"#f87171":"rgba(255,255,255,0.5)",border:"1px solid rgba(255,255,255,0.1)"}} title={f.error_detalle||""}>{f.status.toUpperCase()}</span>
-        {f.status==="emitida"&&<Btn small variant="secondary" onClick={()=>window.open(`/factura/${f.public_token}`,"_blank")}>Ver</Btn>}
-        {f.status==="emitida"&&<Btn small variant="secondary" onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/factura/${f.public_token}`);toast("Link copiado","success");}}>📋</Btn>}
-        {f.status==="emitida"&&(f.wa_sent_at
-          ?<span title={`Enviada por WhatsApp el ${new Date(f.wa_sent_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`} style={{fontSize:10.5,fontWeight:800,color:"#4ade80",whiteSpace:"nowrap"}}>✓ WA</span>
-          :<Btn small onClick={async()=>{if(!await confirmDialog(`¿Mandar la factura ${String(f.punto_venta).padStart(5,"0")}-${String(f.numero).padStart(8,"0")} por WhatsApp al cliente con el bot?`))return;try{const x=await fetch("/api/admin/bot",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"factura",invoice_id:f.id})});const j=await x.json().catch(()=>({}));if(!x.ok)throw new Error(j?.error||`HTTP ${x.status}`);toast("Factura enviada por WhatsApp","success");load();}catch(e){toast("No se pudo enviar: "+e.message,"error");}}}>📲 WhatsApp</Btn>)}
-      </div>)}
+    {!configured&&<div style={{padding:"12px 16px",marginBottom:14,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.35)",borderRadius:12,fontSize:12.5,color:"#fbbf24"}}>ARCA sin conectar: faltan ARCA_CUIT, ARCA_CERT y ARCA_KEY en Vercel.</div>}
+
+    {facturables.length>0&&<div style={{marginBottom:18}}>
+      <p style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.6)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Por facturar</p>
+      <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,scrollbarWidth:"thin"}}>
+        {facturables.slice(0,30).map(o=>{const c=o.clients||{};return <button key={o.id} onClick={()=>abrirOp(o.operation_code)} style={{flex:"0 0 auto",minWidth:190,textAlign:"left",padding:"11px 13px",borderRadius:12,border:"1px solid rgba(251,191,36,0.25)",background:"rgba(251,191,36,0.06)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>
+          <span style={{display:"block",fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
+          <span style={{display:"block",fontSize:13,fontWeight:700,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:200}}>{`${c.first_name||""} ${c.last_name||""}`.trim()||"—"}</span>
+          <span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.55)",marginTop:2,fontVariantNumeric:"tabular-nums"}}>USD {Number(o.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        </button>;})}
+      </div>
     </div>}
 
-    {modal&&<div onClick={cerrar} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 16px",overflowY:"auto"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:14,padding:"20px 22px",margin:"auto"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>🧾 Nueva Factura C</h3>
-          <button onClick={cerrar} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
-        </div>
-        {!opInfo&&facturables.length>0&&<div style={{marginBottom:12}}>
-          <label style={lb}>Listas para facturar · {facturables.length}</label>
-          <div style={{maxHeight:210,overflowY:"auto",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,background:"rgba(255,255,255,0.02)"}}>
-            {facturables.map(o=>{const c=o.clients||{};const nom=`${c.first_name||""} ${c.last_name||""}`.trim();return <button key={o.id} onClick={()=>{setOpCode(o.operation_code);traerOp(o.operation_code);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 11px",background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer",textAlign:"left",color:"#fff"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <span style={{fontFamily:"monospace",fontSize:11.5,color:"#E8C99B",fontWeight:700,flexShrink:0}}>{o.operation_code}</span>
-              <span style={{flex:1,fontSize:12.5,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nom||"—"} <span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{c.client_code||""}</span></span>
-              <span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",flexShrink:0}}>{o.delivery_completed_at?"entregada":"lista"}</span>
-              <span style={{fontSize:12,fontWeight:800,flexShrink:0,fontFeatureSettings:'"tnum"'}}>USD {Number(o.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-            </button>;})}
+    {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>
+    :rows.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"3rem 0",fontSize:13}}>Todavía no hay facturas.</p>
+    :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {rows.map(f=>{const acciones=f.status==="emitida"&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:celu?"flex-start":"flex-end"}}>
+          {iconBtn("Ver factura",()=>window.open(`/factura/${f.public_token}`,"_blank"),"Ver")}
+          {iconBtn("Copiar link",()=>{navigator.clipboard.writeText(`${window.location.origin}/factura/${f.public_token}`);toast("Link copiado","success");},"Copiar link")}
+          {f.wa_sent_at?<span title={`Enviada el ${new Date(f.wa_sent_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`} style={{height:34,display:"inline-flex",alignItems:"center",padding:"0 10px",fontSize:12,fontWeight:800,color:"#4ade80"}}>✓ Enviada</span>:iconBtn("Mandar por WhatsApp",()=>mandarWa(f),"WhatsApp")}
+        </div>;
+        return <div key={f.id} style={{display:"grid",gridTemplateColumns:celu?"1fr auto":"minmax(0,1fr) 150px 90px auto",gap:celu?"8px 12px":16,alignItems:"center",padding:celu?"13px 14px":"13px 18px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14}}>
+          <div style={{minWidth:0}}>
+            <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.receptor_nombre||"Consumidor Final"}{f.environment!=="produccion"&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:5,background:"rgba(251,191,36,0.15)",color:"#fbbf24",marginLeft:8}}>PRUEBA</span>}</p>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT}}>{nroF(f)}</span> · {new Date(f.fecha+"T12:00:00Z").toLocaleDateString("es-AR",{timeZone:"UTC"})}{f.operations?.operation_code&&<> · {f.operations.operation_code}</>}</p>
           </div>
-          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"5px 0 0"}}>Tocá una para cargar sus datos. O escribí el código abajo.</p>
-        </div>}
-        <label style={lb}>Operación</label>
+          <span style={{fontSize:15,fontWeight:800,color:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>$ {arsF(f.importe)}</span>
+          {celu?<div style={{gridColumn:"1 / -1",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>{chipEstado(f)}{acciones}</div>:<>{chipEstado(f)}{acciones||<span/>}</>}
+        </div>;})}
+    </div>}
+
+    {modal&&<div onClick={cerrar} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:celu?"stretch":"flex-start",justifyContent:"center",padding:celu?0:"34px 16px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:celu?"none":580,minHeight:celu?"100%":undefined,boxSizing:"border-box",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:18,padding:celu?"18px 16px 24px":"22px 24px",margin:celu?0:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <h3 style={{fontSize:18,fontWeight:800,color:"#fff",margin:0}}>Nueva factura C</h3>
+          <button onClick={cerrar} aria-label="Cerrar" style={{width:36,height:36,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:18,cursor:"pointer"}}>×</button>
+        </div>
+
+        {paso(1,"Operación")}
         <div style={{display:"flex",gap:8}}>
-          <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
-          <Btn small variant="secondary" onClick={()=>traerOp()}>Traer datos</Btn>
+          <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"'JetBrains Mono',monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
+          <Btn variant="secondary" onClick={()=>traerOp()}>Traer</Btn>
         </div>
-        {opInfo&&<p style={{fontSize:11.5,color:"#4ade80",margin:"6px 0 0"}}>✓ {opInfo.code} · {opInfo.cliente}{buscandoPadron?" · consultando padrón…":""}</p>}
-        <div style={{display:"grid",gridTemplateColumns:"130px 1fr auto",gap:8,alignItems:"end"}}>
-          <div><label style={lb}>Documento</label>
-            <select value={docTipo} onChange={e=>{const v=Number(e.target.value);setDocTipo(v);if(v===99)setDocNro("");}} style={inp}>
-              <option value={96}>DNI</option><option value={80}>CUIT</option><option value={99}>Cons. Final s/doc</option>
-            </select></div>
-          <div><label style={lb}>Número</label><input value={docNro} onChange={e=>setDocNro(e.target.value.replace(/[^0-9]/g,""))} disabled={docTipo===99} placeholder={docTipo===80?"30123456789":"12345678"} style={{...inp,fontFamily:"monospace"}}/></div>
-          {docTipo===80&&<Btn small variant="secondary" onClick={()=>buscarPadron()} disabled={buscandoPadron}>{buscandoPadron?"…":"🔍 Padrón"}</Btn>}
-        </div>
-        <label style={lb}>Nombre / Razón social</label>
+        {opInfo?<p style={{fontSize:12.5,color:"#4ade80",margin:"8px 0 0",fontWeight:600}}>✓ {opInfo.code} · {opInfo.cliente}{buscandoPadron?" · consultando padrón…":""}</p>
+          :facturables.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{facturables.slice(0,8).map(o=><button key={o.id} onClick={()=>{setOpCode(o.operation_code);traerOp(o.operation_code);}} style={{height:30,padding:"0 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{o.operation_code}</button>)}</div>}
+
+        {paso(2,"Receptor")}
+        <label style={lb}>Documento</label>
+        {seg([[96,"DNI"],[80,"CUIT"],[99,"Sin documento"]],docTipo,v=>{setDocTipo(v);if(v===99)setDocNro("");})}
+        {docTipo!==99&&<div style={{display:"flex",gap:8,marginTop:8}}>
+          <input value={docNro} onChange={e=>setDocNro(e.target.value.replace(/[^0-9]/g,""))} placeholder={docTipo===80?"30123456789":"12345678"} inputMode="numeric" style={{...inp,flex:1,fontFamily:"'JetBrains Mono',monospace"}}/>
+          {docTipo===80&&<Btn variant="secondary" onClick={()=>buscarPadron()} disabled={buscandoPadron}>{buscandoPadron?"…":"Padrón"}</Btn>}
+        </div>}
+        <label style={lb}>Nombre o razón social</label>
         <input value={nombre} onChange={e=>setNombre(e.target.value)} style={inp}/>
         <label style={lb}>Domicilio</label>
         <input value={domicilio} onChange={e=>setDomicilio(e.target.value)} style={inp}/>
-        <label style={lb}>Condición IVA del receptor</label>
-        <select value={condIva} onChange={e=>setCondIva(Number(e.target.value))} style={inp}>
-          {Object.entries(COND).map(([k,v])=><option key={k} value={k}>{v}</option>)}
-        </select>
+        <div style={{marginTop:12}}><Sel label="Condición frente al IVA" value={String(condIva)} onChange={v=>setCondIva(Number(v))} options={Object.entries(COND).map(([k,v])=>({value:k,label:v}))}/></div>
 
+        {paso(3,"Importe")}
         {opInfo&&lineas.length>0?<>
           <label style={lb}>Tipo de cambio (ARS por USD)</label>
-          <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={{...inp,maxWidth:160,fontWeight:700}}/>
-          <label style={lb}>Conceptos a facturar</label>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {lineas.map((l,i)=><div key={l.key} style={{display:"grid",gridTemplateColumns:"22px 1fr 110px 120px",gap:8,alignItems:"center",padding:"8px 10px",background:l.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${l.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:9}}>
-              <input type="checkbox" checked={l.on} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,on:e.target.checked}:x))} style={{accentColor:"#B8956A"}}/>
-              <input value={l.label} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,label:e.target.value}:x))} disabled={!l.on} placeholder="Concepto" title="Podés editar el nombre del concepto" style={{...inp,padding:"7px 8px",fontSize:12.5,fontWeight:600,background:"transparent",border:"1px solid transparent",color:l.on?"#fff":"rgba(255,255,255,0.4)"}} onFocus={e=>{e.target.style.border="1px solid rgba(184,149,106,0.5)";e.target.style.background="rgba(255,255,255,0.05)";}} onBlur={e=>{e.target.style.border="1px solid transparent";e.target.style.background="transparent";}}/>
-              <div style={{position:"relative"}}>
-                <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>USD</span>
-                <input value={l.usd} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,usd:e.target.value.replace(/[^0-9.,]/g,"").replace(",",".")}:x))} inputMode="decimal" disabled={!l.on} style={{...inp,padding:"7px 8px 7px 38px",fontSize:12.5,textAlign:"right"}}/>
+          <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={{...inp,maxWidth:180,fontWeight:700}}/>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:12}}>
+            {lineas.map((l,i)=><div key={l.key} style={{display:"grid",gridTemplateColumns:celu?"34px 1fr":"34px 1fr 120px 130px",gap:8,alignItems:"center",padding:"8px 10px",background:l.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${l.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:11}}>
+              <button type="button" onClick={()=>setLineas(p=>p.map((x,j)=>j===i?{...x,on:!x.on}:x))} aria-label={l.on?"Quitar":"Incluir"} style={{width:26,height:26,borderRadius:8,border:`1.5px solid ${l.on?GOLD:"rgba(255,255,255,0.25)"}`,background:l.on?GOLD:"transparent",color:"#0A1628",fontWeight:900,fontSize:14,cursor:"pointer",lineHeight:1}}>{l.on?"✓":""}</button>
+              <input value={l.label} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,label:e.target.value}:x))} disabled={!l.on} style={{...inp,height:36,fontSize:13,fontWeight:600,background:"transparent",border:"1px solid transparent",color:l.on?"#fff":"rgba(255,255,255,0.4)"}}/>
+              <div style={{position:"relative",gridColumn:celu?"2":"auto"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>USD</span>
+                <input value={l.usd} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,usd:e.target.value.replace(/[^0-9.,]/g,"").replace(",",".")}:x))} inputMode="decimal" disabled={!l.on} style={{...inp,height:36,paddingLeft:42,fontSize:13,textAlign:"right"}}/>
               </div>
-              <span style={{fontSize:12.5,fontWeight:800,textAlign:"right",color:l.on?"#E8C99B":"rgba(255,255,255,0.3)",fontFeatureSettings:'"tnum"'}}>$ {arsF(Number(l.usd||0)*nTc)}</span>
+              <span style={{gridColumn:celu?"2":"auto",fontSize:13,fontWeight:800,textAlign:"right",color:l.on?GOLD_LIGHT:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>$ {arsF(Number(l.usd||0)*nTc)}</span>
             </div>)}
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,padding:"12px 14px",background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:10}}>
-            <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",color:"#E8C99B"}}>TOTAL A FACTURAR</span>
-            <span style={{fontSize:18,fontWeight:900,color:"#fff",fontFeatureSettings:'"tnum"'}}>$ {arsF(totalArs)}</span>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,padding:"14px 16px",background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:12}}>
+            <span style={{fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>Total</span>
+            <span style={{fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>$ {arsF(totalArs)}</span>
           </div>
         </>:<>
-          <label style={lb}>Importe (ARS)</label>
+          <label style={lb}>Importe en pesos</label>
           <input value={importe} onChange={e=>setImporte(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" placeholder="1500000" style={{...inp,fontSize:16,fontWeight:700}}/>
           <label style={lb}>Detalle</label>
           <input value={detalle} onChange={e=>setDetalle(e.target.value)} style={inp}/>
         </>}
-        {err&&<p style={{fontSize:12,color:"#f87171",margin:"10px 0 0",lineHeight:1.5}}>{err}</p>}
-        <div style={{display:"flex",gap:8,marginTop:16}}>
-          <Btn onClick={emitir} disabled={emitiendo}>{emitiendo?"Emitiendo en ARCA…":"🧾 Emitir factura"}</Btn>
-          <Btn variant="secondary" onClick={cerrar}>Cancelar</Btn>
+        {err&&<p style={{fontSize:12.5,color:"#f87171",margin:"10px 0 0",lineHeight:1.5}}>{err}</p>}
+        <div style={{display:"flex",gap:8,marginTop:18}}>
+          <Btn variant="secondary" onClick={cerrar} fullWidth={celu}>Cancelar</Btn>
+          <Btn variant="gold" onClick={emitir} disabled={emitiendo} fullWidth={celu}>{emitiendo?"Emitiendo en ARCA…":"Emitir factura"}</Btn>
         </div>
-        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"10px 0 0",lineHeight:1.5}}>La factura se emite en ARCA al instante (CAE real) y se abre con el diseño de Argencargo para imprimir o mandar al cliente.</p>
       </div>
     </div>}
   </div>;
