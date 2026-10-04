@@ -98,7 +98,7 @@ html,body{overflow-x:clip!important}
 .acl footer .abajo{max-width:1180px;margin:44px auto 0;padding:22px 24px 0;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:rgba(255,255,255,0.45)}
 @media(max-width:900px){.acl .links{display:none}.acl .pieGrid{grid-template-columns:1fr 1fr;gap:36px 24px}.acl .pieGrid>div:first-child{grid-column:1/-1}.acl .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.acl .nav{padding:0 12px}.acl .isla{height:62px;padding:0 10px 0 16px;gap:10px}.acl .isla .der{margin-left:auto}}
 @media(max-width:900px){
-.acl .linksCel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;max-width:620px;margin:10px auto 0;padding:0 12px}
+.acl .linksCel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-width:620px;margin:10px auto 0;padding:0 12px}
 .acl .linksCel a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:11px 2px 10px;border-radius:16px;background:var(--suave);border:1px solid var(--borde);color:var(--ink);font-size:12px;font-weight:800;text-align:center;line-height:1.15}
 .acl .linksCel a:active{transform:scale(0.97)}
 }
@@ -171,7 +171,6 @@ export default function MarcoLanding({ children }) {
           <nav className="links">
             <a href="/servicios"><Ico d={ICOS.servicios} />{t("servicios")}</a>
             <a href="/blog"><Ico d={ICOS.aprender} />{t("aprender")}</a>
-            <a href="/#quienes-somos" onClick={ir("quienes-somos")}><Ico d={ICOS.quienes} />{t("quienes")}</a>
             <a href="/blog"><Ico d={ICOS.blog} />{t("blog")}</a>
           </nav>
           <div className="der">
@@ -193,7 +192,6 @@ export default function MarcoLanding({ children }) {
       <nav className="linksCel">
         <a href="/servicios"><Ico d={ICOS.servicios} />{t("servicios")}</a>
         <a href="/blog"><Ico d={ICOS.aprender} />{t("aprender")}</a>
-        <a href="/#quienes-somos" onClick={ir("quienes-somos")}><Ico d={ICOS.quienes} />{t("quienes")}</a>
         <a href="/blog"><Ico d={ICOS.blog} />{t("blog")}</a>
       </nav>
 
@@ -226,7 +224,6 @@ export default function MarcoLanding({ children }) {
             <h4>{t("navegacion")}</h4>
             <a href="/servicios">{t("servicios")}</a>
             <a href="/blog">{t("aprender")}</a>
-            <a href="/#quienes-somos" onClick={ir("quienes-somos")}>{t("quienes")}</a>
             <a href="/blog">{t("blog")}</a>
             <a href="/portal">{t("calculadora")}</a>
           </div>
