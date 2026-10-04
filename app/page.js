@@ -53,7 +53,7 @@ export default function Landing(){
     }
   },[]);
 
-  return <div style={{fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",color:"#fff",background:BG}}><MarcoLanding>
+  return <div style={{fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}><MarcoLanding>
 
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_ORGANIZATION)}}/>
     <script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(LD_WEBSITE)}}/>
@@ -67,7 +67,7 @@ export default function Landing(){
 
     {/* RESEÑAS DE GOOGLE (04/10/2026): cinta que se mueve sola, justo debajo del título. */}
     <section className="resAC" aria-label="Opiniones en Google">
-      <a className="resCab" href="https://www.google.com/search?q=ARGENCARGO+Av.+Callao+1137+opiniones" target="_blank" rel="noopener noreferrer">
+      <a className="resCab" href="https://www.google.com/search?q=ARGENCARGO+Virrey+Loreto+2428+opiniones" target="_blank" rel="noopener noreferrer">
         {GOOGLE_G}<b>4,8</b><span className="est">★★★★★</span><span className="cnt">53 opiniones en Google</span>
       </a>
       <div className="resCinta"><div className="resPista">
@@ -80,6 +80,8 @@ export default function Landing(){
     </section>
 
 
+    {/* Lo de abajo es la landing vieja: siempre oscura hasta rehacerla. */}
+    <div style={{background:BG,color:"#fff"}}>
     {/* DOLOR → SOLUCIÓN */}
     <section style={{padding:"80px 24px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
       <div style={{maxWidth:900,margin:"0 auto",textAlign:"center"}}>
@@ -201,11 +203,13 @@ export default function Landing(){
       </div>
     </section>
 
+    </div>
+
     {/* WA FLOTANTE */}
     <a href={waL("Hola! Quiero info sobre importaciones")} target="_blank" rel="noopener" aria-label="Escribinos por WhatsApp" title="Escribinos por WhatsApp" style={{position:"fixed",bottom:24,right:24,width:60,height:60,borderRadius:"50%",background:"#25D366",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 20px rgba(37,211,102,0.4)",zIndex:99}}>
       <svg width="30" height="30" viewBox="0 0 24 24" fill="#0a1223" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
     </a>
 
-    <style>{`.resAC{padding:8px 0 64px}.resCab{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto 26px;width:max-content;max-width:calc(100% - 32px);padding:10px 18px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;text-decoration:none;font-weight:700;font-size:15px}.resCab b{font-size:20px}.resCab .est,.resCard .est{color:#FBBC04;letter-spacing:2px}.resCab .cnt{color:rgba(255,255,255,0.6);font-weight:600}.resCinta{overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}.resPista{display:flex;gap:16px;width:max-content;animation:resDesfile 70s linear infinite;padding:4px 0}.resCinta:hover .resPista{animation-play-state:paused}@keyframes resDesfile{to{transform:translateX(calc(-50% - 8px))}}.resCard{margin:0;width:340px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;padding:22px;border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}.resCard blockquote{margin:0;flex:1;font-size:15px;line-height:1.55;color:rgba(255,255,255,0.86)}.resCard figcaption{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:#fff;text-transform:capitalize}.resCard .ini{width:32px;height:32px;border-radius:50%;background:#3B7DD8;display:inline-flex;align-items:center;justify-content:center;font-size:14px}@media(max-width:640px){.resCard{width:280px;padding:18px}.resCard blockquote{font-size:14px}.resCab{font-size:13.5px;gap:8px;padding:9px 14px}.resCab b{font-size:17px}.resPista{animation-duration:55s}}@media (prefers-reduced-motion: reduce){.resPista{animation:none}.resCinta{overflow-x:auto}}.heroAC{max-width:1100px;margin:0 auto;padding:56px 24px 48px;text-align:center}.heroAC h1{font-size:clamp(40px,5.6vw,72px);line-height:1.04;font-weight:800;letter-spacing:-0.03em;margin:0 auto 28px;max-width:900px}.heroAC h1 span{color:#74ACDF}.heroMapa{max-width:980px;margin:0 auto}@media(max-width:900px){.heroAC{padding:26px 16px 30px}.acl .heroAC h1{font-size:44px!important;line-height:1.02!important;margin-bottom:10px}.heroMapa{margin:0 -8px}}@media(max-width:768px){.hero-grid{grid-template-columns:1fr!important;gap:32px!important;}.hero-dash{display:none!important;}}html{scroll-behavior:smooth;}*{box-sizing:border-box;}`}</style>
+    <style>{`.resAC{padding:8px 0 64px}.resCab{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto 26px;width:max-content;max-width:calc(100% - 32px);padding:10px 18px;border-radius:999px;background:var(--sup);border:1px solid var(--supB);color:var(--ink);text-decoration:none;font-weight:700;font-size:15px}.resCab b{font-size:20px}.resCab .est,.resCard .est{color:#FBBC04;letter-spacing:2px}.resCab .cnt{color:var(--txt2);font-weight:600}.resCinta{overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}.resPista{display:flex;gap:16px;width:max-content;animation:resDesfile 70s linear infinite;padding:4px 0}.resCinta:hover .resPista{animation-play-state:paused}@keyframes resDesfile{to{transform:translateX(calc(-50% - 8px))}}.resCard{margin:0;width:340px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;padding:22px;border-radius:18px;background:var(--sup);border:1px solid var(--supB)}.resCard blockquote{margin:0;flex:1;font-size:15px;line-height:1.55;color:var(--txt)}.resCard figcaption{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:var(--ink);text-transform:capitalize}.resCard .ini{width:32px;height:32px;border-radius:50%;background:#3B7DD8;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px}@media(max-width:640px){.resCard{width:280px;padding:18px}.resCard blockquote{font-size:14px}.resCab{font-size:13.5px;gap:8px;padding:9px 14px}.resCab b{font-size:17px}.resPista{animation-duration:55s}}@media (prefers-reduced-motion: reduce){.resPista{animation:none}.resCinta{overflow-x:auto}}.heroAC{max-width:1100px;margin:0 auto;padding:56px 24px 48px;text-align:center;color:var(--ink)}.heroAC h1{font-size:clamp(40px,5.6vw,72px);line-height:1.04;font-weight:800;letter-spacing:-0.03em;margin:0 auto 28px;max-width:900px}.heroAC h1 span{color:var(--cel)}.heroMapa{max-width:980px;margin:0 auto}@media(max-width:900px){.heroAC{padding:26px 16px 30px}.acl .heroAC h1{font-size:44px!important;line-height:1.02!important;margin-bottom:10px}.heroMapa{margin:0 -8px}}@media(max-width:768px){.hero-grid{grid-template-columns:1fr!important;gap:32px!important;}.hero-dash{display:none!important;}}html{scroll-behavior:smooth;}*{box-sizing:border-box;}`}</style>
   </MarcoLanding></div>;
 }

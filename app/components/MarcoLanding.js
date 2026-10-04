@@ -54,8 +54,8 @@ const ICOS = {
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
-.acl{--card:#FFFFFF;--ink:#0F1B2D;--gris:#5A6578;--borde:#E3E7EE;--suave:#F3F6FA;--ac:#3B7DD8;--acsuave:#E6EFFB;font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif}
-.acl[data-tema="oscuro"]{--card:#101B30;--ink:#F2F5FA;--gris:#9AA6B8;--borde:#22314A;--suave:#16233B;--acsuave:rgba(59,125,216,0.2)}
+.acl{--card:#FFFFFF;--ink:#0F1B2D;--gris:#5A6578;--borde:#E3E7EE;--suave:#F3F6FA;--ac:#3B7DD8;--acsuave:#E6EFFB;--bg:#F4F6FA;--cel:#3A86D6;--sup:#FFFFFF;--supB:#E2E7EF;--txt:#26334A;--txt2:#5A6578;--mrDot:rgba(15,27,45,0.2);--mrViaj:#0F1B2D;font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+.acl[data-tema="oscuro"]{--card:#101B30;--ink:#F2F5FA;--gris:#9AA6B8;--borde:#22314A;--suave:#16233B;--acsuave:rgba(59,125,216,0.2);--bg:#0A1223;--cel:#74ACDF;--sup:rgba(255,255,255,0.04);--supB:rgba(255,255,255,0.09);--txt:rgba(255,255,255,0.86);--txt2:rgba(255,255,255,0.6);--mrDot:rgba(255,255,255,0.24);--mrViaj:#FFFFFF}
 html,body{overflow-x:clip!important}
 .acl *{box-sizing:border-box}.acl a{text-decoration:none;color:inherit}.acl button{font-family:inherit}
 .acl .grupoWrap{display:flex;justify-content:center;padding:12px 16px 0}
