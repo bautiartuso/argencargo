@@ -22,17 +22,17 @@ const REDES = [
 ];
 
 const IDIOMAS = [
-  { k: "es", flag: "es", nombre: "Español" },
+  { k: "es", flag: "ar", nombre: "Español" },
   { k: "en", flag: "gb", nombre: "English" },
   { k: "zh", flag: "cn", nombre: "中文" },
   { k: "ru", flag: "ru", nombre: "Русский" },
 ];
 
 const T = {
-  es: { servicios: "Servicios", aprender: "Aprender", quienes: "Quiénes somos", calculadora: "Calculadora", cuenta: "Mi cuenta", claim: "Tu importación, resuelta.", sub: "Importaciones desde China y Estados Unidos: courier, carga aérea y marítimo, con aduana y entrega en todo el país.", contacto: "Contacto", oficina: "Oficina Argentina", horario: "Lun a Vie · 10:00 a 18:00 hs", origen: "Warehouse China", origenTxt: "Operativo 24 hs · los 365 días", navegacion: "Navegación", blog: "Blog", portalCli: "Portal de clientes", portalAg: "Portal de agentes", legal: "Legal", terminos: "Términos y condiciones", privacidad: "Política de privacidad", aviso: "Aviso legal", derechos: "Todos los derechos reservados", lugar: "Buenos Aires · Argentina", grupo: "Grupo Argencargo" },
-  en: { servicios: "Services", aprender: "Learn", quienes: "About us", calculadora: "Calculator", cuenta: "My account", claim: "Your import, sorted.", sub: "Imports from China and the United States: courier, air and sea freight, with customs clearance and delivery nationwide.", contacto: "Contact", oficina: "Argentina office", horario: "Mon to Fri · 10 am to 6 pm", origen: "China warehouse", origenTxt: "Open 24/7 · 365 days a year", navegacion: "Navigation", blog: "Blog", portalCli: "Client portal", portalAg: "Agent portal", legal: "Legal", terminos: "Terms and conditions", privacidad: "Privacy policy", aviso: "Legal notice", derechos: "All rights reserved", lugar: "Buenos Aires · Argentina", grupo: "Argencargo Group" },
-  zh: { servicios: "服务", aprender: "学习", quienes: "关于我们", calculadora: "计算器", cuenta: "我的账户", claim: "您的进口，一站解决。", sub: "从中国和美国进口：快递、空运和海运，含清关及全国配送。", contacto: "联系方式", oficina: "阿根廷办公室", horario: "周一至周五 · 10:00–18:00", origen: "中国仓库", origenTxt: "全年365天 · 24小时运营", navegacion: "导航", blog: "博客", portalCli: "客户门户", portalAg: "代理门户", legal: "法律信息", terminos: "条款与条件", privacidad: "隐私政策", aviso: "法律声明", derechos: "版权所有", lugar: "阿根廷 · 布宜诺斯艾利斯", grupo: "Argencargo 集团" },
-  ru: { servicios: "Услуги", aprender: "Обучение", quienes: "О нас", calculadora: "Калькулятор", cuenta: "Кабинет", claim: "Ваш импорт — под ключ.", sub: "Импорт из Китая и США: курьер, авиа- и морские перевозки, таможня и доставка по всей стране.", contacto: "Контакты", oficina: "Офис в Аргентине", horario: "Пн–Пт · 10:00–18:00", origen: "Склад в Китае", origenTxt: "Работает 24/7 · 365 дней в году", navegacion: "Навигация", blog: "Блог", portalCli: "Кабинет клиента", portalAg: "Кабинет агента", legal: "Правовая информация", terminos: "Условия", privacidad: "Конфиденциальность", aviso: "Правовое уведомление", derechos: "Все права защищены", lugar: "Буэнос-Айрес · Аргентина", grupo: "Группа Argencargo" },
+  es: { servicios: "Servicios", aprender: "Aprender", quienes: "Quiénes somos", calculadora: "Calculadora", cuenta: "Mi cuenta", claim: "Tu importación, resuelta.", sub: "Importaciones desde China y Estados Unidos: courier, carga aérea y marítimo, con aduana y entrega en todo el país.", contacto: "Contacto", oficina: "Oficina Argentina", horario: "Lun a Vie · 10:00 a 18:00 hs", origen: "Warehouse China", origenTxt: "Operativo 24 hs · los 365 días", atencion: "Atención", navegacion: "Navegación", blog: "Blog", portalCli: "Portal de clientes", portalAg: "Portal de agentes", legal: "Legal", terminos: "Términos y condiciones", privacidad: "Política de privacidad", aviso: "Aviso legal", derechos: "Todos los derechos reservados", lugar: "Buenos Aires · Argentina", grupo: "Grupo Argencargo" },
+  en: { servicios: "Services", aprender: "Learn", quienes: "About us", calculadora: "Calculator", cuenta: "My account", claim: "Your import, sorted.", sub: "Imports from China and the United States: courier, air and sea freight, with customs clearance and delivery nationwide.", contacto: "Contact", oficina: "Argentina office", horario: "Mon to Fri · 10 am to 6 pm", origen: "China warehouse", origenTxt: "Open 24/7 · 365 days a year", atencion: "Support", navegacion: "Navigation", blog: "Blog", portalCli: "Client portal", portalAg: "Agent portal", legal: "Legal", terminos: "Terms and conditions", privacidad: "Privacy policy", aviso: "Legal notice", derechos: "All rights reserved", lugar: "Buenos Aires · Argentina", grupo: "Argencargo Group" },
+  zh: { servicios: "服务", aprender: "学习", quienes: "关于我们", calculadora: "计算器", cuenta: "我的账户", claim: "您的进口，一站解决。", sub: "从中国和美国进口：快递、空运和海运，含清关及全国配送。", contacto: "联系方式", oficina: "阿根廷办公室", horario: "周一至周五 · 10:00–18:00", origen: "中国仓库", origenTxt: "全年365天 · 24小时运营", atencion: "客服", navegacion: "导航", blog: "博客", portalCli: "客户门户", portalAg: "代理门户", legal: "法律信息", terminos: "条款与条件", privacidad: "隐私政策", aviso: "法律声明", derechos: "版权所有", lugar: "阿根廷 · 布宜诺斯艾利斯", grupo: "Argencargo 集团" },
+  ru: { servicios: "Услуги", aprender: "Обучение", quienes: "О нас", calculadora: "Калькулятор", cuenta: "Кабинет", claim: "Ваш импорт — под ключ.", sub: "Импорт из Китая и США: курьер, авиа- и морские перевозки, таможня и доставка по всей стране.", contacto: "Контакты", oficina: "Офис в Аргентине", horario: "Пн–Пт · 10:00–18:00", origen: "Склад в Китае", origenTxt: "Работает 24/7 · 365 дней в году", atencion: "Поддержка", navegacion: "Навигация", blog: "Блог", portalCli: "Кабинет клиента", portalAg: "Кабинет агента", legal: "Правовая информация", terminos: "Условия", privacidad: "Конфиденциальность", aviso: "Правовое уведомление", derechos: "Все права защищены", lugar: "Буэнос-Айрес · Аргентина", grupo: "Группа Argencargo" },
 };
 
 const Ctx = createContext({ lang: "es", tema: "oscuro", t: (k) => T.es[k] || k });
@@ -69,8 +69,9 @@ html,body{overflow-x:clip!important}
 .acl .logo{display:flex;align-items:center;gap:10px;flex-shrink:0}.acl .logo .iso{height:26px;width:auto}.acl .logo .txt{height:15px;width:auto}
 .acl .links{display:flex;gap:26px;font-size:14.5px;font-weight:700;color:var(--ink);flex:1;justify-content:center}
 .acl .links a:hover{opacity:0.7}.acl .links svg{display:none}
+.acl .linksCel{display:none}
 .acl .der{display:flex;gap:8px;align-items:center}
-.acl .pill{height:36px;padding:0 12px 0 9px;border-radius:999px;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;letter-spacing:0.02em}
+.acl .pill{height:36px;padding:0 14px 0 10px;border-radius:999px;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap}
 .acl .pill:hover{border-color:var(--ink)}
 .acl .pill img{width:20px;height:14px;object-fit:cover;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,0.12)}
 .acl .ico{width:36px;height:36px;padding:0;border-radius:50%;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
@@ -81,8 +82,8 @@ html,body{overflow-x:clip!important}
 .acl .menuLang button{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;border:none;background:transparent;border-radius:10px;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;text-align:left}
 .acl .menuLang button:hover,.acl .menuLang button.on{background:var(--suave)}
 .acl .menuLang img{width:20px;height:14px;object-fit:cover;border-radius:3px}
-.acl footer{background:#070E1C;color:rgba(255,255,255,0.62);padding:64px 0 28px;font-size:14px;border-top:1px solid rgba(255,255,255,0.06)}
-.acl .pieGrid{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:40px;align-items:start}
+.acl footer{background:#070E1C;color:rgba(255,255,255,0.62);padding:40px 0 28px;font-size:14px;border-top:1px solid rgba(255,255,255,0.06)}
+.acl .pieGrid{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;column-gap:72px;row-gap:40px;align-items:start}
 .acl footer h4{margin:0 0 18px;font-size:11.5px;letter-spacing:0.16em;text-transform:uppercase;color:#fff;font-weight:700}
 .acl footer .col a,.acl footer .col span.l{display:block;color:rgba(255,255,255,0.62);margin:0 0 12px;font-weight:500;line-height:1.4}
 .acl footer .col a:hover{color:#fff}
@@ -96,18 +97,20 @@ html,body{overflow-x:clip!important}
 .acl footer .razon{display:block;color:#7FA8E6;font-weight:600;font-size:14px;letter-spacing:0.04em;margin:0 0 18px}
 .acl footer .abajo{max-width:1180px;margin:44px auto 0;padding:22px 24px 0;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:rgba(255,255,255,0.45)}
 @media(max-width:900px){.acl .links{display:none}.acl .pieGrid{grid-template-columns:1fr 1fr;gap:36px 24px}.acl .pieGrid>div:first-child{grid-column:1/-1}.acl .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.acl .nav{padding:0 12px}.acl .isla{height:62px;padding:0 10px 0 16px;gap:10px}.acl .isla .der{margin-left:auto}}
+@media(max-width:900px){
+.acl .linksCel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;max-width:620px;margin:10px auto 0;padding:0 12px}
+.acl .linksCel a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:11px 2px 10px;border-radius:16px;background:var(--suave);border:1px solid var(--borde);color:var(--ink);font-size:12px;font-weight:800;text-align:center;line-height:1.15}
+.acl .linksCel a:active{transform:scale(0.97)}
+}
 @media(max-width:640px){
 .acl .nav{padding:0 10px;margin:8px 0 0}
-.acl .isla{flex-wrap:wrap;height:auto;padding:8px 8px 8px 14px;gap:8px;border-radius:26px}
-.acl .logo{gap:6px}.acl .logo .iso{height:17px}.acl .logo .txt{height:10px}
-.acl .isla .der{margin-left:auto}
-.acl .ico{width:32px;height:32px}.acl .pill{height:32px;padding:0 7px}.acl .pill span{display:none}.acl .pill img{width:18px;height:13px}
-.acl .isla .der{gap:6px}
-.acl .cta{height:34px;padding:0 12px;font-size:12px;gap:6px}.acl .cta svg{display:none}
-.acl .links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));order:3;flex-basis:100%;gap:6px;margin:0 -2px 2px}
-.acl .links a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:10px 2px 9px;border-radius:16px;background:var(--suave);border:1px solid var(--borde);color:var(--ink);font-size:11.5px;font-weight:800;text-align:center;line-height:1.15}
-.acl .links a svg{display:block}
-.acl .links a:active{transform:scale(0.97)}
+.acl .isla{flex-wrap:wrap;height:auto;padding:10px 10px 10px 16px;gap:10px;border-radius:24px}
+.acl .logo{gap:6px}.acl .logo .iso{height:18px}.acl .logo .txt{height:10.5px}
+.acl .isla .der{margin-left:auto;gap:6px;display:contents}
+.acl .isla .der>div{margin-left:auto}
+.acl .ico{width:34px;height:34px}.acl .pill{height:34px;padding:0 12px 0 9px;font-size:12.5px}.acl .pill img{width:18px;height:13px}
+.acl .cta{order:3;flex-basis:100%;justify-content:center;height:46px;font-size:15.5px;border-radius:14px}
+.acl .linksCel{padding:0 10px}
 .acl .grupoWrap{padding:8px 10px 0}
 .acl .grupo{display:grid;grid-template-columns:1fr 1fr;width:100%;max-width:420px;padding:4px;gap:0;border-radius:999px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
 .acl .grupo a{width:auto;height:34px;padding:0 8px;gap:6px;box-shadow:none;border-width:1.5px;min-width:0}
@@ -117,7 +120,7 @@ html,body{overflow-x:clip!important}
 .acl .pieGrid{grid-template-columns:1fr;gap:30px}
 .acl footer .abajo{flex-direction:column;margin-top:32px}
 }
-@media(max-width:410px){.acl .ico.tema{display:none}}
+@media(max-width:360px){.acl .logo .txt{height:9px}.acl .pill{padding:0 9px 0 8px}}
 `;
 
 export default function MarcoLanding({ children }) {
@@ -164,7 +167,7 @@ export default function MarcoLanding({ children }) {
           </nav>
           <div className="der">
             <div style={{ position: "relative" }}>
-              <button className="pill" onClick={() => setMenuLang((v) => !v)} aria-label="Idioma" aria-haspopup="menu" aria-expanded={menuLang}><img src={bandera(idioma.flag)} alt="" /><span>{lang.toUpperCase()}</span></button>
+              <button className="pill" onClick={() => setMenuLang((v) => !v)} aria-label="Idioma" aria-haspopup="menu" aria-expanded={menuLang}><img src={bandera(idioma.flag)} alt="" /><span>{idioma.nombre}</span></button>
               {menuLang && <>
                 <div onClick={() => setMenuLang(false)} style={{ position: "fixed", inset: 0, zIndex: 110 }} />
                 <div className="menuLang" role="menu">
@@ -177,6 +180,13 @@ export default function MarcoLanding({ children }) {
           </div>
         </div>
       </header>
+      {/* En el celu los títulos van en la página (no en la isla pegada). */}
+      <nav className="linksCel">
+        <a href="/#servicios" onClick={ir("servicios")}><Ico d={ICOS.servicios} />{t("servicios")}</a>
+        <a href="/blog"><Ico d={ICOS.aprender} />{t("aprender")}</a>
+        <a href="/#quienes-somos" onClick={ir("quienes-somos")}><Ico d={ICOS.quienes} />{t("quienes")}</a>
+        <a href="/blog"><Ico d={ICOS.blog} />{t("blog")}</a>
+      </nav>
 
       {children}
 
@@ -197,7 +207,7 @@ export default function MarcoLanding({ children }) {
           <div className="col">
             <h4>{t("contacto")}</h4>
             <p className="dato"><a href={`mailto:${MAIL}`} style={{ color: "rgba(255,255,255,0.78)" }}>{MAIL}</a></p>
-            <p className="fila"><span className="k">WhatsApp</span><a className="mono" href={`https://wa.me/${WA_NUM}`} target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.78)" }}>{WA_TXT}</a></p>
+            <p className="fila"><span className="k">{t("atencion")}</span><a className="mono" href={`https://wa.me/${WA_NUM}`} target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.78)" }}>{WA_TXT}</a></p>
             <span className="k">{t("oficina")}</span>
             <p className="dato">{t("horario")}</p>
             <span className="k">{t("origen")}</span>
