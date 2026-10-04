@@ -1,0 +1,225 @@
+"use client";
+// Marco de la landing de Argencargo (04/10/2026): barra del grupo (ARGENMAQ · ARGENCARGO), isla
+// flotante y pie. Mismo estilo que el sitio de ARGENMAQ (app/argenmaq/kit.js): la barra del grupo
+// queda arriba y se va al scrollear; la isla queda pegada.
+// Idioma compartido con el portal (ac_portal_lang). El tema se guarda en ac_landing_tema.
+import { createContext, useContext, useEffect, useState } from "react";
+import { AM_URL } from "../argenmaq/_marca";
+
+const WA_NUM = "5491125088580";
+const WA_TXT = "+54 9 11 2508-8580";
+const MAIL = "info@argencargo.com.ar";
+const LANG_KEY = "ac_portal_lang";
+const TEMA_KEY = "ac_landing_tema";
+
+// Redes: solo se muestran las que tienen link.
+const REDES = [
+  { k: "instagram", url: "https://www.instagram.com/argencargo", d: ["M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5z", "M16 11.4A4 4 0 1 1 12.6 8 4 4 0 0 1 16 11.4z", "M17.5 6.5h.01"] },
+  { k: "linkedin", url: null, d: ["M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z", "M2 9h4v12H2z", "M4 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"] },
+  { k: "facebook", url: null, d: ["M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"] },
+  { k: "tiktok", url: null, d: ["M9 12a4 4 0 1 0 4 4V2a5 5 0 0 0 5 5"] },
+  { k: "youtube", url: null, d: ["M22.5 6.4a2.8 2.8 0 0 0-1.9-2C18.9 4 12 4 12 4s-6.9 0-8.6.5a2.8 2.8 0 0 0-1.9 2A29 29 0 0 0 1 12a29 29 0 0 0 .5 5.6 2.8 2.8 0 0 0 1.9 2c1.7.4 8.6.4 8.6.4s6.9 0 8.6-.5a2.8 2.8 0 0 0 1.9-2 29 29 0 0 0 .5-5.5 29 29 0 0 0-.5-5.6z", "M9.8 15.5l5.7-3.5-5.7-3.3z"] },
+];
+
+const IDIOMAS = [
+  { k: "es", flag: "es", nombre: "Español" },
+  { k: "en", flag: "gb", nombre: "English" },
+  { k: "zh", flag: "cn", nombre: "中文" },
+  { k: "ru", flag: "ru", nombre: "Русский" },
+];
+
+const T = {
+  es: { servicios: "Servicios", aprender: "Aprender", quienes: "Quiénes somos", calculadora: "Calculadora", cuenta: "Mi cuenta", claim: "Tu importación, resuelta.", sub: "Importaciones desde China y Estados Unidos: courier, carga aérea y marítimo, con aduana y entrega en todo el país.", contacto: "Contacto", oficina: "Oficina Buenos Aires", horario: "Lun a Vie · 10 a 18 hs", origen: "Depósitos en origen", origenTxt: "China · Estados Unidos", navegacion: "Navegación", blog: "Blog", portalCli: "Portal de clientes", portalAg: "Portal de agentes", legal: "Legal", terminos: "Términos y condiciones", privacidad: "Política de privacidad", aviso: "Aviso legal", derechos: "Todos los derechos reservados", lugar: "Buenos Aires · Argentina", grupo: "Grupo Argencargo" },
+  en: { servicios: "Services", aprender: "Learn", quienes: "About us", calculadora: "Calculator", cuenta: "My account", claim: "Your import, sorted.", sub: "Imports from China and the United States: courier, air and sea freight, with customs clearance and delivery nationwide.", contacto: "Contact", oficina: "Buenos Aires office", horario: "Mon to Fri · 10 am to 6 pm", origen: "Origin warehouses", origenTxt: "China · United States", navegacion: "Navigation", blog: "Blog", portalCli: "Client portal", portalAg: "Agent portal", legal: "Legal", terminos: "Terms and conditions", privacidad: "Privacy policy", aviso: "Legal notice", derechos: "All rights reserved", lugar: "Buenos Aires · Argentina", grupo: "Argencargo Group" },
+  zh: { servicios: "服务", aprender: "学习", quienes: "关于我们", calculadora: "计算器", cuenta: "我的账户", claim: "您的进口，一站解决。", sub: "从中国和美国进口：快递、空运和海运，含清关及全国配送。", contacto: "联系方式", oficina: "布宜诺斯艾利斯办公室", horario: "周一至周五 · 10:00–18:00", origen: "始发仓库", origenTxt: "中国 · 美国", navegacion: "导航", blog: "博客", portalCli: "客户门户", portalAg: "代理门户", legal: "法律信息", terminos: "条款与条件", privacidad: "隐私政策", aviso: "法律声明", derechos: "版权所有", lugar: "阿根廷 · 布宜诺斯艾利斯", grupo: "Argencargo 集团" },
+  ru: { servicios: "Услуги", aprender: "Обучение", quienes: "О нас", calculadora: "Калькулятор", cuenta: "Кабинет", claim: "Ваш импорт — под ключ.", sub: "Импорт из Китая и США: курьер, авиа- и морские перевозки, таможня и доставка по всей стране.", contacto: "Контакты", oficina: "Офис в Буэнос-Айресе", horario: "Пн–Пт · 10:00–18:00", origen: "Склады отправления", origenTxt: "Китай · США", navegacion: "Навигация", blog: "Блог", portalCli: "Кабинет клиента", portalAg: "Кабинет агента", legal: "Правовая информация", terminos: "Условия", privacidad: "Конфиденциальность", aviso: "Правовое уведомление", derechos: "Все права защищены", lugar: "Буэнос-Айрес · Аргентина", grupo: "Группа Argencargo" },
+};
+
+const Ctx = createContext({ lang: "es", tema: "oscuro", t: (k) => T.es[k] || k });
+export const useLanding = () => useContext(Ctx);
+
+const Ico = ({ d, size = 17 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d.map((x, i) => <path key={i} d={x} />)}</svg>;
+const bandera = (f) => `https://flagcdn.com/w40/${f}.png`;
+const WA_D = "M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.2-.2.3-.8 1-.9 1.1-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.4-.5c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3M12 21.8a9.9 9.9 0 0 1-5-1.4l-.4-.2-3.7 1 1-3.7-.2-.4A9.9 9.9 0 1 1 12 21.8M20.5 3.5A11.8 11.8 0 0 0 12 0C5.5 0 .2 5.3.2 11.9c0 2.1.5 4.1 1.6 5.9L0 24l6.3-1.7a11.9 11.9 0 0 0 5.7 1.4c6.6 0 11.9-5.3 11.9-11.9 0-3.2-1.2-6.2-3.4-8.4z";
+
+const ICOS = {
+  servicios: ["M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z", "M3.3 7l8.7 5 8.7-5", "M12 22V12"],
+  aprender: ["M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z", "M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"],
+  quienes: ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.9", "M16 3.1a4 4 0 0 1 0 7.8"],
+  calc: ["M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z", "M8 6h8v4H8z", "M8 14h.01", "M12 14h.01", "M16 14h.01", "M8 18h.01", "M12 18h.01", "M16 18h.01"],
+  cuenta: ["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
+  sol: ["M12 3v2", "M12 19v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M3 12h2", "M19 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4", "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"],
+  luna: ["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"],
+};
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+.acl{--card:#FFFFFF;--ink:#0F1B2D;--gris:#5A6578;--borde:#E3E7EE;--suave:#F3F6FA;--ac:#3B7DD8;--acsuave:#E6EFFB;font-family:'Montserrat',ui-sans-serif,system-ui,sans-serif}
+.acl[data-tema="oscuro"]{--card:#101B30;--ink:#F2F5FA;--gris:#9AA6B8;--borde:#22314A;--suave:#16233B;--acsuave:rgba(59,125,216,0.2)}
+html,body{overflow-x:clip!important}
+.acl *{box-sizing:border-box}.acl a{text-decoration:none;color:inherit}.acl button{font-family:inherit}
+.acl .grupoWrap{display:flex;justify-content:center;padding:12px 16px 0}
+.acl .grupo{display:inline-flex;gap:8px}
+.acl .grupo a{width:236px;height:42px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:10px;background:#fff;border:2px solid transparent;box-shadow:0 6px 18px rgba(0,0,0,0.4);transition:transform 140ms}
+.acl .grupo a:hover{transform:translateY(-1px)}.acl .grupo a.on{border-color:var(--ac)}
+.acl .grupo img{width:auto;display:block}.acl .grupo .am .iso{height:22px}.acl .grupo .am .txt{height:15px}.acl .grupo .argc .iso{height:19px}.acl .grupo .argc .txt{height:12px}
+.acl .nav{position:sticky;top:10px;z-index:100;padding:0 20px;margin:12px 0 0}
+.acl .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.35);color:var(--ink)}
+.acl .logo{display:flex;align-items:center;gap:10px;flex-shrink:0}.acl .logo .iso{height:26px;width:auto}.acl .logo .txt{height:15px;width:auto}
+.acl .links{display:flex;gap:26px;font-size:14.5px;font-weight:600;color:var(--gris);flex:1;justify-content:center}
+.acl .links a:hover{color:var(--ink)}.acl .links svg{display:none}
+.acl .der{display:flex;gap:8px;align-items:center}
+.acl .pill{height:36px;padding:0 12px 0 9px;border-radius:999px;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;letter-spacing:0.02em}
+.acl .pill:hover{border-color:var(--ink)}
+.acl .pill img{width:20px;height:14px;object-fit:cover;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,0.12)}
+.acl .ico{width:36px;height:36px;padding:0;border-radius:50%;border:1px solid var(--borde);background:var(--card);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.acl .ico:hover{border-color:var(--ink)}.acl .ico.dia{color:#E0A800}
+.acl .cta{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 20px;border-radius:999px;background:var(--ac);color:#fff;font-weight:800;font-size:14.5px;white-space:nowrap;box-shadow:0 6px 16px rgba(59,125,216,0.35);transition:transform 120ms}
+.acl .cta:hover{transform:translateY(-1px)}
+.acl .menuLang{position:absolute;top:44px;right:0;z-index:120;min-width:170px;padding:6px;border-radius:16px;background:var(--card);border:1px solid var(--borde);box-shadow:0 16px 40px rgba(0,0,0,0.3)}
+.acl .menuLang button{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;border:none;background:transparent;border-radius:10px;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;text-align:left}
+.acl .menuLang button:hover,.acl .menuLang button.on{background:var(--suave)}
+.acl .menuLang img{width:20px;height:14px;object-fit:cover;border-radius:3px}
+.acl footer{background:#070E1C;color:rgba(255,255,255,0.62);padding:64px 0 28px;font-size:14px;border-top:1px solid rgba(255,255,255,0.06)}
+.acl .pieGrid{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:40px;align-items:start}
+.acl footer h4{margin:0 0 18px;font-size:11.5px;letter-spacing:0.16em;text-transform:uppercase;color:#fff;font-weight:700}
+.acl footer .col a,.acl footer .col span.l{display:block;color:rgba(255,255,255,0.62);margin:0 0 12px;font-weight:500;line-height:1.4}
+.acl footer .col a:hover{color:#fff}
+.acl footer .k{display:block;font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.42);font-weight:700;margin:0 0 5px}
+.acl footer .dato{margin:0 0 18px;color:rgba(255,255,255,0.78);font-weight:500;line-height:1.45}
+.acl footer .mono{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:13.5px;letter-spacing:0.02em}
+.acl footer .redes{display:flex;gap:10px;margin-top:22px}
+.acl footer .redes a{width:42px;height:42px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);display:inline-flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.8);transition:border-color 120ms,color 120ms}
+.acl footer .redes a:hover{border-color:var(--ac);color:#fff}
+.acl footer .abajo{max-width:1180px;margin:44px auto 0;padding:22px 24px 0;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:rgba(255,255,255,0.45)}
+@media(max-width:900px){.acl .links{display:none}.acl .pieGrid{grid-template-columns:1fr 1fr;gap:36px 24px}.acl .pieGrid>div:first-child{grid-column:1/-1}.acl .grupo a{width:168px;height:36px;padding:0 10px;gap:7px}.acl .nav{padding:0 12px}.acl .isla{height:62px;padding:0 10px 0 16px;gap:10px}.acl .isla .der{margin-left:auto}}
+@media(max-width:640px){
+.acl .nav{padding:0 10px;margin:8px 0 0}
+.acl .isla{flex-wrap:wrap;height:auto;padding:8px 8px 8px 14px;gap:8px;border-radius:26px}
+.acl .logo{gap:6px}.acl .logo .iso{height:17px}.acl .logo .txt{height:10px}
+.acl .isla .der{margin-left:auto}
+.acl .ico{width:32px;height:32px}.acl .pill{height:32px;padding:0 7px}.acl .pill span{display:none}.acl .pill img{width:18px;height:13px}
+.acl .isla .der{gap:6px}.acl .ico.cuenta{display:none}
+.acl .cta{height:34px;padding:0 12px;font-size:12px;gap:6px}.acl .cta svg{display:none}
+.acl .links{display:grid;grid-template-columns:repeat(3,1fr);order:3;flex-basis:100%;gap:6px;margin:0 -2px 2px}
+.acl .links a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:10px 4px 9px;border-radius:16px;background:var(--suave);border:1px solid var(--borde);color:var(--ink);font-size:12.5px;font-weight:800;text-align:center;line-height:1.15}
+.acl .links a svg{display:block}
+.acl .links a:active{transform:scale(0.97)}
+.acl .grupoWrap{padding:8px 10px 0}
+.acl .grupo{display:grid;grid-template-columns:1fr 1fr;width:100%;max-width:420px;padding:4px;gap:0;border-radius:999px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
+.acl .grupo a{width:auto;height:34px;padding:0 8px;gap:6px;box-shadow:none;border-width:1.5px;min-width:0}
+.acl .grupo .am .iso{height:17px}.acl .grupo .am .txt{height:11px}.acl .grupo .argc .iso{height:14px}.acl .grupo .argc .txt{height:9px}
+.acl footer{padding:48px 0 96px}
+.acl .pieGrid{grid-template-columns:1fr;gap:30px}
+.acl footer .abajo{flex-direction:column;margin-top:32px}
+}
+@media(max-width:410px){.acl .ico.tema{display:none}}
+`;
+
+export default function MarcoLanding({ children }) {
+  const [lang, setLangSt] = useState("es");
+  const [tema, setTemaSt] = useState("oscuro");
+  const [menuLang, setMenuLang] = useState(false);
+  useEffect(() => {
+    try {
+      const l = localStorage.getItem(LANG_KEY);
+      if (T[l]) setLangSt(l);
+      const tm = localStorage.getItem(TEMA_KEY);
+      if (tm === "claro" || tm === "oscuro") setTemaSt(tm);
+    } catch {}
+  }, []);
+  const setLang = (l) => { setLangSt(l); setMenuLang(false); try { localStorage.setItem(LANG_KEY, l); } catch {} };
+  const setTema = (v) => { setTemaSt(v); try { localStorage.setItem(TEMA_KEY, v); } catch {} };
+  const t = (k) => (T[lang] || T.es)[k] || T.es[k] || k;
+  const claro = tema === "claro";
+  const idioma = IDIOMAS.find((x) => x.k === lang) || IDIOMAS[0];
+  const ir = (id) => (e) => { const el = document.getElementById(id); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth" }); } };
+
+  return <Ctx.Provider value={{ lang, tema, t }}>
+    <div className="acl" data-tema={tema}>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
+      {/* Barra del grupo: se va al scrollear. */}
+      <div className="grupoWrap"><div className="grupo">
+        <a className="am" href={AM_URL} aria-label="ARGENMAQ"><img className="iso" src="/argenmaq/isotipo.png" alt="" /><img className="txt" src="/argenmaq/texto.png" alt="ARGENMAQ" /></a>
+        <a className="on argc" href="/" aria-label="ARGENCARGO"><img className="iso" src="/argencargo/isotipo.png" alt="" /><img className="txt" src="/argencargo/texto.png" alt="ARGENCARGO" /></a>
+      </div></div>
+
+      {/* Isla: queda pegada arriba. */}
+      <header className="nav">
+        <div className="isla">
+          <a className="logo" href="/" aria-label="Argencargo">
+            <img className="iso" src={claro ? "/argencargo/isotipo.png" : "/argencargo/isotipo-blanco.png"} alt="" />
+            <img className="txt" src={claro ? "/argencargo/texto.png" : "/argencargo/texto-blanco.png"} alt="Argencargo" />
+          </a>
+          <nav className="links">
+            <a href="/#servicios" onClick={ir("servicios")}><Ico d={ICOS.servicios} />{t("servicios")}</a>
+            <a href="/blog"><Ico d={ICOS.aprender} />{t("aprender")}</a>
+            <a href="/#quienes-somos" onClick={ir("quienes-somos")}><Ico d={ICOS.quienes} />{t("quienes")}</a>
+          </nav>
+          <div className="der">
+            <div style={{ position: "relative" }}>
+              <button className="pill" onClick={() => setMenuLang((v) => !v)} aria-label="Idioma" aria-haspopup="menu" aria-expanded={menuLang}><img src={bandera(idioma.flag)} alt="" /><span>{lang.toUpperCase()}</span></button>
+              {menuLang && <>
+                <div onClick={() => setMenuLang(false)} style={{ position: "fixed", inset: 0, zIndex: 110 }} />
+                <div className="menuLang" role="menu">
+                  {IDIOMAS.map((x) => <button key={x.k} className={x.k === lang ? "on" : ""} onClick={() => setLang(x.k)} role="menuitem"><img src={bandera(x.flag)} alt="" />{x.nombre}</button>)}
+                </div>
+              </>}
+            </div>
+            <button className={`ico tema ${claro ? "" : "dia"}`} onClick={() => setTema(claro ? "oscuro" : "claro")} aria-label="Tema"><Ico d={claro ? ICOS.luna : ICOS.sol} size={15} /></button>
+            <a className="ico cuenta" href="/portal" title={t("cuenta")} aria-label={t("cuenta")}><Ico d={ICOS.cuenta} size={16} /></a>
+            <a className="cta" href="/portal"><Ico d={ICOS.calc} size={16} />{t("calculadora")}</a>
+          </div>
+        </div>
+      </header>
+
+      {children}
+
+      <footer>
+        <div className="pieGrid">
+          <div>
+            <a href="/" aria-label="Argencargo" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <img src="/argencargo/isotipo-blanco.png" alt="" style={{ height: 26, width: "auto" }} />
+              <img src="/argencargo/texto-blanco.png" alt="Argencargo" style={{ height: 15, width: "auto" }} />
+            </a>
+            <p style={{ margin: "18px 0 10px", color: "#fff", fontWeight: 700, fontSize: 16 }}>{t("claim")}</p>
+            <p style={{ margin: 0, lineHeight: 1.65, maxWidth: 340 }}>{t("sub")}</p>
+            <div className="redes">
+              {REDES.filter((r) => r.url).map((r) => <a key={r.k} href={r.url} target="_blank" rel="noopener noreferrer" aria-label={r.k}><Ico d={r.d} size={18} /></a>)}
+              <a href={`https://wa.me/${WA_NUM}`} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={WA_D} /></svg></a>
+            </div>
+          </div>
+          <div className="col">
+            <h4>{t("contacto")}</h4>
+            <p className="dato"><a href={`mailto:${MAIL}`} style={{ color: "rgba(255,255,255,0.78)" }}>{MAIL}</a></p>
+            <span className="k">WhatsApp</span>
+            <p className="dato mono"><a href={`https://wa.me/${WA_NUM}`} target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.78)" }}>{WA_TXT}</a></p>
+            <span className="k">{t("oficina")}</span>
+            <p className="dato">Virrey Loreto 2428, Belgrano<br />{t("horario")}</p>
+            <span className="k">{t("origen")}</span>
+            <p className="dato" style={{ marginBottom: 0 }}>{t("origenTxt")}</p>
+          </div>
+          <div className="col">
+            <h4>{t("navegacion")}</h4>
+            <a href="/#servicios" onClick={ir("servicios")}>{t("servicios")}</a>
+            <a href="/blog">{t("aprender")}</a>
+            <a href="/#quienes-somos" onClick={ir("quienes-somos")}>{t("quienes")}</a>
+            <a href="/blog">{t("blog")}</a>
+            <a href="/portal">{t("calculadora")}</a>
+            <a href="/portal">{t("portalCli")}</a>
+            <a href="/agente">{t("portalAg")}</a>
+          </div>
+          <div className="col">
+            <h4>{t("legal")}</h4>
+            <a href="/terminos">{t("terminos")}</a>
+            <a href="/privacidad">{t("privacidad")}</a>
+            <a href="/legal">{t("aviso")}</a>
+            <a href={AM_URL} style={{ marginTop: 22 }}>ARGENMAQ · {t("grupo")}</a>
+          </div>
+        </div>
+        <div className="abajo"><span>© 2026 Argencargo — {t("derechos")}</span><span>{t("lugar")}</span></div>
+      </footer>
+    </div>
+  </Ctx.Provider>;
+}

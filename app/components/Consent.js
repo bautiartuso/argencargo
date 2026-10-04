@@ -109,8 +109,11 @@ export default function Consent() {
   const privada = esPrivada(pathname);
   const tema = esArgenmaq ? TEMAS.argenmaq : TEMAS.argencargo;
   const { pixel: META_PIXEL_ID, ads: GOOGLE_ADS_ID, gtag: GTAG_ID } = esArgenmaq ? IDS.argenmaq : IDS.argencargo;
-  const acepta = decision === "all" && !privada;
-  const mostrarBanner = decision === null && !privada;
+  // Argencargo (04/10/2026): sin aviso, la medición queda aceptada (Bautista lo pidió porque el
+  // banner tapaba la landing). Solo se respeta a quien ya había elegido "Solo esenciales".
+  // ARGENMAQ sigue con el aviso.
+  const acepta = !privada && (esArgenmaq ? decision === "all" : decision !== undefined && decision !== "essential");
+  const mostrarBanner = esArgenmaq && decision === null && !privada;
 
   return (
     <>
