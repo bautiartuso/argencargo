@@ -5793,7 +5793,7 @@ function EntregasPanel({token,onOpenOp,vista}){
   };
   const filtered=rows.filter(matchesQ);
   // RI con entrega directa: el courier la deja en el domicilio del cliente, así que no se coordina ni
-  // se imprime nada; se ve con las entregadas que deben (04/10/2026, caso Julio Cortino).
+  // se imprime nada; se ve con las entregadas que deben (04/10/2026, caso Giulio Sciortino, GIUSCI).
   const esRiDir=o=>o.ri_entrega_directa!==false&&(o.ri_entrega_directa===true||o.clients?.tax_condition==="responsable_inscripto");
   const pendientesTodas=filtered.filter(o=>!o.delivery_completed_at);
   const pendientes=pendientesTodas.filter(o=>!esRiDir(o));
