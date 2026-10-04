@@ -21,12 +21,12 @@ const CSS = `
 .amq .promesas{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:960px;margin:30px auto 0}
 .amq .promesa{padding:16px 18px;border-radius:18px;background:var(--ysuave);border:1px solid var(--y);text-align:left}
 .amq .promesa b{display:block;font-size:15px;margin-bottom:2px}.amq .promesa span{font-size:13px;color:var(--gris)}
-.amq .pasos{background:var(--suave);border:1px solid var(--borde);border-radius:28px;padding:42px 34px;margin:34px auto 0;max-width:1080px}
-.amq .pasos h2{font-size:clamp(24px,3.4vw,36px);letter-spacing:-0.03em;margin:0 0 30px;text-align:center}
-.amq .pasos .fila{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
-.amq .paso{text-align:center;position:relative}.amq .paso .ico2{width:78px;height:78px;margin:0 auto 14px;border-radius:22px;background:var(--card);border:1px solid var(--borde);display:flex;align-items:center;justify-content:center}
-.amq .paso .n{font-family:${MONO};font-size:11px;color:var(--gris);letter-spacing:0.1em}.amq .paso b{display:block;font-size:16px;margin-top:4px}
-.amq .paso:not(:last-child):after{content:"+";position:absolute;right:-9px;top:30px;color:#B7BBC1;font-size:18px}
+.amq .pasosHome{background:var(--suave);border:1px solid var(--borde);border-radius:28px;padding:42px 34px;margin:34px auto 0;max-width:1080px}
+.amq .pasosHome h2{font-size:clamp(24px,3.4vw,36px);letter-spacing:-0.03em;margin:0 0 30px;text-align:center}
+.amq .pasosHome .fila{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.amq .pasoHome{text-align:center;position:relative}.amq .pasoHome .ico2{width:78px;height:78px;margin:0 auto 14px;border-radius:22px;background:var(--card);border:1px solid var(--borde);display:flex;align-items:center;justify-content:center}
+.amq .pasoHome .n{font-family:${MONO};font-size:11px;color:var(--gris);letter-spacing:0.1em}.amq .pasoHome b{display:block;font-size:16px;margin-top:4px}
+.amq .pasoHome:not(:last-child):after{content:"+";position:absolute;right:-9px;top:30px;color:#B7BBC1;font-size:18px}
 .amq .bento{display:grid;grid-template-columns:1.25fr 1fr 1fr;grid-auto-rows:240px;gap:14px}
 .amq .bc{position:relative;border-radius:22px;overflow:hidden;background:#15171A;color:#fff;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;isolation:isolate}
 .amq .bc.alta{grid-row:span 2}.amq .bc.clara{background:var(--suave);color:var(--ink);border:1px solid var(--borde)}
@@ -39,8 +39,9 @@ const CSS = `
 .amq .pago .caja{background:#1C1E21;border:1px solid #2B2E33;border-radius:20px;padding:22px}.amq .pago .lin{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid #2B2E33;font-size:15px}.amq .pago .lin:last-child{border:none}
 .amq .pago .lin i{font-family:${MONO};font-style:normal;font-size:11px;letter-spacing:0.1em;padding:4px 8px;border-radius:6px;background:#3A3305;color:${Y}}
 .amq .cta{text-align:center;padding:90px 0}.amq .cta h2{font-size:clamp(34px,6vw,76px);letter-spacing:-0.05em;line-height:0.95;margin:0 0 22px}
-@media(max-width:900px){.amq .promesas{grid-template-columns:1fr}.amq .bento{grid-template-columns:1fr 1fr;grid-auto-rows:220px}.amq .bc.alta{grid-row:span 1;grid-column:span 2}.amq .pago{grid-template-columns:1fr;padding:34px 24px}.amq .pasos .fila{grid-template-columns:repeat(2,1fr);gap:22px}.amq .paso:after{display:none}}
-@media(max-width:560px){.amq .bento{grid-template-columns:1fr}.amq .bc.alta{grid-column:span 1}}
+@media(max-width:900px){.amq .promesas{grid-template-columns:1fr}.amq .bento{grid-template-columns:1fr 1fr;grid-auto-rows:220px}.amq .bc.alta{grid-row:span 1;grid-column:span 2}.amq .pago{grid-template-columns:1fr;padding:34px 24px}.amq .pasosHome .fila{grid-template-columns:repeat(2,1fr);gap:22px}.amq .pasoHome:after{display:none}}
+@media(max-width:560px){.amq .bento{grid-template-columns:1fr}.amq .bento>.bc{grid-column:span 1!important;grid-row:span 1}}
+@media(max-width:640px){.amq .hero{padding:28px 0 14px}.amq .hero p.sub{font-size:16.5px;margin:16px auto 20px}.amq .promesas{margin-top:22px}.amq .pasosHome{padding:26px 16px;border-radius:22px;margin-top:22px}.amq .pasosHome h2{margin-bottom:20px}.amq .pasosHome .fila{gap:16px 10px}.amq .pasoHome .ico2{width:60px;height:60px;border-radius:18px;margin-bottom:10px}.amq .pasoHome .ico2 svg{width:28px;height:28px}.amq .pasoHome b{font-size:14px}.amq .bento{grid-auto-rows:auto;gap:10px}.amq .bc{min-height:180px;padding:56px 18px 20px}.amq .bc .tag2{left:18px;top:16px}.amq .bc h3{font-size:20px}.amq .bc.alta h3{font-size:24px}.amq .bc p{font-size:13.5px}.amq .pago h2{font-size:28px}.amq .pago .caja{padding:16px}.amq .cta{padding:56px 0}}
 `;
 
 const TXT = {
@@ -80,9 +81,9 @@ export default function Landing({ arbol, destacadas, diasVia }) {
       <p className="sub">{x.sub}</p>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}><a className="btn k" href="/catalogo">{x.b1}</a><a className="btn" href="/como-funciona">{x.b2}</a></div>
       <div className="promesas">{[x.p1, x.p2, x.p3].map(([a, b]) => <div className="promesa" key={a}><b>{a}</b><span>{b}</span></div>)}</div>
-      <div className="pasos" id="como">
+      <div className="pasosHome" id="como">
         <h2>{x.pasosT}</h2>
-        <div className="fila">{x.pasos.map((tt, i) => <div className="paso" key={tt}><div className="ico2"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={iconos[i]} /></svg></div><span className="n">0{i + 1}</span><b>{tt}</b></div>)}</div>
+        <div className="fila">{x.pasos.map((tt, i) => <div className="pasoHome" key={tt}><div className="ico2"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={iconos[i]} /></svg></div><span className="n">0{i + 1}</span><b>{tt}</b></div>)}</div>
       </div>
     </div></section>
 
