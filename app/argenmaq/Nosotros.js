@@ -34,12 +34,12 @@ const CSS = `
 .amq .ns-punta h3{margin:0;font-size:26px;letter-spacing:-0.03em}
 .amq .ns-punta .que{display:block;margin-top:8px;font-family:${MONO};font-size:11.5px;letter-spacing:0.08em;color:var(--gris)}.amq .ns-punta.china .que{color:var(--y)}
 .amq .ns-punta p{margin:16px 0 0;font-size:15px;line-height:1.5;color:var(--gris)}.amq .ns-punta.china p{color:#C9CDD2}
-.amq .ns-grupo{margin-top:64px;border-radius:24px;border:1px solid var(--borde);background:var(--suave);padding:30px 34px;display:grid;grid-template-columns:auto 1fr auto;gap:30px;align-items:center}
-.amq .ns-grupo .logo{display:inline-flex;align-items:center;gap:9px}.amq .ns-grupo .logo img.iso{height:30px}.amq .ns-grupo .logo img.txt{height:18px}
-.amq .ns-grupo .logo img.oscuro{display:none}.amq[data-tema="oscuro"] .ns-grupo .logo img.oscuro{display:inline}.amq[data-tema="oscuro"] .ns-grupo .logo img.claro{display:none}
+.amq .ns-grupo{margin-top:64px;border-radius:24px;border:1px solid var(--borde);background:var(--suave);padding:30px 34px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:30px;align-items:center}
+.amq .ns-grupo .logo{display:flex;align-items:center;justify-content:center;padding-right:30px;border-right:1px solid var(--borde)}.amq .ns-grupo .logo img{width:140px;height:auto;display:block}
+.amq .ns-grupo .logo img.oscuro{display:none}.amq[data-tema="oscuro"] .ns-grupo .logo img.oscuro{display:block}.amq[data-tema="oscuro"] .ns-grupo .logo img.claro{display:none}
 .amq .ns-grupo .lbl{margin-bottom:6px}.amq .ns-grupo p{margin:0;font-size:15.5px;line-height:1.5;color:var(--gris)}.amq .ns-grupo p b{color:var(--ink)}
 .amq .ns-cta{text-align:center;padding:90px 0 80px}.amq .ns-cta h2{font-size:clamp(34px,6vw,76px);letter-spacing:-0.05em;line-height:0.95;margin:0 0 20px}
-@media(max-width:900px){.amq .ns-prob{grid-template-columns:1fr;padding:36px 26px;gap:22px}.amq .ns-prob h2{position:static}.amq .ns-nums{grid-template-columns:1fr 1fr}.amq .ns-sol{grid-template-columns:1fr 1fr}.amq .ns-puntas{grid-template-columns:1fr}.amq .ns-grupo{grid-template-columns:1fr;gap:16px;padding:24px 22px}}
+@media(max-width:900px){.amq .ns-prob{grid-template-columns:1fr;padding:36px 26px;gap:22px}.amq .ns-prob h2{position:static}.amq .ns-nums{grid-template-columns:1fr 1fr}.amq .ns-sol{grid-template-columns:1fr 1fr}.amq .ns-puntas{grid-template-columns:1fr}.amq .ns-grupo{grid-template-columns:minmax(0,1fr);gap:16px;padding:24px 22px;text-align:center}.amq .ns-grupo .logo{padding:0 0 16px;border-right:none;border-bottom:1px solid var(--borde)}.amq .ns-grupo .btn{white-space:normal}}
 @media(max-width:520px){.amq .ns-sol{grid-template-columns:1fr}.amq .ns-nums{gap:18px 12px}}
 `;
 
@@ -50,20 +50,20 @@ const TXT = {
     sub: "ARGENMAQ importa maquinaria de fábricas en China y la entrega en Argentina con un precio final. Vos elegís y pagás la máquina; nosotros nos ocupamos de la fábrica, la importación y la entrega.",
     probT: ["Traer una máquina está roto.", "Lo estamos arreglando."],
     prob: [
-      ["Quien quiere traer una máquina hoy negocia con la fábrica en otro idioma, gira dólares a China sin haberla visto funcionar y después tiene que conseguir un forwarder, un despachante y alguien que la reciba. ", "Cada uno con su tiempo, su lenguaje y su factura."],
+      ["Quien quiere traer una máquina hoy negocia con la fábrica en otro idioma, gira dólares a un proveedor que no conoce y después tiene que conseguir un forwarder, un despachante y alguien que la reciba. ", "Cada uno con su tiempo, su lenguaje y su factura."],
       ["El problema no es la fábrica ni el despachante. El problema es que nadie se hace cargo del todo: ", "el que compra termina siendo el importador de su propia máquina, sin serlo."],
       ["ARGENMAQ hace todo eso como una sola operación. ", "Precio final antes de pagar, dos cuotas, fecha estimada de llegada y una sola cara con quien hablar si algo pasa."],
     ],
     nums: { maq: "máquinas en catálogo", rub: "rubros", ops: "operaciones del grupo", h: "para arrepentirte después de la seña" },
     solT: "Qué resolvemos",
     solS: "Cuatro cosas que hoy el que importa por su cuenta tiene que pelear solo.",
-    sol: [["01", "Precio final antes de pagar", "Máquina, flete, seguro, aduana y depósito en un solo número, puesto en CABA. Sin sorpresas después."], ["02", "Pagás en dos cuotas", "Al confirmar pagás la máquina y la fábrica arranca. La importación se abona cuando llega a Buenos Aires."], ["03", "Sabés cuándo llega", "En cada máquina ves la fecha aproximada de llegada, y te avisamos en cada etapa: producción, embarque, aduana y entrega."], ["04", "Una sola cara", "Si algo pasa hablás con ARGENMAQ, no con la fábrica. Seguís cada hito desde tu cuenta."]],
+    sol: [["01", "Precio final antes de pagar", "Máquina, flete, seguro, aduana y gestión en un solo número. Sin sorpresas después."], ["02", "Pagás en dos cuotas", "Cuotas propias, de contado: la máquina al confirmar, y la fábrica arranca; la importación, cuando llega a Argentina."], ["03", "Sabés cuándo llega", "En cada máquina ves la fecha aproximada de llegada, y te avisamos en cada etapa: producción, embarque, aduana y entrega."], ["04", "Una sola cara", "Si algo pasa hablás con ARGENMAQ, no con la fábrica. Seguís cada hito desde tu cuenta."]],
     puntasT: "Dos puntas, una operación.",
     puntasS: "La máquina se produce en China y se entrega donde la vas a usar.",
     china: ["China", "FÁBRICAS · PRODUCCIÓN · EMBARQUE", "Trabajamos con fábricas que ya producen las máquinas del catálogo. Coordinamos la producción y el embarque hacia Argentina."],
-    baires: ["Buenos Aires", "OFICINA · DEPÓSITO · ENTREGA", "Oficina y depósito propios en CABA. Retirás sin cargo o te la enviamos a cualquier punto del país."],
+    baires: ["Buenos Aires", "OFICINA · DEPÓSITO · ENTREGA", "Nuestra oficina y depósito están en CABA. Desde ahí coordinamos la entrega en tu negocio, en cualquier punto del país."],
     grupoK: "PARTE DEL GRUPO ARGENCARGO",
-    grupoP: ["La importación de cada máquina la hace Argencargo: ", "flete, seguro y aduana con un equipo que opera importaciones desde Buenos Aires todos los días. ARGENMAQ es su división de maquinaria."],
+    grupoP: ["Argencargo es una empresa de logística internacional y despacho de aduana con base en Buenos Aires: ", "coordina el flete, el seguro y la aduana de cada importación. ARGENMAQ es su división de maquinaria."],
     grupoB: "Conocer Argencargo",
     ctaT: "Contanos qué máquina necesitás.",
     ctaP: "Te decimos cuánto sale puesta en Argentina y, si te cierra, arrancamos.",
@@ -76,20 +76,20 @@ const TXT = {
     sub: "ARGENMAQ imports machinery from factories in China and delivers it in Argentina at a final price. You choose and pay for the machine; we handle the factory, import and delivery.",
     probT: ["Bringing a machine in is broken.", "We're fixing it."],
     prob: [
-      ["Whoever wants a machine today negotiates with the factory in another language, wires dollars to China without seeing it run, and then has to find a forwarder, a customs broker and someone to receive it. ", "Each with their own timing, language and invoice."],
+      ["Whoever wants a machine today negotiates with the factory in another language, wires dollars to a supplier they don't know, and then has to find a forwarder, a customs broker and someone to receive it. ", "Each with their own timing, language and invoice."],
       ["The problem isn't the factory or the broker. The problem is that nobody owns the whole thing: ", "the buyer ends up being the importer of their own machine, without being one."],
       ["ARGENMAQ runs all of that as a single operation. ", "Final price before you pay, two instalments, an estimated arrival date and one face to talk to if anything happens."],
     ],
     nums: { maq: "machines in the catalog", rub: "trades", ops: "group operations", h: "to change your mind after the deposit" },
     solT: "What we solve",
     solS: "Four things anyone importing on their own has to fight alone today.",
-    sol: [["01", "Final price before paying", "Machine, freight, insurance, customs and warehouse in one number, landed in Buenos Aires. No surprises later."], ["02", "Pay in two instalments", "On confirmation you pay for the machine and the factory starts. Import costs are paid when it reaches Buenos Aires."], ["03", "You know when it arrives", "Every machine shows its estimated arrival date, and we update you at each stage: production, shipping, customs and delivery."], ["04", "One face", "If anything happens you talk to ARGENMAQ, not the factory. Follow every milestone from your account."]],
+    sol: [["01", "Final price before paying", "Machine, freight, insurance, customs and handling in one number. No surprises later."], ["02", "Pay in two instalments", "Our own instalments, paid upfront: the machine on confirmation, so the factory starts; the import when it reaches Argentina."], ["03", "You know when it arrives", "Every machine shows its estimated arrival date, and we update you at each stage: production, shipping, customs and delivery."], ["04", "One face", "If anything happens you talk to ARGENMAQ, not the factory. Follow every milestone from your account."]],
     puntasT: "Two ends, one operation.",
     puntasS: "The machine is made in China and delivered where you'll use it.",
     china: ["China", "FACTORIES · PRODUCTION · SHIPPING", "We work with factories already producing the machines in the catalog. We coordinate production and shipping to Argentina."],
-    baires: ["Buenos Aires", "OFFICE · WAREHOUSE · DELIVERY", "Our own office and warehouse in Buenos Aires. Pick up free of charge or we ship anywhere in the country."],
+    baires: ["Buenos Aires", "OFFICE · WAREHOUSE · DELIVERY", "Our office and warehouse are in Buenos Aires. From there we arrange delivery to your business, anywhere in the country."],
     grupoK: "PART OF THE ARGENCARGO GROUP",
-    grupoP: ["Every machine is imported by Argencargo: ", "freight, insurance and customs by a team that runs imports from Buenos Aires every day. ARGENMAQ is its machinery division."],
+    grupoP: ["Argencargo is an international freight forwarding and customs brokerage company based in Buenos Aires: ", "it handles freight, insurance and customs for every import. ARGENMAQ is its machinery division."],
     grupoB: "About Argencargo",
     ctaT: "Tell us which machine you need.",
     ctaP: "We'll tell you the landed price in Argentina and, if it works for you, we start.",
@@ -102,20 +102,20 @@ const TXT = {
     sub: "ARGENMAQ импортирует оборудование с заводов Китая и доставляет его в Аргентину по итоговой цене. Вы выбираете и оплачиваете машину; завод, импорт и доставку берём на себя мы.",
     probT: ["Привезти машину сегодня сложно.", "Мы это исправляем."],
     prob: [
-      ["Тот, кто хочет привезти машину, договаривается с заводом на чужом языке, переводит доллары в Китай, не видя её в работе, а потом ищет экспедитора, таможенного брокера и того, кто её примет. ", "У каждого свои сроки, свой язык и свой счёт."],
+      ["Тот, кто хочет привезти машину, договаривается с заводом на чужом языке, переводит доллары незнакомому поставщику, а потом ищет экспедитора, таможенного брокера и того, кто её примет. ", "У каждого свои сроки, свой язык и свой счёт."],
       ["Проблема не в заводе и не в брокере. Проблема в том, что никто не отвечает за всё целиком: ", "покупатель становится импортёром собственной машины, не будучи им."],
       ["ARGENMAQ делает всё это как одну операцию. ", "Итоговая цена до оплаты, два платежа, ориентировочная дата прибытия и один контакт, если что-то случится."],
     ],
     nums: { maq: "машин в каталоге", rub: "отраслей", ops: "операций группы", h: "чтобы передумать после аванса" },
     solT: "Что мы решаем",
     solS: "Четыре вещи, с которыми тот, кто импортирует сам, сегодня борется в одиночку.",
-    sol: [["01", "Итоговая цена до оплаты", "Машина, фрахт, страховка, таможня и склад — одна цифра, с доставкой в Буэнос-Айрес. Без сюрпризов."], ["02", "Оплата в два платежа", "При подтверждении вы платите за машину, и завод начинает. Импорт оплачивается по прибытии в Буэнос-Айрес."], ["03", "Знаете, когда прибудет", "У каждой машины указана ориентировочная дата прибытия, и мы сообщаем о каждом этапе: производство, отгрузка, таможня, доставка."], ["04", "Один контакт", "Если что-то случится, вы говорите с ARGENMAQ, а не с заводом. Каждый этап видно в аккаунте."]],
+    sol: [["01", "Итоговая цена до оплаты", "Машина, фрахт, страховка, таможня и оформление — одна цифра. Без сюрпризов."], ["02", "Оплата в два платежа", "Собственные платежи, без кредита: машина при подтверждении — и завод начинает; импорт — по прибытии в Аргентину."], ["03", "Знаете, когда прибудет", "У каждой машины указана ориентировочная дата прибытия, и мы сообщаем о каждом этапе: производство, отгрузка, таможня, доставка."], ["04", "Один контакт", "Если что-то случится, вы говорите с ARGENMAQ, а не с заводом. Каждый этап видно в аккаунте."]],
     puntasT: "Две точки, одна операция.",
     puntasS: "Машину производят в Китае и доставляют туда, где вы будете работать.",
     china: ["Китай", "ЗАВОДЫ · ПРОИЗВОДСТВО · ОТГРУЗКА", "Мы работаем с заводами, которые уже производят машины из каталога. Координируем производство и отгрузку в Аргентину."],
-    baires: ["Буэнос-Айрес", "ОФИС · СКЛАД · ДОСТАВКА", "Собственный офис и склад в Буэнос-Айресе. Самовывоз бесплатно или доставка в любую точку страны."],
+    baires: ["Буэнос-Айрес", "ОФИС · СКЛАД · ДОСТАВКА", "Наш офис и склад — в Буэнос-Айресе. Оттуда организуем доставку в ваш бизнес в любой точке страны."],
     grupoK: "ЧАСТЬ ГРУППЫ ARGENCARGO",
-    grupoP: ["Импорт каждой машины выполняет Argencargo: ", "фрахт, страховка и таможня силами команды, которая ежедневно ведёт импорт из Буэнос-Айреса. ARGENMAQ — её подразделение по оборудованию."],
+    grupoP: ["Argencargo — компания международной логистики и таможенного оформления из Буэнос-Айреса: ", "фрахт, страховка и таможня для каждого импорта. ARGENMAQ — её подразделение по оборудованию."],
     grupoB: "Об Argencargo",
     ctaT: "Расскажите, какая машина нужна.",
     ctaP: "Назовём цену с доставкой в Аргентину и, если подходит, начнём.",
@@ -163,8 +163,8 @@ export default function Nosotros({ stats }) {
       </div>
       <div className="ns-grupo">
         <a className="logo" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="Argencargo">
-          <img className="iso claro" src="/argencargo/isotipo.png" alt="" /><img className="txt claro" src="/argencargo/texto.png" alt="Argencargo" />
-          <img className="iso oscuro" src="/argencargo/isotipo-blanco.png" alt="" /><img className="txt oscuro" src="/argencargo/texto-blanco.png" alt="Argencargo" />
+          <img className="claro" src="/argencargo/logo-apilado.png" alt="Argencargo" />
+          <img className="oscuro" src="/argencargo/logo-apilado-blanco.png" alt="Argencargo" />
         </a>
         <div><p className="lbl">{x.grupoK}</p><p>{x.grupoP[0]}<b>{x.grupoP[1]}</b></p></div>
         <a className="btn" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer">{x.grupoB} →</a>
