@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { LD_ORGANIZATION, LD_WEBSITE } from "../lib/ld-argencargo";
 import MarcoLanding from "./components/MarcoLanding";
 import MapaRutas from "./components/MapaRutas";
+import CalcLanding from "./components/CalcLanding";
 
 const WA="5491125088580";
 const AC="#3B7DD8";
@@ -100,17 +101,12 @@ export default function Landing(){
       </div>
     </section>
 
-    {/* CALCULADORA BANNER */}
-    <section style={{padding:"60px 24px",background:`linear-gradient(135deg,${NAVY}40,${AC}15)`}}>
-      <div style={{maxWidth:700,margin:"0 auto",textAlign:"center"}}>
-        <p style={{fontSize:40,margin:"0 0 16px"}}>🧮</p>
-        <h2 style={{fontSize:"clamp(20px, 3vw, 28px)",fontWeight:800,margin:"0 0 10px"}}>Calculadora de importación</h2>
-        <p style={{fontSize:15,color:"rgba(255,255,255,0.55)",margin:"0 0 24px",lineHeight:1.6}}>Dentro de nuestro portal tenés una calculadora para cotizar tus cargas de forma gratuita. Ingresá los datos de tu producto y obtené el costo estimado al instante.</p>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 24px"}}>No necesitás ser importador registrado. Creá tu cuenta gratis y empezá a cotizar.</p>
-        <a href="/portal" style={{display:"inline-block",padding:"14px 32px",fontSize:15,fontWeight:700,borderRadius:10,background:`linear-gradient(135deg,${AC},${NAVY})`,color:"#fff",textDecoration:"none"}}>Ir a la calculadora →</a>
-      </div>
-    </section>
+    </div>
 
+    {/* CALCULADORA (04/10/2026): texto + compu con la calculadora del portal. */}
+    <CalcLanding />
+
+    <div style={{background:BG,color:"#fff"}}>
     {/* FAQ */}
     <section style={{padding:"60px 24px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
       <div style={{maxWidth:700,margin:"0 auto"}}>
