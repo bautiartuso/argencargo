@@ -1630,7 +1630,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </div>
     </div>}
     {/* Tabs estilo Linear: pill flotante para el tab activo + scroll horizontal en mobile */}
-    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_completed_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
+    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} data-on={active?"1":"0"} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_completed_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
         <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
@@ -6904,7 +6904,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn>
       </div>
     </div>
-    <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",paddingBottom:0}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"10px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.l}</button>;})}</div>
+    <div className="ac-editor-tabs" style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",paddingBottom:0}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} data-on={active?"1":"0"} onClick={()=>setTab(t.k)} style={{padding:"10px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.l}</button>;})}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
         <Inp label="Código" value={cl.client_code} onChange={chCl("client_code")}/>
@@ -10784,7 +10784,7 @@ function AgentsPanel({token}){
             {grpFob>0&&<span title="FOB declarado acumulado de las ops de este agente" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontVariantNumeric:"tabular-nums"}}>FOB USD {grpFob.toLocaleString("es-AR",{maximumFractionDigits:0})}</span>}
           </div>
           {!collapsed&&<div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
+            <table className="ag-dep" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
               <colgroup>
                 <col style={{width:44}}/>{/* ✓ */}
                 <col style={{width:124}}/>{/* Op — lleva la alerta de DIE 0% en su renglón */}
@@ -10894,7 +10894,7 @@ function AgentsPanel({token}){
                       {renderTbl(oSnap,"Antes","#fbbf24")}
                       {renderTbl(nSnap,"Después","#22c55e")}
                     </div>;})()}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                  <div className="ag-dep-det" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
                     {/* Productos declarados por el cliente */}
                     <div>
                       {(()=>{const groups=findMergeableGroups(itemsOfOp);const dup=groups.reduce((s,g)=>s+(g.length-1),0);return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"0 0 10px",gap:8,flexWrap:"wrap"}}>
@@ -16126,6 +16126,21 @@ function AdminDashboard({session,onLogout}){
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
+      @media(max-width:900px){
+        .ac-editor-tabs{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px!important;border-bottom:none!important;overflow:visible!important}
+        .ac-editor-tabs button{border-radius:10px!important;border:1px solid rgba(255,255,255,0.08)!important;padding:10px 4px!important;font-size:10.5px!important;letter-spacing:0.03em!important;white-space:normal!important;margin:0!important;display:flex!important;align-items:center;justify-content:center;gap:5px;text-align:center;line-height:1.2}
+        .ac-editor-tabs button[data-on="1"]{border-color:rgba(184,149,106,0.6)!important;background:rgba(184,149,106,0.16)!important}
+        /* Depósito de Aéreos en el celu: solo ✓, Op, Cliente y Fact. ÷5000; el resto se ve al abrir la op. */
+        table.ag-dep{display:table!important;white-space:normal!important;table-layout:auto!important}
+        table.ag-dep thead,table.ag-dep tbody{display:table-row-group!important;min-width:0!important}
+        table.ag-dep col:nth-child(n+4){width:auto!important}
+        table.ag-dep tr>*:nth-child(4),table.ag-dep tr>*:nth-child(5),table.ag-dep tr>*:nth-child(6),table.ag-dep tr>*:nth-child(7),table.ag-dep tr>*:nth-child(9),table.ag-dep tr>*:nth-child(10){display:none}
+        table.ag-dep tr>td[colspan]{display:table-cell!important}
+        table.ag-dep td,table.ag-dep th{padding:10px 6px!important}
+        .ag-dep-det{grid-template-columns:1fr!important}
+        .ac-tabs-cel{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px!important;overflow:visible!important}
+        .ac-tabs-cel>button{white-space:normal!important;margin:0!important;text-align:center}
+      }
       html.ac-claro{filter:invert(1) hue-rotate(180deg);background:#0A1628}
       html.ac-claro img,html.ac-claro video,html.ac-claro canvas,html.ac-claro iframe,html.ac-claro .ac-noinv{filter:invert(1) hue-rotate(180deg)}
       html.ac-claro .ac-noinv img{filter:none}
