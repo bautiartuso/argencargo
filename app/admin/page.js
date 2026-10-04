@@ -6749,37 +6749,52 @@ function ClientsList({token,onSelect}){
   const paginas=Math.max(1,Math.ceil(total/CLIENTES_POR_PAGINA));
   const btnPag=(activo)=>({padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.09)",background:"rgba(255,255,255,0.04)",color:activo?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)",cursor:activo?"pointer":"default"});
 
+  // Lista de clientes (04/10/2026): filas con avatar de iniciales, chips y accesos directos a
+  // WhatsApp y mail. En el celu son tarjetas.
+  const celu=useEsCelu();
+  const COLS_CL="minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,0.9fr) 92px";
+  const avatar=c=>{const ini=`${(c.first_name||"?")[0]||""}${(c.last_name||"")[0]||""}`.toUpperCase();return <span style={{width:40,height:40,flexShrink:0,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:GOLD_LIGHT,background:"linear-gradient(135deg,rgba(184,149,106,0.22),rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.3)"}}>{ini}</span>;};
+  const chipRI=<span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:5,background:"rgba(96,165,250,0.14)",color:"#93c5fd",letterSpacing:"0.06em"}}>RI</span>;
+  const tier=c=>c.tier&&c.tier!=="standard"?(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts`} style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.06em",textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})():null;
+  const accion=(href,titulo,d)=><a href={href} target="_blank" rel="noopener noreferrer" title={titulo} onClick={e=>e.stopPropagation()} style={{width:36,height:36,borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.75)"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x,i)=><path key={i} d={x}/>)}</svg></a>;
+  const ICO_WA=["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"];
+  const ICO_MAIL=["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"];
+  const waNum=c=>String(c.whatsapp||"").replace(/\D/g,"");
+  const acciones=c=><div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>{waNum(c)&&accion(`https://wa.me/${waNum(c)}`,"WhatsApp",ICO_WA)}{c.email&&accion(`mailto:${c.email}`,"Mail",ICO_MAIL)}</div>;
+  const lugar=c=>[c.city,c.province].filter(Boolean).join(", ");
+
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,gap:12,flexWrap:"wrap"}}>
-      <div><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>{total} {total===1?"cliente":"clientes"}{busq||fCond?" encontrados":""}</p></div>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.07)"}}>
-          {[{k:"",l:"Todos"},{k:"responsable_inscripto",l:`RI (${nRI})`},{k:"monotributista",l:"Monotributo"}].map(o=>
-            <button key={o.k} onClick={()=>setFCond(o.k)} style={{padding:"6px 13px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:fCond===o.k?GOLD_GRADIENT:"transparent",color:fCond===o.k?"#0A1628":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
-        </div>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{width:360,maxWidth:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.08)";e.target.style.boxShadow="none";}}/>
+    <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",flex:celu?"1 1 100%":"0 0 auto"}}>
+        {[{k:"",l:"Todos"},{k:"responsable_inscripto",l:`RI · ${nRI}`},{k:"monotributista",l:"Monotributo"}].map(o=>
+          <button key={o.k} onClick={()=>setFCond(o.k)} style={{flex:1,padding:"8px 14px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:fCond===o.k?"rgba(184,149,106,0.22)":"transparent",color:fCond===o.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{o.l}</button>)}
       </div>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar nombre, código o email" style={{flex:1,minWidth:celu?0:240,height:40,padding:"0 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:11,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+      <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{total.toLocaleString("es-AR")} {total===1?"cliente":"clientes"}</span>
     </div>
     {err&&<div style={{padding:"12px 16px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",fontSize:13}}>{err}</div>}
-    {lo?<SkeletonTable rows={8} cols={5}/>:
-    <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-          {["Código","Nombre","Email","WhatsApp","Ciudad"].map(h=><th key={h} style={{padding:"14px 16px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</th>)}
-        </tr></thead>
-        <tbody>{clients.map(c=><tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(c)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-          <td style={{padding:"14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{c.client_code}</td>
-          <td style={{padding:"14px 16px",color:"#fff",fontWeight:500,fontSize:13}}>{c.first_name} {c.last_name}{c.tax_condition==="responsable_inscripto"&&<span title="Responsable Inscripto — factura A, paga sus impuestos aparte" style={{marginLeft:9,fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.14)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.35)",letterSpacing:"0.08em"}}>RI</span>}{c.tier&&c.tier!=="standard"&&(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts ganados`} style={{marginLeft:10,fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${ti.color}`,display:"inline-flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}</td>
-          <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.email}</td>
-          <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.whatsapp||<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
-          <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",fontSize:12.5}}>{[c.city,c.province].filter(Boolean).join(", ")||<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
-        </tr>)}</tbody>
-      </table>
-      {clients.length===0&&<EmptyState icon="users" title={busq?"Sin resultados":"No hay clientes"} description={busq?`Nada coincide con "${busq}"`:"Aún no se registró ningún cliente en el sistema."}/>}
-    </div>}
+    {lo?<SkeletonTable rows={8} cols={4}/>:clients.length===0
+      ?<EmptyState icon="users" title={busq?"Sin resultados":"No hay clientes"} description={busq?`Nada coincide con "${busq}"`:""}/>
+      :<div style={{display:"flex",flexDirection:"column",gap:celu?8:0,background:celu?"transparent":"rgba(255,255,255,0.02)",borderRadius:16,border:celu?"none":"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        {!celu&&<div style={{display:"grid",gridTemplateColumns:COLS_CL,gap:16,padding:"11px 18px",background:"rgba(0,0,0,0.2)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Cliente","Contacto","Ciudad",""].map((h,i)=><span key={i} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</span>)}</div>}
+        {clients.map(c=>{const nombre=<div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>{avatar(c)}<div style={{minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{c.first_name} {c.last_name}</span>{c.tax_condition==="responsable_inscripto"&&chipRI}{tier(c)}</div>
+            <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{c.client_code}</span>
+          </div></div>;
+          if(celu)return <div role="button" tabIndex={0} key={c.id} onClick={()=>onSelect(c)} style={{cursor:"pointer",display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:10,alignItems:"center",padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",boxSizing:"border-box"}}>
+            {nombre}{acciones(c)}
+            {(c.email||lugar(c))&&<p style={{gridColumn:"1 / -1",margin:0,fontSize:12,color:"rgba(255,255,255,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[c.email,lugar(c)].filter(Boolean).join(" · ")}</p>}
+          </div>;
+          return <div role="button" tabIndex={0} key={c.id} onClick={()=>onSelect(c)} style={{cursor:"pointer",display:"grid",gridTemplateColumns:COLS_CL,gap:16,alignItems:"center",padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.045)",boxSizing:"border-box",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            {nombre}
+            <div style={{minWidth:0}}><p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||"—"}</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.4)"}}>{c.whatsapp||""}</p></div>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lugar(c)||"—"}</span>
+            {acciones(c)}
+          </div>;})}
+      </div>}
     {paginas>1&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginTop:18}}>
       <button onClick={()=>setPag(p=>Math.max(0,p-1))} disabled={pag===0} style={btnPag(pag>0)}>← Anterior</button>
-      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>Página {pag+1} de {paginas}</span>
+      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{pag+1} / {paginas}</span>
       <button onClick={()=>setPag(p=>Math.min(paginas-1,p+1))} disabled={pag>=paginas-1} style={btnPag(pag<paginas-1)}>Siguiente →</button>
     </div>}
   </div>;
@@ -12204,7 +12219,7 @@ function AgpForm({token,allClients,editing,onClose,onSaved}){
     <span>{lbl}</span>
     <span style={{position:"relative",width:40,height:23,borderRadius:23,background:on?"#22c55e":"rgba(255,255,255,0.18)",transition:"background .2s",flexShrink:0}}><span style={{position:"absolute",top:3,left:on?20:3,width:17,height:17,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/></span>
   </button>;
-  const lbl=t=><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>{t}</p>;
+  const lbl=t=><p style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",margin:"0 0 5px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t}</p>;
   const bloque=(num,titulo,listo,children)=><section style={{marginTop:14,padding:"16px 16px 4px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:`1px solid ${listo?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.08)"}`}}>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
       <span style={{width:24,height:24,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:listo?"#22c55e":"rgba(184,149,106,0.2)",color:listo?"#0A1628":GOLD_LIGHT}}>{listo?"✓":num}</span>
