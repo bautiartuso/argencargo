@@ -8,6 +8,7 @@ export default async function sitemap() {
   try { notas = await notasPublicadas({ limit: 500 }); } catch {}
   return [
     { url: `${base}/`, lastModified, changeFrequency: 'weekly', priority: 1.0 },
+    { url: `${base}/servicios`, lastModified, changeFrequency: 'monthly', priority: 0.9 },
     { url: `${base}/blog`, lastModified, changeFrequency: 'daily', priority: 0.8 },
     { url: `${base}/terminos`, lastModified, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${base}/privacidad`, lastModified, changeFrequency: 'yearly', priority: 0.3 },

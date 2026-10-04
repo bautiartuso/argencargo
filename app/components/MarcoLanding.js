@@ -169,7 +169,7 @@ export default function MarcoLanding({ children }) {
             <img className="txt" src={claro ? "/argencargo/texto.png" : "/argencargo/texto-blanco.png"} alt="Argencargo" />
           </a>
           <nav className="links">
-            <a href="/#servicios" onClick={ir("servicios")}><Ico d={ICOS.servicios} />{t("servicios")}</a>
+            <a href="/servicios"><Ico d={ICOS.servicios} />{t("servicios")}</a>
             <a href="/blog"><Ico d={ICOS.aprender} />{t("aprender")}</a>
             <a href="/#quienes-somos" onClick={ir("quienes-somos")}><Ico d={ICOS.quienes} />{t("quienes")}</a>
             <a href="/blog"><Ico d={ICOS.blog} />{t("blog")}</a>
@@ -191,7 +191,7 @@ export default function MarcoLanding({ children }) {
       </header>
       {/* En el celu los títulos van en la página (no en la isla pegada). */}
       <nav className="linksCel">
-        <a href="/#servicios" onClick={ir("servicios")}><Ico d={ICOS.servicios} />{t("servicios")}</a>
+        <a href="/servicios"><Ico d={ICOS.servicios} />{t("servicios")}</a>
         <a href="/blog"><Ico d={ICOS.aprender} />{t("aprender")}</a>
         <a href="/#quienes-somos" onClick={ir("quienes-somos")}><Ico d={ICOS.quienes} />{t("quienes")}</a>
         <a href="/blog"><Ico d={ICOS.blog} />{t("blog")}</a>
@@ -224,7 +224,7 @@ export default function MarcoLanding({ children }) {
           </div>
           <div className="col">
             <h4>{t("navegacion")}</h4>
-            <a href="/#servicios" onClick={ir("servicios")}>{t("servicios")}</a>
+            <a href="/servicios">{t("servicios")}</a>
             <a href="/blog">{t("aprender")}</a>
             <a href="/#quienes-somos" onClick={ir("quienes-somos")}>{t("quienes")}</a>
             <a href="/blog">{t("blog")}</a>
