@@ -14,7 +14,7 @@ const TEMA_KEY = "ac_landing_tema";
 
 // Redes: las que todavía no tienen link se muestran igual (sin enlace) para que se note que faltan.
 const REDES = [
-  { k: "instagram", url: "https://www.instagram.com/argencargo", d: ["M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5z", "M16 11.4A4 4 0 1 1 12.6 8 4 4 0 0 1 16 11.4z", "M17.5 6.5h.01"] },
+  { k: "instagram", url: "https://www.instagram.com/argencargo_", d: ["M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5z", "M16 11.4A4 4 0 1 1 12.6 8 4 4 0 0 1 16 11.4z", "M17.5 6.5h.01"] },
   { k: "linkedin", url: null, d: ["M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z", "M2 9h4v12H2z", "M4 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"] },
   { k: "facebook", url: null, d: ["M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"] },
   { k: "tiktok", url: null, d: ["M9 12a4 4 0 1 0 4 4V2a5 5 0 0 0 5 5"] },
