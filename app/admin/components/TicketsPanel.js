@@ -37,7 +37,6 @@ export default function TicketsPanel({ token, allClients = [] }) {
   for (const t of tickets) counts[t.status] = (counts[t.status] || 0) + 1;
 
   return <div>
-    <h2 style={{ color: "#fff", fontSize: 26, margin: "0 0 6px", fontWeight: 700 }}>🎫 Tickets / Soporte</h2>
     <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, margin: "0 0 22px" }}>Sistema de tickets e incidentes. Los clientes abren tickets desde el portal y vos los gestionás acá.</p>
 
     <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>

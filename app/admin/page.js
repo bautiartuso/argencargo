@@ -498,7 +498,7 @@ function OperationsList({token,onSelect,onNew}){
   </button>;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Operaciones</h2>
+      
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Btn variant="gold" onClick={onNew}>+ Nueva operación</Btn>
       </div>
@@ -6238,7 +6238,7 @@ function EntregasPanel({token,onOpenOp}){
 
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:celu?16:22,marginBottom:celu?12:16,flexWrap:"wrap"}}>
-      <h2 style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>Entregas</h2>
+      
       <div style={{display:"flex",gap:18}}>
         {[["agenda","En curso",pendientes.length+entregadasSinCobrar.length],["hechas","Entregadas",null]].map(([k,l,n])=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"4px 0",fontSize:12,fontWeight:on?800:700,letterSpacing:"0.08em",textTransform:"uppercase",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,background:"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}}>{n}</span>}</button>;})}
       </div>
@@ -6751,7 +6751,7 @@ function ClientsList({token,onSelect}){
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,gap:12,flexWrap:"wrap"}}>
-      <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Clientes</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>{total} {total===1?"cliente":"clientes"}{busq||fCond?" encontrados":""}</p></div>
+      <div><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>{total} {total===1?"cliente":"clientes"}{busq||fCond?" encontrados":""}</p></div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.07)"}}>
           {[{k:"",l:"Todos"},{k:"responsable_inscripto",l:`RI (${nRI})`},{k:"monotributista",l:"Monotributo"}].map(o=>
@@ -7045,7 +7045,7 @@ function TariffsManager({token}){
 
   const o=TARIFAS_ORIGENES.find(x=>x.k===origen)||TARIFAS_ORIGENES[0];
   return <div>
-    <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 16px",letterSpacing:"-0.02em"}}>Tarifas</h2>
+    
     <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":`repeat(${TARIFAS_ORIGENES.length},minmax(0,1fr))`,gap:8,marginBottom:16}}>
       {TARIFAS_ORIGENES.map(x=>{const on=x.k===origen;return <button key={x.k} onClick={()=>setOrigen(x.k)} style={{padding:"12px 14px",borderRadius:12,border:`1.5px solid ${on?GOLD:"rgba(255,255,255,0.08)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
         <span style={{display:"block",fontSize:14,fontWeight:800}}>{x.flag} {x.nombre}</span>
@@ -7187,7 +7187,7 @@ function Calculator({token,clients}){
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
   const clName=selClient?clients.find(c=>c.id===selClient):null;
 
-  return <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Calculadora de Importación</h2>
+  return <div>
     {/* Client selector - always visible */}
     <Card><Sel label="Cliente (para tarifas custom)" value={selClient} onChange={setSelClient} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Sin cliente (tarifa base)"/>
     {selClient&&overrides.length>0&&<p style={{fontSize:11,color:IC,margin:"-8px 0 0",fontWeight:600}}>Usando {overrides.length} tarifa(s) custom</p>}</Card>
@@ -7484,7 +7484,7 @@ function AdminSettings({token,session}){
     const r=await sf("/auth/v1/user",{method:"PUT",body:JSON.stringify({password:newPw}),headers:{Authorization:`Bearer ${token}`}});
     if(r?.error){setErr(r.error.message||"Error al cambiar contraseña");setLo(false);return;}
     setMsg("Contraseña cambiada exitosamente");setCurPw("");setNewPw("");setConfPw("");setLo(false);};
-  return <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Configuración</h2>
+  return <div>
     <Card title="Cambiar contraseña">
       <div style={{maxWidth:400}}>
         <Inp label="Contraseña actual" type="password" value={curPw} onChange={setCurPw} placeholder="••••••••"/>
@@ -7911,7 +7911,7 @@ function FinancePanel({token}){
   };
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Finanzas</h2>
+      
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(-1)}>📊 Cierre mes anterior</Btn>
         <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(0)}>📊 Cierre mes actual</Btn>
@@ -11248,7 +11248,7 @@ function ShipmentsTracking({token,onSelectOp}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <div>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Seguimientos en tránsito</h2>
+        
         <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{filtered.length} {filtered.length===1?"paquete":"paquetes"} en operaciones activas</p>
       </div>
       <div style={{display:"flex",gap:8}}>
@@ -12086,7 +12086,7 @@ function AgpPanel({token,allClients}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
       <div>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Gestión de pagos</h2>
+        
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>Giros al exterior por cuenta del cliente. Al panel financiero solo entra la ganancia, no el monto que pasa.</p>
       </div>
       <Btn variant="gold" onClick={()=>setEditing("nuevo")}>+ Nueva gestión</Btn>
@@ -12398,7 +12398,7 @@ function FacturasPanel({token}){
   const arsF=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Facturación <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>ARCA · Factura C</span></h2>
+      <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>ARCA · Factura C</span>
       <Btn onClick={()=>{setModal(true);setErr("");}}>🧾 Nueva factura</Btn>
     </div>
     {!configured&&<div style={{padding:"12px 16px",marginBottom:14,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.35)",borderRadius:10,fontSize:12.5,color:"#fbbf24",lineHeight:1.6}}>
@@ -13501,7 +13501,7 @@ function ComunicacionesPanel({token}){
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:10}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Comunicaciones</h2>
+      
       <button onClick={testEmail} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📧 Probar email</button>
     </div>
     <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>{tab==="seguimiento"?"A quién le conviene escribirle hoy para que vuelva a operar.":"Notificaciones manuales (WhatsApp), plantillas y feedback de clientes."}</p>
@@ -13779,7 +13779,7 @@ function AdminTasks({token}){
   return <div>
     {/* Header */}
     <div style={{marginBottom:20}}>
-      <h2 style={{fontSize:24,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>Tareas</h2>
+      
       <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>Tu día a día. Las atrasadas se muestran arriba como urgentes — su fecha original queda intacta.</p>
     </div>
 
@@ -15666,7 +15666,7 @@ function GiAdminPanel({token,clients}){
     {msg&&<div style={{position:"fixed",top:20,right:20,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",padding:"10px 16px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 12px 30px rgba(0,0,0,0.4)"}}>{msg}</div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:14}}>
       <div>
-        <h2 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Gestión Integral</h2>
+        
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedile cotizaciones al socio o armalas vos mismo (sin comisión). Cuando se acepta, se convierte en op AC-XXXX.</p>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -15942,7 +15942,7 @@ function AdminDashboard({session,onLogout}){
   const navSectionsAll=[
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
-      {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
+      {key:"agents",label:"Aéreos",p:["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"agp",label:"Gestión de pagos",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},

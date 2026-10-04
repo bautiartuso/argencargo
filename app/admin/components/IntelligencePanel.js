@@ -38,7 +38,6 @@ export default function IntelligencePanel({ token, allClients = [] }) {
   useEffect(() => { if (mode === "trends") load(); }, [mode, months]);
 
   return <div>
-    <h2 style={{ color: "#fff", fontSize: 26, margin: "0 0 6px", fontWeight: 700 }}>🧠 Inteligencia</h2>
     <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, margin: "0 0 22px" }}>Análisis 360 de cliente + tendencias globales de mercadería + predicción de próxima importación.</p>
 
     <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
