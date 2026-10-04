@@ -320,7 +320,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   const [etapa,setEtapa]=useState(()=>{try{return localStorage.getItem("ac_ops_etapa")||"proceso";}catch{return "proceso";}});
   useEffect(()=>{try{localStorage.setItem("ac_ops_etapa",etapa);}catch{}},[etapa]);
   const [subEtapa,setSubEtapa]=useState("");
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [cliComByOp,setCliComByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [lo,setLo]=useState(true);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [cliComByOp,setCliComByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [vueloDeOp,setVueloDeOp]=useState({});const [lo,setLo]=useState(true);
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
   const [fStatuses,setFStatuses]=useState([]);
   const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
@@ -333,7 +333,6 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
   const [bulkRunning,setBulkRunning]=useState(false);
-  const [attFilter,setAttFilter]=useState(null); // categoría de atención activa: "stale"|"noBudget"|"noEta"|"noNcm" — filtra la lista
   const toggleSelected=(id)=>setSelectedIds(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
   const clearSelection=()=>setSelectedIds(new Set());
   const selectAll=(rows)=>setSelectedIds(new Set(rows.map(o=>o.id)));
@@ -375,7 +374,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm,cp,it,fo]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd,amount_ars,exchange_rate,currency,commission_pct"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"}),dq("flight_operations",{token,filters:"?select=operation_id"}).catch(()=>[])]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};const comMap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);const pct=Number(p.commission_pct||0);if(pct>0){const rt=Number(p.exchange_rate||0);const cu=p.currency==="ARS"&&rt>0?(Number(p.amount_ars||0)*(pct/100))/rt:Number(p.amount_usd||0)*(pct/100);comMap[p.operation_id]=(comMap[p.operation_id]||0)+cu;}});setCliPmtsByOp(cmap);setCliComByOp(comMap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setOpsWithFlight(new Set((Array.isArray(fo)?fo:[]).map(r=>r.operation_id).filter(Boolean)));setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp,it,fo,fl]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd,amount_ars,exchange_rate,currency,commission_pct"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"}),dq("flight_operations",{token,filters:"?select=operation_id,flight_id"}).catch(()=>[]),dq("flights",{token,filters:"?select=id,status,invoice_presented_at"}).catch(()=>[])]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};const comMap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);const pct=Number(p.commission_pct||0);if(pct>0){const rt=Number(p.exchange_rate||0);const cu=p.currency==="ARS"&&rt>0?(Number(p.amount_ars||0)*(pct/100))/rt:Number(p.amount_usd||0)*(pct/100);comMap[p.operation_id]=(comMap[p.operation_id]||0)+cu;}});setCliPmtsByOp(cmap);setCliComByOp(comMap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setOpsWithFlight(new Set((Array.isArray(fo)?fo:[]).map(r=>r.operation_id).filter(Boolean)));const fmap={};(Array.isArray(fl)?fl:[]).forEach(f=>{fmap[f.id]=f;});const vmap={};(Array.isArray(fo)?fo:[]).forEach(r=>{const f=fmap[r.flight_id];if(!f||!r.operation_id)return;const cerrado=f.status!=="preparando"||!!f.invoice_presented_at;if(cerrado||!vmap[r.operation_id])vmap[r.operation_id]=cerrado?"cerrado":"abierto";});setVueloDeOp(vmap);setLo(false);})();},[token]);
   // Saldo pendiente del cliente. Considera:
   // - pagos ya recibidos (collected_amount si la op está cobrada, o operation_client_payments si es GI)
   // - crédito aplicado de CC (credit_applied_usd)
@@ -407,6 +406,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   };
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const toggleChannel=(c)=>setFChannels(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
+  const estadoVisto=o=>{if(!String(o.channel||"").startsWith("aereo")||!["en_deposito_origen","en_preparacion","en_transito"].includes(o.status))return o.status;const v=vueloDeOp[o.id];if(v==="cerrado")return "en_transito";if(v==="abierto")return "en_preparacion";return "en_deposito_origen";};
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannels.length>0&&!fChannels.includes(o.channel))return false;if(fOrigin&&String(o.origin||"").toLowerCase()!==fOrigin.toLowerCase())return false;if(fEta&&String(o.eta||"").slice(0,10)!==fEta)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
   // true = la ganancia se calculo asumiendo que se cobro el presupuesto completo, porque la op
@@ -472,7 +472,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   const sorted=[...filtered].sort((a,b)=>{
     if(sortCol==="smart"){
       // Orden: más cercano a entrega primero (status_weight desc), luego ETA asc, luego created_at desc
-      const wa=STATUS_WEIGHT[a.status]??-1,wb=STATUS_WEIGHT[b.status]??-1;
+      const wa=STATUS_WEIGHT[estadoVisto(a)]??-1,wb=STATUS_WEIGHT[estadoVisto(b)]??-1;
       if(wa!==wb)return wb-wa;
       const ea=a.eta?String(a.eta).slice(0,10):"9999-12-31";const eb=b.eta?String(b.eta).slice(0,10):"9999-12-31";
       if(ea!==eb)return ea.localeCompare(eb);
@@ -484,29 +484,24 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   // El 3er click "suelta" el orden, así no queda clavado por tocar el encabezado.
   const toggleSort=(col)=>{if(sortCol===col){if(sortDir==="asc"){setSortDir("desc");}else{setSortCol("smart");setSortDir("asc");}}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col,narrow,alignRight})=><th onClick={()=>toggleSort(col)} style={{padding:alignRight?"14px 24px 14px 16px":narrow?"14px 8px 14px 16px":"14px 16px",textAlign:"center",fontSize:10,fontWeight:700,color:sortCol===col?GOLD_LIGHT:"rgba(255,255,255,0.45)",textTransform:"uppercase",cursor:"pointer",userSelect:"none",letterSpacing:"0.08em",transition:"color 150ms",...(narrow?{width:"1%",whiteSpace:"nowrap"}:{})}}>{label}{sortCol===col?<span style={{marginLeft:6,fontSize:9}}>{sortDir==="asc"?"▲":"▼"}</span>:null}</th>;
-  // Cards "qué necesita atención": cuenta ops por categoría problemática
   const STALE_DAYS={en_deposito_origen:14,en_preparacion:10,en_transito:30,arribo_argentina:7,en_aduana:14,entregada:30};
   const daysSince=(dateStr)=>dateStr?Math.floor((Date.now()-new Date(dateStr).getTime())/86400000):0;
-  const staleOps=ops.filter(o=>{const limit=STALE_DAYS[o.status];if(!limit)return false;const since=daysSince(o.updated_at||o.created_at);return since>=limit;});
-  const noBudgetOps=ops.filter(o=>!["operacion_cerrada","cancelada","pendiente"].includes(o.status)&&Number(o.budget_total||0)<=0);
-  const noEtaOps=ops.filter(o=>["en_transito","arribo_argentina"].includes(o.status)&&!o.eta);
   // Sin NCM: solo canales en blanco (aéreo/marítimo), no-GI, con algún producto que falta clasificar.
   // Aéreo: recién cuenta como "sin NCM" cuando la op YA tiene vuelo asignado. Antes de eso
   // todavía no hay nada que declarar, así que no tiene sentido reclamar la clasificación.
   // Marítimo no pasa por vuelo, así que se sigue evaluando siempre.
   const noNcmOps=ops.filter(o=>(o.channel==="aereo_blanco"||o.channel==="maritimo_blanco")&&o.service_type!=="gestion_integral"&&!["operacion_cerrada","cancelada"].includes(o.status)&&ncmMissingByOp[o.id]&&(o.channel!=="aereo_blanco"||opsWithFlight.has(o.id)));
-  const attentionTotal=staleOps.length+noBudgetOps.length+noEtaOps.length+noNcmOps.length;
-  // Filtro por tarjeta de atención: al tocar una card, la lista se filtra a esa categoría.
-  const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps,noNcm:noNcmOps};
-  const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA",noNcm:"Sin NCM"};
-  const attIds=attFilter&&attArrays[attFilter]?new Set(attArrays[attFilter].map(o=>o.id)):null;
-  const toggleAtt=(k)=>setAttFilter(f=>f===k?null:k);
-  const AttCard=({n,label,color,onClick,active})=>n>0||active?<button onClick={onClick} style={{display:"inline-flex",alignItems:"center",gap:8,height:36,padding:"0 14px 0 12px",borderRadius:999,border:`1.5px solid ${active?color:color+"55"}`,background:active?`${color}2A`:`${color}12`,color:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:12.5,fontWeight:700}}><b style={{fontSize:14,color}}>{n}</b>{label}{active&&<span style={{fontSize:11,color}}>✕</span>}</button>:null;
-  const etapaDe=o=>{if(["operacion_cerrada","cancelada"].includes(o.status))return "cerradas";if(o.delivery_completed_at)return (calcSaldo(o)||0)>0.005?"entregar":"entregadas";if(o.status==="entregada"||o.delivery_ready_at)return "entregar";return "proceso";};
+  // Etapas (04/10/2026): Arribadas (para entregar o entregadas con saldo) · En proceso · Finalizadas
+  // (cerradas, canceladas y entregadas sin saldo). El estado de las aéreas sale del vuelo: vuelo
+  // listo para despachar o despachado = en tránsito, vuelo abierto = preparación, sin vuelo = depósito.
+  const etapaDe=o=>{if(["operacion_cerrada","cancelada"].includes(o.status))return "finalizadas";if(o.delivery_completed_at)return (calcSaldo(o)||0)>0.005?"arribadas":"finalizadas";if(o.status==="entregada"||o.delivery_ready_at)return "arribadas";return "proceso";};
   const nEtapa=k=>ops.filter(o=>etapaDe(o)===k).length;
   const buscando=search.trim().length>0;
-  const ETAPAS=[{k:"proceso",l:"En proceso",c:"#60a5fa"},{k:"entregar",l:"Para entregar",c:"#22c55e"},{k:"entregadas",l:"Entregadas",c:"#a78bfa"},{k:"cerradas",l:"Cerradas",c:"#94a3b8"}];
-  const SUB=[{k:"",l:"Todas"},{k:"pendiente",l:"Proveedor"},{k:"en_deposito_origen",l:"Depósito"},{k:"en_preparacion",l:"Preparación"},{k:"en_transito",l:"En tránsito"},{k:"arribo_argentina",l:"Arribó"},{k:"en_aduana",l:"Aduana"}];
+  const ETAPAS=[{k:"arribadas",l:"Arribadas",c:"#22c55e"},{k:"proceso",l:"En proceso",c:"#60a5fa"},{k:"finalizadas",l:"Finalizadas",c:"#94a3b8"}];
+  const etapaOk=ETAPAS.some(e=>e.k===etapa)?etapa:(etapa==="entregar"?"arribadas":etapa==="cerradas"||etapa==="entregadas"?"finalizadas":"proceso");
+  const SUB=[{k:"",l:"Todas"},{k:"en_aduana",l:"Aduana"},{k:"arribo_argentina",l:"Arribó"},{k:"en_transito",l:"En tránsito"},{k:"en_preparacion",l:"Preparación"},{k:"en_deposito_origen",l:"Depósito"},{k:"pendiente",l:"Proveedor"}];
+  const ORIGENES_F=[{v:"",l:"Todos"},{v:"China",l:"China",f:"🇨🇳"},{v:"USA",l:"USA",f:"🇺🇸"},{v:"Pakistán",l:"Pakistán",f:"🇵🇰"},{v:"Bangladesh",l:"Bangladesh",f:"🇧🇩"}];
+  const chipF=(on)=>({display:"inline-flex",alignItems:"center",gap:6,height:34,padding:"0 13px",borderRadius:999,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.09)"}`,background:on?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flex:"0 0 auto"});
   return <div>
     <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center"}}>
       <div style={{position:"relative",flex:1,minWidth:0}}>
@@ -516,10 +511,10 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
       </div>
       <Btn variant="gold" onClick={onNew}>{celu?"+ Nueva":"+ Nueva operación"}</Btn>
     </div>
-    {!buscando&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:8,marginBottom:18}}>
-      {ETAPAS.map(e=>{const on=etapa===e.k;const n=e.k==="entregadas"?null:nEtapa(e.k);return <button key={e.k} onClick={()=>setEtapa(e.k)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:celu?"12px 14px":"14px 18px",borderRadius:14,border:`1.5px solid ${on?e.c:"rgba(255,255,255,0.08)"}`,background:on?`${e.c}1F`:"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
-        <span style={{display:"flex",alignItems:"center",gap:8,fontSize:celu?13:14,fontWeight:800}}><span style={{width:8,height:8,borderRadius:"50%",background:e.c,flexShrink:0}}/>{e.l}</span>
-        {n!=null&&<span style={{fontSize:celu?15:18,fontWeight:800,color:on?e.c:"rgba(255,255,255,0.55)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
+    {!buscando&&<div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)",gap:4,padding:5,marginBottom:18,borderRadius:18,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.07)"}}>
+      {ETAPAS.map(e=>{const on=etapaOk===e.k;const n=nEtapa(e.k);return <button key={e.k} onClick={()=>setEtapa(e.k)} style={{display:"flex",flexDirection:celu?"column":"row",alignItems:"center",justifyContent:"center",gap:celu?4:10,padding:celu?"10px 4px":"13px 16px",borderRadius:14,border:"none",background:on?`linear-gradient(180deg,${e.c}33,${e.c}14)`:"transparent",boxShadow:on?`inset 0 0 0 1.5px ${e.c}88, 0 6px 22px ${e.c}26`:"none",color:on?"#fff":"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit",transition:"all 160ms"}}>
+        <span style={{fontSize:celu?13:14.5,fontWeight:800,letterSpacing:"-0.01em"}}>{e.l}</span>
+        {e.k!=="finalizadas"&&<span style={{minWidth:24,height:22,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,fontVariantNumeric:"tabular-nums",background:on?e.c:"rgba(255,255,255,0.08)",color:on?"#0A1628":"rgba(255,255,255,0.6)"}}>{n}</span>}
       </button>;})}
     </div>}
     {selectedIds.size>0&&<div style={{display:"flex",gap:10,marginBottom:14,padding:"12px 16px",background:`linear-gradient(90deg, rgba(184,149,106,0.18), rgba(184,149,106,0.06))`,border:`1.5px solid ${GOLD}`,borderRadius:12,alignItems:"center",flexWrap:"wrap"}}>
@@ -533,7 +528,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
     </div>}
     {/* NCM faltante: cartel imposible de ignorar. Sin la clasificación no se puede
         presentar factura ni despachar, así que se muestra arriba de todo y bien grande. */}
-    {(buscando||etapa==="proceso")&&noNcmOps.length>0&&<div style={{marginBottom:18,padding:"18px 22px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.20),rgba(239,68,68,0.06))",border:"2px solid #ef4444",boxShadow:"0 0 0 1px rgba(239,68,68,0.4), 0 8px 30px rgba(239,68,68,0.22)"}}>
+    {(buscando||etapaOk==="proceso")&&noNcmOps.length>0&&<div style={{marginBottom:18,padding:"18px 22px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.20),rgba(239,68,68,0.06))",border:"2px solid #ef4444",boxShadow:"0 0 0 1px rgba(239,68,68,0.4), 0 8px 30px rgba(239,68,68,0.22)"}}>
       <style>{"@keyframes ncmPulse{0%,100%{opacity:1}50%{opacity:.45}}"}</style>
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <span style={{fontSize:34,lineHeight:1,animation:"ncmPulse 1.4s ease-in-out infinite"}}>⚠️</span>
@@ -550,43 +545,36 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
         </div>
       </div>
     </div>}
-    {!buscando&&etapa==="proceso"&&attentionTotal>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
-      <AttCard n={staleOps.length} label="Estancadas" color="#f87171" active={attFilter==="stale"} onClick={()=>{if(staleOps.length)toggleAtt("stale");}}/>
-      <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" active={attFilter==="noBudget"} onClick={()=>{if(noBudgetOps.length)toggleAtt("noBudget");}}/>
-      <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" active={attFilter==="noEta"} onClick={()=>{if(noEtaOps.length)toggleAtt("noEta");}}/>
-      <AttCard n={noNcmOps.length} label="Sin NCM" color="#a78bfa" active={attFilter==="noNcm"} onClick={()=>{if(noNcmOps.length)toggleAtt("noNcm");}}/>
-    </div>}
-    {attFilter&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"8px 14px",background:"rgba(184,149,106,0.10)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
-      <span style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>Filtrando: {attLabels[attFilter]} <span style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>({attArrays[attFilter]?.length||0})</span></span>
-      <button onClick={()=>setAttFilter(null)} style={{fontSize:11,padding:"4px 11px",border:"1px solid rgba(255,255,255,0.18)",background:"transparent",color:"rgba(255,255,255,0.7)",borderRadius:6,cursor:"pointer",fontWeight:600}}>✕ Mostrar todas</button>
-    </div>}
-    {(buscando||etapa==="proceso"||etapa==="cerradas")&&<div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-      {!buscando&&etapa==="proceso"&&<div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto",maxWidth:"100%",flex:celu?"1 1 100%":"0 1 auto"}}>{SUB.map(x=>{const on=subEtapa===x.k;const n=x.k?ops.filter(o=>o.status===x.k&&etapaDe(o)==="proceso").length:null;return <button key={x.k} onClick={()=>setSubEtapa(x.k)} style={{flex:"0 0 auto",padding:"7px 12px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:on?"rgba(184,149,106,0.22)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.6)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{x.l}{n?<span style={{marginLeft:5,opacity:0.7}}>{n}</span>:null}</button>;})}</div>}
-      <div style={{position:"relative"}}><button onClick={()=>setShowChannelDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fChannels.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fChannels.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fChannels.length>0?`${fChannels.length} canal${fChannels.length>1?"es":""}`:"Todos los canales"} ▼</button>
-        {showChannelDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:180}}>{CHANNELS.map(c=><label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fChannels.includes(c)} onChange={()=>toggleChannel(c)}/><span style={{fontSize:12,color:"#fff",fontWeight:600}}>{CM[c]}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFChannels([]);setShowChannelDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar canales</button></div></div>}
+    {(buscando||etapaOk!=="arribadas")&&<div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+      {!buscando&&etapaOk==="proceso"&&<div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>{SUB.map(x=>{const on=subEtapa===x.k;const n=x.k?ops.filter(o=>etapaDe(o)==="proceso"&&estadoVisto(o)===x.k).length:null;const c=x.k?(SM[x.k]?.c||GOLD_LIGHT):GOLD_LIGHT;return <button key={x.k} onClick={()=>setSubEtapa(x.k)} style={{flex:"0 0 auto",display:"inline-flex",alignItems:"center",gap:7,height:36,padding:"0 14px",fontSize:13,fontWeight:700,borderRadius:11,border:`1px solid ${on?c:"rgba(255,255,255,0.08)"}`,cursor:"pointer",background:on?`${c}22`:"rgba(255,255,255,0.03)",color:on?"#fff":"rgba(255,255,255,0.6)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{x.k&&<span style={{width:7,height:7,borderRadius:"50%",background:c,opacity:on?1:0.6}}/>}{x.l}{n?<span style={{fontSize:11.5,fontWeight:800,color:on?c:"rgba(255,255,255,0.4)"}}>{n}</span>:null}</button>;})}</div>}
+      <div style={{display:"flex",gap:8,flexWrap:celu?"nowrap":"wrap",alignItems:"center",overflowX:celu?"auto":"visible",paddingBottom:celu?2:0}}>
+        <button onClick={()=>setFChannels([])} style={chipF(fChannels.length===0)}>Todos los canales</button>
+        {CHANNELS.map(c=><button key={c} onClick={()=>toggleChannel(c)} style={chipF(fChannels.includes(c))}>{CM[c]}</button>)}
+        <span style={{width:1,height:22,background:"rgba(255,255,255,0.1)",margin:"0 4px",flex:"0 0 auto"}}/>
+        {ORIGENES_F.map(x=><button key={x.v} onClick={()=>setFOrigin(x.v)} style={chipF(fOrigin===x.v)}>{x.f&&<span style={{fontSize:14}}>{x.f}</span>}{x.v?x.l:"Todos los orígenes"}</button>)}
+        <span style={{width:1,height:22,background:"rgba(255,255,255,0.1)",margin:"0 4px",flex:"0 0 auto"}}/>
+        <div style={{display:"inline-flex",alignItems:"center",gap:6,flex:"0 0 auto"}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>ETA</span>
+          <DatePicker value={fEta} onChange={v=>setFEta(v||"")} placeholder="ETA" small/>
+          {fEta&&<button onClick={()=>setFEta("")} title="Limpiar ETA" style={{padding:"6px 9px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>}
+        </div>
+        {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"8px 12px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer",flex:"0 0 auto"}}>↻ Restaurar orden</button>}
       </div>
-      <div style={{minWidth:170,marginBottom:-12}}><Sel value={fOrigin} onChange={setFOrigin} options={[{value:"",label:"Todos los orígenes"},{value:"China",label:"🇨🇳 China"},{value:"USA",label:"🇺🇸 USA"},{value:"Pakistán",label:"🇵🇰 Pakistán"},{value:"Bangladesh",label:"🇧🇩 Bangladesh"}]}/></div>
-      <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>ETA</span>
-        <DatePicker value={fEta} onChange={v=>setFEta(v||"")} placeholder="ETA" small/>
-        {fEta&&<button onClick={()=>setFEta("")} title="Limpiar ETA" style={{padding:"6px 9px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>}
-      </div>
-      {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>}
     {lo?<SkeletonTable rows={10} cols={7}/>:(()=>{
     // Filtro por tarjeta de atención (si hay una activa, limita la lista a esa categoría).
-    const baseSorted=attIds?sorted.filter(o=>attIds.has(o.id)):sorted;
+    const baseSorted=sorted;
     const active=baseSorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
     // Separamos las que ya llegaron y están esperando que el cliente las retire ("entregada" =
     // LISTA PARA RETIRAR). Quedan arriba para que se vea de un vistazo qué cargas hay listas.
     const ready=active.filter(o=>o.status==="entregada");
     const inProgress=active.filter(o=>o.status!=="entregada");
-    const closed=baseSorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=String(a.collection_date||a.closed_at||"").slice(0,10);const db=String(b.collection_date||b.closed_at||"").slice(0,10);return db.localeCompare(da);});
+    const closed=baseSorted.filter(o=>etapaDe(o)==="finalizadas").sort((a,b)=>{const da=String(a.collection_date||a.closed_at||a.delivery_completed_at||"").slice(0,10);const db=String(b.collection_date||b.closed_at||b.delivery_completed_at||"").slice(0,10);return db.localeCompare(da);});
     const totalGanancia=closed.reduce((s,o)=>s+calcGan(o),0);
     // En el celu (04/10/2026): tarjetas en vez de tabla. Código, estado y saldo arriba; cliente y
     // descripción abajo. Tocar abre la op.
     const renderCards=(rows,showGanancia)=>rows.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay operaciones</p>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
-      {rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const saldo=showGanancia?null:calcSaldo(op);const gan=showGanancia?calcGan(op):0;
+      {rows.map(op=>{const st=SM[estadoVisto(op)]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const saldo=showGanancia?null:calcSaldo(op);const gan=showGanancia?calcGan(op):0;
         return <div key={op.id} role="button" tabIndex={0} onClick={()=>onSelect(op)} style={{padding:"13px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",borderLeft:`3px solid ${st.c}`,cursor:"pointer"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
             <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:13.5,letterSpacing:"0.03em"}}>{op.operation_code}{op.service_type==="gestion_integral"&&<span style={{marginLeft:6,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:5,background:GOLD_GRADIENT,color:"#0A1628",fontFamily:"inherit"}}>GI</span>}</span>
@@ -608,14 +596,14 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
           <th style={{padding:"14px 12px",width:36}}><input type="checkbox" checked={rows.length>0&&rows.every(o=>selectedIds.has(o.id))} onChange={()=>{if(rows.every(o=>selectedIds.has(o.id))){setSelectedIds(p=>{const n=new Set(p);rows.forEach(o=>n.delete(o.id));return n;});}else{setSelectedIds(p=>{const n=new Set(p);rows.forEach(o=>n.add(o.id));return n;});}}} title="Seleccionar todas las visibles" style={{cursor:"pointer",accentColor:GOLD}}/></th>
           <SH label="Código" col="operation_code" narrow/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cobrada" col="collection_date"/>:<><SH label="ETA" col="eta"/><SH label="Saldo" col="saldo" alignRight/></>}{showGanancia&&<SH label="Ganancia" col="ganancia" alignRight/>}
         </tr></thead>
-        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const gan=calcGan(op);const saldo=showGanancia?null:calcSaldo(op);const isSel=selectedIds.has(op.id);
+        <tbody>{rows.map(op=>{const st=SM[estadoVisto(op)]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const gan=calcGan(op);const saldo=showGanancia?null:calcSaldo(op);const isSel=selectedIds.has(op.id);
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:isSel?"rgba(184,149,106,0.08)":"transparent"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=isSel?"rgba(184,149,106,0.08)":"transparent";}}>
           <td style={{padding:"14px 12px",width:36}} onClick={e=>{e.stopPropagation();toggleSelected(op.id);}}><input type="checkbox" checked={isSel} onChange={()=>{}} style={{cursor:"pointer",accentColor:GOLD}}/></td>
           <td style={{padding:"14px 8px 14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",whiteSpace:"nowrap",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}{op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{marginLeft:8,fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,animation:"acGiPulse 2.4s ease-in-out infinite",fontFamily:"'Inter','Segoe UI',sans-serif",verticalAlign:"middle"}}>GI</span>}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.78)",whiteSpace:"nowrap",fontSize:13}}>{cn}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
-          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[op.status];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span>{isStale&&!op.lost_in_customs_at&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}{op.lost_in_customs_at&&<span title={`Perdida en aduana — ${op.lost_in_customs_reason||""}`} style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(239,68,68,0.2)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.5)",letterSpacing:"0.04em"}}>🚨 PERDIDA ADUANA</span>}</span>;})()}</td>
+          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[estadoVisto(op)];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span>{isStale&&!op.lost_in_customs_at&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}{op.lost_in_customs_at&&<span title={`Perdida en aduana — ${op.lost_in_customs_reason||""}`} style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(239,68,68,0.2)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.5)",letterSpacing:"0.04em"}}>🚨 PERDIDA ADUANA</span>}</span>;})()}</td>
           {showGanancia?<td style={{padding:"14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{op.lost_in_customs_at
             ?<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:999,color:"#fca5a5",background:"rgba(239,68,68,0.10)",border:"1px solid rgba(239,68,68,0.35)",letterSpacing:"0.06em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:"#f87171"}}/>Pérdida</span>
             :<span style={{color:"rgba(255,255,255,0.5)"}}>{formatDateShort(op.collection_date||op.closed_at)}</span>}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
@@ -646,11 +634,11 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
       const res=baseSorted;
       return res.length===0?<EmptyState icon="box" title="Sin resultados" description={`Ninguna operación coincide con "${search}".`}/>:<>{titulo("Resultados",res.length)}{renderTable(res,false)}</>;
     }
-    if(etapa==="entregar"||etapa==="entregadas")return <EntregasPanel token={token} onOpenOp={onOpenEntrega||onSelect} vista={etapa==="entregar"?"agenda":"hechas"}/>;
-    if(etapa==="cerradas")return closed.length===0?<EmptyState icon="box" title="No hay operaciones cerradas"/>:<>
-      <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:4}}>{titulo("Cerradas",closed.length)}{totalGanancia!==0&&<span style={{fontSize:12.5,fontWeight:800,color:totalGanancia>0?"#22c55e":"#ff6b6b"}}>Ganancia USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</div>
+    if(etapaOk==="arribadas")return <EntregasPanel token={token} onOpenOp={onOpenEntrega||onSelect} vista="agenda"/>;
+    if(etapaOk==="finalizadas")return closed.length===0?<EmptyState icon="box" title="No hay operaciones finalizadas"/>:<>
+      {totalGanancia!==0&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}><span style={{fontSize:12.5,fontWeight:800,color:totalGanancia>0?"#22c55e":"#ff6b6b"}}>Ganancia USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
       {renderTable(closedPaged,true)}{renderPagination()}</>;
-    const enProceso=active.filter(o=>etapaDe(o)==="proceso"&&(!subEtapa||o.status===subEtapa));
+    const enProceso=active.filter(o=>etapaDe(o)==="proceso"&&(!subEtapa||estadoVisto(o)===subEtapa));
     return enProceso.length===0?<EmptyState icon="box" title="No hay operaciones en proceso" cta="+ Nueva operación" ctaOnClick={onNew}/>:renderTable(enProceso,false);
   })()}
 
@@ -5721,7 +5709,8 @@ function EntregasPanel({token,onOpenOp,vista}){
   const [cobroModal,setCobroModal]=useState(null); // {op, soloCobro} — cobro/entrega desde cards
   const [coordinarModal,setCoordinarModal]=useState(null); // op a coordinar a mano
   const [hechas,setHechas]=useState([]); // historial reciente: entregadas y cobradas
-  const [diaAgenda,setDiaAgenda]=useState(hoyAR());
+  // Sábado o domingo: arranca en el lunes siguiente (que es el primer día de los chips).
+  const [diaAgenda,setDiaAgenda]=useState(()=>{const d=new Date(hoyAR()+"T12:00:00");while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;});
   const usd=v=>sinMontos?"—":`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   // Universo: dos tramos.
@@ -6027,15 +6016,24 @@ function EntregasPanel({token,onOpenOp,vista}){
   const sinCarrier=(ops)=>ops.filter(o=>o.delivery_choice!=="carrier");
 
   // ===== PANEL ENTREGAS v3: pipeline de cards =====
-  const Bloque=({titulo,n,hint,children,accion,tone})=><div style={{marginBottom:16,border:`1px solid ${tone==="warn"?"rgba(251,191,36,0.3)":tone==="danger"?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:16,background:"rgba(255,255,255,0.028)",padding:celu?"12px 10px":"14px 16px"}}>
-    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:tone==="warn"?"#fbbf24":tone==="danger"?"#f87171":"rgba(255,255,255,0.45)",margin:0}}>{titulo}{n!==undefined&&<span style={{marginLeft:8,padding:"1px 7px",borderRadius:999,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)",fontSize:10}}>{n}</span>}</p>
-      {hint&&!celu&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>{hint}</span>}
-      <span style={{flex:1}}/>
-      {accion}
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:8}}>{children}</div>
-  </div>;
+  // Bloques de la agenda (04/10/2026): encabezado con ícono en color, título grande y contador del tono.
+  const TONOS_BLOQUE={warn:"#fbbf24",danger:"#f87171",wait:"#60a5fa"};
+  const Bloque=({titulo,n,hint,children,accion,tone})=>{
+    const tc=TONOS_BLOQUE[tone];
+    const m=String(titulo).match(/^(\p{Extended_Pictographic}\uFE0F?)\s+(.*)$/u);
+    const ico=m?m[1]:null;const txt=m?m[2]:titulo;
+    return <div style={{marginBottom:16,borderRadius:18,border:`1px solid ${tc?tc+"45":"rgba(255,255,255,0.07)"}`,background:tc?`linear-gradient(180deg,${tc}14,rgba(255,255,255,0.02) 90px)`:"rgba(255,255,255,0.028)",padding:celu?"14px 10px 10px":"16px 18px 14px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+        {ico&&<span style={{width:38,height:38,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:18,background:tc?`${tc}22`:"rgba(255,255,255,0.06)",border:`1px solid ${tc?tc+"40":"rgba(255,255,255,0.08)"}`}}>{ico}</span>}
+        <div style={{minWidth:0,flex:1}}>
+          <p style={{fontSize:celu?15:15.5,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em",display:"flex",alignItems:"center",gap:8}}>{txt}{n!==undefined&&<span style={{minWidth:22,height:22,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:tc&&n>0?tc:"rgba(255,255,255,0.1)",color:tc&&n>0?"#0A1628":"rgba(255,255,255,0.7)"}}>{n}</span>}</p>
+          {hint&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{hint}</p>}
+        </div>
+        {accion}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{children}</div>
+    </div>;
+  };
 
   // Aviso real: /api/notify trigger retiro manda el mail "lista para retirar" y setea delivery_ready_at.
   const enviarAviso=async(o,allowZero=false)=>{
@@ -6264,25 +6262,26 @@ function EntregasPanel({token,onOpenOp,vista}){
     const dias=[];{const d=new Date();while(dias.length<6){const dow=d.getDay();if(dow>=1&&dow<=5){dias.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);}d.setDate(d.getDate()+1);}}
     conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});dias.sort();
     const hoyIso=hoyAR();
-    return dias.map(iso=>{const d=new Date(iso+"T12:00:00");const top=iso===hoyIso?"Hoy":["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()];const sub=`${d.getDate()}/${d.getMonth()+1}`;const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;
-      return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{display:"inline-flex",flexShrink:0,whiteSpace:"nowrap",alignItems:"center",gap:7,padding:celu?"9px 14px":"7px 13px",borderRadius:999,cursor:"pointer",border:`1px solid ${act?"transparent":"rgba(255,255,255,0.12)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:act?"#0A1628":"rgba(255,255,255,0.7)",fontFamily:"inherit",fontSize:12,fontWeight:700,transition:"all 150ms"}}>
-        {top}<span style={{fontSize:10.5,fontWeight:600,opacity:act?0.75:0.5}}>{sub}</span>
-        {n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:999,background:act?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.1)",color:act?"#0A1628":"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
+    return dias.map(iso=>{const d=new Date(iso+"T12:00:00");const top=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d.getDay()];const sub=`${iso===hoyIso?"Hoy · ":""}${d.getDate()}/${d.getMonth()+1}`;const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;
+      return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,minWidth:0,padding:celu?"10px 4px":"11px 8px",borderRadius:14,cursor:"pointer",border:`1px solid ${act?"transparent":n>0?"rgba(74,222,128,0.35)":"rgba(255,255,255,0.1)"}`,background:act?GOLD_GRADIENT:"rgba(255,255,255,0.035)",color:act?"#0A1628":"#fff",fontFamily:"inherit",transition:"all 150ms"}}>
+        <span style={{fontSize:celu?13:14,fontWeight:800,whiteSpace:"nowrap"}}>{top}</span>
+        <span style={{fontSize:11.5,fontWeight:600,opacity:act?0.75:0.5,whiteSpace:"nowrap"}}>{sub}</span>
+        {n>0&&<span className="ac-dia-glow" style={{position:"absolute",top:-7,right:-5,minWidth:22,height:22,padding:"0 6px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,background:"#4ade80",color:"#052e16",fontVariantNumeric:"tabular-nums"}}>{n}</span>}
       </button>;});
   })();
   const tabPill=(k,l,n,c)=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:9,background:on?`linear-gradient(135deg, ${c}33, ${c}1A)`:"transparent",color:on?c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,fontFamily:"inherit"}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:999,background:on?`${c}33`:"rgba(255,255,255,0.08)",color:on?c:"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;};
   const tabBtn=(k,l,n,color)=><button onClick={()=>setTab(k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>{l}{n>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:color||"rgba(255,255,255,0.1)",color:color?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;
 
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:celu?16:22,marginBottom:celu?12:16,flexWrap:"wrap"}}>
-      
-      {!vista&&<div style={{display:"flex",gap:18}}>
+    {!vista&&<div style={{display:"flex",alignItems:"center",gap:celu?16:22,marginBottom:celu?12:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:18}}>
         {[["agenda","En curso",pendientes.length+entregadasSinCobrar.length],["hechas","Entregadas",null]].map(([k,l,n])=>{const on=tab===k;return <button key={k} onClick={()=>setTab(k)} style={{padding:"4px 0",fontSize:12,fontWeight:on?800:700,letterSpacing:"0.08em",textTransform:"uppercase",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,background:"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7}}>{l}{n>0&&<span style={{fontSize:10,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.35)"}}>{n}</span>}</button>;})}
-      </div>}
-      <span style={{flex:1}}/>
-      {tab==="agenda"&&!celu&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>{diasChips}</div>}
-    </div>
-    {tab==="agenda"&&celu&&<div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginBottom:12,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>{diasChips}</div>}
+      </div>
+    </div>}
+    {tab==="agenda"&&<div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)":"repeat(auto-fit,minmax(110px,1fr))",gap:celu?8:10,paddingTop:8,marginBottom:16}}>
+      <style dangerouslySetInnerHTML={{__html:"@keyframes acDiaGlow{0%,100%{box-shadow:0 0 0 3px rgba(74,222,128,0.22),0 0 12px rgba(74,222,128,0.65)}50%{box-shadow:0 0 0 5px rgba(74,222,128,0.12),0 0 22px rgba(74,222,128,0.95)}}.ac-dia-glow{animation:acDiaGlow 1.8s ease-in-out infinite}"}}/>
+      {diasChips}
+    </div>}
 
     {tab==="agenda"&&(()=>{
       const conFecha=confirmadas.filter(o=>o.delivery_day);
@@ -6370,15 +6369,15 @@ function EntregasPanel({token,onOpenOp,vista}){
         </Bloque>}
 
         <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"22px 0 18px"}}/>
-        <Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="la carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
+        <Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="La carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
           {sinAviso.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nada sin avisar. 👌</p>
             :renderPorCliente([...sinAviso].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"aviso")}
         </Bloque>
-        <Bloque titulo="⏳ Esperando al cliente" n={esperando.length} hint="avisadas · falta que complete el link">
+        <Bloque titulo="⏳ Esperando al cliente" n={esperando.length} hint="Avisadas · falta que completen el link" tone="wait">
           {esperando.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nadie pendiente de responder.</p>
             :renderPorCliente([...esperando].sort((a,b)=>new Date(avisadaAt(a))-new Date(avisadaAt(b))),"esperando")}
         </Bloque>
-        {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} tone="danger">
+        {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} hint={sinMontos?null:`Deben ${usd(entregadasSinCobrar.reduce((a,o)=>a+saldoFor(o),0))} en total`} tone="danger">
           {renderPorCliente([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at)-new Date(b.delivery_completed_at)),"acobrar")}
         </Bloque>}
       </>;
@@ -10806,7 +10805,7 @@ function AgentsPanel({token}){
             {grpKg>0&&<span title="Peso facturable acumulado del agente — la cuenta para decidir si conviene armar vuelo ya" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(184,149,106,0.12)",color:"#E8C99B",fontVariantNumeric:"tabular-nums"}}>Σ {grpKg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg fact.</span>}
             {grpFob>0&&<span title="FOB declarado acumulado de las ops de este agente" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontVariantNumeric:"tabular-nums"}}>FOB USD {grpFob.toLocaleString("es-AR",{maximumFractionDigits:0})}</span>}
           </div>
-          {!collapsed&&<div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+          {!collapsed&&<div className="ag-dep-wrap" style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
             <table className="ag-dep" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
               <colgroup>
                 <col style={{width:44}}/>{/* ✓ */}
@@ -16129,6 +16128,9 @@ function AdminDashboard({session,onLogout}){
   const [botUnread,setBotUnread]=useState(0);
   // Globo del blog: notas escritas por la Mac que esperan tu visto (se refresca cada 60 s).
   const [blogPend,setBlogPend]=useState(0);
+  // Globo del Email: no leídos de la bandeja (se refresca cada 60 s y cuando el panel de mail avisa).
+  const [mailUnread,setMailUnread]=useState(0);
+  useEffect(()=>{if(!token||isEmpleado)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/mail?accion=no_leidos",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setMailUnread(Number(b.n)||0);}catch{}};f();const id=setInterval(f,60000);const h=e=>setMailUnread(Number(e.detail)||0);window.addEventListener("ac_mail_noleidos",h);return()=>{on=false;clearInterval(id);window.removeEventListener("ac_mail_noleidos",h);};},[token]);
   useEffect(()=>{if(!token)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/studio?view=blog_count",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setBlogPend(Number(b.pendientes)||0);}catch{}};f();const id=setInterval(f,60000);return()=>{on=false;clearInterval(id);};},[token,page]);
   useEffect(()=>{let mounted=true;const load=async()=>{try{const r=await fetch("/api/admin/bot?count=1",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(mounted&&r.ok)setBotUnread(Number(b.unread||0));}catch{}};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
@@ -16143,7 +16145,7 @@ function AdminDashboard({session,onLogout}){
     {/* Sidebar nav agrupado por secciones — sentence case, tipografía Inter limpia */}
     <nav style={{flex:1,padding:"10px 10px 14px",overflowY:"auto"}}>{navSections.map(sec=><div key={sec.section} style={{marginTop:16}}>
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
-      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
+      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
     </div>)}</nav>
     <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>AD</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0}}>Admin</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.user.email}</p></div></div>{btnTema}<button onClick={onLogout} style={{width:"100%",padding:"8px 10px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>Cerrar sesión</button></div>
   </>;
@@ -16154,13 +16156,10 @@ function AdminDashboard({session,onLogout}){
         .ac-editor-tabs{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px!important;border-bottom:none!important;overflow:visible!important}
         .ac-editor-tabs button{border-radius:10px!important;border:1px solid rgba(255,255,255,0.08)!important;padding:10px 4px!important;font-size:10.5px!important;letter-spacing:0.03em!important;white-space:normal!important;margin:0!important;display:flex!important;align-items:center;justify-content:center;gap:5px;text-align:center;line-height:1.2}
         .ac-editor-tabs button[data-on="1"]{border-color:rgba(184,149,106,0.6)!important;background:rgba(184,149,106,0.16)!important}
-        /* Depósito de Aéreos en el celu: solo ✓, Op, Cliente y Fact. ÷5000; el resto se ve al abrir la op. */
-        table.ag-dep{display:table!important;white-space:normal!important;table-layout:auto!important}
+        /* Depósito de Aéreos en el celu: la tabla completa y se desliza a la derecha, como la de vuelos */
+        .ag-dep-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+        table.ag-dep{display:table!important;min-width:1000px;white-space:normal!important}
         table.ag-dep thead,table.ag-dep tbody{display:table-row-group!important;min-width:0!important}
-        table.ag-dep col:nth-child(n+4){width:auto!important}
-        table.ag-dep tr>*:nth-child(4),table.ag-dep tr>*:nth-child(5),table.ag-dep tr>*:nth-child(6),table.ag-dep tr>*:nth-child(7),table.ag-dep tr>*:nth-child(9),table.ag-dep tr>*:nth-child(10){display:none}
-        table.ag-dep tr>td[colspan]{display:table-cell!important}
-        table.ag-dep td,table.ag-dep th{padding:10px 6px!important}
         .ag-dep-det{grid-template-columns:1fr!important}
         .ac-tabs-cel{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px!important;overflow:visible!important}
         .ac-tabs-cel>button{white-space:normal!important;margin:0!important;text-align:center}
@@ -16197,7 +16196,7 @@ function AdminDashboard({session,onLogout}){
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <img src={LOGO} alt="AC" style={{height:30,objectFit:"contain"}}/>
-      <NotifBell token={token}/>
+      <span style={{width:40}}/>
     </div>
     {/* Mobile overlay */}
     {mobOpen&&<div className="ac-mob-overlay" onClick={()=>setMobOpen(false)} style={{display:"none",position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:60,animation:"ac_fade_in 180ms"}}/>}
@@ -16207,15 +16206,6 @@ function AdminDashboard({session,onLogout}){
     <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.06)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
-      {/* TopBar moderno estilo Linear/Vercel: sticky con backdrop blur, search prominente, bell */}
-      <div className="ac-admin-top-notif" style={{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",gap:12,padding:"12px 32px",background:"rgba(10,22,40,0.65)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-        <button onClick={()=>{const e=new KeyboardEvent("keydown",{key:"k",metaKey:true});window.dispatchEvent(e);}} title="Buscar (⌘K)" style={{flex:1,maxWidth:520,display:"inline-flex",alignItems:"center",gap:10,padding:"8px 14px",fontSize:13,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,color:"rgba(255,255,255,0.55)",cursor:"pointer",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.12)";e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.07)";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          Buscar operaciones, clientes, agentes…
-          <kbd style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",padding:"2px 7px",borderRadius:5,fontSize:10.5,fontFamily:"'SF Mono','JetBrains Mono',monospace",color:"rgba(255,255,255,0.5)"}}>⌘K</kbd>
-        </button>
-        <NotifBell token={token}/>
-      </div>
       <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)} onOpenEntrega={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}

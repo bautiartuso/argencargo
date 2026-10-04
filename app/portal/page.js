@@ -2442,7 +2442,11 @@ function AccountPage({token,client,onRestartTutorial}){
     setLoading(false);
   })();},[client?.id,token]);
   const fmtDate=d=>{try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
-  const isCredit=balance>0;const isDebt=balance<0;
+  // El balance que se muestra descuenta lo que falta abonar de las operaciones (04/10/2026): con
+  // USD 0 en la cuenta y USD 3.069 a abonar, el cliente tiene que ver −3.069, no 0.
+  const pendTot=pendingOps.reduce((a,p)=>a+Number(p.saldo||0),0);
+  const neto=Math.round((balance-pendTot)*100)/100;
+  const isCredit=neto>0.005;const isDebt=neto<-0.005;const porOps=isDebt&&pendTot>0.005;
   // Cuenta corriente (04/10/2026): saldo grande y el historial agrupado por mes.
   const usd2=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const balColor=isCredit?"#22c55e":isDebt?"#ef4444":"#fff";
@@ -2454,8 +2458,8 @@ function AccountPage({token,client,onRestartTutorial}){
     <div className="acc-hero" style={{marginBottom:24}}>
       <div style={{padding:"24px 26px",borderRadius:18,background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.14), rgba(255,255,255,0.02))":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.14), rgba(255,255,255,0.02))":"linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":isDebt?"rgba(239,68,68,0.35)":"rgba(255,255,255,0.09)"}`}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
-        <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":""}{usd2(balance)}</p>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0",lineHeight:1.5}}>{isCredit?t("acc.creditNote"):isDebt?t("acc.debtNote"):t("acc.noPending")}</p>
+        <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":isDebt?"−":""}{usd2(Math.abs(neto))}</p>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0",lineHeight:1.5}}>{isCredit?t("acc.creditNote"):porOps?t("acc.pendingOpsNote"):isDebt?t("acc.debtNote"):t("acc.noPending")}</p>
       </div>
     </div>
     {/* Pendientes de pago (ops GI activas + ops entregadas con saldo) */}

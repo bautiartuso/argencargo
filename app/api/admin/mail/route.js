@@ -6,8 +6,9 @@
 // Storage (mail-config/gmail.json), como las tarifas de los agentes. Solo admin.
 //
 // GET  ?accion=estado | carpetas | lista&carpeta=…&q=…&pagina=… | mensaje&id=… | adjunto&id=…&adj=… |
-//          filtros | conectar | oauth (callback de Google)
-// POST {accion:"enviar"|"borrador"|"filtro"|"borrar_filtro"|"leido"|"papelera"|"desconectar", …}
+//          filtros | no_leidos | conectar | oauth (callback de Google)
+// POST {accion:"enviar"|"borrador"|"filtro"|"borrar_filtro"|"leido"|"papelera"|"ordenar"|"desconectar", …}
+//      enviar con reenviar:id suma el mail original y sus adjuntos.
 
 import crypto from "crypto";
 
@@ -91,11 +92,12 @@ const resumen = (m) => {
 };
 
 // Arma el MIME del mail (texto + html + adjuntos) en base64url para la API.
-function armarMime({ de, para, cc, asunto, texto, adjuntos = [], enRespuestaA, referencias }) {
+function armarMime({ de, para, cc, asunto, texto, adjuntos = [], enRespuestaA, referencias, htmlExtra = "", textoExtra = "" }) {
   const enc = (s) => `=?UTF-8?B?${Buffer.from(String(s || ""), "utf8").toString("base64")}?=`;
   const limite = "ac_" + crypto.randomBytes(8).toString("hex");
   const alt = "alt_" + crypto.randomBytes(8).toString("hex");
-  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${String(texto || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>`;
+  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${String(texto || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>${htmlExtra}`;
+  texto = `${texto || ""}${textoExtra}`;
   const lineas = [];
   if (de) lineas.push(`From: ${de}`);
   lineas.push(`To: ${para}`);
@@ -109,11 +111,26 @@ function armarMime({ de, para, cc, asunto, texto, adjuntos = [], enRespuestaA, r
     lineas.push(`--${limite}`, `Content-Type: ${a.tipo || "application/octet-stream"}; name="${enc(a.nombre)}"`, "Content-Transfer-Encoding: base64", `Content-Disposition: attachment; filename="${enc(a.nombre)}"`, "", String(a.datos || "").replace(/(.{76})/g, "$1\r\n"));
   }
   lineas.push(`--${limite}--`);
-  return b64url(Buffer.from(lineas.join("\r\n"), "utf8"));
+  return lineas.join("\r\n");
 }
 
+// Carpetas automáticas (04/10/2026): todo lo de DHL, FedEx, UPS y WhatsApp sale de la bandeja y va
+// a su carpeta. Se asegura una vez por carga del panel (accion "ordenar"): crea la etiqueta y el
+// filtro si faltan y barre lo que haya quedado en la bandeja.
+const AUTO = [
+  { nombre: "DHL", q: "from:dhl" },
+  { nombre: "FedEx", q: "from:fedex" },
+  { nombre: "UPS", q: "from:ups" },
+  { nombre: "WhatsApp", q: "from:whatsapp OR subject:whatsapp" },
+];
+const SIN_AUTO = AUTO.map((a) => `-label:${a.nombre}`).join(" ");
+
+// Separa una lista de direcciones respetando las comas dentro de comillas.
+const separar = (s) => (String(s || "").match(/(?:"[^"]*"|[^,])+/g) || []).map((x) => x.trim()).filter(Boolean);
+const direccion = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim().toLowerCase();
+
 // Carpetas especiales: bandeja incluye spam (pedido de Bautista: que no se le pierda nada).
-const CONSULTA = { bandeja: "in:inbox OR in:spam", enviados: "in:sent", destacados: "is:starred", papelera: "in:trash" };
+const CONSULTA = { bandeja: `{in:inbox in:spam} ${SIN_AUTO}`, enviados: "in:sent", destacados: "is:starred", papelera: "in:trash" };
 
 export async function GET(req) {
   const u = new URL(req.url);
@@ -148,14 +165,17 @@ export async function GET(req) {
       const url = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: CID, redirect_uri: redirectUri(req), response_type: "code", scope: SCOPES.join(" "), access_type: "offline", prompt: "consent", state: `${ts}.${firmar(ts)}` })}`;
       return json({ url });
     }
+    if (accion === "no_leidos") {
+      const d = await gm(`/messages?maxResults=100&includeSpamTrash=true&q=${encodeURIComponent(`is:unread {in:inbox in:spam} ${SIN_AUTO}`)}`);
+      return json({ n: (d.messages || []).length });
+    }
     if (accion === "carpetas") {
       const d = await gm("/labels");
       const propias = (d.labels || []).filter((l) => l.type === "user");
       const conteos = await Promise.all(propias.map((l) => gm(`/labels/${l.id}`).catch(() => ({}))));
-      const inbox = await gm("/labels/INBOX").catch(() => ({}));
-      const spam = await gm("/labels/SPAM").catch(() => ({}));
+      const nl = await gm(`/messages?maxResults=100&includeSpamTrash=true&q=${encodeURIComponent(`is:unread {in:inbox in:spam} ${SIN_AUTO}`)}`).catch(() => ({}));
       return json({
-        noLeidosBandeja: (inbox.messagesUnread || 0) + (spam.messagesUnread || 0),
+        noLeidosBandeja: (nl.messages || []).length,
         carpetas: propias.map((l, i) => ({ id: l.id, nombre: l.name, noLeidos: conteos[i]?.messagesUnread || 0 })).sort((a, b) => a.nombre.localeCompare(b.nombre)),
       });
     }
@@ -184,7 +204,7 @@ export async function GET(req) {
       recorrer(m.payload, out);
       if ((m.labelIds || []).includes("UNREAD")) gm(`/messages/${id}/modify`, { method: "POST", body: JSON.stringify({ removeLabelIds: ["UNREAD"] }) }).catch(() => {});
       const h = m.payload?.headers || [];
-      return json({ ...resumen(m), cc: hdr(h, "Cc"), messageId: hdr(h, "Message-ID"), referencias: hdr(h, "References"), html: out.html, texto: out.texto, adjuntos: out.adjuntos });
+      return json({ ...resumen(m), cc: hdr(h, "Cc"), responderA: hdr(h, "Reply-To"), messageId: hdr(h, "Message-ID"), referencias: hdr(h, "References"), html: out.html, texto: out.texto, adjuntos: out.adjuntos });
     }
     if (accion === "adjunto") {
       const d = await gm(`/messages/${u.searchParams.get("id")}/attachments/${u.searchParams.get("adj")}`);
@@ -194,7 +214,7 @@ export async function GET(req) {
     if (accion === "filtros") {
       const [f, l] = await Promise.all([gm("/settings/filters").catch(() => ({})), gm("/labels")]);
       const nombres = Object.fromEntries((l.labels || []).map((x) => [x.id, x.name]));
-      return json({ filtros: (f.filter || []).map((x) => ({ id: x.id, de: x.criteria?.from || "", asunto: x.criteria?.subject || "", carpeta: (x.action?.addLabelIds || []).map((i) => nombres[i]).filter(Boolean)[0] || "" })) });
+      return json({ filtros: (f.filter || []).map((x) => ({ id: x.id, de: x.criteria?.from || "", asunto: x.criteria?.subject || "", query: x.criteria?.query || "", carpeta: (x.action?.addLabelIds || []).map((i) => nombres[i]).filter(Boolean)[0] || "" })) });
     }
     return json({ error: "accion_desconocida" }, 400);
   } catch (e) {
@@ -208,11 +228,51 @@ export async function POST(req) {
   let b = {};
   try { b = await req.json(); } catch {}
   try {
+    if (b.accion === "ordenar") {
+      const [l, f] = await Promise.all([gm("/labels"), gm("/settings/filters").catch(() => ({}))]);
+      const labels = l.labels || [];
+      let movidos = 0;
+      for (const a of AUTO) {
+        let label = labels.find((x) => x.name.toLowerCase() === a.nombre.toLowerCase());
+        if (!label) label = await gm("/labels", { method: "POST", body: JSON.stringify({ name: a.nombre, labelListVisibility: "labelShow", messageListVisibility: "show" }) }).catch(() => null);
+        if (!label) continue;
+        const tiene = (f.filter || []).some((x) => x.criteria?.query === a.q && (x.action?.addLabelIds || []).includes(label.id));
+        if (!tiene) await gm("/settings/filters", { method: "POST", body: JSON.stringify({ criteria: { query: a.q }, action: { addLabelIds: [label.id], removeLabelIds: ["INBOX"] } }) }).catch(() => {});
+        const ex = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(`(${a.q}) {in:inbox in:spam}`)}`).catch(() => ({}));
+        const ids = (ex.messages || []).map((m) => m.id);
+        if (ids.length) { await gm("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids, addLabelIds: [label.id], removeLabelIds: ["INBOX", "SPAM"] }) }).catch(() => {}); movidos += ids.length; }
+      }
+      return json({ ok: true, movidos });
+    }
     if (b.accion === "desconectar") { await guardarConfig({}); cacheToken = null; return json({ ok: true }); }
     if (b.accion === "enviar" || b.accion === "borrador") {
       if (b.accion === "enviar" && !String(b.para || "").trim()) return json({ error: "Falta el destinatario" }, 400);
       const cfg = await leerConfig();
-      const raw = armarMime({ de: cfg?.email, para: b.para || "", cc: b.cc, asunto: b.asunto, texto: b.texto, adjuntos: b.adjuntos, enRespuestaA: b.enRespuestaA, referencias: b.referencias });
+      // Reenviar: se suma el mail original (con sus adjuntos) debajo del texto.
+      let extra = { htmlExtra: "", textoExtra: "" }, adjOrig = [];
+      if (b.reenviar) {
+        const m = await gm(`/messages/${b.reenviar}?format=full`);
+        const out = { html: "", texto: "", adjuntos: [] };
+        recorrer(m.payload, out);
+        const h = m.payload?.headers || [];
+        const esc = (x) => String(x || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+        const cab = [["De", hdr(h, "From")], ["Fecha", hdr(h, "Date")], ["Asunto", hdr(h, "Subject")], ["Para", hdr(h, "To")], ...(hdr(h, "Cc") ? [["Cc", hdr(h, "Cc")]] : [])];
+        extra = {
+          htmlExtra: `<br><div style="font-family:Arial,sans-serif;font-size:13px;color:#555">---------- Mensaje reenviado ----------<br>${cab.map(([k, v]) => `${k}: ${esc(v)}`).join("<br>")}</div><br>${out.html || `<pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${esc(out.texto)}</pre>`}`,
+          textoExtra: `\n\n---------- Mensaje reenviado ----------\n${cab.map(([k, v]) => `${k}: ${v}`).join("\n")}\n\n${out.texto}`,
+        };
+        adjOrig = await Promise.all(out.adjuntos.map(async (a) => { const d = await gm(`/messages/${b.reenviar}/attachments/${a.id}`).catch(() => null); return d?.data ? { nombre: a.nombre, tipo: a.tipo, datos: b64dec(d.data).toString("base64") } : null; }));
+      }
+      const mime = armarMime({ de: cfg?.email, para: b.para || "", cc: b.cc, asunto: b.asunto, texto: b.texto, adjuntos: [...(b.adjuntos || []), ...adjOrig.filter(Boolean)], enRespuestaA: b.enRespuestaA, referencias: b.referencias, ...extra });
+      if (b.accion === "enviar" && b.reenviar) {
+        // Por la carga de subida (hasta 35 MB): los adjuntos del original pueden ser pesados.
+        const t = await accessToken();
+        const r = await fetch("https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media", { method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "message/rfc822" }, body: mime });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d?.error?.message || `Gmail ${r.status}`);
+        return json({ ok: true, id: d.id });
+      }
+      const raw = b64url(Buffer.from(mime, "utf8"));
       const message = { raw, ...(b.hilo ? { threadId: b.hilo } : {}) };
       if (b.accion === "enviar") {
         const d = await gm("/messages/send", { method: "POST", body: JSON.stringify(message) });
