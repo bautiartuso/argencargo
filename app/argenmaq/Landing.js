@@ -7,14 +7,13 @@
 //   4. Por qué ARGENMAQ: tarjetas animadas (Argencargo, precio final, dos cuotas, 220 V, seguimiento, respaldo).
 //   5. ¿No encontrás la máquina que buscás?
 import { useEffect, useRef, useState } from "react";
-import { useAM, Marco, MONO, WA, Ico, primeraFoto } from "./kit";
+import { useAM, Marco, MONO, WA, Ico, primeraFoto, precioVidriera, diasVia } from "./kit";
 import { Tarjeta, usePrecios } from "./Tienda";
 
 const Y = "#FFD200";
 const K = "#15171A";
 
 // ── Gráficos con movimiento de las tarjetas de "Por qué ARGENMAQ" ─────────────────────────
-const Ruta = () => <svg className="anim" viewBox="0 0 400 240" preserveAspectRatio="none" aria-hidden="true"><path d="M40 200 C 120 60, 260 60, 360 40" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeDasharray="8 10" style={{ animation: "correr 6s linear infinite" }} /><circle r="6" fill={Y} style={{ offsetPath: "path('M40 200 C 120 60, 260 60, 360 40')", animation: "viajar 5s ease-in-out infinite" }} /><circle cx="40" cy="200" r="10" fill="none" stroke="rgba(255,255,255,0.5)" /><circle cx="360" cy="40" r="10" fill="none" stroke={Y} /><text x="52" y="222" fill="rgba(255,255,255,0.6)" fontFamily={MONO} fontSize="10" letterSpacing="2">CHINA</text><text x="262" y="30" fill="rgba(255,255,255,0.6)" fontFamily={MONO} fontSize="10" letterSpacing="2">BUENOS AIRES</text></svg>;
 const Barras = () => <svg className="anim" viewBox="0 0 400 200" preserveAspectRatio="none" aria-hidden="true">{[40, 90, 140, 190, 240, 290, 340].map((x, i) => <rect key={x} x={x} y={30} width="26" height="150" rx="4" fill={i === 5 ? Y : "rgba(255,255,255,0.16)"} style={{ transformOrigin: "50% 180px", transformBox: "fill-box", animation: `subir 1.8s ${i * 0.15}s ease-out infinite alternate` }} />)}<line x1="30" y1="180" x2="380" y2="180" stroke="rgba(255,255,255,0.3)" /></svg>;
 const DosCuotas = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><g transform="translate(40 70)"><rect width="320" height="34" rx="17" fill="rgba(255,255,255,0.12)" /><rect width="320" height="34" rx="17" fill={Y} style={{ transformOrigin: "0 0", transformBox: "fill-box", animation: "llenarDos 4s ease-in-out infinite" }} /><text x="12" y="62" fontFamily={MONO} fontSize="11" letterSpacing="2" fill={Y}>1 · ANTICIPO</text><text x="308" y="62" textAnchor="end" fontFamily={MONO} fontSize="11" letterSpacing="2" fill="rgba(255,255,255,0.6)">2 · AL RECIBIR</text><line x1="190" y1="-8" x2="190" y2="42" stroke="rgba(255,255,255,0.5)" strokeDasharray="3 4" /></g></svg>;
 const Enchufe = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><g transform="translate(200 100)"><circle r="66" fill="none" stroke="rgba(128,128,128,0.18)" strokeWidth="13" /><circle r="66" fill="none" stroke={Y} strokeWidth="13" strokeDasharray="110 310" strokeLinecap="round" style={{ transformBox: "fill-box", transformOrigin: "center", animation: "girar 3s linear infinite" }} /><text textAnchor="middle" y="9" fontFamily={MONO} fontSize="25" fontWeight="600" fill="currentColor">220 V</text></g></svg>;
@@ -86,8 +85,9 @@ function Historia({ x, fotos }) {
   const irA = (i) => { const el = ref.current; if (!el) return; const tramo = el.offsetHeight - window.innerHeight; window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY + tramo * ((i + 0.5) / 5), behavior: "smooth" }); };
   return <section className="historia" id="como">
     <div className="hScroll" ref={ref}>
+      {[0, 1, 2, 3, 4].map((k) => <span key={k} className="hAncla" aria-hidden="true" style={{ top: `calc(${(k + 0.5) / 5} * 450vh)` }} />)}
       <div className="hSticky"><div className="wrap">
-        <div className="hCabeza"><h2>{x.pasosT}</h2><p>{x.pasosS}</p></div>
+        <div className="hCabeza"><h2>{x.pasosT}</h2></div>
         {/* Compu: una tarjeta que cambia de paso */}
         <div className="hCard hSolo" key={activo}>
           <TextoPaso i={activo} x={x} />
@@ -103,25 +103,78 @@ function Historia({ x, fotos }) {
   </section>;
 }
 
+// Lo primero que se ve: una máquina real del catálogo como oferta (foto, precio final puesto en
+// Argentina, las dos cuotas y la fecha aproximada de llegada). Rota sola entre varias.
+function Oferta({ maquinas, precios, dv, x }) {
+  const { fmt, lang } = useAM();
+  const lista = maquinas.filter((m) => primeraFoto(m) && precioVidriera(precios?.[m.id])).slice(0, 6);
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (lista.length < 2 || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const id = setInterval(() => setI((v) => (v + 1) % lista.length), 4800);
+    return () => clearInterval(id);
+  }, [lista.length]);
+  const m = lista[i % (lista.length || 1)];
+  if (!m) return <div className="oferta"><div className="ofCard ofVacia" /></div>;
+  const pr = precios?.[m.id]; const pv = precioVidriera(pr);
+  const tr = pr?.escalera?.maritima?.[0] || pr?.escalera?.aerea?.[0];
+  const dias = pv?.via ? diasVia(pv.via, dv) + Number(pr?.dias_produccion ?? m.dias_produccion ?? 0) : null;
+  const loc = lang === "en" ? "en-GB" : lang === "ru" ? "ru-RU" : "es-AR";
+  const fecha = dias ? new Date(Date.now() + dias * 864e5).toLocaleDateString(loc, { day: "numeric", month: "long" }) : null;
+  return <div className="oferta">
+    <div className="ofFondo uno" /><div className="ofFondo dos" />
+    <a className="ofCard" key={m.id} href={`/m/${m.id}`}>
+      <div className="ofFoto"><img src={primeraFoto(m)} alt={m.nombre} /><span className="ofTag">{x.of.tag}</span></div>
+      <div className="ofCuerpo">
+        <p className="ofNom">{m.nombre}</p>
+        <div className="ofPrecio"><b>{fmt(pv.unit)}</b><span>{x.of.puesto}</span></div>
+        {tr && <div className="ofCuotas"><div><small>{x.of.c1}</small><b>{fmt(tr.maquina)}</b></div><div><small>{x.of.c2}</small><b>{fmt(tr.argencargo)}</b></div></div>}
+        {fecha && <p className="ofLlega"><i />{x.of.llega} {fecha}</p>}
+      </div>
+    </a>
+    {lista.length > 1 && <div className="ofPuntos">{lista.map((mm, k) => <button key={mm.id} className={k === i ? "on" : ""} onClick={() => setI(k)} aria-label={mm.nombre} />)}</div>}
+  </div>;
+}
+
 const CSS = `
 /* Hero */
-.amq .hero{padding:64px 0 0;text-align:center}
-.amq .hero h1{font-size:clamp(40px,6.4vw,92px);line-height:0.96;letter-spacing:-0.05em;font-weight:800;margin:0}
-.amq .hero p.sub{font-size:19px;color:var(--gris);max-width:600px;margin:22px auto 30px;line-height:1.5}
-.amq .ctaCat{display:inline-flex;align-items:center;gap:16px;height:64px;padding:0 10px 0 30px;border-radius:999px;background:var(--y);color:#15171A;font-weight:800;font-size:17px;box-shadow:0 14px 34px rgba(255,210,0,0.35);transition:transform 140ms,box-shadow 140ms}
+.amq .hero{padding:56px 0 20px}
+.amq .heroGrid{display:grid;grid-template-columns:1.08fr 0.92fr;gap:56px;align-items:center}
+.amq .hero h1{font-size:clamp(40px,5.4vw,80px);line-height:0.98;letter-spacing:-0.05em;font-weight:800;margin:0}
+.amq .hero p.sub{font-size:19px;color:var(--gris);max-width:540px;margin:24px 0 32px;line-height:1.55}
+.amq .ctaCat{display:inline-flex;align-items:center;gap:18px;height:64px;padding:0 9px 0 30px;border-radius:999px;background:var(--y);color:#15171A;font-weight:800;font-size:17.5px;box-shadow:0 14px 34px rgba(255,210,0,0.35);transition:transform 140ms,box-shadow 140ms}
 .amq .ctaCat:hover{transform:translateY(-2px);box-shadow:0 18px 40px rgba(255,210,0,0.45)}
-.amq .ctaCat small{font-family:${MONO};font-size:12px;font-weight:600;opacity:0.7}
-.amq .ctaCat .flecha{width:46px;height:46px;border-radius:50%;background:#15171A;color:var(--y);display:inline-flex;align-items:center;justify-content:center}
-.amq .cinta{margin-top:54px;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
-.amq .cinta .pista{display:flex;gap:14px;width:max-content;animation:desfile 60s linear infinite}
-.amq .cinta:hover .pista{animation-play-state:paused}
-.amq .cinta a{flex:0 0 auto;width:210px;height:170px;border-radius:20px;overflow:hidden;background:var(--suave);border:1px solid var(--borde);position:relative}
-.amq .cinta img{width:100%;height:100%;object-fit:cover;display:block;transition:transform 300ms}
-.amq .cinta a:hover img{transform:scale(1.05)}
+.amq .ctaCat .flechaC{width:46px;height:46px;border-radius:50%;background:#15171A;color:var(--y);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.amq .oferta{position:relative;max-width:440px;margin-left:auto;width:100%;padding:14px 0 30px}
+.amq .ofFondo{position:absolute;inset:14px 0 30px;border-radius:28px;background:var(--suave);border:1px solid var(--borde)}
+.amq .ofFondo.uno{transform:rotate(-5deg) translate(-16px,8px)}.amq .ofFondo.dos{transform:rotate(3deg) translate(14px,4px);background:var(--ysuave);border-color:var(--y)}
+.amq .ofCard{position:relative;display:block;border-radius:28px;overflow:hidden;background:var(--card);border:1px solid var(--borde);box-shadow:0 30px 60px rgba(0,0,0,0.14);animation:ofEntra 520ms cubic-bezier(.2,.8,.2,1)}
+.amq .ofVacia{height:520px}
+.amq .ofFoto{position:relative;aspect-ratio:4/3;background:#fff}
+.amq .ofFoto img{width:100%;height:100%;object-fit:contain;display:block}
+.amq .ofTag{position:absolute;top:14px;left:14px;font-family:${MONO};font-size:10.5px;letter-spacing:0.1em;padding:6px 10px;border-radius:999px;background:#15171A;color:var(--y);font-weight:600}
+.amq .ofCuerpo{padding:18px 22px 22px;border-top:1px solid var(--borde)}
+.amq .ofNom{margin:0;font-size:15px;font-weight:700;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.amq .ofPrecio{display:flex;align-items:baseline;gap:10px;margin-top:10px}
+.amq .ofPrecio b{font-size:32px;letter-spacing:-0.03em}
+.amq .ofPrecio span{font-size:12.5px;color:var(--gris);font-weight:600}
+.amq .ofCuotas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.amq .ofCuotas div{padding:10px 12px;border-radius:14px;background:var(--suave)}
+.amq .ofCuotas div:first-child{background:var(--ysuave);box-shadow:inset 0 0 0 1px var(--y)}
+.amq .ofCuotas small{display:block;font-family:${MONO};font-size:10px;letter-spacing:0.08em;color:var(--gris);text-transform:uppercase}
+.amq .ofCuotas b{display:block;font-size:16px;margin-top:3px}
+.amq .ofLlega{display:flex;align-items:center;gap:8px;margin:14px 0 0;font-size:13.5px;font-weight:700}
+.amq .ofLlega i{width:8px;height:8px;border-radius:50%;background:#1F7A2E;box-shadow:0 0 0 4px rgba(31,122,46,0.15)}
+.amq .ofPuntos{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center;gap:7px}
+.amq .ofPuntos button{width:8px;height:8px;border-radius:999px;border:none;padding:0;background:var(--borde);cursor:pointer;transition:width 240ms,background 240ms}
+.amq .ofPuntos button.on{width:24px;background:var(--ink)}
+@keyframes ofEntra{from{opacity:0;transform:translateY(12px) scale(0.98)}to{opacity:1;transform:none}}
 
 /* Pasos al estilo Shippar */
 .amq .historia{background:var(--y);color:#15171A;margin-top:64px}
-.amq .hScroll{position:relative;height:calc(100vh + 5 * 70vh)}
+.amq .hScroll{position:relative;height:calc(100vh + 5 * 90vh)}
+.amq .hAncla{position:absolute;left:0;width:1px;height:1px;scroll-snap-align:start;pointer-events:none}
+@media(min-width:901px){html:has(.hScroll){scroll-snap-type:y proximity}}
 .amq .hSticky{position:sticky;top:0;height:100vh;display:flex;align-items:center;padding:92px 0 22px}
 .amq .hSticky>.wrap{width:100%}
 .amq .hCabeza{text-align:center;margin-bottom:22px}
@@ -189,21 +242,28 @@ const CSS = `
 .amq .catHome .cab{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}
 .amq .verTodo{display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:20px;background:#15171A;color:#fff;text-align:center;padding:20px;min-height:100%;font-weight:800;font-size:17px;transition:transform 140ms}
 .amq .verTodo:hover{transform:translateY(-2px)}
-.amq .verTodo .flecha{width:54px;height:54px;border-radius:50%;background:var(--y);color:#15171A;display:flex;align-items:center;justify-content:center}
+.amq .verTodo .flechaC{width:54px;height:54px;border-radius:50%;background:var(--y);color:#15171A;display:flex;align-items:center;justify-content:center}
 .amq .verTodo small{font-family:${MONO};font-size:12px;color:#9DA3A9;font-weight:600}
 
 /* Por qué ARGENMAQ */
-.amq .bento{display:grid;grid-template-columns:1.2fr 1fr 1fr;grid-auto-rows:260px;gap:14px}
+.amq .bento{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:260px;gap:14px}
 .amq .bc{position:relative;border-radius:24px;overflow:hidden;background:#15171A;color:#fff;padding:22px 24px;display:flex;flex-direction:column;justify-content:flex-end;isolation:isolate}
-.amq .bc.alta{grid-row:span 2}.amq .bc.ancha{grid-column:1/-1}.amq .bc.clara{background:var(--suave);color:var(--ink);border:1px solid var(--borde)}
+.amq .bc.ancha{grid-column:span 2}.amq .bc.clara{background:var(--suave);color:var(--ink);border:1px solid var(--borde)}
 .amq .bc .tag2{position:absolute;top:20px;left:24px;font-size:15px;font-weight:700;border-bottom:2px solid var(--y);padding-bottom:3px}
 .amq .bc .lug{font-family:${MONO};font-size:11px;letter-spacing:0.12em;opacity:0.6;margin-bottom:6px}
-.amq .bc h3{margin:0;font-size:23px;letter-spacing:-0.02em;line-height:1.15}.amq .bc.alta h3{font-size:34px}
+.amq .bc h3{margin:0;font-size:23px;letter-spacing:-0.02em;line-height:1.15}
 .amq .bc p{margin:8px 0 0;font-size:14.5px;opacity:0.75;line-height:1.5;max-width:420px}
 .amq .bc .anim{position:absolute;left:0;right:0;top:44px;height:56%;width:100%;z-index:-1;opacity:0.6}
-.amq .bc.alta .anim{top:0;height:100%;opacity:0.55}
 .amq .bc .grilla{position:absolute;inset:0;z-index:-1;background-image:linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px);background-size:34px 34px}
 
+/* Parte del grupo Argencargo */
+.amq .argBanda{display:grid;grid-template-columns:auto 1fr auto;gap:34px;align-items:center;padding:32px 36px;border-radius:26px;border:1px solid var(--borde);background:var(--suave)}
+.amq .argBanda .logo{display:inline-flex;align-items:center;gap:10px}.amq .argBanda .logo img.iso{height:34px}.amq .argBanda .logo img.txt{height:20px}
+.amq .argBanda .logo img.oscuro{display:none}.amq[data-tema="oscuro"] .argBanda .logo img.oscuro{display:inline}.amq[data-tema="oscuro"] .argBanda .logo img.claro{display:none}
+.amq .argBanda .lbl{margin-bottom:6px}
+.amq .argBanda h3{margin:0 0 8px;font-size:22px;letter-spacing:-0.02em}
+.amq .argBanda p{margin:0;font-size:15.5px;line-height:1.55;color:var(--gris);max-width:640px}
+.amq .argBanda .acc{display:grid;gap:8px}
 /* ¿No encontrás tu máquina? */
 .amq .busca{display:grid;grid-template-columns:1.3fr 1fr;gap:28px;align-items:center;background:#15171A;color:#fff;border-radius:30px;padding:46px 44px}
 .amq .busca h2{font-size:clamp(28px,3.8vw,46px);letter-spacing:-0.04em;line-height:1.02;margin:0}
@@ -225,9 +285,9 @@ const CSS = `
 
 @media(max-width:1100px){.amq .hTexto p{font-size:15px}.amq .hTexto ul{gap:7px}}
 @media(max-width:900px){
-  .amq .hero{padding:30px 0 0}.amq .hero p.sub{font-size:16.5px;margin:16px auto 24px}
-  .amq .ctaCat{height:58px;font-size:16px;padding:0 8px 0 24px;gap:12px}.amq .ctaCat .flecha{width:42px;height:42px}
-  .amq .cinta{margin-top:34px}.amq .cinta a{width:150px;height:120px;border-radius:16px}
+  .amq .hero{padding:26px 0 0}.amq .heroGrid{grid-template-columns:1fr;gap:30px}.amq .hero p.sub{font-size:16.5px;margin:16px 0 22px}
+  .amq .ctaCat{height:58px;font-size:16px;padding:0 8px 0 24px;gap:12px}.amq .ctaCat .flechaC{width:42px;height:42px}
+  .amq .oferta{margin:0 auto;max-width:400px}.amq .ofPrecio b{font-size:28px}
   .amq .historia{margin-top:40px;padding:36px 0 30px}
   .amq .hScroll{height:auto}.amq .hSticky{position:static;height:auto;padding:0}
   .amq .hSolo,.amq .hLinea{display:none}
@@ -235,23 +295,25 @@ const CSS = `
   .amq .hCard{grid-template-columns:1fr;min-height:0;border-radius:22px}
   .amq .hVisual{border-left:none;border-top:1px solid #2B2E33}
   .amq .hCabeza{text-align:left}
-  .amq .bento{grid-template-columns:1fr 1fr;grid-auto-rows:230px}.amq .bc.alta{grid-row:span 1;grid-column:1/-1}
+  .amq .bento{grid-template-columns:1fr 1fr;grid-auto-rows:230px}
   .amq .busca{grid-template-columns:1fr;padding:32px 24px}
+  .amq .argBanda{grid-template-columns:1fr;gap:18px;padding:26px 22px}.amq .argBanda .acc{grid-template-columns:1fr 1fr}
 }
 @media(max-width:600px){
   .amq .bento{grid-template-columns:1fr;grid-auto-rows:220px;gap:10px}
-  .amq .bc{padding:20px}.amq .bc h3,.amq .bc.alta h3{font-size:21px}
+  .amq .bento .bc.ancha{grid-column:span 1}.amq .bc{padding:20px}.amq .bc h3{font-size:21px}
   .amq .vpGrilla{gap:8px}
 }
-@media(prefers-reduced-motion:reduce){.amq .bc .anim *,.amq .cinta .pista,.amq .hSolo,.amq .vpFila,.amq .vpBarra i,.amq .vpMaq.on,.amq .vpRuta .linea i{animation:none!important}}
+@media(prefers-reduced-motion:reduce){.amq .bc .anim *,.amq .hSolo,.amq .vpFila,.amq .vpBarra i,.amq .vpMaq.on,.amq .vpRuta .linea i{animation:none!important}}
 `;
 
 const TXT = {
   es: {
-    h1a: "Elegís la máquina.", h1b: "Nosotros la traemos.",
-    sub: "Importamos maquinaria de China llave en mano: la fábrica, la aduana y la entrega corren por nuestra cuenta.",
+    h1a: "Maquinaria de China,", h1b: "puesta en tu negocio.",
+    sub: "Importación llave en mano: elegís la máquina, ves el precio final y nosotros nos encargamos de la fábrica, la aduana y la entrega.",
     cta: "Ver catálogo", maquinas: "máquinas",
-    pasosT: "Una sola operación, de la fábrica en China a tu taller.", pasosS: "Así llega tu máquina, paso a paso.",
+    of: { tag: "PRECIO FINAL EN ARGENTINA", puesto: "puesta en CABA", c1: "1ª cuota · hoy", c2: "2ª cuota · al recibir", llega: "Llega aprox." },
+    pasosT: "Una sola operación, de la fábrica en China a tu negocio.",
     pasos: [
       { etiqueta: "Elegís tu máquina", titulo: "Encontrás la máquina para tu oficio", texto: "Recorrés el catálogo con fotos, ficha técnica y video. Si no está, nos decís cuál buscás y la conseguimos.", items: ["Fotos y video reales", "Ficha técnica completa", "Máquinas a pedido"] },
       { etiqueta: "Ves el precio final", titulo: "Un solo número, puesto en Argentina", texto: "El precio incluye la máquina, el flete, la aduana y la entrega en nuestro depósito de CABA. Sin costos escondidos.", items: ["Máquina, flete y aduana", "En dólares o en pesos", "Mejor precio por cantidad"] },
@@ -266,17 +328,19 @@ const TXT = {
       { estado: "En viaje", origen: "ORIGEN", destino: "DESTINO", filas: ["Video aprobado y embarcada", "En tránsito", "Aduana y entrega"], enCurso: "EN CURSO" },
       { estado: "Entregada", filas: ["Llegó a Buenos Aires", "Saldo pagado", "Retiro o envío a tu taller"], enCurso: "HOY", lista: "Lista para trabajar" },
     ],
-    catT: "Catálogo de maquinaria", catS: "Precio final puesto en nuestro depósito de CABA.", verTodo: "Ver catálogo completo",
+    catT: "Catálogo de productos", catS: "Precio final puesto en nuestro depósito de CABA.", verTodo: "Ver catálogo completo",
     porQue: "Por qué ARGENMAQ",
-    b: { arg: ["Argencargo", "CHINA → ARGENTINA", "La importación la hace Argencargo.", "Flete, seguro, aduana y entrega con un equipo que importa todos los días. Vos ves cada paso, sin hablar con nadie en China."], precio: ["Precio final", "PUESTO EN CABA", "Máquina, flete y aduana en un solo número."], dos: ["Pagás en dos cuotas", "ANTICIPO + SALDO", "La segunda cuota, cuando llega."], v220: ["Lista para usar", "220 V · 50 HZ", "Todas se importan a 220 V. Llegan listas para usar."], seg: ["Seguimiento", "PRODUCCIÓN → EMBARQUE → ADUANA → ENTREGA", "Sabés dónde está tu máquina."], resp: ["Respaldo", "ARGENMAQ SIEMPRE PRESENTE", "Si algo pasa, hablás con nosotros, no con la fábrica."] },
+    arg: { k: "PARTE DEL GRUPO ARGENCARGO", t: "Detrás de ARGENMAQ está Argencargo.", p: "Argencargo importa desde China todos los días, con equipo propio en Buenos Aires: flete, seguro, aduana y entrega. ARGENMAQ es su división de maquinaria, así que tu máquina viaja con quienes ya lo hacen todos los días.", ops: "Ya son más de {n} operaciones.", b1: "Conocer Argencargo", b2: "Quiénes somos" },
+    b: { precio: ["Precio final", "PUESTO EN CABA", "Máquina, flete y aduana en un solo número."], dos: ["Pagás en dos cuotas", "ANTICIPO + SALDO", "La segunda cuota, cuando llega."], v220: ["Lista para usar", "220 V · 50 HZ", "Todas se importan a 220 V. Llegan listas para usar."], seg: ["Seguimiento", "PRODUCCIÓN → EMBARQUE → ADUANA → ENTREGA", "Sabés dónde está tu máquina."], resp: ["Respaldo", "ARGENMAQ SIEMPRE PRESENTE", "Si algo pasa, hablás con nosotros, no con la fábrica."] },
     buscaT: ["¿No encontrás la máquina", "que buscás?"], buscaP: "Te la conseguimos. Contanos qué necesitás y te pasamos el precio final puesta en Argentina.",
     buscaB: "Pedila por WhatsApp", buscaWa: "Hola ARGENMAQ, estoy buscando una máquina que no está en el catálogo", rep: "¿Buscás un repuesto?",
   },
   en: {
-    h1a: "You pick the machine.", h1b: "We bring it.",
-    sub: "We import machinery from China, turnkey: factory, customs and delivery are on us.",
+    h1a: "Machinery from China,", h1b: "delivered to your business.",
+    sub: "Turnkey import: you pick the machine, see the final price, and we handle the factory, customs and delivery.",
     cta: "See catalog", maquinas: "machines",
-    pasosT: "One operation, from the factory in China to your workshop.", pasosS: "How your machine gets to you, step by step.",
+    of: { tag: "FINAL PRICE IN ARGENTINA", puesto: "landed in Buenos Aires", c1: "1st instalment · today", c2: "2nd · on delivery", llega: "Arrives approx." },
+    pasosT: "One operation, from the factory in China to your business.",
     pasos: [
       { etiqueta: "Pick your machine", titulo: "Find the machine for your trade", texto: "Browse the catalog with photos, specs and video. If it's not there, tell us what you need and we'll source it.", items: ["Real photos and video", "Full spec sheet", "Machines on request"] },
       { etiqueta: "See the final price", titulo: "One number, landed in Argentina", texto: "The price includes the machine, freight, customs and delivery to our Buenos Aires warehouse. No hidden costs.", items: ["Machine, freight and customs", "In dollars or pesos", "Better price by quantity"] },
@@ -291,17 +355,19 @@ const TXT = {
       { estado: "In transit", origen: "ORIGIN", destino: "DESTINATION", filas: ["Video approved, shipped", "In transit", "Customs and delivery"], enCurso: "IN PROGRESS" },
       { estado: "Delivered", filas: ["Arrived in Buenos Aires", "Balance paid", "Pickup or delivery"], enCurso: "TODAY", lista: "Ready to work" },
     ],
-    catT: "Machinery catalog", catS: "Final price delivered to our Buenos Aires warehouse.", verTodo: "See full catalog",
+    catT: "Product catalog", catS: "Final price delivered to our Buenos Aires warehouse.", verTodo: "See full catalog",
     porQue: "Why ARGENMAQ",
-    b: { arg: ["Argencargo", "CHINA → ARGENTINA", "Argencargo handles the import.", "Freight, insurance, customs and delivery by a team that imports every day. You see every step, without talking to anyone in China."], precio: ["Final price", "LANDED IN BUENOS AIRES", "Machine, freight and customs in one number."], dos: ["Two instalments", "DEPOSIT + BALANCE", "The second one, when it arrives."], v220: ["Ready to use", "220 V · 50 HZ", "Every machine is imported at 220 V. Ready to use."], seg: ["Tracking", "PRODUCTION → SHIPPING → CUSTOMS → DELIVERY", "You know where your machine is."], resp: ["Backing", "ARGENMAQ ALWAYS THERE", "If anything happens, you talk to us, not the factory."] },
+    arg: { k: "PART OF THE ARGENCARGO GROUP", t: "Argencargo is behind ARGENMAQ.", p: "Argencargo imports from China every day with its own team in Buenos Aires: freight, insurance, customs and delivery. ARGENMAQ is its machinery division, so your machine travels with people who do this every day.", ops: "Over {n} operations so far.", b1: "About Argencargo", b2: "About us" },
+    b: { precio: ["Final price", "LANDED IN BUENOS AIRES", "Machine, freight and customs in one number."], dos: ["Two instalments", "DEPOSIT + BALANCE", "The second one, when it arrives."], v220: ["Ready to use", "220 V · 50 HZ", "Every machine is imported at 220 V. Ready to use."], seg: ["Tracking", "PRODUCTION → SHIPPING → CUSTOMS → DELIVERY", "You know where your machine is."], resp: ["Backing", "ARGENMAQ ALWAYS THERE", "If anything happens, you talk to us, not the factory."] },
     buscaT: ["Can't find the machine", "you need?"], buscaP: "We'll source it. Tell us what you need and we'll send you the final landed price in Argentina.",
     buscaB: "Ask on WhatsApp", buscaWa: "Hi ARGENMAQ, I'm looking for a machine that isn't in the catalog", rep: "Looking for a spare part?",
   },
   ru: {
-    h1a: "Вы выбираете машину.", h1b: "Мы её привозим.",
-    sub: "Импортируем оборудование из Китая под ключ: завод, таможня и доставка — на нас.",
+    h1a: "Оборудование из Китая —", h1b: "прямо в ваш бизнес.",
+    sub: "Импорт под ключ: вы выбираете машину, видите итоговую цену, а завод, таможню и доставку берём на себя.",
     cta: "Каталог", maquinas: "машин",
-    pasosT: "Одна операция: с завода в Китае в ваш цех.", pasosS: "Как приходит ваша машина, шаг за шагом.",
+    of: { tag: "ИТОГОВАЯ ЦЕНА В АРГЕНТИНЕ", puesto: "в Буэнос-Айресе", c1: "1-й платёж · сегодня", c2: "2-й · при получении", llega: "Прибытие ≈" },
+    pasosT: "Одна операция: с завода в Китае в ваш бизнес.",
     pasos: [
       { etiqueta: "Выбираете машину", titulo: "Найдите машину для вашего дела", texto: "Каталог с фото, характеристиками и видео. Если нужной нет — скажите, и мы её найдём.", items: ["Реальные фото и видео", "Полные характеристики", "Машины под заказ"] },
       { etiqueta: "Видите итоговую цену", titulo: "Одна цифра с доставкой в Аргентину", texto: "В цену входят машина, фрахт, таможня и доставка на наш склад в Буэнос-Айресе. Без скрытых расходов.", items: ["Машина, фрахт и таможня", "В долларах или песо", "Дешевле при объёме"] },
@@ -316,31 +382,31 @@ const TXT = {
       { estado: "В пути", origen: "ОТКУДА", destino: "КУДА", filas: ["Видео одобрено, отгружено", "В пути", "Таможня и доставка"], enCurso: "ИДЁТ" },
       { estado: "Доставлено", filas: ["Прибыла в Буэнос-Айрес", "Остаток оплачен", "Самовывоз или доставка"], enCurso: "СЕГОДНЯ", lista: "Готова к работе" },
     ],
-    catT: "Каталог оборудования", catS: "Итоговая цена с доставкой на наш склад в Буэнос-Айресе.", verTodo: "Весь каталог",
+    catT: "Каталог товаров", catS: "Итоговая цена с доставкой на наш склад в Буэнос-Айресе.", verTodo: "Весь каталог",
     porQue: "Почему ARGENMAQ",
-    b: { arg: ["Argencargo", "КИТАЙ → АРГЕНТИНА", "Импортом занимается Argencargo.", "Фрахт, страховка, таможня и доставка силами команды, которая импортирует каждый день."], precio: ["Итоговая цена", "НА СКЛАДЕ В БУЭНОС-АЙРЕСЕ", "Машина, фрахт и таможня — одна цифра."], dos: ["Два платежа", "АВАНС + ОСТАТОК", "Второй — по прибытии."], v220: ["Готова к работе", "220 В · 50 ГЦ", "Все машины — на 220 В."], seg: ["Отслеживание", "ПРОИЗВОДСТВО → ОТГРУЗКА → ТАМОЖНЯ → ДОСТАВКА", "Вы знаете, где ваша машина."], resp: ["Поддержка", "ARGENMAQ ВСЕГДА РЯДОМ", "Если что-то случится, вы говорите с нами, а не с заводом."] },
+    arg: { k: "ЧАСТЬ ГРУППЫ ARGENCARGO", t: "За ARGENMAQ стоит Argencargo.", p: "Argencargo ежедневно импортирует из Китая силами своей команды в Буэнос-Айресе: фрахт, страховка, таможня и доставка. ARGENMAQ — её подразделение по оборудованию.", ops: "Уже более {n} операций.", b1: "Об Argencargo", b2: "О нас" },
+    b: { precio: ["Итоговая цена", "НА СКЛАДЕ В БУЭНОС-АЙРЕСЕ", "Машина, фрахт и таможня — одна цифра."], dos: ["Два платежа", "АВАНС + ОСТАТОК", "Второй — по прибытии."], v220: ["Готова к работе", "220 В · 50 ГЦ", "Все машины — на 220 В."], seg: ["Отслеживание", "ПРОИЗВОДСТВО → ОТГРУЗКА → ТАМОЖНЯ → ДОСТАВКА", "Вы знаете, где ваша машина."], resp: ["Поддержка", "ARGENMAQ ВСЕГДА РЯДОМ", "Если что-то случится, вы говорите с нами, а не с заводом."] },
     buscaT: ["Не нашли нужную", "машину?"], buscaP: "Найдём. Расскажите, что нужно, и мы назовём итоговую цену с доставкой в Аргентину.",
     buscaB: "Написать в WhatsApp", buscaWa: "Здравствуйте, ARGENMAQ! Ищу машину, которой нет в каталоге", rep: "Ищете запчасть?",
   },
 };
 
-export default function Landing({ destacadas, total, diasVia }) {
+export default function Landing({ destacadas, total, diasVia, ops }) {
   const { lang } = useAM();
   const x = TXT[lang] || TXT.es;
   const precios = usePrecios(destacadas.map((m) => m.id));
   const fotos = destacadas.map(primeraFoto).filter(Boolean);
-  const cinta = destacadas.filter((m) => primeraFoto(m));
   const b = x.b;
   return <Marco actual="inicio" conGrupo>
     <style dangerouslySetInnerHTML={{ __html: CSS }} />
-    <section className="hero">
-      <div className="wrap">
+    <section className="hero"><div className="wrap heroGrid">
+      <div>
         <h1>{x.h1a}<br /><span className="ac">{x.h1b}</span></h1>
         <p className="sub">{x.sub}</p>
-        <a className="ctaCat" href="/catalogo"><span>{x.cta}</span>{total > 0 && <small>{total} {x.maquinas}</small>}<span className="flecha"><Ico d={FLECHA} size={20} /></span></a>
+        <a className="ctaCat" href="/catalogo"><span>{x.cta}</span><span className="flechaC"><Ico d={FLECHA} size={20} /></span></a>
       </div>
-      {cinta.length > 2 && <div className="cinta" aria-hidden="true"><div className="pista">{[...cinta, ...cinta].map((m, i) => <a key={`${m.id}-${i}`} href={`/m/${m.id}`} tabIndex={-1}><img src={primeraFoto(m)} alt="" loading="lazy" /></a>)}</div></div>}
-    </section>
+      <Oferta maquinas={destacadas} precios={precios} dv={diasVia} x={x} />
+    </div></section>
 
     <Historia x={x} fotos={fotos} />
 
@@ -348,21 +414,36 @@ export default function Landing({ destacadas, total, diasVia }) {
       <div className="cab"><div><h2 className="h2">{x.catT}</h2><p style={{ color: "var(--gris)", fontSize: 15, margin: "8px 0 0" }}>{x.catS}</p></div></div>
       {destacadas.length > 0 && <div className="carril">
         {destacadas.map((m) => <Tarjeta key={m.id} m={m} precios={precios} diasVia={diasVia} />)}
-        <a className="verTodo" href="/catalogo"><span className="flecha"><Ico d={FLECHA} size={22} /></span>{x.verTodo}{total > 0 && <small>{total} {x.maquinas}</small>}</a>
+        <a className="verTodo" href="/catalogo"><span className="flechaC"><Ico d={FLECHA} size={22} /></span>{x.verTodo}{total > 0 && <small>{total} {x.maquinas}</small>}</a>
       </div>}
     </div></section>
 
     <section style={{ padding: "54px 0 46px" }}><div className="wrap">
       <h2 className="h2" style={{ marginBottom: 20 }}>{x.porQue}</h2>
       <div className="bento">
-        <div className="bc alta"><div className="grilla" /><Ruta /><span className="tag2">{b.arg[0]}</span><div className="lug">{b.arg[1]}</div><h3>{b.arg[2]}</h3><p>{b.arg[3]}</p></div>
-        <div className="bc"><Barras /><span className="tag2">{b.precio[0]}</span><div className="lug">{b.precio[1]}</div><h3>{b.precio[2]}</h3></div>
+        <div className="bc ancha"><Barras /><span className="tag2">{b.precio[0]}</span><div className="lug">{b.precio[1]}</div><h3>{b.precio[2]}</h3></div>
         <div className="bc"><DosCuotas /><span className="tag2">{b.dos[0]}</span><div className="lug">{b.dos[1]}</div><h3>{b.dos[2]}</h3></div>
         <div className="bc clara"><Enchufe /><span className="tag2">{b.v220[0]}</span><div className="lug" style={{ opacity: 0.7 }}>{b.v220[1]}</div><h3>{b.v220[2]}</h3></div>
         <div className="bc"><Seguimiento /><span className="tag2">{b.seg[0]}</span><div className="lug">{b.seg[1]}</div><h3>{b.seg[2]}</h3></div>
-        <div className="bc ancha"><Respaldo /><span className="tag2">{b.resp[0]}</span><div className="lug">{b.resp[1]}</div><h3>{b.resp[2]}</h3></div>
+        <div className="bc"><Respaldo /><span className="tag2">{b.resp[0]}</span><div className="lug">{b.resp[1]}</div><h3>{b.resp[2]}</h3></div>
       </div>
     </div></section>
+
+    <section style={{ padding: "0 0 40px" }}><div className="wrap"><div className="argBanda">
+      <a className="logo" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer" aria-label="Argencargo">
+        <img className="iso claro" src="/argencargo/isotipo.png" alt="" /><img className="txt claro" src="/argencargo/texto.png" alt="Argencargo" />
+        <img className="iso oscuro" src="/argencargo/isotipo-blanco.png" alt="" /><img className="txt oscuro" src="/argencargo/texto-blanco.png" alt="Argencargo" />
+      </a>
+      <div>
+        <p className="lbl">{x.arg.k}</p>
+        <h3>{x.arg.t}</h3>
+        <p>{x.arg.p}{ops ? ` ${x.arg.ops.replace("{n}", ops.toLocaleString("es-AR"))}` : ""}</p>
+      </div>
+      <div className="acc">
+        <a className="btn k" href="https://www.argencargo.com.ar" target="_blank" rel="noopener noreferrer">{x.arg.b1} ↗</a>
+        <a className="btn" href="/quienes-somos">{x.arg.b2}</a>
+      </div>
+    </div></div></section>
 
     <section className="finLanding" style={{ padding: "0 0 30px" }}><div className="wrap"><div className="busca">
       <div><h2>{x.buscaT[0]} <span>{x.buscaT[1]}</span></h2><p>{x.buscaP}</p></div>

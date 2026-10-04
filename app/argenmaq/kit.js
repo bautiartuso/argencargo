@@ -27,9 +27,10 @@ html,body{overflow-x:clip!important}
 .amq .isla{max-width:1320px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
 .amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
 .amq .nav .links{display:flex;gap:24px;font-size:14.5px;font-weight:800;color:var(--ink);flex:1;justify-content:center}
-.amq .nav .links a{opacity:0.82;transition:opacity 120ms}.amq .nav .links a:hover,.amq .nav .links a.on{opacity:1}
+.amq .nav .links a{color:var(--ink)}.amq .nav .links a:hover{color:var(--ink);text-decoration:underline;text-decoration-color:var(--y);text-decoration-thickness:3px;text-underline-offset:6px}
+html:has(.amq){scrollbar-width:thin;scrollbar-color:rgba(128,128,128,0.45) transparent}html:has(.amq)::-webkit-scrollbar{width:8px;height:8px;background:transparent}html:has(.amq)::-webkit-scrollbar-thumb{background:rgba(128,128,128,0.45);border-radius:8px}html:has(.amq)::-webkit-scrollbar-track{background:transparent}
 .amq .nav .links a.rep,.amq .nav .links a.rep.on{opacity:1;color:#15171A;background:var(--y);padding:7px 14px;margin:-7px 0;border-radius:999px}
-.amq .nav .links a.rep:hover{filter:brightness(0.96)}
+.amq .nav .links a.rep:hover{filter:brightness(0.96);text-decoration:none}
 .amq[data-tema="oscuro"] .nav .links a.rep,.amq[data-tema="oscuro"] .nav .links a.rep.on{color:var(--y);background:transparent;padding:0;margin:0}
 .amq .isla.info .despMon{display:none}
 .amq .nav .links a.on{color:var(--ink)}.amq .nav .links svg{display:none}

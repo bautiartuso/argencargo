@@ -1,7 +1,7 @@
 // Landing de ARGENMAQ (argenmaq.vercel.app/). Los datos vienen de las vistas públicas del catálogo.
 import { Proveedor } from "./kit";
 import Landing from "./Landing";
-import { maquinas, ajustes } from "./_datos";
+import { maquinas, ajustes, operacionesArgencargo } from "./_datos";
 
 export const revalidate = 300;
 
@@ -13,6 +13,6 @@ const portada = (lista) => lista
   .slice(0, 10);
 
 export default async function ArgenmaqLanding() {
-  const [lista, aj] = await Promise.all([maquinas(), ajustes()]);
-  return <Proveedor><Landing destacadas={portada(lista)} total={lista.length} diasVia={aj.dias_via} /></Proveedor>;
+  const [lista, aj, ops] = await Promise.all([maquinas(), ajustes(), operacionesArgencargo()]);
+  return <Proveedor><Landing destacadas={portada(lista)} total={lista.length} diasVia={aj.dias_via} ops={ops ? Math.floor(ops / 10) * 10 : null} /></Proveedor>;
 }
