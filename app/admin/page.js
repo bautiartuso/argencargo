@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD } from "../../lib/calc";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
@@ -135,7 +135,8 @@ const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
-const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China/USA",unit:"kg",info:"7-10 días hábiles desde China · 3-5 desde USA"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
+const banderaOrigen=(o)=>({USA:"🇺🇸","España":"🇪🇸","Pakistán":"🇵🇰",Bangladesh:"🇧🇩"})[o]||"🇨🇳";
+const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China/USA",unit:"kg",info:"7-10 días hábiles desde China · 3-5 desde USA"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""},{key:"aereo_a_pk_bd",label:"Aéreo — Pakistán / Bangladesh",unit:"kg",info:""}];
 // Forma válida de un código NCM: dígitos, con o sin puntos (ej. "8517.62.72" o "84099910").
 const isValidNcmCode=(v)=>!!v&&/^\d{4}(\.?\d{2}){0,2}$/.test(String(v).trim());
 // Un item "necesita clasificación" si no tiene NCM con forma válida (ej. quedó "—" de una
@@ -645,8 +646,8 @@ function NewOperation({token,clients,onBack,onCreated}){
     <Card>
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
       <Sel label="Tipo de servicio" value={form.service_type} onChange={ch("service_type")} options={[{value:"courier",label:"Courier — cliente compra, nosotros despachamos"},{value:"gestion_integral",label:"Gestión Integral — nosotros compramos y vendemos puesto en Argentina"}]}/>
-      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&form.channel==="maritimo_blanco")ch("channel")("aereo_blanco");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
-      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={(form.origin==="USA"?["aereo_blanco","maritimo_negro"]:CHANNELS).map(c=>({value:c,label:CM[c]}))}/>
+      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&form.channel==="maritimo_blanco")ch("channel")("aereo_blanco");if(esPkBd(v))ch("channel")("aereo_blanco");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"},{value:"Pakistán",label:"Pakistán"},{value:"Bangladesh",label:"Bangladesh"}]}/>
+      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={(esPkBd(form.origin)?["aereo_blanco"]:form.origin==="USA"?["aereo_blanco","maritimo_negro"]:CHANNELS).map(c=>({value:c,label:CM[c]}))}/>
       {form.service_type==="gestion_integral"&&<div style={{background:"rgba(168,85,247,0.08)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:8,padding:"10px 12px",margin:"8px 0 12px",fontSize:12,color:"rgba(255,255,255,0.7)"}}>
         <b style={{color:"#c084fc"}}>Gestión Integral:</b> al cliente le cotizás un precio final puesto en Argentina (<code>budget_total</code>). Vos pagás al proveedor (<code>cost_producto_usd</code>) y asumís flete + impuestos. Ganancia = precio cliente − todos los costos. Lo configurás en el detalle de la op.
       </div>}
@@ -1419,7 +1420,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // Aclaración para el cliente: si tenía deuda anterior (ya sumada) o saldo a favor (ya descontado).
     const creditNote=(debtApp>0?`\n_(ya incluye USD ${fmt(debtApp)} de deuda anterior de tu cuenta)_`:"")+(creditApp>0?`\n_(ya descontamos USD ${fmt(creditApp)} de tu saldo a favor)_`:"");
     const origen=op.origin||"China";
-    const flag=op.origin==="USA"?"🇺🇸":"🇨🇳";
+    const flag=banderaOrigen(op.origin);
     const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:"";
     const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo),retiroLink};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
@@ -5976,7 +5977,7 @@ function EntregasPanel({token,onOpenOp}){
     const rutaDe=(o)=>{const c=o.clients||{};const loc=[c.city,c.province].filter(Boolean).join(", ");
       const destino=o.delivery_choice==="oficina"?"Belgrano, CABA":o.delivery_choice==="propio"?(o.delivery_address||loc||"Domicilio del cliente"):loc||"Argentina";
       const modalidad=o.delivery_choice==="propio"?"Envío a domicilio":o.delivery_choice==="carrier"?`Transportista${o.carrier_mode?` · ${o.carrier_mode}`:""}`:o.delivery_choice==="oficina"?"Retiro por oficina":"A coordinar";
-      return {origen:o.origin==="USA"?"Estados Unidos":"China",destino,modalidad,mercaderia:o.description||""};};
+      return {origen:o.origin==="USA"?"Estados Unidos":esPkBd(o.origin)?o.origin:"China",destino,modalidad,mercaderia:o.description||""};};
     const docs=ops.map(o=>({op:o,client:o.clients||{},packages:lista.filter(p=>p.operation_id===o.id),entrega:rutaDe(o)}));
     const r=printPackageLabelsMulti(docs);
     if(r===null)toast("Estas entregas no tienen bultos cargados","error");
@@ -6960,82 +6961,125 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   </div>;
 }
 
+// Tarifas (04/10/2026): ordenadas por origen y, dentro de cada origen, por servicio. Cada servicio
+// muestra sus rangos con precio, costo y margen juntos y se edita en el lugar (se guarda al salir
+// del campo). Debajo: certificación de flete y antidumping.
+const TARIFAS_ORIGENES=[
+  {k:"china",flag:"🇨🇳",nombre:"China",minKg:"Mínimo aéreo 10 kg",svcs:[
+    {key:"aereo_a_china",nombre:"Aéreo · Courier comercial",unit:"kg"},
+    {key:"maritimo_a_china",nombre:"Marítimo · LCL / FCL",unit:"m³"},
+    {key:"maritimo_b",nombre:"Marítimo · Integral AC",unit:"m³"}]},
+  {k:"usa",flag:"🇺🇸",nombre:"Estados Unidos",minKg:"Mínimo aéreo 25 kg",svcs:[
+    {key:"aereo_a_china",nombre:"Aéreo · Courier comercial",unit:"kg",comparte:"Misma tarifa que China"},
+    {key:"maritimo_b",nombre:"Marítimo · Integral AC",unit:"m³",comparte:"Misma tarifa que China"}]},
+  {k:"pkbd",flag:"🇵🇰 🇧🇩",nombre:"Pakistán y Bangladesh",minKg:"Mínimo aéreo 50 kg",svcs:[
+    {key:"aereo_a_pk_bd",nombre:"Aéreo · Courier comercial",unit:"kg"}]},
+];
 function TariffsManager({token}){
-  const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [selSvc,setSelSvc]=useState(null);const [msg,setMsg]=useState("");const [viewMode,setViewMode]=useState("sell");
+  const celu=useEsCelu();
+  const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [origen,setOrigen]=useState("china");const [borrar,setBorrar]=useState(null);
   const load=async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
-  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
-  // Solo mostrar la versión VIGENTE de cada tarifa (oculta versiones históricas con effective_to pasado).
+  const flash=m=>{const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m,v);};
+  // Solo la versión VIGENTE de cada tarifa (las históricas tienen effective_to pasado).
   const tNowOk=t=>{const n=Date.now();return (t.effective_from==null||Date.parse(t.effective_from)<=n)&&(t.effective_to==null||n<Date.parse(t.effective_to));};
-  const svcTariffs=selSvc?tariffs.filter(t=>t.service_key===selSvc&&tNowOk(t)):[];
-  const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
-  const saveTariff=async(t)=>{const{id,created_at,...rest}=t;await dq("tariffs",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Guardado");};
-  const addTariff=async(type)=>{const svc=SERVICES.find(s=>s.key===selSvc);const r=await dq("tariffs",{method:"POST",token,body:{service_key:selSvc,type,min_qty:0,max_qty:null,rate:0,cost:0,unit:svc?.unit||"kg",label:"Nuevo rango",sort_order:svcTariffs.length+1}});if(Array.isArray(r))setTariffs(p=>[...p,...r]);else if(r?.id)setTariffs(p=>[...p,r]);flash("Agregado");};
-  const delTariff=async(id)=>{await dq("tariffs",{method:"DELETE",token,filters:`?id=eq.${id}`});setTariffs(p=>p.filter(t=>t.id!==id));flash("Eliminado");};
-  const chT=(id,f,v)=>{setTariffs(p=>p.map(t=>t.id===id?{...t,[f]:v}:t));};
-  const isCost=viewMode==="cost";
-  const renderRow=(t)=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-    <div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div>
-    <div style={{flex:1}}><Inp label="Min" type="number" value={t.min_qty} onChange={v=>chT(t.id,"min_qty",v)} step="0.01" small/></div>
-    <div style={{flex:1}}><Inp label="Max" type="number" value={t.max_qty} onChange={v=>chT(t.id,"max_qty",v===""?null:v)} step="0.01" small/></div>
-    <div style={{flex:1}}><Inp label={t.type==="surcharge"?"% Recargo":(isCost?"Costo":"Precio Venta")} type="number" value={isCost?t.cost:t.rate} onChange={v=>chT(t.id,isCost?"cost":"rate",v)} step="0.01" small/></div>
-    {!isCost&&t.type==="rate"&&<div style={{flex:1,paddingBottom:12,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 2px"}}>GANANCIA</p><p style={{fontSize:13,fontWeight:700,color:Number(t.rate)-Number(t.cost||0)>0?"#22c55e":"#ff6b6b",margin:0}}>${(Number(t.rate)-Number(t.cost||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>}
-    <div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div>
-  </div>;
-  // Cert flete config
-  const [certConfig,setCertConfig]=useState([]);const [certLoaded,setCertLoaded]=useState(false);
-  useEffect(()=>{if(!certLoaded){(async()=>{const r=await dq("calc_config",{token,filters:"?key=like.cert_flete_*&select=*"});setCertConfig(Array.isArray(r)?r:[]);setCertLoaded(true);})();}},[token,certLoaded]);
-  const saveCertConfig=async(key,val)=>{await dq("calc_config",{method:"PATCH",token,filters:`?key=eq.${key}`,body:{value:Number(val)}});flash("Guardado");};
-  const getCert=(key)=>certConfig.find(c=>c.key===key);
-  // Antidumping calzado (NCM cap. 64): piso de valor imponible por par para DIE/TE/IVA.
-  const [adConfig,setAdConfig]=useState(null);const [adLoaded,setAdLoaded]=useState(false);
-  useEffect(()=>{if(!adLoaded){(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.antidumping_calzado_usd_par&select=*"});setAdConfig(Array.isArray(r)&&r[0]?r[0]:null);setAdLoaded(true);})();}},[token,adLoaded]);
-  const saveAdConfig=async(val)=>{await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.antidumping_calzado_usd_par",body:{value:Number(val)}});flash("Guardado");};
-  // Posiciones con antidumping (tabla antidumping_ncm). El monto de cada medida sale de la
-  // resolucion oficial: el sistema no lo puede adivinar, hay que cargarlo a mano una vez.
-  const [adRows,setAdRows]=useState([]);const [adRowsLoaded,setAdRowsLoaded]=useState(false);
-  useEffect(()=>{if(!adRowsLoaded){(async()=>{const r=await dq("antidumping_ncm",{token,filters:"?select=*&order=ncm_prefix.asc"});setAdRows(Array.isArray(r)?r:[]);setAdRowsLoaded(true);})();}},[token,adRowsLoaded]);
-  const saveAdRow=async(id,patch)=>{await dq("antidumping_ncm",{method:"PATCH",token,filters:`?id=eq.${id}`,body:patch});flash("Guardado");};
-  const adInp={width:"100%",padding:"6px 8px",fontSize:11.5,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit"};
+  const patch=async(id,campos)=>{const r=await dq("tariffs",{method:"PATCH",token,filters:`?id=eq.${id}`,body:campos});if(r?.code){flash("No se pudo guardar");return;}flash("Guardado");};
+  const chT=(id,f,v)=>setTariffs(p=>p.map(t=>t.id===id?{...t,[f]:v}:t));
+  const numOrNull=v=>v===""||v==null?null:Number(v);
+  const addTariff=async(svcKey,type,unit)=>{const n=tariffs.filter(t=>t.service_key===svcKey&&tNowOk(t)).length;const r=await dq("tariffs",{method:"POST",token,body:{service_key:svcKey,type,min_qty:0,max_qty:null,rate:0,cost:0,unit,label:type==="surcharge"?"Nuevo recargo":type==="special"?"Nuevo adicional":"Nuevo rango",sort_order:n+1}});if(r?.code){flash("No se pudo agregar");return;}const fila=Array.isArray(r)?r:r?.id?[r]:[];setTariffs(p=>[...p,...fila]);flash("Agregado");};
+  const delTariff=async(id)=>{const r=await dq("tariffs",{method:"DELETE",token,filters:`?id=eq.${id}`});if(r?.code){flash("No se pudo borrar");return;}setTariffs(p=>p.filter(t=>t.id!==id));setBorrar(null);flash("Borrado");};
+  const crearPkBd=async()=>{const r=await dq("tariffs",{method:"POST",token,body:TARIFA_PK_BD});if(r?.code){flash("No se pudo crear");return;}await load();flash("Tarifas creadas");};
 
-  if(!selSvc)return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
-    <div style={{display:"flex",gap:8,marginBottom:20}}>{[{k:"sell",l:"Precios de Venta"},{k:"cost",l:"Costos de Flete"}].map(m=><button key={m.k} onClick={()=>setViewMode(m.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:viewMode===m.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:viewMode===m.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:viewMode===m.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{m.l}</button>)}</div>
-    {certLoaded&&<Card title="Certificación de Flete (CIF)"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Valores para calcular el CIF. Real = lo declarado ante aduana. Ficticio = lo que ve el cliente.</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}>{[
-        {k:"cert_flete_aereo_real",l:"Aéreo REAL (USD/kg bruto)"},
-        {k:"cert_flete_aereo_ficticio",l:"Aéreo FICTICIO (USD/kg fact.)"},
-        {k:"cert_flete_maritimo_real",l:"Marítimo REAL (USD/CBM)"},
-        {k:"cert_flete_maritimo_ficticio",l:"Marítimo FICTICIO (USD/CBM)"}
-      ].map(f=>{const c=getCert(f.k);return <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>{f.l}</label><input type="number" value={c?.value||""} onChange={e=>{setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x));}} onBlur={e=>saveCertConfig(f.k,e.target.value)} step="0.1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>;})}</div></Card>}
-    {adLoaded&&<Card title="Antidumping"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Valor imponible mínimo por par de calzado (NCM cap. 64) para DIE/tasa estadística/IVA — se aplica aunque el precio real pagado sea menor. El FOB real y lo que abona el cliente no se tocan.</p>
-      <div style={{maxWidth:260}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>Piso calzado (USD/par)</label><input type="number" value={adConfig?.value??""} onChange={e=>setAdConfig(p=>({...p,value:e.target.value}))} onBlur={e=>saveAdConfig(e.target.value)} step="0.01" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div></Card>}
-    {adRowsLoaded&&<Card title="Posiciones con antidumping"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Cuando un producto cae en una de estas posiciones, el sistema avisa en la op y por notificación. El <strong style={{color:"#fbbf24"}}>monto de la medida sale de la resolución oficial</strong>: cargalo acá una vez y las alertas ya lo informan. Las que están sin monto avisan igual, pero sin decir cuánto.</p>
-      <div style={{overflowX:"auto"}}>
-        <div style={{display:"grid",gridTemplateColumns:"90px minmax(150px,1fr) 140px 100px 100px 130px",gap:8,padding:"0 0 8px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          <span>NCM</span><span>Producto</span><span>Tipo de medida</span><span>Valor</span><span>Unidad</span><span>Resolución</span>
-        </div>
-        {adRows.map(r=>{const falta=r.valor==null||r.valor===""; return <div key={r.id} style={{display:"grid",gridTemplateColumns:"90px minmax(150px,1fr) 140px 100px 100px 130px",gap:8,alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:r.activo?1:0.45}}>
-          <span style={{fontSize:11.5,fontFamily:"monospace",color:IC,fontWeight:700}}>{r.ncm_prefix}</span>
-          <span style={{fontSize:11.5,color:"rgba(255,255,255,0.75)"}}>{r.producto}{falta&&<span title="Sin monto cargado" style={{marginLeft:6,fontSize:9,padding:"2px 6px",borderRadius:3,background:"rgba(251,191,36,0.15)",color:"#fbbf24",fontWeight:800}}>SIN MONTO</span>}</span>
-          <select value={r.medida_tipo||""} onChange={e=>{const v=e.target.value||null;setAdRows(p=>p.map(x=>x.id===r.id?{...x,medida_tipo:v}:x));saveAdRow(r.id,{medida_tipo:v});}} style={{...adInp}}>
-            <option value="">—</option><option value="derecho_especifico">Derecho específico</option><option value="valor_criterio">Valor criterio</option><option value="ad_valorem">Ad valorem</option>
-          </select>
-          <input type="number" step="0.01" value={r.valor??""} placeholder="—" onChange={e=>setAdRows(p=>p.map(x=>x.id===r.id?{...x,valor:e.target.value}:x))} onBlur={e=>saveAdRow(r.id,{valor:e.target.value===""?null:Number(e.target.value)})} style={{...adInp,textAlign:"right"}}/>
-          <select value={r.unidad||""} onChange={e=>{const v=e.target.value||null;setAdRows(p=>p.map(x=>x.id===r.id?{...x,unidad:v}:x));saveAdRow(r.id,{unidad:v});}} style={{...adInp}}>
-            <option value="">—</option><option value="USD/kg">USD/kg</option><option value="USD/u">USD/u</option><option value="USD/par">USD/par</option><option value="USD/m2">USD/m²</option><option value="%">%</option>
-          </select>
-          <input value={r.resolucion||""} placeholder="Res. .../..." onChange={e=>setAdRows(p=>p.map(x=>x.id===r.id?{...x,resolucion:e.target.value}:x))} onBlur={e=>saveAdRow(r.id,{resolucion:e.target.value||null})} style={{...adInp}}/>
-        </div>;})}
+  const inp={width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(0,0,0,0.22)",color:"#fff",outline:"none",fontFamily:"inherit",fontVariantNumeric:"tabular-nums"};
+  const cab={fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"};
+  const COLS="minmax(0,1.6fr) 80px 80px 96px 96px 90px 34px";
+  const fmtM=n=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const campo=(t,f,tipo)=><input type={tipo||"number"} step="0.01" value={t[f]??""} placeholder={f==="max_qty"?"∞":""} onChange={e=>chT(t.id,f,e.target.value)} onBlur={e=>patch(t.id,{[f]:tipo==="text"?e.target.value:numOrNull(e.target.value)})} style={{...inp,textAlign:tipo==="text"?"left":"right"}}/>;
+  const btnX=t=>borrar===t.id
+    ?<button onClick={()=>delTariff(t.id)} style={{height:34,padding:"0 8px",borderRadius:8,border:"1px solid rgba(255,80,80,0.5)",background:"rgba(255,80,80,0.18)",color:"#ff8a8a",fontSize:11,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap"}}>¿Borrar?</button>
+    :<button onClick={()=>setBorrar(t.id)} title="Borrar" style={{height:34,width:34,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.45)",fontSize:14,cursor:"pointer"}}>×</button>;
+  const scope=t=>t.tax_scope==="ri"?<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#93c5fd"}}>RI</span>:t.tax_scope==="no_ri"?<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.15)",color:"#c4b5fd"}}>NO RI</span>:null;
+  const filaRango=(t,esRecargo)=>{const margen=Number(t.rate||0)-Number(t.cost||0);
+    if(celu)return <div key={t.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{flex:1}}>{campo(t,"label","text")}</div>{btnX(t)}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div><p style={{...cab,margin:"0 0 4px"}}>Desde</p>{campo(t,"min_qty")}</div><div><p style={{...cab,margin:"0 0 4px"}}>Hasta</p>{campo(t,"max_qty")}</div>
+        <div><p style={{...cab,margin:"0 0 4px"}}>{esRecargo?"% recargo":"Precio"}</p>{campo(t,"rate")}</div>{!esRecargo&&<div><p style={{...cab,margin:"0 0 4px"}}>Costo</p>{campo(t,"cost")}</div>}
       </div>
-    </Card>}
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate"&&tNowOk(t));if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
-  const svcInfo=SERVICES.find(s=>s.key===selSvc);
+      {!esRecargo&&<p style={{margin:"8px 0 0",fontSize:12.5,fontWeight:700,color:margen>0?"#4ade80":"#ff6b6b"}}>Margen {fmtM(margen)}{scope(t)}</p>}
+    </div>;
+    return <div key={t.id} style={{display:"grid",gridTemplateColumns:COLS,gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+      <div style={{display:"flex",alignItems:"center"}}>{campo(t,"label","text")}{scope(t)}</div>
+      {campo(t,"min_qty")}{campo(t,"max_qty")}{campo(t,"rate")}
+      {esRecargo?<span/>:campo(t,"cost")}
+      {esRecargo?<span/>:<span style={{fontSize:12.5,fontWeight:800,textAlign:"right",color:margen>0?"#4ade80":"#ff6b6b",fontVariantNumeric:"tabular-nums"}}>{fmtM(margen)}</span>}
+      {btnX(t)}
+    </div>;};
+  const filaEspecial=t=>celu
+    ?<div key={t.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"1fr 90px 34px",gap:8,alignItems:"center"}}>{campo(t,"label","text")}{campo(t,"rate")}{btnX(t)}</div>
+    :<div key={t.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 96px 96px minmax(0,1fr) 34px",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>{campo(t,"label","text")}{campo(t,"rate")}{campo(t,"cost")}{campo(t,"notes","text")}{btnX(t)}</div>;
+  const encabezado=!celu&&<div style={{display:"grid",gridTemplateColumns:COLS,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={cab}>Rango</span><span style={{...cab,textAlign:"right"}}>Desde</span><span style={{...cab,textAlign:"right"}}>Hasta</span><span style={{...cab,textAlign:"right"}}>Precio</span><span style={{...cab,textAlign:"right"}}>Costo</span><span style={{...cab,textAlign:"right"}}>Margen</span><span/></div>;
+  const sub=(titulo,boton)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"18px 0 8px"}}><p style={{margin:0,fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{titulo}</p>{boton}</div>;
+  const servicio=svc=>{const filas=tariffs.filter(t=>t.service_key===svc.key&&tNowOk(t));
+    const rangos=filas.filter(t=>t.type==="rate").sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0)||String(a.tax_scope||"").localeCompare(String(b.tax_scope||"")));
+    const esp=filas.filter(t=>t.type==="special");const rec=filas.filter(t=>t.type==="surcharge").sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0));
+    return <Card v2 key={svc.key} title={svc.nombre} sub={`Por ${svc.unit}${svc.comparte?` · ${svc.comparte}`:""}`} actions={<Btn small variant="secondary" onClick={()=>addTariff(svc.key,"rate",svc.unit==="m³"?"cbm":"kg")}>+ Rango</Btn>}>
+      {rangos.length===0&&svc.key==="aereo_a_pk_bd"
+        ?<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"12px 14px",borderRadius:12,border:"1px dashed rgba(255,255,255,0.18)"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>50 a 100 kg: USD 18/kg · +100 kg: USD 17/kg</span><Btn small onClick={crearPkBd}>Guardar estas tarifas</Btn></div>
+        :<>{encabezado}{rangos.map(t=>filaRango(t,false))}</>}
+      {(esp.length>0||svc.key==="aereo_a_china")&&<>{sub("Adicionales",<Btn small variant="ghost" onClick={()=>addTariff(svc.key,"special",svc.unit==="m³"?"cbm":"kg")}>+ Adicional</Btn>)}{esp.map(filaEspecial)}</>}
+      {rec.length>0&&<>{sub("Recargo por valor",<Btn small variant="ghost" onClick={()=>addTariff(svc.key,"surcharge",svc.unit==="m³"?"cbm":"kg")}>+ Recargo</Btn>)}{rec.map(t=>filaRango(t,true))}</>}
+    </Card>;};
+
+  // Certificación de flete (calc_config)
+  const [certConfig,setCertConfig]=useState([]);
+  useEffect(()=>{(async()=>{const r=await dq("calc_config",{token,filters:"?key=like.cert_flete_*&select=*"});setCertConfig(Array.isArray(r)?r:[]);})();},[token]);
+  const saveCertConfig=async(key,val)=>{await dq("calc_config",{method:"PATCH",token,filters:`?key=eq.${key}`,body:{value:Number(val)}});flash("Guardado");};
+  // Antidumping (tabla antidumping_ncm)
+  const [adRows,setAdRows]=useState([]);
+  useEffect(()=>{(async()=>{const r=await dq("antidumping_ncm",{token,filters:"?select=*&order=ncm_prefix.asc"});setAdRows(Array.isArray(r)?r:[]);})();},[token]);
+  const saveAdRow=async(id,patchAd)=>{await dq("antidumping_ncm",{method:"PATCH",token,filters:`?id=eq.${id}`,body:patchAd});flash("Guardado");};
+  const MEDIDAS=[{value:"",label:"—"},{value:"derecho_especifico",label:"Derecho específico"},{value:"valor_criterio",label:"Valor criterio"},{value:"ad_valorem",label:"Ad valorem"}];
+  const UNIDADES=[{value:"",label:"—"},{value:"USD/kg",label:"USD/kg"},{value:"USD/u",label:"USD/u"},{value:"USD/par",label:"USD/par"},{value:"USD/m2",label:"USD/m²"},{value:"%",label:"%"}];
+  const [verTodasAd,setVerTodasAd]=useState(false);
+
+  const o=TARIFAS_ORIGENES.find(x=>x.k===origen)||TARIFAS_ORIGENES[0];
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={()=>setSelSvc(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{svcInfo?.label} — {isCost?"Costos":"Precios de Venta"}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div></div>
-    <Card title="Rangos de tarifa" actions={<Btn onClick={()=>addTariff("rate")} small>+ Agregar rango</Btn>}>{rates.length>0?rates.map(renderRow):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin rangos</p>}</Card>
-    <Card title="Tarifas especiales" actions={<Btn onClick={()=>addTariff("special")} small>+ Agregar especial</Btn>}>{specials.length>0?specials.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0"}}><div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div><div style={{flex:1}}><Inp label={isCost?"Costo/un":"Tarifa/un"} type="number" value={isCost?t.cost:t.rate} onChange={v=>chT(t.id,isCost?"cost":"rate",v)} step="0.01" small/></div><div style={{flex:2}}><Inp label="Notas" value={t.notes} onChange={v=>chT(t.id,"notes",v)} small/></div><div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div></div>):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin tarifas especiales</p>}</Card>
-    {!isCost&&<Card title="Recargos por valor" actions={<Btn onClick={()=>addTariff("surcharge")} small>+ Agregar recargo</Btn>}>{surcharges.length>0?surcharges.map(renderRow):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin recargos</p>}</Card>}
+    <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 16px",letterSpacing:"-0.02em"}}>Tarifas</h2>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":`repeat(${TARIFAS_ORIGENES.length},minmax(0,1fr))`,gap:8,marginBottom:16}}>
+      {TARIFAS_ORIGENES.map(x=>{const on=x.k===origen;return <button key={x.k} onClick={()=>setOrigen(x.k)} style={{padding:"12px 14px",borderRadius:12,border:`1.5px solid ${on?GOLD:"rgba(255,255,255,0.08)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+        <span style={{display:"block",fontSize:14,fontWeight:800}}>{x.flag} {x.nombre}</span>
+        <span style={{display:"block",fontSize:11.5,color:on?GOLD_LIGHT:"rgba(255,255,255,0.45)",marginTop:3,fontWeight:600}}>{x.minKg}</span>
+      </button>;})}
+    </div>
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:o.svcs.map(servicio)}
+
+    <Card v2 title="Certificación de flete" sub="Para calcular el CIF">
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:12}}>{[
+        {k:"cert_flete_aereo_real",l:"Aéreo real · USD/kg bruto"},
+        {k:"cert_flete_aereo_ficticio",l:"Aéreo ficticio · USD/kg fact."},
+        {k:"cert_flete_maritimo_real",l:"Marítimo real · USD/m³"},
+        {k:"cert_flete_maritimo_ficticio",l:"Marítimo ficticio · USD/m³"}
+      ].map(f=>{const c=certConfig.find(x=>x.key===f.k);return <div key={f.k}><p style={{...cab,margin:"0 0 5px"}}>{f.l}</p><input type="number" step="0.1" value={c?.value??""} onChange={e=>setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x))} onBlur={e=>saveCertConfig(f.k,e.target.value)} style={inp}/></div>;})}</div>
+    </Card>
+
+    <Card v2 title="Antidumping" sub={`${adRows.filter(r=>r.activo).length} posiciones · origen China`} actions={<Btn small variant="ghost" onClick={()=>setVerTodasAd(v=>!v)}>{verTodasAd?"Ver solo vigentes":"Ver también sin medida"}</Btn>}>
+      {!celu&&<div style={{display:"grid",gridTemplateColumns:"88px minmax(0,1.4fr) 170px 90px 110px minmax(0,1fr)",gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["NCM","Producto","Medida","Valor","Unidad","Resolución"].map(h=><span key={h} style={cab}>{h}</span>)}</div>}
+      {adRows.filter(r=>verTodasAd||r.activo).map(r=>{const falta=r.activo&&(r.valor==null||r.valor==="");
+        const medida=<Sel value={r.medida_tipo||""} onChange={v=>{const x=v||null;setAdRows(p=>p.map(y=>y.id===r.id?{...y,medida_tipo:x}:y));saveAdRow(r.id,{medida_tipo:x});}} options={MEDIDAS}/>;
+        const unidad=<Sel value={r.unidad||""} onChange={v=>{const x=v||null;setAdRows(p=>p.map(y=>y.id===r.id?{...y,unidad:x}:y));saveAdRow(r.id,{unidad:x});}} options={UNIDADES}/>;
+        const valor=<input type="number" step="0.01" value={r.valor??""} placeholder="—" onChange={e=>setAdRows(p=>p.map(y=>y.id===r.id?{...y,valor:e.target.value}:y))} onBlur={e=>saveAdRow(r.id,{valor:e.target.value===""?null:Number(e.target.value)})} style={{...inp,textAlign:"right",marginBottom:12}}/>;
+        const resol=<input value={r.resolucion||""} placeholder="Res. …" onChange={e=>setAdRows(p=>p.map(y=>y.id===r.id?{...y,resolucion:e.target.value}:y))} onBlur={e=>saveAdRow(r.id,{resolucion:e.target.value||null})} style={{...inp,marginBottom:12}}/>;
+        const prod=<span style={{fontSize:12.5,color:r.activo?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.4)"}}>{r.producto}{falta&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",fontWeight:800}}>SIN MONTO</span>}{!r.activo&&<span style={{marginLeft:6,fontSize:9.5,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.5)",fontWeight:800}}>SIN MEDIDA</span>}</span>;
+        if(celu)return <div key={r.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",opacity:r.activo?1:0.6}}>
+          <p style={{margin:"0 0 8px"}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT,fontWeight:700,fontSize:12.5,marginRight:8}}>{r.ncm_prefix}</span>{prod}</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 8px"}}>{medida}{unidad}{valor}{resol}</div>
+        </div>;
+        return <div key={r.id} style={{display:"grid",gridTemplateColumns:"88px minmax(0,1.4fr) 170px 90px 110px minmax(0,1fr)",gap:8,alignItems:"start",padding:"8px 0 0",borderBottom:"1px solid rgba(255,255,255,0.05)",opacity:r.activo?1:0.6}}>
+          <span style={{fontSize:12,fontFamily:"monospace",color:GOLD_LIGHT,fontWeight:700,paddingTop:10}}>{r.ncm_prefix}</span>
+          <div style={{paddingTop:9}}>{prod}</div>{medida}{valor}{unidad}{resol}
+        </div>;})}
+    </Card>
   </div>;
 }
 
@@ -11225,7 +11269,7 @@ function ShipmentsTracking({token,onSelectOp}){
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,userSelect:"text"}}>{r.op.operation_code}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)",userSelect:"text"}}>{r.client}</td>
           <td style={{padding:"12px 14px",color:"#fff",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",userSelect:"text"}}>{r.desc}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",userSelect:"text"}}>{r.origin==="China"?"🇨🇳":r.origin==="USA"?"🇺🇸":""} {r.origin}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",userSelect:"text"}}>{r.origin&&r.origin!=="—"?banderaOrigen(r.origin):""} {r.origin}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[r.channel]||r.channel}</span></td>
           <td style={{padding:"12px 14px",userSelect:"text"}}>
             {r.tracking==="—"?<span style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic",fontSize:12}}>{r.trackingType}</span>:<div>

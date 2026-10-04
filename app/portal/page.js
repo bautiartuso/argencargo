@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { PROVINCIAS } from "../../lib/provincias";
-import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje, esPkBd, svcAereoDe, SVC_PK_BD, TARIFA_PK_BD } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
 import MaritimeCargoCards from "./components/MaritimeCargoCards";
@@ -112,6 +112,7 @@ const stageKeyOf=(status,showDoc,docsConfirmed,lost)=>{if(lost)return "aduana";c
 // seguía pidiendo confirmar algo que el servidor ya rechaza (21/09/2026).
 const docsCerradas=(op,inFlight)=>!!op.docs_confirmed_at||!!inFlight||Number(op.budget_total||0)>0;
 const stLabelOf=(op,t)=>op.status==="en_preparacion"&&op.docs_confirmed_at?t("opStatus.prep_confirmed"):(SM[op.status]?t(SM[op.status].tk):op.status);
+const banderaOrigen=(o)=>({USA:"🇺🇸","España":"🇪🇸","Pakistán":"🇵🇰",Bangladesh:"🇧🇩"})[o]||"🇨🇳";
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{tk:"opStatus.pendiente",c:"#94a3b8"},en_deposito_origen:{tk:"opStatus.warehouse_ac",c:"#fbbf24"},en_preparacion:{tk:"opStatus.en_preparacion",c:"#a78bfa"},en_transito:{tk:"opStatus.en_transito",c:"#60a5fa"},arribo_argentina:{tk:"opStatus.arribo_argentina",c:"#818cf8"},en_aduana:{tk:"opStatus.en_aduana",c:"#fb923c"},entregada:{tk:"opStatus.entregada",c:"#22c55e"},operacion_cerrada:{tk:"opStatus.operacion_cerrada",c:"#10b981"},cancelada:{tk:"opStatus.cancelada",c:"#f87171"}};
 const CM={aereo_blanco:"channel.aereo_blanco",maritimo_blanco:"channel.maritimo_blanco",maritimo_negro:"channel.maritimo_negro"};
@@ -965,7 +966,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         <span style={{fontSize:20,fontWeight:800,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.05em"}}>{op.operation_code}</span>
         {isGI&&<span className="ac-gi-pulse" style={{fontSize:10.5,fontWeight:800,padding:"5px 12px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>{t("op.gi")}</span>}
         {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?t("ol.heldCustoms"):stLabelOf(op,t)}</span>;})()}
-        <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{op.origin==="USA"?"🇺🇸":"🇨🇳"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?t("op.arrived"):"ETA"} {fd(op.eta)}</span></>:null}</span>
+        <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{banderaOrigen(op.origin)} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?t("op.arrived"):"ETA"} {fd(op.eta)}</span></>:null}</span>
       </div>
       <h2 style={{fontSize:19,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.4)",margin:"12px 0 4px",fontStyle:op.description?"normal":"italic"}}>{op.description||(items.length?items.map(i=>i.description).filter(Boolean).slice(0,3).join(", "):t("op.noGoods"))}</h2>
       <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={docsCerradas(op,inFlight)}/>
@@ -1508,7 +1509,7 @@ function CalculatorPage({token,client,preset}){
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   // Cotización nueva → tarifa vigente HOY (ignora versiones históricas).
   const tariffNowOk=t=>{const n=Date.now();return (t.effective_from==null||Date.parse(t.effective_from)<=n)&&(t.effective_to==null||n<Date.parse(t.effective_to));};
-  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t)&&tarifaAplica(t,client?.tax_condition==="responsable_inscripto"));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
+  const getFleteRate=(svcKey,amount)=>{let rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t)&&tarifaAplica(t,client?.tax_condition==="responsable_inscripto"));if(!rates.length&&svcKey===SVC_PK_BD)rates=TARIFA_PK_BD;for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
 
   const calculateSpain=()=>{
@@ -1581,12 +1582,14 @@ function CalculatorPage({token,client,preset}){
   };
 
   // China y USA comparten flujo y tarifas. Unica diferencia: USA no tiene Maritimo LCL/FCL
-  // y su minimo facturable aereo es de 25 kg.
+  // y su minimo facturable aereo es de 25 kg. Pakistán y Bangladesh (04/10/2026): solo aéreo
+  // courier, mínimo 50 kg y tarifa propia (aereo_a_pk_bd).
   const calculateChina=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
     const conLcl=origin==="China";
-    const minKgAereo=origin==="USA"?MIN_KG_AEREO_USA:MIN_KG_AEREO_CHINA;
-    const transitoAereo=origin==="USA"?"3-5 días hábiles":"7-10 días hábiles";
+    const pkBd=esPkBd(origin);
+    const minKgAereo=pkBd?minKgAereoDe(origin):origin==="USA"?MIN_KG_AEREO_USA:MIN_KG_AEREO_CHINA;
+    const transitoAereo=pkBd?"":origin==="USA"?"3-5 días hábiles":"7-10 días hábiles";
     // Peso facturable = suma del max(bruto, vol) POR BULTO, no global
     let facturable=0;let volWeightTotal=0;
     const pkgDetails=pkgs.map(pk=>{const q=(toN(pk.qty)||1),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);
@@ -1625,7 +1628,7 @@ function CalculatorPage({token,client,preset}){
     // Omitido si: hay marca registrada, o algún bulto unitario supera los 45 kg
     // (límite operativo del canal courier — no importa el total, sino el peso por bulto)
     const overweightPkg=pkgs.find(pk=>toN(pk.weight)>=46);
-    if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,minKgAereo);const fleteRate=getFleteRate("aereo_a_china",facturableBill);const flete=facturableBill*fleteRate;
+    if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,minKgAereo);const fleteRate=getFleteRate(svcAereoDe(origin),facturableBill);const flete=facturableBill*fleteRate;
       const certFlete=isRI?(totWeight*certAerReal):(facturableBill*certAerFict);
       const seguro=(totalFob+certFlete)*0.01;const battExtra=hasBattery?facturableBill*bateriaUsdKg(isRI):0; // desde 25/09/2026: USD 1/kg para todos
       const validProds=products.filter(p=>toN(p.unit_price)>0);
@@ -1672,7 +1675,7 @@ function CalculatorPage({token,client,preset}){
 
     // Marítimo Integral AC (B) — siempre disponible (incluso para ropa/calzado <5 CBM).
     // Si totCBM>0 hay dimensiones cargadas. No chequeamos noDims porque puede estar en true por edge UX.
-    if(totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);let flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
+    if(totCBM>0&&!pkBd){const fleteRate=getFleteRate("maritimo_b",totCBM);let flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
       // Mínimo de servicio del Integral: USD 100 (10/08/2026). Se ajusta el flete para que
       // las líneas sumen el total.
       let negroTotal=flete+sur.amt;
@@ -1707,7 +1710,7 @@ function CalculatorPage({token,client,preset}){
   const DELIV={oficina:t("calc.pickupOfficeFree"),caba:t("calc.shipCaba"),coordinar:t("calc.deliveryTBD")};
   const [savedMsg,setSavedMsg]=useState("");
   // Tiempo de tránsito por canal (para la lista de resultados y la cotización guardada).
-  const transitOf=ch=>ch?.info||({aereo_a_china:origin==="USA"?"3-5 días hábiles":"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:origin==="USA"?"40 días":"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
+  const transitOf=ch=>esPkBd(origin)&&ch?.key==="aereo_a_china"?"":ch?.info||({aereo_a_china:origin==="USA"?"3-5 días hábiles":"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:origin==="USA"?"40 días":"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
   // Guardado automático (11/09/2026): al llegar a Resultados se guarda UNA cotización con todas las
   // alternativas (channel_alternatives). Si el cliente vuelve atrás y recalcula, se actualiza la misma
   // fila. "Nueva cotización" resetea el id y la próxima crea otra fila.
@@ -1775,7 +1778,7 @@ function CalculatorPage({token,client,preset}){
   const resultsRef=useRef(null);
   useEffect(()=>{if(results){setResults(null);setExpandedCh(null);}},[products,pkgs,delivery,hasBattery,noDims,origin]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{if(results&&resultsRef.current)resultsRef.current.scrollIntoView({behavior:"smooth",block:"start"});},[results]);
-  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":origin==="Espa\u00f1a"?"\ud83c\uddea\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.total+delivCost;
+  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=banderaOrigen(origin);const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.total+delivCost;
     const usdF=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\n${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete Internacional"}: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${autoDelivLabel}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
     return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\nEntrega en Destino: *${autoDelivLabel}*\nCosto de importación: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);};
@@ -1802,7 +1805,7 @@ function CalculatorPage({token,client,preset}){
   const delBtn=(onClick,disabled)=><button onClick={onClick} disabled={disabled} title="Quitar" style={{width:32,height:32,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.8)",cursor:disabled?"default":"pointer",fontSize:16,lineHeight:1,opacity:disabled?0.25:1,flexShrink:0}}>×</button>;
   const lockedRow=(label)=><div style={{...PANEL,padding:"14px 24px",opacity:0.5,boxShadow:"none"}}><p style={{...LBL,color:"rgba(255,255,255,0.6)"}}>{label}</p></div>;
   // China y USA comparten todo el flujo: NCM, pregunta de baterias y Courier comercial.
-  const isChina=origin==="China"||origin==="USA";
+  const isChina=origin==="China"||origin==="USA"||esPkBd(origin);
   const isRI=client?.tax_condition==="responsable_inscripto";
   const battRate=bateriaUsdKg(isRI);
   const flagOf=o=>o==="China"?"🇨🇳":o==="España"?"🇪🇸":"🇺🇸";
@@ -1924,7 +1927,7 @@ function CalculatorPage({token,client,preset}){
           const half=(l,v,extra)=><div style={{flex:"1 1 260px",padding:"14px 18px",borderRadius:12,border:"1px solid rgba(255,255,255,0.14)",background:"#0B1628",textAlign:"center"}}><p style={{...LBL,fontSize:10.5,color:SKY}}>{l}</p>{v!=null&&<p style={{margin:"6px 0 0",fontSize:18,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</p>}{extra}</div>;
           return <div key={ch.key} style={{border:`1px solid ${open?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,borderRadius:16,marginTop:i?14:0,background:open?"linear-gradient(180deg, rgba(184,149,106,0.14), rgba(184,149,106,0.06))":"linear-gradient(180deg, rgba(140,200,245,0.1), rgba(140,200,245,0.04))",transition:"border-color 150ms",boxShadow:"0 10px 26px rgba(0,0,0,0.28)"}}>
             <div className="rs-head" style={{display:"flex",alignItems:"center",gap:18,padding:"20px 22px 14px"}}>
-              {chHead(ch,tag&&tagPill(tag),`Llega en ${transitOf(ch)}`,false)}
+              {chHead(ch,tag&&tagPill(tag),transitOf(ch)?`Llega en ${transitOf(ch)}`:"Tiempo de tránsito a coordinar",false)}
             </div>
             <div style={{display:"flex",gap:12,flexWrap:"wrap",padding:"0 22px 12px"}}>
               {ch.isBlanco?<>{half(t("quotes.freightIns"),svc)}{half(t("imports.taxes"),imp)}</>:<>{half(ch.key==="maritimo_a_china"?t("quotes.seaService"):t("op.integralService"),svc)}{half("Tarifa ALL IN",null,<p style={{margin:"6px 0 0",fontSize:12.5,color:"#fff",lineHeight:1.5,fontWeight:500}}>{t("calc.closedCost")}</p>)}</>}
@@ -1964,19 +1967,24 @@ function CalculatorPage({token,client,preset}){
   }
 
   // ══════════ VISTA CARGA ══════════
+  // Bandera de fondo de cada origen (China, USA, Pakistán, Bangladesh).
   const flagBg=(k)=>k==="China"
     ?<div aria-hidden style={{position:"absolute",inset:0,background:"#C8102E",opacity:0.55}}><span style={{position:"absolute",left:14,top:2,fontSize:42,color:"#FFDE00",lineHeight:1}}>★</span>{[[62,6],[72,16],[72,30],[62,40]].map(([x,y],i)=><span key={i} style={{position:"absolute",left:x,top:y,fontSize:12,color:"#FFDE00",lineHeight:1}}>★</span>)}</div>
+    :k==="Pakistán"
+    ?<div aria-hidden style={{position:"absolute",inset:0,background:"linear-gradient(90deg,#FFFFFF 0 25%,#01411C 25% 100%)",opacity:0.6}}><span style={{position:"absolute",left:"52%",top:"50%",transform:"translate(-50%,-50%)",width:52,height:52,borderRadius:"50%",boxShadow:"inset 9px -6px 0 0 #fff"}}/><span style={{position:"absolute",left:"60%",top:"18%",fontSize:16,color:"#fff",lineHeight:1}}>★</span></div>
+    :k==="Bangladesh"
+    ?<div aria-hidden style={{position:"absolute",inset:0,background:"#006A4E",opacity:0.6}}><span style={{position:"absolute",left:"45%",top:"50%",transform:"translate(-50%,-50%)",width:58,height:58,borderRadius:"50%",background:"#F42A41"}}/></div>
     :<div aria-hidden style={{position:"absolute",inset:0,background:"repeating-linear-gradient(180deg,#B22234 0 7.69%,#FFFFFF 7.69% 15.38%)",opacity:0.55}}><div style={{position:"absolute",left:0,top:0,width:"40%",height:"53.8%",background:"#3C3B6E",backgroundImage:"radial-gradient(circle,#fff 1.1px,transparent 1.6px)",backgroundSize:"10px 10px",backgroundPosition:"5px 5px"}}/></div>;
   return <div><h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("calc.title")}</h2>
 
     {/* País de origen */}
     <div style={PANEL}>
       <p style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 14px",textAlign:"center",letterSpacing:"0.14em",textTransform:"uppercase"}}>{t("calc.originCountry")}</p>
-      <div className="origin-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,maxWidth:680,margin:"0 auto"}}>{["China","USA"].map(k=>{const on=origin===k;const dim=!!origin&&!on;return <button key={k} onClick={()=>pickOrigin(k)} style={{position:"relative",overflow:"hidden",height:96,borderRadius:14,border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.22)"}`,background:"#0B1628",cursor:"pointer",padding:0,opacity:dim?0.5:1,boxShadow:on?"0 0 0 3px rgba(232,208,152,0.25), 0 12px 28px rgba(0,0,0,0.35)":"0 8px 20px rgba(0,0,0,0.25)",transition:"all 160ms"}}>
+      <div className="origin-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,maxWidth:680,margin:"0 auto"}}>{["China","USA","Pakistán","Bangladesh"].map(k=>{const on=origin===k;const dim=!!origin&&!on;return <button key={k} onClick={()=>pickOrigin(k)} style={{position:"relative",overflow:"hidden",height:96,borderRadius:14,border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.22)"}`,background:"#0B1628",cursor:"pointer",padding:0,opacity:dim?0.5:1,boxShadow:on?"0 0 0 3px rgba(232,208,152,0.25), 0 12px 28px rgba(0,0,0,0.35)":"0 8px 20px rgba(0,0,0,0.25)",transition:"all 160ms"}}>
         {flagBg(k)}
         <span aria-hidden style={{position:"absolute",inset:0,background:"linear-gradient(180deg, rgba(6,12,24,0.25), rgba(6,12,24,0.7))"}}/>
         <span style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",gap:16,height:"100%"}}>
-          <span style={{fontSize:32,fontWeight:900,color:"#fff",letterSpacing:"0.22em",textTransform:"uppercase",textShadow:"0 2px 6px rgba(0,0,0,0.95), 0 4px 18px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,1)"}}>{k}</span>
+          <span className="origin-name" style={{fontSize:k.length>6?25:32,fontWeight:900,color:"#fff",letterSpacing:k.length>6?"0.14em":"0.22em",textTransform:"uppercase",textShadow:"0 2px 6px rgba(0,0,0,0.95), 0 4px 18px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,1)"}}>{k}</span>
         </span>
       </button>;})}</div>
     </div>
@@ -2720,7 +2728,9 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .op-progress{overflow-x:auto;-webkit-overflow-scrolling:touch}
         .op-info{flex-wrap:wrap!important;gap:12px!important}
         h2{font-size:18px!important}
-        .origin-picker{grid-template-columns:1fr!important}
+        .origin-picker{grid-template-columns:1fr 1fr!important;gap:10px!important}
+        .origin-picker>button{height:76px!important}
+        .origin-name{font-size:15px!important;letter-spacing:0.12em!important}
         .pay-top{grid-template-columns:1fr!important;gap:18px!important}
         .dep-head{display:none!important}
         .dep-row{grid-template-columns:30px 1fr 1fr!important}
