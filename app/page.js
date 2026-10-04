@@ -81,6 +81,9 @@ export default function Landing(){
     </section>
 
 
+    {/* CALCULADORA (04/10/2026): texto + compu con la calculadora del portal. */}
+    <CalcLanding />
+
     {/* Lo de abajo es la landing vieja: siempre oscura hasta rehacerla. */}
     <div style={{background:BG,color:"#fff"}}>
     {/* DOLOR → SOLUCIÓN */}
@@ -101,12 +104,6 @@ export default function Landing(){
       </div>
     </section>
 
-    </div>
-
-    {/* CALCULADORA (04/10/2026): texto + compu con la calculadora del portal. */}
-    <CalcLanding />
-
-    <div style={{background:BG,color:"#fff"}}>
     {/* FAQ */}
     <section style={{padding:"60px 24px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
       <div style={{maxWidth:700,margin:"0 auto"}}>
