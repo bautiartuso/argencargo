@@ -104,10 +104,10 @@ html, body {
     grid-template-columns: 1fr 1fr !important;
   }
 
-  /* Headings con tipografía fluida */
-  h1 { font-size: clamp(20px, 6vw, 28px) !important; line-height: 1.15 !important; }
-  h2 { font-size: clamp(18px, 5.2vw, 26px) !important; line-height: 1.2 !important; }
-  h3 { font-size: clamp(13px, 3.8vw, 16px) !important; }
+  /* Headings con tipografía fluida (Argencargo). ARGENMAQ (.amq) maneja sus propios tamaños. */
+  h1:not(.amq h1) { font-size: clamp(20px, 6vw, 28px) !important; line-height: 1.15 !important; }
+  h2:not(.amq h2) { font-size: clamp(18px, 5.2vw, 26px) !important; line-height: 1.2 !important; }
+  h3:not(.amq h3) { font-size: clamp(13px, 3.8vw, 16px) !important; }
 
   /* Tablas: scroll horizontal seguro */
   table {

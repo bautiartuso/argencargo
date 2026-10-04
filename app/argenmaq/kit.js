@@ -16,7 +16,7 @@ export const CSS = `
 .amq[data-tema="oscuro"]{--bg:#141517;--card:#1C1E21;--ink:#F3F3F1;--gris:#9DA3A9;--borde:#2B2E33;--suave:#23262A;--ysuave:#3A3305;--ok:#7BD88F;--sombra:0 14px 40px rgba(0,0,0,0.35)}
 html,body{overflow-x:clip!important}
 .amq *{box-sizing:border-box}.amq a{color:inherit;text-decoration:none}.amq button{font-family:inherit}
-.amq .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.amq .wrap{max-width:1320px;margin:0 auto;padding:0 28px}
 .amq .grupoWrap{display:flex;justify-content:center;padding:12px 16px 0}
 .amq .grupo{display:inline-flex;gap:8px}
 .amq .grupo a{width:236px;height:42px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:10px;background:#15171A;border:2px solid transparent;box-shadow:0 6px 18px rgba(0,0,0,0.12);transition:transform 140ms}
@@ -24,12 +24,13 @@ html,body{overflow-x:clip!important}
 .amq[data-tema="oscuro"] .grupo a{background:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
 .amq .grupo img{width:auto;display:block}.amq .grupo .iso{height:22px}.amq .grupo .txt{height:15px}.amq .grupo .argc .iso{height:19px}.amq .grupo .argc .txt{height:12px}
 .amq .nav{position:sticky;top:10px;z-index:30;padding:0 20px;margin:12px 0 0}
-.amq .isla{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
+.amq .isla{max-width:1320px;margin:0 auto;display:flex;align-items:center;gap:20px;height:68px;padding:0 14px 0 22px;border-radius:999px;background:color-mix(in srgb,var(--card) 90%,transparent);backdrop-filter:blur(16px);border:1px solid var(--borde);box-shadow:0 12px 34px rgba(0,0,0,0.10)}
 .amq[data-tema="oscuro"] .isla{box-shadow:0 12px 34px rgba(0,0,0,0.45)}
 .amq .nav .links{display:flex;gap:24px;font-size:14.5px;font-weight:800;color:var(--ink);flex:1;justify-content:center}
 .amq .nav .links a{opacity:0.82;transition:opacity 120ms}.amq .nav .links a:hover,.amq .nav .links a.on{opacity:1}
-.amq .nav .links a.rep,.amq .nav .links a.rep.on{opacity:1;color:var(--y);-webkit-text-stroke:0.9px #15171A;paint-order:stroke fill;letter-spacing:0.01em}
-.amq[data-tema="oscuro"] .nav .links a.rep{-webkit-text-stroke:0}
+.amq .nav .links a.rep,.amq .nav .links a.rep.on{opacity:1;color:#15171A;background:var(--y);padding:7px 14px;margin:-7px 0;border-radius:999px}
+.amq .nav .links a.rep:hover{filter:brightness(0.96)}
+.amq[data-tema="oscuro"] .nav .links a.rep,.amq[data-tema="oscuro"] .nav .links a.rep.on{color:var(--y);background:transparent;padding:0;margin:0}
 .amq .isla.info .despMon{display:none}
 .amq .nav .links a.on{color:var(--ink)}.amq .nav .links svg{display:none}
 .amq .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border-radius:999px;font-weight:800;font-size:14.5px;border:1px solid var(--borde);background:var(--card);color:var(--ink);cursor:pointer;transition:transform 120ms;white-space:nowrap}
@@ -37,7 +38,7 @@ html,body{overflow-x:clip!important}
 .amq .ico{width:36px;height:36px;border-radius:50%;border:1px solid var(--borde);background:transparent;color:var(--gris);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-family:${MONO};font-size:11px;font-weight:600}
 .amq .card{background:var(--card);border:1px solid var(--borde);border-radius:20px;overflow:hidden;transition:transform 140ms,box-shadow 140ms;display:block}
 .amq .card:hover{transform:translateY(-3px);box-shadow:var(--sombra)}
-.amq .carril{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 16px;scroll-snap-type:x proximity;scrollbar-width:thin}
+.amq .carril{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 16px;scroll-snap-type:x proximity;scrollbar-width:thin;contain:paint}
 .amq .carril>*{flex:0 0 230px;scroll-snap-align:start}
 .amq .chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--borde);background:var(--card);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
 .amq .chip.on{background:var(--ysuave);border-color:var(--y)}
@@ -67,7 +68,7 @@ html,body{overflow-x:clip!important}
 .amq footer .dir{font-size:13px!important;color:rgba(255,255,255,0.5)!important}
 .amq footer .legal .razon{margin:0 0 6px;font-size:15px;font-weight:600;letter-spacing:0.02em;color:rgba(255,255,255,0.85)}
 .amq footer .legal .cuit{margin:0 0 18px;font-family:${MONO};font-size:12.5px;color:rgba(255,255,255,0.5)}
-.amq footer .abajo{max-width:1180px;margin:40px auto 0;padding:20px 24px 0;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,0.5)}
+.amq footer .abajo{max-width:1320px;margin:40px auto 0;padding:20px 24px 0;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,0.5)}
 .amq footer .abajo span:last-child{color:rgba(255,255,255,0.4)}
 .amq .buscaIsla{flex:1;display:flex;align-items:center;max-width:520px;margin:0 auto;position:relative}
 .amq .buscaIsla input{width:100%;height:42px;border-radius:999px;border:1px solid var(--borde);background:var(--suave);padding:0 16px 0 40px;font-size:14px;font-weight:600;color:var(--ink);outline:none;font-family:inherit}
