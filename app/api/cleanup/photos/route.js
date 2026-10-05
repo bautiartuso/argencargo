@@ -114,6 +114,16 @@ export async function GET(req) {
       const filas = await j(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}`);
       for (const f of filas) { const p = storagePath(f[col]); if (p) referencias.add(p); }
     }
+    // Fotos de las cargas marítimas (listas en maritime_shipments.fotos y fotos_mercaderia, desde el
+    // 28/09/2026). No estaban acá y el cron las borraba como huérfanas a los 2 días (detectado el
+    // 05/10/2026: se perdieron las fotos de Luna). Paginado de a 1000.
+    for (let desde = 0; ; desde += 1000) {
+      const r = await sb(`/rest/v1/maritime_shipments?select=fotos,fotos_mercaderia&order=id.asc`, { headers: { "Range-Unit": "items", Range: `${desde}-${desde + 999}` } });
+      if (!r.ok) throw new Error("no se pudieron leer las fotos marítimas: no se borra nada");
+      const filas = await r.json();
+      for (const f of filas) for (const u of [...(f.fotos || []), ...(f.fotos_mercaderia || [])]) { const p = storagePath(u); if (p) referencias.add(p); }
+      if (filas.length < 1000) break;
+    }
     // Los que estamos por borrar en A/B ya no cuentan como referencia viva
     for (const p of aBorrar) referencias.delete(p);
 
@@ -122,6 +132,8 @@ export async function GET(req) {
     const limiteHuerfano = Date.now() - GRACIA_HUERFANOS_DIAS * 86400000;
     for (const a of (Array.isArray(archivos) ? archivos : [])) {
       if (referencias.has(a.name)) continue;
+      // Por las dudas: la carpeta de Marítimos nunca se toma como huérfana.
+      if (String(a.name).startsWith("maritimo/")) continue;
       if (new Date(a.created_at).getTime() > limiteHuerfano) continue; // recién subido
       aBorrar.push(a.name);
       huerfanos++;
