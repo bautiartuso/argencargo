@@ -4,9 +4,9 @@
 // (Google la leía como duplicado) y se compartía con el título y el logo de Argencargo.
 import { AM_URL } from "./_marca";
 
-const TITULO = "ARGENMAQ — Maquinaria de China, puesta en tu puerta";
+const TITULO = "ARGENMAQ — De la fábrica en China a tu negocio";
 const DESC =
-  "Elegís la máquina, ves el precio final con flete e impuestos en Argentina, y nosotros hacemos todo lo demás: fábrica, control, importación y entrega. Una empresa del grupo Argencargo.";
+  "Maquinaria importada llave en mano: elegís la máquina, ves el precio final en Argentina y pagás en dos cuotas. Nosotros nos ocupamos de la fábrica, la importación y la entrega. Parte del grupo Argencargo.";
 
 export const metadata = {
   metadataBase: new URL(AM_URL),
