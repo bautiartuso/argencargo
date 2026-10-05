@@ -16921,7 +16921,7 @@ function MaritimePanel({token,allClients=[]}){
   const btnMini=(color,extra)=>({padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${color}55`,background:`${color}14`,color,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",...extra});
   const btnGhost={padding:"5px 9px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"};
   const COLS="26px 64px minmax(200px,2.4fr) 96px 48px 72px 168px 92px 150px";
-  const COLS_CONT="26px minmax(150px,1fr) minmax(190px,1.7fr) 168px 56px 76px 190px 128px";
+  const COLS_CONT="26px 56px minmax(150px,1fr) minmax(190px,1.7fr) 168px 56px 76px 190px 128px";
   // Selector blanca/negra de un clic, en cualquier etapa (lo puede cambiar Bautista o el depósito).
   const tipoSel=(sh)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:9,padding:2,gap:2}}>
     {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=sh.mercaderia_tipo===k;return <button key={k} onClick={e=>{e.stopPropagation();setTipoAdmin(sh,k);}} style={{padding:"4px 9px",fontSize:11,fontWeight:800,border:"none",borderRadius:7,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",background:on?(k==="negra"?"#05080f":"#f8fafc"):"transparent",color:on?(k==="negra"?"#fff":"#0A1628"):"rgba(255,255,255,0.45)",boxShadow:on?"0 0 0 1px rgba(184,149,106,0.7)":"none"}}>{l}</button>;})}
@@ -17201,6 +17201,8 @@ function MaritimePanel({token,allClients=[]}){
         return <div key={sh.id} className="mt-v-fila" style={{background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"}}>
           <div className="mt-v-grid" style={{gridTemplateColumns:COLS_CONT,cursor:"pointer"}} onClick={toggleExp}>
             <div onClick={e=>e.stopPropagation()}><input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/></div>
+            {/* Foto de la carga también dentro del contenedor (05/10/2026). */}
+            {(()=>{const todasF=[...(sh.fotos||[]).map(u=>({u,k:"Bulto"})),...(sh.fotos_mercaderia||[]).map(u=>({u,k:"Mercadería"}))];return <div onClick={e=>{if(!todasF.length)return;e.stopPropagation();setFotoGrande({fotos:todasF,i:0});}}>{todasF.length?<div style={{width:52,height:52,borderRadius:9,backgroundImage:`url(${todasF[0].u})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${MT_BORDE}`,cursor:"zoom-in",position:"relative"}}>{todasF.length>1&&<span style={{position:"absolute",right:-5,bottom:-5,minWidth:18,height:18,padding:"0 5px",borderRadius:999,background:"#0A1628",border:`1px solid ${MT_BORDE}`,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{todasF.length}</span>}</div>:<div style={{width:52,height:52,borderRadius:9,border:"1px dashed rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.25)",fontSize:16}}>📷</div>}</div>;})()}
             <div style={{minWidth:0}}>
               <span style={{display:"block",fontSize:14.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{c?.client_code||"—"}</span>
               <span style={{display:"block",fontSize:12.5,color:"rgba(255,255,255,0.75)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?`${c.first_name||""} ${c.last_name||""}`.trim():(sh.client_name_snapshot||"Sin identificar")}</span>
@@ -17271,7 +17273,7 @@ function MaritimePanel({token,allClients=[]}){
             {c.notes&&<p style={{width:"100%",fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,fontStyle:"italic"}}>{c.notes}</p>}
           </div>
           {abierto&&<>
-            {lista.length>0&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
+            {lista.length>0&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
             {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>filaCont(sh,todas))}
           </>}
         </>)}</div>;
