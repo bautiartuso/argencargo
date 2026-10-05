@@ -3,9 +3,19 @@ const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const get = async (path, revalidate = 120) => { try { const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: { apikey: SB_KEY }, next: { revalidate } }); const d = await r.json(); return Array.isArray(d) ? d : []; } catch { return []; } };
 
+// Rubros ordenados por cantidad de máquinas publicadas (el que más tiene, primero). "Otros" va
+// siempre al final, tenga las que tenga. Empates: el orden cargado en el panel. Cada rubro trae
+// su cantidad en `n` para que los contadores no dependan de la lista que se está mostrando.
 export async function categorias() {
-  const cats = await get("cat_categorias?select=slug,nombre,padre_slug,orden&order=orden.asc,nombre.asc", 600);
-  const arbol = cats.filter((c) => !c.padre_slug).map((c) => ({ ...c, subs: cats.filter((s) => s.padre_slug === c.slug) }));
+  const [cats, pubs] = await Promise.all([
+    get("cat_categorias?select=slug,nombre,padre_slug,orden&order=orden.asc,nombre.asc", 600),
+    get("cat_maquinas_publicas?select=categoria", 120),
+  ]);
+  const n = {}; pubs.forEach((m) => { if (m.categoria) n[m.categoria] = (n[m.categoria] || 0) + 1; });
+  const arbol = cats.filter((c) => !c.padre_slug)
+    .map((c, i) => ({ ...c, n: n[c.slug] || 0, _i: i, subs: cats.filter((s) => s.padre_slug === c.slug) }))
+    .sort((a, b) => (a.slug === "otros") - (b.slug === "otros") || b.n - a.n || a._i - b._i)
+    .map(({ _i, ...c }) => c);
   return { cats, arbol };
 }
 export const maquinas = (filtro = "") => get(`cat_maquinas_publicas?select=id,numero,nombre,descripcion,categoria,subcategoria,condicion,garantia_meses,fotos,video_url,dias_produccion,moq,vias,publicado_at&order=publicado_at.desc${filtro}`);

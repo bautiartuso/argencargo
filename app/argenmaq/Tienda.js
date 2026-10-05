@@ -62,13 +62,14 @@ export function CatalogoVista({ arbol, lista, diasVia: dv, rubro }) {
   const nombreDe = (slug) => { for (const c of arbol) { if (c.slug === slug) return c.nombre; const s = (c.subs || []).find((x) => x.slug === slug); if (s) return s.nombre; } return ""; };
   const filtradas = lista.filter((m) => !sub || m.subcategoria === sub)
     .map((m) => [m, q.trim() ? puntajeBusqueda(m, q, nombreDe) : 1]).filter(([, p]) => p > 0).sort((a, b) => b[1] - a[1]).map(([m]) => m);
-  const cuenta = (slug) => lista.filter((m) => m.categoria === slug).length;
+  const cuenta = (slug) => arbol.find((c) => c.slug === slug)?.n ?? lista.filter((m) => m.categoria === slug).length;
+  const totalCat = arbol.reduce((s, c) => s + (c.n || 0), 0) || lista.length;
   const rubros = arbol.filter((c) => c.slug !== "otros" || cuenta(c.slug) > 0);
   return <div className="wrap" style={{ padding: "26px 24px 70px" }}>
     <div className="catGrid">
       <aside className="rubros">
         <p className="lbl">{t("rubros")}</p>
-        <a className={!cat && !q.trim() ? "on" : ""} href="/catalogo">{t("todosRubros")}<span>{lista.length}</span></a>
+        <a className={!cat && !q.trim() ? "on" : ""} href="/catalogo">{t("todosRubros")}<span>{totalCat}</span></a>
         <hr />
         {rubros.map((c) => <a key={c.slug} className={cat?.slug === c.slug ? "on" : ""} href={`/catalogo/${c.slug}`}>{c.nombre}<span>{cuenta(c.slug) || ""}</span></a>)}
       </aside>
