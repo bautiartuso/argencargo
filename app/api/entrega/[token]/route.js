@@ -180,7 +180,9 @@ export async function GET(req, { params }) {
       for (const p of pkgs) { if (!(p.length_cm && p.width_cm && p.height_cm)) continue; const k = trk(p.national_tracking) || ""; (porTrk[k] = porTrk[k] || []).push(fila(p.quantity, p.length_cm, p.width_cm, p.height_cm)); }
       grupos = Object.entries(porTrk).map(([k, b]) => ({ tracking: k || null, bultos: b }));
     }
-    grupos = grupos.filter((g) => g.bultos.length).map((g) => ({ ...g, m3: Math.round(g.bultos.reduce((a, b) => a + b.m3_t, 0) * 1e4) / 1e4 }));
+    // Bultos con las mismas medidas van en una sola fila ("2 bultos · 41 × 31 × 21").
+    const juntar = (bs) => { const m = new Map(); for (const b of bs) { const k = `${b.l}x${b.w}x${b.h}`; const x = m.get(k); if (x) m.set(k, fila(x.q + b.q, b.l, b.w, b.h)); else m.set(k, b); } return [...m.values()]; };
+    grupos = grupos.filter((g) => g.bultos.length).map((g) => { const bultos = juntar(g.bultos); return { ...g, bultos, m3: Math.round(bultos.reduce((a, b) => a + b.m3_t, 0) * 1e4) / 1e4 }; });
     if (grupos.length) maritimo = { grupos, m3_total: Math.round(grupos.reduce((a, g) => a + g.m3, 0) * 1e4) / 1e4, bultos: grupos.reduce((a, g) => a + g.bultos.reduce((x, b) => x + b.q, 0), 0) };
   }
   const bultos = pkgs.reduce((s, p) => s + Number(p.quantity || 1), 0);
