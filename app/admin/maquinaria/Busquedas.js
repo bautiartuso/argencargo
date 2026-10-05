@@ -30,10 +30,11 @@ export const ESTADOS_BUSQ=[
 ];
 const estadoDe=(k)=>ESTADOS_BUSQ.find(e=>e.k===k)||ESTADOS_BUSQ[0];
 const ChipEst=({e})=>{const s=estadoDe(e);return <Chip l={s.l} c={s.c} bg={s.bg}/>;};
-// Agrupación de la lista: nuevas → en curso → finalizadas
+// Agrupación de la lista: nuevas → en curso → cotizadas → finalizadas
 const GRUPOS=[
   {k:"nuevas",l:"Nuevas",f:(b)=>b.estado==="nueva"},
-  {k:"curso",l:"En curso",f:(b)=>["buscando","cotizada"].includes(b.estado)},
+  {k:"curso",l:"En curso",f:(b)=>b.estado==="buscando"},
+  {k:"cotizadas",l:"Cotizadas",f:(b)=>b.estado==="cotizada"},   // enviamos la cotización y esperamos respuesta
   {k:"fin",l:"Finalizadas",f:(b)=>["ganada","perdida"].includes(b.estado)},
   {k:"todas",l:"Todas",f:()=>true},
 ];
@@ -209,7 +210,7 @@ function Detalle({b,ses,dq,onVolver,guardar,borrar}){
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"14px 18px",border:`1px dashed ${BORDE}`,borderRadius:14,marginTop:14}}>
       <span style={{...LBL,marginBottom:0}}>Estado del pedido</span>
       {ESTADOS_BUSQ.map(e=><Pill key={e.k} small on={b.estado===e.k} onClick={async()=>{if(b.estado!==e.k&&await guardar(b.id,{estado:e.k}))toast(`Pasó a ${e.l.toLowerCase()}`);}}>{e.l}</Pill>)}
-      <span style={{fontSize:12,color:GRIS,marginLeft:"auto"}}>Nueva → en curso (buscando, cotizada) → finalizada (ganada o perdida).</span>
+      <span style={{fontSize:12,color:GRIS,marginLeft:"auto"}}>Nueva → en curso (buscando) → cotizada (esperando respuesta) → finalizada (ganada o perdida).</span>
     </div>
   </>;
 }
