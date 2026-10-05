@@ -160,6 +160,29 @@ export async function GET(req, { params }) {
   ]);
 
   const pkgs = Array.isArray(pkgsRes.body) ? pkgsRes.body : [];
+  // Marítimo (05/10/2026): por cada tracking, sus bultos con medidas y m³ (unitario y total) y el
+  // total de la carga. Sale de las cargas del depósito (maritime_shipments + maritime_packages);
+  // si la op no tiene, de los bultos de la op.
+  let maritimo = null;
+  if (String(op.channel || "").startsWith("maritimo")) {
+    const m3 = (l, w, h) => (Number(l) * Number(w) * Number(h)) / 1e6;
+    const fila = (q, l, w, h) => { const u = m3(l, w, h); return { q: Number(q || 1), l: Number(l), w: Number(w), h: Number(h), m3_u: Math.round(u * 1e4) / 1e4, m3_t: Math.round(u * Number(q || 1) * 1e4) / 1e4 }; };
+    const trk = (t) => { const v = String(t || "").trim(); return !v || v === "-" || /^SEA\s/i.test(v) ? null : v; };
+    let grupos = [];
+    const shRes = await sbFetch(`/maritime_shipments?operation_id=eq.${op.id}&select=id,tracking_number&order=created_at.asc`).catch(() => ({ body: [] }));
+    const ships = Array.isArray(shRes.body) ? shRes.body : [];
+    if (ships.length) {
+      const mpRes = await sbFetch(`/maritime_packages?shipment_id=in.(${ships.map((x) => x.id).join(",")})&select=shipment_id,bulto_number,quantity,length_cm,width_cm,height_cm&order=bulto_number.asc`).catch(() => ({ body: [] }));
+      const mp = Array.isArray(mpRes.body) ? mpRes.body : [];
+      grupos = ships.map((x) => ({ tracking: trk(x.tracking_number), bultos: mp.filter((p) => p.shipment_id === x.id && p.length_cm && p.width_cm && p.height_cm).map((p) => fila(p.quantity, p.length_cm, p.width_cm, p.height_cm)) }));
+    } else {
+      const porTrk = {};
+      for (const p of pkgs) { if (!(p.length_cm && p.width_cm && p.height_cm)) continue; const k = trk(p.national_tracking) || ""; (porTrk[k] = porTrk[k] || []).push(fila(p.quantity, p.length_cm, p.width_cm, p.height_cm)); }
+      grupos = Object.entries(porTrk).map(([k, b]) => ({ tracking: k || null, bultos: b }));
+    }
+    grupos = grupos.filter((g) => g.bultos.length).map((g) => ({ ...g, m3: Math.round(g.bultos.reduce((a, b) => a + b.m3_t, 0) * 1e4) / 1e4 }));
+    if (grupos.length) maritimo = { grupos, m3_total: Math.round(grupos.reduce((a, g) => a + g.m3, 0) * 1e4) / 1e4, bultos: grupos.reduce((a, g) => a + g.bultos.reduce((x, b) => x + b.q, 0), 0) };
+  }
   const bultos = pkgs.reduce((s, p) => s + Number(p.quantity || 1), 0);
   const tracking = pkgs.map(p => p.national_tracking).filter(Boolean);
   let pesoFacturable = 0;
@@ -343,7 +366,7 @@ export async function GET(req, { params }) {
     client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "", street: client.street || "", floor_apt: client.floor_apt || "", city: client.city || "" },
     tax_detail: taxDetail,
     flete_detalle: fleteDetalle,
-    cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
+    cargo: { bultos: maritimo ? maritimo.bultos : bultos, tracking: maritimo ? [] : tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100, maritimo },
     preferential,
     delivery: {
       inferred_zone: match ? match.name : null,

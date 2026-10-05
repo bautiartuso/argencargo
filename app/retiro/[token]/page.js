@@ -11,6 +11,28 @@ const INK = "#1a1a1a";
 const MUTED = "#7a7362";
 
 const fmt = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtM3 = (n) => Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const fmtCm = (n) => Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 1 });
+
+// Marítimo: por cada tracking, cantidad de bultos, medidas, m³ por bulto y m³ de la fila; al pie el
+// total de la carga (05/10/2026).
+function MedidasMaritimo({ m }) {
+  return <div style={{ marginTop: 14 }}>
+    {m.grupos.map((g, i) => <div key={i} style={{ padding: "11px 0", borderTop: `1px solid ${LINE}` }}>
+      <p style={{ margin: "0 0 7px", fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: MUTED }}>Tracking</p>
+      <p style={{ margin: "0 0 8px", fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 12.5, fontWeight: 700, color: INK, wordBreak: "break-all" }}>{g.tracking || "Sin tracking"}</p>
+      {g.bultos.map((b, k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "5px 10px", marginBottom: 4, borderRadius: 8, background: "#fff", border: `1px solid ${LINE}` }}>
+        <span style={{ fontSize: 12, color: INK }}><b>{b.q} {b.q === 1 ? "bulto" : "bultos"}</b> · {fmtCm(b.l)} × {fmtCm(b.w)} × {fmtCm(b.h)} cm</span>
+        <span style={{ fontSize: 11.5, color: MUTED, fontVariantNumeric: "tabular-nums" }}>{b.q > 1 ? <>{fmtM3(b.m3_u)} m³ c/u · </> : null}<b style={{ color: INK }}>{fmtM3(b.m3_t)} m³</b></span>
+      </div>)}
+      {m.grupos.length > 1 && g.bultos.length > 1 && <p style={{ margin: "4px 2px 0", fontSize: 11, color: MUTED, textAlign: "right" }}>Subtotal {fmtM3(g.m3)} m³</p>}
+    </div>)}
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "11px 12px", borderRadius: 10, background: "#f3ead9", border: "1px solid #ddc99a" }}>
+      <span style={{ fontSize: 12.5, fontWeight: 800, color: INK }}>Total de la carga</span>
+      <span style={{ fontSize: 15, fontWeight: 800, color: INK, fontVariantNumeric: "tabular-nums" }}>{fmtM3(m.m3_total)} m³</span>
+    </div>
+  </div>;
+}
 const CHANNEL_NAME = { aereo_blanco: "Aéreo Courier Comercial", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo Integral AC" };
 
 export default function EntregaPublica({ params }) {
@@ -177,6 +199,7 @@ export default function EntregaPublica({ params }) {
   const modoRi = !!data.modo_ri;
   const facturas = Array.isArray(data.facturas) ? data.facturas : [];
   const isBlanco = op.channel?.includes("blanco");
+  const esMaritimo = String(op.channel || "").startsWith("maritimo");
   const inferredZone = deliveryInfo.inferred_zone;
   const hasPropio = deliveryInfo.price != null;
   const clientName = `${client.first_name || ""} ${client.last_name || ""}`.trim() || "Cliente";
@@ -287,8 +310,9 @@ export default function EntregaPublica({ params }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            {isBlanco && <div style={factStyle()}><div style={factLblStyle()}>Peso factur.</div><div style={factValStyle()}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</div></div>}
-            {!isBlanco && <div style={factStyle()}><div style={factLblStyle()}>Bultos</div><div style={factValStyle()}>{cargo.bultos}</div></div>}
+            {isBlanco && !esMaritimo && <div style={factStyle()}><div style={factLblStyle()}>Peso factur.</div><div style={factValStyle()}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</div></div>}
+            {(!isBlanco || esMaritimo) && <div style={factStyle()}><div style={factLblStyle()}>Bultos</div><div style={factValStyle()}>{cargo.bultos}</div></div>}
+            {esMaritimo && cargo.maritimo && <div style={factStyle()}><div style={factLblStyle()}>Volumen</div><div style={factValStyle()}>{fmtM3(cargo.maritimo.m3_total)} m³</div></div>}
           </div>
           {isBlanco && <div style={{ marginTop: 12, paddingTop: 4, borderTop: `1px solid ${LINE}` }}>
             {op.budget_flete > 0 && (() => {
@@ -325,6 +349,7 @@ export default function EntregaPublica({ params }) {
               <span style={{ fontSize: 11, fontWeight: 700, color: GOLD_A }}>ver / descargar →</span>
             </a>)}
           </>}
+          {esMaritimo && cargo.maritimo && <MedidasMaritimo m={cargo.maritimo} />}
           {cargo.tracking.length > 0 && <>
             <p style={{ ...factLblStyle(), margin: "12px 0 6px" }}>Tracking</p>
             <div style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 12, color: INK, lineHeight: 1.9 }}>
@@ -605,6 +630,7 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
 }
 
 function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBlanco, onEdit }) {
+  const esMaritimoCv = String(op?.channel || "").startsWith("maritimo");
   const L = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
   const tc = Number(data.tc_venta || 0);
   const enPesos = (p) => p.method === "transferencia" || (p.method === "efectivo" && p.currency === "ARS");
@@ -653,7 +679,8 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
         </div>
         {verDetalle && <div style={{ marginTop: 8 }}>
           {cargo && <div style={rowS}><span style={{ color: MUTED }}>Bultos</span><span style={{ fontWeight: 700 }}>{cargo.bultos}</span></div>}
-          {cargo && isBlanco && <div style={rowS}><span style={{ color: MUTED }}>Peso facturable</span><span style={{ fontWeight: 700 }}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</span></div>}
+          {cargo && esMaritimoCv && cargo.maritimo && <div style={rowS}><span style={{ color: MUTED }}>Volumen</span><span style={{ fontWeight: 700 }}>{fmtM3(cargo.maritimo.m3_total)} m³</span></div>}
+          {cargo && isBlanco && !esMaritimoCv && <div style={rowS}><span style={{ color: MUTED }}>Peso facturable</span><span style={{ fontWeight: 700 }}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</span></div>}
           {op.budget_flete > 0 && <div style={rowS}><span style={{ color: MUTED }}>Flete internacional</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_flete)}</span></div>}
           {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <div style={rowS}><span style={{ color: MUTED }}>Impuestos &amp; Aduana</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_taxes)}</span></div>}
           {taxDetail && taxDetail.productos.map((pr, i2) => <div key={i2} style={{ padding: "4px 0 4px 12px", borderLeft: `2px solid ${LINE}` }}>
