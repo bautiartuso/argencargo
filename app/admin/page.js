@@ -14664,6 +14664,88 @@ function QuotesList({token}){
 // Calculadora "pro" del admin: misma matemática que la del portal cliente (calcOpBudget) pero con
 // selección explícita de régimen fiscal (RI / Monotributo), origen y export PDF por canal.
 // El régimen impacta el cert flete declarado en aduana: RI = USD 2,5/kg (real), Mono = USD 3,5/kg (ficticio).
+// ── Pegar lista en la calculadora (06/10/2026) ───────────────────────────────────────────────
+// Lee texto pegado (tablas copiadas de un chat, Excel o un mail) y separa productos y bultos:
+//  · Bulto: el renglón tiene medidas "200 × 195 × 46" (x, ×, *) y opcionalmente "42 kg".
+//    Bultos iguales (medidas y peso) se juntan en uno con cantidad.
+//  · Producto: descripción + cantidad + precio unitario ("USD 486", "$ 2,70", "2.70").
+//    Si hay tres números (cant, unitario, total) se valida con cant × unitario ≈ total.
+// Encabezados, totales y renglones sin números se ignoran.
+const pegNum=(raw)=>{
+  let t=String(raw||"").replace(/[^\d.,-]/g,"");if(!t||!/\d/.test(t))return NaN;
+  const hasC=t.includes(","),hasD=t.includes(".");
+  if(hasC&&hasD)t=t.lastIndexOf(",")>t.lastIndexOf(".")?t.replace(/\./g,"").replace(",","."):t.replace(/,/g,"");
+  else if(hasC)t=/^\d{1,3}(,\d{3})+$/.test(t)?t.replace(/,/g,""):t.replace(",",".");
+  else if(hasD&&/^\d{1,3}(\.\d{3})+$/.test(t))t=t.replace(/\./g,"");
+  const n=Number(t);return isFinite(n)?n:NaN;
+};
+const parsearListaCalc=(texto)=>{
+  const productos=[],bultosRaw=[];
+  const DIM=/(\d+(?:[.,]\d+)?)\s*(?:cm)?\s*[x×*X]\s*(\d+(?:[.,]\d+)?)\s*(?:cm)?\s*[x×*X]\s*(\d+(?:[.,]\d+)?)/;
+  for(const linea of String(texto||"").split(/\r?\n/)){
+    const l=linea.trim();if(!l)continue;
+    if(/^(total|subtotal|totales)\b/i.test(l))continue;
+    const dm=l.match(DIM);
+    if(dm){
+      const resto=l.replace(dm[0]," ");
+      const kg=resto.match(/(\d+(?:[.,]\d+)?)\s*(?:kg|kgs|kilos?)\b/i);
+      let peso=kg?pegNum(kg[1]):NaN;
+      if(!isFinite(peso)){const nums=(resto.split(/\t|\s{2,}|\|/).map(c=>c.trim()).filter(c=>/^\d+(?:[.,]\d+)?$/.test(c)));if(nums.length)peso=pegNum(nums[nums.length-1]);}
+      const cant=(resto.match(/(?:^|\s)(?:x|cant\.?:?)\s*(\d+)\s*(?:bultos?|cajas?)?\b/i)||resto.match(/\b(\d+)\s*(?:bultos|cajas)\b/i));
+      bultosRaw.push({qty:cant?Number(cant[1]):1,length:pegNum(dm[1]),width:pegNum(dm[2]),height:pegNum(dm[3]),weight:isFinite(peso)?peso:""});
+      continue;
+    }
+    const celdas=l.split(/\t|\s{2,}|\s*\|\s*/).map(c=>c.trim()).filter(Boolean);
+    const esNum=(c)=>/^(usd|us\$|u\$s|\$)?\s*-?\d[\d.,]*\s*(usd|u\$s)?$/i.test(c);
+    let desc=celdas.filter(c=>!esNum(c)&&/[a-záéíóúñ]/i.test(c)).join(" ").trim();
+    let numCells=celdas.filter(esNum);
+    // Todo en un renglón sin tabs: "cable calefactor 8000 2,70"
+    if(numCells.length<2&&celdas.length===1){const m=l.match(/^(.*?[a-záéíóúñ)].*?)\s+((?:usd|\$)?\s*[\d.,]+)\s+((?:usd|\$)?\s*[\d.,]+)(?:\s+((?:usd|\$)?\s*[\d.,]+))?\s*$/i);if(m){desc=m[1].trim();numCells=[m[2],m[3],m[4]].filter(Boolean);}}
+    if(!desc||!numCells.length)continue;
+    const conMoneda=numCells.filter(c=>/usd|\$/i.test(c)).map(pegNum);
+    const nums=numCells.map(pegNum).filter(isFinite);
+    let qty=NaN,unit=NaN;
+    if(conMoneda.length){unit=conMoneda[0];const sinM=numCells.filter(c=>!/usd|\$/i.test(c)).map(pegNum).filter(isFinite);qty=sinM.length?sinM[0]:(conMoneda.length>1&&unit>0?Math.round(conMoneda[1]/unit):1);}
+    else if(nums.length>=3){const [a,b,c]=nums;if(Math.abs(a*b-c)<=Math.max(0.02*c,0.05)){qty=a;unit=b;}else if(Math.abs(b*a-c)<=Math.max(0.02*c,0.05)){qty=a;unit=b;}else{qty=a;unit=b;}}
+    else if(nums.length===2){const [a,b]=nums;if(Number.isInteger(a)&&!Number.isInteger(b)){qty=a;unit=b;}else if(Number.isInteger(b)&&!Number.isInteger(a)){qty=b;unit=a;}else{qty=a;unit=b;}}
+    else if(nums.length===1){qty=1;unit=nums[0];}
+    if(!isFinite(unit)||unit<=0)continue;
+    productos.push({description:desc.replace(/\s+/g," "),quantity:isFinite(qty)&&qty>0?qty:1,unit_price:unit});
+  }
+  // Bultos iguales → uno con cantidad
+  const bultos=[];
+  for(const b of bultosRaw){const ig=bultos.find(x=>x.length===b.length&&x.width===b.width&&x.height===b.height&&x.weight===b.weight);if(ig)ig.qty+=b.qty;else bultos.push({...b});}
+  return {productos,bultos};
+};
+function PegarListaModal({onCerrar,onAplicar,hayCargados}){
+  const [txt,setTxt]=useState("");
+  const r=parsearListaCalc(txt);
+  const fm=(n)=>Number(n).toLocaleString("es-AR",{maximumFractionDigits:2});
+  const box={background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 12px"};
+  return <div onClick={onCerrar} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 16px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:"linear-gradient(160deg,#142038,#0e1a2c)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:"20px 22px",boxSizing:"border-box"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <p style={{margin:0,fontSize:17,fontWeight:800,color:"#fff"}}>Pegar productos y bultos</p>
+        <button onClick={onCerrar} aria-label="Cerrar" style={{width:34,height:34,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"#fff",cursor:"pointer",fontSize:16}}>×</button>
+      </div>
+      <textarea autoFocus value={txt} onChange={e=>setTxt(e.target.value)} placeholder={"Pegá acá las tablas (productos, bultos o las dos juntas)"} style={{width:"100%",height:190,boxSizing:"border-box",padding:12,borderRadius:12,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,lineHeight:1.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",resize:"vertical",outline:"none"}}/>
+      {txt.trim()&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10,marginTop:12}}>
+        <div style={box}>
+          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>Productos · {r.productos.length}</p>
+          {r.productos.length===0?<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ninguno</p>:r.productos.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12.5,color:"#fff",padding:"4px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description}</span><span style={{flexShrink:0,color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{fm(p.quantity)} × USD {fm(p.unit_price)}</span></div>)}
+        </div>
+        <div style={box}>
+          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>Bultos · {r.bultos.reduce((a,b)=>a+b.qty,0)}</p>
+          {r.bultos.length===0?<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ninguno</p>:r.bultos.map((b,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12.5,color:"#fff",padding:"4px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none",fontVariantNumeric:"tabular-nums"}}><span>{b.qty} × {fm(b.length)}×{fm(b.width)}×{fm(b.height)} cm</span><span style={{color:"rgba(255,255,255,0.7)"}}>{b.weight===""?"sin peso":`${fm(b.weight)} kg`}</span></div>)}
+        </div>
+      </div>}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
+        {hayCargados&&<button disabled={!r.productos.length&&!r.bultos.length} onClick={()=>onAplicar(r,"agregar")} style={{height:40,padding:"0 16px",borderRadius:11,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Agregar a lo que hay</button>}
+        <button disabled={!r.productos.length&&!r.bultos.length} onClick={()=>onAplicar(r,"reemplazar")} style={{height:40,padding:"0 18px",borderRadius:11,border:"none",background:GOLD_GRADIENT,color:"#0A1628",fontWeight:800,fontSize:13,cursor:"pointer",opacity:(!r.productos.length&&!r.bultos.length)?0.5:1}}>{hayCargados?"Reemplazar":"Cargar"}</button>
+      </div>
+    </div>
+  </div>;
+}
 function AdminCalculator({token}){
   const [tariffs,setTariffs]=useState([]);
   const [config,setConfig]=useState({});
@@ -14806,6 +14888,17 @@ function AdminCalculator({token}){
     try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});const d=await r.json();
       setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null}:null}:x));
     }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));}
+  };
+  // NCM de todos los que faltan de una (06/10/2026, pensado para después de "Pegar lista"): una
+  // consulta por descripción distinta, de a 4 a la vez; las repetidas comparten el resultado.
+  const [clasificandoTodos,setClasificandoTodos]=useState(false);
+  const classifyAll=async()=>{
+    const descs=[...new Set(products.filter(p=>!p.ncm&&p.description?.trim()).map(p=>p.description.trim()))];if(!descs.length)return;
+    setClasificandoTodos(true);setProducts(arr=>arr.map(x=>!x.ncm&&descs.includes(String(x.description||"").trim())?{...x,classifying:true}:x));
+    const cola=[...descs];
+    const uno=async()=>{while(cola.length){const desc=cola.shift();let ncm=null;try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:desc})});const d=await r.json();if(d?.ncm_code)ncm={ncm_code:d.ncm_code,ncm_description:d.ncm_description||desc,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null,antidumping:d.antidumping||null};}catch{}
+      setProducts(arr=>arr.map(x=>!x.ncm&&String(x.description||"").trim()===desc?{...x,classifying:false,ncm}:x));}};
+    await Promise.all([uno(),uno(),uno(),uno()]);setClasificandoTodos(false);
   };
   const calculate=(auto)=>{
     // Tarifas tocadas a mano (USD/kg, USD/m³, costo, desaduanaje): valen para esta cotización.
@@ -14997,6 +15090,15 @@ function AdminCalculator({token}){
   // Alícuotas editables a mano (DIE, TE, IVA) sobre lo que sugirió la clasificación.
   const chNcm=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i&&x.ncm?{...x,ncm:{...x.ncm,[f]:v.replace(/[^\d.,]/g,"")}}:x));
   const addPkg=()=>setPkgs(p=>[...p,{id:proxPkId.current++,qty:"1",length:"",width:"",height:"",weight:""}]);
+  // Pegar lista: reemplaza (o suma) productos y bultos con lo que se leyó del texto pegado.
+  const [pegarOpen,setPegarOpen]=useState(false);
+  const prodVacio=(x)=>!String(x.description||"").trim()&&!String(x.unit_price||"").trim();
+  const pkVacio=(x)=>!x.length&&!x.width&&!x.height&&!x.weight;
+  const aplicarPegado=({productos,bultos},modo)=>{
+    if(productos.length){const nuevos=productos.map(x=>({description:x.description,unit_price:String(x.unit_price),quantity:String(x.quantity),ncm:null,classifying:false,package_ids:[]}));setProducts(p=>modo==="agregar"?[...p.filter(x=>!prodVacio(x)),...nuevos]:nuevos);}
+    if(bultos.length){const nuevos=bultos.map(b=>({id:proxPkId.current++,qty:String(b.qty),length:String(b.length),width:String(b.width),height:String(b.height),weight:b.weight===""?"":String(b.weight)}));setPkgs(p=>modo==="agregar"?[...p.filter(x=>!pkVacio(x)),...nuevos]:nuevos);}
+    setPegarOpen(false);toast(`${productos.length} producto${productos.length!==1?"s":""} y ${bultos.reduce((a,b)=>a+b.qty,0)} bulto${bultos.reduce((a,b)=>a+b.qty,0)!==1?"s":""} cargados`,"success");
+  };
   // Al borrar un bulto se saca de los productos que viajaban en el, si no quedan apuntando a
   // un bulto que ya no existe y el prorrateo del flete los manda al pozo de "sin asignar".
   const rmPkg=(i)=>{if(pkgs.length<=1)return;const fuera=pkgs[i]?.id;setPkgs(p=>p.filter((_,j)=>j!==i));if(fuera!=null)setProducts(pr=>pr.map(x=>Array.isArray(x.package_ids)&&x.package_ids.includes(fuera)?{...x,package_ids:x.package_ids.filter(id=>id!==fuera)}:x));};
@@ -15312,7 +15414,7 @@ function AdminCalculator({token}){
 
     {/* Productos */}
     <div className="qc-sec">
-      <div className="qc-sh"><span className="qc-lbl">Productos</span><button type="button" className="qc-add" onClick={addProduct}>+ Producto</button></div>
+      <div className="qc-sh"><span className="qc-lbl">Productos</span><span style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>{products.filter(p=>!p.ncm&&p.description?.trim()).length>1&&<button type="button" className="qc-add" disabled={clasificandoTodos} onClick={classifyAll}>{clasificandoTodos?"Buscando NCM…":`✨ NCM de todos (${products.filter(p=>!p.ncm&&p.description?.trim()).length})`}</button>}<button type="button" className="qc-add" onClick={()=>setPegarOpen(true)}>📋 Pegar lista</button><button type="button" className="qc-add" onClick={addProduct}>+ Producto</button></span></div>
       {products.map((p,i)=><div key={i} className="qc-item">
         <div className={"qc-prod"+(products.length===1?" solo":"")}>
           <input className="qc-in" style={{gridArea:"d"}} value={p.description} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Descripción"/>
@@ -15330,9 +15432,10 @@ function AdminCalculator({token}){
       </div>)}
     </div>
 
+    {pegarOpen&&<PegarListaModal onCerrar={()=>setPegarOpen(false)} onAplicar={aplicarPegado} hayCargados={products.some(x=>!prodVacio(x))||pkgs.some(x=>!pkVacio(x))}/>}
     {/* Bultos */}
     <div className="qc-sec">
-      <div className="qc-sh"><span className="qc-lbl">Bultos</span><button type="button" className="qc-add" onClick={addPkg}>+ Bulto</button></div>
+      <div className="qc-sh"><span className="qc-lbl">Bultos</span><span style={{display:"flex",gap:6}}><button type="button" className="qc-add" onClick={()=>setPegarOpen(true)}>📋 Pegar lista</button><button type="button" className="qc-add" onClick={addPkg}>+ Bulto</button></span></div>
       <div className="qc-pkhead">{["Cant.","Largo cm","Ancho cm","Alto cm","Peso kg","",""].map((h,j)=><span key={j} style={{textAlign:j<5?"center":"left"}}>{h}</span>)}</div>
       {pkgs.map((pk,i)=>{
         const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);
