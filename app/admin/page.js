@@ -14818,7 +14818,7 @@ function AdminCalculator({token}){
     setClientId("");setClientName("");setTaxCond("monotributo");setOrigin("China");setHasBrand(false);setHasBattery(false);
     setProducts([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
     proxPkId.current=1;setPkgs([{id:0,qty:"1",length:"",width:"",height:"",weight:""}]);
-    setRateOverride({});setCostOverride({});setDesembolsoOverride({});setCerts({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});
+    setRateOverride({});setCostOverride({});setDesembolsoOverride({});setCerts({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});setRecPctOv({});
     setResults(null);setLinkGenerado(null);setCanalesLink([]);setAutoCalc(false);firmaCalc.current=null;
     try{localStorage.removeItem(CALC_BORRADOR);}catch{}
   };
@@ -14972,7 +14972,7 @@ function AdminCalculator({token}){
     const fleteBasePdf=Number(ch.flete||0)-battExtraPdf;
     // Recargo por valor: NO se discrimina, va folded dentro del Servicio Integral de importación.
     // En blanco el surcharge es el recargo por sobrepeso y tiene fila propia — no se pliega.
-    const surchargePdf=bd.isBlanco?0:Number(ch.surcharge||0);
+    const surchargePdf=bd.isBlanco?0:recargoDe(ch).amt;
     const svcLabelPdf=ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(surchargePdf>0?"Servicio Integral de importación":"Flete");
     const svcAmtPdf=fleteBasePdf+surchargePdf;
     if(svcAmtPdf>0)rowsServicios.push(`<div class="row"><span>${svcLabelPdf}</span><span>USD ${fmt(svcAmtPdf)}</span></div>`);
@@ -15098,6 +15098,15 @@ function AdminCalculator({token}){
   // pesos pasan a dólares con el blue del día (editable). Van al total, al costo, al link y al PDF.
   const [certs,setCerts]=useState({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});
   const [tcCert,setTcCert]=useState("");
+  // % del recargo por valor editable por cotización (06/10/2026). Vacío = el del tramo de la tarifa.
+  const [recPctOv,setRecPctOv]=useState({});
+  const recargoDe=(ch)=>{
+    if(ch?.bd?.isBlanco)return {pct:0,amt:0,ov:false};
+    const ov=recPctOv[ch?.key];const hasOv=ov!=null&&String(ov).trim()!=="";
+    if(!hasOv)return {pct:Number(ch?.surchargePct||0),amt:Number(ch?.surcharge||0),ov:false};
+    const fob=products.reduce((a,p)=>a+toN(p.unit_price)*(toN(p.quantity)||1),0);const pct=toN(ov);
+    return {pct,amt:Math.round(fob*pct)/100,ov:true};
+  };
   useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTcCert(t=>t||String(d.venta));}}catch{}})();},[]);
   const certsDe=(chKey)=>{
     if(chKey!=="maritimo_a_china")return {lines:[],total:0};
@@ -15190,7 +15199,7 @@ function AdminCalculator({token}){
         const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
         const certL=certsDe(c.key);
         taxEff+=certL.total;
-        const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0)+certL.total);
+        const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+recargoDe(c).amt+certL.total);
         // Desglose detallado por linea (mismo nivel de detalle que la card interna del admin)
         // para que el link lo muestre al expandir la opcion. [label, monto]. El % va en el
         // label cuando todos los productos comparten la alicuota (si hay mezcla, sin %).
@@ -15208,14 +15217,14 @@ function AdminCalculator({token}){
         // opcion (flete con override, desaduanaje bonificado). La misma cuenta que el portal:
         // el flete se reparte por peso facturable del bulto donde viaja cada producto y los
         // impuestos por FOB. impuestosTotal hace que la suma cierre contra totalAbonar.
-        const estEf={flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),seguro:bd.isBlanco?Number(c.seguro||0):0,overweightSurcharge:owEffLink,shipCost:0,taxDetail:{items:c.taxDetail?.items||[]}};
+        const estEf={flete:bd.isBlanco?fleteEff:(fleteEff+recargoDe(c).amt),seguro:bd.isBlanco?Number(c.seguro||0):0,overweightSurcharge:owEffLink,shipCost:0,taxDetail:{items:c.taxDetail?.items||[]}};
         const landed=costoPuestoEnArgentina(itemsLink,pksLink,estEf,{impuestosTotal:taxEff,repartirPor:bd.isMaritimo?"volumen":"peso"}).map(r=>({
           description:r.it.description||"",ncm:r.it.ncm_code||null,qty:r.qty,
           bultos:pksLink.map((pk,k)=>Array.isArray(r.it.package_ids)&&r.it.package_ids.includes(pk.id)?k+1:null).filter(Boolean),
           fob:red(r.fob),fobUnit:red(r.fobUnit),tax:red(r.tax),taxUnit:red(r.taxUnit),
           svc:red(r.svc),svcUnit:red(r.svcUnit),total:red(r.total),totalUnit:red(r.totalUnit),
         }));
-        return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),fleteRate:fleteRateEff,fleteAmt:Number(c.fleteAmt||0),battExtra:batEff,overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail,landed};
+        return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+recargoDe(c).amt),fleteRate:fleteRateEff,fleteAmt:Number(c.fleteAmt||0),battExtra:batEff,overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail,landed};
       });
       const cli=clientId?allClients.find(c=>c.id===clientId):null;
       const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);
@@ -15511,7 +15520,7 @@ function AdminCalculator({token}){
           else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
           // Recargo por sobrepeso (aéreo) con fila propia; en el canal B el surcharge es el recargo por valor.
           const owEff=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
-          const recValor=bd.isBlanco?0:Number(ch.surcharge||0);
+          const rec=recargoDe(ch);const recValor=bd.isBlanco?0:rec.amt;
           const cert=certsDe(ch.key);
           const effTotal=(bd.isBlanco?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff):(fleteEff+recValor))+cert.total;
           const isAer=ch.key==="aereo_a_china";
@@ -15537,7 +15546,10 @@ function AdminCalculator({token}){
                 <span className="qc-lr">{ovIn(hasRateOv?rateOvStr:String(Number(ch.fleteRate||0)),hasRateOv,v=>setRateOverride(p=>({...p,[ch.key]:v})),sinOv(setRateOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(fleteEff-batt)}</b></span>
               </div>
               {batt>0&&L("Baterías",batt)}
-              {recValor>0&&L(`Recargo por valor${ch.surchargePct?` ${ch.surchargePct}%`:""}`,recValor)}
+              {!bd.isBlanco&&<div className="qc-l">
+                <span>Recargo por valor</span>
+                <span className="qc-lr">{ovIn(rec.ov?String(recPctOv[ch.key]):String(Number(ch.surchargePct||0)),rec.ov&&Math.abs(rec.pct-Number(ch.surchargePct||0))>0.001,v=>setRecPctOv(p=>({...p,[ch.key]:v})),sinOv(setRecPctOv,ch.key))}<span className="qc-u">%</span><b>USD {fmt(recValor)}</b></span>
+              </div>}
               {owEff>0&&L("Recargo por sobrepeso",owEff)}
               {Number(ch.seguro||0)>0&&L("Seguro",ch.seguro)}
               {bd.isBlanco&&<>
