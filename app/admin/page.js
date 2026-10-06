@@ -315,6 +315,18 @@ const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSO
 // Operaciones + Entregas en un solo panel (04/10/2026): cuatro etapas (En proceso · Para entregar ·
 // Entregadas · Cerradas) y un buscador arriba que busca en todas. "Para entregar" y "Entregadas" son
 // el panel de Entregas tal cual (avisos, agenda por día, cobros).
+// Volver una op a un estado anterior a la entrega (06/10/2026, caso AC-0222: se marcó entregada por
+// error y al pasarla otra vez a en tránsito seguía en Arribadas): se borran la marca de "lista para
+// retirar" y los avisos de retiro (y el de arribo si vuelve a antes de arribar), así cuando llegue de
+// verdad el aviso sale de nuevo.
+const PRE_ARRIBO=["pendiente","en_deposito_origen","en_preparacion","en_transito"];
+const limpiarAlRetroceder=(status,sentNotif)=>{
+  if(!PRE_ARRIBO.includes(status)&&status!=="arribo_argentina"&&status!=="en_aduana")return null;
+  const sn={...(sentNotif||{})};delete sn.wa_retiro;delete sn.email_retiro;
+  const out={delivery_ready_at:null,delivery_confirmed_at:null,sent_notifications:sn};
+  if(PRE_ARRIBO.includes(status)){delete sn.email_arribo;out.office_received_at=null;}
+  return out;
+};
 function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   const celu=useEsCelu();
   const [etapa,setEtapa]=useState(()=>{try{return localStorage.getItem("ac_ops_etapa")||"proceso";}catch{return "proceso";}});
@@ -351,6 +363,8 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
     try{
       if(bulkAction.action==="setStatus"){
         await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{status:bulkAction.value}});
+        // Las que vuelven a antes de la entrega pierden la marca de lista para retirar (una por una: los avisos son por op).
+        for(const o of ops.filter(x=>selectedIds.has(x.id)&&(x.status==="entregada"||x.delivery_ready_at))){const l=limpiarAlRetroceder(bulkAction.value,o.sent_notifications);if(l)await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:l});}
       } else if(bulkAction.action==="markCollected"){
         await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{is_collected:true,collection_date:hoyAR()}});
       } else if(bulkAction.action==="delete"){
@@ -494,7 +508,7 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   // Etapas (04/10/2026): Arribadas (para entregar o entregadas con saldo) · En proceso · Finalizadas
   // (cerradas, canceladas y entregadas sin saldo). El estado de las aéreas sale del vuelo: vuelo
   // listo para despachar o despachado = en tránsito, vuelo abierto = preparación, sin vuelo = depósito.
-  const etapaDe=o=>{if(["operacion_cerrada","cancelada"].includes(o.status))return "finalizadas";if(o.delivery_completed_at)return (calcSaldo(o)||0)>0.005?"arribadas":"finalizadas";if(o.status==="entregada"||o.delivery_ready_at)return "arribadas";return "proceso";};
+  const etapaDe=o=>{if(["operacion_cerrada","cancelada"].includes(o.status))return "finalizadas";if(o.delivery_completed_at)return (calcSaldo(o)||0)>0.005?"arribadas":"finalizadas";if(o.status==="entregada"||(o.delivery_ready_at&&!PRE_ARRIBO.includes(o.status)))return "arribadas";return "proceso";};
   const nEtapa=k=>ops.filter(o=>etapaDe(o)===k).length;
   const buscando=search.trim().length>0;
   const ETAPAS=[{k:"arribadas",l:"Arribadas",c:"#22c55e"},{k:"proceso",l:"En proceso",c:"#60a5fa"},{k:"finalizadas",l:"Finalizadas",c:"#94a3b8"}];
@@ -1134,6 +1148,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       Object.assign(rest,resuelto);
     }
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
+    if(rest.status!==initOp.status&&(initOp.status==="entregada"||initOp.delivery_ready_at)){const l=limpiarAlRetroceder(rest.status,rest.sent_notifications);if(l){Object.assign(rest,l);setOp(p=>({...p,...l}));}}
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     // Tier voucher DESACTIVADO (11/06/2026): las categorías quedan como etiqueta visual pero
     // ya no aplican descuento automático. Reactivar restaurando el apply_tier_voucher_to_op.
@@ -1563,6 +1578,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       Object.assign(rest,resuelto);
     }
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
+    if(rest.status!==initOp.status&&(initOp.status==="entregada"||initOp.delivery_ready_at)){const l=limpiarAlRetroceder(rest.status,rest.sent_notifications);if(l){Object.assign(rest,l);setOp(p=>({...p,...l}));}}
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     if(rest.status!==prevStatus){
       const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};
@@ -5724,7 +5740,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     setLo(true);
     const sel="id,operation_code,description,origin,delivery_receipt_number,labels_printed_at,remito_printed_at,recibo_printed_at,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
-      dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
+      dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&status=not.in.(${PRE_ARRIBO.join(",")})&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.true&select=${sel}&order=delivery_completed_at.desc&limit=60`}).catch(()=>[]),
     ]);

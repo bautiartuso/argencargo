@@ -65,7 +65,7 @@ const HERMANA_SEL = "id,operation_code,description,budget_total,credit_applied_u
 // el link las ofrece para coordinar todo en una sola visita.
 async function loadHermanas(op) {
   if (!op.client_id) return [];
-  const r = await sbFetch(`/operations?client_id=eq.${op.client_id}&id=neq.${op.id}&delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}&order=created_at.asc`);
+  const r = await sbFetch(`/operations?client_id=eq.${op.client_id}&id=neq.${op.id}&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}&order=created_at.asc`);
   const list = Array.isArray(r.body) ? r.body : [];
   if (list.length === 0) return [];
   const [pk, pagos] = await Promise.all([

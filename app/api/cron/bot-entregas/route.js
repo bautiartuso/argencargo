@@ -121,7 +121,7 @@ export async function GET(req) {
     } catch (e) { console.error("[bot-entregas] aviso", op.operation_code, e.message); }
   }
 
-  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
+  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
 
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
     if (!enHorario && !dry) { out.recordatorios_fuera_de_horario = true; break; }
