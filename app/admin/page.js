@@ -14818,7 +14818,7 @@ function AdminCalculator({token}){
     setClientId("");setClientName("");setTaxCond("monotributo");setOrigin("China");setHasBrand(false);setHasBattery(false);
     setProducts([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
     proxPkId.current=1;setPkgs([{id:0,qty:"1",length:"",width:"",height:"",weight:""}]);
-    setRateOverride({});setCostOverride({});setDesembolsoOverride({});
+    setRateOverride({});setCostOverride({});setDesembolsoOverride({});setCerts({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});
     setResults(null);setLinkGenerado(null);setCanalesLink([]);setAutoCalc(false);firmaCalc.current=null;
     try{localStorage.removeItem(CALC_BORRADOR);}catch{}
   };
@@ -14990,6 +14990,7 @@ function AdminCalculator({token}){
         if(bd.iigg>0)rowsAduana.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(bd.iigg)}</span></div>`);
         if(bd.iibb>0)rowsAduana.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(bd.iibb)}</span></div>`);
       }
+      for(const [l,v] of (eff?.certLines||[]))rowsAduana.push(`<div class="row"><span>${l}</span><span>USD ${fmt(v)}</span></div>`);
       if(bd.isAereo&&desEff>0)rowsAduana.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desEff)}</span></div>`);
       if(bd.isAereo&&ivaDesEff>0)rowsAduana.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesEff)}</span></div>`);
     }
@@ -15092,6 +15093,19 @@ function AdminCalculator({token}){
   const addPkg=()=>setPkgs(p=>[...p,{id:proxPkId.current++,qty:"1",length:"",width:"",height:"",weight:""}]);
   // Pegar lista: reemplaza (o suma) productos y bultos con lo que se leyó del texto pegado.
   const [pegarOpen,setPegarOpen]=useState(false);
+  // Certificados del LCL/FCL (06/10/2026): INAL ($850.000 por certificado + USD 1.200 fijos por
+  // importación) y Seguridad eléctrica ($1.500.000 por certificado). Se tildan por cotización; los
+  // pesos pasan a dólares con el blue del día (editable). Van al total, al costo, al link y al PDF.
+  const [certs,setCerts]=useState({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});
+  const [tcCert,setTcCert]=useState("");
+  useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTcCert(t=>t||String(d.venta));}}catch{}})();},[]);
+  const certsDe=(chKey)=>{
+    if(chKey!=="maritimo_a_china")return {lines:[],total:0};
+    const tc=toN(tcCert);const n=(k)=>Math.max(1,Math.round(toN(certs[k].n)||1));const lines=[];
+    if(certs.inal.on)lines.push([`INAL (${n("inal")} certificado${n("inal")>1?"s":""})`,(tc>0?n("inal")*850000/tc:0)+1200]);
+    if(certs.seg.on)lines.push([`Seguridad eléctrica (${n("seg")} certificado${n("seg")>1?"s":""})`,tc>0?n("seg")*1500000/tc:0]);
+    return {lines:lines.map(([l,v])=>[l,Math.round(v*100)/100]),total:Math.round(lines.reduce((a,[,v])=>a+v,0)*100)/100};
+  };
   const prodVacio=(x)=>!String(x.description||"").trim()&&!String(x.unit_price||"").trim();
   const pkVacio=(x)=>!x.length&&!x.width&&!x.height&&!x.weight;
   const aplicarPegado=({productos,bultos},modo)=>{
@@ -15174,7 +15188,9 @@ function AdminCalculator({token}){
         if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
         else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
         const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
-        const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0));
+        const certL=certsDe(c.key);
+        taxEff+=certL.total;
+        const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0)+certL.total);
         // Desglose detallado por linea (mismo nivel de detalle que la card interna del admin)
         // para que el link lo muestre al expandir la opcion. [label, monto]. El % va en el
         // label cuando todos los productos comparten la alicuota (si hay mezcla, sin %).
@@ -15186,6 +15202,7 @@ function AdminCalculator({token}){
         }else if(bd.isBlanco&&bd.isMaritimo){
           detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
         }
+        if(detail&&certL.lines.length)detail=[...detail,...certL.lines];
         if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
         // Costo de cada producto puesto en Argentina, con los valores EFECTIVOS de esta
         // opcion (flete con override, desaduanaje bonificado). La misma cuenta que el portal:
@@ -15495,7 +15512,8 @@ function AdminCalculator({token}){
           // Recargo por sobrepeso (aéreo) con fila propia; en el canal B el surcharge es el recargo por valor.
           const owEff=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
           const recValor=bd.isBlanco?0:Number(ch.surcharge||0);
-          const effTotal=bd.isBlanco?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff):(fleteEff+recValor);
+          const cert=certsDe(ch.key);
+          const effTotal=(bd.isBlanco?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff):(fleteEff+recValor))+cert.total;
           const isAer=ch.key==="aereo_a_china";
           const unit=isAer?"kg":"m³";
           const qty=Number(ch.fleteAmt||0);
@@ -15531,6 +15549,20 @@ function AdminCalculator({token}){
                   {bd.iigg>0&&L("Ganancias",bd.iigg)}
                   {bd.iibb>0&&L("Ingresos brutos",bd.iibb)}
                 </>}
+                {ch.key==="maritimo_a_china"&&(()=>{const tc=toN(tcCert);
+                  const fila=(k,lb,usd)=>{const c=certs[k];return <div className="qc-l" style={{opacity:c.on?1:0.6}}>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+                      <button type="button" role="switch" aria-checked={c.on} onClick={()=>setCerts(p=>({...p,[k]:{...p[k],on:!p[k].on}}))} style={{width:34,height:20,borderRadius:999,border:"none",padding:2,cursor:"pointer",background:c.on?"#60a5fa":"rgba(255,255,255,0.15)",display:"inline-flex",justifyContent:c.on?"flex-end":"flex-start",flexShrink:0}}><i style={{width:16,height:16,borderRadius:"50%",background:"#fff",display:"block"}}/></button>
+                      {lb}
+                    </span>
+                    <span className="qc-lr">{c.on&&<><input className="qc-in" inputMode="numeric" value={c.n} onChange={e=>setCerts(p=>({...p,[k]:{...p[k],n:e.target.value.replace(/[^\d]/g,"")}}))} style={{width:44,height:30,textAlign:"center",padding:0}}/><span className="qc-u">cert.</span></>}<b>{c.on?`USD ${fmt(usd)}`:"—"}</b></span>
+                  </div>;};
+                  const nI=Math.max(1,Math.round(toN(certs.inal.n)||1)),nS=Math.max(1,Math.round(toN(certs.seg.n)||1));
+                  return <>
+                    {fila("inal","INAL",(tc>0?nI*850000/tc:0)+1200)}
+                    {fila("seg","Seguridad eléctrica",tc>0?nS*1500000/tc:0)}
+                    {(certs.inal.on||certs.seg.on)&&<div className="qc-l"><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Pesos a USD</span><span className="qc-lr"><span className="qc-u">$</span><input className="qc-in" inputMode="decimal" value={tcCert} onChange={e=>setTcCert(e.target.value.replace(/[^\d.,]/g,""))} style={{width:84,height:30,textAlign:"center",padding:0}}/></span></div>}
+                  </>;})()}
                 {bd.isAereo&&<>
                   <div className="qc-l"><span>Desaduanaje</span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOv?ovStr:String(bd.desembolsoAuto||0),hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01,v=>setDesembolsoOverride(p=>({...p,[ch.key]:v})),sinOv(setDesembolsoOverride,ch.key))}</span></div>
                   {ivaDesEff>0&&L("IVA desaduanaje",ivaDesEff)}
@@ -15538,7 +15570,7 @@ function AdminCalculator({token}){
               </>}
             </div>
             <div className="qc-total"><span>Total</span><strong>USD {fmt(effTotal)}</strong></div>
-            <button type="button" className="qc-pdf" onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})}>📄 PDF</button>
+            <button type="button" className="qc-pdf" onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd,certLines:cert.lines})}>📄 PDF</button>
             {/* Costo (solo admin): el costo por rango cargado en Tarifas → Costos de flete. Antes
                 salía de un valor fijo de configuración y el Integral tomaba el mismo que LCL. */}
             {!esEmpleado()?(()=>{
@@ -15548,11 +15580,11 @@ function AdminCalculator({token}){
               const hasC=ovC!=null&&String(ovC).trim()!=="";
               const rate=hasC?toN(ovC):rateDef;
               const cFlete=qty*rate;
-              const cImp=bd.isBlanco?effTotalImp:0;
+              const cImp=(bd.isBlanco?effTotalImp:0)+cert.total;
               const costo=cFlete+cImp;const gan=effTotal-costo;const pct=effTotal>0?gan/effTotal*100:0;
               return <div className="qc-cost">
                 <div className="qc-l"><span>Costo flete</span><span className="qc-lr">{ovIn(hasC?ovC:String(rateDef),hasC&&Math.abs(rate-rateDef)>0.001,v=>setCostOverride(o=>({...o,[ch.key]:v})),sinOv(setCostOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(cFlete)}</b></span></div>
-                {bd.isBlanco&&L("Impuestos y despacho",cImp)}
+                {(bd.isBlanco||cert.total>0)&&L(cert.total>0?"Impuestos, despacho y certificados":"Impuestos y despacho",cImp)}
                 <div className="qc-l qc-sum"><span>Costo</span><b>USD {fmt(costo)}</b></div>
                 <div className="qc-l qc-gan"><span>Ganancia</span><b style={{color:gan>=0?"#4ade80":"#f87171"}}>USD {fmt(gan)} <span style={{fontSize:11,opacity:0.8}}>· {pct.toFixed(0)}%</span></b></div>
               </div>;
