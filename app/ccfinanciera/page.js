@@ -129,6 +129,7 @@ function Dashboard({ token, onLogout, embebido }) {
   const [loading, setLoading] = useState(true);
   const [filterCurrency, setFilterCurrency] = useState("all");
   const [filterType, setFilterType] = useState("all");
+  const [filterClase, setFilterClase] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [tab, setTab] = useState("movs");
@@ -150,8 +151,8 @@ function Dashboard({ token, onLogout, embebido }) {
 
   const enriched = useMemo(() => enrichMovements(movements), [movements]);
   const filtered = useMemo(
-    () => aplicarFiltros(enriched.withRunning, { currency: filterCurrency, type: filterType, from, to }),
-    [enriched, filterCurrency, filterType, from, to]
+    () => aplicarFiltros(enriched.withRunning, { currency: filterCurrency, type: filterType, from, to, clase: filterClase }),
+    [enriched, filterCurrency, filterType, from, to, filterClase]
   );
   const stats = useMemo(() => calcStats(filtered), [filtered]);
   const isMobile = useIsMobile();
@@ -197,7 +198,7 @@ function Dashboard({ token, onLogout, embebido }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ marginBottom: 4 }}><Filtros
                 currency={filterCurrency} setCurrency={setFilterCurrency}
-                type={filterType} setType={setFilterType}
+                type={filterType} setType={setFilterType} clase={filterClase} setClase={setFilterClase}
                 from={from} setFrom={setFrom} to={to} setTo={setTo}
               /></div>
               {filtered.length === 0 ? <p style={{ fontSize: 14, color: T.textMuted, textAlign: "center", padding: "40px 0" }}>Sin movimientos con estos filtros</p>
@@ -208,7 +209,7 @@ function Dashboard({ token, onLogout, embebido }) {
               <MovimientosTabla rows={filtered} onEdit={setEditing} acciones={acciones} total={filtered.length}
                 toolbar={<Filtros
                 currency={filterCurrency} setCurrency={setFilterCurrency}
-                type={filterType} setType={setFilterType}
+                type={filterType} setType={setFilterType} clase={filterClase} setClase={setFilterClase}
                 from={from} setFrom={setFrom} to={to} setTo={setTo}
               />} />
               {filtered.length === 0 && <p style={{ fontSize: 14, color: T.textMuted, textAlign: "center", padding: "40px 0" }}>Sin movimientos con estos filtros</p>}

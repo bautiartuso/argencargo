@@ -15,6 +15,7 @@ export default function SharePage({ params }) {
   const [state, setState] = useState({ loading: true, error: null, movements: [], share: null });
   const [filterCurrency, setFilterCurrency] = useState("all");
   const [filterType, setFilterType] = useState("all");
+  const [filterClase, setFilterClase] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [tab, setTab] = useState("movs");
@@ -31,8 +32,8 @@ export default function SharePage({ params }) {
 
   const enriched = useMemo(() => enrichMovements(state.movements), [state.movements]);
   const filtered = useMemo(
-    () => aplicarFiltros(enriched.withRunning, { currency: filterCurrency, type: filterType, from, to }),
-    [enriched, filterCurrency, filterType, from, to]
+    () => aplicarFiltros(enriched.withRunning, { currency: filterCurrency, type: filterType, from, to, clase: filterClase }),
+    [enriched, filterCurrency, filterType, from, to, filterClase]
   );
   const stats = useMemo(() => calcStats(filtered), [filtered]);
   const isMobile = useIsMobile();
@@ -80,7 +81,7 @@ export default function SharePage({ params }) {
         </div>
 
         {(() => {
-          const filtros = <Filtros currency={filterCurrency} setCurrency={setFilterCurrency} type={filterType} setType={setFilterType} from={from} setFrom={setFrom} to={to} setTo={setTo} />;
+          const filtros = <Filtros currency={filterCurrency} setCurrency={setFilterCurrency} type={filterType} setType={setFilterType} clase={filterClase} setClase={setFilterClase} from={from} setFrom={setFrom} to={to} setTo={setTo} />;
           const vacio = <p style={{ fontSize: 14, color: T.textMuted, textAlign: "center", padding: "40px 0" }}>Sin movimientos con estos filtros</p>;
           if (tab === "stats") return <Estadisticas stats={stats} />;
           if (isMobile) return <div style={{ display: "flex", flexDirection: "column", gap: 10 }}><div style={{ marginBottom: 4 }}>{filtros}</div>{filtered.length === 0 ? vacio : filtered.map((m) => <MovimientoTarjeta key={m.id} m={m} readOnly />)}</div>;
