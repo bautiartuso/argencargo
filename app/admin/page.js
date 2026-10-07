@@ -18095,6 +18095,7 @@ function MaritimePanel2({token,allClients=[]}){
   const plata=verPlata();
   const [shipments,setShipments]=useState([]);const [packages,setPackages]=useState([]);const [items,setItems]=useState([]);
   const [containers,setContainers]=useState([]);const [whs,setWhs]=useState([]);
+  const [arriboModal,setArriboModal]=useState(null); // {c, texto, desde}: confirmar arribo + desde cuándo se puede retirar
   const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});const [mtOverrides,setMtOverrides]=useState({});
   const [lo,setLo]=useState(true);const [loadErr,setLoadErr]=useState(null);const loadedOnce=useRef(false);
   // Preferencias de UI persistidas (localStorage.mt). Nada de negocio.
@@ -18400,18 +18401,19 @@ function MaritimePanel2({token,allClients=[]}){
     setCostModal({code:c.code,ops:list});
   };
   // Arribó: confirm con N ops + clientes; si la ETA todavía no llegó (> hoy+3) pregunta de más.
-  const setContainerStatus=async(c,status)=>{
+  const setContainerStatus=async(c,status,opts=null)=>{
     if(creatingOp)return;
-    if(status==="arribado"){
+    if(status==="arribado"&&!opts){
       const pend=shipsRef.current.filter(x=>x.container_id===c.id&&!x.operation_id&&x.client_id);
       const clis=[...new Set(pend.map(x=>x.client_id))];const nCli=clis.length;
       const eta=mtEffEta(c);const adelantado=eta&&diasDesde(eta)< -3;
       const nombres=clis.map(id=>clientOf(id)?.client_code||"").filter(Boolean).slice(0,6).join(", ");
-      if(!await confirmDialog(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?(plata?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro${nombres?` a ${nombres}`:""}. Tarda unos segundos — no cierres la pantalla.`:`\n\nHay ${pend.length} ${mtPlural(pend.length,"carga sin operar","cargas sin operar")} de ${nCli} ${mtPlural(nCli,"cliente")}: las operaciones y el aviso de retiro los crea Bautista (quedan en la alerta "sin operar").`):""}${adelantado?`\n\n⚠ La ETA es ${mtFmtD(eta)}, ¿seguro que ya arribó?`:""}`))return;
+      // Se confirma en un modal propio que además pide desde qué día el link deja coordinar el retiro.
+      setArriboModal({c,desde:mtHoy(),texto:(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?(plata?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro${nombres?` a ${nombres}`:""}. Tarda unos segundos — no cierres la pantalla.`:`\n\nHay ${pend.length} ${mtPlural(pend.length,"carga sin operar","cargas sin operar")} de ${nCli} ${mtPlural(nCli,"cliente")}: las operaciones y el aviso de retiro los crea Bautista (quedan en la alerta "sin operar").`):""}${adelantado?`\n\n⚠ La ETA es ${mtFmtD(eta)}, ¿seguro que ya arribó?`:""}`)});return;
     }
     setCreatingOp(true);busyRef.current=true;
     try{
-      const body={status};if(status==="arribado")body.arrived_at=mtHoy();if(status==="en_transito")body.arrived_at=null;
+      const body={status};if(status==="arribado"){body.arrived_at=mtHoy();const d=opts?.desde;body.entrega_desde=d&&d>mtHoy()?d:null;}if(status==="en_transito")body.arrived_at=null;
       const ok=await patchCont(c.id,body);if(!ok)return;
       let extra="";
       // El EMPLEADO solo marca status + arrived_at: no crea ops ni calcula presupuestos ni abre el modal de costos.
@@ -18575,7 +18577,21 @@ function MaritimePanel2({token,allClients=[]}){
   const conActividad=visibles.filter(w=>w.act>0||w.tr>0||active.some(s=>s.warehouse===w.name));
   const vacios=visibles.filter(w=>!conActividad.includes(w));
 
+  const arriboUI=arriboModal&&createPortal(<div onClick={()=>setArriboModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#0F1D33",border:"1px solid rgba(232,208,152,0.3)",borderRadius:14,padding:20,width:"100%",maxWidth:460,color:"#fff"}}>
+      <div style={{fontSize:16,fontWeight:800,marginBottom:10}}>⚓ Arribo de {arriboModal.c.code}</div>
+      <p style={{fontSize:13,lineHeight:1.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",margin:"0 0 16px"}}>{arriboModal.texto}</p>
+      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Disponible para retirar desde</div>
+      <DatePicker value={arriboModal.desde} onChange={v=>setArriboModal(m=>({...m,desde:v||mtHoy()}))}/>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 18px"}}>{arriboModal.desde>mtHoy()?`El link de retiro no deja coordinar antes del ${mtFmtD(arriboModal.desde)}.`:"Se puede coordinar desde hoy."}</p>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button onClick={()=>setArriboModal(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+        <button onClick={()=>{const m=arriboModal;setArriboModal(null);setContainerStatus(m.c,"arribado",{desde:m.desde});}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#22c55e",color:"#06240f",fontWeight:800,cursor:"pointer"}}>Marcar arribado</button>
+      </div>
+    </div>
+  </div>,document.body);
   return <div style={{position:"relative"}}>
+    {arriboUI}
     <style>{`@keyframes mtFlashK{0%{box-shadow:0 0 0 0 rgba(232,208,152,0.9);background:rgba(232,208,152,0.25)}100%{box-shadow:0 0 0 12px rgba(232,208,152,0);background:transparent}}.mtFlash{animation:mtFlashK 1.5s ease-out}@keyframes mtSlideK{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}.mtSlideIn{animation:mtSlideK 180ms ease-out}@keyframes mtPulseK{0%,100%{opacity:.35}50%{opacity:.7}}.mtSkel{animation:mtPulseK 1.4s infinite;background:rgba(255,255,255,0.06);border-radius:10px}`}</style>
     {/* NIVEL 0 · barra superior sticky */}
     <div style={{position:"sticky",top:0,zIndex:5,background:"#0A1628",padding:"6px 0 8px",marginBottom:10,display:"flex",flexDirection:isMobile?"column":"row",gap:8,alignItems:isMobile?"stretch":"center"}}>
