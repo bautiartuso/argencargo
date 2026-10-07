@@ -33,11 +33,11 @@ const r4 = (v) => Math.round(v * 10000) / 10000;
 const esTrackingReal = (t) => !!t && !/^SEA[A-Z]*$/i.test(String(t).trim());
 
 const SHIP_SEL = [
-  "id,product_description,tracking_number,status,container_id,revenue_manual,created_at,received_at,fotos,fotos_mercaderia",
+  "id,product_description,tracking_number,status,container_id,revenue_manual,created_at,received_at,fotos,fotos_mercaderia,origin",
   "maritime_packages(bulto_number,quantity,length_cm,width_cm,height_cm,cbm)",
   "maritime_items(description,quantity,unit_price_usd)",
   "maritime_containers(id,code,status,eta,transbordo_dias,transbordo_lugar)",
-  "maritime_warehouses(id,mostrar_contenedor_cliente)",
+  "maritime_warehouses(id,mostrar_contenedor_cliente,origin)",
 ].join(",");
 // En depósito (sin contenedor) o viajando en un contenedor; nunca lo que todavía espera al proveedor.
 const shipsDe = (cid) => svc(`/rest/v1/maritime_shipments?client_id=eq.${cid}&operation_id=is.null&or=(container_id.not.is.null,status.eq.en_deposito)&select=${SHIP_SEL}&order=created_at.asc`);
@@ -106,6 +106,8 @@ export async function GET(req) {
       groups[key] = {
         id: key,
         etapa: c ? "transito" : "deposito",
+        // Origen por el depósito (Chuse Di Fiori = USA): el portal dice "salió de China/Estados Unidos".
+        origen: /usa|estados|ee\.?uu/i.test(String(s.maritime_warehouses?.origin || s.origin || "")) ? "usa" : "china",
         contenedor: c && s.maritime_warehouses?.mostrar_contenedor_cliente ? (c.code || null) : null,
         eta_puerto: eta,
         entrega_estimada: addDays(eta, 14),

@@ -28,6 +28,10 @@ export default function MaritimeCargoCards({cargo}){
       const abierta=abiertas.has(g.id);
       const toggle=()=>setAbiertas(p=>{const n=new Set(p);n.has(g.id)?n.delete(g.id):n.add(g.id);return n;});
       const dep=g.etapa==="deposito";
+      // Estados Unidos (07/10/2026): en depósito la carga espera consolidar (no "salió"); recién en
+      // el contenedor se dice que salió de Estados Unidos. China mantiene el mensaje de siempre.
+      const usa=g.origen==="usa";
+      const msg=usa?(dep?[t("mar2.usaDepotTitle"),t("mar2.usaDepotMsg")]:[t("mar2.usaShippedTitle"),null]):(dep?[t("mar2.depotTitle"),t("mar2.depotMsg")]:null);
       const cargas=Array.isArray(g.cargas)?g.cargas:[];
       const todas=cargas.flatMap(fotosDe);
       const portada=todas[0];
@@ -40,7 +44,7 @@ export default function MaritimeCargoCards({cargo}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:ORO}}>{t("mar2.eyebrow")}</span>
-              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:TX,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.16)"}}>{dep?`● ${t("mar2.stageShipped")}`:`🚢 ${t("mar2.stageSea")}`}</span>
+              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:TX,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.16)"}}>{dep&&usa?`● ${t("mar2.stageDepotUsa")}`:dep?`● ${t("mar2.stageShipped")}`:`🚢 ${t("mar2.stageSea")}`}</span>
             </div>
             <p style={{margin:"7px 0 0",fontSize:17,fontWeight:800,color:TX,lineHeight:1.3,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{titulo}</p>
           </div>
@@ -48,14 +52,15 @@ export default function MaritimeCargoCards({cargo}){
         </div>
 
         {/* Mensaje de la carga ya embarcada */}
-        {dep&&<div style={{margin:"0 20px 14px",padding:"13px 16px",borderRadius:14,background:"rgba(232,208,152,0.07)",border:"1px solid rgba(232,208,152,0.28)"}}>
-          <p style={{margin:0,fontSize:14,fontWeight:800,color:TX}}>{t("mar2.depotTitle")}</p>
-          <p style={{margin:"4px 0 0",fontSize:13,color:SUB,lineHeight:1.5}}>{t("mar2.depotMsg")}</p>
+        {msg&&<div style={{margin:"0 20px 14px",padding:"13px 16px",borderRadius:14,background:"rgba(232,208,152,0.07)",border:"1px solid rgba(232,208,152,0.28)"}}>
+          <p style={{margin:0,fontSize:14,fontWeight:800,color:TX}}>{msg[0]}</p>
+          {msg[1]&&<p style={{margin:"4px 0 0",fontSize:13,color:SUB,lineHeight:1.5}}>{msg[1]}</p>}
         </div>}
 
         {/* Datos del viaje */}
         <div className="mc-strip" style={{margin:"0 20px",borderRadius:14,border:`1px solid ${LINEA}`,background:"rgba(0,0,0,0.16)",overflow:"hidden"}}>
           {g.contenedor&&celda(t("mar2.container"),<span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:17,letterSpacing:"0.04em",color:ORO}}>{g.contenedor}</span>,{flex:"1.3 1 190px"})}
+          {celda(t("mar2.origin"),usa?t("origin.usa"):t("origin.china"),{flex:"0.8 1 130px"})}
           {celda(t("mar2.arrival"),dep||!g.eta_puerto?<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>:fD(g.eta_puerto))}
           {!dep&&celda(t("mar2.delivery"),fD(g.entrega_estimada)||<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>)}
           {/* En depósito (todavía sin contenedor) bultos, volumen y total se muestran recién cuando la
