@@ -16481,6 +16481,7 @@ const presuManualMaritimo=(ships,importeDe)=>{
 };
 function MaritimePanel({token,allClients=[]}){
   const [shipments,setShipments]=useState([]);
+  const [arriboModal,setArriboModal]=useState(null); // {c, texto, desde}
   const [packages,setPackages]=useState([]);
   const [items,setItems]=useState([]);
   const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});
@@ -16884,18 +16885,18 @@ function MaritimePanel({token,allClients=[]}){
     return {msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
   };
   const [costModal,setCostModal]=useState(null); // {code, ops:[{id,code,clientName,budget}]} para cargar costos
-  const setContainerStatus=async(c,status)=>{
+  const setContainerStatus=async(c,status,opts=null)=>{
     if(creatingOp)return; // ya hay una creacion en curso: no duplicar
     // Confirmar el arribo ANTES: crea las ops y manda los mails, no es un cambio de estado mas.
-    if(status==="arribado"){
+    if(status==="arribado"&&!opts){
       const pend=shipments.filter(x=>x.container_id===c.id&&!x.operation_id&&x.client_id);
       const nCli=new Set(pend.map(x=>x.client_id)).size;
-      if(!await confirmDialog(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Tarda unos segundos — no cierres la pantalla.`:""}`))return;
+      setArriboModal({c,desde:hoyAR(),texto:(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Tarda unos segundos — no cierres la pantalla.`:""}`)});return;
     }
     setCreatingOp(true);
     try{
       const body={status};
-      if(status==="arribado")body.arrived_at=hoyAR();
+      if(status==="arribado"){body.arrived_at=hoyAR();const d=opts?.desde;body.entrega_desde=d&&d>hoyAR()?d:null;}
       if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
       await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
       let extra="";
@@ -17241,7 +17242,21 @@ function MaritimePanel({token,allClients=[]}){
   const sinValorTab=tabAct.lista?tabAct.lista.filter(s=>!(valorOf(s.id)>0)).length:0;
   const listaTab=tabAct.lista?tabAct.lista.filter(coincide).filter(s=>!soloSinValor||!(valorOf(s.id)>0)):null;
 
+  const arriboUI=arriboModal&&createPortal(<div onClick={()=>setArriboModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#0F1D33",border:"1px solid rgba(232,208,152,0.3)",borderRadius:14,padding:20,width:"100%",maxWidth:460,color:"#fff"}}>
+      <div style={{fontSize:16,fontWeight:800,marginBottom:10}}>⚓ Arribo de {arriboModal.c.code}</div>
+      <p style={{fontSize:13,lineHeight:1.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",margin:"0 0 16px"}}>{arriboModal.texto}</p>
+      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Disponible para retirar desde</div>
+      <DatePicker value={arriboModal.desde} onChange={v=>setArriboModal(m=>({...m,desde:v||hoyAR()}))}/>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 18px"}}>{arriboModal.desde>hoyAR()?`El link de retiro no deja coordinar antes del ${String(arriboModal.desde).slice(8,10)}/${String(arriboModal.desde).slice(5,7)}.`:"Se puede coordinar desde hoy."}</p>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button onClick={()=>setArriboModal(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+        <button onClick={()=>{const m=arriboModal;setArriboModal(null);setContainerStatus(m.c,"arribado",{desde:m.desde});}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#22c55e",color:"#06240f",fontWeight:800,cursor:"pointer"}}>Marcar arribado</button>
+      </div>
+    </div>
+  </div>,document.body);
   return <div>
+    {arriboUI}
     <style>{`.mt-v-card{container-type:inline-size}.mt-v-grid{display:grid;gap:10px;align-items:center;padding:12px 16px}.mt-v-head{padding:9px 18px;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.07);font-size:10px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.07em}.mt-v-fila{border-bottom:1px solid rgba(255,255,255,0.05);transition:background .12s}.mt-v-fila:hover{background:rgba(255,255,255,0.02)}.mt-v-num{font-size:13px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}.mt-v-det-t{margin:0 0 7px;font-size:10px;font-weight:800;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em}.mt-v-tab{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025);cursor:pointer;font-family:inherit;text-align:left;color:#fff;transition:all .15s;min-width:0}.mt-v-tab:hover{border-color:rgba(184,149,106,0.4)}@container (max-width:1060px){.mt-v-head{display:none}.mt-v-grid{grid-template-columns:26px 64px minmax(0,1fr) minmax(0,1fr) !important}.mt-v-det{padding-left:16px !important;grid-template-columns:1fr !important}}`}</style>
 
     {/* Barra: depósitos + acciones */}
