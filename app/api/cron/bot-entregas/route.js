@@ -78,7 +78,8 @@ export async function GET(req) {
   const conItems = new Set(itemsAll.map((i) => i.operation_id));
   for (const op of cand) {
     const c = op.clients || {};
-    const riDir = op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
+    // La entrega directa por courier es solo del aéreo A (un RI en marítimo se avisa como cualquiera).
+    const riDir = op.channel === "aereo_blanco" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
     if (riDir) continue;
     if (!c.email && !waNumber(c.whatsapp)) continue;
     const bloqueo = sinNcm.has(op.id) ? "productos sin NCM o sin alícuotas (presupuesto incompleto)" : String(op.channel || "").includes("blanco") && !conItems.has(op.id) ? "sin productos cargados (el presupuesto queda en USD 0)" : !(Number(op.budget_total) > 0) ? "presupuesto en cero" : "";
@@ -161,10 +162,10 @@ export async function GET(req) {
   out.ri_cobros = [];
   try {
     const desde = new Date(now - 90 * 86400000).toISOString();
-    const r2 = await sb(`/operations?delivery_completed_at=gte.${encodeURIComponent(desde)}&is_collected=eq.false&ri_entrega_directa=not.is.false&select=id,operation_code,description,budget_total,debt_applied_usd,total_anticipos,credit_applied_usd,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,sent_notifications,ri_entrega_directa,clients(first_name,client_code,whatsapp,tax_condition)`);
+    const r2 = await sb(`/operations?delivery_completed_at=gte.${encodeURIComponent(desde)}&is_collected=eq.false&ri_entrega_directa=not.is.false&select=channel,id,operation_code,description,budget_total,debt_applied_usd,total_anticipos,credit_applied_usd,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,sent_notifications,ri_entrega_directa,clients(first_name,client_code,whatsapp,tax_condition)`);
     const riOps = (Array.isArray(r2.body) ? r2.body : []).filter((op) => {
       const c = op.clients || {};
-      const riDir = op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto";
+      const riDir = op.channel === "aereo_blanco" && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
       return riDir && !op.sent_notifications?.wa_ri_cobro && waNumber(c.whatsapp);
     });
     if (riOps.length) {

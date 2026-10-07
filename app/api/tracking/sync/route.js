@@ -174,9 +174,9 @@ async function applyEventsToOp(op, route, d) {
   // 9 a 20 h — antes salía de acá con el link, a cualquier hora (cambio 06/09).
   if (d.actualDelivery) {
     try {
-      const rFull = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&select=id,operation_code,description,delivery_public_token,delivery_completed_at,ri_entrega_directa,sent_notifications,clients(first_name,tax_condition,whatsapp)`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+      const rFull = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&select=id,operation_code,description,channel,delivery_public_token,delivery_completed_at,ri_entrega_directa,sent_notifications,clients(first_name,tax_condition,whatsapp)`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
       const full = (await rFull.json())?.[0];
-      const esRiDirecta = full && full.ri_entrega_directa !== false && (full.ri_entrega_directa === true || full.clients?.tax_condition === "responsable_inscripto");
+      const esRiDirecta = full && full.channel === "aereo_blanco" && full.ri_entrega_directa !== false && (full.ri_entrega_directa === true || full.clients?.tax_condition === "responsable_inscripto");
       if (esRiDirecta) {
         const upd = {};
         if (!full.delivery_completed_at) {

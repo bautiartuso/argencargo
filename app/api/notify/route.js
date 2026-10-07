@@ -251,7 +251,7 @@ export async function POST(req) {
 
     // RI con entrega directa: el courier entrega en el domicilio — el aviso de "lista para
     // retirar" no aplica (el link de pago lo dispara el sync de tracking al entregarse).
-    if (trigger === "retiro" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || client?.tax_condition === "responsable_inscripto")) {
+    if (trigger === "retiro" && op.channel === "aereo_blanco" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || client?.tax_condition === "responsable_inscripto")) {
       return Response.json({ skipped: "ri_entrega_directa" });
     }
 

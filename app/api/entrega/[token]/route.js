@@ -32,7 +32,9 @@ function usdCollected(op) {
 // RI con entrega directa por courier al domicilio: el link no coordina nada — es
 // detalle + documentos + pago. NULL en ri_entrega_directa = automatico para RI;
 // false = excepcion (ese RI usa el flujo normal); true = forzar.
+// Solo existe en el aéreo A (courier): un RI en marítimo retira o coordina como cualquiera (07/10/2026).
 function esRiDirecta(op) {
+  if (op.channel !== "aereo_blanco") return false;
   if (op.ri_entrega_directa === false) return false;
   return op.ri_entrega_directa === true || op.clients?.tax_condition === "responsable_inscripto";
 }
