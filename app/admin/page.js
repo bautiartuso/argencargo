@@ -10255,23 +10255,28 @@ function AgentsPanel({token}){
   const [expandedOp,setExpandedOp]=useState(null);
   const [depositItems,setDepositItems]=useState([]);
   const [repackReqs,setRepackReqs]=useState([]);
+  const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set()); // códigos FL con "Extraer bultos con IA" ya aplicado
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const [collapsedAgents,setCollapsedAgents]=useState(()=>new Set()); // grupos de agente colapsados en depósito
   const [flightProgress,setFlightProgress]=useState(null); // overlay de progreso de createFlight {label,current,total}
   const load=async()=>{setLo(true);
     // Ola 1: lo liviano + lo que define qué ops nos importan (depósito y vuelos).
-    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos]=await Promise.all([
+    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos,notasExtr]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,channel,ri_argencargo_collects_taxes,budget_total,budget_taxes,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity,flight_id))"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,channel,ri_argencargo_collects_taxes,budget_total,budget_taxes,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"}),
-      dq("operation_packages",{token,filters:"?select=*,clients(id,client_code,first_name,last_name,whatsapp)&operation_id=is.null&order=created_at.asc"})
+      dq("operation_packages",{token,filters:"?select=*,clients(id,client_code,first_name,last_name,whatsapp)&operation_id=is.null&order=created_at.asc"}),
+      // Los bultos ya quedan con flight_id al despachar, así que la marca de que se extrajo el
+      // desglose del courier es la nota que deja ExtraerBultosModal en la op.
+      dq("op_communications",{token,filters:"?content=ilike.*foto%20del%20courier%20(FL-*&select=content"}).catch(()=>[])
     ]);
+    setVuelosExtraidos(new Set((Array.isArray(notasExtr)?notasExtr:[]).map(n=>(String(n.content||"").match(/foto del courier \((FL-\d+)\)/)||[])[1]).filter(Boolean)));
     // Ola 2: bultos e items SOLO de las ops en depósito — antes bajaba el histórico completo
     // de toda la empresa en cada entrada al panel. Los bultos de un vuelo los carga el
     // FlightEditor por su cuenta al abrirlo.
@@ -11234,10 +11239,8 @@ function AgentsPanel({token}){
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
             if(f.dispatched_at&&!Number(f.total_cost_usd))warns.push({t:"COSTO",c:"#f87171",title:"Despachado sin costo del agente cargado"});
             if(f.status==="recibido"&&ops.some(fo=>Number(fo.operations?.budget_taxes||0)>0&&!Number(fo.operations?.cost_impuestos_reales)))warns.push({t:"IMP",c:"#a78bfa",title:"Hay ops con impuestos presupuestados sin cargar el costo real de aduana"});
-            // Desglose del courier subido y todavía no pasado a las ops (Extraer bultos con IA): los
-            // bultos extraídos quedan con flight_id de este vuelo.
-            const bultosExtraidos=ops.some(fo=>(fo.operations?.operation_packages||[]).some(p=>p.flight_id===f.id));
-            if(f.dispatch_photo_url&&!bultosExtraidos)warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
+            // Desglose del courier subido y todavía no pasado a las ops (Extraer bultos con IA).
+            if(f.dispatch_photo_url&&f.status!=="recibido"&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}} title={`${stepInfo.l.replace("⚡ ","")} — paso ${stepIdx+1} de 5`}>
