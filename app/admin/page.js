@@ -20124,6 +20124,18 @@ function useAdminPush(token){
   },[token]);
 }
 
+// Aviso de versión nueva: una pestaña del admin abierta sigue corriendo el código viejo aunque
+// ya se haya publicado otro deploy (08/10/2026: "no quedó hecho el redeploy" y sí estaba).
+function AvisoVersion(){
+  const [nueva,setNueva]=useState(false);
+  useEffect(()=>{let base=null,on=true;
+    const f=async()=>{try{const r=await fetch("/api/version",{cache:"no-store"});const b=await r.json();if(!on||!b?.v)return;if(base==null)base=b.v;else if(b.v!==base)setNueva(true);}catch{}};
+    f();const id=setInterval(f,90000);const vis=()=>{if(document.visibilityState==="visible")f();};document.addEventListener("visibilitychange",vis);
+    return()=>{on=false;clearInterval(id);document.removeEventListener("visibilitychange",vis);};},[]);
+  if(!nueva)return null;
+  return <button onClick={()=>window.location.reload()} style={{position:"fixed",left:"50%",bottom:22,transform:"translateX(-50%)",zIndex:3000,padding:"11px 20px",borderRadius:999,border:"1px solid rgba(232,201,155,0.6)",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0F1A2D",fontSize:13.5,fontWeight:800,cursor:"pointer",boxShadow:"0 10px 30px rgba(0,0,0,0.45)",whiteSpace:"nowrap"}}>↻ Versión nueva · Recargar</button>;
+}
+
 export default function AdminPage(){
   const [session,setSession]=useState(null);const [restoring,setRestoring]=useState(true);
   useAdminPush(session?.token);
@@ -20131,7 +20143,7 @@ export default function AdminPage(){
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
   if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
-  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminDashboard session={session} onLogout={logout}/></>;
+  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AvisoVersion/><AdminDashboard session={session} onLogout={logout}/></>;
 }
 
 
