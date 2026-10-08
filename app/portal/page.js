@@ -1101,8 +1101,15 @@ function OperationDetail({op:opProp,token,client,onBack}){
         {canAsig&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"0 0 14px",lineHeight:1.5}}>{t("op.pkgAssignDesc")}</p>}
         {!canAsig&&<div style={{marginBottom:12}}/>}
         {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("op.noPkgsYet")}</p>}
-        {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;
-          return <div style={{marginBottom:12,padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff"}}><b style={{color:"#4ade80"}}>{t("op.repackDone")}</b> Peso facturable {f2(before)} kg → <b>{f2(after)} kg</b>{delta>0&&<span style={{color:"#4ade80",marginLeft:6}}>(−{pct.toFixed(0)}%)</span>}</div>;})()}
+        {/* Reembalaje (del agente o al despachar el vuelo): solo se muestra si bajó el peso facturable. */}
+        {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;if(!(delta>0.01))return null;
+          return <div style={{marginBottom:12,padding:"12px 14px",borderRadius:12,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",color:"#fff",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:20}}>♻️</span>
+            <div style={{flex:1,minWidth:200}}>
+              <p style={{margin:0,fontSize:13.5,fontWeight:800}}><span style={{color:"#4ade80"}}>{t("op.repackDone")}</span> {t("op.repackSaved",{kg:f2(delta)})} <span style={{color:"#4ade80"}}>(−{pct.toFixed(0)}%)</span></p>
+              <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.65)"}}>{t("op.repackBilled")}: {f2(before)} kg → <b style={{color:"#fff"}}>{f2(after)} kg</b></p>
+            </div>
+          </div>;})()}
         {pkgs.length>0&&<>
           <div className="op-pk-head" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,padding:"0 12px 8px"}}>{["Bulto","Tracking","Medidas","Peso bruto",t("dep.volumetric"),"m³","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>
           {pkData.map((p,i)=>{const hot=p.vw>p.gw;const enEste=items.filter(it=>Array.isArray(it.package_ids)&&it.package_ids.includes(p.id));

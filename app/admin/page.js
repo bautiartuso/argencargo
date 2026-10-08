@@ -8543,7 +8543,20 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
       for(const [opId,fs] of Object.entries(porOp)){
         // Los bultos nuevos heredan la trazabilidad de los originales: los últimos 5 del
         // tracking de cada bulto viejo, unidos con "/" (ej. 97426/92587/85819/74902).
-        const orig=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=id,national_tracking&order=package_number.asc`});
+        const orig=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=id,national_tracking,package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm&order=package_number.asc`});
+        // Reembalaje visible para el cliente (08/10/2026): si con los bultos del courier el peso
+        // facturable baja, queda registrado como reempaque hecho (el portal muestra "antes → después"
+        // y el ahorro). Si no baja, no se dice nada. Base: lo que tenía antes de la primera extracción
+        // de este vuelo (si se vuelve a extraer, no se compara contra lo ya reemplazado).
+        const factDe=(q,gw,l,w,h)=>{const qq=Number(q||1);const v=(Number(l)||0)*(Number(w)||0)*(Number(h)||0)/5000;return Math.max((Number(gw)||0)*qq,v*qq);};
+        const tagRpk=`Reembalaje en el despacho del vuelo ${flight.flight_code}`;
+        const rpks=await dq("repack_requests",{token,filters:`?operation_id=eq.${opId}&status=in.(pending,done)&select=id,status,reason,original_billable_kg,original_pkg_count,original_packages_snapshot&order=created_at.desc`}).catch(()=>[]);
+        const rpkAuto=(Array.isArray(rpks)?rpks:[]).find(r=>r.status==="done"&&r.reason===tagRpk);
+        const rpkPend=(Array.isArray(rpks)?rpks:[]).find(r=>r.status==="pending");
+        const origArr=Array.isArray(orig)?orig:[];
+        const antesKg=rpkAuto?Number(rpkAuto.original_billable_kg||0):rpkPend&&Number(rpkPend.original_billable_kg)>0?Number(rpkPend.original_billable_kg):origArr.reduce((a2,p2)=>a2+factDe(p2.quantity,p2.gross_weight_kg,p2.length_cm,p2.width_cm,p2.height_cm),0);
+        const despuesKg=fs.reduce((a2,f2)=>a2+factDe(1,num(f2.peso),num(f2.l),num(f2.a),num(f2.h)),0);
+        const snapAntes=rpkAuto?.original_packages_snapshot||origArr.map(p2=>({package_number:p2.package_number,quantity:p2.quantity,gross_weight_kg:p2.gross_weight_kg,length_cm:p2.length_cm,width_cm:p2.width_cm,height_cm:p2.height_cm,national_tracking:p2.national_tracking}));
         const igualesIds=new Set(fs.filter(f=>f.match&&f.match.opId===opId).map(f=>f.match.pkgId));
         const cambiados=(Array.isArray(orig)?orig:[]).filter(p2=>!igualesIds.has(p2.id));
         const base=cambiados.length?cambiados:(Array.isArray(orig)?orig:[]);
@@ -8554,6 +8567,19 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
           const esIgual=f.match&&f.match.opId===opId;
           await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,flight_id:flight.id,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:esIgual?(f.match.trk||trk||null):(trk||null)},headers:{Prefer:"return=representation"}});
         }
+        try{
+          const r2=x=>Math.round(x*100)/100;
+          const snapDesp=fs.map((f2,i2)=>({package_number:i2+1,quantity:1,gross_weight_kg:num(f2.peso)||null,length_cm:num(f2.l)||null,width_cm:num(f2.a)||null,height_cm:num(f2.h)||null}));
+          if(antesKg>0&&despuesKg<antesKg-0.01){
+            const done={status:"done",new_billable_kg:r2(despuesKg),new_pkg_count:fs.length,new_packages_snapshot:snapDesp,completed_at:new Date().toISOString()};
+            if(rpkAuto)await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${rpkAuto.id}`,body:done});
+            else if(rpkPend)await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${rpkPend.id}`,body:{...done,agent_notes:tagRpk}});
+            else await dq("repack_requests",{method:"POST",token,body:{operation_id:opId,reason:tagRpk,original_billable_kg:r2(antesKg),original_pkg_count:origArr.length,original_packages_snapshot:snapAntes,...done}});
+          }else if(rpkAuto){
+            // Se volvió a extraer y ya no hay ahorro: el cartel de reempaque deja de mostrarse.
+            await dq("repack_requests",{method:"DELETE",token,filters:`?id=eq.${rpkAuto.id}`});
+          }
+        }catch(e){console.error("reembalaje",e);}
         const code=ops.find(o=>o.id===opId)?.code||"";
         const nIg=fs.filter(f=>f.match&&f.match.opId===opId).length;
         dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales${nIg?` (${nIg} sin cambios, conservan su tracking)`:""}. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
