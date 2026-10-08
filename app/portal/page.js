@@ -1103,10 +1103,18 @@ function OperationDetail({op:opProp,token,client,onBack}){
         {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("op.noPkgsYet")}</p>}
         {/* Reembalaje (del agente o al despachar el vuelo): solo se muestra si bajó el peso facturable. */}
         {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;if(!(delta>0.01))return null;
+          // Ahorro en plata: flete con los bultos de antes menos el flete actual (respeta el cambio de
+          // tramo de tarifa y el mínimo de kilos). Sin presupuesto calculable: kilos × valor por kilo.
+          let ahorroUsd=null;
+          try{
+            const snap=Array.isArray(repackInfo.original_packages_snapshot)?repackInfo.original_packages_snapshot:null;
+            if(est&&snap&&snap.length&&calcCtx){const estAntes=calcOpBudget(op,items,snap,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);const d=Number(estAntes?.flete||0)-Number(est.flete||0);if(d>0.005)ahorroUsd=d;}
+            if(ahorroUsd==null){const rate=Number(est?.fleteRate||0)||(Number(op.budget_flete||0)>0&&after>0?Number(op.budget_flete)/after:0);if(rate>0)ahorroUsd=delta*rate;}
+          }catch{ahorroUsd=null;}
           return <div style={{marginBottom:12,padding:"12px 14px",borderRadius:12,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",color:"#fff",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{fontSize:20}}>♻️</span>
             <div style={{flex:1,minWidth:200}}>
-              <p style={{margin:0,fontSize:13.5,fontWeight:800}}><span style={{color:"#4ade80"}}>{t("op.repackDone")}</span> {t("op.repackSaved",{kg:f2(delta)})} <span style={{color:"#4ade80"}}>(−{pct.toFixed(0)}%)</span></p>
+              <p style={{margin:0,fontSize:13.5,fontWeight:800}}><span style={{color:"#4ade80"}}>{t("op.repackDone")}</span> {t("op.repackSaved",{kg:f2(delta)})}{ahorroUsd>0&&<> · <span style={{color:"#4ade80"}}>USD {f2(ahorroUsd)}</span></>} <span style={{color:"rgba(74,222,128,0.8)",fontWeight:700}}>(−{pct.toFixed(0)}%)</span></p>
               <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.65)"}}>{t("op.repackBilled")}: {f2(before)} kg → <b style={{color:"#fff"}}>{f2(after)} kg</b></p>
             </div>
           </div>;})()}
