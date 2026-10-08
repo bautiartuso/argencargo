@@ -8550,7 +8550,7 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
         // de este vuelo (si se vuelve a extraer, no se compara contra lo ya reemplazado).
         const factDe=(q,gw,l,w,h)=>{const qq=Number(q||1);const v=(Number(l)||0)*(Number(w)||0)*(Number(h)||0)/5000;return Math.max((Number(gw)||0)*qq,v*qq);};
         const tagRpk=`Reembalaje en el despacho del vuelo ${flight.flight_code}`;
-        const rpks=await dq("repack_requests",{token,filters:`?operation_id=eq.${opId}&status=in.(pending,done)&select=id,status,reason,original_billable_kg,original_pkg_count,original_packages_snapshot&order=created_at.desc`}).catch(()=>[]);
+        const rpks=await dq("repack_requests",{token,filters:`?operation_id=eq.${opId}&status=in.(pending,done)&select=id,status,reason,original_billable_kg,original_pkg_count,original_packages_snapshot&order=requested_at.desc`}).catch(()=>[]);
         const rpkAuto=(Array.isArray(rpks)?rpks:[]).find(r=>r.status==="done"&&r.reason===tagRpk);
         const rpkPend=(Array.isArray(rpks)?rpks:[]).find(r=>r.status==="pending");
         const origArr=Array.isArray(orig)?orig:[];
@@ -8572,9 +8572,10 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
           const snapDesp=fs.map((f2,i2)=>({package_number:i2+1,quantity:1,gross_weight_kg:num(f2.peso)||null,length_cm:num(f2.l)||null,width_cm:num(f2.a)||null,height_cm:num(f2.h)||null}));
           if(antesKg>0&&despuesKg<antesKg-0.01){
             const done={status:"done",new_billable_kg:r2(despuesKg),new_pkg_count:fs.length,new_packages_snapshot:snapDesp,completed_at:new Date().toISOString()};
-            if(rpkAuto)await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${rpkAuto.id}`,body:done});
-            else if(rpkPend)await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${rpkPend.id}`,body:{...done,agent_notes:tagRpk}});
-            else await dq("repack_requests",{method:"POST",token,body:{operation_id:opId,reason:tagRpk,original_billable_kg:r2(antesKg),original_pkg_count:origArr.length,original_packages_snapshot:snapAntes,...done}});
+            const rr=rpkAuto?await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${rpkAuto.id}`,body:done})
+              :rpkPend?await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${rpkPend.id}`,body:{...done,agent_notes:tagRpk}})
+              :await dq("repack_requests",{method:"POST",token,body:{operation_id:opId,reason:tagRpk,original_billable_kg:r2(antesKg),original_pkg_count:origArr.length,original_packages_snapshot:snapAntes,...done}});
+            if(!Array.isArray(rr))toast(`No se pudo registrar el reembalaje de la op: ${rr?.message||"error"}`,"error");
           }else if(rpkAuto){
             // Se volvió a extraer y ya no hay ahorro: el cartel de reempaque deja de mostrarse.
             await dq("repack_requests",{method:"DELETE",token,filters:`?id=eq.${rpkAuto.id}`});
@@ -8582,7 +8583,7 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
         }catch(e){console.error("reembalaje",e);}
         const code=ops.find(o=>o.id===opId)?.code||"";
         const nIg=fs.filter(f=>f.match&&f.match.opId===opId).length;
-        dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales${nIg?` (${nIg} sin cambios, conservan su tracking)`:""}. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
+        dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): facturable ${antesKg.toLocaleString("es-AR",{maximumFractionDigits:2})} → ${despuesKg.toLocaleString("es-AR",{maximumFractionDigits:2})} kg · ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales${nIg?` (${nIg} sin cambios, conservan su tracking)`:""}. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
       }
       toast("Bultos reemplazados — revisá el presupuesto de las ops","success");
       onDone();
