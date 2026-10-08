@@ -900,7 +900,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // descuento o queda como deuda. Con AC-0324 la op cerro y los 1.648,19 que el cliente debia
     // se evaporaron de la cuenta corriente. Las ops sin presupuesto (las gratis) ya salieron
     // arriba por bt<=0, asi que esto no molesta ahi.
-    const aCobrar=bt+Number(opActual.debt_applied_usd||0)-Number(opActual.total_anticipos||0);
+    // En Gestión Integral total_anticipos ES la suma de los cobros del cliente (se sincroniza al
+    // cargar cada cobro), que ya están en `cobrado`: restarlo de nuevo inventaba un excedente
+    // (AC-0047, 08/10/2026: debía 100 y decía que pagó 5.327 de más).
+    const ant=opActual.service_type==="gestion_integral"?0:Number(opActual.total_anticipos||0);
+    const aCobrar=bt+Number(opActual.debt_applied_usd||0)-ant;
     const dif=Math.round((cobrado-aCobrar)*100)/100;
     if(dif>0.01){
       const choice=await askCobroDecision("overpay",dif);
