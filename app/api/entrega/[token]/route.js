@@ -7,6 +7,7 @@ const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 
+import { diasFeriados, queryFeriadosAr } from "../../../../lib/feriados-ar";
 const sbFetch = async (path, init = {}) => {
   const r = await fetch(`${SB_URL}/rest/v1${path}`, {
     ...init,
@@ -328,9 +329,12 @@ export async function GET(req, { params }) {
   } catch (e) { console.error("[GET entrega] tc", e.message); }
 
   const deliveryMinDay = await entregaDesdeDe([op.id]).catch(() => null);
+  const hoyArIso = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const feriadosAr = await sbFetch(`/${queryFeriadosAr(hoyArIso)}`).then((r) => [...diasFeriados(r.body)]).catch(() => []);
   return Response.json({
     tc,
     delivery_min_day: deliveryMinDay,
+    feriados_ar: feriadosAr,
     op: {
       operation_code: op.operation_code,
       description: op.description,
@@ -458,6 +462,8 @@ export async function POST(req, { params }) {
       const [y, m, d] = minDia.split("-");
       return Response.json({ error: `Esta carga se puede coordinar a partir del ${d}/${m}/${y}` }, { status: 400 });
     }
+    const fer = await sbFetch(`/${queryFeriadosAr(String(delivery_day))}`).then((r) => diasFeriados(r.body)).catch(() => new Set());
+    if (fer.has(String(delivery_day))) return Response.json({ error: "Ese día es feriado: elegí otro día" }, { status: 400 });
   }
 
   // Cargas hermanas seleccionadas para coordinar en la misma visita. Solo cuentan ids que

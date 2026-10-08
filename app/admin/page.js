@@ -9,6 +9,7 @@ import DatePicker from "../components/DatePicker";
 import CarrierLogo from "../components/CarrierLogo";
 import { TarifasAgenteResumen } from "../components/TarifasAgente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
+import { diasFeriados } from "../../lib/feriados-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
 import { CcFinancieraPanel } from "../ccfinanciera/page";
 import MailPanel from "./MailPanel";
@@ -5732,6 +5733,9 @@ function EntregasPanel({token,onOpenOp,vista}){
   const [coordinarModal,setCoordinarModal]=useState(null); // op a coordinar a mano
   const [hechas,setHechas]=useState([]); // historial reciente: entregadas y cobradas
   // Sábado o domingo: arranca en el lunes siguiente (que es el primer día de los chips).
+  // Feriados de Argentina (Ajustes → Feriados): la agenda no los ofrece (08/10/2026).
+  const [feriadosAr,setFeriadosAr]=useState(()=>new Set());
+  useEffect(()=>{dq("holidays_calendar",{token,filters:`?country=eq.argentina&end_date=gte.${hoyAR()}&select=start_date,end_date`}).then(r=>setFeriadosAr(diasFeriados(r))).catch(()=>{});},[token]);
   const [diaAgenda,setDiaAgenda]=useState(()=>{const d=new Date(hoyAR()+"T12:00:00");while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;});
   const usd=v=>sinMontos?"—":`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -6288,7 +6292,7 @@ function EntregasPanel({token,onOpenOp,vista}){
   // Chips de días de la agenda (van en la fila del título): próximos 6 hábiles + los que tengan entregas.
   const diasChips=(()=>{
     const conFecha=rows.filter(o=>!o.delivery_completed_at&&o.delivery_confirmed_at&&o.delivery_day);
-    const dias=[];{const d=new Date();while(dias.length<6){const dow=d.getDay();if(dow>=1&&dow<=5){dias.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);}d.setDate(d.getDate()+1);}}
+    const dias=[];{const d=new Date();while(dias.length<6){const dow=d.getDay();const isoD=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;if(dow>=1&&dow<=5&&!feriadosAr.has(isoD)){dias.push(isoD);}d.setDate(d.getDate()+1);}}
     conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});dias.sort();
     const hoyIso=hoyAR();
     return dias.map(iso=>{const d=new Date(iso+"T12:00:00");const top=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][d.getDay()];const sub=`${iso===hoyIso?"Hoy · ":""}${d.getDate()}/${d.getMonth()+1}`;const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;
@@ -6318,7 +6322,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       const carriers=confirmadas.filter(o=>o.delivery_choice==="carrier");
       const dias=[];{
         const d=new Date();
-        while(dias.length<6){const dow=d.getDay();if(dow>=1&&dow<=5){dias.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);}d.setDate(d.getDate()+1);}
+        while(dias.length<6){const dow=d.getDay();const isoD=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;if(dow>=1&&dow<=5&&!feriadosAr.has(isoD)){dias.push(isoD);}d.setDate(d.getDate()+1);}
       }
       conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});
       dias.sort();
@@ -7543,12 +7547,12 @@ function HolidaysCard({token}){
   const todayISO=hoyAR();
   const upcoming=holidays.filter(h=>h.end_date>=todayISO);
   const past=holidays.filter(h=>h.end_date<todayISO);
-  return <Card v2 title="Feriados" sub="China · Estados Unidos · España" actions={<Btn small variant="gold" onClick={()=>setShowForm(true)}>+ Nuevo feriado</Btn>}>
+  return <Card v2 title="Feriados" sub="China · Estados Unidos · España · Argentina" actions={<Btn small variant="gold" onClick={()=>setShowForm(true)}>+ Nuevo feriado</Btn>}>
     <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Banner preventivo en el portal cliente. Le avisa al cliente sobre feriados próximos del país de origen para que planifique sus envíos. La alerta aparece N días antes según configures.</p>
     {showForm&&<div style={{padding:"14px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10,marginBottom:14}}>
       <h4 style={{fontSize:12,fontWeight:700,color:"#60a5fa",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Nuevo feriado</h4>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-        <Sel label="País" value={form.country} onChange={v=>setForm(p=>({...p,country:v}))} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"},{value:"spain",label:"🇪🇸 España"}]} small/>
+        <Sel label="País" value={form.country} onChange={v=>setForm(p=>({...p,country:v}))} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"},{value:"spain",label:"🇪🇸 España"},{value:"argentina",label:"🇦🇷 Argentina (no se coordinan entregas)"}]} small/>
         <Inp label="Nombre" value={form.name} onChange={v=>setForm(p=>({...p,name:v}))} placeholder="Ej: Año Nuevo Chino" small/>
         <Inp label="Fecha inicio" type="date" value={form.start_date} onChange={v=>setForm(p=>({...p,start_date:v}))} small/>
         <Inp label="Fecha fin" type="date" value={form.end_date} onChange={v=>setForm(p=>({...p,end_date:v}))} small/>
@@ -7564,7 +7568,7 @@ function HolidaysCard({token}){
       {upcoming.length>0&&<>
         <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Próximos / activos ({upcoming.length})</p>
         <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
-          {upcoming.map(h=>{const flag={china:"🇨🇳",usa:"🇺🇸",spain:"🇪🇸"}[h.country]||"🌍";return <div key={h.id} style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+          {upcoming.map(h=>{const flag={china:"🇨🇳",usa:"🇺🇸",spain:"🇪🇸",argentina:"🇦🇷"}[h.country]||"🌍";return <div key={h.id} style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
             <div style={{flex:1,minWidth:0}}>
               <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 3px"}}>{flag} {h.name}</p>
               <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>{formatDate(h.start_date)} → {formatDate(h.end_date)} · alerta {h.alert_days_before}d antes</p>
@@ -7576,7 +7580,7 @@ function HolidaysCard({token}){
       {past.length>0&&<details style={{marginTop:8}}>
         <summary style={{cursor:"pointer",fontSize:11,color:"rgba(255,255,255,0.4)",fontWeight:600,letterSpacing:"0.05em"}}>Pasados ({past.length}) ▸</summary>
         <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:8}}>
-          {past.map(h=>{const flag={china:"🇨🇳",usa:"🇺🇸",spain:"🇪🇸"}[h.country]||"🌍";return <div key={h.id} style={{padding:"6px 10px",fontSize:11,color:"rgba(255,255,255,0.45)",display:"flex",justifyContent:"space-between"}}>
+          {past.map(h=>{const flag={china:"🇨🇳",usa:"🇺🇸",spain:"🇪🇸",argentina:"🇦🇷"}[h.country]||"🌍";return <div key={h.id} style={{padding:"6px 10px",fontSize:11,color:"rgba(255,255,255,0.45)",display:"flex",justifyContent:"space-between"}}>
             <span>{flag} {h.name} · {formatDate(h.start_date)}</span>
             <button onClick={()=>del(h.id)} style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.5)",cursor:"pointer",fontSize:10}}>×</button>
           </div>;})}

@@ -381,7 +381,7 @@ export default function EntregaPublica({ params }) {
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
           <OptRow selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} label="Retiro por oficina" meta={`${deliveryInfo.office_address || ""}${deliveryInfo.office_locality ? " · " + deliveryInfo.office_locality : ""}${deliveryInfo.office_hours ? " · " + deliveryInfo.office_hours : ""}`} />
-          {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" minDia={data?.delivery_min_day} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
+          {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
           {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${cotEnvio?.zone || inferredZone}`} price={precioPropio != null ? "+ " + fmt(precioPropio) : "Fuera de zona"} />}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
@@ -393,7 +393,7 @@ export default function EntregaPublica({ params }) {
               <input value={dirTel} onChange={e => setDirTel(e.target.value)} placeholder="Teléfono de contacto" inputMode="tel" style={contactInputStyle()} />
             </div>
             <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos los datos registrados en tu cuenta — editá lo que necesites.</p>
-            <DiaFranja modo="propio" minDia={data?.delivery_min_day} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
+            <DiaFranja modo="propio" minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
 
@@ -542,7 +542,8 @@ export default function EntregaPublica({ params }) {
 
 // Selector de día (próximos 5 días hábiles) + franja horaria. Las franjas dependen del modo:
 // oficina cada 2 hs (10-18), fletero propio cada 3 hs (10-19).
-function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia }) {
+function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia, feriados }) {
+  const fer = new Set(Array.isArray(feriados) ? feriados : []);
   const franjas = modo === "oficina"
     ? ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"]
     : ["10:00 a 13:00", "13:00 a 16:00", "16:00 a 19:00"];
@@ -560,8 +561,9 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia }) {
   if (desde && desde > d) { d.setFullYear(desde.getFullYear(), desde.getMonth(), desde.getDate()); }
   while (dias.length < 5) {
     const dow = d.getDay();
-    if (dow >= 1 && dow <= 5) {
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const isoD = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (dow >= 1 && dow <= 5 && !fer.has(isoD)) {
+      const iso = isoD;
       const esHoy = new Date().toDateString() === d.toDateString();
       const nombre = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"][dow];
       // "Hoy" se deshabilita si ya no queda ninguna franja disponible.

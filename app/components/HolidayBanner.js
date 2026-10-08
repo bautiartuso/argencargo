@@ -43,7 +43,7 @@ export default function HolidayBanner() {
     (async () => {
       const todayISO = hoyAR();
       try {
-        const r = await fetch(`${SB_URL}/rest/v1/holidays_calendar?end_date=gte.${todayISO}&order=start_date.asc`, {
+        const r = await fetch(`${SB_URL}/rest/v1/holidays_calendar?end_date=gte.${todayISO}&country=neq.argentina&order=start_date.asc`, {
           headers: { apikey: SB_KEY },
         });
         if (!r.ok) return;

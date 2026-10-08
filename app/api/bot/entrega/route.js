@@ -52,6 +52,7 @@ const FRANJAS = {
 };
 const METODOS = ["efectivo", "transferencia", "crypto"];
 
+import { diasFeriados, queryFeriadosAr } from "../../../../lib/feriados-ar";
 async function sb(path, opts = {}) {
   const r = await fetch(`${SB_URL}/rest/v1${path}`, {
     ...opts,
@@ -333,6 +334,8 @@ export async function POST(req) {
     // Excepción por contenedor (maritime_containers.entrega_desde): no se coordina antes de esa fecha.
     const cont = await sb(`/maritime_shipments?operation_id=eq.${op.id}&select=maritime_containers(entrega_desde)`);
     const minDia = (Array.isArray(cont.body) ? cont.body : []).map((x) => x.maritime_containers?.entrega_desde).filter(Boolean).sort().pop();
+    const fer = await sb(`/${queryFeriadosAr(dia)}`).then((r) => diasFeriados(r.body)).catch(() => new Set());
+    if (fer.has(dia)) return Response.json({ error: `El ${dia.split("-").reverse().join("/")} es feriado: ofrecé otro día hábil` }, { status: 400 });
     if (minDia && dia < minDia) return Response.json({ error: `${op.operation_code} se puede coordinar a partir del ${minDia.split("-").reverse().join("/")} — ofrecé ese día o posteriores` }, { status: 400 });
     patch.delivery_day = dia;
     patch.delivery_slot = franja;
