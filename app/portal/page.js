@@ -1522,6 +1522,10 @@ function CalculatorPage({token,client,preset}){
     const ncm=(p.ncm?.ncm_code||"").replace(/[^0-9]/g,"");
     const chapter=ncm.slice(0,2);
     if(RESTRICTED_CHAPTERS.has(chapter))return true;
+    // Con NCM asignada manda el capítulo: las palabras clave son solo para productos sin NCM.
+    // (09/10/2026: "guantes de box", NCM 9506 = deporte, caía como ropa por "guantes" y se
+    // escondía el LCL aunque era la opción más barata.)
+    if(ncm.length>=6)return false;
     const d=(p.description||"").toLowerCase();
     return RESTRICTED_KEYWORDS.test(d);
   });
