@@ -61,14 +61,14 @@ export async function POST(request) {
   // 1) Sale de MyBox
   const r1 = await mb(`/rest/v1/cc_financiera_movements`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({
     date, type: "egreso", currency, amount, commission_pct: 0, commission_amount: 0, net_amount: amount,
-    description: `🔁 Pase a Argencargo${sufijo}`, auto_generated: true,
+    description: `A CC Argencargo${sufijo}`, auto_generated: true,
   }) });
   const d1 = await r1.json().catch(() => null);
   if (!r1.ok || !Array.isArray(d1) || !d1[0]?.id) return Response.json({ error: `No se pudo registrar en MyBox: ${d1?.message || r1.status}` }, { status: 500 });
   // 2) Entra a Argencargo
   const r2 = await ac(`/rest/v1/cc_solfin_movements`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({
     date, type: "ingreso", currency, amount, net_amount: amount,
-    description: `🔁 Traído de MyBox${sufijo}`, auto_generated: true,
+    description: `De CC MyBox${sufijo}`, auto_generated: true,
   }) });
   const d2 = await r2.json().catch(() => null);
   if (!r2.ok || !Array.isArray(d2)) {
