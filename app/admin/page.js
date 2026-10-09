@@ -10219,6 +10219,119 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
   </div>;
 }
 
+// ── Reclamos de depósito (09/10/2026) ───────────────────────────────────────
+// Paquetes que el cliente dice que llegaron al depósito y el agente no registró. Se carga
+// tracking + cliente; el agente lo ve en su panel ("Llegó" / "No lo encuentro") y, si registra
+// ese tracking por el camino normal, el cliente queda asignado solo y el reclamo se cierra.
+const normTrkA=(x)=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+const trkCoincideA=(a,b)=>{a=normTrkA(a);b=normTrkA(b);if(!a||!b)return false;if(a===b)return true;return Math.min(a.length,b.length)>=8&&(a.endsWith(b)||b.endsWith(a));};
+function ReclamosDeposito({token,onCount}){
+  const [clientes,setClientes]=useState([]);
+  const [lista,setLista]=useState(null);
+  const [donde,setDonde]=useState({}); // claimId → {t,c} dónde aparece ese tracking hoy
+  const [cliId,setCliId]=useState("");const [busca,setBusca]=useState("");const [abierto,setAbierto]=useState(false);
+  const [trks,setTrks]=useState("");const [origen,setOrigen]=useState("China");const [nota,setNota]=useState("");
+  const [guardando,setGuardando]=useState(false);
+  const cli=clientes.find(c=>c.id===cliId);
+  // Busca el tracking en los bultos registrados (depósito/ops) y en huérfanos.
+  const buscarRegistros=async(trackings)=>{
+    const sufijos=[...new Set(trackings.map(x=>normTrkA(x).slice(-8)).filter(x=>x.length>=6))];
+    if(!sufijos.length)return {pk:[],hu:[]};
+    const or=`(${sufijos.map(x=>`national_tracking.ilike.*${x}*`).join(",")})`;
+    const [pk,hu]=await Promise.all([
+      dq("operation_packages",{token,filters:`?or=${encodeURIComponent(or)}&select=id,national_tracking,client_id,operation_id,clients(client_code),operations(operation_code,client_id,clients(client_code))&limit=200`}),
+      dq("unassigned_packages",{token,filters:`?or=${encodeURIComponent(or)}&select=id,national_tracking&limit=200`}),
+    ]);
+    return {pk:Array.isArray(pk)?pk:[],hu:Array.isArray(hu)?hu:[]};
+  };
+  const cargar=async()=>{
+    const desde=new Date(Date.now()-15*864e5).toISOString();
+    const r=await dq("deposit_claims",{token,filters:`?or=(status.in.(pendiente,no_encontrado),created_at.gte.${desde})&select=*,clients(client_code,first_name,last_name)&order=created_at.desc`});
+    if(!Array.isArray(r)){setLista([]);return;}
+    const abiertos=r.filter(c=>c.status==="pendiente"||c.status==="no_encontrado");
+    const {pk,hu}=await buscarRegistros(abiertos.map(c=>c.tracking));
+    const d={};const cerrar=[];
+    abiertos.forEach(c=>{
+      const p=pk.find(x=>trkCoincideA(x.national_tracking,c.tracking)||String(x.national_tracking||"").split(/[\s,;/]+/).some(y=>trkCoincideA(y,c.tracking)));
+      if(p){const duenio=p.client_id||p.operations?.client_id;const code=p.clients?.client_code||p.operations?.clients?.client_code||"";
+        if(duenio===c.client_id)cerrar.push(c.id);
+        else d[c.id]={t:`⚠ Registrado a ${code||"otro cliente"}${p.operations?.operation_code?` · ${p.operations.operation_code}`:""}`,c:"#f87171"};return;}
+      if(hu.some(x=>String(x.national_tracking||"").split(/[\s,;/]+/).some(y=>trkCoincideA(y,c.tracking))))d[c.id]={t:"⚠ Está en Huérfanos",c:"#fbbf24"};
+    });
+    // Ya estaba registrado a nombre del mismo cliente: el reclamo se cierra solo.
+    if(cerrar.length)await dq("deposit_claims",{method:"PATCH",token,filters:`?id=in.(${cerrar.join(",")})`,body:{status:"recibido",resolved_at:new Date().toISOString()}});
+    const final=r.map(c=>cerrar.includes(c.id)?{...c,status:"recibido",resolved_at:new Date().toISOString()}:c);
+    setDonde(d);setLista(final);
+    onCount?.(final.filter(c=>c.status==="pendiente"||c.status==="no_encontrado").length);
+  };
+  useEffect(()=>{cargar();dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"}).then(r=>setClientes(Array.isArray(r)?r:[]));},[]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reclamar=async()=>{
+    const lista2=[...new Set(trks.split(/[\n,;]+|\s{2,}|\t/).map(x=>x.trim()).filter(Boolean))];
+    if(!cliId){toast("Elegí el cliente","error");return;}
+    if(!lista2.length){toast("Pegá al menos un tracking","error");return;}
+    setGuardando(true);
+    try{
+      const abiertos=(lista||[]).filter(c=>c.status==="pendiente"||c.status==="no_encontrado");
+      const nuevos=lista2.filter(x=>!abiertos.some(c=>trkCoincideA(c.tracking,x)));
+      const rep=lista2.length-nuevos.length;
+      if(nuevos.length){const r=await dq("deposit_claims",{method:"POST",token,body:nuevos.map(x=>({tracking:x,client_id:cliId,origin:origen,note:nota.trim()||null})),headers:{Prefer:"return=representation"}});
+        if(!Array.isArray(r)){toast(`No se pudo guardar: ${r?.message||"error"}`,"error");setGuardando(false);return;}}
+      toast(`${nuevos.length} ${nuevos.length===1?"reclamo cargado":"reclamos cargados"}${rep?` · ${rep} ya ${rep===1?"estaba":"estaban"} reclamado${rep===1?"":"s"}`:""}`,"success");
+      setTrks("");setNota("");await cargar();
+    }finally{setGuardando(false);}
+  };
+  const cambiar=async(c,body)=>{await dq("deposit_claims",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});cargar();};
+  const filtrados=(busca.trim()?clientes.filter(c=>{const q=busca.toLowerCase();return c.client_code?.toLowerCase().includes(q)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q);}):clientes).slice(0,40);
+  const inp={width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"};
+  const lbl={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6};
+  const dias=(d)=>{const n=Math.floor((Date.now()-new Date(d).getTime())/864e5);return n<1?"hoy":`${n} d`;};
+  const grupo=(titulo,color,items,acciones)=>items.length>0&&<div style={{marginTop:18}}>
+    <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.07em"}}>{titulo} · {items.length}</p>
+    <div style={{borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.025)",overflow:"hidden"}}>
+      {items.map((c,i)=>{const dd=donde[c.id];const n=Math.floor((Date.now()-new Date(c.created_at).getTime())/864e5);return <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"11px 14px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
+        <div style={{flex:"1 1 280px",minWidth:0}}>
+          <p style={{margin:0,fontSize:14,fontWeight:800,fontFamily:"monospace",color:"#fff",wordBreak:"break-all"}}>{c.tracking}</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.clients?.client_code||"—"}</b> {[c.clients?.first_name,c.clients?.last_name].filter(Boolean).join(" ")} · {c.origin==="USA"?"🇺🇸":"🇨🇳"} · <span style={{color:c.status==="pendiente"&&n>=3?"#f87171":"inherit",fontWeight:c.status==="pendiente"&&n>=3?800:400}}>{dias(c.created_at)}</span>{c.note?` · ${c.note}`:""}</p>
+          {dd&&<p style={{margin:"4px 0 0",fontSize:12,fontWeight:800,color:dd.c}}>{dd.t}</p>}
+        </div>
+        {acciones(c)}
+      </div>;})}
+    </div>
+  </div>;
+  const bt=(txt,on,prim)=><button onClick={on} style={{padding:"7px 13px",fontSize:12,fontWeight:800,borderRadius:9,border:prim?"1px solid rgba(232,201,155,0.6)":"1px solid rgba(255,255,255,0.15)",background:prim?"rgba(184,149,106,0.15)":"transparent",color:prim?"#E8C99B":"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+  const L=lista||[];
+  return <div>
+    <div style={{padding:"16px 18px",borderRadius:14,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1.3fr)",gap:14}} className="rc-form">
+      <style>{`@media(max-width:760px){.rc-form{grid-template-columns:1fr!important}}`}</style>
+      <div style={{position:"relative"}}>
+        <span style={lbl}>Cliente</span>
+        <button type="button" onClick={()=>setAbierto(v=>!v)} style={{...inp,textAlign:"left",cursor:"pointer",display:"flex",justifyContent:"space-between",color:cli?"#fff":"rgba(255,255,255,0.4)"}}><span>{cli?`${cli.client_code} · ${cli.first_name||""} ${cli.last_name||""}`:"Elegí el cliente"}</span><span>{abierto?"▲":"▼"}</span></button>
+        {abierto&&<><div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:40}}/><div style={{position:"absolute",left:0,right:0,top:"100%",marginTop:6,zIndex:41,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.5)",overflow:"hidden"}}>
+          <div style={{padding:8}}><input autoFocus value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código o nombre" style={{...inp,padding:"9px 12px",fontSize:13}}/></div>
+          <div style={{maxHeight:260,overflowY:"auto"}}>{filtrados.map(c=><button key={c.id} type="button" onClick={()=>{setCliId(c.id);setAbierto(false);setBusca("");}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",border:"none",background:c.id===cliId?"rgba(184,149,106,0.18)":"transparent",color:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.client_code}</b> <span style={{color:"rgba(255,255,255,0.6)"}}>{c.first_name} {c.last_name}</span></button>)}</div>
+        </div></>}
+        <span style={{...lbl,marginTop:12}}>Depósito</span>
+        <div style={{display:"flex",gap:6}}>{[["China","🇨🇳 China"],["USA","🇺🇸 USA"]].map(([v,l])=><button key={v} type="button" onClick={()=>setOrigen(v)} style={{flex:1,padding:"9px 0",fontSize:13,fontWeight:800,borderRadius:10,border:origen===v?"1px solid rgba(232,201,155,0.7)":"1px solid rgba(255,255,255,0.12)",background:origen===v?"rgba(184,149,106,0.18)":"transparent",color:origen===v?"#E8C99B":"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}</div>
+      </div>
+      <div>
+        <span style={lbl}>Tracking (uno por línea)</span>
+        <textarea value={trks} onChange={e=>setTrks(e.target.value)} rows={3} placeholder="YT7700112233" style={{...inp,fontFamily:"monospace",resize:"vertical",minHeight:84}}/>
+        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+          <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Nota para el agente (opcional)" style={{...inp,flex:"1 1 220px",width:"auto"}}/>
+          <button onClick={reclamar} disabled={guardando} style={{padding:"11px 20px",fontSize:13.5,fontWeight:800,borderRadius:10,border:"1px solid rgba(184,149,106,0.6)",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0A1628",cursor:guardando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{guardando?"Guardando…":"📦 Reclamar"}</button>
+        </div>
+      </div>
+    </div>
+    {lista===null?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"2rem 0"}}>Cargando…</p>
+    :L.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2.5rem 0"}}>No hay reclamos</p>
+    :<>
+      {grupo("No lo encuentran","#f87171",L.filter(c=>c.status==="no_encontrado"),c=><div style={{display:"flex",gap:6}}>{bt("↻ Volver a pedir",()=>cambiar(c,{status:"pendiente",resolved_at:null,resolved_by:null}),true)}{bt("Cancelar",()=>cambiar(c,{status:"cancelado",resolved_at:new Date().toISOString()}))}</div>)}
+      {grupo("Esperando al agente","#fbbf24",L.filter(c=>c.status==="pendiente"),c=>bt("Cancelar",()=>cambiar(c,{status:"cancelado",resolved_at:new Date().toISOString()})))}
+      {grupo("Resueltos · últimos 15 días","#4ade80",L.filter(c=>c.status==="recibido"||c.status==="cancelado"),c=><span style={{fontSize:12,fontWeight:800,color:c.status==="recibido"?"#4ade80":"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{c.status==="recibido"?"✓ Registrado":"Cancelado"}{c.resolved_at?` · ${new Date(c.resolved_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:""}</span>)}
+    </>}
+  </div>;
+}
+
 function AgentsPanel({token}){
   // Persistimos también la sub-tab (depósito/vuelos/cc agentes/...) y el vuelo seleccionado
   // para que al recargar dentro del panel de agentes volvamos al mismo subview.
@@ -10255,14 +10368,15 @@ function AgentsPanel({token}){
   const [expandedOp,setExpandedOp]=useState(null);
   const [depositItems,setDepositItems]=useState([]);
   const [repackReqs,setRepackReqs]=useState([]);
-  const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set()); // códigos FL con "Extraer bultos con IA" ya aplicado
+  const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set());
+  const [reclamosN,setReclamosN]=useState(0); // reclamos de depósito abiertos (badge de la solapa) // códigos FL con "Extraer bultos con IA" ya aplicado
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const [collapsedAgents,setCollapsedAgents]=useState(()=>new Set()); // grupos de agente colapsados en depósito
   const [flightProgress,setFlightProgress]=useState(null); // overlay de progreso de createFlight {label,current,total}
   const load=async()=>{setLo(true);
     // Ola 1: lo liviano + lo que define qué ops nos importan (depósito y vuelos).
-    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos,notasExtr]=await Promise.all([
+    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos,notasExtr,recl]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
@@ -10274,8 +10388,10 @@ function AgentsPanel({token}){
       dq("operation_packages",{token,filters:"?select=*,clients(id,client_code,first_name,last_name,whatsapp)&operation_id=is.null&order=created_at.asc"}),
       // Los bultos ya quedan con flight_id al despachar, así que la marca de que se extrajo el
       // desglose del courier es la nota que deja ExtraerBultosModal en la op.
-      dq("op_communications",{token,filters:"?content=ilike.*foto%20del%20courier%20(FL-*&select=content"}).catch(()=>[])
+      dq("op_communications",{token,filters:"?content=ilike.*foto%20del%20courier%20(FL-*&select=content"}).catch(()=>[]),
+      dq("deposit_claims",{token,filters:"?status=in.(pendiente,no_encontrado)&select=id"}).catch(()=>[])
     ]);
+    setReclamosN(Array.isArray(recl)?recl.length:0);
     setVuelosExtraidos(new Set((Array.isArray(notasExtr)?notasExtr:[]).map(n=>(String(n.content||"").match(/foto del courier \((FL-\d+)\)/)||[])[1]).filter(Boolean)));
     // Ola 2: bultos e items SOLO de las ops en depósito — antes bajaba el histórico completo
     // de toda la empresa en cada entrada al panel. Los bultos de un vuelo los carga el
@@ -10827,7 +10943,7 @@ function AgentsPanel({token}){
         <div className="ag-izq">{izq}</div>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
-        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length},{k:"reclamos",l:"Reclamos",n:reclamosN}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
             </div>
         <div className="ag-der">{der}</div>
@@ -11321,6 +11437,7 @@ function AgentsPanel({token}){
 
     {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} finRate={finRateOf(flight.agent_id)} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
+    {tab==="reclamos"&&<ReclamosDeposito token={token} onCount={setReclamosN}/>}
     {tab==="orphans"&&<>
       {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>

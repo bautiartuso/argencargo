@@ -262,6 +262,15 @@ const I18N={
     push_android_step2:"Tocá «Instalar app» o «Agregar a pantalla principal»",
     push_android_step3:"Abrí Argencargo desde el ícono que apareció — NO desde Chrome",
     push_android_step4:"Volvé acá y se activarán las notificaciones automáticamente",
+    claim_title:"Paquetes reclamados por Argencargo",
+    claim_sub:"El cliente dice que ya llegaron. Buscalos y registralos.",
+    claim_arrived:"Llegó",
+    claim_not_found:"No lo encuentro",
+    claim_days:"días",
+    claim_today:"hoy",
+    claim_linked:"Reclamado por Argencargo",
+    claim_registered:"Paquete reclamado registrado",
+    claim_marked_nf:"Avisamos que no lo encontrás",
     repack_pending:"Reempaque pedido",
     repack_current:"Peso actual",
     repack_open:"Reempaquetar",
@@ -600,6 +609,15 @@ const I18N={
     push_android_step2:"点击「安装应用」或「添加到主屏幕」",
     push_android_step3:"从主屏幕图标打开 Argencargo（不要从 Chrome 打开）",
     push_android_step4:"回到这里，通知会自动开启",
+    claim_title:"Argencargo 追查的包裹",
+    claim_sub:"客户说这些包裹已到仓库。请找到并登记。",
+    claim_arrived:"已到",
+    claim_not_found:"找不到",
+    claim_days:"天",
+    claim_today:"今天",
+    claim_linked:"Argencargo 追查中",
+    claim_registered:"追查包裹已登记",
+    claim_marked_nf:"已通知找不到",
     repack_pending:"重新打包请求",
     repack_current:"当前重量",
     repack_open:"重新打包",
@@ -957,6 +975,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [account,setAccount]=useState([]);
   const [repackRequests,setRepackRequests]=useState([]);
   const [repackOpen,setRepackOpen]=useState(null); // operation_id activo en modal
+  const [claims,setClaims]=useState([]); // reclamos de depósito pendientes (deposit_claims)
+  const [claimReg,setClaimReg]=useState(null); // reclamo que se está registrando con "Llegó"
   const [showForm,setShowForm]=useState(false);
   const [editPkg,setEditPkg]=useState(null);
   const [flashMsg,setFlashMsg]=useState("");
@@ -974,13 +994,15 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const toggleGrp=(k)=>setGrpCerrados(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);try{localStorage.setItem("ac_agent_grp",JSON.stringify([...n]));}catch(e){}return n;});
 
   const reloadAll=async()=>{
-    const [pk,fl,fo,acc,rp]=await Promise.all([
+    const [pk,fl,fo,acc,rp,cl]=await Promise.all([
       dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,status,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*,operations(status,operation_code,eta)"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
-      dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"})
+      dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"}),
+      dq("deposit_claims",{token,filters:"?status=eq.pendiente&select=id,tracking,tracking_norm,client_id,origin,note,created_at,clients(client_code,first_name,last_name)&order=created_at.asc"}).catch(()=>[])
     ]);
+    setClaims(Array.isArray(cl)?cl:[]);
     setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);setRepackRequests(Array.isArray(rp)?rp:[]);
   };
 
@@ -1007,6 +1029,18 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   })();},[token,userId]);
 
   const reloadPackages=reloadAll;
+  const origenAgente=/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China";
+  const misReclamos=claims.filter(c=>esAdmin||!c.origin||c.origin===origenAgente);
+  const reclamoNoEncontrado=async(c)=>{
+    setClaims(p=>p.filter(x=>x.id!==c.id));
+    try{
+      await dq("deposit_claims",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{status:"no_encontrado",resolved_at:new Date().toISOString(),resolved_by:userId}});
+      const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+      const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+      if(adminId)await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:"❓ El agente no encuentra un paquete reclamado",body:`${c.clients?.client_code||""} · Tracking: ${c.tracking}`,link:null}});
+    }catch(e){console.error("reclamo",e);}
+    flash(t.claim_marked_nf||"Avisamos que no lo encontrás");
+  };
   const flash=(m)=>{setFlashMsg(m);setTimeout(()=>setFlashMsg(""),3000);const v=/error|fail/i.test(m)?"error":"success";toast(m,v);};
   // Balance: para anticipos/refunds usar amount_received_usd (lo que efectivamente recibió el agente).
   // amount_usd es el costo total para Argencargo (incluye comisión del giro), no debe afectar la CC del agente.
@@ -1177,6 +1211,24 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
       </div>)}
     </div>}
+    {/* Reclamos de depósito (09/10/2026): paquetes que el cliente dice que llegaron y no están registrados. */}
+    {misReclamos.length>0&&<div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.07)",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(251,191,36,0.25)"}}>
+        <span style={{fontSize:22}}>📦</span>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>{t.claim_title||"Paquetes reclamados por Argencargo"} <span style={{color:"var(--amber)"}}>· {misReclamos.length}</span></p>
+          <p style={{fontSize:11.5,color:"rgba(var(--ink),0.65)",margin:"2px 0 0"}}>{t.claim_sub}</p>
+        </div>
+      </div>
+      {misReclamos.map((c,i)=>{const dias=Math.floor((Date.now()-new Date(c.created_at).getTime())/864e5);return <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"11px 16px",borderTop:i?"1px solid rgba(var(--ink),0.07)":"none"}}>
+        <div style={{flex:"1 1 260px",minWidth:0}}>
+          <p style={{margin:0,fontSize:15,fontWeight:800,fontFamily:"monospace",color:"var(--tx)",wordBreak:"break-all"}}>{c.tracking}</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(var(--ink),0.6)"}}><span style={{fontFamily:"monospace",fontWeight:800,color:"var(--gold)"}}>{c.clients?.client_code||"—"}</span>{c.clients?.first_name?` · ${c.clients.first_name}`:""} · <span style={{color:dias>=3?"var(--red)":"inherit",fontWeight:dias>=3?800:400}}>{dias<1?(t.claim_today||"hoy"):`${dias} ${t.claim_days||"días"}`}</span>{c.note?<span style={{display:"block",marginTop:2,color:"rgba(var(--ink),0.75)"}}>{c.note}</span>:null}</p>
+        </div>
+        <button onClick={()=>reclamoNoEncontrado(c)} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>{t.claim_not_found||"No lo encuentro"}</button>
+        <button onClick={()=>{setClaimReg(c);setShowForm(true);window.scrollTo({top:0,behavior:"smooth"});}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",boxShadow:GOLD_GLOW}}>✓ {t.claim_arrived||"Llegó"}</button>
+      </div>;})}
+    </div>}
     {noPhotoCount>0&&!soloSinFoto&&<div className="ac-alerta" style={{marginTop:12}}>
       <span style={{fontSize:16}}>📷</span>
       <span style={{flex:1,fontSize:13,fontWeight:700}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
@@ -1185,7 +1237,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       {esAdmin&&<div style={{padding:"9px 14px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:9,margin:"12px 0 0",fontSize:12,color:"var(--gold)",fontWeight:600}}>
         {t.supervision_msg}
       </div>}
-      {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} origin={/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China"} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
+      {showForm&&<NewPackageForm key={claimReg?.id||"nuevo"} token={token} lang={lang} t={t} agentId={userId} origin={origenAgente} claim={claimReg} claims={misReclamos} onCancel={()=>{setShowForm(false);setClaimReg(null);}} onSaved={()=>{const eraReclamo=!!claimReg;setShowForm(false);setClaimReg(null);reloadPackages();flash(eraReclamo?(t.claim_registered||"Paquete reclamado registrado"):t.success);}}/>}
       <div className="ac-card" style={{background:"rgba(var(--ink),0.028)",borderRadius:16,border:"1px solid rgba(var(--ink),0.07)",overflow:"hidden",marginTop:12}}>
         <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(var(--ink),0.07)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <h3 style={{fontSize:15,fontWeight:800,margin:0,letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{t.tab_deposit} <span style={{color:"rgba(var(--ink),0.45)",fontWeight:600}}>· {depositPkgs.length}{(depositSearch||soloSinFoto)?` / ${depositPkgsAll.length}`:""} · {depositTotalKg} kg</span></h3>
@@ -2324,14 +2376,23 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
   </>;
 }
 
-function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCancel,onSaved}){
+// Reclamos de depósito: un tracking coincide si es igual sin espacios/guiones, o si uno termina
+// con el otro (a veces se carga cortado) con al menos 8 caracteres.
+const normTrk=(x)=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+const trkCoincide=(a,b)=>{a=normTrk(a);b=normTrk(b);if(!a||!b)return false;if(a===b)return true;return Math.min(a.length,b.length)>=8&&(a.endsWith(b)||b.endsWith(a));};
+
+function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=null,claims=[],onCancel,onSaved}){
   const [allClients,setAllClients]=useState([]);
   const [clientSearch,setClientSearch]=useState("");
-  const [clientId,setClientId]=useState("");// "" = no seleccionado, "unregistered" = no registrado, uuid = cliente
+  const [clientId,setClientId]=useState(claim?.client_id||"");// "" = no seleccionado, "unregistered" = no registrado, uuid = cliente
   const [showDrop,setShowDrop]=useState(false);
   const [existingOp,setExistingOp]=useState(null);
-  const [tracking,setTracking]=useState("");
+  const [tracking,setTracking]=useState(claim?.tracking||"");
   const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
+  // Reclamo que corresponde a este paquete: el elegido con "Llegó" o uno cuyo tracking coincide.
+  const reclamo=claim||(tracking.trim()?claims.find(c=>trkCoincide(c.tracking,tracking)):null)||null;
+  useEffect(()=>{if(reclamo&&(clientId===""||clientId==="unregistered"))setClientId(reclamo.client_id);},[reclamo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cerrarReclamo=async()=>{if(!reclamo||reclamo.client_id!==clientId)return;try{await dq("deposit_claims",{method:"PATCH",token,filters:`?id=eq.${reclamo.id}&status=eq.pendiente`,body:{status:"recibido",resolved_at:new Date().toISOString(),resolved_by:agentId}});}catch(e){console.error("reclamo",e);}};
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
 
@@ -2447,9 +2508,10 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
         const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
         const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
         if(adminId){
-          await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Paquete recibido en depósito`,body:`${clName} · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}`,link:null}});
+          await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:reclamo&&reclamo.client_id===clientId?`📦 Llegó un paquete reclamado`:`📦 Paquete recibido en depósito`,body:`${clName} · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}`,link:null}});
         }
       }catch(e){console.error("notif error",e);}
+      await cerrarReclamo();
       onSaved();
     } catch(e){console.error(e);setErr(t.err_generic);}
     setSaving(false);
@@ -2461,7 +2523,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
 
     <div style={{marginBottom:14,position:"relative"}}>
       <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{t.select_client}<span style={{color:"var(--red)"}}> *</span></label>
-      <button type="button" onClick={()=>setShowDrop(!showDrop)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.06)",color:selectedClient||clientId==="unregistered"?"var(--tx)":"rgba(var(--ink),0.4)",outline:"none",textAlign:"left",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <button type="button" disabled={!!claim} onClick={()=>setShowDrop(!showDrop)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.06)",color:selectedClient||clientId==="unregistered"?"var(--tx)":"rgba(var(--ink),0.4)",outline:"none",textAlign:"left",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span>{clientId==="unregistered"?`📦 ${t.unregistered_client}`:selectedClient?`${selectedClient.client_code} - ${selectedClient.first_name||""} ${selectedClient.last_name||""}`:t.select_client}</span>
         <span>{showDrop?"▲":"▼"}</span>
       </button>
@@ -2483,10 +2545,17 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",onCanc
       <p style={{fontSize:12,color:"var(--gold)",margin:0,fontWeight:600}}>ℹ {t.deposit_info}</p>
     </div>}
 
-    <div style={{display:"flex",gap:8,alignItems:"end",marginBottom:12}}>
+    {claim?<div style={{marginBottom:12}}>
+      <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{t.tracking}</label>
+      <div style={{padding:"11px 14px",fontSize:15,fontWeight:800,fontFamily:"monospace",borderRadius:10,border:"1.5px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.08)",color:"var(--tx)",wordBreak:"break-all"}}>{claim.tracking}</div>
+    </div>:<div style={{display:"flex",gap:8,alignItems:"end",marginBottom:12}}>
       <div style={{flex:1}}><Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/></div>
       <TrackingScanButton onDetected={setTracking} t={t}/>
-    </div>
+    </div>}
+    {reclamo&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.4)",marginBottom:12}}>
+      <span style={{fontSize:18}}>📦</span>
+      <span style={{fontSize:13,fontWeight:800,color:"var(--amber)"}}>{t.claim_linked||"Reclamado por Argencargo"} · <span style={{fontFamily:"monospace"}}>{reclamo.clients?.client_code||""}</span></span>
+    </div>}
     <TrackingDuplicateWarning trackingCode={tracking} excludeOpId={null} token={token} lang={lang}/>
 
 
