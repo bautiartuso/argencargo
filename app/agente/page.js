@@ -1000,7 +1000,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       dq("flight_operations",{token,filters:"?select=*,operations(status,operation_code,eta)"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"}),
-      dq("deposit_claims",{token,filters:"?status=eq.pendiente&select=id,tracking,tracking_norm,client_id,origin,note,created_at,clients(client_code,first_name,last_name)&order=created_at.asc"}).catch(()=>[])
+      dq("deposit_claims",{token,filters:"?status=eq.pendiente&select=id,tracking,tracking_norm,client_id,agent_id,origin,note,created_at,clients(client_code,first_name,last_name)&order=created_at.asc"}).catch(()=>[])
     ]);
     setClaims(Array.isArray(cl)?cl:[]);
     setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);setRepackRequests(Array.isArray(rp)?rp:[]);
@@ -1030,7 +1030,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
 
   const reloadPackages=reloadAll;
   const origenAgente=/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China";
-  const misReclamos=claims.filter(c=>esAdmin||!c.origin||c.origin===origenAgente);
+  // Cada reclamo va a un agente (agent_id); los viejos sin agente los ve cualquiera de China.
+  const misReclamos=claims.filter(c=>esAdmin||(c.agent_id?c.agent_id===userId:origenAgente==="China"));
   const reclamoNoEncontrado=async(c)=>{
     setClaims(p=>p.filter(x=>x.id!==c.id));
     try{

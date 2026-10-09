@@ -10225,12 +10225,17 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
 // ese tracking por el camino normal, el cliente queda asignado solo y el reclamo se cierra.
 const normTrkA=(x)=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 const trkCoincideA=(a,b)=>{a=normTrkA(a);b=normTrkA(b);if(!a||!b)return false;if(a===b)return true;return Math.min(a.length,b.length)>=8&&(a.endsWith(b)||b.endsWith(a));};
-function ReclamosDeposito({token,onCount}){
+function ReclamosDeposito({token,signups=[],onCount}){
   const [clientes,setClientes]=useState([]);
   const [lista,setLista]=useState(null);
   const [donde,setDonde]=useState({}); // claimId → {t,c} dónde aparece ese tracking hoy
   const [cliId,setCliId]=useState("");const [busca,setBusca]=useState("");const [abierto,setAbierto]=useState(false);
-  const [trks,setTrks]=useState("");const [origen,setOrigen]=useState("China");const [nota,setNota]=useState("");
+  const [trk,setTrk]=useState("");const [nota,setNota]=useState("");
+  // Solo depósito de China (09/10/2026): se reclama a un agente aprobado que no sea de USA.
+  const agentes=signups.filter(a=>a.status==="approved"&&a.auth_user_id&&!/estados unidos|usa|united states/i.test(String(a.country||"")));
+  const [agenteId,setAgenteId]=useState("");
+  useEffect(()=>{if(!agenteId&&agentes.length===1)setAgenteId(agentes[0].auth_user_id);},[agentes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nombreAgente=(id)=>{const a=signups.find(x=>x.auth_user_id===id);return a?`${a.first_name||""} ${a.last_name||""}`.trim()||a.email||"Agente":"";};
   const [guardando,setGuardando]=useState(false);
   const cli=clientes.find(c=>c.id===cliId);
   // Busca el tracking en los bultos registrados (depósito/ops) y en huérfanos.
@@ -10266,18 +10271,18 @@ function ReclamosDeposito({token,onCount}){
   };
   useEffect(()=>{cargar();dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"}).then(r=>setClientes(Array.isArray(r)?r:[]));},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const reclamar=async()=>{
-    const lista2=[...new Set(trks.split(/[\n,;]+|\s{2,}|\t/).map(x=>x.trim()).filter(Boolean))];
+    const x=trk.trim();
+    if(!agenteId){toast("Elegí el agente","error");return;}
     if(!cliId){toast("Elegí el cliente","error");return;}
-    if(!lista2.length){toast("Pegá al menos un tracking","error");return;}
+    if(!x){toast("Poné el tracking","error");return;}
+    const abiertos=(lista||[]).filter(c=>c.status==="pendiente"||c.status==="no_encontrado");
+    if(abiertos.some(c=>trkCoincideA(c.tracking,x))){toast("Ese tracking ya está reclamado","error");return;}
     setGuardando(true);
     try{
-      const abiertos=(lista||[]).filter(c=>c.status==="pendiente"||c.status==="no_encontrado");
-      const nuevos=lista2.filter(x=>!abiertos.some(c=>trkCoincideA(c.tracking,x)));
-      const rep=lista2.length-nuevos.length;
-      if(nuevos.length){const r=await dq("deposit_claims",{method:"POST",token,body:nuevos.map(x=>({tracking:x,client_id:cliId,origin:origen,note:nota.trim()||null})),headers:{Prefer:"return=representation"}});
-        if(!Array.isArray(r)){toast(`No se pudo guardar: ${r?.message||"error"}`,"error");setGuardando(false);return;}}
-      toast(`${nuevos.length} ${nuevos.length===1?"reclamo cargado":"reclamos cargados"}${rep?` · ${rep} ya ${rep===1?"estaba":"estaban"} reclamado${rep===1?"":"s"}`:""}`,"success");
-      setTrks("");setNota("");await cargar();
+      const r=await dq("deposit_claims",{method:"POST",token,body:{tracking:x,client_id:cliId,agent_id:agenteId,origin:"China",note:nota.trim()||null},headers:{Prefer:"return=representation"}});
+      if(!Array.isArray(r)){toast(`No se pudo guardar: ${r?.message||"error"}`,"error");return;}
+      toast("Reclamo cargado","success");
+      setTrk("");setNota("");setCliId("");await cargar();
     }finally{setGuardando(false);}
   };
   const cambiar=async(c,body)=>{await dq("deposit_claims",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});cargar();};
@@ -10291,7 +10296,7 @@ function ReclamosDeposito({token,onCount}){
       {items.map((c,i)=>{const dd=donde[c.id];const n=Math.floor((Date.now()-new Date(c.created_at).getTime())/864e5);return <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"11px 14px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
         <div style={{flex:"1 1 280px",minWidth:0}}>
           <p style={{margin:0,fontSize:14,fontWeight:800,fontFamily:"monospace",color:"#fff",wordBreak:"break-all"}}>{c.tracking}</p>
-          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.clients?.client_code||"—"}</b> {[c.clients?.first_name,c.clients?.last_name].filter(Boolean).join(" ")} · {c.origin==="USA"?"🇺🇸":"🇨🇳"} · <span style={{color:c.status==="pendiente"&&n>=3?"#f87171":"inherit",fontWeight:c.status==="pendiente"&&n>=3?800:400}}>{dias(c.created_at)}</span>{c.note?` · ${c.note}`:""}</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.clients?.client_code||"—"}</b> {[c.clients?.first_name,c.clients?.last_name].filter(Boolean).join(" ")}{c.agent_id?` · → ${nombreAgente(c.agent_id)}`:""} · <span style={{color:c.status==="pendiente"&&n>=3?"#f87171":"inherit",fontWeight:c.status==="pendiente"&&n>=3?800:400}}>{dias(c.created_at)}</span>{c.note?` · ${c.note}`:""}</p>
           {dd&&<p style={{margin:"4px 0 0",fontSize:12,fontWeight:800,color:dd.c}}>{dd.t}</p>}
         </div>
         {acciones(c)}
@@ -10310,12 +10315,13 @@ function ReclamosDeposito({token,onCount}){
           <div style={{padding:8}}><input autoFocus value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código o nombre" style={{...inp,padding:"9px 12px",fontSize:13}}/></div>
           <div style={{maxHeight:260,overflowY:"auto"}}>{filtrados.map(c=><button key={c.id} type="button" onClick={()=>{setCliId(c.id);setAbierto(false);setBusca("");}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",border:"none",background:c.id===cliId?"rgba(184,149,106,0.18)":"transparent",color:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.client_code}</b> <span style={{color:"rgba(255,255,255,0.6)"}}>{c.first_name} {c.last_name}</span></button>)}</div>
         </div></>}
-        <span style={{...lbl,marginTop:12}}>Depósito</span>
-        <div style={{display:"flex",gap:6}}>{[["China","🇨🇳 China"],["USA","🇺🇸 USA"]].map(([v,l])=><button key={v} type="button" onClick={()=>setOrigen(v)} style={{flex:1,padding:"9px 0",fontSize:13,fontWeight:800,borderRadius:10,border:origen===v?"1px solid rgba(232,201,155,0.7)":"1px solid rgba(255,255,255,0.12)",background:origen===v?"rgba(184,149,106,0.18)":"transparent",color:origen===v?"#E8C99B":"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}</div>
+        <span style={{...lbl,marginTop:12}}>Agente · 🇨🇳 China</span>
+        {agentes.length===0?<p style={{margin:0,fontSize:12.5,color:"#fbbf24"}}>No hay agentes de China aprobados</p>
+        :<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{agentes.map(a=>{const on=agenteId===a.auth_user_id;return <button key={a.auth_user_id} type="button" onClick={()=>setAgenteId(a.auth_user_id)} style={{flex:"1 1 120px",padding:"9px 12px",fontSize:13,fontWeight:800,borderRadius:10,border:on?"1px solid rgba(232,201,155,0.7)":"1px solid rgba(255,255,255,0.12)",background:on?"rgba(184,149,106,0.18)":"transparent",color:on?"#E8C99B":"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>{nombreAgente(a.auth_user_id)}</button>;})}</div>}
       </div>
       <div>
-        <span style={lbl}>Tracking (uno por línea)</span>
-        <textarea value={trks} onChange={e=>setTrks(e.target.value)} rows={3} placeholder="YT7700112233" style={{...inp,fontFamily:"monospace",resize:"vertical",minHeight:84}}/>
+        <span style={lbl}>Tracking</span>
+        <input value={trk} onChange={e=>setTrk(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")reclamar();}} placeholder="YT7700112233" style={{...inp,fontFamily:"monospace",fontSize:15}}/>
         <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
           <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Nota para el agente (opcional)" style={{...inp,flex:"1 1 220px",width:"auto"}}/>
           <button onClick={reclamar} disabled={guardando} style={{padding:"11px 20px",fontSize:13.5,fontWeight:800,borderRadius:10,border:"1px solid rgba(184,149,106,0.6)",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0A1628",cursor:guardando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{guardando?"Guardando…":"📦 Reclamar"}</button>
@@ -11437,7 +11443,7 @@ function AgentsPanel({token}){
 
     {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} finRate={finRateOf(flight.agent_id)} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
-    {tab==="reclamos"&&<ReclamosDeposito token={token} onCount={setReclamosN}/>}
+    {tab==="reclamos"&&<ReclamosDeposito token={token} signups={signups} onCount={setReclamosN}/>}
     {tab==="orphans"&&<>
       {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>

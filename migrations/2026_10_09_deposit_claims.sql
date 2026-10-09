@@ -40,3 +40,7 @@ create policy deposit_claims_agente_update on public.deposit_claims for update
   with check ((select current_user_role()) = 'agente');
 
 grant select, insert, update, delete on public.deposit_claims to authenticated;
+
+-- 09/10/2026 (segunda tanda): cada reclamo va a un agente puntual; solo depósito de China.
+alter table public.deposit_claims add column if not exists agent_id uuid;
+create index if not exists deposit_claims_agent_idx on public.deposit_claims (agent_id);
