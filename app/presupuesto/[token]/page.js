@@ -18,6 +18,20 @@ const num = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return
 const fmt = (n) => Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const usd = (n) => `USD ${fmt(n)}`;
 const fmtKg = (n) => `${fmt(n)} kg`;
+// Certificados (09/10/2026): las líneas "INAL (n certificados)" / "Seguridad eléctrica (n
+// certificado)" se muestran con un distintivo CERTIFICACIÓN · nombre.
+function EtiquetaLinea({ l }) {
+  const m = String(l || "").match(/^(.+?)\s*\((\d+)\s*certificados?\)\s*$/i);
+  if (!m) return <span>{l}</span>;
+  const n = Number(m[2]);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "#1F3B2D", color: "#E8F5E9", fontSize: 10.5, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.5 }}>✓ Certificación</span>
+      <span style={{ color: "rgba(26,26,26,0.35)" }}>·</span>
+      <span style={{ fontWeight: 700, color: "#1a1a1a" }}>{m[1]}{n > 1 ? ` ×${n}` : ""}</span>
+    </span>
+  );
+}
 const fmtCbm = (n) => `${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })} m³`;
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" }) : "";
 const dim = (v) => Number(num(v).toFixed(1)).toLocaleString("es-AR");
@@ -454,7 +468,7 @@ export default function PresupuestoPage({ params }) {
                     ].filter(Boolean)
                 ).map(([l, v], k) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
-                    <span style={{ color: "rgba(26,26,26,0.6)" }}>{l}</span><span style={{ fontWeight: 600 }}>USD {fmt(v)}</span>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}><EtiquetaLinea l={l} /></span><span style={{ fontWeight: 600 }}>USD {fmt(v)}</span>
                   </div>
                 ))}
                 {Number(elegidaFinal.shipCost || 0) > 0 && (
@@ -522,7 +536,7 @@ export default function PresupuestoPage({ params }) {
                       )}
                       {abierta && comps.length > 0 && (
                         <div className="pz-desg">
-                          {comps.map(([l, v], k) => <div key={k}><span>{l}</span><b>{v}</b></div>)}
+                          {comps.map(([l, v], k) => <div key={k}><span><EtiquetaLinea l={l} /></span><b>{v}</b></div>)}
                           {comps.length > 1 && <div className="t"><span>Total</span><b>{usd(a.totalAbonar)}</b></div>}
                           {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
                         </div>
