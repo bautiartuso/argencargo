@@ -693,7 +693,11 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   const [classifyingAll,setClassifyingAll]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const dirtyRef=useRef(false);const timerRef=useRef(null);const lastSavedRef=useRef(null);
   const ch=(i,f,v)=>{dirtyRef.current=true;setRows(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));};
-  const add=()=>setRows(p=>[...p,empty()]);const rm=i=>{dirtyRef.current=true;setRows(p=>p.filter((_,j)=>j!==i));};
+  const add=()=>setRows(p=>[...p,empty()]);
+  // Borrar el último producto vuelve al inicio (cargar a mano / leer factura) y vacía el borrador.
+  const rm=i=>{if(rows.length<=1){dirtyRef.current=false;clearTimeout(timerRef.current);setRows([empty()]);setMode(null);lastSavedRef.current="";
+      (async()=>{try{const r=await fetch("/api/portal/guardar-mercaderia",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({op_id:op.id,client_id:client?.id,items:[],vaciar:true})});if(r.ok)onSaved?.();}catch{}})();return;}
+    dirtyRef.current=true;setRows(p=>p.filter((_,j)=>j!==i));};
   const classifyOne=async(i)=>{const p=rows[i];if(!p?.description?.trim())return;
     setRows(pr=>pr.map((x,j)=>j===i?{...x,ncmLoading:true,ncmError:false}:x));
     try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description,hint:p.ncm_hint||undefined})});const d=await r.json();
@@ -748,7 +752,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
           {numIn({value:p.unit_price,onChange:v=>ch(i,"unit_price",v),placeholder:"USD c/u"})}
           {numIn({value:p.quantity,onChange:v=>ch(i,"quantity",v),placeholder:"Cant."})}
           <input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))ch(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title={t("merc.hsHint")} style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>
-          <div className="pc-tail" style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",minWidth:0}}>{ncmCell(p)}{delBtn(()=>rm(i),rows.length<=1)}</div>
+          <div className="pc-tail" style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",minWidth:0}}>{ncmCell(p)}{delBtn(()=>rm(i),false)}</div>
         </div>
         {(()=>{const est=()=>ch(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21});const n=p.ncm;
           return <div style={{padding:"0 4px 8px"}}>

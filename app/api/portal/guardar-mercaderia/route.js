@@ -98,7 +98,16 @@ export async function POST(req) {
       antidumping_note: it.antidumping_note ? String(it.antidumping_note).slice(0, 300) : null,
     }))
     .filter((it) => it.description && it.quantity > 0 && it.unit_price_usd > 0);
-  if (!items.length) return Response.json({ error: "sin_items" }, { status: 400 });
+  if (!items.length) {
+    // El cliente borró todos los productos para volver a empezar (09/10/2026): se vacía la
+    // mercadería del borrador. Nunca al confirmar.
+    if (body.vaciar === true && body.confirm !== true) {
+      await svc(`/rest/v1/operation_items?operation_id=eq.${opId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      await svc(`/rest/v1/operations?id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ description: null }) });
+      return Response.json({ ok: true, items: 0 });
+    }
+    return Response.json({ error: "sin_items" }, { status: 400 });
+  }
 
   // Reemplazo completo de la mercadería (la op está pre-vuelo, no hay nada facturado sobre estos ítems).
   await svc(`/rest/v1/operation_items?operation_id=eq.${opId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
