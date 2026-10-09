@@ -7,7 +7,7 @@ import { comprimirImagen } from "../../lib/img";
 import { hoyAR } from "../../lib/fecha-ar";
 import {
   T, fmtMoney, fmtDate, useIsMobile, enrichMovements, aplicarFiltros, calcStats,
-  BalanceCard, Filtros, MovimientosTabla, MovimientoTarjeta, Estadisticas, LogoCarrier,
+  BalanceCard, Filtros, MovimientosTabla, MovimientoTarjeta, Estadisticas, LogoCarrier, IconoDolarizar, LogoMyBox,
 } from "../../lib/cc-ui";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -584,23 +584,6 @@ function ShareModal({ token, onClose }) {
         </div>
       )}
     </Modal>
-  );
-}
-
-// Ícono de Dolarizar (09/10/2026): pesos que pasan a dólares, en verde, como los logos de
-// Courier y Cable China.
-function IconoDolarizar({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="11" fill="rgba(34,197,94,0.18)" stroke="#4ade80" strokeWidth="1.4" />
-      <path d="M12 5.5v13M15 8.2c-.6-.8-1.7-1.3-3-1.3-1.8 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.3-1.3 2.3-3.1 2.3-1.4 0-2.6-.6-3.2-1.5" stroke="#4ade80" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-// Marca de MyBox para el puente: cuadrado lima con la "m".
-function LogoMyBox({ size = 18 }) {
-  return (
-    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), background: "#D3F462", color: "#0A1628", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(size * 0.62), fontWeight: 900, lineHeight: 1, flexShrink: 0, fontFamily: "'Inter',system-ui,sans-serif" }}>m</span>
   );
 }
 
