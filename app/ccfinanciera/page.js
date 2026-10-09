@@ -138,6 +138,7 @@ function Dashboard({ token, onLogout, embebido }) {
   const [showDollarize, setShowDollarize] = useState(false);
   const [showCable, setShowCable] = useState(false);
   const [showCourier, setShowCourier] = useState(false);
+  const [showPuente, setShowPuente] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
@@ -179,7 +180,8 @@ function Dashboard({ token, onLogout, embebido }) {
           </div>
           <div style={{ display: isMobile ? "grid" : "flex", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, flexWrap: "wrap", alignItems: "center", width: isMobile ? "100%" : "auto" }}>
             <button onClick={() => setShowShare(true)} style={btnBar}>🔗 Compartir</button>
-            <button onClick={() => setShowDollarize(true)} style={btnBar}>💱 Dolarizar</button>
+            <button onClick={() => setShowDollarize(true)} style={{ ...btnBar, ...btnDolarTone }}><IconoDolarizar size={18} />Dolarizar</button>
+            <button onClick={() => setShowPuente(true)} style={{ ...btnBar, ...btnMyBoxTone }}><LogoMyBox size={18} />{isMobile ? "MyBox" : "Traer de MyBox"}</button>
             <button onClick={() => setShowCable(true)} style={{ ...btnBar, ...btnCableTone }}>🌏 Cable China</button>
             <button onClick={() => setShowCourier(true)} style={{ ...btnBar, ...btnCourierTone }}>
               <span style={{ display: "inline-flex", gap: 3 }}>{["dhl", "fedex", "ups"].map((k) => <LogoCarrier key={k} k={k} size={isMobile ? 20 : 18} />)}</span>{!isMobile && " Courier"}
@@ -223,6 +225,7 @@ function Dashboard({ token, onLogout, embebido }) {
       {showShare && <ShareModal token={token} onClose={() => setShowShare(false)} />}
       {showCourier && <CourierModal token={token} onClose={() => setShowCourier(false)} onSaved={() => { setShowCourier(false); load(); }} />}
       {showCable && <CableChinaModal token={token} onClose={() => setShowCable(false)} onSaved={() => { setShowCable(false); load(); }} />}
+      {showPuente && <TraerMyBoxModal token={token} onClose={() => setShowPuente(false)} onSaved={() => { setShowPuente(false); load(); }} />}
       {showDollarize && <DollarizeModal token={token} arsBalance={enriched.totals.ars} onClose={() => setShowDollarize(false)} onSaved={() => { setShowDollarize(false); load(); }} />}
     </div>
   );
@@ -584,11 +587,97 @@ function ShareModal({ token, onClose }) {
   );
 }
 
+// Ícono de Dolarizar (09/10/2026): pesos que pasan a dólares, en verde, como los logos de
+// Courier y Cable China.
+function IconoDolarizar({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="11" fill="rgba(34,197,94,0.18)" stroke="#4ade80" strokeWidth="1.4" />
+      <path d="M12 5.5v13M15 8.2c-.6-.8-1.7-1.3-3-1.3-1.8 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.3-1.3 2.3-3.1 2.3-1.4 0-2.6-.6-3.2-1.5" stroke="#4ade80" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+// Marca de MyBox para el puente: cuadrado lima con la "m".
+function LogoMyBox({ size = 18 }) {
+  return (
+    <span aria-hidden="true" style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), background: "#D3F462", color: "#0A1628", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(size * 0.62), fontWeight: 900, lineHeight: 1, flexShrink: 0, fontFamily: "'Inter',system-ui,sans-serif" }}>m</span>
+  );
+}
+
+// Puente con MyBox (09/10/2026): trae a esta CC una parte del saldo de la CC financiera de
+// MyBox. Queda un egreso en MyBox y un ingreso acá (lo hace /api/ccfinanciera/puente).
+function TraerMyBoxModal({ token, onClose, onSaved }) {
+  const [date, setDate] = useState(todayStr());
+  const [currency, setCurrency] = useState("ARS");
+  const [monto, setMonto] = useState("");
+  const [nota, setNota] = useState("");
+  const [saldos, setSaldos] = useState(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    fetch("/api/ccfinanciera/puente", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json()).then((d) => { if (d?.ok) setSaldos(d); else setError(d?.error === "falta_config" ? "Falta conectar MyBox: cargá MYBOX_SUPABASE_SERVICE_ROLE en Vercel." : d?.error || "No se pudo leer MyBox"); })
+      .catch(() => setError("No se pudo leer MyBox"));
+  }, [token]);
+  const m = parseMontoAr(monto);
+  const disp = saldos ? (currency === "USD" ? saldos.usd : saldos.ars) : null;
+  const save = async () => {
+    if (!(m > 0)) { toast.error("Cargá el monto"); return; }
+    setSaving(true);
+    try {
+      const r = await fetch("/api/ccfinanciera/puente", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ currency, amount: m, date, note: nota }) });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.ok) { toast.error(d?.error === "falta_config" ? "Falta conectar MyBox" : d?.error || "No se pudo traer"); setSaving(false); return; }
+      toast.success(`Traído de MyBox: ${fmtMoney(m, currency)}`);
+      onSaved();
+    } catch (e) { toast.error(e.message); setSaving(false); }
+  };
+  const seg = (on) => ({ flex: 1, height: 46, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 800, border: `1px solid ${on ? "rgba(211,244,98,0.6)" : "rgba(255,255,255,0.12)"}`, background: on ? "rgba(211,244,98,0.12)" : "rgba(255,255,255,0.03)", color: on ? "#D3F462" : T.textMuted });
+  return (
+    <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><LogoMyBox size={22} />Traer saldo de MyBox</span>} onClose={onClose}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        {[["ARS", saldos?.ars], ["USD", saldos?.usd]].map(([c, v]) => (
+          <button key={c} type="button" onClick={() => setCurrency(c)} style={{ textAlign: "left", padding: "12px 14px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", border: `1px solid ${currency === c ? "rgba(211,244,98,0.55)" : T.border}`, background: currency === c ? "rgba(211,244,98,0.08)" : "rgba(255,255,255,0.03)" }}>
+            <span style={{ display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: currency === c ? "#D3F462" : T.textMuted }}>MyBox · {c}</span>
+            <span style={{ display: "block", marginTop: 4, fontSize: 16, fontWeight: 900, color: v != null && v < 0 ? T.red : T.text, fontVariantNumeric: "tabular-nums" }}>{v == null ? (error ? "—" : "…") : fmtMoney(v, c)}</span>
+          </button>
+        ))}
+      </div>
+      {error && <p style={{ margin: "-6px 0 14px", fontSize: 12.5, color: T.amber }}>{error}</p>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || todayStr())} /></Field>
+        <Field label="Moneda">
+          <div style={{ display: "flex", gap: 6 }}>{["ARS", "USD"].map((c) => <button key={c} type="button" onClick={() => setCurrency(c)} style={seg(currency === c)}>{c}</button>)}</div>
+        </Field>
+      </div>
+      <Field label={`Monto a traer (${currency})`}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input type="text" inputMode="decimal" value={monto} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setMonto(v); }} placeholder="0,00" style={{ ...campoCable, fontWeight: 800, flex: 1 }} autoFocus />
+          {disp > 0 && <button type="button" onClick={() => setMonto(String(disp).replace(".", ","))} style={{ ...btnGhost, height: 46 }}>Todo</button>}
+        </div>
+      </Field>
+      <Field label="Nota (opcional)">
+        <input type="text" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: para el cable de la semana" style={campoCable} />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: `1px solid ${T.border}`, marginBottom: 6 }}>
+        <div><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Sale de MyBox</span><span style={{ fontSize: 15, fontWeight: 900, color: T.red, fontVariantNumeric: "tabular-nums" }}>− {fmtMoney(m, currency)}</span></div>
+        <span style={{ fontSize: 18, color: T.textMuted }}>→</span>
+        <div style={{ textAlign: "right" }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Entra a Argencargo</span><span style={{ fontSize: 15, fontWeight: 900, color: T.green, fontVariantNumeric: "tabular-nums" }}>+ {fmtMoney(m, currency)}</span></div>
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+        <button onClick={onClose} style={btnGhost}>Cancelar</button>
+        <button onClick={save} disabled={saving || !!error || !(m > 0)} style={{ ...btnMyBox, opacity: saving || error || !(m > 0) ? 0.5 : 1 }}>{saving ? "Trayendo…" : "Traer de MyBox"}</button>
+      </div>
+    </Modal>
+  );
+}
+
 // Dolarizar saldo: convierte ARS → USD al TC ingresado. Genera DOS movimientos
 // visibles en el libro (egreso ARS + ingreso USD) — también en la vista de SOLFIN.
+// Rediseño 09/10/2026: pesos que salen → dólares que entran, con "Todo el saldo".
 function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
   const [date, setDate] = useState(todayStr());
-  const [amountArs, setAmountArs] = useState(arsBalance > 0 ? String(Math.round(arsBalance * 100) / 100) : "");
+  const [amountArs, setAmountArs] = useState("");
   const [rate, setRate] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -596,6 +685,7 @@ function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
   const tc = parseMontoAr(rate);
   const usd = tc > 0 ? Math.round((ars / tc) * 100) / 100 : 0;
   const exceeds = ars > arsBalance + 0.01;
+  const listo = ars > 0 && tc > 0 && !exceeds;
 
   const save = async () => {
     if (ars <= 0) { toast.error("Cargá el importe ARS a dolarizar"); return; }
@@ -618,31 +708,35 @@ function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
       onSaved();
     } catch (e) { toast.error(e.message); setSaving(false); }
   };
+  const lblCaja = { display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" };
 
   return (
-    <Modal title="💱 Dolarizar saldo" onClose={onClose}>
-      <p style={{ fontSize: 12.5, color: T.textMuted, margin: "0 0 16px", lineHeight: 1.5 }}>
-        Convierte saldo ARS a USD al tipo de cambio que pactes con SOLFIN. Quedan dos movimientos en el libro: un egreso en pesos y un ingreso en dólares.
-      </p>
+    <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><IconoDolarizar size={24} />Dolarizar saldo</span>} onClose={onClose}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || new Date().toISOString().slice(0, 10))} /></Field>
-        <Field label="TC ARS/USD">
-          <input type="text" inputMode="decimal" value={rate} onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) setRate(v); }} placeholder="Ej: 1190" style={inputStyle} autoFocus />
+        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || todayStr())} /></Field>
+        <Field label="Tipo de cambio">
+          <input type="text" inputMode="decimal" value={rate} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setRate(v); }} placeholder="Ej: 1.190" style={{ ...campoCable, fontWeight: 800 }} autoFocus />
         </Field>
       </div>
-      <Field label={`Importe ARS a dolarizar (disponible: ${fmtMoney(arsBalance, "ARS")})`}>
-        <input type="text" inputMode="decimal" value={amountArs} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setAmountArs(v); }} placeholder="0,00" style={{ ...inputStyle, fontSize: 17, fontWeight: 700, ...(exceeds ? { border: `1px solid ${T.red}88` } : {}) }} />
-        {exceeds && <p style={{ fontSize: 11, color: T.red, margin: "6px 0 0" }}>Supera el saldo ARS disponible</p>}
-      </Field>
-      {ars > 0 && tc > 0 && (
-        <div style={{ padding: "12px 14px", background: `${T.green}10`, border: `1px solid ${T.green}40`, borderRadius: 10, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: T.textMuted }}>{fmtMoney(ars, "ARS")} ÷ {tc.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          <span style={{ fontSize: 17, fontWeight: 800, color: T.green, fontVariantNumeric: "tabular-nums" }}>= {fmtMoney(usd, "USD")}</span>
+      <div style={{ padding: "14px 16px", borderRadius: 14, background: "rgba(248,113,113,0.05)", border: `1px solid ${exceeds ? T.red + "88" : "rgba(248,113,113,0.22)"}`, marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+          <span style={{ ...lblCaja, color: "#f87171" }}>Pesos que salen</span>
+          <button type="button" onClick={() => setAmountArs(String(Math.round(arsBalance * 100) / 100).replace(".", ","))} disabled={!(arsBalance > 0)} style={{ background: "transparent", border: "none", color: T.textMuted, fontSize: 12, cursor: "pointer", padding: 0, fontFamily: "inherit" }}>Disponible <b style={{ color: T.text, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(arsBalance, "ARS")}</b> · <span style={{ color: T.gold, fontWeight: 800 }}>Todo</span></button>
         </div>
-      )}
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+        <input type="text" inputMode="decimal" value={amountArs} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setAmountArs(v); }} placeholder="0,00" style={{ width: "100%", boxSizing: "border-box", background: "transparent", border: "none", outline: "none", color: T.text, fontSize: 26, fontWeight: 900, fontFamily: "inherit", fontVariantNumeric: "tabular-nums", padding: 0 }} />
+        {exceeds && <p style={{ fontSize: 11.5, color: T.red, margin: "6px 0 0" }}>Supera el saldo en pesos disponible</p>}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", margin: "-4px 0 6px" }}>
+        <span style={{ width: 32, height: 32, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(34,197,94,0.14)", border: "1px solid rgba(34,197,94,0.45)", color: "#4ade80", fontSize: 16, fontWeight: 900 }}>↓</span>
+      </div>
+      <div style={{ padding: "14px 16px", borderRadius: 14, background: "rgba(34,197,94,0.07)", border: "1px solid rgba(34,197,94,0.35)", boxShadow: listo ? "0 0 22px rgba(34,197,94,0.12)" : "none", marginBottom: 6 }}>
+        <span style={{ ...lblCaja, color: "#4ade80", marginBottom: 6 }}>Dólares que entran</span>
+        <span style={{ display: "block", fontSize: 26, fontWeight: 900, color: listo ? "#4ade80" : T.textMuted, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(usd, "USD")}</span>
+        {ars > 0 && tc > 0 && <span style={{ display: "block", marginTop: 4, fontSize: 12, color: T.textMuted, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(ars, "ARS")} ÷ {tc.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
         <button onClick={onClose} style={btnGhost}>Cancelar</button>
-        <button onClick={save} disabled={saving || ars <= 0 || tc <= 0 || exceeds} style={{ ...btnIngreso, opacity: saving || ars <= 0 || tc <= 0 || exceeds ? 0.5 : 1 }}>{saving ? "Dolarizando…" : "💱 Dolarizar"}</button>
+        <button onClick={save} disabled={saving || !listo} style={{ ...btnDolar, opacity: saving || !listo ? 0.5 : 1 }}><IconoDolarizar size={18} />{saving ? "Dolarizando…" : "Dolarizar"}</button>
       </div>
     </Modal>
   );
@@ -686,6 +780,10 @@ const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13.5, fontWe
 const btnBar = { height: 40, minWidth: 0, overflow: "hidden", padding: "0 12px", fontSize: 13, fontWeight: 800, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: T.text, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, boxSizing: "border-box" };
 const btnCableTone = { border: "1px solid rgba(96,165,250,0.45)", background: "rgba(96,165,250,0.1)", color: "#93c5fd" };
 const btnCourierTone = { border: "1px solid rgba(232,208,152,0.35)", background: "rgba(184,149,106,0.08)", color: "#E8D098" };
+const btnDolarTone = { border: "1px solid rgba(34,197,94,0.5)", background: "rgba(34,197,94,0.1)", color: "#4ade80" };
+const btnMyBoxTone = { border: "1px solid rgba(211,244,98,0.45)", background: "rgba(211,244,98,0.08)", color: "#D3F462" };
+const btnDolar = { padding: "11px 18px", fontSize: 13.5, fontWeight: 800, borderRadius: 11, border: "1px solid rgba(34,197,94,0.6)", background: "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(22,163,74,0.12))", color: "#4ade80", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 0 18px rgba(34,197,94,0.18)" };
+const btnMyBox = { padding: "11px 18px", fontSize: 13.5, fontWeight: 900, borderRadius: 11, border: "none", background: "#D3F462", color: "#0A1628", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" };
 const btnEgresoTone = { border: "1px solid rgba(248,113,113,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171" };
 const btnIngresoTone = { border: "none", background: T.goldGrad, color: "#0A1628" };
 const btnPrimary = { padding: "10px 18px", fontSize: 13, fontWeight: 900, borderRadius: 11, border: "none", background: T.goldGrad, color: "#0A1628", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "0 6px 18px rgba(184,149,106,0.3)" };
