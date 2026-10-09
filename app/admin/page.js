@@ -5782,6 +5782,27 @@ function EntregasPanel({token,onOpenOp,vista}){
     // Si quedó saldo, pasa a "entregadas pendientes de cobro" en vez de desaparecer.
     setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:now}:r).filter(r=>r.id!==o.id||!r.is_collected));
   };
+  // Cerrar a cuenta corriente (09/10/2026): la op entregada con saldo se cierra (deja de estar
+  // abierta en el admin y en el portal) y lo que falta queda como deuda en la CC del cliente.
+  // Si el cliente tiene otra op lista para retirar con saldo, el trigger aplicar_saldo_cc le pasa
+  // la deuda a esa (regla 11/09/2026); si no, queda en la cuenta corriente.
+  const cerrarACC=async(o)=>{
+    const saldo=saldoFor(o);
+    const cli=o.clients?.client_code||"el cliente";
+    const otra=rows.find(r=>r.id!==o.id&&r.client_id===o.client_id&&!r.is_collected&&saldoFor(r)>0.005);
+    if(!await confirmDialog(`¿Cerrar ${o.operation_code} y pasar ${usd(saldo)} a la cuenta corriente de ${cli}?${otra?`\n\n${cli} tiene ${otra.operation_code} abierta con saldo: la deuda se le suma a esa.`:""}`,{confirmText:"Cerrar → cuenta corriente"}))return;
+    const ahora=new Date().toISOString();
+    const r1=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{status:"operacion_cerrada",closed_at:ahora,is_collected:true}});
+    if(!Array.isArray(r1)){toast(`No se pudo cerrar: ${r1?.message||"error"}`,"error");return;}
+    if(saldo>0.005){
+      const prev=await dq("client_account_movements",{token,filters:`?operation_id=eq.${o.id}&type=eq.debt&select=id&limit=1`});
+      const body={client_id:o.client_id,operation_id:o.id,type:"debt",amount_usd:-saldo,description:`Deuda pendiente de ${o.operation_code} (cerrada a cuenta corriente)`};
+      const r2=Array.isArray(prev)&&prev[0]?await dq("client_account_movements",{method:"PATCH",token,filters:`?id=eq.${prev[0].id}`,body}):await dq("client_account_movements",{method:"POST",token,body});
+      if(!Array.isArray(r2)){toast(`${o.operation_code} quedó cerrada pero no se cargó la deuda: revisá la cuenta corriente`,"error");}
+    }
+    setRows(p=>p.filter(r=>r.id!==o.id));
+    toast(`${o.operation_code} cerrada · ${usd(saldo)} a la cuenta corriente de ${cli}`,"success");
+  };
   const undoDelivered=async(o)=>{
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:null}});
     setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:null}:r));
@@ -6156,7 +6177,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       const acciones=contexto==="aviso"?[mb("📨 Avisar",()=>enviarAviso(o),true),mb("💬 WA",()=>waAviso(o)),mb("📋 Link",()=>copyLink(o))]
         :contexto==="esperando"?[mb("🔁 Recordar",()=>waAviso(o),true),mb("Coordinar",()=>setCoordinarModal(o)),mb("📋",()=>copyLink(o))]
         :contexto==="porentregar"?[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",()=>setCoordinarModal(o)),mb("✓ Entregar",()=>setCobroModal({op:o}),true)]
-        :contexto==="acobrar"?[mb("💬 WA",()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)),mb("↺",()=>undoDelivered(o)),mb("💰 Cobrar",()=>setCobroModal({op:o,soloCobro:true}),true)]
+        :contexto==="acobrar"?[mb("💬 WA",()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)),mb("↺",()=>undoDelivered(o)),mb("→ CC",()=>cerrarACC(o)),mb("💰 Cobrar",()=>setCobroModal({op:o,soloCobro:true}),true)]
         :[];
       const tel=dc.telefono||o.clients?.whatsapp;
       const chip=(t,c)=><span style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:6,background:`${c}22`,color:c,whiteSpace:"nowrap"}}>{t}</span>;
@@ -6231,6 +6252,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         </>}
         {contexto==="acobrar"&&<>
           <Btn small variant="secondary" onClick={()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)}>WA</Btn>
+          <Btn small variant="secondary" title="Cerrar la operación y pasar el saldo a la cuenta corriente" onClick={()=>cerrarACC(o)}>→ Cuenta corriente</Btn>
           <Btn small onClick={()=>setCobroModal({op:o,soloCobro:true})}>💰 Cobrar</Btn>
           <Btn small variant="secondary" onClick={()=>undoDelivered(o)}>↺</Btn>
         </>}
