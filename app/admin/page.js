@@ -11570,8 +11570,8 @@ function AgentsPanel({token}){
           </tr>;});
             if(flightsSubTab==="received")return shownFlights.map(filaVuelo);
             const esRIv=(f)=>flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.clients?.tax_condition==="responsable_inscripto");
-            const carrierDe=(f)=>{if(f.status==="preparando")return "listo";const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
-            const GR=[{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
+            const carrierDe=(f)=>{if(f.status==="preparando")return f.invoice_presented_at?"listo":"preparando";const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
+            const GR=[{k:"preparando",l:"🛠 Preparando",c:"#fbbf24"},{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
             const porNum=(x,y)=>String(y.flight_code||"").localeCompare(String(x.flight_code||""),undefined,{numeric:true});
             // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
             const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 1;return 2;};
