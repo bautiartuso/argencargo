@@ -120,9 +120,12 @@ export async function GET(req) {
   }
 
   if (phone) {
+    const since = url.searchParams.get("since") || "";
     const [conv, msgs] = await Promise.all([
       sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone }) }),
-      sb(`/bot_messages?phone=eq.${phone}&select=id,role,content,media_url,media_type,wamid,delivered_at,read_at,failed_at,error,created_at&order=created_at.asc&limit=500`),
+      // Con ?since= solo los mensajes nuevos (11/10/2026): el chat abierto se actualiza cada pocos
+      // segundos y antes bajaba la conversación entera cada vez (egress de Supabase).
+      sb(`/bot_messages?phone=eq.${phone}${since ? `&created_at=gt.${encodeURIComponent(since)}` : ""}&select=id,role,content,media_url,media_type,wamid,delivered_at,read_at,failed_at,error,created_at&order=created_at.asc&limit=500`),
     ]);
     const row = Array.isArray(conv.body) && conv.body[0] ? conv.body[0] : { phone, human_mode: false, last_user_at: null };
     // Marcar visto sin bloquear la respuesta.
@@ -130,11 +133,11 @@ export async function GET(req) {
     const c = rowToConv(row);
     // Facturas emitidas del cliente que todavía no se mandaron por el bot (chips en el chat).
     let facturas = [];
-    if (c.client?.id) {
+    if (c.client?.id && !since) {
       const f = await sb(`/invoices?client_id=eq.${c.client.id}&status=eq.emitida&wa_sent_at=is.null&select=id,punto_venta,numero,importe,fecha,operations(operation_code)&order=created_at.desc&limit=5`);
       facturas = (Array.isArray(f.body) ? f.body : []).map((x) => ({ id: x.id, numero: fmtNum(x.punto_venta, x.numero), importe: Number(x.importe || 0), fecha: x.fecha, op: x.operations?.operation_code || null }));
     }
-    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [], facturas_pendientes: facturas });
+    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [], ...(since ? { incremental: true } : { facturas_pendientes: facturas }) });
   }
 
   const r = await sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({}) });

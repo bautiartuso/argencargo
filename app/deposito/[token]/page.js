@@ -123,7 +123,7 @@ export default function DepositoPage({ params }) {
   useEffect(() => {
     cargar();
     const tick = () => { if (document.visibilityState === "visible") cargar(); };
-    const iv = setInterval(tick, 10000);
+    const iv = setInterval(tick, 30000);
     document.addEventListener("visibilitychange", tick);
     window.addEventListener("focus", tick);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", tick); window.removeEventListener("focus", tick); };

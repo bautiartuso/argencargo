@@ -269,7 +269,7 @@ function NotifBell({token}){
     else{setPushMsg(r.error||"No se pudo activar");}
   };
   const load=async()=>{const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});const list=Array.isArray(r)?r:[];setNotifs(list);setUnread(list.filter(n=>!n.read).length);};
-  useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
+  useEffect(()=>{load();const iv=setInterval(()=>{if(!document.hidden)load();},60000);return()=>clearInterval(iv);},[token]);
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});setNotifs(p=>p.map(n=>n.id===id?{...n,read:true}:n));setUnread(p=>Math.max(0,p-1));};
   const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);if(ids.length===0)return;await dq("notifications",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{read:true}});setNotifs(p=>p.map(n=>({...n,read:true})));setUnread(0);};
   return <div style={{position:"relative"}}><button onClick={()=>setOpen(p=>!p)} style={{background:"none",border:"none",cursor:"pointer",padding:4,position:"relative"}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{unread>0&&<span style={{position:"absolute",top:0,right:0,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unread}</span>}</button>
@@ -4679,9 +4679,17 @@ function BotPanel({token}){
   };
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/bot${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const loadList=async()=>{try{const b=await api("");setConvs(b.conversations||[]);}catch(e){console.error(e);}finally{setLo(false);}};
-  const loadThread=async(phone)=>{try{const b=await api(`?phone=${phone}`);setThread(b);setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){toast(e.message,"error");}};
-  useEffect(()=>{loadList();const id=setInterval(loadList,15000);return()=>clearInterval(id);},[token]);
-  useEffect(()=>{if(!sel)return;loadThread(sel);const id=setInterval(()=>loadThread(sel),8000);return()=>clearInterval(id);},[sel]);
+  // Chat abierto (11/10/2026, consumo de Supabase): cada 10 s con la pestaña a la vista se piden solo
+  // los mensajes nuevos (?since=); una vez por minuto se recarga entero para los ✓✓ de entregado/leído.
+  const threadRef=useRef(null);useEffect(()=>{threadRef.current=thread;},[thread]);
+  const loadThread=async(phone,incremental)=>{try{
+    const prev=threadRef.current;const ult=incremental&&prev?.phone===phone&&prev.messages?.length?prev.messages[prev.messages.length-1].created_at:null;
+    const b=await api(`?phone=${phone}${ult?`&since=${encodeURIComponent(ult)}`:""}`);
+    if(b.incremental&&prev?.phone===phone){const ids=new Set((prev.messages||[]).map(m=>m.id));setThread({...prev,...b,facturas_pendientes:prev.facturas_pendientes,messages:[...(prev.messages||[]),...(b.messages||[]).filter(m=>!ids.has(m.id))]});}
+    else setThread(b);
+    setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){if(!incremental)toast(e.message,"error");}};
+  useEffect(()=>{loadList();const id=setInterval(()=>{if(!document.hidden)loadList();},30000);return()=>clearInterval(id);},[token]);
+  useEffect(()=>{if(!sel)return;loadThread(sel);let n=0;const id=setInterval(()=>{if(document.hidden)return;n++;loadThread(sel,n%6!==0);},10000);return()=>clearInterval(id);},[sel]);
   useEffect(()=>{endRef.current?.scrollIntoView({block:"end"});},[thread?.messages?.length]);
   const send=async()=>{
     const t=txt.trim();if(!t||!sel)return;
@@ -14410,7 +14418,7 @@ function QuotesList({token}){
       const q=await dq("quotes",{token,filters:"?select=*&order=created_at.desc"}).catch(()=>null);
       if(Array.isArray(q)){setQuotes(q);setUltimaCarga(new Date());}
     };
-    const t=setInterval(()=>{if(!selQuote)refrescar();},45000);
+    const t=setInterval(()=>{if(!selQuote&&!document.hidden)refrescar();},90000);
     const onVis=()=>{if(!selQuote)refrescar();};
     if(typeof document!=="undefined")document.addEventListener("visibilitychange",onVis);
     return()=>{clearInterval(t);if(typeof document!=="undefined")document.removeEventListener("visibilitychange",onVis);};
@@ -16670,7 +16678,7 @@ function AdminDashboard({session,onLogout}){
       if(!v){mtGuardarVistos(new Set(ids));setMtNuevosNav(0);return;}
       setMtNuevosNav(ids.filter(id=>!v.has(id)).length);
     };
-    contar();const iv=setInterval(contar,60000);window.addEventListener("mt_vistos",contar);
+    contar();const iv=setInterval(()=>{if(!document.hidden)contar();},120000);window.addEventListener("mt_vistos",contar);
     return()=>{vivo=false;clearInterval(iv);window.removeEventListener("mt_vistos",contar);};
   },[token]);
   const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)):navSectionsAll;
@@ -16683,10 +16691,10 @@ function AdminDashboard({session,onLogout}){
   const [blogPend,setBlogPend]=useState(0);
   // Globo del Email: no leídos de la bandeja (se refresca cada 60 s y cuando el panel de mail avisa).
   const [mailUnread,setMailUnread]=useState(0);
-  useEffect(()=>{if(!token||isEmpleado)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/mail?accion=no_leidos",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setMailUnread(Number(b.n)||0);}catch{}};f();const id=setInterval(f,60000);const h=e=>setMailUnread(Number(e.detail)||0);window.addEventListener("ac_mail_noleidos",h);return()=>{on=false;clearInterval(id);window.removeEventListener("ac_mail_noleidos",h);};},[token]);
-  useEffect(()=>{if(!token)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/studio?view=blog_count",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setBlogPend(Number(b.pendientes)||0);}catch{}};f();const id=setInterval(f,60000);return()=>{on=false;clearInterval(id);};},[token,page]);
-  useEffect(()=>{let mounted=true;const load=async()=>{try{const r=await fetch("/api/admin/bot?count=1",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(mounted&&r.ok)setBotUnread(Number(b.unread||0));}catch{}};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
-  useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
+  useEffect(()=>{if(!token||isEmpleado)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/mail?accion=no_leidos",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setMailUnread(Number(b.n)||0);}catch{}};f();const id=setInterval(()=>{if(!document.hidden)f();},60000);const h=e=>setMailUnread(Number(e.detail)||0);window.addEventListener("ac_mail_noleidos",h);return()=>{on=false;clearInterval(id);window.removeEventListener("ac_mail_noleidos",h);};},[token]);
+  useEffect(()=>{if(!token)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/studio?view=blog_count",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setBlogPend(Number(b.pendientes)||0);}catch{}};f();const id=setInterval(()=>{if(!document.hidden)f();},300000);return()=>{on=false;clearInterval(id);};},[token,page]);
+  useEffect(()=>{let mounted=true;const load=async()=>{try{const r=await fetch("/api/admin/bot?count=1",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(mounted&&r.ok)setBotUnread(Number(b.unread||0));}catch{}};load();const iv=setInterval(()=>{if(!document.hidden)load();},60000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
+  useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(()=>{if(!document.hidden)load();},120000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   // Listener para "+ Nueva operación" desde el HOY dashboard (custom event)
   useEffect(()=>{const h=()=>{setPage("operations");setSelOp(null);setSelClient(null);setNewOp(true);};window.addEventListener("ac_new_op",h);return()=>window.removeEventListener("ac_new_op",h);},[]);
   useEffect(()=>{const h=()=>{setPage("facturas");setSelOp(null);setSelClient(null);setNewOp(false);};window.addEventListener("ac_go_facturas",h);return()=>window.removeEventListener("ac_go_facturas",h);},[]);
@@ -18578,7 +18586,7 @@ function MaritimePanel2({token,allClients=[]}){
       setShipments(sh);setPackages(pk);if(Array.isArray(ct))setContainers(ct);
     }catch(e){console.warn("[muelle] refetch",e?.message||e);} // sin red: el próximo tick lo intenta de nuevo
   };
-  useEffect(()=>{const t=setInterval(silentRefetch,60000);const v=()=>{if(!document.hidden)silentRefetch();};document.addEventListener("visibilitychange",v);return()=>{clearInterval(t);document.removeEventListener("visibilitychange",v);};},[token,plata]);
+  useEffect(()=>{const t=setInterval(()=>{if(!document.hidden)silentRefetch();},120000);const v=()=>{if(!document.hidden)silentRefetch();};document.addEventListener("visibilitychange",v);return()=>{clearInterval(t);document.removeEventListener("visibilitychange",v);};},[token,plata]);
 
   // ── Índices y helpers de plata ─────────────────────────────────────────────
   const pkgByShip=useMemo(()=>{const m={};packages.forEach(p=>{(m[p.shipment_id]=m[p.shipment_id]||[]).push(p);});return m;},[packages]);

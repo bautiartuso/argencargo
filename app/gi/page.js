@@ -173,7 +173,7 @@ function Shell({session,profile,onLogout}){
     const r=await dq("gi_quote_requests",{token,filters:"?status=in.(pending,quoting)&select=id"});
     setPendingQuotes(Array.isArray(r)?r.length:0);
   };
-  useEffect(()=>{reloadCounts();const iv=setInterval(reloadCounts,30000);return()=>clearInterval(iv);},[token]);
+  useEffect(()=>{reloadCounts();const iv=setInterval(()=>{if(!document.hidden)reloadCounts();},60000);return()=>clearInterval(iv);},[token]);
 
   const NAV=[
     {sec:"Inicio",items:[

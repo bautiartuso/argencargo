@@ -1920,7 +1920,7 @@ function NotifBell({token,t}){
     const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});
     const arr=Array.isArray(r)?r:[];setNotifs(arr);setUnread(arr.filter(n=>!n.read).length);
   };
-  useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
+  useEffect(()=>{load();const iv=setInterval(()=>{if(!document.hidden)load();},120000);return()=>clearInterval(iv);},[token]);
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});load();};
   const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);if(ids.length===0)return;await dq("notifications",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{read:true}});setNotifs(p=>p.map(n=>({...n,read:true})));setUnread(0);};
   return <div style={{position:"relative"}}>
