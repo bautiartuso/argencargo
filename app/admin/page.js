@@ -10554,6 +10554,9 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
+  // Contadores de las solapas (11/10/2026): Depósito = bultos esperando vuelo (de ops que todavía no
+  // están en un vuelo + los sueltos en el depósito de cada cliente); Vuelos = solo los que no están recibidos.
+  const bultosEnDeposito=depositOps.filter(o=>!opsInFlightIds.has(o.id)).reduce((a2,o)=>a2+opPackages(o.id).reduce((b,p)=>b+Number(p.quantity||1),0),0)+depSueltos.reduce((b,p)=>b+Number(p.quantity||1),0);
   // Exportar presupuesto en PDF (como la calculadora) para una op del depósito:
   // recalcula el budget fresco con la tarifa vigente de la op y arma el PDF de cotización.
   const [pdfBusy,setPdfBusy]=useState(null);
@@ -11054,7 +11057,7 @@ function AgentsPanel({token}){
         <div className="ag-izq">{izq}</div>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
-        {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length},{k:"reclamos",l:"Reclamos",n:reclamosN}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+        {[{k:"deposito",l:"Depósito",n:bultosEnDeposito},{k:"flights",l:"Vuelos",n:flights.filter(f=>f.status!=="recibido").length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length},{k:"reclamos",l:"Reclamos",n:reclamosN}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
             </div>
         <div className="ag-der">{der}</div>
