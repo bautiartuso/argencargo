@@ -10207,7 +10207,7 @@ function RefundForm({token,agentId,onSaved}){
   </div>;
 }
 
-function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
+function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe,volDe}){
   // Agentes (03/10/2026): son pocos, así que todo va desplegado. Por agente: datos, cuenta corriente
   // (saldo, anticipos, devoluciones y movimientos) y sus tarifas (las carga el agente desde su panel).
   const [tarifas,setTarifas]=useState(null); // {auth_user_id: tarifas}
@@ -10215,9 +10215,10 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>;
   if(signups.length===0)return <p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes.</p>;
   const orden={pending:0,approved:1,rejected:2};
-  const lista=[...signups].sort((a,b)=>(orden[a.status]??3)-(orden[b.status]??3));
+  // Mismo estado: el más antiguo primero (飞殷 arriba de VV Xiao, pedido 11/10/2026).
+  const lista=[...signups].sort((a,b)=>(orden[a.status]??3)-(orden[b.status]??3)||String(a.created_at||"").localeCompare(String(b.created_at||"")));
   const btn=(c)=>({height:34,padding:"0 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${c}55`,background:`${c}1a`,color:c,cursor:"pointer",fontFamily:"inherit"});
-  const seccion=(titulo,hijo)=><div style={{marginTop:18,paddingTop:18,borderTop:"1px solid rgba(255,255,255,0.07)"}}><p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>{titulo}</p>{hijo}</div>;
+  const seccion=(titulo,hijo,derecha)=><div style={{marginTop:18,paddingTop:18,borderTop:"1px solid rgba(255,255,255,0.07)"}}>{titulo&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",margin:"0 0 12px"}}><p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>{titulo}</p>{derecha}</div>}{hijo}</div>;
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     {lista.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};const t=tarifas?.[s.auth_user_id];const aprobado=s.status==="approved";const saldo=aprobado&&saldoDe?saldoDe(s):null;
       return <div key={s.id} style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:"20px 22px"}}>
@@ -10235,8 +10236,8 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe}){
           {s.status==="pending"&&<div style={{display:"flex",gap:8}}><button onClick={()=>approve(s)} style={btn("#22c55e")}>✓ Aprobar</button><button onClick={()=>reject(s)} style={btn("#f87171")}>✕ Rechazar</button></div>}
           {s.status==="rejected"&&<button onClick={()=>approve(s)} style={btn("#22c55e")}>Reactivar</button>}
         </div>
-        {aprobado&&ccDe&&seccion("Movimientos de la cuenta",ccDe(s))}
-        {aprobado&&seccion(<>Tarifas <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>· las carga {s.first_name||"el agente"} desde su panel</span></>,tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>)}
+        {aprobado&&ccDe&&seccion(null,ccDe(s))}
+        {aprobado&&seccion(<>Tarifas <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>· las carga {s.first_name||"el agente"} desde su panel</span></>,tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>,volDe?volDe(s):null)}
       </div>;})}
   </div>;
 }
@@ -10360,6 +10361,85 @@ function ReclamosDeposito({token,signups=[],onCount}){
   </div>;
 }
 
+// ── Huérfanos (11/10/2026): bultos que el agente registró sin cliente. Se ven separados por
+// agente y se asignan al DEPÓSITO de un cliente (no a una operación: desde el 13/09 el cliente arma
+// la importación). Se pueden tildar varios y asignarlos todos juntos.
+function HuerfanosPanel({token,unassigned,setUnassigned,signups,onFlash}){
+  const [sel,setSel]=useState(()=>new Set());
+  const [clientes,setClientes]=useState([]);const [cliId,setCliId]=useState("");const [busca,setBusca]=useState("");const [abierto,setAbierto]=useState(false);
+  const [asignando,setAsignando]=useState(false);
+  useEffect(()=>{dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"}).then(r=>setClientes(Array.isArray(r)?r:[]));},[token]);
+  const nombreAg=(id)=>{const a=signups.find(x=>x.auth_user_id===id);return a?`${a.first_name||""} ${a.last_name||""}`.trim()||a.email:"Sin agente";};
+  const grupos=[];unassigned.forEach(p=>{const k=p.registered_by_agent_id||"";let g=grupos.find(x=>x.k===k);if(!g){g={k,n:nombreAg(k),pkgs:[]};grupos.push(g);}g.pkgs.push(p);});
+  const toggle=(id)=>setSel(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+  const toggleGrupo=(g)=>setSel(s=>{const n=new Set(s);const todos=g.pkgs.every(p=>n.has(p.id));g.pkgs.forEach(p=>todos?n.delete(p.id):n.add(p.id));return n;});
+  const cli=clientes.find(c=>c.id===cliId);
+  const filtrados=(busca.trim()?clientes.filter(c=>{const q=busca.toLowerCase();return c.client_code?.toLowerCase().includes(q)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q);}):clientes).slice(0,40);
+  const elegidos=unassigned.filter(p=>sel.has(p.id));
+  const asignar=async()=>{
+    if(!cli||!elegidos.length)return;
+    if(!await confirmDialog(`¿Pasar ${elegidos.length===1?"el bulto":`los ${elegidos.length} bultos`} al depósito de ${cli.client_code} — ${cli.first_name||""} ${cli.last_name||""}?`,{confirmText:"Asignar"}))return;
+    setAsignando(true);
+    try{
+      const ult=await dq("operation_packages",{token,filters:`?client_id=eq.${cli.id}&operation_id=is.null&select=package_number&order=package_number.desc&limit=1`});
+      let num=Array.isArray(ult)&&ult[0]?Number(ult[0].package_number)||0:0;
+      const hechos=[];
+      for(const p of elegidos){
+        num++;
+        const body={client_id:cli.id,registered_by_agent_id:p.registered_by_agent_id||null,origin:p.origin||"China",package_number:num,quantity:p.quantity||1,national_tracking:p.national_tracking||null,created_at:p.created_at};
+        ["gross_weight_kg","length_cm","width_cm","height_cm","photo_url","photo_uploaded_at"].forEach(k=>{if(p[k]!=null)body[k]=p[k];});
+        const r=await dq("operation_packages",{method:"POST",token,body});
+        if(!Array.isArray(r)){toast(`No se pudo pasar ${p.national_tracking||"un bulto"}: ${r?.message||"error"}`,"error");continue;}
+        await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
+        hechos.push(p);
+        // Si ese tracking estaba reclamado para este cliente, el reclamo se cierra.
+        const norm=normTrkA(p.national_tracking);
+        if(norm.length>=6)dq("deposit_claims",{method:"PATCH",token,filters:`?client_id=eq.${cli.id}&status=in.(pendiente,no_encontrado)&tracking_norm=eq.${norm}`,body:{status:"recibido",resolved_at:new Date().toISOString()}}).catch(()=>{});
+      }
+      const ids=new Set(hechos.map(p=>p.id));
+      setUnassigned(prev=>prev.filter(x=>!ids.has(x.id)));setSel(new Set());setCliId("");
+      if(hechos.length)onFlash(`${hechos.length} ${hechos.length===1?"bulto pasó":"bultos pasaron"} al depósito de ${cli.client_code}`);
+    }finally{setAsignando(false);}
+  };
+  const borrar=async(p)=>{if(!await confirmDialog("¿Eliminar este paquete huérfano? Se borra definitivamente del registro."))return;await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});setUnassigned(prev=>prev.filter(x=>x.id!==p.id));setSel(s=>{const n=new Set(s);n.delete(p.id);return n;});};
+  const check=(on)=><span style={{width:20,height:20,borderRadius:6,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${on?"#E8C99B":"rgba(255,255,255,0.25)"}`,background:on?"linear-gradient(135deg,#B8956A,#E8C99B)":"transparent",color:"#0A1628",fontSize:13,fontWeight:900}}>{on?"✓":""}</span>;
+  const kg=(v)=>v?`${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";
+  if(unassigned.length===0)return <p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>;
+  return <div style={{display:"flex",flexDirection:"column",gap:16,paddingBottom:elegidos.length?90:0}}>
+    {grupos.map(g=>{const todos=g.pkgs.every(p=>sel.has(p.id));const kgT=g.pkgs.reduce((a,p)=>a+Number(p.gross_weight_kg||0),0);return <div key={g.k} style={{background:"rgba(255,255,255,0.028)",borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:"rgba(0,0,0,0.22)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+        <button onClick={()=>toggleGrupo(g)} title={todos?"Destildar todos":"Tildar todos"} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",display:"inline-flex"}}>{check(todos)}</button>
+        <span style={{width:34,height:34,borderRadius:10,background:"rgba(184,149,106,0.14)",border:"1px solid rgba(184,149,106,0.35)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:900,color:"#E8C99B"}}>{(g.n||"?").charAt(0)}</span>
+        <span style={{fontSize:15,fontWeight:800,color:"#fff"}}>{g.n}</span>
+        <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>{g.pkgs.length} {g.pkgs.length===1?"bulto":"bultos"} · {kg(kgT)}</span>
+      </div>
+      {g.pkgs.map(p=>{const on=sel.has(p.id);const dias=p.created_at?Math.floor((Date.now()-new Date(p.created_at).getTime())/864e5):null;return <div key={p.id} onClick={()=>toggle(p.id)} style={{display:"grid",gridTemplateColumns:"24px 48px 190px 44px 86px 110px minmax(0,1fr) 150px 84px",gap:12,alignItems:"center",padding:"10px 16px",borderTop:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:on?"rgba(184,149,106,0.08)":"transparent"}}>
+        {check(on)}
+        {p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}><img src={p.photo_url} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",display:"block"}}/></a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}
+        <span style={{fontSize:12,color:"#fff",minWidth:0}}><TrackingChips value={p.national_tracking}/></span>
+        <span style={{color:"rgba(255,255,255,0.5)",fontSize:12.5}}>#{p.package_number}</span>
+        <span style={{color:"#fff",fontSize:13,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{kg(p.gross_weight_kg)}</span>
+        <span style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>{p.length_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}</span>
+        <span style={{color:"rgba(255,255,255,0.5)",fontSize:11.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.notes||""}>{p.notes||""}</span>
+        <span style={{fontSize:11.5,color:dias>3?"#f87171":"rgba(255,255,255,0.45)",fontWeight:dias>3?800:400,whiteSpace:"nowrap"}}>{formatDate(p.created_at)}{dias!=null&&` (${dias}d)`}</span>
+        <button onClick={e=>{e.stopPropagation();borrar(p);}} style={{fontSize:11,padding:"5px 10px",borderRadius:7,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:700,justifySelf:"end"}}>✕ Eliminar</button>
+      </div>;})}
+    </div>;})}
+    {elegidos.length>0&&<div style={{position:"fixed",left:"50%",bottom:20,transform:"translateX(-50%)",zIndex:900,width:"min(760px,calc(100vw - 32px))",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"12px 14px",borderRadius:16,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.5)",boxShadow:"0 18px 50px rgba(0,0,0,0.55)"}}>
+      <span style={{fontSize:13.5,fontWeight:800,color:"#E8C99B",whiteSpace:"nowrap"}}>{elegidos.length} {elegidos.length===1?"bulto":"bultos"} · {kg(elegidos.reduce((a,p)=>a+Number(p.gross_weight_kg||0),0))}</span>
+      <div style={{position:"relative",flex:"1 1 240px"}}>
+        <button type="button" onClick={()=>setAbierto(v=>!v)} style={{width:"100%",height:40,padding:"0 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:cli?"#fff":"rgba(255,255,255,0.45)",fontSize:13.5,textAlign:"left",cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span>{cli?`${cli.client_code} · ${cli.first_name||""} ${cli.last_name||""}`:"Depósito de qué cliente…"}</span><span>{abierto?"▲":"▼"}</span></button>
+        {abierto&&<><div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:40}}/><div style={{position:"absolute",left:0,right:0,bottom:"100%",marginBottom:6,zIndex:41,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.5)",overflow:"hidden"}}>
+          <div style={{padding:8}}><input autoFocus value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código o nombre" style={{width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"}}/></div>
+          <div style={{maxHeight:260,overflowY:"auto"}}>{filtrados.map(c=><button key={c.id} type="button" onClick={()=>{setCliId(c.id);setAbierto(false);setBusca("");}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",border:"none",background:c.id===cliId?"rgba(184,149,106,0.18)":"transparent",color:"#fff",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.client_code}</b> <span style={{color:"rgba(255,255,255,0.6)"}}>{c.first_name} {c.last_name}</span></button>)}</div>
+        </div></>}
+      </div>
+      <button onClick={asignar} disabled={!cli||asignando} style={{height:40,padding:"0 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0A1628",fontSize:13.5,fontWeight:900,cursor:cli?"pointer":"not-allowed",opacity:cli?1:0.5,fontFamily:"inherit",whiteSpace:"nowrap"}}>{asignando?"Asignando…":"Asignar al depósito"}</button>
+      <button onClick={()=>setSel(new Set())} style={{height:40,padding:"0 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.65)",fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+    </div>}
+  </div>;
+}
+
 function AgentsPanel({token}){
   // Persistimos también la sub-tab (depósito/vuelos/cc agentes/...) y el vuelo seleccionado
   // para que al recargar dentro del panel de agentes volvamos al mismo subview.
@@ -10392,6 +10472,7 @@ function AgentsPanel({token}){
   },[tab,selFlight,flightsSubTab]);
   const [expandedRepack,setExpandedRepack]=useState(null); // op.id cuyo snapshot está expandido
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
+  const [movsAbiertos,setMovsAbiertos]=useState(()=>new Set()); // agentes con todos los movimientos a la vista
   const [showRefundForm,setShowRefundForm]=useState(null);
   const [expandedOp,setExpandedOp]=useState(null);
   const [depositItems,setDepositItems]=useState([]);
@@ -10911,21 +10992,25 @@ function AgentsPanel({token}){
   // timer) le pasa un array nuevo al editor y su useEffect resetea los items en edición.
   const invoiceItemsForSel=useMemo(()=>flight?invoiceItems.filter(i=>i.flight_id===flight.id):[],[invoiceItems,flight?.id]);
     // Cuenta corriente de un agente (03/10/2026): se muestra dentro de la solapa Agentes.
-    const ccDeAgente=(a)=>{const bal=agentBalance(a.auth_user_id);const movs=accMovements.filter(m=>m.agent_id===a.auth_user_id);return <div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
-          <span/>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+    // Divisor volumétrico del agente (÷5000 / ÷6000): con cuál divide el agente cm³ para calcular el
+    // peso facturable de sus bultos y vuelos. Va junto a sus tarifas (11/10/2026).
+    const volDeAgente=(a)=><div style={{display:"flex",gap:8,alignItems:"center"}}>
             <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.55)"}} title="Divisor para peso volumétrico (cm³ ÷ divisor). Estándar 5000, algunos couriers usan 6000.">
               <span>Vol ÷</span>
               <span style={{display:"inline-flex",gap:3,padding:3,borderRadius:9,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)"}}>{[5000,6000].map(v=>{const on=Number(a.volumetric_divisor||5000)===v;return <button key={v} type="button" onClick={async()=>{if(on)return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${a.id}`,body:{volumetric_divisor:v}});load();flash(`Divisor de ${a.first_name}: ${v}`);}} style={{height:28,padding:"0 10px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:on?GOLD_GRADIENT:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.6)"}}>{v}</button>;})}</span>
             </label>
+    </div>;
+    const ccDeAgente=(a)=>{const bal=agentBalance(a.auth_user_id);const movsAll=accMovements.filter(m=>m.agent_id===a.auth_user_id);const abiertos=movsAbiertos.has(a.auth_user_id);const movs=abiertos?movsAll:movsAll.slice(0,6);return <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:12,flexWrap:"wrap"}}>
+          <p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Movimientos de la cuenta <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.3)"}}>· {movsAll.length}</span></p>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <Btn small onClick={()=>{setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id);setShowRefundForm(null);}}>+ Cargar anticipo</Btn>
             <Btn small variant="secondary" onClick={()=>{setShowRefundForm(showRefundForm===a.auth_user_id?null:a.auth_user_id);setShowAnticipoForm(null);}}>↩ Devolución</Btn>
           </div>
         </div>
         {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
         {showRefundForm===a.auth_user_id&&<RefundForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowRefundForm(null);load();flash("Devolución cargada");}}/>}
-        {movs.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        {movs.length>0?<><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Fecha","Tipo","Monto","Descripción","Vuelo"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
@@ -10934,7 +11019,9 @@ function AgentsPanel({token}){
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
             <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>
-        </table>:<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,textAlign:"center",padding:"1rem 0"}}>Sin movimientos</p>}
+        </table>
+        {movsAll.length>6&&<button onClick={()=>setMovsAbiertos(p=>{const n=new Set(p);n.has(a.auth_user_id)?n.delete(a.auth_user_id):n.add(a.auth_user_id);return n;})} style={{display:"block",width:"100%",marginTop:8,padding:"9px 0",borderRadius:10,border:"1px dashed rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.6)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{abiertos?"Ver menos ▲":`Ver todos los movimientos (${movsAll.length}) ▼`}</button>}
+        </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,textAlign:"center",padding:"1rem 0"}}>Sin movimientos</p>}
 </div>;};
   const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
@@ -11466,38 +11553,10 @@ function AgentsPanel({token}){
     {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} finRate={finRateOf(flight.agent_id)} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
     {tab==="reclamos"&&<ReclamosDeposito token={token} signups={signups} onCount={setReclamosN}/>}
-    {tab==="orphans"&&<>
-      {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
-      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Foto","Tracking","Bulto","Peso","Dimensiones","Agente","Notas","Recibido","Asignar a operación",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
-          </tr></thead>
-          <tbody>{unassigned.map(p=>{
-            const recAgent=signups.find(s2=>s2.auth_user_id===p.registered_by_agent_id);
-            const daysOld=p.created_at?Math.floor((Date.now()-new Date(p.created_at).getTime())/864e5):null;
-            const stale=daysOld!=null&&daysOld>3;
-            return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"12px 14px"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:40,height:40,objectFit:"cover",borderRadius:6,border:"1px solid rgba(184,149,106,0.4)",cursor:"zoom-in"}}/></a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
-            <td style={{padding:"12px 14px",fontSize:12,color:"#fff",maxWidth:280}}><TrackingChips value={p.national_tracking}/></td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>#{p.package_number}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.length_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)",fontSize:12}}>{recAgent?`${recAgent.first_name||""} ${recAgent.last_name||""}`.trim():"—"}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.55)",fontSize:11,maxWidth:180}}>{p.notes?<span title={p.notes} style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes}</span>:"—"}</td>
-            <td style={{padding:"12px 14px",fontSize:11,color:stale?"#ef4444":"rgba(255,255,255,0.4)",fontWeight:stale?800:400,whiteSpace:"nowrap"}} title={stale?`Hace ${daysOld} días sin dueño — averiguar con el agente`:""}>{formatDate(p.created_at)}{daysOld!=null&&<span style={{marginLeft:5,fontSize:10,fontVariantNumeric:"tabular-nums"}}>({daysOld}d)</span>}</td>
-            <td style={{padding:"12px 14px"}}><select onChange={e=>assignToOp(p,e.target.value)} value="" style={{padding:"6px 10px",fontSize:11,border:"1px solid rgba(184,149,106,0.3)",borderRadius:6,background:"rgba(184,149,106,0.08)",color:"#fff",outline:"none",maxWidth:240}}>
-              <option value="" style={{background:"#142038"}}>— seleccionar —</option>
-              {allOps.map(o=><option key={o.id} value={o.id} style={{background:"#142038"}}>{o.operation_code} - {o.clients?.client_code} ({o.clients?.first_name})</option>)}
-            </select></td>
-            <td style={{padding:"12px 14px"}}><button onClick={()=>delUnassigned(p.id)} title="Eliminar definitivamente este registro" style={{fontSize:10,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:700}}>✕ Eliminar</button></td>
-          </tr>;})}</tbody>
-        </table>
-      </div>}
-    </>}
+    {tab==="orphans"&&<HuerfanosPanel token={token} unassigned={unassigned} setUnassigned={setUnassigned} signups={signups} onFlash={flash}/>}
     {/* Agentes (03/10/2026, ex Solicitudes): una tarjeta por agente con sus datos y sus tarifas por
         servicio (las carga cada agente desde su panel → Tarifas). Las solicitudes nuevas se aprueban acá. */}
-    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject} ccDe={esEmpleado()?null:ccDeAgente} saldoDe={esEmpleado()?null:(a=>agentBalance(a.auth_user_id))}/>}
+    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject} ccDe={esEmpleado()?null:ccDeAgente} saldoDe={esEmpleado()?null:(a=>agentBalance(a.auth_user_id))} volDe={volDeAgente}/>}
     {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const suelto=!movePkgState.fromOp;const fromCl=suelto?(movePkgState.pkg.clients||null):movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
