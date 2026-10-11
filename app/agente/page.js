@@ -274,6 +274,11 @@ const I18N={
     repack_pending:"Reempaque pedido",
     repack_current:"Peso actual",
     repack_open:"Reempaquetar",
+    repack_imposible:"No se puede",
+    repack_imposible_q:"¿Por qué no se puede reempaquetar? (opcional)",
+    repack_imposible_ph:"Ej: ya está en la caja más chica posible",
+    repack_imposible_send:"Avisar que no se puede",
+    repack_imposible_done:"Avisamos que no se puede reempaquetar",
     repack_done:"Reempaque guardado",
     repack_title:"Reempaquetar",
     repack_reason:"Motivo del pedido",
@@ -621,6 +626,11 @@ const I18N={
     repack_pending:"重新打包请求",
     repack_current:"当前重量",
     repack_open:"重新打包",
+    repack_imposible:"无法重新打包",
+    repack_imposible_q:"为什么无法重新打包？（可选）",
+    repack_imposible_ph:"例如：已经是最小的箱子",
+    repack_imposible_send:"通知无法重新打包",
+    repack_imposible_done:"已通知无法重新打包",
     repack_done:"重新打包已保存",
     repack_title:"重新打包",
     repack_reason:"请求原因",
@@ -975,6 +985,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [account,setAccount]=useState([]);
   const [repackRequests,setRepackRequests]=useState([]);
   const [repackOpen,setRepackOpen]=useState(null); // operation_id activo en modal
+  const [repackNo,setRepackNo]=useState(null); // id del pedido que el agente marca "no se puede"
+  const [repackNoMotivo,setRepackNoMotivo]=useState("");
   const [claims,setClaims]=useState([]); // reclamos de depósito pendientes (deposit_claims)
   const [claimReg,setClaimReg]=useState(null); // reclamo que se está registrando con "Llegó"
   const [showForm,setShowForm]=useState(false);
@@ -1029,6 +1041,21 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   })();},[token,userId]);
 
   const reloadPackages=reloadAll;
+  // El agente avisa que el reempaque no es posible (11/10/2026): el pedido se cierra como cancelado
+  // con su motivo, queda nota en la op y le llega aviso al admin.
+  const repackImposible=async(r)=>{
+    const motivo=repackNoMotivo.trim();
+    const nota=`No es posible reempaquetar${motivo?`: ${motivo}`:""}`;
+    await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"cancelled",agent_notes:nota,completed_at:new Date().toISOString(),completed_by:userId}});
+    try{
+      await dq("op_communications",{method:"POST",token,body:{operation_id:r.operation_id,type:"note",direction:"in",content:`🔄 El agente avisó: ${nota}.`}});
+      const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+      const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+      if(adminId)await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`🔄 Reempaque no posible · ${r.operations?.operation_code||""}`,body:nota,link:null}});
+    }catch(e){console.error("repack imposible",e);}
+    setRepackNo(null);setRepackNoMotivo("");
+    await reloadAll();flash(t.repack_imposible_done||"Avisamos que no se puede reempaquetar");
+  };
   const origenAgente=/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China";
   // Cada reclamo va a un agente (agent_id); los viejos sin agente los ve cualquiera de China.
   const misReclamos=claims.filter(c=>esAdmin||(c.agent_id?c.agent_id===userId:origenAgente==="China"));
@@ -1209,7 +1236,14 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
             <p style={{fontSize:11.5,color:"rgba(var(--ink),0.7)",margin:"3px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
           </div>
         </div>
-        <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button onClick={()=>{setRepackNo(repackNo===r.id?null:r.id);setRepackNoMotivo("");}} style={{padding:"10px 16px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.2)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>✕ {t.repack_imposible||"No se puede"}</button>
+          <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
+        </div>
+        {repackNo===r.id&&<div style={{flexBasis:"100%",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",paddingTop:10,marginTop:4,borderTop:"1px solid rgba(var(--ink),0.08)"}}>
+          <input value={repackNoMotivo} onChange={e=>setRepackNoMotivo(e.target.value)} placeholder={t.repack_imposible_ph} aria-label={t.repack_imposible_q} autoFocus style={{flex:"1 1 260px",padding:"10px 12px",fontSize:13,borderRadius:10,border:"1px solid rgba(var(--ink),0.15)",background:"rgba(var(--ink),0.05)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
+          <button onClick={()=>repackImposible(r)} style={{padding:"10px 16px",fontSize:13,fontWeight:800,borderRadius:10,border:"1px solid rgba(var(--ink),0.25)",background:"rgba(var(--ink),0.08)",color:"var(--tx)",cursor:"pointer",fontFamily:"inherit"}}>{t.repack_imposible_send||"Avisar que no se puede"}</button>
+        </div>}
       </div>)}
     </div>}
     {/* Reclamos de depósito (09/10/2026): paquetes que el cliente dice que llegaron y no están registrados. */}
@@ -1261,9 +1295,20 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
             const filaDeposito=(p)=>{
               const x=pesosDe(p);const cli=p.clients?.client_code||p.operations?.clients?.client_code||"";
               return <tr key={p.id}>
-              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(var(--ink),0.7)"}}>
-                {p.national_tracking||"—"}{x.q>1&&<span style={{color:"rgba(var(--ink),0.45)",marginLeft:6}}>×{x.q}</span>}
-                {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={p.consolidated_from_trackings.join(", ")}>
+              <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(var(--ink),0.7)",maxWidth:300}}>
+                {(()=>{
+                  // Bulto reembalado: el tracking junta los de todos los originales ("A + B + C…") y
+                  // hacía la fila larguísima (11/10/2026). Se muestran 2 y "+N", la lista entera al pasar el mouse.
+                  const lista=String(p.national_tracking||"").split(" + ").map(t=>t.trim()).filter(Boolean);
+                  if(lista.length<=1)return <>{p.national_tracking||"—"}{x.q>1&&<span style={{color:"rgba(var(--ink),0.45)",marginLeft:6}}>×{x.q}</span>}</>;
+                  return <span title={lista.join("\n")} style={{display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:"var(--gold)",fontFamily:"inherit"}}>🔄 {lista.length}</span>
+                    {lista.slice(0,2).map((tr,k)=><span key={k}>{tr}</span>)}
+                    <span style={{color:"rgba(var(--ink),0.45)"}}>+{lista.length-2}</span>
+                    {x.q>1&&<span style={{color:"rgba(var(--ink),0.45)"}}>×{x.q}</span>}
+                  </span>;
+                })()}
+                {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&!String(p.national_tracking||"").includes(" + ")&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={p.consolidated_from_trackings.join(", ")}>
                   {p.consolidated_from_trackings.slice(0,3).map((tr,k)=><span key={k} style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"var(--blue)"}}>{tr}</span>)}
                   {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(var(--ink),0.06)",color:"rgba(var(--ink),0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
                 </div>}

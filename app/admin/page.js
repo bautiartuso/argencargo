@@ -1671,6 +1671,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </div>
       <Btn small variant="secondary" onClick={cancelRepack}>Cancelar pedido</Btn>
     </div>}
+    {repackReq&&repackReq.status==="cancelled"&&/^No es posible/i.test(repackReq.agent_notes||"")&&<div style={{marginBottom:16,padding:"12px 16px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <span style={{fontSize:18}}>🔄</span>
+      <div style={{flex:1,minWidth:200}}><p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>El agente avisó que no se puede reempaquetar</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{String(repackReq.agent_notes).replace(/^No es posible reempaquetar:?\s*/i,"")||"Sin motivo"}{repackReq.completed_at?` · ${formatDate(repackReq.completed_at)}`:""}</p></div>
+    </div>}
     {repackReq&&repackReq.status==="done"&&(()=>{const before=Number(repackReq.original_billable_kg||0);const after=Number(repackReq.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;const oSnap=Array.isArray(repackReq.original_packages_snapshot)?repackReq.original_packages_snapshot:null;const nSnap=Array.isArray(repackReq.new_packages_snapshot)?repackReq.new_packages_snapshot:null;const hasSnap=oSnap||nSnap;return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:240}}>
@@ -10992,14 +10996,6 @@ function AgentsPanel({token}){
   // timer) le pasa un array nuevo al editor y su useEffect resetea los items en edición.
   const invoiceItemsForSel=useMemo(()=>flight?invoiceItems.filter(i=>i.flight_id===flight.id):[],[invoiceItems,flight?.id]);
     // Cuenta corriente de un agente (03/10/2026): se muestra dentro de la solapa Agentes.
-    // Divisor volumétrico del agente (÷5000 / ÷6000): con cuál divide el agente cm³ para calcular el
-    // peso facturable de sus bultos y vuelos. Va junto a sus tarifas (11/10/2026).
-    const volDeAgente=(a)=><div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.55)"}} title="Divisor para peso volumétrico (cm³ ÷ divisor). Estándar 5000, algunos couriers usan 6000.">
-              <span>Vol ÷</span>
-              <span style={{display:"inline-flex",gap:3,padding:3,borderRadius:9,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)"}}>{[5000,6000].map(v=>{const on=Number(a.volumetric_divisor||5000)===v;return <button key={v} type="button" onClick={async()=>{if(on)return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${a.id}`,body:{volumetric_divisor:v}});load();flash(`Divisor de ${a.first_name}: ${v}`);}} style={{height:28,padding:"0 10px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:on?GOLD_GRADIENT:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.6)"}}>{v}</button>;})}</span>
-            </label>
-    </div>;
     const ccDeAgente=(a)=>{const bal=agentBalance(a.auth_user_id);const movsAll=accMovements.filter(m=>m.agent_id===a.auth_user_id);const abiertos=movsAbiertos.has(a.auth_user_id);const movs=abiertos?movsAll:movsAll.slice(0,6);return <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:12,flexWrap:"wrap"}}>
           <p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Movimientos de la cuenta <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.3)"}}>· {movsAll.length}</span></p>
@@ -11556,7 +11552,7 @@ function AgentsPanel({token}){
     {tab==="orphans"&&<HuerfanosPanel token={token} unassigned={unassigned} setUnassigned={setUnassigned} signups={signups} onFlash={flash}/>}
     {/* Agentes (03/10/2026, ex Solicitudes): una tarjeta por agente con sus datos y sus tarifas por
         servicio (las carga cada agente desde su panel → Tarifas). Las solicitudes nuevas se aprueban acá. */}
-    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject} ccDe={esEmpleado()?null:ccDeAgente} saldoDe={esEmpleado()?null:(a=>agentBalance(a.auth_user_id))} volDe={volDeAgente}/>}
+    {tab==="signups"&&<AgentesTab signups={signups} ST={ST} lo={lo} token={token} approve={approve} reject={reject} ccDe={esEmpleado()?null:ccDeAgente} saldoDe={esEmpleado()?null:(a=>agentBalance(a.auth_user_id))}/>}
     {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const suelto=!movePkgState.fromOp;const fromCl=suelto?(movePkgState.pkg.clients||null):movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
