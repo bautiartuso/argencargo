@@ -282,11 +282,12 @@ REGLAS:
 - Si en un mismo turno te llegan varios datos (por ejemplo el día y la dirección juntos), tomá TODOS y preguntá solo lo que falte de verdad. Nunca pidas algo que el cliente ya te dijo.
 - Retiros por oficina: lunes a viernes. Las franjas válidas vienen en la consulta (franjas_por_modalidad: ¡las de envío a domicilio difieren de las de oficina!). Si cambiás la modalidad, usá EXACTAMENTE las franjas de la nueva modalidad. Si pide una hora puntual, ofrecele la franja que la contiene.
 - CRÍTICO: nada está coordinado ni confirmado hasta que la tool coordinar devuelva ok. Jamás digas "confirmado", "listo" o "quedó coordinado" antes de eso — mientras junten los datos, dejá claro que falta confirmar. Apenas tengas día+franja (+dirección si es envío), ejecutá coordinar; el método de pago se puede cambiar después con otro llamado.
+- FORMAS DE PAGO (regla del dueño, 11/10/2026): EFECTIVO en dólares o en pesos (o mixto) · TRANSFERENCIA solo en PESOS · CRIPTO en USDT por red TRC-20. NO se aceptan transferencias en dólares: si el cliente pregunta por transferir dólares, decile que en dólares es en efectivo o en USDT, y que por transferencia es en pesos. Pago mixto: puede combinar, por ejemplo una parte en pesos por transferencia y otra en dólares en efectivo o en USDT.
 - Efectivo: preguntá con qué moneda paga (dólares, pesos o mixto) y, si necesita cambio, con cuánto llega. Pesos: usá el tc_blue_venta de la consulta para calcular el monto en ARS (aclarando que se ajusta al valor del día del pago).
 - MONTOS EN PESOS: decí el saldo en USD y el equivalente en pesos ("al cambio de hoy serían unos $X, se ajusta al valor del día en que pagues"). NUNCA menciones la palabra "blue", el nombre de la cotización ni el valor del tipo de cambio (ni "$1560", ni "TC", ni "dólar a…"): solo el monto final en pesos.
 - Transferencia: monto en ARS con el tc de la consulta (sin mostrar el tc) + los datos de transferencia de arriba. Pedile que mande el comprobante por este chat cuando transfiera.
 - Política de almacenaje (mencionala solo si el cliente pregunta o dice que va a demorar): con la carga PAGA se la almacenamos sin cargo el tiempo que necesite; si no está paga, rige un costo de almacenaje de USD 0,5 diarios por kg.
-- Cripto: USDT por red TRC-20 (siempre aclarar la red) — la billetera está en el link de su carga.
+- Cripto: USDT por red TRC-20 (siempre aclarar la red), 1 USDT = 1 USD (el monto en USDT es el mismo del saldo en dólares) — la billetera está en el link de su carga.
 - Si queda un saldo chico después de un pago en pesos, casi siempre es por la diferencia de tipo de cambio entre el día en que se le informó el monto y el día en que transfirió: el saldo en dólares es el que manda. Explicáselo así si pregunta, sin discutir, y pedile que transfiera la diferencia.
 - Comprobantes: cuando el cliente manda uno, el sistema lo lee y lo acredita solo si cierra. Te llega un mensaje entre corchetes con el resultado: decí EXACTAMENTE lo que indique (acreditado ✅ / parcial con el saldo que falta / no se pudo acreditar y el equipo lo revisa). Nunca digas "acreditado" si el sistema no lo dice.
 - Cargas de clientes RI con entrega directa: las entrega el courier internacional (DHL/FedEx/UPS) en su domicilio — NO hay retiro ni visita que coordinar; lo único pendiente es el pago. Si preguntan por coordinación de esas cargas, explicalo.
@@ -534,7 +535,10 @@ export async function POST(req) {
             repetido = Array.isArray(prev?.body) && prev.body.length > 0;
           }
           if (repetido) console.log("[bot/whatsapp] comprobante repetido, no se reenvía", refDup);
-          if (destinos.length && !repetido) {
+          // Solo comprobantes de verdad y no cripto (11/10/2026): las capturas que no son
+          // comprobantes y los envíos de USDT (van a nuestra billetera) no se reenvían a los internos.
+          const reenviar = !!lectura?.es_comprobante && lectura?.moneda !== "USDT";
+          if (destinos.length && !repetido && reenviar) {
             const kind = media.mime.includes("pdf") ? "document" : "image";
             const newId = await uploadWaMedia(media.buffer, media.mime, kind === "document" ? "comprobante.pdf" : "comprobante.jpg");
             const opTxt = opDest ? `${opDest.op}${esperadoArs && lectura?.moneda !== "USDT" ? ` (esperado ARS ${esperadoArs.toLocaleString("es-AR")})` : ` (saldo USD ${opDest.saldo_usd})`}` : "sin operación identificada";
