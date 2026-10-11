@@ -5,7 +5,7 @@
 import { callClaudeText, callClaudeVision } from "../../../lib/anthropic";
 
 // Margen para los reintentos con backoff ante overload (529) de la API.
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -85,7 +85,16 @@ El usuario importa productos desde China/USA para reventa en Argentina. Tu traba
    - termómetro que mide la temperatura del estuche/ambiente (no la corporal) → NO es producto médico.
    El gel "para mantener frío" NO es "uso terapéutico". Si el objeto es esencialmente un estuche/caja/bolso, clasificá por el estuche y NO marques intervención, aunque el nombre comercial mencione insulina, medicación o uso médico.
 
-3. Reglas de clasificación específicas (overrides):
+3. Leé la descripción como lo que ES el producto, no palabra por palabra. Muchas descripciones vienen de proveedores chinos o de traducciones automáticas y usan palabras equivocadas: "carpet" puede ser una CARPETA (folder/binder) y no una alfombra, "hinge" puede ser un COLGANTE y no una bisagra, "sheet" puede ser un folio/funda. Usá el contexto de los demás datos (material, medidas A4/A5, "keychain", "cards", "stickers") para entender qué es. Si hay dos lecturas posibles, elegí la que tiene sentido para un importador que revende mercadería chica, no la literal.
+
+4. Coherencia antes de responder: chequeá que el capítulo y la partida describan ESE producto y SU uso.
+   - 3918 es SOLO revestimientos de pisos, paredes o techos. Carpetas, folios, fundas y útiles de oficina/escolares de plástico van en 3926.10.00.
+   - 8302 es SOLO herrajes y guarniciones de METAL común (bisagras, cerraduras de muebles). Un llavero o colgante de peluche/tela NO va ahí (textil confeccionado 6307.90.90).
+   - 4202.31/.32/.39 dependen de la superficie exterior: .31 cuero, .32 plástico o textil. Bolsos de mano / de hombro de textil → 4202.22.20; de plástico → 4202.22.10.
+   - Bolsas de embalaje: polietileno 3923.21, polipropileno/OPP 3923.29.90.
+   - Álbumes de fotos o figuritas → 4820.50.00; stickers impresos → 4911.91.00.
+
+5. Reglas de clasificación específicas (overrides):
    - auriculares (bluetooth, TWS, inalámbricos, headphones, earbuds) → 8518.30.00 (NO 8517)
    - parlantes/altavoces → 8518.22.00
    - fundas de celular silicona/TPU → 3926.90.90 (NO clasificar como telecom)
@@ -111,7 +120,7 @@ async function classifyWithClaude(description, hint) {
   // hint: posición arancelaria sugerida por el cliente (muchas veces la que le pasó el proveedor,
   // que NO necesariamente es correcta para Argentina). La IA la evalúa, no la copia.
   const hintTxt = hint
-    ? `\nEl cliente sugiere la posición ${hint} (suele ser el HS code que le pasó el proveedor, no necesariamente correcto). Evaluá si esa posición corresponde a esta mercadería según la nomenclatura del Mercosur: si es correcta, devolvela; si no, devolvé la correcta. Agregá al JSON el campo "hint_note": una frase corta (máx. 140 caracteres, en español) que diga si la posición sugerida es correcta o por qué no.`
+    ? `\nEl cliente sugiere la posición ${hint} (suele ser el HS code que le pasó el proveedor). Tomala MUY en cuenta: si es una posición razonable para esta mercadería según la nomenclatura del Mercosur, devolvela (completando los 8 dígitos si faltan); solo cambiala si claramente describe otra cosa, y en ese caso devolvé la correcta. Agregá al JSON el campo "hint_note": una frase corta (máx. 140 caracteres, en español) que diga si la posición sugerida es correcta o por qué no.`
     : "";
   const text = await callClaudeText({
     system: SYSTEM_PROMPT,
@@ -119,6 +128,25 @@ async function classifyWithClaude(description, hint) {
     max_tokens: 500,
   });
   return parseClaudeResponse(text);
+}
+
+// Segunda mirada (11/10/2026): con el código elegido, se le muestran a la IA las aperturas reales
+// de esa posición en la base (ej. 3918.10.00 → "Losetas · Rollos · Para paredes o techos"). Si no
+// describen la mercadería, corrige. Así no vuelve a pasar "carpetas de anillas" → pisos de plástico.
+async function verificarConBase(description, ncmCode, hint) {
+  try {
+    const filas = await searchDB(ncmCode);
+    const exactas = filas.filter((f) => f.ncm_code === ncmCode).map((f) => String(f.description || "").trim()).filter(Boolean);
+    if (!exactas.length) return null;
+    const ap = [...new Set(exactas)].slice(0, 12).join(" · ");
+    const text = await callClaudeText({
+      system: SYSTEM_PROMPT,
+      user: `Mercadería: "${description}"${hint ? ` (el cliente sugirió ${hint})` : ""}.\nSe propuso la posición ${ncmCode}, cuyas aperturas en la nomenclatura son: ${ap}.\n¿Esa posición corresponde a esta mercadería? Si sí, devolvé el mismo código. Si no (por ejemplo porque las aperturas describen otro tipo de producto o de material), devolvé la posición correcta. Mismo formato JSON.`,
+      max_tokens: 400,
+    });
+    const r = parseClaudeResponse(text);
+    return r?.ncm_code && r.ncm_code !== ncmCode ? r : null;
+  } catch { return null; }
 }
 
 async function classifyWithClaudeVision(imageBase64, description, mimeHint) {
@@ -320,17 +348,23 @@ export async function POST(req) {
     if (!image && description) {
       const override = checkOverride(description);
       if (override) return Response.json(withHint(await addAntidumping(override)));
-      // Memoria: si esta descripción ya se clasificó, no se vuelve a llamar a la IA.
-      const recordado = await cacheBuscar(description);
+      // Memoria: si esta descripción ya se clasificó, no se vuelve a llamar a la IA. Con una NCM
+      // sugerida por el cliente NO se usa la memoria: hay que evaluar su sugerencia (11/10/2026: con
+      // memoria se devolvía lo de antes y la sugerencia nunca se miraba).
+      const recordado = hintCode ? null : await cacheBuscar(description);
       if (typeof recordado === "string" && recordado) {
         return Response.json(withHint(await respuestaDeNcm(recordado, null, {}, "memoria")));
       }
     }
 
     // Clasificar: con imagen → vision, sin imagen → texto
-    const claudeResult = image
+    let claudeResult = image
       ? await classifyWithClaudeVision(image, description, image_mime).catch(e => { console.error("Claude vision error:", e?.status||"", e.message); return null; })
       : await classifyWithClaude(description, hintCode).catch(e => { console.error("Claude error:", e?.status||"", e.message); return null; });
+    if (claudeResult?.ncm_code && description) {
+      const corregido = await verificarConBase(description, claudeResult.ncm_code, hintCode);
+      if (corregido) claudeResult = { ...claudeResult, ...corregido, intervention: corregido.intervention || claudeResult.intervention };
+    }
 
     if (claudeResult?.ncm_code) {
       // Si vino guess_description de visión, lo devolvemos para que el cliente rellene el campo
