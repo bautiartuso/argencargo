@@ -38,12 +38,17 @@ async function esAdmin(req) {
 }
 
 // ── Configuración guardada (refresh token) ────────────────────────────────────────────────
+// La configuración casi nunca cambia: se guarda 10 min en memoria para no leer Storage en cada
+// consulta (el contador de no leídos pregunta cada minuto).
+let cacheConfig = { at: 0, data: null };
 async function leerConfig() {
+  if (cacheConfig.data && Date.now() - cacheConfig.at < 10 * 60000) return cacheConfig.data;
   const r = await svc(`/storage/v1/object/${BUCKET}/${ARCHIVO}`);
   if (!r.ok) return null;
-  try { return await r.json(); } catch { return null; }
+  try { const d = await r.json(); cacheConfig = { at: Date.now(), data: d }; return d; } catch { return null; }
 }
 async function guardarConfig(data) {
+  cacheConfig = { at: 0, data: null };
   const b = await svc(`/storage/v1/bucket/${BUCKET}`);
   if (!b.ok) await svc(`/storage/v1/bucket`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: BUCKET, name: BUCKET, public: false }) });
   return svc(`/storage/v1/object/${BUCKET}/${ARCHIVO}`, { method: "POST", headers: { "Content-Type": "application/json", "x-upsert": "true" }, body: JSON.stringify(data) });
