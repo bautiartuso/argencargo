@@ -5801,22 +5801,35 @@ function EntregasPanel({token,onOpenOp,vista}){
   // abierta en el admin y en el portal) y lo que falta queda como deuda en la CC del cliente.
   // Si el cliente tiene otra op lista para retirar con saldo, el trigger aplicar_saldo_cc le pasa
   // la deuda a esa (regla 11/09/2026); si no, queda en la cuenta corriente.
-  const cerrarACC=async(o)=>{
-    const saldo=saldoFor(o);
-    const cli=o.clients?.client_code||"el cliente";
-    const otra=rows.find(r=>r.id!==o.id&&r.client_id===o.client_id&&!r.is_collected&&saldoFor(r)>0.005);
-    if(!await confirmDialog(`¿Cerrar ${o.operation_code} y pasar ${usd(saldo)} a la cuenta corriente de ${cli}?${otra?`\n\n${cli} tiene ${otra.operation_code} abierta con saldo: la deuda se le suma a esa.`:""}`,{confirmText:"Cerrar → cuenta corriente"}))return;
+  // Cerrar a cuenta corriente (09/10/2026; en lote desde el 11/10): las ops entregadas con saldo se
+  // cierran y lo que falta queda como deuda en la CC del cliente. Primero se cierran TODAS y recién
+  // después se cargan las deudas: si no, el trigger aplicar_saldo_cc le pasaba la deuda de la primera
+  // a la siguiente op abierta del mismo cliente y quedaba todo encadenado (caso DIEMAG).
+  const cerrarACC=async(lista)=>{
+    const ops=(Array.isArray(lista)?lista:[lista]).map(o=>({o,saldo:saldoFor(o)}));
+    if(!ops.length)return;
+    const o0=ops[0].o;const cli=o0.clients?.client_code||"el cliente";
+    const total=ops.reduce((a,x)=>a+x.saldo,0);
+    const ids=new Set(ops.map(x=>x.o.id));
+    const otra=rows.find(r=>!ids.has(r.id)&&r.client_id===o0.client_id&&!r.is_collected&&saldoFor(r)>0.005);
+    const que=ops.length===1?o0.operation_code:`${ops.length} operaciones (${ops.map(x=>x.o.operation_code).join(", ")})`;
+    if(!await confirmDialog(`¿Cerrar ${que} y pasar ${usd(total)} a la cuenta corriente de ${cli}?${otra?`\n\n${cli} tiene ${otra.operation_code} abierta con saldo: la deuda se le suma a esa.`:""}`,{confirmText:"Cerrar → cuenta corriente"}))return;
     const ahora=new Date().toISOString();
-    const r1=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{status:"operacion_cerrada",closed_at:ahora,is_collected:true}});
-    if(!Array.isArray(r1)){toast(`No se pudo cerrar: ${r1?.message||"error"}`,"error");return;}
-    if(saldo>0.005){
-      const prev=await dq("client_account_movements",{token,filters:`?operation_id=eq.${o.id}&type=eq.debt&select=id&limit=1`});
-      const body={client_id:o.client_id,operation_id:o.id,type:"debt",amount_usd:-saldo,description:`Deuda pendiente de ${o.operation_code} (cerrada a cuenta corriente)`};
-      const r2=Array.isArray(prev)&&prev[0]?await dq("client_account_movements",{method:"PATCH",token,filters:`?id=eq.${prev[0].id}`,body}):await dq("client_account_movements",{method:"POST",token,body});
-      if(!Array.isArray(r2)){toast(`${o.operation_code} quedó cerrada pero no se cargó la deuda: revisá la cuenta corriente`,"error");}
+    const cerradas=[];
+    for(const x of ops){
+      const r1=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${x.o.id}`,body:{status:"operacion_cerrada",closed_at:ahora,is_collected:true}});
+      if(Array.isArray(r1))cerradas.push(x);else toast(`No se pudo cerrar ${x.o.operation_code}: ${r1?.message||"error"}`,"error");
     }
-    setRows(p=>p.filter(r=>r.id!==o.id));
-    toast(`${o.operation_code} cerrada · ${usd(saldo)} a la cuenta corriente de ${cli}`,"success");
+    for(const x of cerradas){
+      if(x.saldo<=0.005)continue;
+      const prev=await dq("client_account_movements",{token,filters:`?operation_id=eq.${x.o.id}&type=eq.debt&select=id&limit=1`});
+      const body={client_id:x.o.client_id,operation_id:x.o.id,type:"debt",amount_usd:-Math.round(x.saldo*100)/100,description:`Cierre a cuenta corriente de ${x.o.operation_code}`};
+      const r2=Array.isArray(prev)&&prev[0]?await dq("client_account_movements",{method:"PATCH",token,filters:`?id=eq.${prev[0].id}`,body}):await dq("client_account_movements",{method:"POST",token,body});
+      if(!Array.isArray(r2))toast(`${x.o.operation_code} quedó cerrada pero no se cargó la deuda: revisá la cuenta corriente`,"error");
+    }
+    const hechos=new Set(cerradas.map(x=>x.o.id));
+    setRows(p=>p.filter(r=>!hechos.has(r.id)));
+    toast(`${cerradas.length===1?cerradas[0].o.operation_code:`${cerradas.length} operaciones`} · ${usd(cerradas.reduce((a,x)=>a+x.saldo,0))} a la cuenta corriente de ${cli}`,"success");
   };
   const undoDelivered=async(o)=>{
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:null}});
@@ -6192,7 +6205,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       const acciones=contexto==="aviso"?[mb("📨 Avisar",()=>enviarAviso(o),true),mb("💬 WA",()=>waAviso(o)),mb("📋 Link",()=>copyLink(o))]
         :contexto==="esperando"?[mb("🔁 Recordar",()=>waAviso(o),true),mb("Coordinar",()=>setCoordinarModal(o)),mb("📋",()=>copyLink(o))]
         :contexto==="porentregar"?[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",()=>setCoordinarModal(o)),mb("✓ Entregar",()=>setCobroModal({op:o}),true)]
-        :contexto==="acobrar"?[mb("💬 WA",()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)),mb("↺",()=>undoDelivered(o)),mb("→ CC",()=>cerrarACC(o)),mb("💰 Cobrar",()=>setCobroModal({op:o,soloCobro:true}),true)]
+        :contexto==="acobrar"?[mb("💬 WA",()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)),mb("↺",()=>undoDelivered(o)),mb("→ CC",()=>cerrarACC([o])),mb("💰 Cobrar",()=>setCobroModal({op:o,soloCobro:true}),true)]
         :[];
       const tel=dc.telefono||o.clients?.whatsapp;
       const chip=(t,c)=><span style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:6,background:`${c}22`,color:c,whiteSpace:"nowrap"}}>{t}</span>;
@@ -6267,7 +6280,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         </>}
         {contexto==="acobrar"&&<>
           <Btn small variant="secondary" onClick={()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)}>WA</Btn>
-          <Btn small variant="secondary" title="Cerrar la operación y pasar el saldo a la cuenta corriente" onClick={()=>cerrarACC(o)}>→ Cuenta corriente</Btn>
+          <Btn small variant="secondary" title="Cerrar la operación y pasar el saldo a la cuenta corriente" onClick={()=>cerrarACC([o])}>→ Cuenta corriente</Btn>
           <Btn small onClick={()=>setCobroModal({op:o,soloCobro:true})}>💰 Cobrar</Btn>
           <Btn small variant="secondary" onClick={()=>undoDelivered(o)}>↺</Btn>
         </>}
@@ -6308,7 +6321,10 @@ function EntregasPanel({token,onOpenOp,vista}){
         out.push(<div key={"c"+o.client_id} style={{border:"1px solid rgba(184,149,106,0.35)",borderRadius:15,padding:celu?"10px 6px 6px":"10px 10px 8px",background:"rgba(184,149,106,0.05)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,margin:"0 4px 9px",flexWrap:"wrap"}}>
             <p onClick={()=>onOpenOp(o)} style={{fontSize:celu?15:13.5,fontWeight:700,color:"#fff",margin:0,cursor:"pointer"}}>{nom} <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"monospace",fontWeight:600}}>{c.client_code}</span></p>
-            <span style={{fontSize:11.5,fontWeight:800,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{grupo.length} operaciones{!sinMontos&&tot>0.005?` · ${usd(tot)}`:""}</span>
+            <span style={{display:"inline-flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:11.5,fontWeight:800,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{grupo.length} operaciones{!sinMontos&&tot>0.005?` · ${usd(tot)}`:""}</span>
+              {contexto==="acobrar"&&<button onClick={()=>cerrarACC(grupo)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:800,borderRadius:8,border:"1px solid rgba(232,201,155,0.5)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>→ Todo a cuenta corriente</button>}
+            </span>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>{grupo.map(x=><CardOp key={x.id} o={x} contexto={contexto} enCliente/>)}</div>
         </div>);
@@ -6906,6 +6922,89 @@ function ClientsList({token,onSelect}){
   </div>;
 }
 
+// ── Pago a cuenta corriente (11/10/2026) ────────────────────────────────────
+// El cliente paga sin una operación abierta (ej. ops cerradas a cuenta). Queda como movimiento
+// 'payment' con método, moneda, monto original, TC, comprobante y fecha. Si es transferencia en
+// pesos que entró a SOLFIN, además se registra el ingreso en la CC de la financiera (con comisión).
+function RegistrarPagoCC({token,cl,onDone}){
+  const [metodo,setMetodo]=useState("transferencia");
+  const [moneda,setMoneda]=useState("ARS"); // efectivo: ARS | USD
+  const [monto,setMonto]=useState("");const [tc,setTc]=useState("");const [com,setCom]=useState("2,5");
+  const [solfin,setSolfin]=useState(true);
+  const [fecha,setFecha]=useState(hoyAR());const [nota,setNota]=useState("");
+  const [recibo,setRecibo]=useState(null);const [subiendo,setSubiendo]=useState(false);const [guardando,setGuardando]=useState(false);
+  useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(t=>t||String(d.venta));}}catch{}})();},[]);
+  const num=(v)=>{const x=String(v||"").trim();if(!x)return 0;const n=Number(x.includes(",")?x.replace(/\./g,"").replace(",","."):x);return Number.isFinite(n)?n:0;};
+  const enPesos=metodo==="transferencia"||(metodo==="efectivo"&&moneda==="ARS");
+  const m=num(monto),t=num(tc),c=num(com);
+  const usd=enPesos?(t>0?Math.round(m/t*100)/100:0):Math.round(m*100)/100;
+  const comArs=metodo==="transferencia"&&solfin?Math.round(m*c)/100:0;
+  const subir=async(file)=>{
+    if(!file?.type?.startsWith("image/")){toast("El comprobante tiene que ser una imagen","error");return;}
+    setSubiendo(true);
+    try{
+      const f=await comprimirImagen(file,{maxLado:2000});
+      const name=`CC_${cl.client_code||"cli"}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
+      const r=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${name}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":f.type||"image/jpeg","x-upsert":"false"},body:f});
+      if(!r.ok)throw new Error("no se pudo subir");
+      setRecibo(`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${name}`);
+    }catch(e){toast("Error subiendo el comprobante: "+e.message,"error");}
+    setSubiendo(false);
+  };
+  useEffect(()=>{const pegar=(e)=>{const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/"));if(it){const f=it.getAsFile();if(f){e.preventDefault();subir(f);}}};document.addEventListener("paste",pegar);return()=>document.removeEventListener("paste",pegar);},[]); // eslint-disable-line react-hooks/exhaustive-deps
+  const guardar=async()=>{
+    if(!(m>0)){toast("Cargá el monto","error");return;}
+    if(enPesos&&!(t>0)){toast("Cargá el tipo de cambio","error");return;}
+    setGuardando(true);
+    try{
+      const metodoTxt=metodo==="transferencia"?"Transferencia":metodo==="efectivo"?"Efectivo":"Cripto USDT";
+      const detalle=enPesos?`ARS ${m.toLocaleString("es-AR",{maximumFractionDigits:2})} a TC ${t.toLocaleString("es-AR")}`:`${metodo==="cripto"?"USDT":"USD"} ${m.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const r=await dq("client_account_movements",{method:"POST",token,body:{client_id:cl.id,type:"payment",amount_usd:usd,description:`Pago a cuenta · ${metodoTxt} · ${detalle}${nota.trim()?` · ${nota.trim()}`:""}`,payment_method:metodo,currency:enPesos?"ARS":"USD",amount_original:m,exchange_rate:enPesos?t:null,receipt_url:recibo,movement_date:fecha}});
+      if(!Array.isArray(r)){toast(`No se pudo registrar: ${r?.message||"error"}`,"error");setGuardando(false);return;}
+      if(metodo==="transferencia"&&solfin){
+        const s=await dq("cc_solfin_movements",{method:"POST",token,body:{date:fecha,type:"ingreso",currency:"ARS",amount:m,commission_pct:c||null,commission_amount:comArs||null,net_amount:Math.round((m-comArs)*100)/100,provisional_rate:t,description:`Pago a cuenta · ${cl.client_code||""}`,image_url:recibo,auto_generated:true}});
+        if(!Array.isArray(s))toast("El pago quedó en la cuenta del cliente pero no entró a SOLFIN: cargalo a mano","error");
+      }
+      toast(`Pago registrado: USD ${usd.toLocaleString("es-AR",{minimumFractionDigits:2})} a la cuenta de ${cl.client_code||"el cliente"}`,"success");
+      setMonto("");setNota("");setRecibo(null);onDone?.();
+    }finally{setGuardando(false);}
+  };
+  const seg=(on)=>({flex:1,height:40,borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,border:`1px solid ${on?"rgba(232,201,155,0.6)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.6)"});
+  const campo={width:"100%",boxSizing:"border-box",height:40,padding:"0 12px",fontSize:14,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit",fontVariantNumeric:"tabular-nums"};
+  const lbl={display:"block",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6};
+  const soloNum=(set)=>(e)=>{const v=e.target.value;if(v===""||/^[\d.,]*$/.test(v))set(v);};
+  return <Card title="Registrar pago a cuenta">
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      {[["transferencia","🏦 Transferencia (pesos)"],["efectivo","💵 Efectivo"],["cripto","🪙 Cripto (USDT)"]].map(([k,l])=><button key={k} type="button" onClick={()=>setMetodo(k)} style={seg(metodo===k)}>{l}</button>)}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,alignItems:"end"}}>
+      {metodo==="efectivo"&&<div><span style={lbl}>Moneda</span><div style={{display:"flex",gap:6}}>{["ARS","USD"].map(x=><button key={x} type="button" onClick={()=>setMoneda(x)} style={seg(moneda===x)}>{x}</button>)}</div></div>}
+      <div><span style={lbl}>Monto ({enPesos?"ARS":metodo==="cripto"?"USDT":"USD"})</span><input value={monto} onChange={soloNum(setMonto)} inputMode="decimal" placeholder="0" style={{...campo,fontWeight:800}}/></div>
+      {enPesos&&<div><span style={lbl}>Tipo de cambio</span><input value={tc} onChange={soloNum(setTc)} inputMode="decimal" placeholder="1.450" style={campo}/></div>}
+      {metodo==="transferencia"&&<div><span style={lbl}>Comisión SOLFIN %</span><input value={com} onChange={soloNum(setCom)} inputMode="decimal" disabled={!solfin} style={{...campo,opacity:solfin?1:0.4}}/></div>}
+      <div><span style={lbl}>Fecha</span><DatePicker value={fecha} onChange={v=>setFecha(v||hoyAR())}/></div>
+    </div>
+    {metodo==="transferencia"&&<div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+      {[[true,"Entró a SOLFIN"],[false,"Cuenta propia"]].map(([v,l])=><button key={l} type="button" onClick={()=>setSolfin(v)} style={{...seg(solfin===v),flex:"0 0 auto",padding:"0 16px"}}>{l}</button>)}
+    </div>}
+    <div style={{display:"flex",gap:12,marginTop:12,flexWrap:"wrap",alignItems:"center"}}>
+      <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Nota (opcional)" style={{...campo,flex:"1 1 240px",width:"auto",fontVariantNumeric:"normal"}}/>
+      {recibo?<span style={{display:"inline-flex",alignItems:"center",gap:8}}><a href={recibo} target="_blank" rel="noreferrer"><img src={recibo} alt="" style={{width:40,height:40,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.2)"}}/></a><button type="button" onClick={()=>setRecibo(null)} style={{background:"transparent",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>✕</button></span>
+      :<label style={{display:"inline-flex",alignItems:"center",gap:8,height:40,padding:"0 14px",borderRadius:10,border:"1px dashed rgba(232,201,155,0.45)",background:"rgba(184,149,106,0.06)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:700,cursor:subiendo?"wait":"pointer"}}>
+        <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)subir(f);e.target.value="";}} style={{display:"none"}}/>
+        {subiendo?"Subiendo…":"📎 Comprobante (o pegalo con ⌘V)"}
+      </label>}
+    </div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:14,padding:"12px 14px",borderRadius:12,background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.3)"}}>
+      <span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Se acredita en la cuenta de {cl.client_code||"el cliente"}{metodo==="transferencia"&&solfin&&m>0?` · SOLFIN recibe ARS ${(m-comArs).toLocaleString("es-AR",{maximumFractionDigits:2})} netos`:""}</span>
+      <span style={{fontSize:18,fontWeight:900,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>+ USD {usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+      <Btn onClick={guardar} disabled={guardando||!(usd>0)}>{guardando?"Guardando…":"✓ Registrar pago"}</Btn>
+    </div>
+  </Card>;
+}
+
 function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
   const [giPartners,setGiPartners]=useState([]);
@@ -7028,7 +7127,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       </div>
     </Card>}
     {tab==="ops"&&<Card title="Operaciones">{lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",borderRadius:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</span><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:14}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{CM[op.channel]||op.channel}</span><span style={{color:GOLD_LIGHT,fontSize:12,fontWeight:600}}>→</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin operaciones</p>}</Card>}
-    {tab==="cc"&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;const isDebt=bal<0;const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste manual",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op",gpi_cobro:"Gestión pagos internacional"};const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
+    {tab==="cc"&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;const isDebt=bal<0;const MOV_LABELS={payment:"Pago a cuenta",overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste manual",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op",gpi_cobro:"Gestión pagos internacional"};const MOV_COLORS={payment:"#22c55e",overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
       // Timeline unificado: movements + cobros de ops + anticipos GI + gestión pagos
       const timeline=[
         ...accMovs.map(m=>({id:"m_"+m.id,raw:m,kind:"movement",date:m.created_at,type:m.type,amount:Number(m.amount_usd),op_code:m.operations?.operation_code,description:m.description,deletable:true})),
@@ -7049,6 +7148,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         {isCredit&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>Se puede aplicar a cualquier operación pendiente de cobro del cliente.</p>}
         {isDebt&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>El cliente debe este importe — podés aplicarlo a su próxima operación.</p>}
       </div>
+      <RegistrarPagoCC token={token} cl={cl} onDone={async()=>{await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));}}/>
       {/* Nuevo movimiento */}
       <Card title="Registrar movimiento manual">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:12,alignItems:"end"}}>

@@ -321,7 +321,7 @@ function DepositoView({pkgs,token,client,onCreated}){
   </div>;
 }
 
-function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},mCargo=[]}){
+function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},ccOps=new Set(),mCargo=[]}){
   const {t}=useT();
   // Orden: más cerca de la entrega primero. ETA asc como desempate (antes = más urgente).
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
@@ -340,6 +340,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const fShort=d=>{if(!d)return "—";const x=new Date(String(d).length<=10?d+"T12:00:00":d);return `${String(x.getDate()).padStart(2,"0")}/${String(x.getMonth()+1).padStart(2,"0")}/${String(x.getFullYear()).slice(2)}`;};
   const saldoDe=(op)=>{const bt=Number(op.budget_total||0);
     if(op.lost_in_customs_at)return{txt:"USD 0,00",tone:"ok",l:t("ol.noBalance")};
+    if(ccOps.has(op.id))return{txt:usd(bt),tone:"cc",l:t("ol.toAccount")};
     if(op.is_collected||op.status==="operacion_cerrada")return{txt:bt>0?usd(bt):"—",tone:"ok",l:"Abonado"};
     if(bt<=0)return{txt:"Pendiente",tone:"muted",l:"A abonar"};
     const pmtTot=Number(pmtsByOp[op.id]||0);const ant=Number(op.total_anticipos||0);const cliPaid=Number(cliPmtsByOp[op.id]||0);
@@ -377,7 +378,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       </div>
       <p className="ol-eta" style={{margin:0,textAlign:"center",fontSize:12.5,fontWeight:700,color:op.eta?SKY:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{fShort(op.eta)}</p>
       <div className="ol-saldo" style={{textAlign:"center"}}>
-        <p style={{margin:0,fontSize:14,fontWeight:800,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",color:s.tone==="ok"?"#4ade80":s.tone==="due"?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{s.txt}</p>
+        <p style={{margin:0,fontSize:14,fontWeight:800,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",color:s.tone==="ok"?"#4ade80":s.tone==="due"?GOLD_LIGHT:s.tone==="cc"?SKY:"rgba(255,255,255,0.5)"}}>{s.txt}</p>
         <p style={{margin:"2px 0 0",fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>{s.l}</p>
       </div>
       <span className="ol-arrow" style={{textAlign:"right",color:SKY,fontSize:18,fontWeight:700}}>→</span>
@@ -806,7 +807,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
   // Desglose de impuestos abierto/cerrado en el Resumen: el cliente quiere ver que paga por cada
   // producto (derechos, tasa estadistica, IVA) y el desaduanaje, no solo el total.
   const [impOpen,setImpOpen]=useState(false);
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [ccMov,setCcMov]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó t("op.waitingPackages"): ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
   // Tarifas/config/overrides para recomputar el desglose de impuestos (misma cuenta que el admin)
@@ -826,7 +827,8 @@ function OperationDetail({op:opProp,token,client,onBack}){
     setShowDocPanel(false);setDocItems([]);await loadAll();setSavingDocs(false);
   };
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
-  const loadAll=async()=>{dq("operations",{token,filters:`?id=eq.${op.id}&select=*`}).then(r=>{if(Array.isArray(r)&&r[0])setOpFresh(r[0]);}).catch(()=>{});const [it,ev,pk,pm,cp,rk,fl,fii,tf,cf,ov]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`}),dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);
+  const loadAll=async()=>{dq("operations",{token,filters:`?id=eq.${op.id}&select=*`}).then(r=>{if(Array.isArray(r)&&r[0])setOpFresh(r[0]);}).catch(()=>{});
+  dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&type=eq.debt&select=amount_usd,description,created_at&order=created_at.desc&limit=1`}).then(r=>{const x=Array.isArray(r)&&r[0];setCcMov(x&&/cuenta corriente/i.test(x.description||"")?x:null);}).catch(()=>{});const [it,ev,pk,pm,cp,rk,fl,fii,tf,cf,ov]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`}),dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);
   {const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setCalcCtx({tariffs:Array.isArray(tf)?tf:[],config:cfg,overrides:Array.isArray(ov)?ov:[]});}
   setDeclaredItems(Array.isArray(fii)?fii:[]);
 
@@ -1065,7 +1067,13 @@ function OperationDetail({op:opProp,token,client,onBack}){
               </div>
               {barraDorada(t(hasBudget?"imp.totalImport":"imp.totalImportEst"),totalImpo,t("imp.totalImportNote"))}
             </>;})()}
-          {hasBudget&&cliPmts.length>0&&<div style={{marginTop:12}}>
+          {/* Cerrada a cuenta corriente (11/10/2026): lo que faltaba de ESTA importación pasó a la cuenta. */}
+          {hasBudget&&ccMov&&(()=>{const cred=Number(op.credit_applied_usd||0);const disc=Number(op.discount_applied_usd||0);const propio=Math.max(0,Math.round((totalAbonar-totalCli-cred-disc)*100)/100);return <div style={{marginTop:12}}>
+            {totalCli>0.005&&fila("Pagado",usd(totalCli),{color:"#4ade80"})}
+            {cred>0.005&&fila(t("op.creditUsed"),usd(cred),{color:"#4ade80"})}
+            {fila(t("op.ccMoved"),usd(propio),{bold:true,color:SKY,last:true})}
+          </div>;})()}
+          {hasBudget&&!ccMov&&cliPmts.length>0&&<div style={{marginTop:12}}>
             {fila("Pagado",usd(totalCli),{color:"#4ade80"})}
             {fila(saldoReal>0.01?"Saldo pendiente":t("op.fullyPaid"),usd(saldoReal),{bold:true,color:saldoReal<=0.01?"#4ade80":GOLD_LIGHT,last:true})}
             <div style={{height:7,background:"rgba(255,255,255,0.08)",borderRadius:999,overflow:"hidden",margin:"8px 0 12px"}}><div style={{width:`${totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0}%`,height:"100%",background:saldoReal<=0.01?"#4ade80":GOLD_LIGHT}}/></div>
@@ -2406,151 +2414,124 @@ function ServicesPage({client}){
     </div>
   </div>;
 }
-function AccountPage({token,client,onRestartTutorial}){
+// Cuenta corriente del cliente (rehecha el 11/10/2026): un saldo claro arriba, lo que hay por pagar
+// (importaciones listas para retirar y GI) y el libro de la cuenta con su saldo corriente, donde cada
+// renglón dice qué fue: importación pasada a la cuenta (con su costo, lo pagado y la deuda anterior
+// que traía), pagos con método/moneda/TC/comprobante, saldos a favor y ajustes.
+function AccountPage({token,client,onRestartTutorial,onOpenOp}){
   const {t}=useT();
-  const [timeline,setTimeline]=useState([]);
+  const SKY="#8CC8F5";
+  const [movs,setMovs]=useState([]);
+  const [paidByOp,setPaidByOp]=useState({});
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
   const [pendingOps,setPendingOps]=useState([]);
   const [loading,setLoading]=useState(true);
-  const MOV_LABELS={overpayment:t("acc.movOverpayment"),applied:t("acc.movApplied"),adjustment:t("acc.movAdjustment"),refund:t("acc.movRefund"),debt:t("acc.movDebt"),op_cobro:t("acc.movOpCobro"),op_anticipo:t("acc.movOpAnticipo"),gpi_cobro:t("acc.movGpiCobro")};
-  const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
-    const[m,cl,ops,pm,pg,giOps,giItems,giCliPmts,entregadaOps,entregadaCliPmts,entregadaPmtMgmt]=await Promise.all([
-      dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code)&order=created_at.desc`}),
+    const[m,cl,giOps,giItems,giCliPmts,entregadaOps,entregadaCliPmts,entregadaPmtMgmt]=await Promise.all([
+      dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code,budget_total,debt_applied_usd,credit_applied_usd,discount_applied_usd)&order=created_at.asc`}),
       dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`}),
-      dq("operations",{token,filters:`?client_id=eq.${client.id}&is_collected=eq.true&select=id,operation_code,collected_amount,collection_currency,collection_exchange_rate,collection_date,closed_at`}),
-      dq("operation_client_payments",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&order=payment_date.desc`}),
-      dq("payment_management",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&client_paid=eq.true&order=client_paid_at.desc`}),
-      // Ops GI activas (no cerradas/canceladas) del cliente
       dq("operations",{token,filters:`?client_id=eq.${client.id}&service_type=eq.gestion_integral&status=not.in.(operacion_cerrada,cancelada)&select=id,operation_code,description,eta,status,is_collected,channel,service_type&order=created_at.desc`}),
       dq("operation_items",{token,filters:`?select=operation_id,quantity,unit_price_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
-      // Ops NO-GI con status="entregada" (lista para retirar) y aún no marcadas como cobradas → saldo pendiente
-      dq("operations",{token,filters:`?client_id=eq.${client.id}&status=eq.entregada&service_type=neq.gestion_integral&is_collected=eq.false&select=id,operation_code,description,eta,status,channel,service_type,budget_total,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd,collected_amount,collection_currency,collection_exchange_rate&order=created_at.desc`}),
-      // Cobros del cliente para esas ops entregada
+      dq("operations",{token,filters:`?client_id=eq.${client.id}&status=eq.entregada&service_type=neq.gestion_integral&is_collected=eq.false&select=id,operation_code,description,eta,status,channel,service_type,budget_total,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd&order=created_at.desc`}),
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,status,service_type,is_collected)&operations.client_id=eq.${client.id}&operations.status=eq.entregada&operations.service_type=neq.gestion_integral&operations.is_collected=eq.false`}),
-      // Gestión de pagos (client_amount_usd) para esas ops entregada — se suma al total a abonar
       dq("payment_management",{token,filters:`?select=operation_id,client_amount_usd,operations!inner(client_id,status,service_type,is_collected)&operations.client_id=eq.${client.id}&operations.status=eq.entregada&operations.service_type=neq.gestion_integral&operations.is_collected=eq.false`})
     ]);
-    const movs=Array.isArray(m)?m:[];
-    const opsList=Array.isArray(ops)?ops:[];
-    const pmts=Array.isArray(pm)?pm:[];
-    const gpi=Array.isArray(pg)?pg:[];
-    const giOpsList=Array.isArray(giOps)?giOps:[];
-    const giItemsList=Array.isArray(giItems)?giItems:[];
-    const giCliPmtsList=Array.isArray(giCliPmts)?giCliPmts:[];
-    const entregadaOpsList=Array.isArray(entregadaOps)?entregadaOps:[];
-    const entregadaCliPmtsList=Array.isArray(entregadaCliPmts)?entregadaCliPmts:[];
-    const entregadaPmtMgmtList=Array.isArray(entregadaPmtMgmt)?entregadaPmtMgmt:[];
-    // Pendientes GI: total acordado = sum(items×qty), cobrado = sum(cli_payments), saldo = diff
-    const pendingGi=giOpsList.map(o=>{
-      const it=giItemsList.filter(i=>i.operation_id===o.id);
-      const total=it.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
-      const cp=giCliPmtsList.filter(p=>p.operation_id===o.id);
-      const cobrado=cp.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const saldo=Math.max(0,total-cobrado);
-      return {id:o.id,code:o.operation_code,desc:o.description||"",eta:o.eta,status:o.status,channel:o.channel,isGI:true,total,cobrado,saldo,pct:total>0?Math.min(100,(cobrado/total)*100):0};
+    const ml=Array.isArray(m)?m:[];
+    setMovs(ml);
+    // Lo pagado de cada importación pasada a la cuenta (para el detalle del renglón).
+    const opIds=[...new Set(ml.filter(x=>x.type==="debt"&&x.operation_id).map(x=>x.operation_id))];
+    if(opIds.length){const pg=await dq("operation_client_payments",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,amount_usd`});const pm={};(Array.isArray(pg)?pg:[]).forEach(p=>{pm[p.operation_id]=(pm[p.operation_id]||0)+Number(p.amount_usd||0);});setPaidByOp(pm);}
+    const arr=(x)=>Array.isArray(x)?x:[];
+    const pendingGi=arr(giOps).map(o=>{
+      const total=arr(giItems).filter(i=>i.operation_id===o.id).reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
+      const cobrado=arr(giCliPmts).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      return {id:o.id,code:o.operation_code,desc:o.description||"",isGI:true,status:o.status,total,cobrado,saldo:Math.max(0,total-cobrado)};
     }).filter(x=>x.saldo>0.01);
-    // Pendientes entregada (no-GI): total = budget + pmtMgmt pendiente − anticipos, cobrado = operation_client_payments
-    const pendingEntregada=entregadaOpsList.map(o=>{
-      const bt=Number(o.budget_total||0);
-      const cp=entregadaCliPmtsList.filter(p=>p.operation_id===o.id);
-      const cobrado=cp.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const pms=entregadaPmtMgmtList.filter(p=>p.operation_id===o.id);
-      const pmtTot=pms.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-      const ant=Number(o.total_anticipos||0);
-      // Mismo criterio que el admin (04/10/2026): suma la deuda de ops anteriores que se pasó a esta
-      // y descuenta el saldo a favor aplicado y el descuento. Antes la deuda arrastrada no aparecía.
-      const total=bt+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0)+Math.max(0,pmtTot-ant);
-      const saldo=Math.max(0,total-cobrado);
-      return {id:o.id,code:o.operation_code,desc:o.description||"",eta:o.eta,status:o.status,channel:o.channel,isGI:false,total,cobrado,saldo,pct:total>0?Math.min(100,(cobrado/total)*100):0};
+    const pendingEntregada=arr(entregadaOps).map(o=>{
+      const cobrado=arr(entregadaCliPmts).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const pmtTot=arr(entregadaPmtMgmt).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+      const total=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0)+Math.max(0,pmtTot-Number(o.total_anticipos||0));
+      return {id:o.id,code:o.operation_code,desc:o.description||"",isGI:false,status:o.status,total,cobrado,saldo:Math.max(0,total-cobrado),deudaAnterior:Number(o.debt_applied_usd||0)};
     }).filter(x=>x.saldo>0.01);
-    // Merge: GI primero, después entregada no-GI
     setPendingOps([...pendingGi,...pendingEntregada]);
-    const merged=[
-      ...movs.map(x=>({id:"m_"+x.id,date:x.created_at,type:x.type,amount:Number(x.amount_usd),op_code:x.operations?.operation_code,description:x.description})),
-      ...opsList.filter(o=>Number(o.collected_amount||0)>0).map(o=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usd=isArs&&rate>0?raw/rate:raw;return{id:"o_"+o.id,date:o.collection_date||o.closed_at,type:"op_cobro",amount:usd,op_code:o.operation_code,description:isArs?`Pago ARS ${raw.toLocaleString("es-AR")} @ ${rate}`:"Pago recibido"};}),
-      ...pmts.map(p=>({id:"p_"+p.id,date:p.payment_date,type:"op_anticipo",amount:Number(p.amount_usd||0),op_code:p.operations?.operation_code,description:p.notes||`Anticipo (${p.payment_method||"pago"})`})),
-      ...gpi.map(g=>{const amt=Number(g.client_paid_amount_usd??g.client_amount_usd??0);return{id:"g_"+g.id,date:g.client_paid_at||g.created_at,type:"gpi_cobro",amount:amt,op_code:g.operations?.operation_code,description:`Pago de gestión internacional${g.proveedor_name?` · ${g.proveedor_name}`:""}`};})
-    ].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-    setTimeline(merged);
     if(Array.isArray(cl)&&cl[0])setBalance(Number(cl[0].account_balance_usd||0));
     setLoading(false);
   })();},[client?.id,token]);
-  const fmtDate=d=>{try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
-  // El balance que se muestra descuenta lo que falta abonar de las operaciones (04/10/2026): con
-  // USD 0 en la cuenta y USD 3.069 a abonar, el cliente tiene que ver −3.069, no 0.
+  const usd2=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const fecha=d=>{try{return new Date(String(d).length<=10?d+"T12:00:00":d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
   const pendTot=pendingOps.reduce((a,p)=>a+Number(p.saldo||0),0);
   const neto=Math.round((balance-pendTot)*100)/100;
-  const isCredit=neto>0.005;const isDebt=neto<-0.005;const porOps=isDebt&&pendTot>0.005;
-  // Cuenta corriente (04/10/2026): saldo grande y el historial agrupado por mes.
-  const usd2=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const balColor=isCredit?"#22c55e":isDebt?"#ef4444":"#fff";
+  const isCredit=neto>0.005,isDebt=neto<-0.005;
+  const balColor=isCredit?"#22c55e":isDebt?"#f87171":"#fff";
+  // Libro: renglones con su saldo corriente (se calcula del más viejo al más nuevo, se muestra al revés).
+  const metodoTxt=(m)=>m==="transferencia"?t("acc.mTransfer"):m==="efectivo"?t("acc.mCash"):m==="cripto"?t("acc.mCrypto"):"";
+  const tx=(k,p)=>t(k,p); // (para el chequeo de i18n: asignaciones no son atributos JSX)
+  let run=0;
+  const libro=movs.map(x=>{
+    const amt=Number(x.amount_usd||0);run=Math.round((run+amt)*100)/100;
+    const code=x.operations?.operation_code||"";const o=x.operations||{};
+    let concepto=null;const detalle=[];
+    if(x.type==="debt"&&/cuenta corriente/i.test(x.description||"")&&code){
+      concepto=tx("acc.lnClosedOp",{op:code});
+      detalle.push(t("acc.lnCost",{v:usd2(Number(o.budget_total||0)-Number(o.discount_applied_usd||0))}));
+      const pag=Number(paidByOp[x.operation_id]||0);if(pag>0.005)detalle.push(t("acc.lnPaid",{v:usd2(pag)}));
+      if(Number(o.credit_applied_usd||0)>0.005)detalle.push(t("acc.lnCreditUsed",{v:usd2(o.credit_applied_usd)}));
+      if(Number(o.debt_applied_usd||0)>0.005)detalle.push(t("acc.lnPrevDebt",{v:usd2(o.debt_applied_usd)}));
+    }else if(x.type==="debt")concepto=code?t("acc.lnDebtOp",{op:code}):(x.description||t("acc.movDebt"));
+    else if(x.type==="applied")concepto=amt>0?t("acc.lnMovedToOp",{op:code||"—"}):t("acc.lnUsedInOp",{op:code||"—"});
+    else if(x.type==="overpayment")concepto=code?t("acc.lnOverpay",{op:code}):t("acc.movOverpayment");
+    else if(x.type==="payment"){
+      concepto=[t("acc.lnPayment"),metodoTxt(x.payment_method)].filter(Boolean).join(" · ");
+      if(x.currency==="ARS"&&Number(x.amount_original)>0)detalle.push(`ARS ${Number(x.amount_original).toLocaleString("es-AR",{maximumFractionDigits:2})}${Number(x.exchange_rate)>0?` ${t("acc.atRate",{v:Number(x.exchange_rate).toLocaleString("es-AR")})}`:""}`);
+    }
+    else if(x.type==="adjustment")concepto=t("acc.lnAdjust");
+    else if(x.type==="refund")concepto=t("acc.lnRefund");
+    else concepto=x.description||x.type;
+    return {id:x.id,fecha:x.movement_date||x.created_at,concepto,detalle,code,amt,saldo:run,recibo:x.receipt_url||null};
+  }).reverse();
+  const card={background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,overflow:"hidden"};
+  const lblS={fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"};
+  const chipOp=(code)=>code?<button onClick={()=>onOpenOp?.(code)} style={{padding:"1px 8px",borderRadius:6,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,fontWeight:700,cursor:onOpenOp?"pointer":"default"}}>{code}</button>:null;
   return <div>
-    <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+    <div style={{marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <h2 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("acc.title")}</h2>
       {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"7px 12px",fontSize:12,fontWeight:600,borderRadius:999,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>🎓 {t("acc.tutorialAgain")}</button>}
     </div>
-    <div className="acc-hero" style={{marginBottom:24}}>
-      <div style={{padding:"24px 26px",borderRadius:18,background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.14), rgba(255,255,255,0.02))":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.14), rgba(255,255,255,0.02))":"linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":isDebt?"rgba(239,68,68,0.35)":"rgba(255,255,255,0.09)"}`}}>
-        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
-        <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":isDebt?"−":""}{usd2(Math.abs(neto))}</p>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0",lineHeight:1.5}}>{isCredit?t("acc.creditNote"):porOps?t("acc.pendingOpsNote"):isDebt?t("acc.debtNote"):t("acc.noPending")}</p>
-      </div>
+    {/* Saldo */}
+    <div style={{padding:"22px 24px",borderRadius:18,marginBottom:22,background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.14), rgba(255,255,255,0.02))":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.13), rgba(255,255,255,0.02))":"linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":isDebt?"rgba(239,68,68,0.35)":"rgba(255,255,255,0.1)"}`}}>
+      <p style={{...lblS,margin:"0 0 8px"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
+      <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":isDebt?"−":""}{usd2(Math.abs(neto))}</p>
+      {(Math.abs(balance)>0.005||pendTot>0.005)?<div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
+        {Math.abs(balance)>0.005&&<span style={{fontSize:12.5,padding:"5px 11px",borderRadius:999,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{t("acc.ccLine")} <b style={{color:balance<0?"#f87171":"#4ade80"}}>{balance<0?"−":"+"}{usd2(Math.abs(balance))}</b></span>}
+        {pendTot>0.005&&<span style={{fontSize:12.5,padding:"5px 11px",borderRadius:999,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{t("acc.toPickupLine")} <b style={{color:"#fb923c"}}>−{usd2(pendTot)}</b></span>}
+      </div>:<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0"}}>{t("acc.allSettled")}</p>}
     </div>
-    {/* Pendientes de pago (ops GI activas + ops entregadas con saldo) */}
-    {pendingOps.length>0&&<div style={{marginBottom:24}}>
-      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.pendingPayments")}</h3>
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {pendingOps.map(p=>{const isEntregada=p.status==="entregada";return <div key={p.id} style={{background:"linear-gradient(135deg, rgba(251,146,60,0.08) 0%, rgba(255,255,255,0.02) 100%)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:14,padding:"18px 22px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap",marginBottom:14}}>
-            <div style={{flex:1,minWidth:220}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-                <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isEntregada?t("acc.readyForPickup"):t("acc.pendingPay")}</span>
-                {p.isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>{t("acc.gi")}</span>}
-                <span style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{p.code}</span>
-              </div>
-              {p.desc&&<p style={{fontSize:14,fontWeight:600,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{p.desc}</p>}
-              {isEntregada?<p style={{fontSize:11,color:"#22c55e",margin:0,fontWeight:600}}>✓ {t("acc.availableForPickup")}</p>:p.eta?<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>{t("acc.estDelivery")} · <span style={{color:"#fff",fontWeight:600}}>{fmtDate(p.eta)}</span></p>:null}
-            </div>
-            <div style={{textAlign:"right"}}>
-              <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("acc.balanceDue")}</p>
-              <p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {p.saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            </div>
-          </div>
-          {/* Progress bar */}
-          <div style={{marginBottom:8}}>
-            <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}>
-              <div style={{width:`${p.pct}%`,height:"100%",background:p.pct>=50?"#60a5fa":"#fb923c",transition:"width 0.3s"}}/>
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.55)"}}>
-            <span dangerouslySetInnerHTML={{__html:t("acc.youPaid",{paid:`<b style="color:#22c55e">USD ${p.cobrado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b>`,total:`USD ${p.total.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`})}}/>
-            <span style={{fontWeight:700}}>{p.pct.toFixed(0)}%</span>
-          </div>
-        </div>;})}
-      </div>
-    </div>}
-
-    {/* Historial */}
-    <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.history")}</h3>
-    {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:timeline.length===0?
-      <EmptyState icon="document" title={t("acc.emptyTitle")} description={t("acc.emptyDesc")}/>
-      :<div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {Object.entries(timeline.reduce((g,x)=>{const k=String(x.date||"").slice(0,7)||"—";(g[k]=g[k]||[]).push(x);return g;},{})).map(([mes,items])=><div key={mes}>
-        <p style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>{mes==="—"?"Sin fecha":(x=>x.charAt(0).toUpperCase()+x.slice(1))(new Date(mes+"-15T12:00:00").toLocaleDateString("es-AR",{month:"long",year:"numeric"}))}</p>
-        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
-        {items.map(mv=>{const amt=mv.amount;const isPos=amt>0;const color=MOV_COLORS[mv.type]||"#fff";const label=MOV_LABELS[mv.type]||mv.type;return <div key={mv.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderBottom:"1px solid rgba(255,255,255,0.045)"}}>
-          <span style={{width:34,height:34,flexShrink:0,borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",background:`${color}18`,color,fontSize:15,fontWeight:800}}>{isPos?"↓":"↑"}</span>
-          <div style={{flex:1,minWidth:0}}>
-            <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff"}}>{label}{mv.op_code&&<span style={{marginLeft:8,fontSize:11.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{mv.op_code}</span>}</p>
-            <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{mv.date?fmtDate(mv.date):"—"}{mv.description?` · ${mv.description}`:""}</p>
-          </div>
-          <span style={{fontSize:15,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{isPos?"+":"−"}USD {Math.abs(amt).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-        </div>;})}
+    {/* Por pagar */}
+    {pendingOps.length>0&&<div style={{marginBottom:22}}>
+      <p style={lblS}>{t("acc.toPay")}</p>
+      <div style={card}>{pendingOps.map((p,i)=><div key={p.id} onClick={()=>onOpenOp?.(p.code)} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none",cursor:onOpenOp?"pointer":"default"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{chipOp(p.code)}{p.isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.06em",textTransform:"uppercase"}}>{t("acc.gi")}</span>}{p.status==="entregada"&&<span style={{fontSize:11,color:"#4ade80",fontWeight:700}}>{t("acc.readyForPickup")}</span>}</div>
+          <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.desc||""}{p.cobrado>0.005?`${p.desc?" · ":""}${t("acc.lnPaid",{v:usd2(p.cobrado)})}`:""}{p.deudaAnterior>0.005?` · ${t("acc.lnPrevDebt",{v:usd2(p.deudaAnterior)})}`:""}</p>
         </div>
-      </div>)}
+        <span style={{fontSize:17,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd2(p.saldo)}</span>
+      </div>)}</div>
     </div>}
+    {/* Libro */}
+    <p style={lblS}>{t("acc.ledgerTitle")}</p>
+    {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:libro.length===0?<p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>{t("acc.ledgerEmpty")}</p>
+    :<div style={card}>{libro.map((r,i)=>{const pos=r.amt>0;return <div key={r.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"13px 16px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
+      <span style={{width:32,height:32,flexShrink:0,borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",background:pos?"rgba(34,197,94,0.14)":"rgba(248,113,113,0.13)",color:pos?"#4ade80":"#f87171",fontSize:15,fontWeight:900}}>{pos?"↓":"↑"}</span>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{r.concepto}{r.code&&!r.concepto.includes(r.code)?chipOp(r.code):null}</p>
+        <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>{fecha(r.fecha)}{r.detalle.length?` · ${r.detalle.join(" · ")}`:""}{r.recibo&&<> · <a href={r.recibo} target="_blank" rel="noreferrer" style={{color:SKY,fontWeight:700}}>{t("acc.receipt")}</a></>}</p>
+      </div>
+      <div style={{textAlign:"right",whiteSpace:"nowrap"}}>
+        <p style={{margin:0,fontSize:15,fontWeight:800,color:pos?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{pos?"+":"−"}{usd2(Math.abs(r.amt))}</p>
+        <p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{t("acc.runBal")} {r.saldo<0?"−":""}{usd2(Math.abs(r.saldo))}</p>
+      </div>
+    </div>;})}</div>}
   </div>;
 }
 function InternationalPaymentsPage({client,token}){
@@ -2941,7 +2922,7 @@ function ReferralsPage({token,client}){
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const {t}=useT();
-  const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);
+  const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ccOps,setCcOps]=useState(()=>new Set());const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);
   const loadOps=async()=>{setLo(true);
     // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
     // pero en admin preview mode el token es de admin (ve TODO) y necesitamos filtrar acá.
@@ -2951,13 +2932,16 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     // Se espera junto con las operaciones: antes llegaba después y la tarjeta "saltaba" arriba.
     const mCargoP=ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.json()).then(d=>Array.isArray(d?.cargo)?d.cargo:[]).catch(()=>[]);
     dq("operation_packages",{token,filters:`?client_id=eq.${cId}&operation_id=is.null&select=*&order=created_at.asc`}).then(d=>setDepPkgs(Array.isArray(d)?d:[])).catch(()=>setDepPkgs([]));
-    const [r,it,pm,cp,tv]=await Promise.all([
+    const [r,it,pm,cp,tv,ccm]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
       dq("operation_items",{token,filters:`?select=operation_id,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
       dq("payment_management",{token,filters:`?select=operation_id,client_amount_usd,client_paid,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
-      dq("tier_rewards",{token,filters:`?client_id=eq.${cId}&status=eq.pending&select=id`})
+      dq("tier_rewards",{token,filters:`?client_id=eq.${cId}&status=eq.pending&select=id`}),
+      dq("client_account_movements",{token,filters:`?client_id=eq.${cId}&type=eq.debt&operation_id=not.is.null&select=operation_id,description`})
     ]);
+    // Importaciones cerradas a cuenta corriente (11/10/2026): en la lista dicen "A cuenta corriente".
+    setCcOps(new Set((Array.isArray(ccm)?ccm:[]).filter(x=>/cuenta corriente/i.test(x.description||"")).map(x=>x.operation_id)));
     setMCargo(await mCargoP);
     const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(p.client_paid)return;pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
@@ -2970,7 +2954,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
     <NuevasTarifas t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/>
-    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} mCargo={mCargo}/>}</>}
+    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} ccOps={ccOps} mCargo={mCargo}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>{setSelOp(null);loadOps();}}/>}
     {page==="deposito"&&<>
       <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>
@@ -2983,7 +2967,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="quotes"&&<QuotesPage token={token} client={client} onEdit={q=>{setCalcPreset({...q,_t:Date.now()});setPage("calculator");setSelOp(null);}} onOpenOp={op=>{setSelOp(op);setPage("imports");}}/>}
     {/* Puntos y Referidos desactivados (11/06/2026) — rutas removidas, componentes quedan como código muerto para reactivar. */}
     {page==="payments"&&<InternationalPaymentsPage client={client} token={token}/>}
-    {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
+    {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial} onOpenOp={(code)=>{const o=ops.find(x=>x.operation_code===code);if(o){setSelOp(o);setPage("imports");}}}/>}
     {page==="support"&&<SupportPage token={token} client={client}/>}
     {!["imports","deposito","profile","rates","calculator","services","quotes","points","payments","account","support","referrals"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>{t("common.inDevelopment")}</p></div>}
   </DashShell>;
