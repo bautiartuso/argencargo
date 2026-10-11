@@ -8908,11 +8908,76 @@ function FeTimeline({flight}){
   </div>;
 }
 
+// Estimado por courier (11/10/2026): con el vuelo en preparación y el courier elegido, cuánto se le
+// cobraría a cada cliente, cuánto costaría según las tarifas que cargó el agente y la ganancia.
+// Kilos: facturable de cada bulto con el divisor del servicio (DHL y ÷5000 → 5000, ÷6000 → 6000),
+// redondeado al medio kilo para arriba como cobra el agente. La tarifa por kg sale del tramo que
+// corresponde al total del vuelo. Cobro = presupuesto de la op sin los impuestos (que se pagan aparte).
+function EstimadoCourier({servicio,tarifas,ops,pkgs,usd}){
+  if(tarifas===undefined)return <p style={{margin:"12px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.45)"}}>Calculando estimado…</p>;
+  const nombre={DHL:"DHL",FEDEX_5000:"FedEx ÷5.000",FEDEX_6000:"FedEx ÷6.000",UPS_5000:"UPS ÷5.000",UPS_6000:"UPS ÷6.000"}[servicio]||servicio;
+  const filasT=(tarifas?.servicios?.[servicio]||[]).filter(f=>f.usd!=null).sort((a,b)=>Number(a.min||0)-Number(b.min||0));
+  if(!filasT.length)return <p style={{margin:"12px 0 0",fontSize:12.5,color:"#fbbf24"}}>El agente no cargó tarifas de {nombre}</p>;
+  const div=/6000/.test(servicio)?6000:5000;
+  const kgOp=(opId)=>pkgs.filter(p=>p.operation_id===opId).reduce((a,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?(l*w*h)/div*q:0;return a+Math.ceil(Math.max(gw,vol)*2)/2;},0);
+  const filas=ops.map(o=>({o,kg:kgOp(o.id)}));
+  const totKg=filas.reduce((a,f)=>a+f.kg,0);
+  const tramo=[...filasT].reverse().find(f=>totKg>=Number(f.min||0))||filasT[0];
+  const tarifa=Number(tramo.usd||0);
+  const bat=Number(tarifas?.extras?.bateria_usd_total||0);
+  const kgBat=filas.filter(f=>f.o.has_battery).reduce((a,f)=>a+f.kg,0);
+  const r2=(x)=>Math.round(x*100)/100;
+  const det=filas.map(f=>{
+    const o=f.o;const ri=o.clients?.tax_condition==="responsable_inscripto";
+    const impEnTotal=o.channel!=="aereo_blanco"||!ri||!!o.ri_argencargo_collects_taxes;
+    const cobro=r2(Number(o.budget_total||0)-(impEnTotal?Number(o.budget_taxes||0):0));
+    const costo=r2(f.kg*tarifa+(o.has_battery&&bat>0&&kgBat>0?bat*f.kg/kgBat:0));
+    return {...f,cobro,costo,gan:r2(cobro-costo)};
+  });
+  const T=det.reduce((a,d)=>({cobro:a.cobro+d.cobro,costo:a.costo+d.costo,gan:a.gan+d.gan}),{cobro:0,costo:0,gan:0});
+  const pct=(g,c)=>c>0?` · ${Math.round(g/c*100)}%`:"";
+  const n2=(v)=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const caja=(l,v,c,sub)=><div style={{flex:"1 1 150px",padding:"12px 14px",borderRadius:12,background:`${c}10`,border:`1px solid ${c}40`}}>
+    <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:c}}>{l}</p>
+    <p style={{margin:"4px 0 0",fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</p>
+    {sub&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{sub}</p>}
+  </div>;
+  const th={padding:"7px 12px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
+  const td={padding:"8px 12px",fontSize:12.5,color:"rgba(255,255,255,0.75)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+  return <div style={{marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.09)"}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.09em"}}>Estimado · {nombre}</span>
+      <span style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{n2(totKg)} kg ↑ · tarifa <b style={{color:"#fff"}}>{usd(tarifa)}/kg</b> (tramo {Number(tramo.min||0)}{tramo.max!=null?`–${tramo.max}`:"+"} kg){kgBat>0&&bat>0?` · baterías ${usd(bat)}`:""}</span>
+    </div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      {caja("Cobro estimado",T.cobro,"#E8C99B","sin impuestos")}
+      {caja("Costo agente",T.costo,"#f87171",`${n2(totKg)} kg × ${usd(tarifa)}`)}
+      {caja("Ganancia",T.gan,T.gan>=0?"#4ade80":"#f87171",T.cobro>0?`margen ${Math.round(T.gan/T.cobro*100)}%`:null)}
+    </div>
+    <div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+      <table style={{width:"100%",borderCollapse:"collapse"}}>
+        <thead><tr style={{background:"rgba(0,0,0,0.2)"}}><th style={{...th,textAlign:"left"}}>Operación</th><th style={th}>Kg ↑</th><th style={th}>Cobro</th><th style={th}>Costo</th><th style={th}>Ganancia</th></tr></thead>
+        <tbody>{det.map(d=><tr key={d.o.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+          <td style={{...td,textAlign:"left"}}><b style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT}}>{d.o.operation_code}</b> <span style={{color:"rgba(255,255,255,0.5)",fontSize:11.5}}>{d.o.clients?.client_code||""}</span>{d.o.has_battery&&<span title="Con baterías" style={{marginLeft:6}}>🔋</span>}</td>
+          <td style={td}>{n2(d.kg)}</td>
+          <td style={td}>{usd(d.cobro)}</td>
+          <td style={{...td,color:"#fca5a5"}}>{usd(d.costo)}</td>
+          <td style={{...td,fontWeight:800,color:d.gan>=0?"#4ade80":"#f87171"}}>{usd(d.gan)}<span style={{fontWeight:500,color:"rgba(255,255,255,0.4)",fontSize:11}}>{pct(d.gan,d.cobro)}</span></td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
 function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   // Comisión financiera aplicable: solo si el vuelo se pagó con la cuenta corriente del agente.
   const finK=flight.payment_method==="cuenta_corriente"?Number(finRate||0):0;
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
   const [extraerBultos,setExtraerBultos]=useState(false); // modal: leer bultos de la foto con IA
+  const [opsAbiertas,setOpsAbiertas]=useState(()=>new Set()); // ops del vuelo desplegadas (por defecto plegadas)
+  // Tarifas del agente del vuelo (las carga en su panel): para el estimado por courier en preparación.
+  const [tarifasAg,setTarifasAg]=useState(undefined);
+  useEffect(()=>{if(flight.status!=="preparando"||esEmpleado())return;(async()=>{try{const r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();setTarifasAg((j?.agentes||[]).find(x=>x.auth_user_id===flight.agent_id)?.tarifas||null);}catch{setTarifasAg(null);}})();},[flight.id,flight.status,flight.agent_id,token]);
   const [reembalaje,setReembalaje]=useState(false); // modal: pedir reembalaje al agente desde el vuelo
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
   const VOL_DIV=Number(a?.volumetric_divisor)||5000;
@@ -8934,7 +8999,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,budget_flete,budget_seguro,cost_flete,cost_seguro,cost_impuestos_reales,cost_gasto_documental,cost_flete_local,cost_otros,collected_amount,collection_currency,collection_exchange_rate,collection_fee_pct,collection_method,credit_applied_usd,debt_applied_usd,is_collected,ri_argencargo_collects_taxes`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,budget_flete,budget_seguro,cost_flete,cost_seguro,cost_impuestos_reales,cost_gasto_documental,cost_flete_local,cost_otros,collected_amount,collection_currency,collection_exchange_rate,collection_fee_pct,collection_method,credit_applied_usd,debt_applied_usd,is_collected,ri_argencargo_collects_taxes,channel,has_battery`});
     setFlightOpsData(Array.isArray(r)?r:[]);
     // Cobros de las ops del vuelo: hacen falta para descontar la comision real de cada transferencia
     // al calcular lo cobrado NETO en el detalle financiero.
@@ -9513,8 +9578,9 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </div>
         <p style={{...FE_LBL,marginBottom:8}}>Operaciones en este vuelo</p>
         <div style={{border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,overflow:"hidden"}}>
-          {filasOps.map(({o,fo,pkgs,pkgRows,totBruto,totFact,totFactAgente,totFact6Agente},k)=><div key={o.id} style={{borderTop:k>0?"1px solid rgba(255,255,255,0.06)":"none"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",background:"rgba(255,255,255,0.035)"}}>
+          {filasOps.map(({o,fo,pkgs,pkgRows,totBruto,totFact,totFactAgente,totFact6Agente},k)=>{const abierta=opsAbiertas.has(o.id);return <div key={o.id} style={{borderTop:k>0?"1px solid rgba(255,255,255,0.06)":"none"}}>
+            <div onClick={()=>setOpsAbiertas(p=>{const n=new Set(p);n.has(o.id)?n.delete(o.id):n.add(o.id);return n;})} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",background:abierta?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.025)",cursor:"pointer"}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",width:10,display:"inline-block",transition:"transform 150ms",transform:abierta?"rotate(90deg)":"none"}}>▶</span>
               <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>
               <span style={{fontSize:13,color:"#fff",fontWeight:600}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
               {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"monospace"}}>{o.clients.client_code}</span>}
@@ -9528,7 +9594,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
                 {!esEmpleado()&&fo?.cost_share_usd?<span title="Parte del costo del vuelo que le toca a esta op">flete <strong style={{color:"#4ade80"}}>{usd(fo.cost_share_usd)}</strong></span>:null}
               </span>
             </div>
-            {pkgs.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
+            {abierta&&pkgs.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>
                 <th style={{...th,textAlign:"left",width:44}}>#</th><th style={{...th,textAlign:"left"}}>Tracking</th><th style={{...th,textAlign:"left"}}>Medidas</th><th style={th}>Bruto</th><th style={th}>Vol.</th><th style={th}>Facturable</th><th style={th}>Agente ↑</th><th style={th}>/6000 ↑</th>
               </tr></thead>
@@ -9543,7 +9609,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
                 <td style={{...td,color:"#93c5fd"}}>{fact6Agente>0?n2(fact6Agente):"—"}</td>
               </tr>)}</tbody>
             </table>}
-          </div>)}
+          </div>;})}
         </div>
       </FeCard>;
     })()}
@@ -9561,6 +9627,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
               {k?<><CarrierLogo k={k} alto={38}/>{div?<span style={{fontSize:15,fontWeight:900,fontVariantNumeric:"tabular-nums"}}>÷ {div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
             </button>;})}
           </div>
+          {norm&&!esEmpleado()&&<EstimadoCourier servicio={norm} tarifas={tarifasAg} ops={opsUnique} pkgs={edPkgs} usd={usd}/>}
         </div>;
       })()}
       {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
@@ -9691,14 +9758,16 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         <div style={{display:"flex",justifyContent:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
           <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
-          {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count,target})=><button key={opId} onClick={()=>openCompressFor(opId,target)} title={`Comprimir los ${count} items de ${opCode} a ${target} (otras ops aportan ${totalInvoiceItems-count} al total). Límite RG 5608: ${MAX_INVOICE_ITEMS} por factura.`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{target})</button>)}
-          {needsCompression&&!flight.invoice_presented_at&&<button onClick={()=>openCompressForFlight(MAX_INVOICE_ITEMS)} title={`Comprimir TODOS los items del vuelo (cross-ops). Útil cuando varias ops del mismo cliente repiten mercadería y la compresión por op no agrupa entre sí. Sólo reescribe la declaración del vuelo — los productos en las ops del cliente quedan intactos y los clasificás después manualmente.`} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(167,139,250,0.5)",background:"rgba(167,139,250,0.14)",color:"#a78bfa",cursor:"pointer"}}>🗜 Comprimir VUELO completo ({totalInvoiceItems} → ≤{MAX_INVOICE_ITEMS}) · no toca ops</button>}
-          {items.some(it=>it.hs_code&&it.hs_code.trim())&&<button onClick={recheckInterventions} disabled={checkingInterventions} title="Revisa intervención contra el HS code actual de cada item (útil si reclasificaste alguno a mano)" style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,191,36,0.35)",background:"rgba(251,191,36,0.08)",color:"#fbbf24",cursor:checkingInterventions?"wait":"pointer",opacity:checkingInterventions?0.6:1}}>{checkingInterventions?"Revisando…":"🔄 Revisar intervenciones (HS actual)"}</button>}
+          {/* Agrupar (11/10/2026): los botones por operación se ven siempre que la op tenga 2+ ítems,
+              aunque el vuelo no pase de 8; si pasa, marcan cuánto hay que bajar. */}
+          {!flight.invoice_presented_at&&Object.entries(itemsByOp).filter(([,list])=>list.length>=2).map(([opId,list])=>{const exc=opsCompressible.find(x=>x.opId===opId);const opCode=opsUnique.find(o=>o.id===opId)?.operation_code||"?";const target=exc?exc.target:list.length-1;return <button key={opId} onClick={()=>openCompressFor(opId,target,exc?undefined:list.length-1)} title={exc?`Límite RG 5608: ${MAX_INVOICE_ITEMS} ítems por factura`:undefined} style={{display:"inline-flex",alignItems:"center",gap:8,height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:10,border:`1px solid ${exc?"rgba(251,146,60,0.55)":"rgba(255,255,255,0.14)"}`,background:exc?"rgba(251,146,60,0.12)":"rgba(255,255,255,0.04)",color:exc?"#fb923c":"rgba(255,255,255,0.8)",cursor:"pointer",fontFamily:"inherit"}}>🗜 {exc?"Comprimir":"Agrupar"} <span style={{fontFamily:"'JetBrains Mono',monospace"}}>{opCode}</span> <span style={{opacity:0.7,fontWeight:600}}>{exc?`${list.length} → ≤${target}`:`${list.length} ítems`}</span></button>;})}
+          {needsCompression&&!flight.invoice_presented_at&&<button onClick={()=>openCompressForFlight(MAX_INVOICE_ITEMS)} title="Sólo reescribe la declaración del vuelo: los productos de las ops quedan intactos" style={{display:"inline-flex",alignItems:"center",gap:8,height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:10,border:"1px solid rgba(167,139,250,0.55)",background:"rgba(167,139,250,0.14)",color:"#c4b5fd",cursor:"pointer",fontFamily:"inherit"}}>🗜 Comprimir vuelo completo <span style={{opacity:0.7,fontWeight:600}}>{totalInvoiceItems} → ≤{MAX_INVOICE_ITEMS}</span></button>}
+          {items.some(it=>it.hs_code&&it.hs_code.trim())&&<button onClick={recheckInterventions} disabled={checkingInterventions} title="Vuelve a chequear intervención de organismos con el HS code actual de cada ítem" style={{display:"inline-flex",alignItems:"center",gap:8,height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:10,border:"1px solid rgba(96,165,250,0.5)",background:"linear-gradient(135deg,rgba(96,165,250,0.16),rgba(59,130,246,0.08))",color:"#93c5fd",cursor:checkingInterventions?"wait":"pointer",opacity:checkingInterventions?0.6:1,fontFamily:"inherit"}}><span style={{display:"inline-flex",width:20,height:20,borderRadius:6,alignItems:"center",justifyContent:"center",background:"rgba(96,165,250,0.2)",fontSize:11}}>🛡</span>{checkingInterventions?"Revisando…":"Revisar intervenciones"}</button>}
         </div>
       </div>}
-      {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-        {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
-        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small disabled={presentando} onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!((dest.dest_address||"").trim()||flight.dest_address||flight.destination_address)){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}setPresentando(true);try{await saveAllItems();{const d={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])d[k]=dest[k];});if(d.dest_address!==undefined)d.destination_address=d.dest_address;if(Object.keys(d).length)await updateFlightSilent(d);}await updateFlight({invoice_presented_at:new Date().toISOString()});await Promise.all(flightOps.map(fo=>dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}})));}finally{setPresentando(false);}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>{presentando?"Presentando…":"✓ Guardar y presentar factura"}</Btn>}
+      {flight.status==="preparando"&&<div style={{marginTop:16,padding:"16px 18px",borderRadius:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,background:flight.invoice_presented_at?"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.14),rgba(184,149,106,0.03))",border:`1px solid ${flight.invoice_presented_at?"rgba(34,197,94,0.4)":"rgba(232,201,155,0.4)"}`}}>
+        {flight.invoice_presented_at?<div style={{display:"flex",alignItems:"center",gap:12}}><span style={{width:38,height:38,borderRadius:11,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.45)",fontSize:18}}>✓</span><div><p style={{fontSize:14,fontWeight:800,color:"#4ade80",margin:0}}>Factura presentada · {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div></div>:<div style={{display:"flex",alignItems:"center",gap:12}}><span style={{width:38,height:38,borderRadius:11,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(184,149,106,0.18)",border:"1px solid rgba(232,201,155,0.45)",fontSize:18}}>📄</span><div><p style={{fontSize:14,fontWeight:800,color:"#E8C99B",margin:0}}>Factura sin presentar</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div></div>}
+        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn variant="gold" disabled={presentando} onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!((dest.dest_address||"").trim()||flight.dest_address||flight.destination_address)){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}setPresentando(true);try{await saveAllItems();{const d={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])d[k]=dest[k];});if(d.dest_address!==undefined)d.destination_address=d.dest_address;if(Object.keys(d).length)await updateFlightSilent(d);}await updateFlight({invoice_presented_at:new Date().toISOString()});await Promise.all(flightOps.map(fo=>dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}})));}finally{setPresentando(false);}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>{presentando?"Presentando…":"📤 Guardar y presentar factura"}</Btn>}
       </div>}
     </FeCard>
     {/* Impuestos del vuelo. Se paga un monto unico en pesos al despachante y hay que repartirlo
