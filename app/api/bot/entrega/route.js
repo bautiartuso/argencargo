@@ -200,8 +200,10 @@ export async function GET(req) {
 async function acreditar(body) {
   const op = await findOp(body.op);
   if (!op) return { error: `Operación ${body.op} no encontrada`, status: 404 };
-  const monto = Number(body.monto_ars); const tc = Number(body.tc);
-  if (!(monto > 0) || !(tc > 0)) return { error: "monto_ars y tc tienen que ser > 0", status: 400 };
+  // Cripto (11/10/2026): USDT por TRC-20, 1 USDT = 1 USD, sin pesos ni SOLFIN (va a nuestra billetera).
+  const cripto = body.metodo === "cripto";
+  const monto = cripto ? Number(body.monto_usd) : Number(body.monto_ars); const tc = cripto ? 1 : Number(body.tc);
+  if (!(monto > 0) || !(tc > 0)) return { error: cripto ? "monto_usd tiene que ser > 0" : "monto_ars y tc tienen que ser > 0", status: 400 };
   const ref = String(body.referencia || "").replace(/[^A-Za-z0-9-]/g, "").trim();
   if (ref) {
     const dup = await sb(`/operation_client_payments?operation_id=eq.${op.id}&notes=ilike.*ref%20${ref}*&select=id,amount_usd`);
@@ -224,14 +226,17 @@ async function acreditar(body) {
   const usd = Math.round((monto / tc) * 100) / 100;
   const com = 2.5;
   const comArs = Math.round(monto * com) / 100;
-  const ins = await sb(`/operation_client_payments`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({
+  const ins = await sb(`/operation_client_payments`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(cripto ? {
+    operation_id: op.id, payment_date: hoy, amount_usd: usd, currency: "USD", payment_method: "cripto", receipt_url: body.receipt_url || null,
+    notes: `Acreditado automáticamente por Argy (USDT TRC-20 por WhatsApp${body.fecha ? ` del ${body.fecha}` : ""}${ref ? ` · ref ${ref}` : ""})`,
+  } : {
     operation_id: op.id, payment_date: hoy, amount_usd: usd, amount_ars: monto, exchange_rate: tc, currency: "ARS", payment_method: "transferencia",
     receipt_url: body.receipt_url || null, ars_destination: "financiera", commission_pct: com,
     notes: `Acreditado automáticamente por Argy (comprobante por WhatsApp${body.fecha ? ` del ${body.fecha}` : ""}${ref ? ` · ref ${ref}` : ""})`,
   }) });
   const pago = Array.isArray(ins.body) ? ins.body[0] : null;
   if (!pago?.id) return { error: ins.body?.message || "El cobro no se pudo guardar", status: 500 };
-  try {
+  if (!cripto) try {
     await sb(`/cc_solfin_movements`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({
       date: hoy, type: "ingreso", currency: "ARS", amount: monto, commission_pct: com, commission_amount: comArs, net_amount: monto - comArs, provisional_rate: tc,
       description: `Cobro ${op.operation_code}${op.clients?.client_code ? ` · ${op.clients.client_code}` : ""}`, image_url: body.receipt_url || null,
@@ -248,11 +253,11 @@ async function acreditar(body) {
   const cierraReal = cierra;
   const cotizado = Array.isArray(op.payment_split) ? op.payment_split.reduce((a, p) => a + Number(p.amount || 0), 0) : 0;
   const diferenciaPresupuesto = 0;
-  const upd = { collected_amount: newTotal, collection_method: "transferencia", collection_currency: "USD", collection_date: hoy };
+  const upd = { collected_amount: newTotal, collection_method: cripto ? "cripto" : "transferencia", collection_currency: "USD", collection_date: hoy };
   if (cierra) upd.is_collected = true;
   await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd) });
-  await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: op.id, type: "note", direction: "in", content: `✅ Cobro acreditado automáticamente por Argy: ARS ${monto.toLocaleString("es-AR")} (USD ${usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })} al TC ${tc})${cierraReal ? " — cobro cerrado" : diferenciaPresupuesto > 0 ? ` — ⚠️ pagó lo cotizado (USD ${cotizado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}) pero el presupuesto actual es mayor: diferencia USD ${diferenciaPresupuesto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : ` — queda saldo USD ${Math.max(0, restante).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}` }) });
-  return { ok: true, op: op.operation_code, usd, monto_ars: monto, tc, saldo_antes: saldoAntes, cotizado, restante: cierra ? 0 : Math.max(0, restante), excedente: restante < 0 ? Math.round(-restante * 100) / 100 : 0, cierra, cobro_cerrado: cierraReal, diferencia_presupuesto: diferenciaPresupuesto, entrega: { dia: op.delivery_day, franja: op.delivery_slot, modalidad: op.delivery_choice, confirmada: !!op.delivery_confirmed_at } };
+  await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: op.id, type: "note", direction: "in", content: `✅ Cobro acreditado automáticamente por Argy: ${cripto ? `USDT ${usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })} (TRC-20)` : `ARS ${monto.toLocaleString("es-AR")} (USD ${usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })} al TC ${tc})`}${cierraReal ? " — cobro cerrado" : diferenciaPresupuesto > 0 ? ` — ⚠️ pagó lo cotizado (USD ${cotizado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}) pero el presupuesto actual es mayor: diferencia USD ${diferenciaPresupuesto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : ` — queda saldo USD ${Math.max(0, restante).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}` }) });
+  return { ok: true, metodo: cripto ? "cripto" : "transferencia", op: op.operation_code, usd, monto_ars: cripto ? null : monto, tc, saldo_antes: saldoAntes, cotizado, restante: cierra ? 0 : Math.max(0, restante), excedente: restante < 0 ? Math.round(-restante * 100) / 100 : 0, cierra, cobro_cerrado: cierraReal, diferencia_presupuesto: diferenciaPresupuesto, entrega: { dia: op.delivery_day, franja: op.delivery_slot, modalidad: op.delivery_choice, confirmada: !!op.delivery_confirmed_at } };
 }
 
 export async function POST(req) {

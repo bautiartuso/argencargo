@@ -106,15 +106,16 @@ const LECTURA_SCHEMA = {
   properties: {
     es_comprobante: { type: "boolean", description: "true si la imagen/PDF es un comprobante de transferencia o pago" },
     monto: { anyOf: [{ type: "number" }, { type: "null" }], description: "Importe transferido, número sin separadores de miles" },
-    moneda: { anyOf: [{ type: "string", enum: ["ARS", "USD"] }, { type: "null" }] },
+    moneda: { anyOf: [{ type: "string", enum: ["ARS", "USD", "USDT"] }, { type: "null" }], description: "USDT si es un envío/retiro de cripto (Binance, etc.), aunque diga 'USD'" },
+    red: { anyOf: [{ type: "string" }, { type: "null" }], description: "Solo cripto: red del envío (TRC20/TRX, BEP20, ERC20…)" },
     fecha: { anyOf: [{ type: "string" }, { type: "null" }], description: "Fecha de la operación tal como figura, formato DD/MM/AAAA" },
-    destinatario: { anyOf: [{ type: "string" }, { type: "null" }], description: "Nombre, alias o CBU/CVU de quien RECIBE el dinero" },
+    destinatario: { anyOf: [{ type: "string" }, { type: "null" }], description: "Nombre, alias o CBU/CVU de quien RECIBE el dinero. En cripto: la dirección de la billetera destino completa, tal cual figura" },
     remitente: { anyOf: [{ type: "string" }, { type: "null" }], description: "Nombre de quien ENVÍA el dinero" },
     banco: { anyOf: [{ type: "string" }, { type: "null" }], description: "Banco o billetera desde la que se hizo" },
     referencia: { anyOf: [{ type: "string" }, { type: "null" }], description: "Número de operación / comprobante / referencia" },
     observaciones: { type: "string", description: "SOLO anomalías: comprobante editado, borroso, en estado pendiente o rechazado, fecha vieja, datos tapados. NO incluyas códigos de identificación ni datos normales del comprobante. Vacío si no hay nada raro." },
   },
-  required: ["es_comprobante", "monto", "moneda", "fecha", "destinatario", "remitente", "banco", "referencia", "observaciones"],
+  required: ["es_comprobante", "monto", "moneda", "red", "fecha", "destinatario", "remitente", "banco", "referencia", "observaciones"],
   additionalProperties: false,
 };
 
@@ -128,7 +129,7 @@ async function leerComprobante(media) {
   const res = await client.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 800,
-    system: `Extraés datos de comprobantes de transferencia bancaria o billetera virtual argentinos (Mercado Pago, bancos, Ualá, etc.). HOY es ${new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)}: las fechas de este año son normales, NO las marques como anomalía (la validez de la fecha la chequea el sistema). Respondé solo con el JSON pedido. Si no es un comprobante de pago, es_comprobante=false y el resto null.`,
+    system: `Extraés datos de comprobantes de transferencia bancaria o billetera virtual argentinos (Mercado Pago, bancos, Ualá, etc.) y también de envíos/retiros de criptomonedas (Binance, etc.). En cripto: moneda=USDT, monto en USDT, destinatario = dirección de la billetera destino completa, red = la red (TRC20/TRX…), referencia = el TxID o número de operación, banco = la plataforma (Binance…); que sea cripto NO es una anomalía. HOY es ${new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)}: las fechas de este año son normales, NO las marques como anomalía (la validez de la fecha la chequea el sistema). Respondé solo con el JSON pedido. Si no es un comprobante de pago, es_comprobante=false y el resto null.`,
     messages: [{ role: "user", content: [block, { type: "text", text: "Leé este archivo y extraé los datos del comprobante." }] }],
     output_config: { format: { type: "json_schema", schema: LECTURA_SCHEMA } },
   });
@@ -138,6 +139,16 @@ async function leerComprobante(media) {
 
 // Chequeos previos a acreditar solo: cuenta destino nuestra, fecha reciente, sin anomalías.
 function motivoNoAcreditar(l, cuenta) {
+  if (l.moneda === "USDT") {
+    // Cripto (11/10/2026): la cuenta es nuestra billetera USDT TRC-20 (gi_settings.payment_crypto_wallet).
+    const w = String(cuenta.payment_crypto_wallet || "").replace(/\s/g, "");
+    const d = String(l.destinatario || "").replace(/\s/g, "");
+    if (!w) return "no hay billetera cargada en el sistema";
+    const ok = d === w || (d.length >= 12 && (w.startsWith(d.slice(0, 8)) && w.endsWith(d.slice(-8))));
+    if (!ok) return "la billetera destino no es la nuestra";
+    if (l.red && !/trc|trx|tron/i.test(l.red)) return `red ${l.red} (se cobra por TRC-20)`;
+    return motivoFecha(l);
+  }
   const dest = `${l.destinatario || ""} ${l.banco || ""}`.toLowerCase();
   const destDigits = dest.replace(/\D/g, "");
   const aliasTxt = String(cuenta.payment_alias || "").toLowerCase();
@@ -146,6 +157,9 @@ function motivoNoAcreditar(l, cuenta) {
   const titular = String(cuenta.payment_titular || "").toLowerCase().split(/\s+/).filter((w) => w.length >= 4 && !["s.a.", "sa", "srl", "s.r.l."].includes(w));
   const cuentaOk = cbus.some((c) => destDigits.includes(c)) || aliasWords.some((w) => dest.includes(w)) || titular.some((w) => dest.includes(w));
   if (!cuentaOk) return "la cuenta destino no es la nuestra";
+  return motivoFecha(l);
+}
+function motivoFecha(l) {
   const m = String(l.fecha || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (!m) return "sin fecha legible";
   const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
@@ -164,7 +178,7 @@ function estadoAcred(acreditado, noAcredita) {
   return "";
 }
 
-function resumirLectura(l, esperadoArs) {
+function resumirLectura(l, esperadoArs, esperadoUsd) {
   if (!l) return "no se pudo leer el archivo";
   if (!l.es_comprobante) return `no parece un comprobante${l.observaciones ? ` (${l.observaciones})` : ""}`;
   const partes = [];
@@ -172,9 +186,12 @@ function resumirLectura(l, esperadoArs) {
   if (l.fecha) partes.push(`el ${l.fecha}`);
   if (l.destinatario) partes.push(`a ${l.destinatario}`);
   if (l.remitente) partes.push(`de ${l.remitente}`);
-  if (l.banco) partes.push(`vía ${l.banco}`);
+  if (l.banco) partes.push(`vía ${l.banco}${l.red ? ` (${l.red})` : ""}`);
   if (l.referencia) partes.push(`ref ${l.referencia}`);
-  if (esperadoArs && l.monto != null && (l.moneda || "ARS") === "ARS") {
+  if (esperadoUsd && l.monto != null && (l.moneda === "USDT" || l.moneda === "USD")) {
+    const diffU = Math.abs(Number(l.monto) - esperadoUsd);
+    partes.push(diffU <= Math.max(1, esperadoUsd * TOL_COMPROBANTE) ? `✅ coincide con el saldo (USD ${esperadoUsd.toLocaleString("es-AR", { minimumFractionDigits: 2 })})` : `⚠️ esperado USD ${esperadoUsd.toLocaleString("es-AR", { minimumFractionDigits: 2 })} · diferencia USD ${diffU.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  } else if (esperadoArs && l.monto != null && (l.moneda || "ARS") === "ARS") {
     const diff = Math.abs(Number(l.monto) - esperadoArs) / esperadoArs;
     const difAbs = Math.round(Math.abs(Number(l.monto) - esperadoArs));
     partes.push(diff <= TOL_COMPROBANTE ? `✅ coincide con el saldo (ARS ${esperadoArs.toLocaleString("es-AR")})` : `⚠️ esperado ARS ${esperadoArs.toLocaleString("es-AR")} · diferencia ARS ${difAbs.toLocaleString("es-AR")}`);
@@ -467,7 +484,17 @@ export async function POST(req) {
             guardado = fileUrl;
             // ── Acreditación automática: solo si TODO cierra (cuenta destino nuestra, fecha
             // reciente, sin anomalías, op con saldo y TC del día). Si no, queda para el equipo.
-            if (lectura?.es_comprobante && Number(lectura.monto) > 0 && (lectura.moneda || "ARS") === "ARS" && opDest && Number(opDest.saldo_usd) > 0 && tcBlue > 0) {
+            // Cripto: la op que se paga en cripto con saldo, si la hay.
+            if (lectura?.moneda === "USDT") opDest = (mias.operaciones || []).find((o) => o.pago?.metodo === "crypto" && o.saldo_usd > 0) || opDest;
+            if (lectura?.es_comprobante && Number(lectura.monto) > 0 && lectura.moneda === "USDT" && opDest && Number(opDest.saldo_usd) > 0) {
+              const stg = await sb(`/gi_settings?select=payment_crypto_wallet&limit=1`);
+              const cuenta = Array.isArray(stg.body) && stg.body[0] ? stg.body[0] : {};
+              const motivo = motivoNoAcreditar(lectura, cuenta);
+              if (!motivo) {
+                const r = await apiEntrega("POST", { accion: "acreditar", metodo: "cripto", op: opDest.op, monto_usd: Number(lectura.monto), referencia: lectura.referencia || "", receipt_url: fileUrl, fecha: lectura.fecha || "" });
+                if (r?.ok || r?.duplicado) acreditado = r; else { noAcredita = r?.error || "error al acreditar"; console.error("[bot/whatsapp] acreditar cripto", r); }
+              } else noAcredita = motivo;
+            } else if (lectura?.es_comprobante && Number(lectura.monto) > 0 && (lectura.moneda || "ARS") === "ARS" && opDest && Number(opDest.saldo_usd) > 0 && tcBlue > 0) {
               const stg = await sb(`/gi_settings?select=payment_alias,payment_titular&limit=1`);
               const cuenta = Array.isArray(stg.body) && stg.body[0] ? stg.body[0] : {};
               const motivo = motivoNoAcreditar(lectura, cuenta);
@@ -475,9 +502,9 @@ export async function POST(req) {
                 const r = await apiEntrega("POST", { accion: "acreditar", op: opDest.op, monto_ars: Number(lectura.monto), tc: tcBlue, referencia: lectura.referencia || "", receipt_url: fileUrl, fecha: lectura.fecha || "" });
                 if (r?.ok || r?.duplicado) acreditado = r; else { noAcredita = r?.error || "error al acreditar"; console.error("[bot/whatsapp] acreditar", r); }
               } else noAcredita = motivo;
-            } else if (lectura?.es_comprobante) noAcredita = !opDest ? "sin operación con saldo" : Number(opDest?.saldo_usd) > 0 ? (tcBlue > 0 ? "moneda no es ARS" : "sin tipo de cambio") : "la operación no tiene saldo pendiente";
+            } else if (lectura?.es_comprobante) noAcredita = !opDest ? "sin operación con saldo" : Number(opDest?.saldo_usd) > 0 ? (tcBlue > 0 ? `moneda ${lectura.moneda || "?"} no se acredita sola` : "sin tipo de cambio") : "la operación no tiene saldo pendiente";
           }
-          const resumen = resumirLectura(lectura, esperadoArs) + estadoAcred(acreditado, noAcredita);
+          const resumen = resumirLectura(lectura, lectura?.moneda === "USDT" ? null : esperadoArs, opDest ? Number(opDest.saldo_usd) || null : null) + estadoAcred(acreditado, noAcredita);
           if (up.ok) {
             const fileUrl = guardado;
             if (opDest) {
@@ -510,7 +537,7 @@ export async function POST(req) {
           if (destinos.length && !repetido) {
             const kind = media.mime.includes("pdf") ? "document" : "image";
             const newId = await uploadWaMedia(media.buffer, media.mime, kind === "document" ? "comprobante.pdf" : "comprobante.jpg");
-            const opTxt = opDest ? `${opDest.op}${esperadoArs ? ` (esperado ARS ${esperadoArs.toLocaleString("es-AR")})` : ` (saldo USD ${opDest.saldo_usd})`}` : "sin operación identificada";
+            const opTxt = opDest ? `${opDest.op}${esperadoArs && lectura?.moneda !== "USDT" ? ` (esperado ARS ${esperadoArs.toLocaleString("es-AR")})` : ` (saldo USD ${opDest.saldo_usd})`}` : "sin operación identificada";
             // Pedido 04/09: a los internos les llega SOLO la imagen/PDF. Primero reenvío libre (sin
             // texto; llega si esa persona le escribió al bot en 24 h); si no, plantilla mínima con el
             // adjunto; y si esa todavía no está aprobada, la plantilla con detalle.
@@ -535,7 +562,7 @@ export async function POST(req) {
           }
         }
       } catch (e) { console.error("[bot/whatsapp] media", e.message); }
-      const resumen = resumirLectura(lectura, esperadoArs) + estadoAcred(acreditado, noAcredita);
+      const resumen = resumirLectura(lectura, lectura?.moneda === "USDT" ? null : esperadoArs, opDest ? Number(opDest.saldo_usd) || null : null) + estadoAcred(acreditado, noAcredita);
       logContent = resumen;
       logExtra = { media_url: guardado ? guardado.split(" · ")[0] : null, media_type: msg.type === "document" ? "document" : "image" };
       await notifyAdmins(acreditado?.ok ? (acreditado.cierra ? "✅ Cobro acreditado por Argy" : "🟡 Cobro parcial acreditado por Argy") : "🧾 Comprobante por WhatsApp", `${phone}${opDest ? ` · ${opDest.op}` : ""} — ${resumen}${acreditado?.ok ? "" : ". Verificar y registrar el cobro a mano."}`);
@@ -547,8 +574,11 @@ export async function POST(req) {
       if (acreditado?.ok) {
         const e = acreditado.entrega || {};
         const entregaTxt = e.confirmada && e.dia ? `Su entrega ya está coordinada (${e.dia}${e.franja ? `, ${e.franja}` : ""}${e.modalidad === "propio" ? ", envío a domicilio" : e.modalidad === "oficina" ? ", retiro por oficina" : ""}): recordásela.` : "Todavía no coordinó la entrega: invitalo a elegir día y franja (podés hacerlo vos con la tool coordinar).";
-        text = acreditado.cierra
-          ? `[PAGO ACREDITADO ✅ por el sistema: ${ars(acreditado.monto_ars)} (${usd(acreditado.usd)}) de la operación ${acreditado.op}. La carga queda PAGA, sin saldo.${acreditado.excedente > 0 ? ` Pagó de más ${usd(acreditado.excedente)}: decile que el equipo se lo devuelve o lo deja a favor.` : ""} Confirmale que quedó acreditado (monto en *negrita*). ${entregaTxt}]`
+        const pagoTxt = acreditado.metodo === "cripto" ? `USDT ${Number(acreditado.usd).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${ars(acreditado.monto_ars)} (${usd(acreditado.usd)})`;
+        text = acreditado.metodo === "cripto" && !acreditado.cierra
+          ? `[PAGO PARCIAL acreditado por el sistema: ${pagoTxt} (cripto, se toma 1 USDT = 1 USD) de la operación ${acreditado.op}. FALTA ${usd(acreditado.restante)}. Decile con claridad que se acreditó ese pago y cuánto falta, y pedile que envíe el resto en USDT por TRC-20 a la misma billetera y mande el comprobante. ${entregaTxt}]`
+          : acreditado.cierra
+          ? `[PAGO ACREDITADO ✅ por el sistema: ${pagoTxt} de la operación ${acreditado.op}. La carga queda PAGA, sin saldo.${acreditado.excedente > 0 ? ` Pagó de más ${usd(acreditado.excedente)}: decile que el equipo se lo devuelve o lo deja a favor.` : ""} Confirmale que quedó acreditado (monto en *negrita*). ${entregaTxt}]`
           : `[PAGO PARCIAL acreditado por el sistema: ${ars(acreditado.monto_ars)} (${usd(acreditado.usd)} al cambio del día — no le digas el valor del tipo de cambio) de la operación ${acreditado.op}. FALTA ${usd(acreditado.restante)} ≈ ${ars(acreditado.restante * acreditado.tc)}.${acreditado.restante <= Math.max(5, acreditado.saldo_antes * 0.06) ? " Es un saldo chico: seguramente por la diferencia de tipo de cambio entre el día en que se le informó el monto y el del pago — decíselo así." : ""} Decile con claridad que se acreditó ese pago y cuánto falta, y pedile que transfiera el resto y mande el comprobante. ${entregaTxt}]`;
       } else if (acreditado?.duplicado) {
         text = `[Ese comprobante YA estaba acreditado (misma referencia ${acreditado.ref}). Decile que ese pago ya está registrado y no hace falta reenviarlo.]`;
