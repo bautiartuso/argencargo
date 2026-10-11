@@ -5666,7 +5666,7 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
 // Coordinar a mano: muchos clientes contestan por WhatsApp en vez de usar el link.
 // Este modal deja fijar entrega + dia + franja + metodo desde el panel, y marca la op
 // como coordinada (igual que si hubiera completado el link).
-function CoordinarModal({op,token,onClose,onSaved}){
+function CoordinarModal({op,token,onClose,onSaved,onEntregada}){
   const celu=useEsCelu();
   const [entrega,setEntrega]=useState(op.delivery_choice||"oficina");
   const [dia,setDia]=useState(op.delivery_day||hoyAR());
@@ -5722,6 +5722,9 @@ function CoordinarModal({op,token,onClose,onSaved}){
       {err&&<div style={{padding:"9px 12px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,fontSize:12,color:"#ff6b6b",marginBottom:12}}>{err}</div>}
       <div style={{display:"flex",gap:8,flexDirection:celu?"column":"row"}}>
         <Btn fullWidth={celu} onClick={guardar} disabled={guardando}>{guardando?"Guardando…":"✓ Coordinar"}</Btn>
+        {/* Ya la retiró o se la llevaron (11/10/2026): se marca entregada desde acá, con el mismo
+            paso de entrega/cobro del botón "✓ Entregar". */}
+        {onEntregada&&<Btn fullWidth={celu} variant="secondary" onClick={onEntregada} disabled={guardando}>📦 Marcar entregada</Btn>}
         <Btn fullWidth={celu} variant="secondary" onClick={onClose} disabled={guardando}>Cancelar</Btn>
       </div>
     </div>
@@ -6456,7 +6459,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     </Bloque>}
 
     {cobroModal&&<CobroEntregaModal op={cobroModal.op||cobroModal} saldo={saldoFor(cobroModal.op||cobroModal)} cobradoPrevio={Number(cobrosByOp[(cobroModal.op||cobroModal).id]||0)} token={token} sinMontos={sinMontos} soloCobro={!!cobroModal.soloCobro} onClose={()=>setCobroModal(null)} onSaved={()=>{setCobroModal(null);load();toast("✓ Registrado","success");}}/>}
-    {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} token={token} onClose={()=>setCoordinarModal(null)} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
+    {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} token={token} onClose={()=>setCoordinarModal(null)} onEntregada={()=>{const o=coordinarModal;setCoordinarModal(null);setCobroModal({op:o});}} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
   </div>;
 }
 
