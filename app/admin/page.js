@@ -2366,11 +2366,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {Number(op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
     </Card>}
-    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{!isGI&&items.some(it=>it.description&&it.description.trim()&&needsClassification(it))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
-      {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10,gap:10,flexWrap:"wrap"}}>
+    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{items.length>0&&<span style={{display:"inline-flex",alignItems:"baseline",gap:8,padding:"6px 14px",borderRadius:10,background:"rgba(184,149,106,0.12)",border:"1px solid rgba(232,201,155,0.4)",marginRight:4}}><span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>FOB total · {items.length} {items.length===1?"producto":"productos"}</span><span style={{fontSize:16,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>USD {items.reduce((a,x)=>a+Number(x.unit_price_usd||0)*Number(x.quantity||1),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></span>}{!isGI&&items.some(it=>it.description&&it.description.trim()&&needsClassification(it))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
+      {/* Productos compactos (12/10/2026): cada producto en una tarjeta baja — descripción, precio,
+          cantidad y FOB en una fila; NCM y tasas en la segunda. Menos scroll. */}
+      {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{marginTop:i>0?10:0,padding:"10px 14px 4px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <span style={{width:24,height:24,borderRadius:7,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(184,149,106,0.15)",color:IC,fontSize:12,fontWeight:900}}>{i+1}</span>
+            <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>FOB <span style={{color:GOLD_LIGHT}}>USD {fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></p>
             {!isGI&&(isValidNcmCode(it.ncm_code)?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null)}
             {!isGI&&it.antidumping_note&&<span title="Este NCM tiene medida antidumping para origen China: revisar derechos específicos y valores criterio antes de cotizar" style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)",fontWeight:800}}>⚠ ANTIDUMPING · {it.antidumping_note}</span>}
           </div>
@@ -2401,14 +2404,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <Btn small variant="secondary" onClick={()=>classifyOne(it)}>🔄 Re-clasificar</Btn>
           </div>
         </div>;})()}
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"0 12px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 130px 100px",gap:"0 10px"}}>
           <Inp label="Descripción" value={it.description} onChange={v=>chItem(i,"description",v)} small/>
           <Inp label="Precio unit. USD" type="number" value={it.unit_price_usd} onChange={v=>chItem(i,"unit_price_usd",v)} step="0.01" small/>
           <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v?parseInt(v):0)} small/>
         </div>
-        {isBlanco&&!isGI&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:8,padding:"12px",border:"1px solid rgba(255,255,255,0.04)",marginTop:4}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Tasas Impositivas</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"0 12px"}}>
+        {isBlanco&&!isGI&&<div style={{marginTop:-4}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"0 10px",maxWidth:isAereo?560:720}}>
             <Inp label="DIE %" type="number" value={it.import_duty_rate??0} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate??21} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
