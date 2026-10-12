@@ -80,6 +80,14 @@ const ensureFreshToken=async(token)=>{
   }
   return token;
 };
+// Tarifas de los agentes (11/10/2026): con la pestaña abierta hace horas el token vencía, la ruta
+// respondía 401 y el panel mostraba "Todavía no cargó sus tarifas". Se refresca antes de pedir.
+const fetchTarifasAg=async(token)=>{
+  let r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});
+  if(r.status===401){const nt=await refreshToken();if(nt)r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${nt}`}});}
+  if(!r.ok)throw new Error("tarifas "+r.status);
+  return r;
+};
 // Sanitiza body antes de PATCH/POST: convierte "" a null para que columnas DATE/NUMERIC
 // no fallen con 400 cuando un input quedó vacío. Bug observado: AC-0026 no guardaba
 // porque algún campo DATE estaba "" y el PATCH 400-eaba silenciosamente.
@@ -9088,7 +9096,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const [opsAbiertas,setOpsAbiertas]=useState(()=>new Set()); // ops del vuelo desplegadas (por defecto plegadas)
   // Tarifas del agente del vuelo (las carga en su panel): para el estimado por courier en preparación.
   const [tarifasAg,setTarifasAg]=useState(undefined);
-  useEffect(()=>{if(flight.status!=="preparando"||esEmpleado())return;(async()=>{try{const r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();setTarifasAg((j?.agentes||[]).find(x=>x.auth_user_id===flight.agent_id)?.tarifas||null);}catch{setTarifasAg(null);}})();},[flight.id,flight.status,flight.agent_id,token]);
+  useEffect(()=>{if(flight.status!=="preparando"||esEmpleado())return;(async()=>{try{const r=await fetchTarifasAg(token);const j=await r.json();setTarifasAg((j?.agentes||[]).find(x=>x.auth_user_id===flight.agent_id)?.tarifas||null);}catch{setTarifasAg(null);}})();},[flight.id,flight.status,flight.agent_id,token]);
   const [reembalaje,setReembalaje]=useState(false); // modal: pedir reembalaje al agente desde el vuelo
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
   const VOL_DIV=Number(a?.volumetric_divisor)||5000;
@@ -10395,7 +10403,7 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe,volDe}){
   // Agentes (03/10/2026): son pocos, así que todo va desplegado. Por agente: datos, cuenta corriente
   // (saldo, anticipos, devoluciones y movimientos) y sus tarifas (las carga el agente desde su panel).
   const [tarifas,setTarifas]=useState(null); // {auth_user_id: tarifas}
-  useEffect(()=>{(async()=>{try{const r=await fetch("/api/agente/tarifas",{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();const m={};(j?.agentes||[]).forEach(a=>{m[a.auth_user_id]=a.tarifas||null;});setTarifas(m);}catch(e){setTarifas({});}})();},[token]);
+  useEffect(()=>{(async()=>{try{const r=await fetchTarifasAg(token);const j=await r.json();const m={};(j?.agentes||[]).forEach(a=>{m[a.auth_user_id]=a.tarifas||null;});setTarifas(m);}catch(e){setTarifas("error");}})();},[token]);
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>;
   if(signups.length===0)return <p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes.</p>;
   const orden={pending:0,approved:1,rejected:2};
@@ -10421,7 +10429,7 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe,volDe}){
           {s.status==="rejected"&&<button onClick={()=>approve(s)} style={btn("#22c55e")}>Reactivar</button>}
         </div>
         {aprobado&&ccDe&&seccion(null,ccDe(s))}
-        {aprobado&&seccion(<>Tarifas <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>· las carga {s.first_name||"el agente"} desde su panel</span></>,tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:<TarifasAgenteResumen tarifas={t}/>,volDe?volDe(s):null)}
+        {aprobado&&seccion(<>Tarifas <span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>· las carga {s.first_name||"el agente"} desde su panel</span></>,tarifas==null?<p style={{color:"rgba(255,255,255,0.4)",margin:0}}>Cargando tarifas…</p>:tarifas==="error"?<p style={{color:"#fbbf24",margin:0}}>No se pudieron traer las tarifas. <button onClick={()=>window.location.reload()} style={{background:"transparent",border:"none",color:GOLD_LIGHT,fontWeight:800,cursor:"pointer",padding:0,fontFamily:"inherit"}}>Recargar</button></p>:<TarifasAgenteResumen tarifas={t}/>,volDe?volDe(s):null)}
       </div>;})}
   </div>;
 }
