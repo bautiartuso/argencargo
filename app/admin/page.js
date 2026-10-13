@@ -10702,8 +10702,10 @@ function AgentsPanel({token}){
       const ids=[...new Set((Array.isArray(flOps)?flOps:[]).filter(x=>activos.has(x.flight_id)&&x.operation_id).map(x=>x.operation_id))];
       const lib=new Set();
       for(let i=0;i<ids.length;i+=80){
-        const r=await dq("tracking_events",{token,filters:`?operation_id=in.(${ids.slice(i,i+80).join(",")})&or=(and(source.eq.fedex,status_code.eq.CC),description.ilike.*despacho%20aduanero%20completado*,description.ilike.*clearance%20processing%20complete*,description.ilike.*liberaci*n%20de%20env*importaci*,title.ilike.*liberaci*n%20de%20env*importaci*,description.ilike.*aduana%20finalizad*,title.ilike.*liberado%20por*)&select=operation_id`});
-        (Array.isArray(r)?r:[]).forEach(x=>lib.add(x.operation_id));
+        const r=await dq("tracking_events",{token,filters:`?operation_id=in.(${ids.slice(i,i+80).join(",")})&or=(and(source.eq.fedex,status_code.eq.CC),description.ilike.*despacho%20aduanero%20completado*,description.ilike.*clearance%20processing%20complete*,description.ilike.*liberaci*n%20de%20env*importaci*,title.ilike.*liberaci*n%20de%20env*importaci*,description.ilike.*aduana%20finalizad*,title.ilike.*liberado%20por*)&select=operation_id,location,description`});
+        // Solo la aduana de Argentina: FedEx también marca CC cuando libera la exportación en China
+        // (AC-0247, Guangzhou) y eso no es "liberado" para nosotros.
+        (Array.isArray(r)?r:[]).filter(x=>/argentin|ezeiza|buenos aires|,\s*AR\b/i.test(`${x.location||""} ${x.description||""}`)).forEach(x=>lib.add(x.operation_id));
       }
       setOpsLiberadas(lib);
     }catch(e){console.error("liberadas",e);}
