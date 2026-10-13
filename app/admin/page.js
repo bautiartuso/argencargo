@@ -11222,7 +11222,9 @@ function AgentsPanel({token}){
       let izq=null,der=null;
       if(enVuelos){
         const act=flights.filter(f=>f.status!=="recibido"),rec=flights.length-act.length;
-        const activeIds=new Set(act.map(f=>f.id));const vistas=new Set();let total=0,cobrado=0,sinPres=0;
+        // Solo vuelos con tracking del courier (14/10/2026): los que se están preparando o están
+        // listos para despachar todavía no están "en el aire".
+        const activeIds=new Set(act.filter(f=>String(f.international_tracking||"").trim()).map(f=>f.id));const vistas=new Set();let total=0,cobrado=0,sinPres=0;
         flightOps.forEach(fo=>{if(!activeIds.has(fo.flight_id)||!fo.operation_id||vistas.has(fo.operation_id))return;vistas.add(fo.operation_id);const o=fo.operations;if(!o)return;
           // Todo menos impuestos (03/10/2026): flete, seguro, sobrepeso, envío… Al total se le resta
           // la parte impositiva solo si está incluida (al RI que paga directo no se le cobra).
@@ -11234,7 +11236,7 @@ function AgentsPanel({token}){
         izq=<div style={{display:"inline-flex",gap:4,padding:4,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
           {[{k:"active",l:"En operación",n:act.length},{k:"received",l:"Recibidos",n:rec}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"9px 16px",fontSize:13,fontWeight:800,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",boxShadow:on?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
         </div>;
-        der=<div title="Lo que falta cobrar de las operaciones en vuelos en operación, sin los impuestos (flete, seguro, sobrepeso, envío)." style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+        der=<div title="Lo que falta cobrar de las operaciones en vuelos que ya tienen tracking del courier, sin los impuestos (flete, seguro, sobrepeso, envío)." style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
           <span style={{fontSize:17}}>✈️</span>
           <div>
             <p style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:0}}>Pendiente de cobro en el aire</p>
@@ -13185,7 +13187,7 @@ function ProyeccionTransito({token,usd}){
   const [d,setD]=useState(null);
   useEffect(()=>{(async()=>{try{
     const [fl,ct]=await Promise.all([
-      dq("flights",{token,filters:"?status=neq.recibido&select=id"}),
+      dq("flights",{token,filters:"?status=neq.recibido&international_tracking=not.is.null&international_tracking=neq.&select=id"}),
       dq("maritime_containers",{token,filters:"?status=neq.arribado&select=id"}),
     ]);
     const fIds=(Array.isArray(fl)?fl:[]).map(x=>x.id);const cIds=(Array.isArray(ct)?ct:[]).map(x=>x.id);
