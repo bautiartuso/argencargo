@@ -10672,7 +10672,8 @@ function AgentsPanel({token}){
   const [depositItems,setDepositItems]=useState([]);
   const [repackReqs,setRepackReqs]=useState([]);
   const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set());
-  const [reclamosN,setReclamosN]=useState(0); // reclamos de depósito abiertos (badge de la solapa) // códigos FL con "Extraer bultos con IA" ya aplicado
+  const [reclamosN,setReclamosN]=useState(0); // reclamos de depósito abiertos (badge de la solapa)
+  const [opsLiberadas,setOpsLiberadas]=useState(()=>new Set()); // ops con evento de liberación de aduana del courier // códigos FL con "Extraer bultos con IA" ya aplicado
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const [collapsedAgents,setCollapsedAgents]=useState(()=>new Set()); // grupos de agente colapsados en depósito
@@ -10695,6 +10696,17 @@ function AgentsPanel({token}){
       dq("deposit_claims",{token,filters:"?status=in.(pendiente,no_encontrado)&select=id"}).catch(()=>[])
     ]);
     setReclamosN(Array.isArray(recl)?recl.length:0);
+    // Liberación de aduana según el tracking del courier, para las ops de vuelos que todavía viajan.
+    try{
+      const activos=new Set((Array.isArray(fl)?fl:[]).filter(f=>f.status==="despachado").map(f=>f.id));
+      const ids=[...new Set((Array.isArray(flOps)?flOps:[]).filter(x=>activos.has(x.flight_id)&&x.operation_id).map(x=>x.operation_id))];
+      const lib=new Set();
+      for(let i=0;i<ids.length;i+=80){
+        const r=await dq("tracking_events",{token,filters:`?operation_id=in.(${ids.slice(i,i+80).join(",")})&or=(and(source.eq.fedex,status_code.eq.CC),description.ilike.*despacho%20aduanero%20completado*,description.ilike.*clearance%20processing%20complete*,description.ilike.*liberaci*n%20de%20env*importaci*,title.ilike.*liberaci*n%20de%20env*importaci*,description.ilike.*aduana%20finalizad*,title.ilike.*liberado%20por*)&select=operation_id`});
+        (Array.isArray(r)?r:[]).forEach(x=>lib.add(x.operation_id));
+      }
+      setOpsLiberadas(lib);
+    }catch(e){console.error("liberadas",e);}
     setVuelosExtraidos(new Set((Array.isArray(notasExtr)?notasExtr:[]).map(n=>(String(n.content||"").match(/foto del courier \((FL-\d+)\)/)||[])[1]).filter(Boolean)));
     // Ola 2: bultos e items SOLO de las ops en depósito — antes bajaba el histórico completo
     // de toda la empresa en cada entrada al panel. Los bultos de un vuelo los carga el
@@ -11654,8 +11666,12 @@ function AgentsPanel({token}){
             // cuando sale de tránsito y el vuelo quedaba "en tránsito" para siempre).
             const opsLlegaron=ops.length>0&&ops.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status));
             const entregadoCourier=f.status!=="recibido"&&(!!f.carrier_delivered_at||opsLlegaron);
-            const stepIdx=f.status==="recibido"||entregadoCourier?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
-            const stepInfo=[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
+            // Liberado (14/10/2026, solo admin): el courier informó que la aduana liberó el envío
+            // (FedEx evento CC "Liberación de envíos internacionales: importación"; DHL "Despacho
+            // aduanero completado"). Va entre "En aduana" y "Recibido".
+            const liberado=f.status==="despachado"&&ops.some(fo=>opsLiberadas.has(fo.operation_id));
+            const stepIdx=f.status==="recibido"||entregadoCourier?5:liberado?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
+            const stepInfo=[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Liberado",c:"#2dd4bf"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.
             const warns=[];
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
@@ -11665,8 +11681,8 @@ function AgentsPanel({token}){
             if(f.dispatch_photo_url&&f.status!=="recibido"&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
-            <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}} title={`${stepInfo.l.replace("⚡ ","")} — paso ${stepIdx+1} de 5`}>
-              <div style={{display:"flex",gap:3,justifyContent:"center",marginBottom:4}}>{[0,1,2,3,4].map(i=><span key={i} style={{width:7,height:7,borderRadius:99,background:i<stepIdx?GOLD:i===stepIdx?stepInfo.c:"rgba(255,255,255,0.14)",boxShadow:i===stepIdx?`0 0 9px ${stepInfo.c}99`:"none",transition:"all 200ms"}}/>)}</div>
+            <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}} title={`${stepInfo.l.replace("⚡ ","")} — paso ${stepIdx+1} de 6`}>
+              <div style={{display:"flex",gap:3,justifyContent:"center",marginBottom:4}}>{[0,1,2,3,4,5].map(i=><span key={i} style={{width:7,height:7,borderRadius:99,background:i<stepIdx?GOLD:i===stepIdx?stepInfo.c:"rgba(255,255,255,0.14)",boxShadow:i===stepIdx?`0 0 9px ${stepInfo.c}99`:"none",transition:"all 200ms"}}/>)}</div>
               <span style={{fontSize:9,fontWeight:800,color:stepInfo.c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stepInfo.l}</span>
             </td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{warns.length===0?"":<span style={{display:"inline-flex",gap:3,flexDirection:"column"}}>{warns.map(wn=><span key={wn.t} title={wn.title} style={{fontSize:8.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:`${wn.c}1C`,color:wn.c,border:`1px solid ${wn.c}55`,letterSpacing:"0.05em",cursor:"help"}}>{wn.t}</span>)}</span>}</td>
@@ -11697,7 +11713,7 @@ function AgentsPanel({token}){
             const GR=[{k:"preparando",l:"🛠 Preparando",c:"#fbbf24"},{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
             const porNum=(x,y)=>String(y.flight_code||"").localeCompare(String(x.flight_code||""),undefined,{numeric:true});
             // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
-            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 1;return 2;};
+            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
             const porEstado=(x,y)=>rangoEstado(x)-rangoEstado(y)||porNum(x,y);
             const out=[];
             GR.forEach(g=>{
