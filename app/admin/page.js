@@ -13210,9 +13210,9 @@ function ProyeccionTransito({token,usd}){
     const mar=gananciaMaritimaAgua({ships,pkgs:Array.isArray(pk)?pk:[],items:Array.isArray(it)?it:[],tariffs:Array.isArray(tf)?tf:[],ovByCli});
     setD({aereo:{pend:aTotal-aCob,ops:aOps,vuelos:fIds.length,sinPres},mar});
   }catch(e){console.error("proyección",e);setD({error:true});}})();},[token]);
-  const fila=(icono,l,sub,v,c)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-    <div><p style={{margin:0,fontSize:12.5,fontWeight:700,color:"#fff"}}>{icono} {l}</p><p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{sub}</p></div>
-    <span style={{fontSize:16,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
+  const fila=(icono,l,sub,v,c)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+    <p style={{margin:0,fontSize:12.5,fontWeight:700,color:"#fff"}}>{icono} {l}</p>
+    <span style={{fontSize:15,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
   </div>;
   const total=d&&!d.error?d.aereo.pend+d.mar.ganancia:0;
   return <div style={{background:"linear-gradient(135deg,rgba(232,201,155,0.10),rgba(232,201,155,0.02))",border:"1px solid rgba(232,201,155,0.3)",borderRadius:14,padding:"16px 20px"}}>
