@@ -31,8 +31,13 @@ export default function MaritimeCargoCards({cargo}){
       // Estados Unidos (07/10/2026): en depósito la carga espera consolidar (no "salió"); recién en
       // el contenedor se dice que salió de Estados Unidos. China mantiene el mensaje de siempre.
       const usa=g.origen==="usa";
-      const msg=usa?(dep?[t("mar2.usaDepotTitle"),t("mar2.usaDepotMsg")]:[t("mar2.usaShippedTitle"),null]):(dep?[t("mar2.depotTitle"),t("mar2.depotMsg")]:null);
       const cargas=Array.isArray(g.cargas)?g.cargas:[];
+      // China, en depósito hace menos de 20 días (13/10/2026): todavía "se está cargando en un
+      // contenedor"; recién después pasa a "ya fue cargada y ya salió de China".
+      const llegadas=cargas.map(c=>c.llego).filter(Boolean).sort();
+      const diasDep=llegadas.length?Math.floor((Date.now()-new Date(llegadas[llegadas.length-1]).getTime())/86400000):999;
+      const cargando=dep&&!usa&&diasDep<20;
+      const msg=usa?(dep?[t("mar2.usaDepotTitle"),t("mar2.usaDepotMsg")]:[t("mar2.usaShippedTitle"),null]):(dep?(cargando?[t("mar2.loadingTitle"),t("mar2.loadingMsg")]:[t("mar2.depotTitle"),t("mar2.depotMsg")]):null);
       const todas=cargas.flatMap(fotosDe);
       const portada=todas[0];
       const descs=cargas.map(c=>c.descripcion).filter(Boolean);
@@ -44,7 +49,7 @@ export default function MaritimeCargoCards({cargo}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:ORO}}>{t("mar2.eyebrow")}</span>
-              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:TX,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.16)"}}>{dep&&usa?`● ${t("mar2.stageDepotUsa")}`:dep?`● ${t("mar2.stageShipped")}`:`🚢 ${t("mar2.stageSea")}`}</span>
+              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:TX,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.16)"}}>{dep&&usa?`● ${t("mar2.stageDepotUsa")}`:dep?`● ${t(cargando?"mar2.stageLoading":"mar2.stageShipped")}`:`🚢 ${t("mar2.stageSea")}`}</span>
             </div>
             <p style={{margin:"7px 0 0",fontSize:17,fontWeight:800,color:TX,lineHeight:1.3,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{titulo}</p>
           </div>
@@ -94,9 +99,9 @@ export default function MaritimeCargoCards({cargo}){
                 <button onClick={()=>copiar(c.tracking)} style={{padding:"4px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(232,208,152,0.4)",background:"transparent",color:ORO,cursor:"pointer",fontFamily:"inherit"}}>{copiado===c.tracking?`✓ ${t("mar2.copied")}`:t("mar2.copy")}</button>
               </div></div>}
               <div className="mc-fila"><p style={lbl}>{t("mar2.pkgs")}</p><div style={{display:"flex",flexDirection:"column",gap:4}}>
-                {(c.bultos_detalle||[]).length?c.bultos_detalle.map((b,i)=><div key={i} style={{fontSize:14,fontWeight:700,color:TX,fontVariantNumeric:"tabular-nums"}}>{b.qty} × {b.dims||t("mar2.noDims")}</div>):<span style={{fontSize:14,color:SUB}}>{t("mar2.noDims")}</span>}
+                {dep?<span style={{fontSize:14,color:SUB}}>{t("mar2.dimsTbc")}</span>:(c.bultos_detalle||[]).length?c.bultos_detalle.map((b,i)=><div key={i} style={{fontSize:14,fontWeight:700,color:TX,fontVariantNumeric:"tabular-nums"}}>{b.qty} × {b.dims||t("mar2.noDims")}</div>):<span style={{fontSize:14,color:SUB}}>{t("mar2.noDims")}</span>}
               </div></div>
-              <div className="mc-fila"><p style={lbl}>{t("mar2.volume")}</p><div style={{fontSize:14,fontWeight:700,color:TX,fontVariantNumeric:"tabular-nums"}}>{m3(c.cbm)}</div></div>
+              <div className="mc-fila"><p style={lbl}>{t("mar2.volume")}</p><div style={{fontSize:14,fontWeight:700,color:dep?SUB:TX,fontVariantNumeric:"tabular-nums"}}>{dep?t("mar2.dimsTbc"):m3(c.cbm)}</div></div>
             </div>
           </div>;})}
         </div>}
