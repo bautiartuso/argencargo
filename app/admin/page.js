@@ -13154,6 +13154,79 @@ function FacturasPanel({token}){
   </div>;
 }
 
+// ── En tránsito · proyección (13/10/2026) ──────────────────────────────────
+// Dashboard: lo que todavía viaja. Aéreo = pendiente de cobro de las ops en vuelos no recibidos,
+// sin impuestos (misma cuenta que "Pendiente de cobro en el aire" de Aéreos). Marítimo = ganancia
+// estimada de las cargas en contenedores en viaje (misma cuenta que "Ganancia estimada en el agua"
+// de Marítimos: importe por cliente con la tarifa marítimo integral por rango de m³ + recargo por
+// valor, o el "a cobrar" cargado a mano, menos el costo estimado de cada carga).
+function gananciaMaritimaAgua({ships,pkgs,items,tariffs,ovByCli}){
+  const cbmOf=(id)=>pkgs.filter(p=>p.shipment_id===id).reduce((s,p)=>s+Number(p.cbm||0),0);
+  const rates=tariffs.filter(t=>t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min);
+  const surch=tariffs.filter(t=>t.type==="surcharge").map(t=>({id:t.id,min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
+  const rateFor=(cbm,ov)=>{for(const r of rates){if(cbm>=r.min&&cbm<r.max){const o=(ov||[]).find(x=>x.tariff_id===r.id);return o?Number(o.custom_rate):r.rate;}}const last=rates[rates.length-1];return last?last.rate:0;};
+  const surFor=(fob,cbm,ov)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of surch){if(vpu>=s.min){const o=(ov||[]).find(x=>x.tariff_id===s.id);const pct=o?Number(o.custom_rate):s.rate;return Math.round(fob*(pct/100)*100)/100;}}return 0;};
+  let importe=0,costo=0;
+  const porCont={};ships.forEach(s=>{(porCont[s.container_id]=porCont[s.container_id]||[]).push(s);});
+  Object.values(porCont).forEach(list=>{
+    const byCli={};list.forEach(s=>{if(s.client_id)(byCli[s.client_id]=byCli[s.client_id]||[]).push(s);});
+    const impCli={};Object.entries(byCli).forEach(([cid,ss])=>{const ids=new Set(ss.map(x=>x.id));const cbm=ss.reduce((a,x)=>a+cbmOf(x.id),0);const fob=items.filter(it=>ids.has(it.shipment_id)).reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const ov=ovByCli[cid]||[];impCli[cid]=cbm*rateFor(cbm,ov)+surFor(fob,cbm,ov);});
+    list.forEach(s=>{
+      costo+=Number(s.cost_estimado||0);
+      if(s.revenue_manual!=null){importe+=Number(s.revenue_manual)||0;return;}
+      if(!s.client_id)return;
+      const cli=list.filter(x=>x.client_id===s.client_id);const cbmCli=cli.reduce((a,x)=>a+cbmOf(x.id),0);
+      importe+=cbmCli>0?(impCli[s.client_id]||0)*(cbmOf(s.id)/cbmCli):(impCli[s.client_id]||0)/Math.max(cli.length,1);
+    });
+  });
+  return {importe,costo,ganancia:importe-costo,cargas:ships.length,contenedores:Object.keys(porCont).length};
+}
+function ProyeccionTransito({token,usd}){
+  const [d,setD]=useState(null);
+  useEffect(()=>{(async()=>{try{
+    const [fl,ct]=await Promise.all([
+      dq("flights",{token,filters:"?status=neq.recibido&select=id"}),
+      dq("maritime_containers",{token,filters:"?status=neq.arribado&select=id"}),
+    ]);
+    const fIds=(Array.isArray(fl)?fl:[]).map(x=>x.id);const cIds=(Array.isArray(ct)?ct:[]).map(x=>x.id);
+    const [fo,sh,tf]=await Promise.all([
+      fIds.length?dq("flight_operations",{token,filters:`?flight_id=in.(${fIds.join(",")})&select=operation_id,operations(budget_total,budget_taxes,channel,ri_argencargo_collects_taxes,is_collected,clients(tax_condition))`}):[],
+      cIds.length?dq("maritime_shipments",{token,filters:`?container_id=in.(${cIds.join(",")})&operation_id=is.null&select=id,client_id,container_id,revenue_manual,cost_estimado`}):[],
+      dq("tariffs",{token,filters:"?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate"}),
+    ]);
+    // Aéreo: una vez por op (una op puede ir en dos vuelos).
+    const vistas=new Set();let aTotal=0,aCob=0,aOps=0,sinPres=0;
+    (Array.isArray(fo)?fo:[]).forEach(x=>{const o=x.operations;if(!o||!x.operation_id||vistas.has(x.operation_id))return;vistas.add(x.operation_id);aOps++;
+      const ri=o.clients?.tax_condition==="responsable_inscripto";const impEnTotal=o.channel!=="aereo_blanco"||!ri||!!o.ri_argencargo_collects_taxes;
+      const ing=Math.max(0,Number(o.budget_total||0)-(impEnTotal?Number(o.budget_taxes||0):0));if(!(Number(o.budget_total||0)>0))sinPres++;aTotal+=ing;if(o.is_collected)aCob+=ing;});
+    // Marítimo
+    const ships=Array.isArray(sh)?sh:[];const sIds=ships.map(s=>s.id);const cliIds=[...new Set(ships.map(s=>s.client_id).filter(Boolean))];
+    const [pk,it,ov]=sIds.length?await Promise.all([
+      dq("maritime_packages",{token,filters:`?shipment_id=in.(${sIds.join(",")})&select=shipment_id,cbm`}),
+      dq("maritime_items",{token,filters:`?shipment_id=in.(${sIds.join(",")})&select=shipment_id,quantity,unit_price_usd`}),
+      cliIds.length?dq("client_tariff_overrides",{token,filters:`?client_id=in.(${cliIds.join(",")})&select=client_id,tariff_id,custom_rate`}):[],
+    ]):[[],[],[]];
+    const ovByCli={};(Array.isArray(ov)?ov:[]).forEach(r=>{(ovByCli[r.client_id]=ovByCli[r.client_id]||[]).push(r);});
+    const mar=gananciaMaritimaAgua({ships,pkgs:Array.isArray(pk)?pk:[],items:Array.isArray(it)?it:[],tariffs:Array.isArray(tf)?tf:[],ovByCli});
+    setD({aereo:{pend:aTotal-aCob,ops:aOps,vuelos:fIds.length,sinPres},mar});
+  }catch(e){console.error("proyección",e);setD({error:true});}})();},[token]);
+  const fila=(icono,l,sub,v,c)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+    <div><p style={{margin:0,fontSize:12.5,fontWeight:700,color:"#fff"}}>{icono} {l}</p><p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{sub}</p></div>
+    <span style={{fontSize:16,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
+  </div>;
+  const total=d&&!d.error?d.aereo.pend+d.mar.ganancia:0;
+  return <div style={{background:"linear-gradient(135deg,rgba(232,201,155,0.10),rgba(232,201,155,0.02))",border:"1px solid rgba(232,201,155,0.3)",borderRadius:14,padding:"16px 20px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:6}}>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>🛫 En tránsito · proyección</p>
+      {d&&!d.error&&<p style={{fontSize:22,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>+{usd(total)}</p>}
+    </div>
+    {!d?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>Calculando…</p>:d.error?<p style={{fontSize:12,color:"#fbbf24",margin:"8px 0 0"}}>No se pudo calcular</p>:<>
+      {fila("✈️","Aéreo · por cobrar en el aire",`${d.aereo.ops} op${d.aereo.ops!==1?"s":""} en ${d.aereo.vuelos} vuelo${d.aereo.vuelos!==1?"s":""} · sin impuestos${d.aereo.sinPres?` · ${d.aereo.sinPres} sin presupuesto`:""}`,`+${usd(d.aereo.pend)}`,"#93c5fd")}
+      {fila("🚢","Marítimo · ganancia en el agua",`${d.mar.cargas} carga${d.mar.cargas!==1?"s":""} en ${d.mar.contenedores} contenedor${d.mar.contenedores!==1?"es":""} · cobro ${usd(d.mar.importe)} − costo ${usd(d.mar.costo)}`,`${d.mar.ganancia>=0?"+":"−"}${usd(Math.abs(d.mar.ganancia))}`,d.mar.ganancia>=0?"#4ade80":"#f87171")}
+    </>}
+  </div>;
+}
+
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>hoyAR());const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);});
   // Dashboard v2 (02/10/2026): solapas General / Aéreo A / Marítimo A / Marítimo B y año navegable.
@@ -13504,7 +13577,7 @@ function FinanceDashboard({token}){
         {/* Pendientes — plata que falta entrar/salir, todavía NO es cash */}
         <div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.02))",border:"1px solid rgba(96,165,250,0.28)",borderRadius:14,padding:"16px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>⏳ Pendientes (neto)</p>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>⏳ Por cobrar ya (neto)</p>
             <p style={{fontSize:22,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{pendienteNeto>=0?"+":"−"}{usd(Math.abs(pendienteNeto))}</p>
           </div>
           {(porCobrar>0||porPagar>0)?<div style={{display:"flex",flexDirection:"column",gap:5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
@@ -13526,6 +13599,8 @@ function FinanceDashboard({token}){
             </div>}
           </div>:<p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.3)",margin:"6px 0 0",textAlign:"center"}}>Sin pendientes</p>}
         </div>
+        {/* Lo que todavía viaja (13/10/2026): aéreo por cobrar en el aire y ganancia marítima en el agua. */}
+        <ProyeccionTransito token={token} usd={usd}/>
       </div>;
     })()}
 
