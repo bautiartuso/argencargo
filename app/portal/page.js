@@ -2929,8 +2929,13 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     const cId=client?.id;
     if(!cId){setLo(false);return;}
     // Cargas marítimas en camino (en contenedor, todavía sin operación) — vía endpoint con whitelist.
-    // Se espera junto con las operaciones: antes llegaba después y la tarjeta "saltaba" arriba.
-    const mCargoP=ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.json()).then(d=>Array.isArray(d?.cargo)?d.cargo:[]).catch(()=>[]);
+    // Ese endpoint puede tardar varios segundos cuando la función está dormida (13/10/2026: 1 a 11 s),
+    // así que la última respuesta queda guardada en el navegador y se muestra al instante; cuando
+    // llega la nueva, se reemplaza. Si nunca se cargó, se espera hasta 1,5 s para que no "salte".
+    const mKey=`ac_mcargo_${cId}`;let mCache=null;try{mCache=JSON.parse(localStorage.getItem(mKey)||"null");}catch{}
+    if(Array.isArray(mCache))setMCargo(mCache);
+    const mCargoP=ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.ok?r.json():null).then(d=>Array.isArray(d?.cargo)?d.cargo:null).catch(()=>null);
+    mCargoP.then(c=>{if(!c)return;setMCargo(c);try{localStorage.setItem(mKey,JSON.stringify(c));}catch{}});
     dq("operation_packages",{token,filters:`?client_id=eq.${cId}&operation_id=is.null&select=*&order=created_at.asc`}).then(d=>setDepPkgs(Array.isArray(d)?d:[])).catch(()=>setDepPkgs([]));
     const [r,it,pm,cp,tv,ccm]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
@@ -2942,7 +2947,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     ]);
     // Importaciones cerradas a cuenta corriente (11/10/2026): en la lista dicen "A cuenta corriente".
     setCcOps(new Set((Array.isArray(ccm)?ccm:[]).filter(x=>/cuenta corriente/i.test(x.description||"")).map(x=>x.operation_id)));
-    setMCargo(await mCargoP);
+    if(!Array.isArray(mCache))await Promise.race([mCargoP,new Promise(res=>setTimeout(res,1500))]);
     const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(p.client_paid)return;pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
