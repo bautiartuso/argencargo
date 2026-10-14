@@ -480,13 +480,28 @@ export async function POST(req) {
             headers: { Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": media.mime },
             body: media.buffer,
           });
+          // Con más de una operación con saldo, el comprobante va a la que coincide con el monto
+          // pagado (AC-0240/AC-0275, 14/10/2026: pagó los $930.186 de AC-0240 y se colgó en la otra).
+          if (lectura?.es_comprobante && Number(lectura.monto) > 0) {
+            const conSaldo = (mias.operaciones || []).filter((o) => Number(o.saldo_usd) > 0);
+            if (conSaldo.length > 1) {
+              const usdPagado = lectura.moneda === "USDT" || lectura.moneda === "USD" ? Number(lectura.monto) : tcBlue > 0 ? Number(lectura.monto) / tcBlue : 0;
+              if (usdPagado > 0) {
+                const mejor = conSaldo.map((o) => ({ o, d: Math.abs(Number(o.saldo_usd) - usdPagado) / Number(o.saldo_usd) })).sort((a, b) => a.d - b.d)[0];
+                if (mejor && mejor.d <= 0.05) {
+                  opDest = mejor.o;
+                  if (tcBlue > 0) esperadoArs = Math.round(Number(opDest.saldo_usd) * tcBlue);
+                }
+              }
+            }
+          }
           if (up.ok) {
             const fileUrl = `${SB_URL}/storage/v1/object/public/solfin-comprobantes/${path}`;
             guardado = fileUrl;
             // ── Acreditación automática: solo si TODO cierra (cuenta destino nuestra, fecha
             // reciente, sin anomalías, op con saldo y TC del día). Si no, queda para el equipo.
             // Cripto: la op que se paga en cripto con saldo, si la hay.
-            if (lectura?.moneda === "USDT") opDest = (mias.operaciones || []).find((o) => o.pago?.metodo === "crypto" && o.saldo_usd > 0) || opDest;
+            if (lectura?.moneda === "USDT" && !(Math.abs(Number(opDest?.saldo_usd || 0) - Number(lectura.monto || 0)) <= Number(opDest?.saldo_usd || 0) * 0.05)) opDest = (mias.operaciones || []).find((o) => o.pago?.metodo === "crypto" && o.saldo_usd > 0) || opDest;
             if (lectura?.es_comprobante && Number(lectura.monto) > 0 && lectura.moneda === "USDT" && opDest && Number(opDest.saldo_usd) > 0) {
               const stg = await sb(`/gi_settings?select=payment_crypto_wallet&limit=1`);
               const cuenta = Array.isArray(stg.body) && stg.body[0] ? stg.body[0] : {};
