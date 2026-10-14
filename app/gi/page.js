@@ -276,7 +276,7 @@ function Inicio({ ctx }) {
   const nada = !aceptadas.length && !porCotizar.length && !borradores.length && !vistasSinResp.length && !sinAbrir.length && !porVencer.length && !paraCobrar.length && !paraCerrar.length && !(rol === "admin" && pagosPend.length);
 
   return <div>
-    <Titulo sub={`${enviadas} cotización${enviadas === 1 ? "" : "es"} esperando respuesta · ${activas.length} operación${activas.length === 1 ? "" : "es"} en curso · ${usd0(totalSaldo)} por cobrar`} right={<Btn v="gold" onClick={() => ir("cotizaciones", { nueva: 1 })}>+ Nueva cotización</Btn>}>Inicio</Titulo>
+    <Titulo sub={`${enviadas} ${enviadas === 1 ? "cotización" : "cotizaciones"} esperando respuesta · ${activas.length} ${activas.length === 1 ? "operación" : "operaciones"} en curso · ${usd0(totalSaldo)} por cobrar`} right={<Btn v="gold" onClick={() => ir("cotizaciones", { nueva: 1 })}>+ Nueva cotización</Btn>}>Inicio</Titulo>
     {nada && <Vacio>Todo al día. No hay nada pendiente.</Vacio>}
     <Grupo titulo="Aceptadas · pasar a operación" c={C.green} items={aceptadas} render={filaCot} />
     <Grupo titulo="Para cobrar · listas para entregar" c={C.green} items={paraCobrar} render={filaOp} />
@@ -505,6 +505,18 @@ function CotDetalle({ ctx, id }) {
     await dq("gi_quote_requests", { method: "DELETE", token, filters: `?id=eq.${id}` });
     toast.success("Cotización borrada"); await recargar(); ir("cotizaciones");
   };
+  // Vuelve a dejarla vigente (mismo link): para cuando el cliente la vio y pide retomarla.
+  const renovar = async () => {
+    const v = await promptDialog("¿Por cuántos días más?", { defaultValue: "7" });
+    const n = Number(v);
+    if (!(n > 0)) return;
+    const hasta = new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+    const res = await dq("gi_quotes", { method: "PATCH", token, filters: `?id=eq.${q.id}`, body: { expires_at: hasta, status: q.status === "draft" ? "draft" : "sent" } });
+    if (!ok(res)) { toast.error("No se pudo renovar"); return; }
+    await dq("gi_quote_requests", { method: "PATCH", token, filters: `?id=eq.${id}`, body: { expires_at: hasta, ...(r.status === "rejected" ? { status: "quoted" } : {}) } });
+    await log("note", { content: `Validez renovada hasta el ${fmtDate(hasta)}` });
+    toast.success(`Vigente hasta el ${fmtDate(hasta)}`); recargar();
+  };
   const agregarNota = async () => { const t = nota.trim(); if (!t) return; await log("note", { content: t }); setNota(""); recargar(); };
   const pdf = () => printGiQuotePdf({ quote: q, products: prods || [], client: r.clients, settings: null, requestCode: r.request_code });
 
@@ -527,7 +539,8 @@ function CotDetalle({ ctx, id }) {
       {e.k === "aceptada" && <Btn v="green" onClick={convertir} disabled={trabajando || q?.status === "converting"}>{trabajando ? "Creando…" : "📦 Pasar a operación"}</Btn>}
       {op && <Btn v="gold" onClick={() => ir("operaciones", { id: op.id })}>Ver {op.operation_code} →</Btn>}
       {!["convertida", "aceptada"].includes(e.k) && <Btn v={e.k === "por_cotizar" ? "gold" : "sec"} onClick={() => ir("cotizaciones", { wizard: id })}>{e.k === "por_cotizar" ? "Armar cotización" : "✎ Editar"}</Btn>}
-      {url && ["borrador", "enviada", "vencida"].includes(e.k) && <Btn v="wa" onClick={enviarWa}>💬 Enviar por WhatsApp</Btn>}
+      {q && e.k === "vencida" && <Btn v="gold" onClick={renovar}>↻ Renovar validez</Btn>}
+      {url && ["borrador", "enviada"].includes(e.k) && <Btn v="wa" onClick={enviarWa}>💬 Enviar por WhatsApp</Btn>}
       {url && <Btn onClick={copiar}>Copiar link</Btn>}
       {url && <Btn onClick={() => window.open(url, "_blank", "noopener")}>Ver como cliente</Btn>}
       {q && prods?.length > 0 && <Btn onClick={pdf}>PDF</Btn>}
