@@ -7055,7 +7055,11 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
   // Recalcula y guarda presupuesto de todas las ops activas del cliente (las cerradas/canceladas se saltean).
   // Se llama cuando cambia algo que afecta los presupuestos: tax_condition del cliente, tarifas custom, etc.
-  const syncClientOps=async()=>{
+  // porCambioFiscal (14/10/2026, Pablo Visconti AC-0239): al pasar un cliente de monotributo a RI
+  // (o al revés) solo se recalculan las ops que todavía no viajaron ni se coordinaron. Las que ya
+  // salieron o el cliente confirmó se hicieron con la condición anterior: se fijan en manual con
+  // sus valores, para que tampoco las pise el recálculo al abrirlas.
+  const syncClientOps=async(porCambioFiscal=false)=>{
     try{
       const[tfRes,ccRes,opsRes,ovRes,clRes]=await Promise.all([
         dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
@@ -7073,6 +7077,12 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         // Presupuesto en manual: el admin fijó los números a mano (ej. reparto de un canal
         // rojo) — el re-sync del cliente NO los pisa. Mismo criterio que autoSyncBudget.
         if(o.budget_mode==="manual")continue;
+        // Entrega ya coordinada: el cliente vio y aceptó ese total (mismo criterio que autoSyncBudget).
+        if(o.delivery_confirmed_at)continue;
+        if(porCambioFiscal&&!["pendiente","en_deposito_origen","en_preparacion"].includes(o.status)){
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_mode:"manual"}});
+          continue;
+        }
         try{
           const[it,pk,fii]=await Promise.all([
             dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
@@ -7098,7 +7108,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     const taxChanged=rest.tax_condition!==initClient.tax_condition;
     await dq("clients",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     flash(taxChanged?"Cliente guardado · re-sincronizando ops…":"Cliente guardado");
-    if(taxChanged)syncClientOps();
+    if(taxChanged)syncClientOps(true);
     setSaving(false);
   };
   const deleteClient=async()=>{if(!await confirmDialog(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
