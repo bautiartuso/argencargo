@@ -172,21 +172,39 @@ function Soon({ tab }) {
   </>;
 }
 
+// Arranque de Kairo: el acumulado entre meses cuenta desde acá (antes había gastos de Cinabrio sin ingresos).
+const KAIRO_DESDE = "2026-10-01";
+// Tope de una categoría en pesos: por % de lo que ingresó en el mes, o un monto fijo.
+const catLimit = (c, income) => Number(c.limit_pct) > 0 ? (income * Number(c.limit_pct)) / 100 : Number(c.monthly_limit) || 0;
+const MiniStat = ({ label, value, color }) => <div style={{ background: C.card, border: `0.5px solid ${C.line}`, borderRadius: 14, padding: "10px 12px", minWidth: 0 }}>
+  <div style={{ fontSize: 11, color: C.sub }}>{label}</div>
+  <div className="k-num" style={{ fontSize: 15, fontWeight: 500, marginTop: 2, color: color || C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+</div>;
+
 // ─────── Datos de finanzas (compartidos por Hoy y Finanzas) ───────
 function useFinance(token) {
   const [month, setMonth] = useState(curMonth());
   const [cats, setCats] = useState([]);
   const [exps, setExps] = useState([]);
   const [incomes, setIncomes] = useState([]);
+  const [carry, setCarry] = useState(0);
   const [lo, setLo] = useState(true);
 
   const load = useCallback(async () => {
     const from = shiftMonth(month, 0) + "-01", to = shiftMonth(month, 1) + "-01";
-    const [c, e, b] = await Promise.all([
+    // Acumulado: lo que sobró (o faltó) en los meses anteriores desde que arrancó Kairo.
+    const sumOf = (r) => (Array.isArray(r) ? r : []).reduce((s, x) => s + Number(x.amount_ars || 0), 0);
+    const prev = from > KAIRO_DESDE ? Promise.all([
+      dq("kairo_incomes", { token, filters: `?select=amount_ars&source=neq.ignorado&income_date=gte.${KAIRO_DESDE}&income_date=lt.${from}` }),
+      dq("mp_expenses", { token, filters: `?select=amount_ars&source=neq.ignorado&expense_date=gte.${KAIRO_DESDE}&expense_date=lt.${from}` }),
+    ]).then(([i, o]) => sumOf(i) - sumOf(o)) : Promise.resolve(0);
+    const [c, e, b, cr] = await Promise.all([
       dq("mp_expense_categories", { token, filters: "?select=*&order=sort_order.asc,name.asc" }),
       dq("mp_expenses", { token, filters: `?select=*&source=neq.ignorado&expense_date=gte.${from}&expense_date=lt.${to}&order=expense_date.desc,created_at.desc` }),
       dq("kairo_incomes", { token, filters: `?select=*&source=neq.ignorado&income_date=gte.${from}&income_date=lt.${to}&order=income_date.desc,created_at.desc` }),
+      prev,
     ]);
+    setCarry(cr);
     setCats(Array.isArray(c) ? c : []);
     setExps(Array.isArray(e) ? e : []);
     setIncomes(Array.isArray(b) ? b : []);
@@ -197,18 +215,20 @@ function useFinance(token) {
   const spent = exps.reduce((s, e) => s + Number(e.amount_ars || 0), 0);
   // El presupuesto del mes es lo que entró (ingresos a mano + cobros de Mercado Pago).
   const income = incomes.reduce((s, e) => s + Number(e.amount_ars || 0), 0);
-  const budget = income > 0 ? income : null;
+  // Disponible total = lo acumulado de meses anteriores + lo que entró este mes.
+  const budget = income > 0 || carry !== 0 ? income + carry : null;
   const isCur = month === curMonth();
   const dim = daysIn(month);
   const dayNow = isCur ? new Date().getDate() : month < curMonth() ? dim : 0;
   const left = budget != null ? budget - spent : null;
+  const monthLeft = income - spent; // lo de este mes, sin tocar lo acumulado
   const daysLeft = isCur ? dim - dayNow + 1 : 0;
   const byCat = useMemo(() => {
     const m = {}; for (const e of exps) { const k = e.category_id || "_none"; m[k] = (m[k] || 0) + Number(e.amount_ars || 0); } return m;
   }, [exps]);
   const uncategorized = exps.filter(e => !e.category_id);
 
-  return { month, setMonth, cats, exps, incomes, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, uncategorized, lo, load };
+  return { month, setMonth, cats, exps, incomes, income, carry, monthLeft, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, uncategorized, lo, load };
 }
 
 // ─────── Hoy ───────
@@ -222,8 +242,8 @@ function Hoy({ fin, go }) {
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: C.sub }}><span>Finanzas · {monthName(curMonth()).toLowerCase()}</span><Icon d={I.right} size={16} /></div>
       {fin.budget != null ? <>
         <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 6 }}>{ars(fin.left)}</div>
-        <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>te quedan · {fin.daysLeft > 0 && fin.left > 0 ? `${ars(fin.left / fin.daysLeft)} por día` : `gastado ${ars(fin.spent)}`}</div>
-        <Bar pct={fin.spent / fin.budget} color={C.blue} mark={fin.dayNow / fin.dim} />
+        <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>podés gastar hasta{fin.daysLeft > 0 && fin.monthLeft > 0 ? ` · ${ars(fin.monthLeft / fin.daysLeft)} por día` : ""}</div>
+        <Bar pct={fin.income > 0 ? fin.spent / fin.income : 1} color={C.blue} mark={fin.dayNow / fin.dim} />
       </> : <div style={{ fontSize: 15, marginTop: 8 }}>Cargá tus ingresos del mes</div>}
       {fin.uncategorized.length > 0 && <div style={{ fontSize: 13, color: C.lime, marginTop: 12 }}>{fin.uncategorized.length} gasto{fin.uncategorized.length > 1 ? "s" : ""} sin categoría</div>}
     </button>
@@ -238,7 +258,7 @@ function Hoy({ fin, go }) {
 
 // ─────── Finanzas ───────
 function Finanzas({ fin, token }) {
-  const { month, setMonth, cats, exps, incomes, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, lo, load } = fin;
+  const { month, setMonth, cats, exps, incomes, income, carry, monthLeft, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, lo, load } = fin;
   const [sheet, setSheet] = useState(null); // {type:'cat', exp} | {type:'add'} | {type:'budget'}
   const [syncing, setSyncing] = useState(false);
 
@@ -263,7 +283,7 @@ function Finanzas({ fin, token }) {
     ...incomes.map(row => ({ kind: "in", row, date: row.income_date })),
   ].sort((a, b) => b.date.localeCompare(a.date) || String(b.row.created_at || "").localeCompare(String(a.row.created_at || ""))), [exps, incomes]);
   const monthPct = dayNow / dim;
-  const catRows = cats.map(c => ({ c, spent: byCat[c.id] || 0, limit: Number(c.monthly_limit) || 0 })).filter(r => r.spent > 0 || r.limit > 0).sort((a, b) => b.spent - a.spent);
+  const catRows = cats.map(c => ({ c, spent: byCat[c.id] || 0, limit: catLimit(c, income) })).filter(r => r.spent > 0 || r.limit > 0).sort((a, b) => b.spent - a.spent);
 
   return <>
     <div style={{ display: "flex", justifyContent: "center" }}>
@@ -278,16 +298,18 @@ function Finanzas({ fin, token }) {
       {/* Resumen */}
       <button className="k-press" onClick={() => setSheet(budget != null ? { type: "budget" } : { type: "income" })} style={{ background: "none", border: "none", color: C.text, textAlign: "left", width: "100%", padding: "18px 2px 4px" }}>
         {budget != null ? <>
-          <div style={{ fontSize: 13, color: C.sub }}>{left >= 0 ? "Te queda para gastar" : "Te pasaste del presupuesto"}</div>
-          <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2, color: left >= 0 ? C.text : C.warn }}>{ars(Math.abs(left))}</div>
-          <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>
-            de {ars(budget)} ingresado{isCur && daysLeft > 0 && left > 0 && <> · <span style={{ color: C.lime }}>{ars(left / daysLeft)}/día</span> por {daysLeft} día{daysLeft > 1 ? "s" : ""}</>}
+          <div style={{ fontSize: 13, color: C.sub }}>{left >= 0 ? "Podés gastar hasta" : "Te estás fundiendo"}</div>
+          <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2, color: left >= 0 ? C.text : C.danger }}>{left < 0 ? "−" : ""}{ars(Math.abs(left))}</div>
+          {isCur && daysLeft > 0 && monthLeft > 0 && <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>
+            <span style={{ color: C.lime }}>{ars(monthLeft / daysLeft)}/día</span> para no tocar lo acumulado
+          </div>}
+          <Bar pct={income > 0 ? spent / income : 1} color={spent > income ? C.warn : C.blue} mark={isCur ? monthPct : null} h={6} />
+          <div style={{ display: "grid", gridTemplateColumns: carry !== 0 ? "1fr 1fr 1fr" : "1fr 1fr", gap: 8, marginTop: 14 }}>
+            <MiniStat label="Ingresó" value={arsK(income)} />
+            <MiniStat label="Gastado" value={arsK(spent)} color={spent > income ? C.warn : undefined} />
+            {carry !== 0 && <MiniStat label="Acumulado" value={(carry < 0 ? "−" : "+") + arsK(Math.abs(carry))} color={carry < 0 ? C.danger : C.lime} />}
           </div>
-          <Bar pct={pct} color={pct > 1 ? C.warn : C.blue} mark={isCur ? monthPct : null} h={6} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.sub, marginTop: 7 }}>
-            <span>Gastado {ars(spent)} · {Math.round(pct * 100)}%</span>
-            {isCur && <span>{pct > monthPct + 0.05 ? "Vas adelantado" : "Mes al " + Math.round(monthPct * 100) + "%"}</span>}
-          </div>
+          {monthLeft < 0 && left >= 0 && <div style={{ fontSize: 12, color: C.warn, marginTop: 10 }}>Este mes gastaste más de lo que entró: estás usando lo acumulado.</div>}
         </> : <>
           <div style={{ fontSize: 13, color: C.sub }}>Gastado en {monthName(month).toLowerCase()}</div>
           <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2 }}>{ars(spent)}</div>
@@ -353,7 +375,7 @@ function Finanzas({ fin, token }) {
     {sheet?.type === "cat" && <CategorySheet exp={sheet.exp} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "add" && <AddSheet cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "income" && <IncomeSheet inc={sheet.inc} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
-    {sheet?.type === "budget" && <BudgetSheet month={month} budget={budget} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+    {sheet?.type === "budget" && <BudgetSheet month={month} income={income} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
   </>;
 }
 
@@ -453,35 +475,59 @@ function AddSheet({ cats, token, onClose, onSaved }) {
   </Sheet>;
 }
 
-function BudgetSheet({ month, budget, cats, token, onClose, onSaved }) {
-  const [limits, setLimits] = useState(() => Object.fromEntries(cats.map(c => [c.id, c.monthly_limit ? String(Math.round(c.monthly_limit)) : ""])));
+function BudgetSheet({ month, income, cats, token, onClose, onSaved }) {
+  // Cada tope es un monto fijo ($) o un % de lo que ingresa en el mes (%).
+  const [rows, setRows] = useState(() => Object.fromEntries(cats.map(c => [c.id, Number(c.limit_pct) > 0
+    ? { mode: "%", v: String(Number(c.limit_pct)) }
+    : { mode: "$", v: c.monthly_limit ? String(Math.round(c.monthly_limit)) : "" }])));
   const [newCat, setNewCat] = useState("");
   const [saving, setSaving] = useState(false);
-  const sumLimits = Object.values(limits).reduce((s, v) => s + parseNum(v), 0);
-  const t = budget || 0;
+  const t = income || 0;
+  const pesos = (r) => r.mode === "%" ? (t * parseNum(r.v)) / 100 : parseNum(r.v);
+  const sumLimits = Object.values(rows).reduce((s, r) => s + pesos(r), 0);
+  const setRow = (id, patch) => setRows({ ...rows, [id]: { ...rows[id], ...patch } });
+  const flip = (id) => {
+    const r = rows[id], p = pesos(r);
+    // Al cambiar de modo convierte el valor, así no se pierde lo que habías puesto.
+    setRow(id, r.mode === "$" ? { mode: "%", v: t > 0 && p > 0 ? String(Math.round((p / t) * 100)) : "" } : { mode: "$", v: p > 0 ? String(Math.round(p)) : "" });
+  };
 
   const save = async () => {
     setSaving(true);
-    await Promise.all(cats.filter(c => (Number(c.monthly_limit) || 0) !== parseNum(limits[c.id])).map(c =>
-      dq("mp_expense_categories", { method: "PATCH", token, filters: `?id=eq.${c.id}`, body: { monthly_limit: parseNum(limits[c.id]) || null } })));
+    await Promise.all(cats.map(c => {
+      const r = rows[c.id];
+      const body = r.mode === "%" ? { limit_pct: parseNum(r.v) || null, monthly_limit: null } : { monthly_limit: parseNum(r.v) || null, limit_pct: null };
+      if ((Number(c.limit_pct) || null) === body.limit_pct && (Number(c.monthly_limit) || null) === body.monthly_limit) return null;
+      return dq("mp_expense_categories", { method: "PATCH", token, filters: `?id=eq.${c.id}`, body });
+    }));
     if (newCat.trim()) await dq("mp_expense_categories", { method: "POST", token, body: { name: newCat.trim(), sort_order: cats.length } });
     setSaving(false); pushToast("Guardado"); onSaved();
   };
 
-  return <Sheet title={`Presupuesto de ${monthName(month).toLowerCase()}`} onClose={onClose}>
-    <div style={{ fontSize: 13, color: C.sub }}>Lo que ingresó este mes</div>
+  return <Sheet title={`Topes de ${monthName(month).toLowerCase()}`} onClose={onClose}>
+    <div style={{ fontSize: 13, color: C.sub }}>Ingresó este mes</div>
     <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 2 }}>{ars(t)}</div>
-    <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>Sube solo con cada ingreso que cargás o que llega a Mercado Pago.</div>
-    <Label>Tope por categoría</Label>
-    <div style={{ fontSize: 12, color: sumLimits > t && t > 0 ? C.warn : C.sub, marginBottom: 8 }}>
-      Repartido {ars(sumLimits)}{t > 0 ? ` de ${ars(t)} · ${Math.round((sumLimits / t) * 100)}%` : ""}
+    <div style={{ fontSize: 12, color: sumLimits > t && t > 0 ? C.warn : C.sub, marginTop: 6 }}>
+      Repartido en topes {ars(sumLimits)}{t > 0 ? ` · ${Math.round((sumLimits / t) * 100)}%` : ""}
     </div>
+    <Label>Tope por categoría · tocá $ o % para cambiar</Label>
     <div style={{ background: C.cardHi, borderRadius: 14, padding: "0 14px" }}>
-      {cats.map((c, i) => <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < cats.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
-        <span style={{ flex: 1, fontSize: 15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-        {t > 0 && parseNum(limits[c.id]) > 0 && <span style={{ fontSize: 12, color: C.sub }}>{Math.round((parseNum(limits[c.id]) / t) * 100)}%</span>}
-        <div style={{ width: 120 }}><MoneyInput value={limits[c.id] || ""} onChange={v => setLimits({ ...limits, [c.id]: v })} /></div>
-      </div>)}
+      {cats.map((c, i) => {
+        const r = rows[c.id];
+        return <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: i < cats.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+            {parseNum(r.v) > 0 && <div style={{ fontSize: 11, color: C.sub }}>{r.mode === "%" ? `≈ ${ars(pesos(r))} este mes` : t > 0 ? `${Math.round((pesos(r) / t) * 100)}% de lo que ingresó` : ""}</div>}
+          </div>
+          <button onClick={() => flip(c.id)} className="k-press" aria-label="Cambiar entre monto y porcentaje" style={{ width: 34, height: 34, borderRadius: 10, border: `0.5px solid ${C.line}`, background: C.card, color: C.lime, fontSize: 14, fontWeight: 600 }}>{r.mode}</button>
+          <div style={{ width: 104 }}>
+            <div style={{ ...field, display: "flex", alignItems: "center", gap: 4, padding: "8px 10px" }}>
+              <input inputMode="numeric" value={r.v} onChange={e => setRow(c.id, { v: e.target.value.replace(/[^\d]/g, "") })} placeholder="0" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16, textAlign: "right" }} />
+              {r.mode === "%" && <span style={{ color: C.sub }}>%</span>}
+            </div>
+          </div>
+        </div>;
+      })}
     </div>
     <Label>Nueva categoría</Label>
     <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Ej: Suscripciones" style={field} />
@@ -539,12 +585,6 @@ function Bar({ pct, color, mark, h = 4, mt = 14 }) {
   return <div style={{ position: "relative", height: h, background: C.line, borderRadius: h, marginTop: mt }}>
     <div style={{ width: `${Math.min(100, Math.max(0, pct * 100))}%`, height: "100%", background: color, borderRadius: h, transition: "width 500ms cubic-bezier(.2,.9,.3,1)" }} />
     {mark != null && <div title="Día del mes" style={{ position: "absolute", top: -3, left: `${Math.min(100, mark * 100)}%`, width: 1.5, height: h + 6, background: C.text, opacity: 0.55, borderRadius: 1 }} />}
-  </div>;
-}
-function MoneyInput({ value, onChange, big }) {
-  return <div style={{ ...field, display: "flex", alignItems: "center", gap: 4, padding: big ? "12px 14px" : "8px 10px" }}>
-    <span style={{ color: C.sub }}>$</span>
-    <input inputMode="numeric" value={value} onChange={e => onChange(e.target.value.replace(/[^\d]/g, ""))} placeholder="0" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: big ? 22 : 16, fontWeight: big ? 500 : 400, textAlign: big ? "left" : "right" }} />
   </div>;
 }
 function Toggle({ on }) {
