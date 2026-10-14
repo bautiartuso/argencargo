@@ -16,7 +16,9 @@ const C = {
 };
 
 const CSS = `
-  html,body{background:${C.bg};margin:0;height:100%;overflow:hidden;color:${C.text};-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+  html,body{background:${C.bg};margin:0;height:100%;overflow:hidden;}
+  .k-root{height:100%}
+  html,body{color:${C.text};-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   button{font-family:inherit;cursor:pointer}
   input,select{font-family:inherit;font-size:16px}
@@ -127,10 +129,11 @@ function App({ session }) {
   useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t); } catch {} }, []);
   const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
   const fin = useFinance(session.token);
+  useViewportGapFix();
 
   // Shell fijo a pantalla completa con el scroll adentro y la barra al fondo del flujo.
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", background: C.bg }}>
+    <div style={{ height: "calc(100% + var(--vp-gap, 0px))", display: "flex", flexDirection: "column", background: C.bg }}>
       <main ref={scroller} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
           {tab === "hoy" && <Hoy fin={fin} go={go} />}
@@ -151,6 +154,24 @@ function App({ session }) {
       </nav>
     </div>
   );
+}
+
+// iOS 26, app instalada en el inicio: la página queda más corta que la pantalla por el alto de la
+// barra de estado (874 vs 812 en un iPhone 17 Pro) y ni vh/dvh/lvh lo ven. Se mide la diferencia en
+// --vp-gap y el shell y las hojas se estiran esa cantidad hasta el borde real.
+function useViewportGapFix() {
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)");
+    const apply = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      const gap = Math.round(window.screen.height - window.innerHeight);
+      const v = standalone.matches && portrait && gap > 0 && gap <= 120 ? gap : 0;
+      document.documentElement.style.setProperty("--vp-gap", `${v}px`);
+    };
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, []);
 }
 
 function Header({ title, right }) {
@@ -336,7 +357,7 @@ function Finanzas({ fin, token }) {
 // ─────── Sheets ───────
 function Sheet({ title, onClose, children }) {
   useEffect(() => { const o = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = o; }; }, []);
-  return <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.55)", animation: "kFade 160ms", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+  return <div onClick={onClose} style={{ position: "fixed", inset: "0 0 calc(-1 * var(--vp-gap, 0px))", zIndex: 50, background: "rgba(0,0,0,0.55)", animation: "kFade 160ms", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
     <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, maxHeight: "88dvh", overflowY: "auto", background: C.card, borderTop: `0.5px solid ${C.line}`, borderRadius: "22px 22px 0 0", padding: "10px 18px calc(env(safe-area-inset-bottom) + 18px)", animation: "kUp 260ms cubic-bezier(.2,.9,.3,1)" }}>
       <div style={{ width: 36, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" }} />
       <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 14, letterSpacing: "-0.01em" }}>{title}</div>
