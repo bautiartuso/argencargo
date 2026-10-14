@@ -16,7 +16,8 @@ const C = {
 };
 
 const CSS = `
-  html,body{background:${C.bg};margin:0;height:100%;overflow:hidden;}
+  html,body{background:${C.bg};margin:0;height:100%}
+  body{position:fixed;inset:0}
   .k-root{height:100%}
   html,body{color:${C.text};-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -141,7 +142,7 @@ function App({ session }) {
           {["fisico", "nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
         </div>
       </main>
-      <nav style={{ flexShrink: 0, background: C.bg, borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(6px, min(env(safe-area-inset-bottom), 20px))" }}>
+      <nav style={{ flexShrink: 0, background: C.bg, borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(16px, min(env(safe-area-inset-bottom), 22px))" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex" }}>
           {TABS.map(t => {
             const on = tab === t.id;
@@ -158,7 +159,8 @@ function App({ session }) {
 
 // iOS 26, app instalada en el inicio: la página queda más corta que la pantalla por el alto de la
 // barra de estado (874 vs 812 en un iPhone 17 Pro) y ni vh/dvh/lvh lo ven. Se mide la diferencia en
-// --vp-gap y el shell y las hojas se estiran esa cantidad hasta el borde real.
+// --vp-gap y el shell y las hojas se estiran esa cantidad hasta el borde real. Nada puede llevar
+// overflow:hidden por encima del shell: recorta justo esa franja (body fijo para que no scrollee).
 function useViewportGapFix() {
   useEffect(() => {
     // navigator.standalone es la señal propia de iOS; el media query no siempre matchea ahí.
