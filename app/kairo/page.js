@@ -206,7 +206,7 @@ function useFinance(token) {
     const from = shiftMonth(month, 0) + "-01", to = shiftMonth(month, 1) + "-01";
     const [c, e, b] = await Promise.all([
       dq("mp_expense_categories", { token, filters: "?select=*&order=sort_order.asc,name.asc" }),
-      dq("mp_expenses", { token, filters: `?select=*&expense_date=gte.${from}&expense_date=lt.${to}&order=expense_date.desc,created_at.desc` }),
+      dq("mp_expenses", { token, filters: `?select=*&source=neq.ignorado&expense_date=gte.${from}&expense_date=lt.${to}&order=expense_date.desc,created_at.desc` }),
       dq("kairo_budgets", { token, filters: `?month=eq.${month}&select=*` }),
     ]);
     setCats(Array.isArray(c) ? c : []);
@@ -396,7 +396,20 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
     }
     setSaving(false); pushToast("Guardado"); onSaved();
   };
-  const del = async () => { await dq("mp_expenses", { method: "DELETE", token, filters: `?id=eq.${exp.id}` }); pushToast("Gasto eliminado"); onSaved(); };
+  // Los de Mercado Pago no se borran: quedan marcados para que la sincronización no los vuelva a traer.
+  const notExpense = async () => {
+    setSaving(true);
+    if (exp.mp_payment_id) {
+      await dq("mp_expenses", { method: "PATCH", token, filters: `?id=eq.${exp.id}`, body: { source: "ignorado", category_id: null } });
+      if (remember && exp.merchant) {
+        await dq("kairo_merchant_rules", { method: "POST", token, filters: "?on_conflict=merchant_key", body: { merchant_key: merchantKey(exp.merchant), category_id: null, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+        await dq("mp_expenses", { method: "PATCH", token, filters: `?merchant=eq.${encodeURIComponent(exp.merchant)}&category_id=is.null&source=eq.mp`, body: { source: "ignorado" } });
+      }
+    } else {
+      await dq("mp_expenses", { method: "DELETE", token, filters: `?id=eq.${exp.id}` });
+    }
+    setSaving(false); pushToast("Sacado del presupuesto"); onSaved();
+  };
 
   return <Sheet title="Categorizar" onClose={onClose}>
     <div className="k-num" style={{ fontSize: 30, fontWeight: 500 }}>−{ars(exp.amount_ars)}</div>
@@ -407,11 +420,11 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
     <CatChips cats={cats} value={cat} onChange={setCat} />
     {exp.merchant && <button onClick={() => setRemember(!remember)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", background: "none", border: "none", color: C.text, padding: "18px 0 4px", textAlign: "left" }}>
       <Toggle on={remember} />
-      <span style={{ fontSize: 14 }}>Usar siempre para <b style={{ fontWeight: 500 }}>{exp.merchant}</b><br /><span style={{ color: C.sub, fontSize: 12 }}>Apagalo si este comercio no siempre es lo mismo (ej. Uber viaje vs. envío)</span></span>
+      <span style={{ fontSize: 14 }}>Usar siempre para <b style={{ fontWeight: 500 }}>{exp.merchant}</b><br /><span style={{ color: C.sub, fontSize: 12 }}>Apagalo si no siempre es lo mismo (ej. Uber viaje vs. envío, o una transferencia que a veces es gasto y a veces no)</span></span>
     </button>}
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 18 }}>{saving ? "Guardando…" : "Guardar"}</button>
-    {!confirmDel ? <button onClick={() => setConfirmDel(true)} style={{ ...linkBtn, color: C.sub, width: "100%", marginTop: 12 }}>Eliminar gasto</button>
-      : <button onClick={del} style={{ ...linkBtn, color: C.danger, width: "100%", marginTop: 12 }}>Tocá de nuevo para eliminar</button>}
+    {!confirmDel ? <button onClick={() => setConfirmDel(true)} className="k-press" style={{ ...btnGhost, marginTop: 10 }}>No es un gasto</button>
+      : <button onClick={notExpense} disabled={saving} className="k-press" style={{ ...btnGhost, marginTop: 10, color: C.danger }}>{remember && exp.mp_payment_id && exp.merchant ? `Sacar este y los próximos de ${exp.merchant}` : "Tocá de nuevo para sacarlo"}</button>}
   </Sheet>;
 }
 

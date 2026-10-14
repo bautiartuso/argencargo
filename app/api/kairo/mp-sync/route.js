@@ -12,7 +12,7 @@ const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-const MP_DESDE = null; // 'YYYY-MM-DD' (hora Argentina) cuando se defina desde cuándo contar
+const MP_DESDE = "2026-10-13"; // hora Argentina; antes de esto la cuenta se usaba para otras cosas
 
 const sb = async (path, init = {}) => {
   const r = await fetch(`${SB_URL}${path}`, {
@@ -58,28 +58,38 @@ export async function POST(req) {
     // Lo que pagaste vos a otro (no las ventas que cobra la cuenta).
     const payments = all.filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id));
 
+    // Qué tipos trae MP (para confirmar si aparecen transferencias, servicios, etc.).
+    const kinds = {};
+    for (const p of payments) { const k = `${p.operation_type}/${p.payment_type_id}`; kinds[k] = (kinds[k] || 0) + 1; }
+    console.log("[kairo mp-sync] tipos", JSON.stringify(kinds));
+
     if (!MP_DESDE) {
       return Response.json({ preview: true, found: payments.length, sample: payments.slice(0, 3).map(p => ({ merchant: p.description, amount: p.transaction_amount })) });
     }
 
     const rulesArr = await sb(`/rest/v1/kairo_merchant_rules?select=merchant_key,category_id`);
-    const rules = Object.fromEntries((Array.isArray(rulesArr) ? rulesArr : []).map(r => [r.merchant_key, r.category_id]));
-    const known = await sb(`/rest/v1/mp_expenses?source=eq.mp&mp_payment_id=not.is.null&select=mp_payment_id`);
+    // Regla con category_id null = "no es un gasto" para ese comercio/destinatario.
+    const rules = new Map((Array.isArray(rulesArr) ? rulesArr : []).map(r => [r.merchant_key, r.category_id]));
+    // Incluye los marcados como "no es un gasto" (source='ignorado') para no volver a traerlos.
+    const known = await sb(`/rest/v1/mp_expenses?mp_payment_id=not.is.null&select=mp_payment_id`);
     if (!Array.isArray(known)) throw new Error("No se pudo leer los gastos ya cargados");
     const seen = new Set(known.map(k => k.mp_payment_id));
 
     const rows = payments.filter(p => !seen.has(String(p.id))).map(p => {
-      const merchant = p.description || p.statement_descriptor || p.point_of_interaction?.business_info?.sub_unit || "Mercado Pago";
+      const isTransfer = p.operation_type === "money_transfer";
+      const merchant = p.description || p.statement_descriptor || p.point_of_interaction?.business_info?.sub_unit || (isTransfer ? "Transferencia" : "Mercado Pago");
+      const key = merchantKey(merchant);
+      const ignored = rules.has(key) && rules.get(key) === null;
       return {
         mp_payment_id: String(p.id),
-        source: "mp",
+        source: ignored ? "ignorado" : "mp",
         merchant,
         description: merchant,
         amount_ars: Number(p.transaction_amount || 0),
         expense_date: arDate(p.date_approved || p.date_created),
-        payment_method: p.payment_type_id === "debit_card" || p.payment_type_id === "prepaid_card" ? "Débito" : p.payment_type_id === "credit_card" ? "Tarjeta de crédito" : "Mercado Pago",
+        payment_method: isTransfer ? "Transferencia" : p.payment_type_id === "debit_card" || p.payment_type_id === "prepaid_card" ? "Débito" : p.payment_type_id === "credit_card" ? "Tarjeta de crédito" : p.point_of_interaction?.type === "QR" || p.pos_id ? "QR" : "Mercado Pago",
         installments: p.installments || 1,
-        category_id: rules[merchantKey(merchant)] || null,
+        category_id: rules.get(key) || null,
       };
     });
 
