@@ -242,16 +242,20 @@ function Finanzas({ fin, token }) {
   const [sheet, setSheet] = useState(null); // {type:'cat', exp} | {type:'add'} | {type:'budget'}
   const [syncing, setSyncing] = useState(false);
 
-  const sync = async () => {
-    setSyncing(true);
-    try {
-      const r = await fetch("/api/kairo/mp-sync", { method: "POST", headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json());
-      if (r.error) pushToast(r.error);
-      else if (r.preview) pushToast(`Conexión OK: ${r.found} pago${r.found === 1 ? "" : "s"} en el último mes (prueba, no se cargaron)`);
-      else { const n = (r.inserted || 0) + (r.insertedIncomes || 0); pushToast(n ? `${n} movimiento${n > 1 ? "s" : ""} nuevo${n > 1 ? "s" : ""}` : "Todo al día"); load(); }
-    } catch { pushToast("Sin conexión"); }
-    setSyncing(false);
-  };
+  // Mercado Pago se sincroniza solo: un cron cada 15 min y además cada vez que abrís Finanzas.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setSyncing(true);
+      try {
+        const r = await fetch("/api/kairo/mp-sync", { method: "POST", headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json());
+        const n = (r.inserted || 0) + (r.insertedIncomes || 0);
+        if (alive && n) { pushToast(`${n} movimiento${n > 1 ? "s" : ""} nuevo${n > 1 ? "s" : ""} de Mercado Pago`); load(); }
+      } catch {}
+      if (alive) setSyncing(false);
+    })();
+    return () => { alive = false; };
+  }, [token, load]);
 
   const pct = budget ? spent / budget : 0;
   const moves = useMemo(() => [
@@ -262,12 +266,13 @@ function Finanzas({ fin, token }) {
   const catRows = cats.map(c => ({ c, spent: byCat[c.id] || 0, limit: Number(c.monthly_limit) || 0 })).filter(r => r.spent > 0 || r.limit > 0).sort((a, b) => b.spent - a.spent);
 
   return <>
-    <Header title="Finanzas" right={
-      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-        <RoundBtn onClick={() => setMonth(shiftMonth(month, -1))} label="Mes anterior"><Icon d={I.left} size={18} /></RoundBtn>
-        <span style={{ fontSize: 14, color: C.sub, minWidth: 74, textAlign: "center" }}>{monthName(month)}</span>
-        <RoundBtn onClick={() => setMonth(shiftMonth(month, 1))} label="Mes siguiente"><Icon d={I.right} size={18} /></RoundBtn>
-      </div>} />
+    <div style={{ display: "flex", justifyContent: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", background: C.card, border: `0.5px solid ${C.line}`, borderRadius: 999, padding: 2 }}>
+        <RoundBtn onClick={() => setMonth(shiftMonth(month, -1))} label="Mes anterior"><Icon d={I.left} size={16} /></RoundBtn>
+        <span style={{ fontSize: 14, fontWeight: 500, minWidth: 96, textAlign: "center" }}>{monthName(month)}</span>
+        <RoundBtn onClick={() => setMonth(shiftMonth(month, 1))} label="Mes siguiente"><Icon d={I.right} size={16} /></RoundBtn>
+      </div>
+    </div>
 
     {lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
       {/* Resumen */}
@@ -299,9 +304,7 @@ function Finanzas({ fin, token }) {
           <Icon d={I.plus} size={18} sw={2.2} />Gasto
         </button>
       </div>
-      <button className="k-press" onClick={sync} disabled={syncing} style={{ ...btnGhost, marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: C.sub, fontSize: 14, padding: "11px 16px" }}>
-        <Icon d={I.sync} size={16} />{syncing ? "Trayendo de Mercado Pago…" : "Traer de Mercado Pago"}
-      </button>
+
 
       {/* Categorías */}
       <SectionTitle right={<button onClick={() => setSheet({ type: "budget" })} style={linkBtn}>Editar topes</button>}>Por categoría</SectionTitle>
@@ -321,8 +324,8 @@ function Finanzas({ fin, token }) {
         </div>}
 
       {/* Movimientos */}
-      <SectionTitle>Movimientos</SectionTitle>
-      {moves.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Sin movimientos este mes. Traé los de Mercado Pago o cargá uno.</div> :
+      <SectionTitle right={<span style={{ fontSize: 12, color: C.dim }}>{syncing ? "Actualizando Mercado Pago…" : "Mercado Pago al día"}</span>}>Movimientos</SectionTitle>
+      {moves.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Sin movimientos este mes. Lo que pagues o cobres con Mercado Pago aparece solo.</div> :
         <div style={{ ...card, padding: "2px 16px" }}>
           {moves.map(({ kind, row: e }, i) => {
             const last = i === moves.length - 1;

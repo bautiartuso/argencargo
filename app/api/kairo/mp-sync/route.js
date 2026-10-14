@@ -42,8 +42,19 @@ const mp = async (path) => {
 
 const arDate = (iso) => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
 
+// POST: la app al abrir Finanzas (sesión de admin). GET: el cron de Vercel cada 15 min (CRON_SECRET).
 export async function POST(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "No autorizado" }, { status: 401 });
+  return sync();
+}
+
+export async function GET(req) {
+  const auth = req.headers.get("authorization") || "";
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) return Response.json({ error: "No autorizado" }, { status: 401 });
+  return sync();
+}
+
+async function sync() {
   if (!process.env.MP_ACCESS_TOKEN) return Response.json({ error: "Falta MP_ACCESS_TOKEN en Vercel" }, { status: 400 });
 
   try {
