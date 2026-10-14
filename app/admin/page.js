@@ -16632,11 +16632,19 @@ function ModalLlegadaAdmin({sh,cliente,onCancel,onOk}){
 }
 
 // Foto del proveedor de una carga marítima → bucket público package-photos (28/09/2026).
+// 14/10/2026: desde el celu no subía. Usaba el token que tenía el panel al abrirse (si había vencido,
+// el storage contestaba 401) → ahora se renueva antes y se reintenta una vez. Y se aceptan fotos
+// de cámara que llegan sin tipo (algunos Android) o en HEIC.
+const esFotoArchivo=(f)=>!!f&&(f.type?.startsWith("image/")||(!f.type&&(!f.name||/\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name))));
 async function subirFotoMaritima(token,file){
   try{
     const f=await comprimirImagen(file,{maxLado:1800});
-    const path=`maritimo/${Date.now()}_${Math.random().toString(36).slice(2,9)}.jpg`;
-    const r=await fetch(`${SB_URL}/storage/v1/object/package-photos/${path}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":f.type||"image/jpeg"},body:f});
+    const tipo=f.type||"image/jpeg";
+    const ext=tipo.includes("png")?"png":tipo.includes("webp")?"webp":tipo.includes("hei")?"heic":"jpg";
+    const path=`maritimo/${Date.now()}_${Math.random().toString(36).slice(2,9)}.${ext}`;
+    const subir=(tk)=>fetch(`${SB_URL}/storage/v1/object/package-photos/${path}`,{method:"POST",headers:{Authorization:`Bearer ${tk}`,apikey:SB_KEY,"Content-Type":tipo},body:f});
+    let r=await subir(await ensureFreshToken(token));
+    if(r.status===401||r.status===403){const nt=await refreshToken();if(nt)r=await subir(nt);}
     if(!r.ok){console.error("foto maritima",await r.text());return null;}
     return `${SB_URL}/storage/v1/object/public/package-photos/${path}`;
   }catch(e){console.error("foto maritima",e);return null;}
@@ -16654,6 +16662,9 @@ const presuManualMaritimo=(ships,importeDe)=>{
   return {budget_mode:"manual",budget_total:t,budget_flete:t,budget_surcharge:0,budget_seguro:0,budget_taxes:0};
 };
 function MaritimePanel({token,allClients=[]}){
+  const celu=useEsCelu(700);
+  // Filas como tarjeta también en tablets y notebooks chicas: la grilla de escritorio necesita ~1200px.
+  const compacta=useEsCelu(1200);
   const [shipments,setShipments]=useState([]);
   const [arriboModal,setArriboModal]=useState(null); // {c, texto, desde}
   const [packages,setPackages]=useState([]);
@@ -17214,7 +17225,7 @@ function MaritimePanel({token,allClients=[]}){
   const okCorreccion=async(sh)=>{await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{tipo_corregido:false}});setShipments(p=>p.map(x=>x.id===sh.id?{...x,tipo_corregido:false}:x));};
   const colFoto=(kind)=>kind==="merc"?"fotos_mercaderia":"fotos";
   const agregarFotos=async(sh,files,kind="bulto")=>{
-    const lista=[...(files||[])].filter(f=>f.type?.startsWith("image/"));if(!lista.length)return;
+    const lista=[...(files||[])].filter(esFotoArchivo);if(!lista.length){toast("Ese archivo no es una foto","error");return;}
     setSubiendoFoto(`${sh.id}:${kind}`);
     const urls=[];for(const f of lista){const u=await subirFotoMaritima(token,f);if(u)urls.push(u);}
     setSubiendoFoto(null);
@@ -17226,6 +17237,11 @@ function MaritimePanel({token,allClients=[]}){
     if(!fila){toast("La foto se subió pero no se pudo guardar en la carga. Probá de nuevo.","error");return;}
     setShipments(p=>p.map(x=>x.id===sh.id?{...x,fotos:fila.fotos,fotos_mercaderia:fila.fotos_mercaderia}:x));toast(`${kind==="merc"?"Foto de la mercadería":"Foto del bulto"} guardada`,"success");
   };
+  // Un solo input de archivo, siempre montado: el de cada carga se desmontaba si la lista se
+  // refrescaba mientras el celu estaba en la cámara, y la foto sacada nunca llegaba.
+  const fotoInputRef=useRef(null);const fotoDestinoRef=useRef(null);
+  const abrirSelectorFoto=(sh,kind)=>{fotoDestinoRef.current={id:sh.id,kind};setPegarEn({id:sh.id,kind});fotoInputRef.current?.click();};
+  const alElegirFoto=(e)=>{const files=[...(e.target.files||[])];e.target.value="";const d=fotoDestinoRef.current;if(!d||!files.length)return;agregarFotos({id:d.id},files,d.kind);};
   const quitarFoto=async(sh,url,kind="bulto")=>{
     if(!await confirmDialog("¿Quitar esta foto?"))return;
     const r=await dq("rpc/maritime_quitar_foto",{method:"POST",token,body:{p_id:sh.id,p_merc:kind==="merc",p_url:url}});
@@ -17289,10 +17305,8 @@ function MaritimePanel({token,allClients=[]}){
     const whRow=whByName[sh.warehouse];
     const usaTipo=!!(whRow&&(Number(whRow.cost_cbm_blanca)>0||Number(whRow.cost_cbm_negra)>0));
     const shPkgs=packages.filter(p=>p.shipment_id===sh.id),shItems=items.filter(it=>it.shipment_id===sh.id);
-    return <div key={sh.id} className="mt-v-fila" style={{background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"}}>
-      <div className="mt-v-grid" style={{gridTemplateColumns:COLS,cursor:"pointer"}} onClick={toggleExp}>
-        <div onClick={e=>e.stopPropagation()}>{etapa!=="esperando"&&<input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/>}</div>
-        <div onClick={e=>{e.stopPropagation();if(todasF.length)setFotoGrande({fotos:todasF,i:0});else{setPegarEn({id:sh.id,kind:"bulto"});setExpanded(prev=>new Set(prev).add(sh.id));}}}>
+    const cCheck=<div onClick={e=>e.stopPropagation()}>{etapa!=="esperando"&&<input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/>}</div>;
+    const cFoto=<div onClick={e=>{e.stopPropagation();if(todasF.length)setFotoGrande({fotos:todasF,i:0});else{setPegarEn({id:sh.id,kind:"bulto"});setExpanded(prev=>new Set(prev).add(sh.id));}}}>
           {todasF.length
             ?<div style={{width:64,height:64,borderRadius:10,backgroundImage:`url(${todasF[0].u})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${MT_BORDE}`,position:"relative",cursor:"zoom-in"}}>
               {fotos.length>0&&fotosM.length>0&&<span style={{position:"absolute",left:3,bottom:3,width:24,height:24,borderRadius:6,backgroundImage:`url(${fotosM[0]})`,backgroundSize:"cover",backgroundPosition:"center",border:"1.5px solid #fff"}}/>}
@@ -17301,8 +17315,8 @@ function MaritimePanel({token,allClients=[]}){
             :<div title="Subir o pegar fotos" style={{width:64,height:64,borderRadius:10,border:"1px dashed rgba(255,255,255,0.18)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:"rgba(255,255,255,0.35)",fontSize:10,cursor:"pointer"}}>
               <span style={{fontSize:17}}>📷</span>Fotos
             </div>}
-        </div>
-        <div style={{minWidth:0}}>
+        </div>;
+    const cInfo=<div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
             {esNuevo(sh)&&<span style={pill({fontSize:10,padding:"2px 9px",background:"#ef4444",color:"#fff",letterSpacing:"0.06em",boxShadow:"0 0 0 3px rgba(239,68,68,0.25)"})}>● NUEVO</span>}
             <span style={{fontSize:15.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.02em"}}>{c?.client_code||"—"}</span>
@@ -17314,19 +17328,19 @@ function MaritimePanel({token,allClients=[]}){
           </div>
           <div style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:esPlaceholder(sh)?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.62)",marginTop:3,wordBreak:"break-all"}}>{esPlaceholder(sh)?"sin tracking todavía":(sh.tracking_number||"—")}</div>
           <div style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginTop:4,lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
-        </div>
-        <div className="mt-v-num" style={{color:"#4ade80"}}>{val>0?fusd(val):<span title="Esta carga no tiene valor de mercadería cargado" style={pill({fontSize:10.5,padding:"2px 8px",color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor</span>}</div>
-        <div className="mt-v-num">{bul||"—"}</div>
-        <div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>
-        <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
+        </div>;
+    const cValor=<div className="mt-v-num" style={{color:"#4ade80"}}>{val>0?fusd(val):<span title="Esta carga no tiene valor de mercadería cargado" style={pill({fontSize:10.5,padding:"2px 8px",color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor</span>}</div>;
+    const cBul=<div className="mt-v-num">{bul||"—"}</div>;
+    const cCbm=<div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>;
+    const cTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
           {tipoSel(sh)}{tipoEstado(sh,etapa)}
-        </div>
-        <div style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
+        </div>;
+    const cFecha=<div style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
           {etapa==="camino"&&!fechaRef?<span style={{color:"rgba(255,255,255,0.4)",fontSize:11}}>en viaje<br/><span style={{fontSize:10}}>cargado {dd(sh.created_at)}</span></span>:<span style={{color:"rgba(255,255,255,0.8)",fontWeight:700}}>{dd(fechaRef)}</span>}
           {dias!=null&&<span style={{display:"block",fontSize:10.5,color:alerta?"#f87171":"rgba(255,255,255,0.4)",fontWeight:alerta?700:500}}>hace {dias} d</span>}
           {etapa!=="esperando"&&etapa!=="camino"&&sh.llegada_marcada_por==="deposito"&&<span style={{display:"block",fontSize:10,color:"#93c5fd",fontWeight:700}}>marcó el depósito</span>}
-        </div>
-        <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
+        </div>;
+    const cAcc=<div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
           {etapa==="esperando"&&<>
             <button onClick={()=>llegoTrackingLegacy(sh)} title="Cargar el tracking real: pasa a En camino y el depósito la ve" style={btnMini("#22c55e")}>✓ Tracking</button>
             <button onClick={()=>reclamarLegacy(sh)} title="Reclamar al cliente por WhatsApp" style={btnMini("#a78bfa")}>📲</button>
@@ -17344,25 +17358,53 @@ function MaritimePanel({token,allClients=[]}){
           {etapa==="contenedores"&&<button onClick={()=>quitarDeContenedor(sh)} title="Bajar del contenedor: vuelve a En depósito" style={btnGhost}>↶ Depósito</button>}
           <button onClick={()=>{setEditingId(sh.id);setShowNew(true);}} title="Editar" style={btnMini("#60a5fa",{padding:"5px 9px"})}>✎</button>
           <button onClick={()=>delShipment(sh.id)} title="Eliminar" style={btnMini("#f87171",{padding:"5px 9px"})}>🗑</button>
-        </div>
+        </div>;
+    const rowBg={background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"};
+    // Celular (14/10/2026): tarjeta propia en vez de la grilla de escritorio apretada.
+    if(compacta)return <div key={sh.id} className="mt-v-fila mt-cel" style={rowBg}>
+      <div onClick={toggleExp} style={{display:"flex",gap:10,padding:"12px 12px 8px",cursor:"pointer",alignItems:"flex-start"}}>
+        {etapa!=="esperando"&&<div style={{paddingTop:4}}>{cCheck}</div>}
+        <div className="mt-cel-foto">{cFoto}</div>
+        <div style={{flex:1,minWidth:0}}>{cInfo}</div>
+      </div>
+      <div className="mt-cel-stats" onClick={toggleExp}>
+        <div><span>Valor</span>{cValor}</div>
+        <div><span>Bultos</span>{cBul}</div>
+        <div><span>m³</span>{cCbm}</div>
+        <div><span>{etapa==="esperando"?"Cargado":"Llegó"}</span>{cFecha}</div>
+      </div>
+      <div className="mt-cel-tipo">{cTipo}</div>
+      <div className="mt-cel-acc">{cAcc}</div>
+      {isExp&&detalleDe(sh,imp,fotos,bul,shPkgs,shItems)}
+    </div>;
+    return <div key={sh.id} className="mt-v-fila" style={rowBg}>
+      <div className="mt-v-grid" style={{gridTemplateColumns:COLS,cursor:"pointer"}} onClick={toggleExp}>
+        {cCheck}
+        {cFoto}
+        {cInfo}
+        {cValor}
+        {cBul}
+        {cCbm}
+        {cTipo}
+        {cFecha}
+        {cAcc}
       </div>
       {isExp&&detalleDe(sh,imp,fotos,bul,shPkgs,shItems)}
     </div>;
   };
   const detalleDe=(sh,imp,fotos,bul,shPkgs,shItems)=>{
-    return <div style={{padding:"4px 18px 18px 120px",display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.3fr)",gap:18}} className="mt-v-det">
+    return <div style={compacta?{padding:"6px 12px 14px",display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:14,borderTop:`1px dashed ${MT_BORDE}`}:{padding:"4px 18px 18px 120px",display:"grid",gridTemplateColumns:"minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.3fr)",gap:18}} className={compacta?undefined:"mt-v-det"}>
         <div>
           {[["bulto","Foto del bulto",sh.fotos||[]],["merc","Foto de la mercadería",sh.fotos_mercaderia||[]]].map(([kind,tit,lst])=>{const activa=pegarEn?.id===sh.id&&pegarEn?.kind===kind;const sub=subiendoFoto===`${sh.id}:${kind}`;const todas=[...(sh.fotos||[]).map(u=>({u,k:"Bulto"})),...(sh.fotos_mercaderia||[]).map(u=>({u,k:"Mercadería"}))];return <div key={kind} onClick={()=>setPegarEn({id:sh.id,kind})} style={{marginBottom:10,padding:"8px 10px",borderRadius:10,border:`1.5px ${activa?"solid":"dashed"} ${activa?"rgba(184,149,106,0.7)":"rgba(255,255,255,0.1)"}`,background:activa?"rgba(184,149,106,0.07)":"transparent",cursor:"pointer"}}>
-            <p className="mt-v-det-t" style={{display:"flex",justifyContent:"space-between",gap:6}}><span>{tit}</span><span style={{color:activa?IC:"rgba(255,255,255,0.35)",textTransform:"none",letterSpacing:0,fontWeight:700}}>{activa?"⌘V para pegar":"tocá y pegá con ⌘V"}</span></p>
+            <p className="mt-v-det-t" style={{display:"flex",justifyContent:"space-between",gap:6}}><span>{tit}</span>{!celu&&<span style={{color:activa?IC:"rgba(255,255,255,0.35)",textTransform:"none",letterSpacing:0,fontWeight:700}}>{activa?"⌘V para pegar":"tocá y pegá con ⌘V"}</span>}</p>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {lst.map(u=><div key={u} style={{position:"relative"}}>
                 <div onClick={e=>{e.stopPropagation();setFotoGrande({fotos:todas,i:Math.max(0,todas.findIndex(x=>x.u===u))});}} style={{width:74,height:74,borderRadius:9,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",cursor:"zoom-in",border:`1px solid ${MT_BORDE}`}}/>
                 <button onClick={e=>{e.stopPropagation();quitarFoto(sh,u,kind);}} title="Quitar foto" style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",lineHeight:"20px",padding:0}}>✕</button>
               </div>)}
-              <label onClick={e=>e.stopPropagation()} style={{width:74,height:74,borderRadius:9,border:"1px dashed rgba(184,149,106,0.45)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:10.5,fontWeight:700,cursor:"pointer"}}>
-                <span style={{fontSize:17}}>{sub?"⏳":"＋"}</span>{sub?"Subiendo":"Subir"}
-                <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{agregarFotos(sh,e.target.files,kind);e.target.value="";}}/>
-              </label>
+              <button type="button" onClick={e=>{e.stopPropagation();abrirSelectorFoto(sh,kind);}} style={{background:"transparent",cursor:"pointer",fontFamily:"inherit",width:74,height:74,borderRadius:9,border:"1px dashed rgba(184,149,106,0.45)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:10.5,fontWeight:700,cursor:"pointer"}}>
+                <span style={{fontSize:17}}>{sub?"⏳":celu?"📷":"＋"}</span>{sub?"Subiendo":celu?"Foto":"Subir"}
+              </button>
             </div>
           </div>;})}
         </div>
@@ -17373,7 +17415,7 @@ function MaritimePanel({token,allClients=[]}){
         </div>
         <div>
           <p className="mt-v-det-t">Mercadería</p>
-          {shItems.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin detalle cargado</p>:<table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><tbody>{shItems.map(it=><tr key={it.id} style={{borderBottom:`1px solid ${MT_BORDE}`}}><td style={{padding:"4px 0",color:"rgba(255,255,255,0.8)"}}>{it.description}</td><td style={{padding:"4px 0",color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} × {usd(it.unit_price_usd)}</td><td style={{padding:"4px 0 4px 8px",textAlign:"right",color:GOLD_LIGHT,fontWeight:700,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
+          {shItems.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin detalle cargado</p>:compacta?<div>{shItems.map(it=><div key={it.id} style={{padding:"7px 0",borderBottom:`1px solid ${MT_BORDE}`,fontSize:12.5}}><div style={{color:"rgba(255,255,255,0.85)"}}>{it.description}</div><div style={{display:"flex",justifyContent:"space-between",marginTop:2}}><span style={{color:"rgba(255,255,255,0.5)"}}>{it.quantity} × {usd(it.unit_price_usd)}</span><span style={{color:GOLD_LIGHT,fontWeight:700}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</span></div></div>)}</div>:<table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><tbody>{shItems.map(it=><tr key={it.id} style={{borderBottom:`1px solid ${MT_BORDE}`}}><td style={{padding:"4px 0",color:"rgba(255,255,255,0.8)"}}>{it.description}</td><td style={{padding:"4px 0",color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} × {usd(it.unit_price_usd)}</td><td style={{padding:"4px 0 4px 8px",textAlign:"right",color:GOLD_LIGHT,fontWeight:700,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
           {verPlata&&(()=>{const esManual=sh.revenue_manual!=null;return <div style={{marginTop:12,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",padding:"9px 11px",background:"rgba(0,0,0,0.2)",border:`1px solid ${MT_BORDE}`,borderRadius:10}}>
             <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>Costo
               <input key={`${sh.id}-${sh.cost_estimado??""}`} type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" title={sh.cost_manual?"Cargado a mano. Borrá el campo para volver al automático.":`Automático: m³ × USD ${Number(sh.cost_per_cbm||0)} del depósito${sh.mercaderia_tipo?` (${sh.mercaderia_tipo})`:""}`} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))saveShipCost(sh,e.target.value);}} style={{width:88,padding:"5px 8px",fontSize:12.5,borderRadius:7,border:`1px solid ${sh.cost_manual?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.15)"}`,background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit"}}/>
@@ -17430,19 +17472,21 @@ function MaritimePanel({token,allClients=[]}){
     </div>
   </div>,document.body);
   return <div>
+    <input ref={fotoInputRef} type="file" accept="image/*" multiple onChange={alElegirFoto} style={{display:"none"}}/>
     {arriboUI}
-    <style>{`.mt-v-card{container-type:inline-size}.mt-v-grid{display:grid;gap:10px;align-items:center;padding:12px 16px}.mt-v-head{padding:9px 18px;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.07);font-size:10px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.07em}.mt-v-fila{border-bottom:1px solid rgba(255,255,255,0.05);transition:background .12s}.mt-v-fila:hover{background:rgba(255,255,255,0.02)}.mt-v-num{font-size:13px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}.mt-v-det-t{margin:0 0 7px;font-size:10px;font-weight:800;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em}.mt-v-tab{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025);cursor:pointer;font-family:inherit;text-align:left;color:#fff;transition:all .15s;min-width:0}.mt-v-tab:hover{border-color:rgba(184,149,106,0.4)}@container (max-width:1060px){.mt-v-head{display:none}.mt-v-grid{grid-template-columns:26px 64px minmax(0,1fr) minmax(0,1fr) !important}.mt-v-det{padding-left:16px !important;grid-template-columns:1fr !important}}`}</style>
+    <style>{`.mt-v-card{container-type:inline-size}.mt-v-grid{display:grid;gap:10px;align-items:center;padding:12px 16px}.mt-v-head{padding:9px 18px;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.07);font-size:10px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.07em}.mt-v-fila{border-bottom:1px solid rgba(255,255,255,0.05);transition:background .12s}.mt-v-fila:hover{background:rgba(255,255,255,0.02)}.mt-v-num{font-size:13px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}.mt-v-det-t{margin:0 0 7px;font-size:10px;font-weight:800;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em}.mt-v-tab{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025);cursor:pointer;font-family:inherit;text-align:left;color:#fff;transition:all .15s;min-width:0}.mt-v-tab:hover{border-color:rgba(184,149,106,0.4)}.mt-cel-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0 12px 8px}.mt-cel-stats>div{background:rgba(255,255,255,0.035);border-radius:9px;padding:6px 8px;min-width:0;overflow:hidden}.mt-cel-stats>div>span:first-child{display:block;font-size:9.5px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}.mt-cel-stats .mt-v-num{font-size:12.5px}.mt-cel-tipo{padding:0 12px 8px}.mt-cel-tipo>div{flex-direction:row!important;align-items:center!important;flex-wrap:wrap;gap:8px!important}.mt-cel-acc{padding:0 12px 12px}.mt-cel-acc>div{justify-content:flex-start!important;gap:6px!important}.mt-cel-acc button{min-height:36px;padding:7px 13px!important;font-size:12.5px!important}.mt-cel-foto>div>div{width:56px!important;height:56px!important}@media(max-width:700px){.mt-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important}.mt-tabs .mt-v-tab{padding:9px 10px;gap:8px}.mt-tabs .mt-v-tab span{white-space:normal!important;line-height:1.2}.mt-desc-row>p{flex:1 1 100%!important;min-width:0!important}.mt-desc-row>input{width:100%!important;flex:1 1 100%}.mt-top-deps{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.mt-top-deps::-webkit-scrollbar{display:none}.mt-top-deps>button{flex-shrink:0}.mt-top-acc{margin-left:0!important}.mt-cont-stats{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 8px!important;width:100%}.mt-cont-stats>.mt-cont-m3{display:none!important}.mt-cont-stats>.mt-plata{grid-column:span 2;padding:6px 10px!important}.mt-cont-stats>.mt-plata>span:last-child{font-size:15px!important}.mt-cont-btns{grid-column:span 3}.mt-cont-btns>button{flex:1;min-height:36px}.mt-cont-btns>button:first-child{flex:2}.mt-cont-stats>span:last-child{justify-self:end;align-self:center}}@container (max-width:1060px){.mt-v-head{display:none}.mt-v-grid{grid-template-columns:26px 64px minmax(0,1fr) minmax(0,1fr) !important}.mt-v-det{padding-left:16px !important;grid-template-columns:1fr !important}}`}</style>
 
     {/* Barra: depósitos + acciones */}
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",flex:"1 1 auto",minWidth:0}}>
-        <button onClick={()=>{setEditingId(null);setShowNew(true);}} style={{padding:"11px 20px",fontSize:14,fontWeight:900,borderRadius:12,border:"none",cursor:"pointer",fontFamily:"inherit",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:"0 8px 22px rgba(184,149,106,0.3)",whiteSpace:"nowrap"}}>＋ Nuevo pedido</button>
-        <span style={{width:1,alignSelf:"stretch",background:"rgba(255,255,255,0.1)",margin:"0 4px"}}/>
+    {celu&&<button onClick={()=>{setEditingId(null);setShowNew(true);}} style={{width:"100%",padding:"13px 20px",fontSize:15,fontWeight:900,borderRadius:12,border:"none",cursor:"pointer",fontFamily:"inherit",background:GOLD_GRADIENT,color:"#0A1628",marginBottom:10}}>+ Nuevo pedido</button>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:celu?8:12,flexWrap:"wrap",marginBottom:14}}>
+      <div className="mt-top-deps" style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",flex:"1 1 auto",minWidth:0}}>
+        {!celu&&<button onClick={()=>{setEditingId(null);setShowNew(true);}} style={{padding:"11px 20px",fontSize:14,fontWeight:900,borderRadius:12,border:"none",cursor:"pointer",fontFamily:"inherit",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:"0 8px 22px rgba(184,149,106,0.3)",whiteSpace:"nowrap"}}>＋ Nuevo pedido</button>}
+        {!celu&&<span style={{width:1,alignSelf:"stretch",background:"rgba(255,255,255,0.1)",margin:"0 4px"}}/>}
         {depActivos.map(w=>{const pr=String(w.name).split(/\s+-\s+/).filter(Boolean);return {name:w.name,label:pr.length>2?pr.slice(0,2).join(" · "):pr.join(" · "),w};}).map(d=>{const on=warehouseFilter===d.name;const n=d.name==="all"?shipments.filter(s=>etapaDe(s)).length:activasPorDep(d.name);return <button key={d.name} onClick={()=>elegirDep(d.name)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"transparent":"rgba(255,255,255,0.1)"}`,background:on?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:on?"#0A1628":"rgba(255,255,255,0.7)",display:"inline-flex",alignItems:"center",gap:6}}>
           {d.w&&<span>{d.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>}{d.label}<span style={{fontSize:10.5,fontWeight:800,padding:"0 6px",borderRadius:999,background:on?"rgba(10,22,40,0.15)":"rgba(255,255,255,0.08)"}}>{n}</span>
         </button>;})}
       </div>
-      <div style={{display:"flex",gap:6,alignItems:"center",position:"relative",marginLeft:"auto"}}>
+      <div className="mt-top-acc" style={{display:"flex",gap:6,alignItems:"center",position:"relative",marginLeft:"auto"}}>
         {whSel&&<button onClick={()=>copiarLinkDep(whSel)} title={`Copiar el link de la planilla de ${whSel.name}`} style={btnMini("#60a5fa",{padding:"7px 11px",fontSize:12})}>🔗 Link</button>}
         {whSel&&<button onClick={()=>setMenuMt(menuMt==="pdf"?null:"pdf")} title="PDF del depósito" style={{...btnGhost,padding:"7px 10px",fontSize:12}}>📄 ▾</button>}
         <button onClick={()=>setMenuMt(menuMt==="dep"?null:"dep")} title="Depósitos: editar, crear, eliminar" style={{...btnGhost,padding:"7px 10px",fontSize:12}}>⚙ ▾</button>
@@ -17462,7 +17506,7 @@ function MaritimePanel({token,allClients=[]}){
     {msg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,color:"#22c55e",fontSize:13,fontWeight:600,marginBottom:14}}>{msg}</div>}
 
     {/* Etapas */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
+    <div className="mt-tabs" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
       {TABS.map(x=>{const on=tabMt===x.k;const n=x.k==="historial"?containers.filter(c=>c.status==="arribado"&&(warehouseFilter==="all"||c.warehouse===warehouseFilter)).length:x.lista.length;const sub=x.k==="historial"?`${n} contenedor${n!==1?"es":""}`:x.k==="contenedores"?`${contActivos.filter(c=>warehouseFilter==="all"||c.warehouse===warehouseFilter).length} en viaje · ${n} cargas`:`${n} carga${n!==1?"s":""}${x.k!=="esperando"?` · ${fm3(sumCbm(x.lista))} m³`:""}`;
         return <button key={x.k} onClick={()=>setTabMt(x.k)} className="mt-v-tab" style={on?{background:"rgba(184,149,106,0.12)",borderColor:"rgba(184,149,106,0.55)",boxShadow:"0 8px 24px rgba(0,0,0,0.25)"}:undefined}>
           <span style={{position:"relative",width:34,height:34,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:on?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.05)",flexShrink:0}}>{x.ic}{x.k==="camino"&&nuevosCamino>0&&<span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,padding:"0 5px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10.5,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 0 2px #0F1A2D"}}>{nuevosCamino}</span>}</span>
@@ -17473,7 +17517,7 @@ function MaritimePanel({token,allClients=[]}){
         </button>;})}
     </div>
 
-    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+    <div className="mt-desc-row" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
       <p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:0,flex:1,minWidth:220}}>{tabAct.h}</p>
       {sinValorTab>0&&<button onClick={()=>setSoloSinValor(v=>!v)} title="Mostrar solo las cargas sin valor de mercadería" style={{padding:"8px 13px",fontSize:12,fontWeight:800,borderRadius:10,cursor:"pointer",fontFamily:"inherit",border:"1px solid rgba(239,68,68,0.6)",background:soloSinValor?"#ef4444":"rgba(239,68,68,0.14)",color:soloSinValor?"#fff":"#fecaca"}}>⚠ {sinValorTab} sin valor cargado{soloSinValor?" · ver todas":""}</button>}
       {tabMt!=="historial"&&<input value={qMt} onChange={e=>setQMt(e.target.value)} placeholder="Buscar cliente, tracking o mercadería" style={{width:300,maxWidth:"100%",padding:"9px 13px",fontSize:13,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>}
@@ -17489,7 +17533,7 @@ function MaritimePanel({token,allClients=[]}){
       const clientCode=sameClient?cliMap[[...clientIds][0]]?.client_code:null;
       const whConts=sameWh?contActivos.filter(c=>c.warehouse===[...warehouseSet][0]):[];
       const anyAssigned=sel.some(s=>s.container_id);
-      return <div style={{position:"sticky",top:8,zIndex:30,padding:"11px 16px",background:"#1a2740",border:"1.5px solid rgba(184,149,106,0.5)",borderRadius:14,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",boxShadow:"0 12px 30px rgba(0,0,0,0.35)"}}>
+      return <div style={{...(celu?{position:"fixed",left:10,right:10,bottom:10,zIndex:60,padding:"10px 12px"}:{position:"sticky",top:8,zIndex:30,padding:"11px 16px"}),background:"#1a2740",border:"1.5px solid rgba(184,149,106,0.5)",borderRadius:14,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",boxShadow:"0 12px 30px rgba(0,0,0,0.35)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <p style={{fontSize:13.5,color:"#fff",margin:0,fontWeight:700}}>{sel.length} carga{sel.length>1?"s":""} · {fm3(sumCbm(sel))} m³</p>
           {!sameWh&&<span style={pill({color:"#f87171",background:"rgba(248,113,113,0.12)"})}>⚠ Distintos depósitos</span>}
@@ -17509,8 +17553,8 @@ function MaritimePanel({token,allClients=[]}){
     })()}
 
     {/* Form nuevo / editar */}
-    {showNew&&<div onClick={()=>{setShowNew(false);setEditingId(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 20px",overflowY:"auto"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
+    {showNew&&<div onClick={()=>{setShowNew(false);setEditingId(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:celu?"10px 6px":"40px 20px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:celu?"14px 12px":"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
         <MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):(whSel?{warehouse_id:whSel.id,warehouse:whSel.name}:null)} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} warehouses={whs} shipments={shipments} containers={containers} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>
       </div>
     </div>}
@@ -17519,7 +17563,7 @@ function MaritimePanel({token,allClients=[]}){
 
     {/* Etapas con lista plana */}
     {!lo&&listaTab&&tabMt!=="contenedores"&&tarjeta(<>
-      {listaTab.length>0&&encabezado(tabMt)}
+      {listaTab.length>0&&!compacta&&encabezado(tabMt)}
       {listaTab.length===0?vacio(tabAct.lista.length?"Nada coincide con la búsqueda.":tabMt==="esperando"?"No hay pedidos esperando al proveedor.":tabMt==="camino"?"No hay mercadería en camino al depósito.":"El depósito está vacío."):listaTab.map(sh=>fila(sh,tabMt,tabAct.lista))}
       {listaTab.length>0&&totalesDe(listaTab,tabAct.lista)}
     </>)}
@@ -17550,33 +17594,57 @@ function MaritimePanel({token,allClients=[]}){
         const isSel=selectedShipments.has(sh.id),isExp=expanded.has(sh.id);
         const imp=verPlata?importeOfShip(sh,grupo):0,cost=costOfShip(sh),gan=imp-cost;
         const toggleExp=()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;});
-        return <div key={sh.id} className="mt-v-fila" style={{background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"}}>
-          <div className="mt-v-grid" style={{gridTemplateColumns:COLS_CONT,cursor:"pointer"}} onClick={toggleExp}>
-            <div onClick={e=>e.stopPropagation()}><input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/></div>
-            {/* Foto de la carga también dentro del contenedor (05/10/2026). */}
-            {(()=>{const todasF=[...(sh.fotos||[]).map(u=>({u,k:"Bulto"})),...(sh.fotos_mercaderia||[]).map(u=>({u,k:"Mercadería"}))];return <div onClick={e=>{if(!todasF.length)return;e.stopPropagation();setFotoGrande({fotos:todasF,i:0});}}>{todasF.length?<div style={{width:52,height:52,borderRadius:9,backgroundImage:`url(${todasF[0].u})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${MT_BORDE}`,cursor:"zoom-in",position:"relative"}}>{todasF.length>1&&<span style={{position:"absolute",right:-5,bottom:-5,minWidth:18,height:18,padding:"0 5px",borderRadius:999,background:"#0A1628",border:`1px solid ${MT_BORDE}`,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{todasF.length}</span>}</div>:<div style={{width:52,height:52,borderRadius:9,border:"1px dashed rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.25)",fontSize:16}}>📷</div>}</div>;})()}
-            <div style={{minWidth:0}}>
+        const kCheck=<div onClick={e=>e.stopPropagation()}><input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/></div>;
+        const kFoto=(()=>{const todasF=[...(sh.fotos||[]).map(u=>({u,k:"Bulto"})),...(sh.fotos_mercaderia||[]).map(u=>({u,k:"Mercadería"}))];return <div onClick={e=>{if(!todasF.length)return;e.stopPropagation();setFotoGrande({fotos:todasF,i:0});}}>{todasF.length?<div style={{width:52,height:52,borderRadius:9,backgroundImage:`url(${todasF[0].u})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${MT_BORDE}`,cursor:"zoom-in",position:"relative"}}>{todasF.length>1&&<span style={{position:"absolute",right:-5,bottom:-5,minWidth:18,height:18,padding:"0 5px",borderRadius:999,background:"#0A1628",border:`1px solid ${MT_BORDE}`,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{todasF.length}</span>}</div>:<div style={{width:52,height:52,borderRadius:9,border:"1px dashed rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.25)",fontSize:16}}>📷</div>}</div>;})();
+        const kCli=<div style={{minWidth:0}}>
               <span style={{display:"block",fontSize:14.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{c?.client_code||"—"}</span>
               <span style={{display:"block",fontSize:12.5,color:"rgba(255,255,255,0.75)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?`${c.first_name||""} ${c.last_name||""}`.trim():(sh.client_name_snapshot||"Sin identificar")}</span>
-            </div>
-            <div style={{minWidth:0}}>
+            </div>;
+        const kMerc=<div style={{minWidth:0}}>
               <div style={{fontSize:13,color:"#fff",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
               {!(valorOf(sh.id)>0)&&<span style={pill({fontSize:10,padding:"1px 7px",marginTop:4,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor cargado</span>}
-            </div>
-            <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</div>
-            <div className="mt-v-num">{bul||"—"}</div>
-            <div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>
-            <div style={{fontVariantNumeric:"tabular-nums"}}>
+            </div>;
+        const kTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</div>;
+        const kBul=<div className="mt-v-num">{bul||"—"}</div>;
+        const kCbm=<div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>;
+        const kPlata=<div style={{fontVariantNumeric:"tabular-nums"}}>
               {verPlata?<>
                 {imp>0&&<span style={{display:"inline-block",padding:"3px 10px",borderRadius:8,fontSize:13.5,fontWeight:900,background:gan>=0?"rgba(74,222,128,0.14)":"rgba(248,113,113,0.14)",color:gan>=0?"#4ade80":"#f87171"}}>{gan>=0?"+":""}{fusd(gan)}</span>}
                 <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.55)",marginTop:3}}>Cobra {imp>0?fusd(imp):"—"} · Costo {cost>0?fusd(cost):"—"}</span>
               </>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>—</span>}
-            </div>
-            <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
+            </div>;
+        const kAcc=<div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
               <button onClick={()=>quitarDeContenedor(sh)} title="Bajar del contenedor: vuelve a En depósito" style={btnGhost}>↶</button>
               <button onClick={()=>{setEditingId(sh.id);setShowNew(true);}} title="Editar" style={btnMini("#60a5fa",{padding:"5px 9px"})}>✎</button>
               <button onClick={()=>delShipment(sh.id)} title="Eliminar" style={btnMini("#f87171",{padding:"5px 9px"})}>🗑</button>
-            </div>
+            </div>;
+        const rowBg={background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"};
+        if(compacta)return <div key={sh.id} className="mt-v-fila mt-cel" style={rowBg}>
+          <div onClick={toggleExp} style={{display:"flex",gap:10,padding:"12px 12px 8px",cursor:"pointer",alignItems:"flex-start"}}>
+            <div style={{paddingTop:4}}>{kCheck}</div>
+            <div className="mt-cel-foto">{kFoto}</div>
+            <div style={{flex:1,minWidth:0}}>{kCli}<div style={{marginTop:4}}>{kMerc}</div></div>
+          </div>
+          <div className="mt-cel-stats" onClick={toggleExp} style={{gridTemplateColumns:verPlata?"1fr 1fr 2fr":"1fr 1fr"}}>
+            <div><span>Bultos</span>{kBul}</div>
+            <div><span>m³</span>{kCbm}</div>
+            {verPlata&&<div><span>Ganancia</span>{kPlata}</div>}
+          </div>
+          <div className="mt-cel-tipo">{kTipo}</div>
+          <div className="mt-cel-acc">{kAcc}</div>
+          {isExp&&detalleDe(sh,imp,sh.fotos||[],bul,packages.filter(p=>p.shipment_id===sh.id),items.filter(it=>it.shipment_id===sh.id))}
+        </div>;
+        return <div key={sh.id} className="mt-v-fila" style={rowBg}>
+          <div className="mt-v-grid" style={{gridTemplateColumns:COLS_CONT,cursor:"pointer"}} onClick={toggleExp}>
+            {kCheck}
+            {kFoto}
+            {kCli}
+            {kMerc}
+            {kTipo}
+            {kBul}
+            {kCbm}
+            {kPlata}
+            {kAcc}
           </div>
           {isExp&&detalleDe(sh,imp,sh.fotos||[],bul,packages.filter(p=>p.shipment_id===sh.id),items.filter(it=>it.shipment_id===sh.id))}
         </div>;
@@ -17589,8 +17657,8 @@ function MaritimePanel({token,allClients=[]}){
         const eEta=effEta(c),tb=tbDays(c),delEta=deliveryEtaStr(eEta);
         const bulC=todas.reduce((a,s)=>a+bultosOf(s.id),0),cbmC=sumCbm(todas),costC=costContainer(todas),ganC=verPlata?ganDe(todas):null;
         const porTipo=["negra","blanca",null].map(tp=>{const l=todas.filter(s=>(s.mercaderia_tipo||null)===tp);return {tp,n:l.length,cbm:sumCbm(l),cost:l.reduce((a,s)=>a+costOfShip(s),0)};}).filter(x=>x.n>0);
-        const dato=(l,v,col)=><span style={{display:"flex",flexDirection:"column",gap:1}}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</span><span style={{fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
-        const plata=(l,v,fg,bg)=><span style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderRadius:10,background:bg}}><span style={{fontSize:10,fontWeight:800,color:fg,textTransform:"uppercase",letterSpacing:".06em",opacity:.85}}>{l}</span><span style={{fontSize:15.5,fontWeight:900,color:fg,fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+        const dato=(l,v,col,cls)=><span className={cls} style={{display:"flex",flexDirection:"column",gap:1}}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</span><span style={{fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+        const plata=(l,v,fg,bg)=><span className="mt-plata" style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderRadius:10,background:bg}}><span style={{fontSize:10,fontWeight:800,color:fg,textTransform:"uppercase",letterSpacing:".06em",opacity:.85}}>{l}</span><span style={{fontSize:15.5,fontWeight:900,color:fg,fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
         return <div key={c.id} style={{marginBottom:12}}>{tarjeta(<>
           <div onClick={toggle} style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",cursor:"pointer",background:"linear-gradient(180deg,rgba(184,149,106,0.1),rgba(184,149,106,0.02))",borderBottom:abierto?`1px solid ${MT_BORDE}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
@@ -17598,18 +17666,18 @@ function MaritimePanel({token,allClients=[]}){
               <div style={{minWidth:0}}>
                 <p style={{margin:0,fontSize:17,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".02em"}}>{c.code}</p>
                 {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:10.5,padding:"1px 8px",marginTop:3,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
-                <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.shipping_line||"Sin naviera"}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
+                <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.shipping_line||"Sin naviera"}{celu&&<span style={{color:GOLD_LIGHT,fontWeight:700}}> · {fm3(cbmC)} m³</span>}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
               </div>
             </div>
-            <div style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"center"}}>
+            <div className="mt-cont-stats" style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"center"}}>
               {dato("Salió",dd(c.departed_at))}
               {dato("ETA Bs. As.",dd(eEta),tb>0?"#fb923c":"#93c5fd")}
               {dato("Entrega est.",dd(delEta),"#4ade80")}
               {dato("Bultos",bulC)}
-              {dato("m³",fm3(cbmC),GOLD_LIGHT)}
+              {dato("m³",fm3(cbmC),GOLD_LIGHT,"mt-cont-m3")}
               {verPlata&&plata("Costo contenedor",fusd(costC),"#fca5a5","rgba(248,113,113,0.12)")}
               {verPlata&&ganC!=null&&plata("Ganancia est.",fusd(ganC),ganC>=0?"#4ade80":"#f87171",ganC>=0?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)")}
-              <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>
+              <div className="mt-cont-btns" onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>
                 <button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Arribó: crea las operaciones y manda los mails de retiro" style={btnMini("#22c55e",{padding:"7px 12px",fontSize:12,opacity:creatingOp?0.5:1,cursor:creatingOp?"wait":"pointer"})}>{creatingOp?"⏳ Creando ops…":"⚓ Arribó"}</button>
                 <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✎</button>
                 <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={btnMini("#f87171",{padding:"7px 10px"})}>🗑</button>
@@ -17625,7 +17693,7 @@ function MaritimePanel({token,allClients=[]}){
             {c.notes&&<p style={{width:"100%",fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,fontStyle:"italic"}}>{c.notes}</p>}
           </div>
           {abierto&&<>
-            {lista.length>0&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
+            {lista.length>0&&!compacta&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
             {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>filaCont(sh,todas))}
           </>}
         </>)}</div>;
@@ -17693,6 +17761,7 @@ function MaritimePanel({token,allClients=[]}){
 
     {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} warehouses={whs} onSave={()=>{setEditingContainer(null);load();}} onCancel={()=>setEditingContainer(null)}/>}
     {costModal&&<MaritimeCostModal data={costModal} token={token} onClose={()=>setCostModal(null)} onSaved={()=>{setCostModal(null);load();flash("✅ Costos guardados");}}/>}
+    {celu&&selectedShipments.size>0&&<div style={{height:170}}/>}
   </div>;
 }
 
@@ -19711,6 +19780,7 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
 }
 
 function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehouses=[],shipments=[],containers=[],onCreateWarehouse,onSave,onCancel}){
+  const celuF=useEsCelu(700);
   // editing con id = edición real; editing sin id = solo prellenado (depósito del chip activo,
   // tracking del buscador). Así el tablero prellena sin cambiar la firma del componente.
   // createdId: si el POST del pedido salió pero fallaron bultos/items, el reintento hace PATCH
@@ -19740,7 +19810,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const [fotosM,setFotosM]=useState(Array.isArray(editing?.fotos_mercaderia)?editing.fotos_mercaderia:[]);
   const [zonaFoto,setZonaFoto]=useState("bulto"); // dónde cae una foto pegada con ⌘V
   const [subiendo,setSubiendo]=useState(false);
-  const subirFotos=async(files,kind)=>{const l=[...(files||[])].filter(x=>x.type?.startsWith("image/"));if(!l.length)return;setSubiendo(true);const urls=[];for(const x of l){const u=await subirFotoMaritima(token,x);if(u)urls.push(u);}setSubiendo(false);if(!urls.length){toast("No se pudo subir la foto","error");return;}(kind==="merc"?setFotosM:setFotos)(p=>[...p,...urls]);toast(kind==="merc"?"Foto de la mercadería agregada":"Foto del bulto agregada","success");};
+  const subirFotos=async(files,kind)=>{const l=[...(files||[])].filter(esFotoArchivo);if(!l.length){toast("Ese archivo no es una foto","error");return;}setSubiendo(true);const urls=[];for(const x of l){const u=await subirFotoMaritima(token,x);if(u)urls.push(u);}setSubiendo(false);if(!urls.length){toast("No se pudo subir la foto","error");return;}(kind==="merc"?setFotosM:setFotos)(p=>[...p,...urls]);toast(kind==="merc"?"Foto de la mercadería agregada":"Foto del bulto agregada","success");};
   // ⌘V / Ctrl+V con una imagen copiada: se agrega a la zona de fotos elegida.
   useEffect(()=>{
     const onPaste=(e)=>{const files=[...(e.clipboardData?.files||[])].filter(x=>x.type?.startsWith("image/"));if(!files.length)return;e.preventDefault();subirFotos(files,zonaFoto);};
@@ -19998,12 +20068,12 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
 
     {/* Fotos: del bulto y de la mercadería. Se suben o se pegan con ⌘V en la zona elegida. */}
     {!awaiting&&<div style={SECC}>
-      {secT(np(),"Fotos","Tocá una zona y pegá con ⌘V, o subilas. Ninguna es obligatoria.")}
+      {secT(np(),"Fotos",celuF?"Sacalas o elegilas de la galería. Ninguna es obligatoria.":"Tocá una zona y pegá con ⌘V, o subilas. Ninguna es obligatoria.")}
       <div className="mt-mf-2col" style={{gap:12}}>
         {[["bulto","📦 Foto del bulto",fotos,setFotos],["merc","🧾 Foto de la mercadería",fotosM,setFotosM]].map(([kind,tit,lst,setLst])=>{const act=zonaFoto===kind;return <div key={kind} onClick={()=>setZonaFoto(kind)} style={{padding:"12px",borderRadius:12,cursor:"pointer",border:`1.5px ${act?"solid":"dashed"} ${act?"rgba(184,149,106,0.75)":"rgba(255,255,255,0.14)"}`,background:act?"rgba(184,149,106,0.07)":"transparent"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
             <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{tit}</span>
-            <span style={{fontSize:11,fontWeight:700,color:act?IC:"rgba(255,255,255,0.4)"}}>{act?"⌘V pega acá":"tocá para pegar acá"}</span>
+            {!celuF&&<span style={{fontSize:11,fontWeight:700,color:act?IC:"rgba(255,255,255,0.4)"}}>{act?"⌘V pega acá":"tocá para pegar acá"}</span>}
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {lst.map(u=><div key={u} style={{position:"relative"}}>
