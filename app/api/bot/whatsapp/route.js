@@ -595,7 +595,13 @@ export async function POST(req) {
       const usd = (n) => `USD ${Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       if (acreditado?.ok) {
         const e = acreditado.entrega || {};
-        const entregaTxt = e.confirmada && e.dia ? `Su entrega ya está coordinada (${e.dia}${e.franja ? `, ${e.franja}` : ""}${e.modalidad === "propio" ? ", envío a domicilio" : e.modalidad === "oficina" ? ", retiro por oficina" : ""}): recordásela.` : "Todavía no coordinó la entrega: invitalo a elegir día y franja (podés hacerlo vos con la tool coordinar).";
+        // Coordinada = confirmada en el link, tenga o no día: por transportista no hay día ni franja
+        // (AC-0287, 14/10/2026: ya estaba confirmada por transportista y Argy le pidió coordinar).
+        const entregaTxt = e.confirmada
+          ? (e.modalidad === "carrier"
+            ? "Su entrega YA está coordinada: va por transportista y el equipo le avisa apenas se despache. NO le preguntes cómo ni cuándo recibirla."
+            : `Su entrega YA está coordinada${e.dia ? ` (${e.dia}${e.franja ? `, ${e.franja}` : ""}${e.modalidad === "propio" ? ", envío a domicilio" : e.modalidad === "oficina" ? ", retiro por oficina" : ""})` : ""}: recordásela en una línea, sin volver a preguntar cómo ni cuándo.`)
+          : "Todavía no coordinó la entrega: invitalo a elegir día y franja (podés hacerlo vos con la tool coordinar).";
         const pagoTxt = acreditado.metodo === "cripto" ? `USDT ${Number(acreditado.usd).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${ars(acreditado.monto_ars)} (${usd(acreditado.usd)})`;
         text = acreditado.metodo === "cripto" && !acreditado.cierra
           ? `[PAGO PARCIAL acreditado por el sistema: ${pagoTxt} (cripto, se toma 1 USDT = 1 USD) de la operación ${acreditado.op}. FALTA ${usd(acreditado.restante)}. Decile con claridad que se acreditó ese pago y cuánto falta, y pedile que envíe el resto en USDT por TRC-20 a la misma billetera y mande el comprobante. ${entregaTxt}]`
