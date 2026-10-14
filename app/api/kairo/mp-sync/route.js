@@ -44,9 +44,23 @@ export async function POST(req) {
 
   try {
     const me = await mp("/users/me");
-    const since = new Date(Date.now() - 35 * 86400e3).toISOString();
-    const res = await mp(`/v1/payments/search?payer.id=${me.id}&sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(since)}&end_date=NOW&limit=100`);
+    const res = await mp(`/v1/payments/search?payer.id=${me.id}&sort=date_created&criteria=desc&range=date_created&begin_date=NOW-35DAYS&end_date=NOW&limit=100`);
     const payments = (res.results || []).filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id));
+
+    // Diagnóstico (temporal): qué devuelve MP por cada vía, para ver de dónde salen tus gastos.
+    const probe = async (label, path) => {
+      try {
+        const r = await mp(path);
+        const list = r.results || r.data || (Array.isArray(r) ? r : []);
+        const s = list[0] || {};
+        console.log("[kairo mp-sync]", label, JSON.stringify({ total: r.paging?.total ?? list.length, keys: Object.keys(s).slice(0, 40), sample: { status: s.status, type: s.type, payment_type_id: s.payment_type_id, operation_type: s.operation_type, amount: s.transaction_amount ?? s.amount, payer_is_me: String(s.payer?.id) === String(me.id), collector_is_me: String(s.collector_id) === String(me.id), description: s.description ?? s.detail ?? s.reason } }));
+      } catch (e) { console.log("[kairo mp-sync]", label, "ERROR", String(e.message).slice(0, 200)); }
+    };
+    console.log("[kairo mp-sync] payer search", JSON.stringify({ total: res.paging?.total, kept: payments.length }));
+    await Promise.all([
+      probe("sin filtro", "/v1/payments/search?sort=date_created&criteria=desc&limit=20"),
+      probe("movements", "/mercadopago_account/movements/search?limit=20"),
+    ]);
 
     const rulesArr = await sb(`/rest/v1/kairo_merchant_rules?select=merchant_key,category_id`);
     const rules = Object.fromEntries((Array.isArray(rulesArr) ? rulesArr : []).map(r => [r.merchant_key, r.category_id]));

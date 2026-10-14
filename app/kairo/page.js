@@ -128,15 +128,15 @@ function App({ session }) {
   const fin = useFinance(session.token);
 
   return (
-    <div style={{ minHeight: "100dvh", maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 96px)" }}>
+    <div style={{ minHeight: "100dvh", maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 96px" }}>
       {tab === "hoy" && <Hoy fin={fin} go={go} />}
       {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
       {["fisico", "nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
-      <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "rgba(12,13,16,0.86)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderTop: `0.5px solid ${C.line}`, paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "rgba(12,13,16,0.86)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(6px, min(env(safe-area-inset-bottom), 20px))" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex" }}>
           {TABS.map(t => {
             const on = tab === t.id;
-            return <button key={t.id} onClick={() => go(t.id)} aria-label={t.label} style={{ flex: 1, background: "none", border: "none", padding: "10px 0 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: on ? C.lime : C.dim }}>
+            return <button key={t.id} onClick={() => go(t.id)} aria-label={t.label} style={{ flex: 1, background: "none", border: "none", padding: "8px 0 2px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: on ? C.lime : C.dim }}>
               <Icon d={t.icon} size={23} sw={on ? 1.9 : 1.6} />
               <span style={{ fontSize: 10.5, fontWeight: on ? 600 : 500 }}>{t.label}</span>
             </button>;
