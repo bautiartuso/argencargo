@@ -16,16 +16,30 @@ const sbFetch = async (path, init = {}) => {
   return { status: r.status, body: parsed };
 };
 
+const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
+
 export async function POST(req) {
   if (!SB) return Response.json({ error: "Server config missing" }, { status: 500 });
-  let body = null; try { body = await req.json(); } catch {}
-  if (!body?.quote_id) return Response.json({ error: "quote_id requerido" }, { status: 400 });
+  // Solo admin/empleado o el socio dueño del pedido (antes no pedía sesión: cualquiera con el id convertía).
+  const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const user = tok ? await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
+  if (!user?.id) return Response.json({ error: "Iniciá sesión" }, { status: 401 });
+  const profR = await sbFetch(`/profiles?id=eq.${user.id}&select=role,is_gi_partner`);
+  const prof = Array.isArray(profR.body) ? profR.body[0] : null;
+  const esStaff = ["admin", "empleado"].includes(prof?.role);
+  if (!esStaff && !prof?.is_gi_partner) return Response.json({ error: "Sin permiso" }, { status: 403 });
 
-  const qRes = await sbFetch(`/gi_quotes?id=eq.${body.quote_id}&select=*,gi_quote_requests(client_id,assigned_partner_id,profiles!assigned_partner_id(gi_partner_pct)),gi_quote_products(*)`);
+  let body = null; try { body = await req.json(); } catch {}
+  if (!body?.quote_id || !/^[0-9a-f-]{36}$/i.test(String(body.quote_id))) return Response.json({ error: "quote_id requerido" }, { status: 400 });
+
+  const qRes = await sbFetch(`/gi_quotes?id=eq.${body.quote_id}&select=*,gi_quote_requests(client_id,assigned_partner_id,clients(gi_partner_id,gi_commission_pct)),gi_quote_products(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
   const quote = qRes.body[0];
+  const req0 = quote.gi_quote_requests || {};
+  const partnerId = req0.assigned_partner_id || req0.clients?.gi_partner_id || null;
+  if (!esStaff && partnerId !== user.id) return Response.json({ error: "Sin permiso" }, { status: 403 });
   if (quote.status === "converted" && quote.operation_id) {
     return Response.json({ error: "Ya está convertida en operación", operation_id: quote.operation_id }, { status: 409 });
   }
@@ -45,8 +59,22 @@ export async function POST(req) {
   const deliveryCost = Number(quote.selected_delivery_cost_usd || 0);
   const finalTotal = channelTotal + deliveryCost;
 
-  const clientId = quote.gi_quote_requests?.client_id;
+  const clientId = req0.client_id;
   if (!clientId) return Response.json({ error: "Cliente no asociado a la cotización" }, { status: 500 });
+
+  // Traba: pasa a "converting" solo si sigue "accepted". Un doble toque no crea dos operaciones.
+  const lock = await sbFetch(`/gi_quotes?id=eq.${quote.id}&status=eq.accepted`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ status: "converting" }) });
+  // (si falla con error es el CHECK viejo de estado, antes de la migración del 13/10: sigue sin traba)
+  const trabado = lock.status < 400;
+  if (trabado && (!Array.isArray(lock.body) || !lock.body.length)) return Response.json({ error: "Ya se está convirtiendo" }, { status: 409 });
+  const soltar = () => trabado ? sbFetch(`/gi_quotes?id=eq.${quote.id}`, { method: "PATCH", body: JSON.stringify({ status: "accepted" }) }) : null;
+
+  // Comisión del socio: la de la ficha del cliente si tiene una propia; si no, la del socio.
+  let commissionPct = Number(req0.clients?.gi_commission_pct || 0) || null;
+  if (partnerId && !commissionPct) {
+    const pp = await sbFetch(`/profiles?id=eq.${partnerId}&select=gi_partner_pct`);
+    commissionPct = Number(Array.isArray(pp.body) && pp.body[0]?.gi_partner_pct || 0) || null;
+  }
 
   // Generar código AC-XXXX
   const codeRes = await sbFetch(`/rpc/next_operation_code`, { method: "POST", body: JSON.stringify({}) });
@@ -71,9 +99,9 @@ export async function POST(req) {
     // Los items se guardan con unit_price_usd = precio cliente (ya prorrateado al final), pero por seguridad fijamos el total.
     budget_mode: "manual",
     cost_producto_usd: supplierTotal,
-    gi_partner_id: quote.gi_quote_requests?.assigned_partner_id || null,
-    gi_commission_pct: Number(quote.gi_quote_requests?.profiles?.gi_partner_pct || 0) || null,
-    gi_admin_owned: false,
+    gi_partner_id: partnerId,
+    gi_commission_pct: partnerId ? commissionPct : null,
+    gi_admin_owned: !partnerId,
     is_collected: false,
     shipping_to_door: quote.selected_delivery_zone && quote.selected_delivery_zone !== "oficina",
     shipping_cost: deliveryCost,
@@ -82,6 +110,7 @@ export async function POST(req) {
   const opRes = await sbFetch(`/operations?select=*`, { method: "POST", body: JSON.stringify(opBody), headers: { Prefer: "return=representation" } });
   if (opRes.status >= 400 || !Array.isArray(opRes.body) || opRes.body.length === 0) {
     console.error("[convert-quote] op create failed", opRes);
+    await soltar();
     return Response.json({ error: "No se pudo crear la operación" }, { status: 500 });
   }
   const opId = opRes.body[0].id;

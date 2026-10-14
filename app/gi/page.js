@@ -617,7 +617,7 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
     if(!confirm(`¿Convertir esta cotización aceptada en una operación AC-XXXX?\n\nSe va a crear la op con los productos, presupuesto y canal seleccionado por el cliente.`))return;
     setConverting(true);
     try{
-      const r=await fetch("/api/gi/convert-quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quote_id:quoteRow.id})});
+      const r=await fetch("/api/gi/convert-quote",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFresh(token)}`},body:JSON.stringify({quote_id:quoteRow.id})});
       const d=await r.json();
       if(!r.ok){alert(d.error||"Error al convertir");setConverting(false);return;}
       alert(`✓ Operación ${d.operation_code} creada.\n\nAhora podés cargar costos y empezar la producción.`);
