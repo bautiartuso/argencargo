@@ -523,6 +523,15 @@ export async function POST(req) {
               } else noAcredita = motivo;
             } else if (lectura?.es_comprobante) noAcredita = !opDest ? "sin operación con saldo" : Number(opDest?.saldo_usd) > 0 ? (tcBlue > 0 ? `moneda ${lectura.moneda || "?"} no se acredita sola` : "sin tipo de cambio") : "la operación no tiene saldo pendiente";
           }
+          // Mismo comprobante que ya se acreditó (el cliente lo reenvía): se trata como repetido, no
+          // como "la operación no tiene saldo".
+          if (!acreditado && lectura?.es_comprobante) {
+            const refYa = String(lectura.referencia || "").replace(/[^A-Za-z0-9-]/g, "").trim();
+            if (refYa.length >= 6) {
+              const ya = await sb(`/operation_client_payments?notes=ilike.*ref%20${encodeURIComponent(refYa)}*&select=id&limit=1`).catch(() => ({ body: [] }));
+              if (Array.isArray(ya?.body) && ya.body.length) { acreditado = { duplicado: true, ref: refYa }; noAcredita = ""; }
+            }
+          }
           const resumen = resumirLectura(lectura, lectura?.moneda === "USDT" ? null : esperadoArs, opDest ? Number(opDest.saldo_usd) || null : null) + estadoAcred(acreditado, noAcredita);
           if (up.ok) {
             const fileUrl = guardado;
@@ -551,6 +560,18 @@ export async function POST(req) {
           if (!repetido && refDup.length >= 6) {
             const prev = await sb(`/bot_messages?phone=eq.${phone}&role=eq.user&wamid=neq.${encodeURIComponent(msg.id || "")}&created_at=gte.${encodeURIComponent(new Date(Date.now() - 48 * 3600 * 1000).toISOString())}&content=ilike.*ref%20${encodeURIComponent(refDup)}*&select=id&limit=1`).catch(() => ({ body: [] }));
             repetido = Array.isArray(prev?.body) && prev.body.length > 0;
+          }
+          // Traba atómica (14/10/2026): el mismo comprobante mandado dos veces seguidas (o el
+          // reintento de Meta) llegaba dos veces a los internos, porque el segundo se procesaba antes
+          // de que el primero quedara en el historial. Se crea un archivo marcador en el storage con
+          // la referencia (o el hash del archivo): si ya existe, el storage rechaza el segundo.
+          if (!repetido) {
+            const { createHash } = await import("node:crypto");
+            const claves = [refDup.length >= 6 ? `ref-${refDup.toUpperCase()}` : null, `hash-${createHash("sha256").update(media.buffer).digest("hex").slice(0, 40)}`].filter(Boolean);
+            for (const k of claves) {
+              const lock = await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/_reenviados/${k}.txt`, { method: "POST", headers: { Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "text/plain", "x-upsert": "false" }, body: `${phone} ${new Date().toISOString()}` }).catch(() => null);
+              if (lock && !lock.ok && (lock.status === 400 || lock.status === 409)) { const t = await lock.text().catch(() => ""); if (/exist|duplicate/i.test(t)) { repetido = true; break; } }
+            }
           }
           if (repetido) console.log("[bot/whatsapp] comprobante repetido, no se reenvía", refDup);
           // Solo comprobantes de verdad y no cripto (11/10/2026): las capturas que no son
