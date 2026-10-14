@@ -202,7 +202,8 @@ export async function GET(req) {
           cuenta = Array.isArray(stg.body) && stg.body[0] ? stg.body[0] : {};
         }
         const ars = Math.round(saldo * tc);
-        const totalTxt = `$ ${ars.toLocaleString("es-AR")} (USD ${saldo.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} × TC $ ${tc.toLocaleString("es-AR")})`;
+        // Solo el total en pesos: sin USD ni tipo de cambio (Bautista, 14/10/2026).
+        const totalTxt = `$ ${ars.toLocaleString("es-AR")}`;
         const partes = String(cuenta.payment_alias || "").split(/\s*[·|,]\s*/).map((x) => x.trim()).filter(Boolean);
         const lineas = [...partes, cuenta.payment_titular ? `Titular: ${cuenta.payment_titular}` : ""].filter(Boolean);
         while (lineas.length < 3) lineas.push("Argencargo");
