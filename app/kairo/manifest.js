@@ -9,7 +9,10 @@ export default function manifest() {
     background_color: "#0C0D10",
     theme_color: "#0C0D10",
     orientation: "portrait",
-    // TODO: reemplazar kairo-icon.png por el logo definitivo (hoy es el ícono viejo).
-    icons: [{ src: "/kairo-icon.png", sizes: "any", type: "image/png", purpose: "any maskable" }],
+    icons: [
+      { src: "/kairo-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/kairo-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/kairo-icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
   };
 }
