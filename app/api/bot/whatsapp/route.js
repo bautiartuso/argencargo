@@ -168,7 +168,10 @@ function motivoFecha(l) {
   const dias = (Date.UTC(hoyAr.getUTCFullYear(), hoyAr.getUTCMonth(), hoyAr.getUTCDate()) - f.getTime()) / 86400000;
   if (dias > 3) return `comprobante de hace ${Math.round(dias)} días`;
   if (dias < -1) return "fecha futura";
-  if (l.observaciones) return `observación: ${l.observaciones}`;
+  // "Pendiente" / "en proceso" lo muestran algunas apps de banco en toda transferencia recién
+  // hecha: no frena la acreditación (Bautista, 14/10/2026). Otras anomalías sí.
+  const obs = String(l.observaciones || "").split(/[.;]\s*/).map((x) => x.trim()).filter((x) => x && !/pendiente|en proceso|procesando|en curso/i.test(x)).join(". ");
+  if (obs) return `observación: ${obs}`;
   return "";
 }
 function estadoAcred(acreditado, noAcredita) {

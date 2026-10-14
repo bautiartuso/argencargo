@@ -74,6 +74,17 @@ function authOk(req) {
   const secret = process.env.CRON_SECRET || "";
   return secret && auth === `Bearer ${secret}`;
 }
+// El admin también puede acreditar a mano un comprobante que el bot dejó pendiente (14/10/2026).
+async function esAdmin(req) {
+  const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!tok || tok === process.env.CRON_SECRET) return false;
+  const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
+  const u = await fetch("https://nhfslvixhlbiyfmedmbr.supabase.co/auth/v1/user", { headers: { apikey: ANON, Authorization: `Bearer ${tok}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (!u?.id) return false;
+  const p = await sb(`/profiles?id=eq.${u.id}&select=role`);
+  const fila = Array.isArray(p?.body) ? p.body[0] : Array.isArray(p) ? p[0] : null;
+  return fila?.role === "admin";
+}
 
 function usdCollected(op) {
   if (!op.is_collected) return 0;
@@ -261,9 +272,11 @@ async function acreditar(body) {
 }
 
 export async function POST(req) {
-  if (!authOk(req)) return Response.json({ error: "No autorizado" }, { status: 401 });
+  const admin = !authOk(req) && (await esAdmin(req));
+  if (!authOk(req) && !admin) return Response.json({ error: "No autorizado" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
   let body = null; try { body = await req.json(); } catch {}
+  if (admin && body?.accion !== "acreditar") return Response.json({ error: "No autorizado" }, { status: 401 });
   if (body?.accion === "acreditar") {
     const r = await acreditar(body);
     return Response.json(r, { status: r.status || 200 });
