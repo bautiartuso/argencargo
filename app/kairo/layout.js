@@ -6,7 +6,9 @@ export const metadata = {
   title: { absolute: "Kairo" },
   description: "Físico, nutrición, finanzas y objetivos",
   manifest: "/kairo/manifest.webmanifest",
-  appleWebApp: { title: "Kairo", statusBarStyle: "black-translucent", capable: true },
+  // "black" (barra de la hora sólida) y no "black-translucent": con translucent, iOS 26 deja la
+  // página 62pt más corta que la pantalla y no dibuja nada en esa franja de abajo.
+  appleWebApp: { title: "Kairo", statusBarStyle: "black", capable: true },
 };
 
 export const viewport = {
