@@ -124,6 +124,7 @@ const TABS = [
 function App({ session }) {
   const [tab, setTab] = useState("finanzas");
   const scroller = useRef(null);
+  const shell = useRef(null);
   useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t); } catch {} }, []);
   const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
   const fin = useFinance(session.token);
@@ -131,9 +132,10 @@ function App({ session }) {
   // Shell fijo a pantalla completa con el scroll adentro y la barra en el flujo (no position:fixed
   // propia): en la PWA del iPhone una barra fixed bottom:0 quedaba flotando muy arriba.
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, minHeight: "100lvh", display: "flex", flexDirection: "column", background: C.bg }}>
+    <div ref={shell} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", background: C.bg }}>
       <main ref={scroller} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
+          <ViewportDebug shell={shell} />
           {tab === "hoy" && <Hoy fin={fin} go={go} />}
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
           {["fisico", "nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
@@ -152,6 +154,26 @@ function App({ session }) {
       </nav>
     </div>
   );
+}
+
+// TEMPORAL: medidas reales de la pantalla en el iPhone para ubicar bien la barra de abajo.
+function ViewportDebug({ shell }) {
+  const [txt, setTxt] = useState("");
+  useEffect(() => {
+    const measure = () => {
+      const probe = (css) => { const d = document.createElement("div"); d.style.cssText = `position:fixed;top:0;left:0;width:1px;visibility:hidden;${css}`; document.body.appendChild(d); const r = d.getBoundingClientRect(); const cs = getComputedStyle(d); document.body.removeChild(d); return [r.height, cs.paddingTop, cs.paddingBottom]; };
+      const [svh] = probe("height:100svh"), [lvh] = probe("height:100lvh"), [dvh] = probe("height:100dvh");
+      const [, st, sb] = probe("padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)");
+      const sh = shell.current?.getBoundingClientRect();
+      const nav = shell.current?.querySelector("nav")?.getBoundingClientRect();
+      const vv = window.visualViewport;
+      setTxt(`inner ${innerHeight} · screen ${screen.height} · vv ${Math.round(vv?.height || 0)}/${Math.round(vv?.offsetTop || 0)} · svh ${Math.round(svh)} lvh ${Math.round(lvh)} dvh ${Math.round(dvh)} · safe ${st}/${sb} · shell ${Math.round(sh?.top ?? -1)}-${Math.round(sh?.bottom ?? -1)} · nav ${Math.round(nav?.top ?? -1)}-${Math.round(nav?.bottom ?? -1)} · sa ${navigator.standalone ? 1 : 0}`);
+    };
+    measure(); const t = setTimeout(measure, 800);
+    window.addEventListener("resize", measure);
+    return () => { clearTimeout(t); window.removeEventListener("resize", measure); };
+  }, [shell]);
+  return <div style={{ fontSize: 11, color: C.sub, fontFamily: "ui-monospace, monospace", marginBottom: 10, lineHeight: 1.5 }}>{txt}</div>;
 }
 
 function Header({ title, right }) {
