@@ -6,6 +6,7 @@ import { leerAjustes, AJUSTES_DEFAULT } from "../../../lib/catalogo-precio";
 import { CSS,INK,GRIS,BORDE,CARD,LIMA,LIMA_SUAVE,MONO,LBL,Inp,Btn,Ico,Vacio,Avisos,toast,Logo as LogoImg,BotonTema } from "./ui";
 import { Inicio, Clientes, Ajustes } from "./Otros";
 import { Busquedas } from "./Busquedas";
+import { Studio } from "./Studio";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
 import { Resumen, Libro, Tarifas, CCFinanciera } from "./Finanzas";
@@ -192,6 +193,7 @@ function Shell({ses,setSes,tema,setTema}){
         :pag==="maquinas"?<Maquinas {...ctx}/>
         :pag==="proveedores"?<Proveedores {...ctx}/>
         :pag==="busquedas"?<Busquedas {...ctx}/>
+        :pag==="studio"?<Studio {...ctx}/>
         :pag==="clientes"?<Clientes {...ctx}/>
         :pag==="resumen"?<Resumen {...ctx}/>
         :pag==="libro"?<Libro {...ctx}/>
