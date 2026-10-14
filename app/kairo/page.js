@@ -161,16 +161,19 @@ function App({ session }) {
 // --vp-gap y el shell y las hojas se estiran esa cantidad hasta el borde real.
 function useViewportGapFix() {
   useEffect(() => {
-    const standalone = window.matchMedia("(display-mode: standalone)");
+    // navigator.standalone es la señal propia de iOS; el media query no siempre matchea ahí.
+    const isStandalone = () => window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
     const apply = () => {
       const portrait = window.innerHeight > window.innerWidth;
       const gap = Math.round(window.screen.height - window.innerHeight);
-      const v = standalone.matches && portrait && gap > 0 && gap <= 120 ? gap : 0;
+      const v = isStandalone() && portrait && gap > 0 && gap <= 120 ? gap : 0;
       document.documentElement.style.setProperty("--vp-gap", `${v}px`);
     };
     apply();
+    const t1 = setTimeout(apply, 300), t2 = setTimeout(apply, 1200);
     window.addEventListener("resize", apply);
-    return () => window.removeEventListener("resize", apply);
+    window.addEventListener("pageshow", apply);
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener("resize", apply); window.removeEventListener("pageshow", apply); };
   }, []);
 }
 
