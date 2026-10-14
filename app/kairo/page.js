@@ -13,6 +13,7 @@ const C = {
   bg: "#0C0D10", card: "#15171B", cardHi: "#1C1F24", line: "#24262C",
   text: "#F2F3F5", sub: "#7D8089", dim: "#55585F",
   lime: "#C6F432", limeInk: "#1B2203", blue: "#3D7BFF", warn: "#FF8A5C", danger: "#FF5C5C",
+  pos: "#4ADE80", neg: "#FF6B6B", // entra / sale
 };
 
 const CSS = `
@@ -241,8 +242,8 @@ function Hoy({ fin, go }) {
     <button className="k-press" onClick={() => go("finanzas")} style={{ ...card, width: "100%", textAlign: "left", color: C.text, display: "block" }}>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: C.sub }}><span>Finanzas · {monthName(curMonth()).toLowerCase()}</span><Icon d={I.right} size={16} /></div>
       {fin.budget != null ? <>
-        <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 6 }}>{ars(fin.left)}</div>
-        <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>podés gastar hasta{fin.daysLeft > 0 && fin.monthLeft > 0 ? ` · ${ars(fin.monthLeft / fin.daysLeft)} por día` : ""}</div>
+        <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 6, color: fin.monthLeft >= 0 ? C.pos : C.neg }}>{fin.monthLeft < 0 ? "−" : ""}{ars(Math.abs(fin.monthLeft))}</div>
+        <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>saldo del mes{fin.daysLeft > 0 && fin.monthLeft > 0 ? ` · ${ars(fin.monthLeft / fin.daysLeft)} por día` : ""}</div>
         <Bar pct={fin.income > 0 ? fin.spent / fin.income : 1} color={C.blue} mark={fin.dayNow / fin.dim} />
       </> : <div style={{ fontSize: 15, marginTop: 8 }}>Cargá tus ingresos del mes</div>}
       {fin.uncategorized.length > 0 && <div style={{ fontSize: 13, color: C.lime, marginTop: 12 }}>{fin.uncategorized.length} gasto{fin.uncategorized.length > 1 ? "s" : ""} sin categoría</div>}
@@ -261,6 +262,7 @@ function Finanzas({ fin, token }) {
   const { month, setMonth, cats, exps, incomes, income, carry, monthLeft, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, lo, load } = fin;
   const [sheet, setSheet] = useState(null); // {type:'cat', exp} | {type:'add'} | {type:'budget'}
   const [syncing, setSyncing] = useState(false);
+  const [view, setView] = useState("mes");
 
   // Mercado Pago se sincroniza solo: un cron cada 15 min y además cada vez que abrís Finanzas.
   useEffect(() => {
@@ -287,29 +289,36 @@ function Finanzas({ fin, token }) {
 
   return <>
     <div style={{ display: "flex", justifyContent: "center" }}>
-      <div style={{ display: "flex", alignItems: "center", background: C.card, border: `0.5px solid ${C.line}`, borderRadius: 999, padding: 2 }}>
-        <RoundBtn onClick={() => setMonth(shiftMonth(month, -1))} label="Mes anterior"><Icon d={I.left} size={16} /></RoundBtn>
-        <span style={{ fontSize: 14, fontWeight: 500, minWidth: 96, textAlign: "center" }}>{monthName(month)}</span>
-        <RoundBtn onClick={() => setMonth(shiftMonth(month, 1))} label="Mes siguiente"><Icon d={I.right} size={16} /></RoundBtn>
+      <div style={{ display: "flex", background: C.card, border: `0.5px solid ${C.line}`, borderRadius: 999, padding: 3 }}>
+        {[["mes", "Mes"], ["resumen", "Resumen"]].map(([id, label]) =>
+          <button key={id} onClick={() => setView(id)} className="k-press" style={{ border: "none", borderRadius: 999, padding: "7px 18px", fontSize: 14, fontWeight: 500, background: view === id ? C.cardHi : "transparent", color: view === id ? C.text : C.sub }}>{label}</button>)}
       </div>
+    </div>
+
+    {view === "resumen" ? <Resumen token={token} cats={cats} /> : <>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginTop: 14 }}>
+      <RoundBtn onClick={() => setMonth(shiftMonth(month, -1))} label="Mes anterior"><Icon d={I.left} size={16} /></RoundBtn>
+      <span style={{ fontSize: 15, fontWeight: 500, minWidth: 100, textAlign: "center" }}>{monthName(month)}</span>
+      <RoundBtn onClick={() => setMonth(shiftMonth(month, 1))} label="Mes siguiente"><Icon d={I.right} size={16} /></RoundBtn>
     </div>
 
     {lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
       {/* Resumen */}
       <button className="k-press" onClick={() => setSheet(budget != null ? { type: "budget" } : { type: "income" })} style={{ background: "none", border: "none", color: C.text, textAlign: "left", width: "100%", padding: "18px 2px 4px" }}>
         {budget != null ? <>
-          <div style={{ fontSize: 13, color: C.sub }}>{left >= 0 ? "Podés gastar hasta" : "Te estás fundiendo"}</div>
-          <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2, color: left >= 0 ? C.text : C.danger }}>{left < 0 ? "−" : ""}{ars(Math.abs(left))}</div>
+          <div style={{ fontSize: 13, color: C.sub }}>Saldo del mes</div>
+          <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2, color: monthLeft >= 0 ? C.pos : C.neg }}>{monthLeft < 0 ? "−" : ""}{ars(Math.abs(monthLeft))}</div>
           {isCur && daysLeft > 0 && monthLeft > 0 && <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>
-            <span style={{ color: C.lime }}>{ars(monthLeft / daysLeft)}/día</span> para no tocar lo acumulado
+            Podés gastar <span style={{ color: C.text }}>{ars(monthLeft / daysLeft)} por día</span> hasta fin de mes
           </div>}
-          <Bar pct={income > 0 ? spent / income : 1} color={spent > income ? C.warn : C.blue} mark={isCur ? monthPct : null} h={6} />
+          <Bar pct={income > 0 ? spent / income : 1} color={spent > income ? C.neg : C.blue} mark={isCur ? monthPct : null} h={6} />
           <div style={{ display: "grid", gridTemplateColumns: carry !== 0 ? "1fr 1fr 1fr" : "1fr 1fr", gap: 8, marginTop: 14 }}>
-            <MiniStat label="Ingresó" value={arsK(income)} />
-            <MiniStat label="Gastado" value={arsK(spent)} color={spent > income ? C.warn : undefined} />
-            {carry !== 0 && <MiniStat label="Acumulado" value={(carry < 0 ? "−" : "+") + arsK(Math.abs(carry))} color={carry < 0 ? C.danger : C.lime} />}
+            <MiniStat label="Ingresos" value={"+" + arsK(income)} color={C.pos} />
+            <MiniStat label="Gastos" value={"−" + arsK(spent)} color={C.neg} />
+            {carry !== 0 && <MiniStat label="Ahorro previo" value={(carry < 0 ? "−" : "+") + arsK(Math.abs(carry))} color={carry < 0 ? C.neg : C.pos} />}
           </div>
-          {monthLeft < 0 && left >= 0 && <div style={{ fontSize: 12, color: C.warn, marginTop: 10 }}>Este mes gastaste más de lo que entró: estás usando lo acumulado.</div>}
+          {monthLeft < 0 && left >= 0 && <div style={{ fontSize: 12, color: C.warn, marginTop: 10 }}>Gastaste {ars(-monthLeft)} más de lo que entró: sale de tu ahorro (te quedan {ars(left)}).</div>}
+          {left < 0 && <div style={{ fontSize: 12, color: C.neg, marginTop: 10 }}>Te estás fundiendo: gastaste {ars(-left)} más de todo lo que tenías.</div>}
         </> : <>
           <div style={{ fontSize: 13, color: C.sub }}>Gastado en {monthName(month).toLowerCase()}</div>
           <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2 }}>{ars(spent)}</div>
@@ -356,7 +365,7 @@ function Finanzas({ fin, token }) {
                 <div style={{ fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.description || "Ingreso"}</div>
                 <div style={{ fontSize: 12, marginTop: 2, color: C.sub }}>Ingreso · {dayLabel(e.income_date)}{e.source === "mp" ? " · MP" : ""}</div>
               </div>
-              <span className="k-num" style={{ fontSize: 15, whiteSpace: "nowrap", color: C.lime }}>+{ars(e.amount_ars)}</span>
+              <span className="k-num" style={{ fontSize: 15, whiteSpace: "nowrap", color: C.pos }}>+{ars(e.amount_ars)}</span>
             </button>;
             const cat = cats.find(c => c.id === e.category_id);
             return <button key={e.id} onClick={() => setSheet({ type: "cat", exp: e })} style={{ width: "100%", background: "none", border: "none", color: C.text, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", textAlign: "left", borderBottom: last ? "none" : `0.5px solid ${C.line}` }}>
@@ -366,16 +375,85 @@ function Finanzas({ fin, token }) {
                   {cat ? cat.name : "Sin categoría · tocá para asignar"} · {dayLabel(e.expense_date)}{e.source === "mp" ? " · MP" : ""}
                 </div>
               </div>
-              <span className="k-num" style={{ fontSize: 15, whiteSpace: "nowrap" }}>−{ars(e.amount_ars)}</span>
+              <span className="k-num" style={{ fontSize: 15, whiteSpace: "nowrap", color: C.neg }}>−{ars(e.amount_ars)}</span>
             </button>;
           })}
         </div>}
+    </>}
     </>}
 
     {sheet?.type === "cat" && <CategorySheet exp={sheet.exp} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "add" && <AddSheet cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "income" && <IncomeSheet inc={sheet.inc} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "budget" && <BudgetSheet month={month} income={income} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+  </>;
+}
+
+// ─────── Resumen: todo desde que arrancó Kairo, mes por mes ───────
+function Resumen({ token, cats }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    (async () => {
+      const [i, o] = await Promise.all([
+        dq("kairo_incomes", { token, filters: `?select=amount_ars,income_date&source=neq.ignorado&income_date=gte.${KAIRO_DESDE}` }),
+        dq("mp_expenses", { token, filters: `?select=amount_ars,expense_date,category_id&source=neq.ignorado&expense_date=gte.${KAIRO_DESDE}` }),
+      ]);
+      setData({ ins: Array.isArray(i) ? i : [], outs: Array.isArray(o) ? o : [] });
+    })();
+  }, [token]);
+  if (!data) return <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p>;
+
+  const months = [];
+  for (let m = KAIRO_DESDE.slice(0, 7); m <= curMonth(); m = shiftMonth(m, 1)) months.push(m);
+  const rows = months.map(m => {
+    const inc = data.ins.filter(x => x.income_date.startsWith(m)).reduce((s, x) => s + Number(x.amount_ars || 0), 0);
+    const out = data.outs.filter(x => x.expense_date.startsWith(m)).reduce((s, x) => s + Number(x.amount_ars || 0), 0);
+    return { m, inc, out, bal: inc - out };
+  }).reverse();
+  const totIn = rows.reduce((s, r) => s + r.inc, 0), totOut = rows.reduce((s, r) => s + r.out, 0), totBal = totIn - totOut;
+  const maxV = Math.max(1, ...rows.map(r => Math.max(r.inc, r.out)));
+  const byCat = {};
+  for (const x of data.outs) { const k = x.category_id || "_none"; byCat[k] = (byCat[k] || 0) + Number(x.amount_ars || 0); }
+  const top = Object.entries(byCat).map(([k, v]) => ({ name: cats.find(c => c.id === k)?.name || "Sin categoría", v })).sort((a, b) => b.v - a.v).slice(0, 6);
+  const signed = (n) => (n < 0 ? "−" : "+") + ars(Math.abs(n));
+
+  return <>
+    <div style={{ padding: "22px 2px 4px" }}>
+      <div style={{ fontSize: 13, color: C.sub }}>Ahorrado desde {monthName(KAIRO_DESDE.slice(0, 7)).toLowerCase()}</div>
+      <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2, color: totBal >= 0 ? C.pos : C.neg }}>{signed(totBal)}</div>
+      {totIn > 0 && <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>Guardaste el {Math.round((totBal / totIn) * 100)}% de lo que entró</div>}
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 14 }}>
+      <MiniStat label="Ingresos" value={"+" + arsK(totIn)} color={C.pos} />
+      <MiniStat label="Gastos" value={"−" + arsK(totOut)} color={C.neg} />
+      <MiniStat label="Gasto/mes" value={arsK(totOut / months.length)} />
+    </div>
+
+    <SectionTitle>Mes por mes</SectionTitle>
+    <div style={{ ...card, padding: "2px 16px" }}>
+      {rows.map((r, i) => <div key={r.m} style={{ padding: "13px 0", borderBottom: i < rows.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span style={{ fontSize: 15 }}>{monthName(r.m)}</span>
+          <span className="k-num" style={{ fontSize: 15, color: r.bal >= 0 ? C.pos : C.neg }}>{signed(r.bal)}</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", columnGap: 10, rowGap: 4, alignItems: "center", marginTop: 8, fontSize: 12, color: C.sub }}>
+          <div style={{ height: 3, background: C.line, borderRadius: 2 }}><div style={{ width: `${(r.inc / maxV) * 100}%`, height: 3, background: C.pos, borderRadius: 2 }} /></div>
+          <span className="k-num">+{arsK(r.inc)}</span>
+          <div style={{ height: 3, background: C.line, borderRadius: 2 }}><div style={{ width: `${(r.out / maxV) * 100}%`, height: 3, background: C.neg, borderRadius: 2 }} /></div>
+          <span className="k-num">−{arsK(r.out)}</span>
+        </div>
+      </div>)}
+    </div>
+
+    {top.length > 0 && <>
+      <SectionTitle>En qué se va la plata</SectionTitle>
+      <div style={{ ...card, padding: "2px 16px" }}>
+        {top.map((t, i) => <div key={t.name} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "12px 0", fontSize: 15, borderBottom: i < top.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+          <span className="k-num" style={{ whiteSpace: "nowrap" }}>{arsK(t.v)} <span style={{ color: C.sub }}>· {Math.round((t.v / (totOut || 1)) * 100)}%</span></span>
+        </div>)}
+      </div>
+    </>}
   </>;
 }
 
@@ -403,7 +481,7 @@ function CatChips({ cats, value, onChange }) {
 function CategorySheet({ exp, cats, token, onClose, onSaved }) {
   const [cat, setCat] = useState(exp.category_id);
   const [desc, setDesc] = useState(exp.description || exp.merchant || "");
-  const [remember, setRemember] = useState(exp.source === "mp");
+  const [remember, setRemember] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
@@ -419,11 +497,11 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
     setSaving(false); pushToast("Guardado"); onSaved();
   };
   // Los de Mercado Pago no se borran: quedan marcados para que la sincronización no los vuelva a traer.
-  const notExpense = async () => {
+  const notExpense = async (always) => {
     setSaving(true);
     if (exp.mp_payment_id) {
       await dq("mp_expenses", { method: "PATCH", token, filters: `?id=eq.${exp.id}`, body: { source: "ignorado", category_id: null } });
-      if (remember && exp.merchant) {
+      if (always && exp.merchant) {
         await dq("kairo_merchant_rules", { method: "POST", token, filters: "?on_conflict=merchant_key", body: { merchant_key: merchantKey(exp.merchant), category_id: null, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
         await dq("mp_expenses", { method: "PATCH", token, filters: `?merchant=eq.${encodeURIComponent(exp.merchant)}&category_id=is.null&source=eq.mp`, body: { source: "ignorado" } });
       }
@@ -434,7 +512,7 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
   };
 
   return <Sheet title="Categorizar" onClose={onClose}>
-    <div className="k-num" style={{ fontSize: 30, fontWeight: 500 }}>−{ars(exp.amount_ars)}</div>
+    <div className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.neg }}>−{ars(exp.amount_ars)}</div>
     <div style={{ fontSize: 13, color: C.sub, margin: "2px 0 16px" }}>{exp.merchant ? `${exp.merchant} · ` : ""}{dayLabel(exp.expense_date)}{exp.payment_method ? ` · ${exp.payment_method}` : ""}</div>
     <Label>Concepto</Label>
     <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ej: envío, cena con amigos" style={field} />
@@ -446,7 +524,11 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
     </button>}
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 18 }}>{saving ? "Guardando…" : "Guardar"}</button>
     {!confirmDel ? <button onClick={() => setConfirmDel(true)} className="k-press" style={{ ...btnGhost, marginTop: 10 }}>No es un gasto</button>
-      : <button onClick={notExpense} disabled={saving} className="k-press" style={{ ...btnGhost, marginTop: 10, color: C.danger }}>{remember && exp.mp_payment_id && exp.merchant ? `Sacar este y los próximos de ${exp.merchant}` : "Tocá de nuevo para sacarlo"}</button>}
+      : <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+        <button onClick={() => notExpense(false)} disabled={saving} className="k-press" style={{ ...btnGhost, color: C.danger }}>Sacar solo este</button>
+        {exp.mp_payment_id && exp.merchant && <button onClick={() => notExpense(true)} disabled={saving} className="k-press" style={{ ...btnGhost, color: C.danger, fontSize: 14 }}>Sacar este y todos los de {exp.merchant}</button>}
+        <button onClick={() => setConfirmDel(false)} style={{ ...linkBtn, color: C.sub, padding: 8 }}>Cancelar</button>
+      </div>}
   </Sheet>;
 }
 
@@ -562,7 +644,7 @@ function IncomeSheet({ inc, token, onClose, onSaved }) {
 
   return <Sheet title={inc ? "Ingreso" : "Nuevo ingreso"} onClose={onClose}>
     {fromMp ? <>
-      <div className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.lime }}>+{ars(inc.amount_ars)}</div>
+      <div className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.pos }}>+{ars(inc.amount_ars)}</div>
       <div style={{ fontSize: 13, color: C.sub, margin: "2px 0 4px" }}>Mercado Pago · {dayLabel(inc.income_date)}</div>
     </> : <div style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: `0.5px solid ${C.line}`, paddingBottom: 8 }}>
       <span style={{ fontSize: 30, color: C.sub }}>$</span>

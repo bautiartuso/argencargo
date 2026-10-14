@@ -40,6 +40,14 @@ const mp = async (path) => {
   return r.json();
 };
 
+// Nombre de la otra persona en una transferencia, si MP lo manda (titular de la cuenta o nombre del pagador).
+const counterpart = (p, side) => {
+  const bank = p.point_of_interaction?.transaction_data?.bank_info?.[side];
+  const name = bank?.account_holder_name || bank?.long_name
+    || (side === "payer" ? [p.payer?.first_name, p.payer?.last_name].filter(Boolean).join(" ") : "");
+  return name ? String(name).trim() : "";
+};
+
 const arDate = (iso) => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
 
 // POST: la app al abrir Finanzas (sesión de admin). GET: el cron de Vercel cada 15 min (CRON_SECRET).
@@ -71,7 +79,17 @@ async function sync() {
     };
     const [all, received] = await Promise.all([search("payer"), search("collector")]);
     // Lo que pagaste vos a otro (no las ventas que cobra la cuenta).
-    const payments = all.filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id));
+    // account_fund = ingreso de dinero desde tu banco a tu propia cuenta de MP: no es gasto ni ingreso.
+    const OWN_MONEY = new Set(["account_fund"]);
+    const payments = all.filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id) && !OWN_MONEY.has(p.operation_type));
+    const ownIds = all.filter(p => OWN_MONEY.has(p.operation_type)).map(p => String(p.id));
+    if (ownIds.length) await sb(`/rest/v1/mp_expenses?mp_payment_id=in.(${ownIds.join(",")})&source=eq.mp`, { method: "PATCH", body: JSON.stringify({ source: "ignorado" }) });
+
+    // Diagnóstico (temporal): qué datos de la otra persona trae MP en transferencias y pagos.
+    for (const p of [...all, ...received].filter(p => p.operation_type !== "regular_payment").slice(0, 6)) {
+      const poi = p.point_of_interaction || {};
+      console.log("[kairo mp-sync] detalle", JSON.stringify({ op: p.operation_type, type: p.payment_type_id, desc: p.description, payer: p.payer && { first_name: p.payer.first_name, last_name: p.payer.last_name, has_email: !!p.payer.email, id_type: p.payer.identification?.type }, poi_type: poi.type, poi_keys: Object.keys(poi), td_keys: Object.keys(poi.transaction_data || {}), bank_info: poi.transaction_data?.bank_info, add_keys: Object.keys(p.additional_info || {}) }));
+    }
 
     // Qué tipos trae MP (para confirmar si aparecen transferencias, servicios, etc.).
     const kinds = {};
@@ -92,7 +110,7 @@ async function sync() {
 
     const rows = payments.filter(p => !seen.has(String(p.id))).map(p => {
       const isTransfer = p.operation_type === "money_transfer";
-      const merchant = p.description || p.statement_descriptor || p.point_of_interaction?.business_info?.sub_unit || (isTransfer ? "Transferencia" : "Mercado Pago");
+      const merchant = p.description || p.statement_descriptor || counterpart(p, "collector") || p.point_of_interaction?.business_info?.sub_unit || (isTransfer ? "Transferencia" : "Mercado Pago");
       const key = merchantKey(merchant);
       const ignored = rules.has(key) && rules.get(key) === null;
       return {
@@ -117,14 +135,14 @@ async function sync() {
 
     // Ingresos: lo que te pagaron a vos (transferencias recibidas, cobros). Lo que pagaste vos mismo
     // a tu propia cuenta no cuenta.
-    const incomes = received.filter(p => p.status === "approved" && String(p.payer?.id) !== String(me.id));
+    const incomes = received.filter(p => p.status === "approved" && String(p.payer?.id) !== String(me.id) && !OWN_MONEY.has(p.operation_type));
     const knownIn = await sb(`/rest/v1/kairo_incomes?mp_payment_id=not.is.null&select=mp_payment_id`);
     if (!Array.isArray(knownIn)) throw new Error("No se pudo leer los ingresos ya cargados (¿corriste el SQL de ingresos?)");
     const seenIn = new Set(knownIn.map(k => k.mp_payment_id));
     const inRows = incomes.filter(p => !seenIn.has(String(p.id))).map(p => ({
       mp_payment_id: String(p.id),
       source: "mp",
-      description: p.description || (p.operation_type === "money_transfer" ? "Transferencia recibida" : "Cobro Mercado Pago"),
+      description: p.description || counterpart(p, "payer") || (p.operation_type === "money_transfer" ? "Transferencia recibida" : "Cobro Mercado Pago"),
       amount_ars: Number(p.transaction_amount || 0),
       income_date: arDate(p.date_approved || p.date_created),
     }));
