@@ -174,7 +174,7 @@ function Shell({ sesion, perfil, onLogout }) {
 
   let cuerpo;
   if (!d) cuerpo = <Cargando />;
-  else if (nav.p === "cotizaciones") cuerpo = nav.wizard ? <CotizadorWizard token={token} requestId={nav.wizard} profileId={perfil.id} onBack={() => { recargar(); ir("cotizaciones", { id: nav.wizard }); }} /> : nav.id ? <CotDetalle ctx={ctx} id={nav.id} /> : <Cotizaciones ctx={ctx} />;
+  else if (nav.p === "cotizaciones") cuerpo = nav.wizard ? <CotizadorWizard token={token} rol={rol} requestId={nav.wizard} profileId={perfil.id} onBack={() => { recargar(); ir("cotizaciones", { id: nav.wizard }); }} /> : nav.id ? <CotDetalle ctx={ctx} id={nav.id} /> : <Cotizaciones ctx={ctx} />;
   else if (nav.p === "operaciones") cuerpo = nav.id ? <OpDetalle ctx={ctx} id={nav.id} /> : <Operaciones ctx={ctx} />;
   else if (nav.p === "socios" && rol !== "empleado") cuerpo = <Socios ctx={ctx} />;
   else if (nav.p === "contactos") cuerpo = <Contactos ctx={ctx} />;

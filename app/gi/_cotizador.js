@@ -1,9 +1,10 @@
 "use client";
-// Cotizador de Gestión Integral (3 pasos). Movido tal cual desde el panel viejo (13/10/2026).
+// Cotizador de Gestión Integral. Rediseñado el 13/10/2026: una sola pantalla con productos y resumen;
+// la lógica de cálculo y guardado es la misma de antes.
 import { useState, useEffect } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, tablaDesaduanaje } from "../../lib/calc";
-import { alertDialog } from "../../lib/ui";
-import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, buildQuoteWaMessage, cleanWaNumber, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT } from "./_base";
+import { alertDialog, toast } from "../../lib/ui";
+import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT } from "./_base";
 
 export const CHANNEL_DEFS=[
   {key:"aereo_blanco",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
@@ -12,7 +13,9 @@ export const CHANNEL_DEFS=[
   {key:"maritimo_negro",name:"Marítimo Integral AC",time:"~ 60 días"},
 ];
 
-export function CotizadorWizard({token,requestId,profileId,onBack}){
+export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
+  const verGanancia=rol!=="empleado";
+  const [lastSentStatus,setLastSentStatus]=useState(null);
   const [step,setStep]=useState(1);
   const [request,setRequest]=useState(null);
   const [client,setClient]=useState(null);
@@ -84,6 +87,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack}){
     const draft=Array.isArray(draftRes)&&draftRes[0]?draftRes[0]:null;
     if(draft){
       setDraftQuoteId(draft.id);
+      setLastSentStatus(draft.status);
       if(draft.payment_plan)setPaymentPlan(typeof draft.payment_plan==="string"?JSON.parse(draft.payment_plan):draft.payment_plan);
       if(draft.honorarios_pct!=null)setHonorariosPct(String(draft.honorarios_pct));
       if(draft.supplier_deposit_pct!=null)setSupplierDepositPct(String(draft.supplier_deposit_pct));
@@ -411,45 +415,24 @@ export function CotizadorWizard({token,requestId,profileId,onBack}){
     }
   };
 
-  if(lo)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando cotizador…</p>;
-  if(!request)return <p style={{color:"rgba(255,255,255,0.4)"}}>Solicitud no encontrada</p>;
+  if(lo)return <div style={{color:C.mute,padding:20}}>Cargando cotizador…</div>;
+  if(!request)return <div style={{color:C.mute,padding:20}}>Solicitud no encontrada</div>;
+  if(step===3)return <CotizacionLista generatedQuote={generatedQuote} client={client} request={request} onBack={onBack}/>;
   const cn=client?`${client.first_name||""} ${client.last_name||""}`.trim():"—";
-
-  const Step=({n,label,active,done})=><div style={{display:"flex",alignItems:"center",gap:10,flex:1}}>
-    <span style={{width:26,height:26,borderRadius:"50%",background:done?"#22c55e":(active?GOLD_GRADIENT:"rgba(255,255,255,0.06)"),color:done?"#fff":(active?"#0A1628":"rgba(255,255,255,0.5)"),fontSize:12,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{done?"✓":n}</span>
-    <p style={{fontSize:12,fontWeight:600,color:active?"#fff":(done?"rgba(255,255,255,0.7)":"rgba(255,255,255,0.5)"),margin:0,textTransform:"uppercase",letterSpacing:0}}>{label}</p>
-  </div>;
-
-  return <div>
-    {msg&&<div style={{position:"fixed",top:20,right:20,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",padding:"10px 16px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 12px 30px rgba(0,0,0,0.4)"}}>{msg}</div>}
-    <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:18,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",fontFamily:"inherit"}}>← Volver</button>
-
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14,marginBottom:6}}>
-      <div>
-        <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Cotizador <span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{request.request_code}</span></h1>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Cliente: <strong style={{color:"#fff"}}>{cn}</strong>{lastSavedAt&&<span style={{marginLeft:10,fontSize:11,color:"rgba(255,255,255,0.4)"}}>· Borrador guardado {fmtDate(lastSavedAt)}</span>}</p>
-      </div>
-      <button onClick={()=>saveDraft({})} disabled={savingDraft||lo} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:savingDraft?"rgba(96,165,250,0.2)":"rgba(96,165,250,0.10)",color:"#60a5fa",cursor:savingDraft?"wait":"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{savingDraft?"Guardando…":"💾 Guardar borrador"}</button>
-    </div>
-
-    <div style={{display:"flex",alignItems:"center",gap:12,marginTop:18,marginBottom:24,padding:"14px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12}}>
-      <Step n={1} label="Productos & embalaje" active={step===1} done={step>1}/>
-      <div style={{flex:"0 0 24px",height:1,background:step>1?"#22c55e":"rgba(255,255,255,0.1)"}}/>
-      <Step n={2} label="Costos & honorarios" active={step===2} done={step>2}/>
-      <div style={{flex:"0 0 24px",height:1,background:step>2?"#22c55e":"rgba(255,255,255,0.1)"}}/>
-      <Step n={3} label="Link al cliente" active={step===3} done={false}/>
-    </div>
-
-    {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob} visibleChannels={visibleChannels} tariffs={tariffs} config={config} client={client}/>}
-    {step===2&&<WizStep2 token={token} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} totalFob={totalFob} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct} deliveryZone={deliveryZone} setDeliveryZone={setDeliveryZone} client={client} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
-    {step===3&&<WizStep3 generatedQuote={generatedQuote} client={client} request={request} onBack={onBack}/>}
-  </div>;
+  const faltante=validateStep1();
+  const masBarato=visibleChannels.filter(c=>!c.error&&c.total>0).sort((a,b)=>a.total-b.total)[0];
+  const generar=()=>{if(faltante){alertDialog(faltante);return;}generateLink();};
+  return <CotizadorPantalla
+    request={request} cn={cn} lastSavedAt={lastSavedAt} savingDraft={savingDraft} onSave={()=>saveDraft({})} onBack={async()=>{await saveDraft({silent:true});onBack();}}
+    products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} token={token}
+    totalFob={totalFob} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct}
+    paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct}
+    desglose={(i)=>desgloseItem({products,productIdx:i,visibleChannels,tariffs,config,client,totalFob})}
+    verGanancia={verGanancia} faltante={faltante} masBarato={masBarato} saving={saving} onGenerar={generar} yaEnviada={!!draftQuoteId&&lastSentStatus!=="draft"}/>;
 }
 
-function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob,visibleChannels,tariffs,config,client}){
-  // Desglose impositivo per-item per-canal: replica la lógica de lib/calc.js prorrateando por FOB del item.
-  // Para cada producto devuelve { byChannel: { [channelKey]: { fob, die, te, iva, desemb, ivaAdic, iigg, iibb, total } } }.
-  const computeItemBreakdown=(productIdx)=>{
+// Desglose impositivo de un producto por canal A (prorrateado por FOB), igual que lib/calc.js.
+function desgloseItem({products,productIdx,visibleChannels,tariffs,config,client,totalFob}){
     const out={};
     if(!visibleChannels||!tariffs)return out;
     const p=products[productIdx];
@@ -503,357 +486,223 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
       out[ch.key]={fob:itemFob,certFl:iCert,seguro:iSeg,cif:iCif,die,te:tasa,iva,desemb,ivaAdic,iigg,iibb,total};
     });
     return out;
-  };
-  return <div>
-    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
-      <strong style={{color:"#60a5fa"}}>Step 1:</strong> cargá cada producto con su packing. Si origen es <strong>China</strong> apretá "Clasificar NCM" para que el sistema busque el código y los aranceles. Si es <strong>USA</strong>, va canal B automáticamente.
+  }
+
+// ────────────────────────────────────────────
+// PANTALLA DEL COTIZADOR (13/10/2026): productos a la izquierda, resumen fijo a la derecha.
+// ────────────────────────────────────────────
+const n2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const soloNum=(v,dec)=>dec?v.replace(/[^0-9.]/g,""):v.replace(/[^0-9]/g,"");
+
+function CotizadorPantalla(p){
+  const movil=useMovil(980);
+  const totalBultos=p.products.reduce((s,x)=>s+Number(x.pkg_count||0),0);
+  let cbm=0,kg=0;p.products.forEach(x=>{const c=Number(x.pkg_count||0);cbm+=(Number(x.pkg_length_cm||0)*Number(x.pkg_width_cm||0)*Number(x.pkg_height_cm||0)*c)/1e6;kg+=Number(x.pkg_weight_kg||0)*c;});
+  return <div style={{paddingBottom:movil?90:0}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+      <Volver onClick={p.onBack}/>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:12,color:C.mute}}>{p.savingDraft?"Guardando…":p.lastSavedAt?`Guardado ${hace(p.lastSavedAt)}`:"Sin guardar"}</span>
+        <Btn small onClick={p.onSave} disabled={p.savingDraft}>Guardar borrador</Btn>
+      </div>
     </div>
-    {products.map((p,i)=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:18,marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:10,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-        <h4 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>Producto {i+1}</h4>
-        <button onClick={()=>onRemove(i)} disabled={products.length<=1} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",color:products.length<=1?"rgba(255,255,255,0.2)":"#f87171",cursor:products.length<=1?"not-allowed":"pointer",fontFamily:"inherit"}}>✕ Quitar</button>
+    <Titulo eyebrow={`Cotización ${p.request.request_code}`} sub="Cargá los productos con su embalaje. A la derecha ves el precio final por canal, ajustás los honorarios y el plan de pagos, y generás el link para el cliente.">{p.cn}</Titulo>
+    <div style={{display:"grid",gridTemplateColumns:movil?"1fr":"minmax(0,1fr) 380px",gap:16,alignItems:"start"}}>
+      <div>
+        {p.products.map((x,i)=><ProductoCard key={i} i={i} p={x} total={p.products.length} onUpdate={p.onUpdate} onRemove={p.onRemove} onClassify={p.onClassify} token={p.token} desglose={p.desglose}/>)}
+        <button onClick={p.onAdd} style={{width:"100%",padding:"14px",borderRadius:14,border:`1.5px dashed ${C.lineHi}`,background:"transparent",color:C.sub,fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar producto</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:14,marginBottom:12}}>
-        <PhotoUpload value={p.photo_url} onChange={url=>onUpdate(i,"photo_url",url)} token={token}/>
-        <div>
-          <div style={{marginBottom:12}}>
-            <label style={lblStyle()}>Descripción del producto</label>
-            <input value={p.description} onChange={e=>onUpdate(i,"description",e.target.value)} style={inpStyle()}/>
-          </div>
-          <div>
-            <label style={lblStyle()}>Referencia del proveedor (opcional)</label>
-            <input value={p.supplier_ref||""} onChange={e=>onUpdate(i,"supplier_ref",e.target.value)} placeholder="Link Alibaba, nombre, WeChat, email..." style={inpStyle()}/>
-          </div>
-        </div>
+      <div style={{position:movil?"static":"sticky",top:20}}>
+        <Resumen {...p} movil={movil} totalBultos={totalBultos} cbm={cbm} kg={kg}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
-        <div><label style={lblStyle()}>Origen</label>
-          <select value={p.origin} onChange={e=>onUpdate(i,"origin",e.target.value)} style={inpStyle()}>
-            <option value="china">China</option>
-            <option value="usa">USA</option>
-          </select>
-        </div>
-        <div><label style={lblStyle()}>Lead prod. (días)</label><input type="text" inputMode="numeric" value={p.lead_time_days} onChange={e=>onUpdate(i,"lead_time_days",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Cantidad</label><input type="text" inputMode="numeric" value={p.quantity} onChange={e=>onUpdate(i,"quantity",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Precio venta unit. USD</label><input type="text" inputMode="decimal" value={p.unit_cost_usd} onChange={e=>onUpdate(i,"unit_cost_usd",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+    </div>
+    {movil&&<div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:30,padding:"10px 16px calc(10px + env(safe-area-inset-bottom))",background:"rgba(10,22,40,0.97)",borderTop:`1px solid ${C.line}`,display:"flex",alignItems:"center",gap:12}}>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{margin:0,fontSize:10.5,color:C.mute,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Desde</p>
+        <p style={{margin:0,fontSize:17,fontWeight:800,color:C.goldHi,fontVariantNumeric:"tabular-nums"}}>{p.masBarato?fmtUSD(p.masBarato.total):"—"}</p>
       </div>
+      <Btn v="gold" onClick={p.onGenerar} disabled={p.saving}>{p.saving?"Generando…":p.yaEnviada?"Actualizar link":"Generar link"}</Btn>
+    </div>}
+  </div>;
+}
 
-      {p.origin==="china"&&<div style={{padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:8,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:200}}>
-            {p.ncm_code?<>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:3}}>Clasificación NCM</p>
-              <p style={{fontSize:13,fontWeight:700,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#60a5fa"}}>{p.ncm_code}</span> · {p.ncm_description}</p>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
-                <Tag>DI {p.import_duty_rate===""||p.import_duty_rate==null?0:p.import_duty_rate}%</Tag>
-                <Tag>IVA {p.iva_rate===""||p.iva_rate==null?0:p.iva_rate}%</Tag>
-                <Tag>Tasa Estad. {p.statistics_rate===""||p.statistics_rate==null?0:p.statistics_rate}%</Tag>
-              </div>
-            </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{p.ncm_error?<span style={{color:"#fbbf24"}}>⚠ No se pudo clasificar. Cargá los aranceles a mano abajo.</span>:"Apretá clasificar para que el sistema busque NCM y aranceles."}</p>}
+function ProductoCard({i,p,total,onUpdate,onRemove,onClassify,token,desglose}){
+  const [verImp,setVerImp]=useState(false);
+  const [editNcm,setEditNcm]=useState(false);
+  const [foto,setFoto]=useState(false);
+  const u=(k)=>(v)=>onUpdate(i,k,v);
+  const cnt=Number(p.pkg_count||0),L=Number(p.pkg_length_cm||0),W=Number(p.pkg_width_cm||0),H=Number(p.pkg_height_cm||0),kg=Number(p.pkg_weight_kg||0);
+  const embOk=cnt&&L&&W&&H&&kg;
+  const cbm=(L*W*H*cnt)/1e6,real=kg*cnt,volAer=(L*W*H*cnt)/5000;
+  const sub=Number(p.unit_cost_usd||0)*Number(p.quantity||0);
+  const bd=verImp?desglose(i):{};
+  const blancos=Object.entries(bd).filter(([,v])=>!v.notBlanco);
+  const lbl={fontSize:10.5,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};
+  const box={...inp,padding:"9px 11px",fontSize:13.5};
+  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
+    <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+      <button type="button" onClick={()=>setFoto(true)} style={{width:84,height:84,flexShrink:0,borderRadius:12,border:p.photo_url?`1px solid ${C.line}`:`1.5px dashed ${C.lineHi}`,background:p.photo_url?"#000":"rgba(0,0,0,0.2)",cursor:"pointer",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
+        {p.photo_url?<img src={p.photo_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:11,color:C.mute,fontWeight:700,lineHeight:1.3,textAlign:"center"}}>📷<br/>Foto</span>}
+      </button>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{fontSize:11,fontWeight:800,color:C.gold,letterSpacing:"0.08em"}}>PRODUCTO {i+1}</span>
+          <div style={{marginLeft:"auto",display:"inline-flex",padding:3,background:"rgba(0,0,0,0.25)",borderRadius:9,border:`1px solid ${C.line}`}}>
+            {[["china","China"],["usa","USA"]].map(([k,l])=><button key={k} type="button" onClick={()=>u("origin")(k)} style={{padding:"4px 10px",borderRadius:7,border:"none",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:p.origin===k?C.goldBg:"transparent",color:p.origin===k?C.goldHi:C.mute}}>{l}</button>)}
           </div>
-          {(()=>{const can=(p.description?.trim()||p.photo_url);const hasPhoto=!!p.photo_url;return <button onClick={()=>onClassify(i)} disabled={!can||p.ncm_loading} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:can?"pointer":"not-allowed",fontFamily:"inherit",opacity:can?1:0.4,whiteSpace:"nowrap"}}>{p.ncm_loading?"Clasificando…":(p.ncm_code?(hasPhoto?"🤖 Reclasificar (con foto)":"Reclasificar"):(hasPhoto?"🤖 Clasificar NCM (con foto)":"Clasificar NCM"))}</button>;})()}
+          {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.line}`,background:"transparent",color:C.mute,cursor:"pointer"}}>✕</button>}
         </div>
-        {p.ncm_error&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
-          <div><label style={lblStyle()}>DI %</label><input type="text" inputMode="decimal" value={p.import_duty_rate} onChange={e=>onUpdate(i,"import_duty_rate",e.target.value)} style={inpStyle()}/></div>
-          <div><label style={lblStyle()}>IVA %</label><input type="text" inputMode="decimal" value={p.iva_rate} onChange={e=>onUpdate(i,"iva_rate",e.target.value)} style={inpStyle()}/></div>
-          <div><label style={lblStyle()}>Tasa Estad. %</label><input type="text" inputMode="decimal" value={p.statistics_rate} onChange={e=>onUpdate(i,"statistics_rate",e.target.value)} style={inpStyle()}/></div>
-        </div>}
+        <input value={p.description} onChange={e=>u("description")(e.target.value)} placeholder="Qué es (ej: perfil de aluminio anodizado 6 m)" style={{...box,fontSize:15,fontWeight:700}}/>
+      </div>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginTop:12}}>
+      <label><span style={lbl}>Cantidad</span><input inputMode="numeric" value={p.quantity} onChange={e=>u("quantity")(soloNum(e.target.value))} style={box}/></label>
+      <label><span style={lbl}>Costo unit. USD</span><input inputMode="decimal" value={p.unit_cost_usd} onChange={e=>u("unit_cost_usd")(soloNum(e.target.value,true))} style={box}/></label>
+      <label><span style={lbl}>Producción (días)</span><input inputMode="numeric" value={p.lead_time_days} onChange={e=>u("lead_time_days")(soloNum(e.target.value))} style={box}/></label>
+      <div><span style={lbl}>Subtotal FOB</span><p style={{margin:0,padding:"9px 0",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{sub>0?fmtUSD(sub):"—"}</p></div>
+    </div>
+    <label style={{display:"block",marginTop:10}}><span style={lbl}>Proveedor (link, nombre o WeChat)</span><input value={p.supplier_ref||""} onChange={e=>u("supplier_ref")(e.target.value)} placeholder="https://…alibaba.com/…" style={box}/></label>
+
+    {p.origin==="china"&&<div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:180}}>
+          {p.ncm_code?<>
+            <p style={{margin:0,fontSize:13,fontWeight:700}}><span style={{fontFamily:MONO,color:C.blue}}>{p.ncm_code}</span>{p.ncm_description?<span style={{color:C.sub,fontWeight:500}}> · {p.ncm_description}</span>:null}</p>
+            <p style={{margin:"4px 0 0",fontSize:12,color:C.sub}}>DI {p.import_duty_rate||0}% · Tasa {p.statistics_rate||0}% · IVA {p.iva_rate||0}%</p>
+          </>:<p style={{margin:0,fontSize:12.5,color:p.ncm_error?C.amber:C.sub}}>{p.ncm_error?"No se pudo clasificar: cargá los aranceles a mano.":"Sin posición arancelaria todavía."}</p>}
+        </div>
+        <Btn small onClick={()=>onClassify(i)} disabled={(!p.description?.trim()&&!p.photo_url)||p.ncm_loading}>{p.ncm_loading?"Clasificando…":p.ncm_code?"Reclasificar":"Clasificar con IA"}</Btn>
+        <Btn small v="ghost" onClick={()=>setEditNcm(v=>!v)}>{editNcm?"Listo":"Editar"}</Btn>
+      </div>
+      {(editNcm||p.ncm_error)&&<div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",gap:8,marginTop:10}}>
+        <label><span style={lbl}>NCM</span><input value={p.ncm_code} onChange={e=>u("ncm_code")(e.target.value)} style={box}/></label>
+        <label><span style={lbl}>DI %</span><input inputMode="decimal" value={p.import_duty_rate} onChange={e=>u("import_duty_rate")(soloNum(e.target.value,true))} style={box}/></label>
+        <label><span style={lbl}>Tasa %</span><input inputMode="decimal" value={p.statistics_rate} onChange={e=>u("statistics_rate")(soloNum(e.target.value,true))} style={box}/></label>
+        <label><span style={lbl}>IVA %</span><input inputMode="decimal" value={p.iva_rate} onChange={e=>u("iva_rate")(soloNum(e.target.value,true))} style={box}/></label>
       </div>}
+    </div>}
 
-      <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,marginTop:14}}>Embalaje</p>
-      <div style={{display:"grid",gridTemplateColumns:"0.6fr 1fr 1fr 1fr 1fr",gap:8}}>
-        <div><label style={lblStyle()}>Cant. bultos</label><input type="text" inputMode="numeric" value={p.pkg_count} onChange={e=>onUpdate(i,"pkg_count",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Largo (cm)</label><input type="text" inputMode="decimal" value={p.pkg_length_cm} onChange={e=>onUpdate(i,"pkg_length_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Ancho (cm)</label><input type="text" inputMode="decimal" value={p.pkg_width_cm} onChange={e=>onUpdate(i,"pkg_width_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Alto (cm)</label><input type="text" inputMode="decimal" value={p.pkg_height_cm} onChange={e=>onUpdate(i,"pkg_height_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Peso bulto (kg)</label><input type="text" inputMode="decimal" value={p.pkg_weight_kg} onChange={e=>onUpdate(i,"pkg_weight_kg",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+    <p style={{...lbl,margin:"14px 0 6px"}}>Embalaje</p>
+    <div style={{display:"grid",gridTemplateColumns:"0.8fr 1fr 1fr 1fr 1fr",gap:8}}>
+      <label><span style={{...lbl,fontSize:9.5}}>Bultos</span><input inputMode="numeric" value={p.pkg_count} onChange={e=>u("pkg_count")(soloNum(e.target.value))} style={box}/></label>
+      <label><span style={{...lbl,fontSize:9.5}}>Largo cm</span><input inputMode="decimal" value={p.pkg_length_cm} onChange={e=>u("pkg_length_cm")(soloNum(e.target.value,true))} style={box}/></label>
+      <label><span style={{...lbl,fontSize:9.5}}>Ancho cm</span><input inputMode="decimal" value={p.pkg_width_cm} onChange={e=>u("pkg_width_cm")(soloNum(e.target.value,true))} style={box}/></label>
+      <label><span style={{...lbl,fontSize:9.5}}>Alto cm</span><input inputMode="decimal" value={p.pkg_height_cm} onChange={e=>u("pkg_height_cm")(soloNum(e.target.value,true))} style={box}/></label>
+      <label><span style={{...lbl,fontSize:9.5}}>Kg c/u</span><input inputMode="decimal" value={p.pkg_weight_kg} onChange={e=>u("pkg_weight_kg")(soloNum(e.target.value,true))} style={box}/></label>
+    </div>
+    {embOk?<div style={{display:"flex",flexWrap:"wrap",gap:"4px 14px",marginTop:8,fontSize:12,color:C.sub,fontVariantNumeric:"tabular-nums"}}>
+      <span><strong style={{color:C.txt}}>{cbm.toFixed(3)}</strong> m³</span>
+      <span><strong style={{color:C.txt}}>{n2(real)}</strong> kg reales</span>
+      <span>aéreo factura <strong style={{color:C.green}}>{n2(Math.max(real,volAer))}</strong> kg</span>
+    </div>:<p style={{margin:"8px 0 0",fontSize:12,color:C.amber}}>Faltan datos del embalaje.</p>}
+
+    {p.origin==="china"&&sub>0&&<div style={{marginTop:12}}>
+      <button type="button" onClick={()=>setVerImp(v=>!v)} style={{background:"none",border:"none",color:C.blue,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",padding:0}}>{verImp?"Ocultar impuestos":"Ver impuestos de este producto"}</button>
+      {verImp&&blancos.length>0&&<div style={{display:"grid",gridTemplateColumns:`repeat(${blancos.length},minmax(0,1fr))`,gap:8,marginTop:8}}>
+        {blancos.map(([k,v])=><div key={k} style={{padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.2)",fontSize:12,fontVariantNumeric:"tabular-nums"}}>
+          <p style={{margin:"0 0 6px",fontWeight:800,color:C.blue,fontSize:11.5}}>{k==="aereo_blanco"?"Aéreo":"Marítimo LCL/FCL"}</p>
+          {[["CIF",v.cif],["Derechos",v.die],["Tasa",v.te],["IVA",v.iva],["Desaduanaje",v.desemb],["IVA adic.",v.ivaAdic],["Ganancias",v.iigg],["IIBB",v.iibb]].filter(([,x])=>x>0).map(([l,x])=><div key={l} style={{display:"flex",justifyContent:"space-between",color:C.sub}}><span>{l}</span><span>{n2(x)}</span></div>)}
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.line}`,fontWeight:800}}><span>Impuestos</span><span>USD {n2(v.total)}</span></div>
+        </div>)}
+      </div>}
+    </div>}
+    {foto&&<PhotoUploadModal token={token} onCancel={()=>setFoto(false)} onUploaded={url=>{u("photo_url")(url);setFoto(false);}} onQuitar={p.photo_url?()=>{u("photo_url")("");setFoto(false);}:null}/>}
+  </section>;
+}
+
+function Resumen(p){
+  const canales=p.visibleChannels;
+  const validos=canales.filter(c=>!c.error&&c.total>0);
+  const menor=validos.length?Math.min(...validos.map(c=>c.total)):0;
+  const sec={background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12};
+  const tit={margin:"0 0 10px",fontSize:11,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.1em"};
+  return <div>
+    <section style={sec}>
+      <p style={tit}>Carga</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+        <Dato label="FOB" val={usd0(p.totalFob)}/>
+        <Dato label="Bultos" val={String(p.totalBultos||0)} sub={`${p.cbm.toFixed(2)} m³`}/>
+        <Dato label="Peso" val={`${Math.round(p.kg)} kg`}/>
       </div>
-      {/* Preview en vivo: CBM total y peso facturable (aéreo y marítimo) calculados desde los inputs de embalaje. */}
-      {(()=>{
-        const cnt=Number(p.pkg_count||0);const L=Number(p.pkg_length_cm||0);const W=Number(p.pkg_width_cm||0);const H=Number(p.pkg_height_cm||0);const kg=Number(p.pkg_weight_kg||0);
-        if(!cnt||!L||!W||!H||!kg)return null;
-        const cbm=(L*W*H*cnt)/1000000;
-        const pesoReal=kg*cnt;
-        const pesoVolAereo=(L*W*H*cnt)/5000;
-        const pesoFactAereo=Math.max(pesoReal,pesoVolAereo);
-        const pesoFactMar=Math.max(pesoReal,cbm*1000); // marítimo: 1 m³ = 1.000 kg facturables
-        return <div style={{display:"flex",flexWrap:"wrap",gap:14,padding:"10px 12px",marginTop:8,background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"'}}>
-          <span>CBM total: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>
-          <span>Peso real: <strong style={{color:"#fff"}}>{pesoReal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-          <span>Peso vol. aéreo (÷5000): <strong style={{color:"#fff"}}>{pesoVolAereo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-          <span>Facturable aéreo: <strong style={{color:"#22c55e"}}>{pesoFactAereo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-          <span>Facturable marítimo: <strong style={{color:"#60a5fa"}}>{pesoFactMar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-        </div>;
-      })()}
-      {/* Desglose impositivo por producto y por canal (solo canal A blanco — el B negro es tarifa plana sin impuestos prorrateados) */}
-      {(()=>{
-        const bd=computeItemBreakdown(i);
-        const blancos=Object.entries(bd).filter(([,v])=>!v.notBlanco);
-        if(blancos.length===0)return null;
-        const fmt=n=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-        return <div style={{marginTop:10,padding:"10px 12px",background:"rgba(96,165,250,0.04)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8}}>
-          <p style={{fontSize:9.5,fontWeight:700,color:"rgba(96,165,250,0.85)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 8px"}}>Desglose impositivo del producto (canal A · prorrateado por FOB)</p>
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${blancos.length},1fr)`,gap:10}}>
-            {blancos.map(([k,v])=>{
-              const lbl=k==="aereo_blanco"?"Aéreo A":k==="maritimo_blanco"?"Marítimo A (LCL/FCL)":k;
-              return <div key={k} style={{background:"rgba(0,0,0,0.18)",borderRadius:6,padding:"8px 10px",fontSize:11,color:"rgba(255,255,255,0.7)",fontFeatureSettings:'"tnum"'}}>
-                <p style={{fontSize:10.5,fontWeight:700,color:"#60a5fa",margin:"0 0 6px"}}>{lbl}</p>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>FOB</span><span>USD {fmt(v.fob)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>+ Cert. flete</span><span>USD {fmt(v.certFl)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>+ Seguro (1%)</span><span>USD {fmt(v.seguro)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:3,paddingTop:5}}><span style={{color:"rgba(255,255,255,0.5)"}}>CIF item</span><span style={{color:"#fff",fontWeight:600}}>USD {fmt(v.cif)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",marginTop:5}}><span>DIE</span><span>USD {fmt(v.die)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>Tasa estad.</span><span>USD {fmt(v.te)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IVA</span><span>USD {fmt(v.iva)}</span></div>
-                {v.desemb>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>Desemb.×1.21</span><span>USD {fmt(v.desemb)}</span></div>}
-                {v.ivaAdic>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IVA Adic.</span><span>USD {fmt(v.ivaAdic)}</span></div>}
-                {v.iigg>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IIGG</span><span>USD {fmt(v.iigg)}</span></div>}
-                {v.iibb>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IIBB</span><span>USD {fmt(v.iibb)}</span></div>}
-                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 0",borderTop:"1px solid rgba(96,165,250,0.25)",marginTop:5,fontWeight:700}}><span style={{color:"#fff"}}>Total impuestos</span><span style={{color:"#22c55e"}}>USD {fmt(v.total)}</span></div>
-              </div>;
-            })}
-          </div>
-        </div>;
-      })()}
+    </section>
+    <section style={sec}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <p style={{...tit,margin:0}}>Honorarios GI</p>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <input inputMode="decimal" value={p.honorariosPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))p.setHonorariosPct(v);}} style={{...inp,width:64,padding:"7px 8px",textAlign:"center",fontSize:16,fontWeight:800,color:C.goldHi}}/>
+          <span style={{fontWeight:800,color:C.goldHi}}>%</span>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:6}}>{[5,10,15,20,25].map(v=><button key={v} type="button" onClick={()=>p.setHonorariosPct(String(v))} style={{flex:1,padding:"6px 0",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(p.honorariosPct)===v?C.gold:C.line}`,background:Number(p.honorariosPct)===v?C.goldBg:"transparent",color:Number(p.honorariosPct)===v?C.goldHi:C.sub}}>{v}%</button>)}</div>
+    </section>
+    <section style={sec}>
+      <p style={tit}>Precio final al cliente{p.someUSA?" · origen USA":""}</p>
+      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:C.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=><div key={c.key} style={{padding:"11px 12px",borderRadius:12,border:`1px solid ${c.total===menor&&!c.error?"rgba(52,211,153,0.35)":C.line}`,background:c.total===menor&&!c.error?"rgba(52,211,153,0.06)":"rgba(0,0,0,0.15)",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+          <div style={{minWidth:0}}><p style={{margin:0,fontWeight:800,fontSize:13.5}}>{c.name}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:C.mute}}>{c.time}</p></div>
+          <p style={{margin:0,fontSize:19,fontWeight:900,color:c.error?C.red:C.goldHi,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{c.error?"sin tarifa":usd0(c.total)}</p>
+        </div>
+        {!c.error&&<div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,fontSize:11.5,color:C.mute,fontVariantNumeric:"tabular-nums",flexWrap:"wrap"}}>
+          <span>impo {usd0(c.impoOnly)} + honorarios {usd0(c.honorariosUsd)}</span>
+          {p.verGanancia&&<span style={{color:C.green,fontWeight:700}}>gana {usd0(c.gainTotal)}</span>}
+        </div>}
+      </div>)}
+    </section>
+    <PlanPagos {...p} validos={validos}/>
+    {!p.movil&&<>
+      {p.faltante&&<p style={{margin:"0 0 10px",fontSize:12.5,color:C.amber}}>{p.faltante}</p>}
+      <Btn v="gold" full onClick={p.onGenerar} disabled={p.saving} style={{padding:"13px 16px",fontSize:14}}>{p.saving?"Generando…":p.yaEnviada?"Actualizar link de la cotización":"Generar link para el cliente"}</Btn>
+    </>}
+  </div>;
+}
+
+function PlanPagos({paymentPlan,setPaymentPlan,supplierDepositPct,setSupplierDepositPct,totalFob,validos}){
+  const supDep=Math.max(0,Math.min(100,Number(supplierDepositPct||0)))/100;
+  const ratio=validos.length?Math.max(...validos.map(c=>totalFob/c.total*100)):0;
+  const min1=Math.ceil(ratio*supDep),min12=Math.ceil(ratio);
+  const s1=Number(paymentPlan?.[0]?.pct||0),s12=s1+Number(paymentPlan?.[1]?.pct||0);
+  const suma=paymentPlan.reduce((s,x)=>s+Number(x.pct||0),0);
+  const ajustar=()=>{if(min12<=0||min12>=100)return;setPaymentPlan(pl=>{const b=pl.length>=3?pl:[{pct:30,label:"Inicio de producción"},{pct:20,label:"Producción terminada"},{pct:50,label:"Contra entrega"}];const nx=[...b];nx[0]={...nx[0],pct:min1};nx[1]={...nx[1],pct:Math.max(0,min12-min1)};nx[2]={...nx[2],pct:100-min1-Math.max(0,min12-min1)};for(let i=3;i<nx.length;i++)nx[i]={...nx[i],pct:0};return nx;});};
+  const cubre1=s1>=min1,cubre12=s12>=min12;
+  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
+    <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.1em"}}>Plan de pagos del cliente</p>
+    {paymentPlan.map((st,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+      <input inputMode="numeric" value={st.pct} onChange={e=>{const nv=Number(e.target.value.replace(/[^0-9]/g,""))||0;setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,pct:Math.min(100,nv)}:x));}} style={{...inp,width:56,padding:"7px 6px",textAlign:"center",fontWeight:800,borderColor:(i===0&&!cubre1)||(i===1&&!cubre12)?"rgba(248,113,113,0.5)":C.lineHi}}/>
+      <span style={{fontWeight:800,color:C.sub}}>%</span>
+      <input value={st.label} onChange={e=>setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,label:e.target.value}:x))} style={{...inp,padding:"7px 10px",fontSize:13}}/>
     </div>)}
-    <button onClick={onAdd} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit",marginBottom:18}}>+ Agregar producto</button>
-    {(()=>{
-      // Totales globales para el subtotal
-      let totCBM=0,pesoRealAll=0,pfAll=0;
-      products.forEach(x=>{
-        const cnt=Number(x.pkg_count||0),L=Number(x.pkg_length_cm||0),W=Number(x.pkg_width_cm||0),H=Number(x.pkg_height_cm||0),kg=Number(x.pkg_weight_kg||0);
-        if(!cnt||!L||!W||!H||!kg)return;
-        totCBM+=(L*W*H*cnt)/1000000;
-        pesoRealAll+=kg*cnt;
-        pfAll+=Math.max(kg*cnt,(L*W*H*cnt)/5000);
-      });
-      const pesoFactMarAll=Math.max(pesoRealAll,totCBM*1000);
-      const cbmCharge=Math.max(totCBM,1); // marítimo blanco mínimo 1 m³
-      return <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:0}}>Subtotal venta: <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong></p>
-          <button onClick={onNext} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Continuar a costos →</button>
-        </div>
-        {pesoRealAll>0&&<div style={{display:"flex",flexWrap:"wrap",gap:14,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"',paddingTop:8,borderTop:"1px solid rgba(184,149,106,0.18)"}}>
-          <span>CBM total: <strong style={{color:"#fff"}}>{totCBM.toFixed(4)} m³</strong>{totCBM<1?<span style={{color:"#fbbf24",marginLeft:4,fontSize:10}}>(min 1 m³ marítimo LCL/FCL → cobra {cbmCharge.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} m³)</span>:""}</span>
-          <span>Peso real total: <strong style={{color:"#fff"}}>{pesoRealAll.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-          <span>Facturable aéreo total: <strong style={{color:"#22c55e"}}>{pfAll.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-          <span>Facturable marítimo total: <strong style={{color:"#60a5fa"}}>{pesoFactMarAll.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
-        </div>}
-      </div>;
-    })()}
-  </div>;
+    <p style={{margin:"6px 0 0",fontSize:12,color:suma===100?C.mute:C.amber}}>Suma {suma}%{suma!==100?" · tiene que dar 100%":""}</p>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${C.line}`}}>
+      <span style={{fontSize:12.5,color:C.sub,flex:1}}>Anticipo al proveedor</span>
+      <input inputMode="numeric" value={supplierDepositPct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");if(v===""||Number(v)<=100)setSupplierDepositPct(v);}} style={{...inp,width:56,padding:"6px",textAlign:"center",fontWeight:800}}/>
+      <span style={{fontWeight:800,color:C.sub}}>%</span>
+    </div>
+    {validos.length>0&&<div style={{marginTop:10,fontSize:12,lineHeight:1.6}}>
+      <p style={{margin:0,color:cubre1?C.green:C.red}}>{cubre1?"✓":"✕"} El 1.º pago cubre el anticipo al proveedor ({fmtUSD(totalFob*supDep)}) · mínimo {min1}%</p>
+      <p style={{margin:0,color:cubre12?C.green:C.red}}>{cubre12?"✓":"✕"} 1.º + 2.º cubren todo el FOB · mínimo {min12}%</p>
+      {(!cubre1||!cubre12)&&min12<100&&<button type="button" onClick={ajustar} style={{marginTop:6,background:"none",border:"none",color:C.blue,fontWeight:800,cursor:"pointer",fontFamily:"inherit",padding:0,fontSize:12.5}}>Ajustar al mínimo seguro</button>}
+    </div>}
+  </section>;
 }
 
-function WizStep2({token,visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,totalFob,supplierDepositPct,setSupplierDepositPct,deliveryZone,setDeliveryZone,client,onBack,onNext,saving}){
-  // Zonas de envío disponibles (de gi_shipping_rates) para el dropdown.
-  const [zones,setZones]=useState([]);
-  useEffect(()=>{(async()=>{
-    const r=await dq("gi_shipping_rates",{token,filters:"?select=zone&order=display_order.asc"});
-    if(Array.isArray(r)){const set=new Set();r.forEach(x=>x.zone&&set.add(x.zone));setZones(Array.from(set));}
-  })();},[token]);
-  // Auto-detección por province del cliente (sólo sugerencia, no bloquea):
-  const clientProvince=String(client?.province||"").toLowerCase();
-  const autoSuggest=clientProvince.includes("ciudad")||clientProvince==="caba"?"CABA":(clientProvince.includes("buenos aires")?"":"Interior");
-  // Cobertura por etapa para no quedar en descubierto:
-  //  Stage 1 cliente debe cubrir el ANTICIPO a proveedor (FOB × deposit%).
-  //  Stage 1 + Stage 2 cliente deben cubrir el FOB TOTAL (al fin de producción ya pagaste todo al proveedor).
-  // Worst case = canal con MAYOR ratio FOB/precio.
-  const validChannels=(visibleChannels||[]).filter(c=>!c.error&&c.total>0);
-  const supDepFrac=Math.max(0,Math.min(100,Number(supplierDepositPct||0)))/100;
-  const fobRatios=validChannels.map(c=>totalFob/c.total*100); // % del precio que es FOB
-  const fobRatioMax=fobRatios.length>0?Math.max(...fobRatios):0; // worst case
-  const minStage1=Math.ceil(fobRatioMax*supDepFrac);     // cubrir anticipo
-  const minStage12=Math.ceil(fobRatioMax);                // cubrir FOB total al fin de producción
-
-  const stage1Pct=Number(paymentPlan?.[0]?.pct||0);
-  const stage12Pct=stage1Pct+Number(paymentPlan?.[1]?.pct||0);
-  const isStage1Covered=stage1Pct>=minStage1;
-  const isStage12Covered=stage12Pct>=minStage12;
-
-  const adjustToMinSafe=()=>{
-    if(minStage12<=0||minStage12>=100)return;
-    const stage1Target=minStage1;
-    const stage2Target=Math.max(0,minStage12-stage1Target);
-    const stage3Target=100-stage1Target-stage2Target;
-    setPaymentPlan(p=>{
-      const base=Array.isArray(p)&&p.length>=3?p:[
-        {pct:30,label:"Inicio de producción"},
-        {pct:20,label:"Producción terminada"},
-        {pct:50,label:"Contra entrega"},
-      ];
-      const next=[...base];
-      next[0]={...next[0],pct:stage1Target};
-      next[1]={...next[1],pct:stage2Target};
-      next[2]={...next[2],pct:stage3Target};
-      // si hay más etapas, las pone en 0 (caso edge)
-      for(let i=3;i<next.length;i++)next[i]={...next[i],pct:0};
-      return next;
-    });
-  };
-
-  return <div>
-    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
-      <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo operativo por canal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Sumá los honorarios que cobrás al cliente por la gestión y el sistema arma el precio final que ve el cliente. Tu comisión como socio se define por separado al cerrar la op.
+function CotizacionLista({generatedQuote,client,request,onBack}){
+  if(!generatedQuote)return null;
+  const url=`${window.location.origin}/cotizacion/${generatedQuote.public_token}`;
+  const num=cleanWaNumber(client?.whatsapp&&client.whatsapp!=="—"?client.whatsapp:"");
+  const msg=encodeURIComponent(buildQuoteWaMessage({firstName:client?.first_name||"",code:request?.request_code||"",url,expiresAt:request?.expires_at}));
+  const copiar=async()=>{try{await navigator.clipboard.writeText(url);toast.success("Link copiado");}catch{toast.info(url);}};
+  return <div style={{maxWidth:560,margin:"30px auto",textAlign:"center",padding:"30px 22px",background:C.card,border:"1px solid rgba(52,211,153,0.3)",borderRadius:18}}>
+    <div style={{width:56,height:56,borderRadius:"50%",margin:"0 auto 12px",background:"linear-gradient(135deg,#22c55e,#16a34a)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,color:"#fff"}}>✓</div>
+    <h2 style={{margin:"0 0 6px",fontSize:21,fontWeight:800}}>Cotización lista</h2>
+    <p style={{margin:"0 0 18px",color:C.sub,fontSize:13.5}}>{request?.request_code} · {client?`${client.first_name||""} ${client.last_name||""}`.trim():""}</p>
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"rgba(0,0,0,0.3)",border:`1px solid ${C.line}`,borderRadius:10,marginBottom:14}}>
+      <span style={{flex:1,fontFamily:MONO,fontSize:12,color:C.goldHi,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url}</span>
+      <Btn small onClick={copiar}>Copiar</Btn>
     </div>
-
-    <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:12,marginBottom:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:240}}>
-          <p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:0}}>Zona de entrega del cliente</p>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>El cliente verá <strong style={{color:"#fff"}}>solo</strong> esta opción de envío más "Retiro por oficina". Si elegís Interior, el costo queda "a coordinar".{autoSuggest&&!deliveryZone?<><br/>Sugerencia según ficha del cliente: <strong style={{color:GOLD_LIGHT}}>{autoSuggest}</strong>.</>:""}</p>
-        </div>
-        <select value={deliveryZone} onChange={e=>setDeliveryZone(e.target.value)} style={{padding:"8px 12px",fontSize:13,fontWeight:600,border:"1px solid rgba(96,165,250,0.4)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit",minWidth:200}}>
-          <option value="">— Sin definir (mostrar todas) —</option>
-          {zones.filter(z=>z!=="Interior").map(z=><option key={z} value={z}>{z}</option>)}
-          <option value="Interior">Interior · a coordinar</option>
-        </select>
-      </div>
-    </div>
-
-    <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.32)",borderRadius:12,marginBottom:18}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:240}}>
-          <p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,margin:0}}>Honorarios al cliente</p>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>% que se le cobra al cliente sobre el costo del canal. Es el ingreso por la gestión integral. <strong style={{color:"#fff"}}>Precio al cliente = costo del canal × (1 + honorarios %).</strong></p>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          <input type="text" inputMode="decimal" value={honorariosPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setHonorariosPct(v);}} placeholder="0" style={{width:90,padding:"10px 12px",fontSize:18,fontWeight:800,textAlign:"center",border:"1px solid rgba(184,149,106,0.4)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:GOLD_LIGHT,outline:"none",fontFamily:"inherit"}}/>
-          <span style={{fontSize:18,fontWeight:700,color:GOLD_LIGHT}}>%</span>
-        </div>
-      </div>
-    </div>
-
-    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Precio al cliente por canal</h3>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
-      {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:16}}>
-        <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:3}}>{c.name}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14}}>{c.time}</p>
-        {c.error?<p style={{fontSize:11,color:"#f87171"}}>Sin tarifa configurada</p>:<>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"rgba(255,255,255,0.7)",marginBottom:5}}>
-            <span title="Lo que se le cobraría si solo hace la impo con nosotros (sin GI)">Total impo solo</span>
-            <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.impoOnly||0)}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"#22c55e",marginBottom:10}}>
-            <span>+ Honorarios GI ({Number(honorariosPct||0)}%)</span>
-            <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.honorariosUsd||0)}</span>
-          </div>
-          <div style={{paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Precio al cliente</span>
-            <span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.total)}</span>
-          </div>
-        </>}
-      </div>)}
-    </div>
-
-    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Ganancia estimada para Argencargo (por canal)</h3>
-    <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14,lineHeight:1.5,fontStyle:"italic"}}>Ganancia logística usa un spread mock del 8% sobre el total impo. La ganancia real se calcula al cerrar la op con los costos verdaderos (pagos a embarcadores, aduana, etc.).</p>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
-      {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1px solid rgba(34,197,94,0.25)",borderRadius:12,padding:16}}>
-        <p style={{fontSize:13,fontWeight:700,color:"#22c55e",marginBottom:10}}>{c.name}</p>
-        {c.error?<p style={{fontSize:11,color:"#f87171"}}>—</p>:<>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-            <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
-              <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Logística est.</p>
-              <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:"#fff"}}>{fmtUSD(c.gainLogistica||0)}</p>
-            </div>
-            <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",borderRadius:8}}>
-              <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Honorarios</p>
-              <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:GOLD_LIGHT}}>{fmtUSD(c.gainHonorarios||0)}</p>
-            </div>
-          </div>
-          <div style={{paddingTop:10,borderTop:"1px solid rgba(34,197,94,0.18)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-            <span style={{fontSize:11,fontWeight:700,color:"rgba(34,197,94,0.85)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancia total est.</span>
-            <span style={{fontSize:18,fontWeight:800,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.gainTotal||0)}</span>
-          </div>
-        </>}
-      </div>)}
-    </div>
-
-    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,marginBottom:14,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:240}}>
-          <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Plan de pagos del cliente</h3>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 0",lineHeight:1.5}}>FOB <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong>. Stage 1 del cliente debe cubrir el anticipo al proveedor (al iniciar producción). Stage 1+2 debe cubrir el FOB completo (al fin de producción). Stage 3 cubre logística + aduana al arribo.</p>
-        </div>
-        {minStage12>0&&minStage12<100&&<button onClick={adjustToMinSafe} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Ajustar al mínimo seguro</button>}
-      </div>
-
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.22)",borderRadius:10,marginBottom:14,flexWrap:"wrap"}}>
-        <span style={{fontSize:11.5,color:"rgba(255,255,255,0.85)",fontWeight:600}}>Anticipo al proveedor:</span>
-        <input type="text" inputMode="decimal" value={supplierDepositPct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");if(v===""||(Number(v)>=0&&Number(v)<=100))setSupplierDepositPct(v);}} style={{width:60,padding:"4px 8px",fontSize:13,fontWeight:700,textAlign:"center",border:"1px solid rgba(168,85,247,0.35)",borderRadius:6,background:"rgba(0,0,0,0.25)",color:"#a78bfa",outline:"none",fontFamily:"inherit"}}/>
-        <span style={{fontSize:13,fontWeight:700,color:"#a78bfa"}}>% del FOB</span>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",marginLeft:6}}>· Anticipo USD <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob*supDepFrac)}</strong> · Saldo USD <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob*(1-supDepFrac))}</strong></span>
-      </div>
-
-      {validChannels.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-        <div style={{padding:"10px 14px",background:isStage1Covered?"rgba(34,197,94,0.06)":"rgba(248,113,113,0.06)",border:`1px solid ${isStage1Covered?"rgba(34,197,94,0.25)":"rgba(248,113,113,0.3)"}`,borderRadius:10}}>
-          <p style={{fontSize:10.5,fontWeight:700,color:isStage1Covered?"#22c55e":"#f87171",textTransform:"uppercase",letterSpacing:"0.06em",margin:0}}>{isStage1Covered?"✓ Stage 1 cubre anticipo":"⚠ Stage 1 no cubre anticipo"}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0",lineHeight:1.4}}>Necesitás <strong style={{color:"#fff"}}>{minStage1}%</strong>, plan cobra <strong style={{color:isStage1Covered?"#22c55e":"#f87171"}}>{stage1Pct}%</strong></p>
-        </div>
-        <div style={{padding:"10px 14px",background:isStage12Covered?"rgba(34,197,94,0.06)":"rgba(248,113,113,0.06)",border:`1px solid ${isStage12Covered?"rgba(34,197,94,0.25)":"rgba(248,113,113,0.3)"}`,borderRadius:10}}>
-          <p style={{fontSize:10.5,fontWeight:700,color:isStage12Covered?"#22c55e":"#f87171",textTransform:"uppercase",letterSpacing:"0.06em",margin:0}}>{isStage12Covered?"✓ Stage 1+2 cubre FOB":"⚠ Stage 1+2 no cubre FOB"}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0",lineHeight:1.4}}>Necesitás <strong style={{color:"#fff"}}>{minStage12}%</strong>, plan cobra <strong style={{color:isStage12Covered?"#22c55e":"#f87171"}}>{stage12Pct}%</strong></p>
-        </div>
-      </div>}
-
-      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        {paymentPlan.map((stage,i)=>{
-          const stageBadge=i===0?{l:"ANTICIPO",c:"#60a5fa",b:"rgba(96,165,250,0.12)"}:i===1?{l:"PRODUCCIÓN",c:"#a78bfa",b:"rgba(168,85,247,0.12)"}:i===2?{l:"ARRIBO",c:"#f59e0b",b:"rgba(245,158,11,0.12)"}:null;
-          const errBorder=(i===0&&!isStage1Covered)||(i===1&&!isStage12Covered);
-          return <div key={i} style={{flex:"1 1 200px",padding:"12px 14px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:`1px solid ${errBorder?"rgba(248,113,113,0.35)":"rgba(255,255,255,0.06)"}`}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-              <input type="text" inputMode="numeric" value={stage.pct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");const n=Number(v)||0;setPaymentPlan(p=>{const others=p.reduce((s,x,j)=>s+(j===i?0:Number(x.pct||0)),0);const capped=Math.min(n,Math.max(0,100-others));return p.map((s,j)=>j===i?{...s,pct:capped}:s);});}} style={{width:50,padding:"4px 6px",fontSize:14,fontWeight:700,background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,color:"#fff",textAlign:"center",outline:"none"}}/>
-              <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>%</span>
-              {stageBadge&&<span style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:stageBadge.b,color:stageBadge.c,letterSpacing:"0.04em",marginLeft:"auto"}}>{stageBadge.l}</span>}
-            </div>
-            <input value={stage.label} onChange={e=>setPaymentPlan(p=>p.map((s,j)=>j===i?{...s,label:e.target.value}:s))} style={{width:"100%",padding:"5px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",outline:"none",fontFamily:"inherit"}}/>
-          </div>;
-        })}
-      </div>
-      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",marginTop:8}}>Total: <strong style={{color:paymentPlan.reduce((s,p)=>s+p.pct,0)===100?"#22c55e":"#fbbf24"}}>{paymentPlan.reduce((s,p)=>s+p.pct,0)}%</strong> {paymentPlan.reduce((s,p)=>s+p.pct,0)!==100&&<span style={{color:"#fbbf24"}}>(debe sumar 100%)</span>}</p>
-    </div>
-
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:14}}>
-      <button onClick={onBack} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit"}}>← Volver</button>
-      <button onClick={onNext} disabled={saving} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:saving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"Generando…":"Generar link al cliente →"}</button>
-    </div>
-  </div>;
-}
-
-function WizStep3({generatedQuote,client,request,onBack}){
-  const [copied,setCopied]=useState(false);
-  if(!generatedQuote)return <p style={{color:"rgba(255,255,255,0.5)"}}>Sin cotización generada</p>;
-  const url=`${typeof window!=="undefined"?window.location.origin:"https://argencargo.com.ar"}/cotizacion/${generatedQuote.public_token}`;
-  const copy=()=>{navigator.clipboard?.writeText(url);setCopied(true);setTimeout(()=>setCopied(false),2000);};
-  // WhatsApp: número AR limpio + mensaje preset (mismo template que en CommunicationsTab).
-  const waNumber=cleanWaNumber(client?.whatsapp||client?.phone||"");
-  const firstName=client?.first_name||"";
-  const code=request?.request_code||"";
-  const waMsg=encodeURIComponent(buildQuoteWaMessage({firstName,code,url,expiresAt:request?.expires_at}));
-  const waUrl=waNumber?`https://wa.me/${waNumber}?text=${waMsg}`:`https://wa.me/?text=${waMsg}`;
-  return <div>
-    <div style={{textAlign:"center",padding:"40px 30px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,marginBottom:18}}>
-      <div style={{fontSize:48,marginBottom:8}}>🔗</div>
-      <h2 style={{fontSize:20,fontWeight:800,marginBottom:8}}>Cotización lista</h2>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",marginBottom:20}}>Compartile este link al cliente. Puede elegir servicio + entrega y aceptar online.</p>
-      <div style={{display:"flex",alignItems:"center",gap:10,maxWidth:600,margin:"0 auto 14px",padding:"12px 16px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
-        <span style={{flex:1,fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:GOLD_LIGHT,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url}</span>
-        <button onClick={copy} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"none",background:copied?"#22c55e":GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{copied?"✓ Copiado":"📋 Copiar"}</button>
-      </div>
-      <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",maxWidth:600,margin:"0 auto"}}>
-        <a href={waUrl} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 20px",fontSize:13,fontWeight:700,borderRadius:10,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(37,211,102,0.3)"}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
-          Enviar por WhatsApp{client?.whatsapp&&waNumber?` a ${firstName||"cliente"}`:""}
-        </a>
-      </div>
-      {!waNumber&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",marginTop:10,fontStyle:"italic"}}>El cliente no tiene WhatsApp cargado — el botón te abre WhatsApp sin destinatario para que elijas a quién mandárselo.</p>}
-    </div>
-    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
-      <strong style={{color:"#60a5fa"}}>Próximo paso:</strong> el cliente abre el link, elige servicio + entrega y acepta. Cuando acepta, se convierte automáticamente en una operación AC-XXXX en el panel admin.
-    </div>
-    <div style={{display:"flex",justifyContent:"flex-end"}}>
-      <button onClick={onBack} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Volver al listado</button>
+    <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+      <Btn v="wa" onClick={()=>window.open(num?`https://wa.me/${num}?text=${msg}`:`https://wa.me/?text=${msg}`,"_blank","noopener")}>💬 Mandar por WhatsApp</Btn>
+      <Btn onClick={onBack}>Ir a la cotización</Btn>
     </div>
   </div>;
 }
@@ -881,7 +730,7 @@ export function PhotoUpload({value,onChange,token}){
   </div>;
 }
 
-function PhotoUploadModal({token,onCancel,onUploaded}){
+function PhotoUploadModal({token,onCancel,onUploaded,onQuitar}){
   const [drag,setDrag]=useState(false);
   const [uploading,setUploading]=useState(false);
   const [preview,setPreview]=useState(null);
@@ -938,6 +787,7 @@ function PhotoUploadModal({token,onCancel,onUploaded}){
                 <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value="";}} style={{display:"none"}}/>
               </label>
               <span style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)"}}>⌘V Pegar</span>
+              {onQuitar&&<button type="button" onClick={onQuitar} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(248,113,113,0.4)",background:"transparent",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>Quitar foto</button>}
             </div>
           </>}
       </div>
