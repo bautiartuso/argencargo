@@ -32,13 +32,11 @@ export async function POST(req) {
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return Response.json({ error: "Auth requerido" }, { status: 401 });
   const callerToken = auth.slice(7);
-  // Decode JWT payload (sin verificar firma — Supabase ya validó al recibir)
-  let callerId = null;
-  try {
-    const payload = JSON.parse(Buffer.from(callerToken.split(".")[1], "base64").toString());
-    callerId = payload.sub;
-  } catch { return Response.json({ error: "Token inválido" }, { status: 401 }); }
-  if (!callerId) return Response.json({ error: "Token sin sub" }, { status: 401 });
+  // Se valida el token contra Supabase (antes se decodificaba sin verificar la firma).
+  const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
+  const caller = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${callerToken}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const callerId = caller?.id || null;
+  if (!callerId) return Response.json({ error: "Token inválido" }, { status: 401 });
 
   const callerProfile = await sbFetch(`/rest/v1/profiles?id=eq.${callerId}&select=role`);
   if (!Array.isArray(callerProfile.body) || callerProfile.body[0]?.role !== "admin") {
