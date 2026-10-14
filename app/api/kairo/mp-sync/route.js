@@ -49,12 +49,16 @@ export async function POST(req) {
   try {
     const me = await mp("/users/me");
     const begin = MP_DESDE ? `${MP_DESDE}T00:00:00.000-03:00` : "NOW-35DAYS";
-    const all = [];
-    for (let offset = 0; offset < 1000; offset += 100) {
-      const res = await mp(`/v1/payments/search?payer.id=${me.id}&sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=NOW&limit=100&offset=${offset}`);
-      all.push(...(res.results || []));
-      if (all.length >= (res.paging?.total || 0) || !(res.results || []).length) break;
-    }
+    const search = async (who) => {
+      const out = [];
+      for (let offset = 0; offset < 1000; offset += 100) {
+        const res = await mp(`/v1/payments/search?${who}.id=${me.id}&sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=NOW&limit=100&offset=${offset}`);
+        out.push(...(res.results || []));
+        if (out.length >= (res.paging?.total || 0) || !(res.results || []).length) break;
+      }
+      return out;
+    };
+    const [all, received] = await Promise.all([search("payer"), search("collector")]);
     // Lo que pagaste vos a otro (no las ventas que cobra la cuenta).
     const payments = all.filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id));
 
@@ -99,7 +103,27 @@ export async function POST(req) {
       if (!Array.isArray(r)) throw new Error(`No se pudieron guardar: ${JSON.stringify(r).slice(0, 200)}`);
       inserted = r;
     }
-    return Response.json({ found: payments.length, inserted: inserted.length });
+
+    // Ingresos: lo que te pagaron a vos (transferencias recibidas, cobros). Lo que pagaste vos mismo
+    // a tu propia cuenta no cuenta.
+    const incomes = received.filter(p => p.status === "approved" && String(p.payer?.id) !== String(me.id));
+    const knownIn = await sb(`/rest/v1/kairo_incomes?mp_payment_id=not.is.null&select=mp_payment_id`);
+    if (!Array.isArray(knownIn)) throw new Error("No se pudo leer los ingresos ya cargados (¿corriste el SQL de ingresos?)");
+    const seenIn = new Set(knownIn.map(k => k.mp_payment_id));
+    const inRows = incomes.filter(p => !seenIn.has(String(p.id))).map(p => ({
+      mp_payment_id: String(p.id),
+      source: "mp",
+      description: p.description || (p.operation_type === "money_transfer" ? "Transferencia recibida" : "Cobro Mercado Pago"),
+      amount_ars: Number(p.transaction_amount || 0),
+      income_date: arDate(p.date_approved || p.date_created),
+    }));
+    let insertedIn = [];
+    if (inRows.length) {
+      const r = await sb(`/rest/v1/kairo_incomes`, { method: "POST", body: JSON.stringify(inRows), headers: { Prefer: "return=representation" } });
+      if (!Array.isArray(r)) throw new Error(`No se pudieron guardar los ingresos: ${JSON.stringify(r).slice(0, 200)}`);
+      insertedIn = r;
+    }
+    return Response.json({ found: payments.length, inserted: inserted.length, insertedIncomes: insertedIn.length });
   } catch (e) {
     return Response.json({ error: String(e.message || e) }, { status: 502 });
   }

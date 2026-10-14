@@ -17,7 +17,6 @@ const C = {
 
 const CSS = `
   html,body{background:${C.bg};margin:0;height:100%}
-  body{position:fixed;inset:0}
   .k-root{height:100%}
   html,body{color:${C.text};-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -135,7 +134,7 @@ function App({ session }) {
   // Shell fijo a pantalla completa con el scroll adentro y la barra al fondo del flujo.
   return (
     <div style={{ height: "calc(100% + var(--vp-gap, 0px))", display: "flex", flexDirection: "column", background: C.bg }}>
-      <main ref={scroller} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
+      <main ref={scroller} style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
           {tab === "hoy" && <Hoy fin={fin} go={go} />}
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
@@ -160,7 +159,7 @@ function App({ session }) {
 // iOS 26, app instalada en el inicio: la página queda más corta que la pantalla por el alto de la
 // barra de estado (874 vs 812 en un iPhone 17 Pro) y ni vh/dvh/lvh lo ven. Se mide la diferencia en
 // --vp-gap y el shell y las hojas se estiran esa cantidad hasta el borde real. Nada puede llevar
-// overflow:hidden por encima del shell: recorta justo esa franja (body fijo para que no scrollee).
+// overflow:hidden ni position:fixed por encima del shell: iOS recorta justo esa franja.
 function useViewportGapFix() {
   useEffect(() => {
     // navigator.standalone es la señal propia de iOS; el media query no siempre matchea ahí.
@@ -201,7 +200,7 @@ function useFinance(token) {
   const [month, setMonth] = useState(curMonth());
   const [cats, setCats] = useState([]);
   const [exps, setExps] = useState([]);
-  const [budget, setBudget] = useState(null);
+  const [incomes, setIncomes] = useState([]);
   const [lo, setLo] = useState(true);
 
   const load = useCallback(async () => {
@@ -209,16 +208,19 @@ function useFinance(token) {
     const [c, e, b] = await Promise.all([
       dq("mp_expense_categories", { token, filters: "?select=*&order=sort_order.asc,name.asc" }),
       dq("mp_expenses", { token, filters: `?select=*&source=neq.ignorado&expense_date=gte.${from}&expense_date=lt.${to}&order=expense_date.desc,created_at.desc` }),
-      dq("kairo_budgets", { token, filters: `?month=eq.${month}&select=*` }),
+      dq("kairo_incomes", { token, filters: `?select=*&source=neq.ignorado&income_date=gte.${from}&income_date=lt.${to}&order=income_date.desc,created_at.desc` }),
     ]);
     setCats(Array.isArray(c) ? c : []);
     setExps(Array.isArray(e) ? e : []);
-    setBudget(Array.isArray(b) && b[0] ? Number(b[0].amount_ars) : null);
+    setIncomes(Array.isArray(b) ? b : []);
     setLo(false);
   }, [token, month]);
   useEffect(() => { load(); }, [load]);
 
   const spent = exps.reduce((s, e) => s + Number(e.amount_ars || 0), 0);
+  // El presupuesto del mes es lo que entró (ingresos a mano + cobros de Mercado Pago).
+  const income = incomes.reduce((s, e) => s + Number(e.amount_ars || 0), 0);
+  const budget = income > 0 ? income : null;
   const isCur = month === curMonth();
   const dim = daysIn(month);
   const dayNow = isCur ? new Date().getDate() : month < curMonth() ? dim : 0;
@@ -229,7 +231,7 @@ function useFinance(token) {
   }, [exps]);
   const uncategorized = exps.filter(e => !e.category_id);
 
-  return { month, setMonth, cats, exps, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, uncategorized, lo, load };
+  return { month, setMonth, cats, exps, incomes, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, uncategorized, lo, load };
 }
 
 // ─────── Hoy ───────
@@ -245,7 +247,7 @@ function Hoy({ fin, go }) {
         <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 6 }}>{ars(fin.left)}</div>
         <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>te quedan · {fin.daysLeft > 0 && fin.left > 0 ? `${ars(fin.left / fin.daysLeft)} por día` : `gastado ${ars(fin.spent)}`}</div>
         <Bar pct={fin.spent / fin.budget} color={C.blue} mark={fin.dayNow / fin.dim} />
-      </> : <div style={{ fontSize: 15, marginTop: 8 }}>Definí tu presupuesto del mes</div>}
+      </> : <div style={{ fontSize: 15, marginTop: 8 }}>Cargá tus ingresos del mes</div>}
       {fin.uncategorized.length > 0 && <div style={{ fontSize: 13, color: C.lime, marginTop: 12 }}>{fin.uncategorized.length} gasto{fin.uncategorized.length > 1 ? "s" : ""} sin categoría</div>}
     </button>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
@@ -259,7 +261,7 @@ function Hoy({ fin, go }) {
 
 // ─────── Finanzas ───────
 function Finanzas({ fin, token }) {
-  const { month, setMonth, cats, exps, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, lo, load } = fin;
+  const { month, setMonth, cats, exps, incomes, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, lo, load } = fin;
   const [sheet, setSheet] = useState(null); // {type:'cat', exp} | {type:'add'} | {type:'budget'}
   const [syncing, setSyncing] = useState(false);
 
@@ -269,12 +271,16 @@ function Finanzas({ fin, token }) {
       const r = await fetch("/api/kairo/mp-sync", { method: "POST", headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json());
       if (r.error) pushToast(r.error);
       else if (r.preview) pushToast(`Conexión OK: ${r.found} pago${r.found === 1 ? "" : "s"} en el último mes (prueba, no se cargaron)`);
-      else { pushToast(r.inserted ? `${r.inserted} movimiento${r.inserted > 1 ? "s" : ""} nuevo${r.inserted > 1 ? "s" : ""}` : "Todo al día"); load(); }
+      else { const n = (r.inserted || 0) + (r.insertedIncomes || 0); pushToast(n ? `${n} movimiento${n > 1 ? "s" : ""} nuevo${n > 1 ? "s" : ""}` : "Todo al día"); load(); }
     } catch { pushToast("Sin conexión"); }
     setSyncing(false);
   };
 
   const pct = budget ? spent / budget : 0;
+  const moves = useMemo(() => [
+    ...exps.map(row => ({ kind: "out", row, date: row.expense_date })),
+    ...incomes.map(row => ({ kind: "in", row, date: row.income_date })),
+  ].sort((a, b) => b.date.localeCompare(a.date) || String(b.row.created_at || "").localeCompare(String(a.row.created_at || ""))), [exps, incomes]);
   const monthPct = dayNow / dim;
   const catRows = cats.map(c => ({ c, spent: byCat[c.id] || 0, limit: Number(c.monthly_limit) || 0 })).filter(r => r.spent > 0 || r.limit > 0).sort((a, b) => b.spent - a.spent);
 
@@ -288,12 +294,12 @@ function Finanzas({ fin, token }) {
 
     {lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
       {/* Resumen */}
-      <button className="k-press" onClick={() => setSheet({ type: "budget" })} style={{ background: "none", border: "none", color: C.text, textAlign: "left", width: "100%", padding: "18px 2px 4px" }}>
+      <button className="k-press" onClick={() => setSheet(budget != null ? { type: "budget" } : { type: "income" })} style={{ background: "none", border: "none", color: C.text, textAlign: "left", width: "100%", padding: "18px 2px 4px" }}>
         {budget != null ? <>
           <div style={{ fontSize: 13, color: C.sub }}>{left >= 0 ? "Te queda para gastar" : "Te pasaste del presupuesto"}</div>
           <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2, color: left >= 0 ? C.text : C.warn }}>{ars(Math.abs(left))}</div>
           <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>
-            de {ars(budget)}{isCur && daysLeft > 0 && left > 0 && <> · <span style={{ color: C.lime }}>{ars(left / daysLeft)}/día</span> por {daysLeft} día{daysLeft > 1 ? "s" : ""}</>}
+            de {ars(budget)} ingresado{isCur && daysLeft > 0 && left > 0 && <> · <span style={{ color: C.lime }}>{ars(left / daysLeft)}/día</span> por {daysLeft} día{daysLeft > 1 ? "s" : ""}</>}
           </div>
           <Bar pct={pct} color={pct > 1 ? C.warn : C.blue} mark={isCur ? monthPct : null} h={6} />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.sub, marginTop: 7 }}>
@@ -303,19 +309,22 @@ function Finanzas({ fin, token }) {
         </> : <>
           <div style={{ fontSize: 13, color: C.sub }}>Gastado en {monthName(month).toLowerCase()}</div>
           <div className="k-num" style={{ fontSize: 42, fontWeight: 500, marginTop: 2 }}>{ars(spent)}</div>
-          <div style={{ fontSize: 14, color: C.lime, marginTop: 6 }}>Definir presupuesto del mes</div>
+          <div style={{ fontSize: 14, color: C.lime, marginTop: 6 }}>Cargá un ingreso para armar el presupuesto</div>
         </>}
       </button>
 
       {/* Acciones */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
-        <button className="k-press" onClick={sync} disabled={syncing} style={{ ...btnGhost, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          <Icon d={I.sync} size={18} />{syncing ? "Trayendo…" : "Mercado Pago"}
+        <button className="k-press" onClick={() => setSheet({ type: "income" })} style={{ ...btnGhost, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <Icon d={I.plus} size={18} sw={2.2} />Ingreso
         </button>
         <button className="k-press" onClick={() => setSheet({ type: "add" })} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <Icon d={I.plus} size={18} sw={2.2} />Gasto
         </button>
       </div>
+      <button className="k-press" onClick={sync} disabled={syncing} style={{ ...btnGhost, marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: C.sub, fontSize: 14, padding: "11px 16px" }}>
+        <Icon d={I.sync} size={16} />{syncing ? "Trayendo de Mercado Pago…" : "Traer de Mercado Pago"}
+      </button>
 
       {/* Categorías */}
       <SectionTitle right={<button onClick={() => setSheet({ type: "budget" })} style={linkBtn}>Editar topes</button>}>Por categoría</SectionTitle>
@@ -336,11 +345,19 @@ function Finanzas({ fin, token }) {
 
       {/* Movimientos */}
       <SectionTitle>Movimientos</SectionTitle>
-      {exps.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Sin gastos este mes. Traé tus movimientos de Mercado Pago o cargá uno.</div> :
+      {moves.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Sin movimientos este mes. Traé los de Mercado Pago o cargá uno.</div> :
         <div style={{ ...card, padding: "2px 16px" }}>
-          {exps.map((e, i) => {
+          {moves.map(({ kind, row: e }, i) => {
+            const last = i === moves.length - 1;
+            if (kind === "in") return <button key={"in" + e.id} onClick={() => setSheet({ type: "income", inc: e })} style={{ width: "100%", background: "none", border: "none", color: C.text, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", textAlign: "left", borderBottom: last ? "none" : `0.5px solid ${C.line}` }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.description || "Ingreso"}</div>
+                <div style={{ fontSize: 12, marginTop: 2, color: C.sub }}>Ingreso · {dayLabel(e.income_date)}{e.source === "mp" ? " · MP" : ""}</div>
+              </div>
+              <span className="k-num" style={{ fontSize: 15, whiteSpace: "nowrap", color: C.lime }}>+{ars(e.amount_ars)}</span>
+            </button>;
             const cat = cats.find(c => c.id === e.category_id);
-            return <button key={e.id} onClick={() => setSheet({ type: "cat", exp: e })} style={{ width: "100%", background: "none", border: "none", color: C.text, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", textAlign: "left", borderBottom: i < exps.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+            return <button key={e.id} onClick={() => setSheet({ type: "cat", exp: e })} style={{ width: "100%", background: "none", border: "none", color: C.text, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", textAlign: "left", borderBottom: last ? "none" : `0.5px solid ${C.line}` }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.description || e.merchant || "Gasto"}</div>
                 <div style={{ fontSize: 12, marginTop: 2, color: cat ? C.sub : C.lime }}>
@@ -355,6 +372,7 @@ function Finanzas({ fin, token }) {
 
     {sheet?.type === "cat" && <CategorySheet exp={sheet.exp} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "add" && <AddSheet cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+    {sheet?.type === "income" && <IncomeSheet inc={sheet.inc} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet?.type === "budget" && <BudgetSheet month={month} budget={budget} cats={cats} token={token} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
   </>;
 }
@@ -456,25 +474,24 @@ function AddSheet({ cats, token, onClose, onSaved }) {
 }
 
 function BudgetSheet({ month, budget, cats, token, onClose, onSaved }) {
-  const [total, setTotal] = useState(budget != null ? String(Math.round(budget)) : "");
   const [limits, setLimits] = useState(() => Object.fromEntries(cats.map(c => [c.id, c.monthly_limit ? String(Math.round(c.monthly_limit)) : ""])));
   const [newCat, setNewCat] = useState("");
   const [saving, setSaving] = useState(false);
   const sumLimits = Object.values(limits).reduce((s, v) => s + parseNum(v), 0);
-  const t = parseNum(total);
+  const t = budget || 0;
 
   const save = async () => {
     setSaving(true);
-    if (t > 0) await dq("kairo_budgets", { method: "POST", token, filters: "?on_conflict=month", body: { month, amount_ars: t, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
     await Promise.all(cats.filter(c => (Number(c.monthly_limit) || 0) !== parseNum(limits[c.id])).map(c =>
       dq("mp_expense_categories", { method: "PATCH", token, filters: `?id=eq.${c.id}`, body: { monthly_limit: parseNum(limits[c.id]) || null } })));
     if (newCat.trim()) await dq("mp_expense_categories", { method: "POST", token, body: { name: newCat.trim(), sort_order: cats.length } });
-    setSaving(false); pushToast("Presupuesto guardado"); onSaved();
+    setSaving(false); pushToast("Guardado"); onSaved();
   };
 
   return <Sheet title={`Presupuesto de ${monthName(month).toLowerCase()}`} onClose={onClose}>
-    <Label>Total para gastar en el mes</Label>
-    <MoneyInput value={total} onChange={setTotal} big />
+    <div style={{ fontSize: 13, color: C.sub }}>Lo que ingresó este mes</div>
+    <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 2 }}>{ars(t)}</div>
+    <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>Sube solo con cada ingreso que cargás o que llega a Mercado Pago.</div>
     <Label>Tope por categoría</Label>
     <div style={{ fontSize: 12, color: sumLimits > t && t > 0 ? C.warn : C.sub, marginBottom: 8 }}>
       Repartido {ars(sumLimits)}{t > 0 ? ` de ${ars(t)} · ${Math.round((sumLimits / t) * 100)}%` : ""}
@@ -489,6 +506,51 @@ function BudgetSheet({ month, budget, cats, token, onClose, onSaved }) {
     <Label>Nueva categoría</Label>
     <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Ej: Suscripciones" style={field} />
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : "Guardar"}</button>
+  </Sheet>;
+}
+
+// Alta de un ingreso a mano (sueldo, efectivo, otro banco) o detalle de uno existente.
+function IncomeSheet({ inc, token, onClose, onSaved }) {
+  const [amount, setAmount] = useState(inc ? String(Math.round(inc.amount_ars)) : "");
+  const [desc, setDesc] = useState(inc?.description || "");
+  const [date, setDate] = useState(inc?.income_date || today());
+  const [saving, setSaving] = useState(false);
+  const [confirmOut, setConfirmOut] = useState(false);
+  const fromMp = !!inc?.mp_payment_id;
+
+  const save = async () => {
+    const n = parseNum(amount); if (n <= 0) return pushToast("Ingresá un monto");
+    setSaving(true);
+    const body = fromMp ? { description: desc.trim() || null } : { amount_ars: n, description: desc.trim() || null, income_date: date };
+    if (inc) await dq("kairo_incomes", { method: "PATCH", token, filters: `?id=eq.${inc.id}`, body });
+    else await dq("kairo_incomes", { method: "POST", token, body: { ...body, source: "manual" } });
+    setSaving(false); pushToast(inc ? "Guardado" : "Ingreso cargado"); onSaved();
+  };
+  // Los de Mercado Pago quedan marcados para que no vuelvan a entrar; los manuales se borran.
+  const notIncome = async () => {
+    setSaving(true);
+    if (fromMp) await dq("kairo_incomes", { method: "PATCH", token, filters: `?id=eq.${inc.id}`, body: { source: "ignorado" } });
+    else await dq("kairo_incomes", { method: "DELETE", token, filters: `?id=eq.${inc.id}` });
+    setSaving(false); pushToast("Sacado del presupuesto"); onSaved();
+  };
+
+  return <Sheet title={inc ? "Ingreso" : "Nuevo ingreso"} onClose={onClose}>
+    {fromMp ? <>
+      <div className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.lime }}>+{ars(inc.amount_ars)}</div>
+      <div style={{ fontSize: 13, color: C.sub, margin: "2px 0 4px" }}>Mercado Pago · {dayLabel(inc.income_date)}</div>
+    </> : <div style={{ display: "flex", alignItems: "baseline", gap: 4, borderBottom: `0.5px solid ${C.line}`, paddingBottom: 8 }}>
+      <span style={{ fontSize: 30, color: C.sub }}>$</span>
+      <input autoFocus={!inc} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 36, fontWeight: 500 }} />
+    </div>}
+    <Label>Concepto</Label>
+    <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ej: sueldo, cobro de un trabajo" style={field} />
+    {!fromMp && <>
+      <Label>Fecha</Label>
+      <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...field, colorScheme: "dark" }} />
+    </>}
+    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : inc ? "Guardar" : "Cargar ingreso"}</button>
+    {inc && (!confirmOut ? <button onClick={() => setConfirmOut(true)} className="k-press" style={{ ...btnGhost, marginTop: 10 }}>No es un ingreso</button>
+      : <button onClick={notIncome} disabled={saving} className="k-press" style={{ ...btnGhost, marginTop: 10, color: C.danger }}>Tocá de nuevo para sacarlo</button>)}
   </Sheet>;
 }
 
