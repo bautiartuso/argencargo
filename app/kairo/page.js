@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession, clearSession, ac, saveSession } from "../../lib/sb-client";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ const C = {
 };
 
 const CSS = `
-  html,body{background:${C.bg};margin:0;color:${C.text};-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+  html,body{background:${C.bg};margin:0;height:100%;overflow:hidden;color:${C.text};-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   button{font-family:inherit;cursor:pointer}
   input,select{font-family:inherit;font-size:16px}
@@ -123,16 +123,23 @@ const TABS = [
 
 function App({ session }) {
   const [tab, setTab] = useState("finanzas");
+  const scroller = useRef(null);
   useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t); } catch {} }, []);
-  const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} window.scrollTo(0, 0); };
+  const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
   const fin = useFinance(session.token);
 
+  // Shell fijo a pantalla completa con el scroll adentro y la barra en el flujo (no position:fixed
+  // propia): en la PWA del iPhone una barra fixed bottom:0 quedaba flotando muy arriba.
   return (
-    <div style={{ minHeight: "100dvh", maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 96px" }}>
-      {tab === "hoy" && <Hoy fin={fin} go={go} />}
-      {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
-      {["fisico", "nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
-      <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "rgba(12,13,16,0.86)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(6px, min(env(safe-area-inset-bottom), 20px))" }}>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, minHeight: "100lvh", display: "flex", flexDirection: "column", background: C.bg }}>
+      <main ref={scroller} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
+          {tab === "hoy" && <Hoy fin={fin} go={go} />}
+          {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
+          {["fisico", "nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
+        </div>
+      </main>
+      <nav style={{ flexShrink: 0, background: C.bg, borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(6px, min(env(safe-area-inset-bottom), 20px))" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex" }}>
           {TABS.map(t => {
             const on = tab === t.id;
@@ -236,6 +243,7 @@ function Finanzas({ fin, token }) {
     try {
       const r = await fetch("/api/kairo/mp-sync", { method: "POST", headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json());
       if (r.error) pushToast(r.error);
+      else if (r.preview) pushToast(`Conexión OK: ${r.found} pago${r.found === 1 ? "" : "s"} en el último mes (prueba, no se cargaron)`);
       else { pushToast(r.inserted ? `${r.inserted} movimiento${r.inserted > 1 ? "s" : ""} nuevo${r.inserted > 1 ? "s" : ""}` : "Todo al día"); load(); }
     } catch { pushToast("Sin conexión"); }
     setSyncing(false);

@@ -1,6 +1,8 @@
 // POST /api/kairo/mp-sync
-// Trae los pagos que hiciste con Mercado Pago (QR, débito, online) de los últimos 35 días y los
-// carga como gastos en mp_expenses (source='mp'). No duplica: mp_payment_id es único.
+// Trae los pagos que hiciste con Mercado Pago (QR, débito, online) y los carga como gastos en
+// mp_expenses (source='mp'). No duplica: se saltean los mp_payment_id ya cargados.
+// Solo cuenta desde MP_DESDE: lo anterior de la cuenta era de otros usos. Mientras MP_DESDE sea
+// null, es una prueba: muestra qué encontraría sin cargar nada.
 // Si el comercio tiene una regla en kairo_merchant_rules, entra ya categorizado.
 // Requiere MP_ACCESS_TOKEN (access token de producción de tu cuenta) y sesión de admin.
 
@@ -9,6 +11,8 @@ import { SB_URL, SB_KEY } from "../../../../lib/sb-client";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
+
+const MP_DESDE = null; // 'YYYY-MM-DD' (hora Argentina) cuando se defina desde cuándo contar
 
 const sb = async (path, init = {}) => {
   const r = await fetch(`${SB_URL}${path}`, {
@@ -44,28 +48,27 @@ export async function POST(req) {
 
   try {
     const me = await mp("/users/me");
-    const res = await mp(`/v1/payments/search?payer.id=${me.id}&sort=date_created&criteria=desc&range=date_created&begin_date=NOW-35DAYS&end_date=NOW&limit=100`);
-    const payments = (res.results || []).filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id));
+    const begin = MP_DESDE ? `${MP_DESDE}T00:00:00.000-03:00` : "NOW-35DAYS";
+    const all = [];
+    for (let offset = 0; offset < 1000; offset += 100) {
+      const res = await mp(`/v1/payments/search?payer.id=${me.id}&sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=NOW&limit=100&offset=${offset}`);
+      all.push(...(res.results || []));
+      if (all.length >= (res.paging?.total || 0) || !(res.results || []).length) break;
+    }
+    // Lo que pagaste vos a otro (no las ventas que cobra la cuenta).
+    const payments = all.filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id));
 
-    // Diagnóstico (temporal): qué devuelve MP por cada vía, para ver de dónde salen tus gastos.
-    const probe = async (label, path) => {
-      try {
-        const r = await mp(path);
-        const list = r.results || r.data || (Array.isArray(r) ? r : []);
-        const s = list[0] || {};
-        console.log("[kairo mp-sync]", label, JSON.stringify({ total: r.paging?.total ?? list.length, keys: Object.keys(s).slice(0, 40), sample: { status: s.status, type: s.type, payment_type_id: s.payment_type_id, operation_type: s.operation_type, amount: s.transaction_amount ?? s.amount, payer_is_me: String(s.payer?.id) === String(me.id), collector_is_me: String(s.collector_id) === String(me.id), description: s.description ?? s.detail ?? s.reason } }));
-      } catch (e) { console.log("[kairo mp-sync]", label, "ERROR", String(e.message).slice(0, 200)); }
-    };
-    console.log("[kairo mp-sync] payer search", JSON.stringify({ total: res.paging?.total, kept: payments.length }));
-    await Promise.all([
-      probe("sin filtro", "/v1/payments/search?sort=date_created&criteria=desc&limit=20"),
-      probe("movements", "/mercadopago_account/movements/search?limit=20"),
-    ]);
+    if (!MP_DESDE) {
+      return Response.json({ preview: true, found: payments.length, sample: payments.slice(0, 3).map(p => ({ merchant: p.description, amount: p.transaction_amount })) });
+    }
 
     const rulesArr = await sb(`/rest/v1/kairo_merchant_rules?select=merchant_key,category_id`);
     const rules = Object.fromEntries((Array.isArray(rulesArr) ? rulesArr : []).map(r => [r.merchant_key, r.category_id]));
+    const known = await sb(`/rest/v1/mp_expenses?source=eq.mp&mp_payment_id=not.is.null&select=mp_payment_id`);
+    if (!Array.isArray(known)) throw new Error("No se pudo leer los gastos ya cargados");
+    const seen = new Set(known.map(k => k.mp_payment_id));
 
-    const rows = payments.map(p => {
+    const rows = payments.filter(p => !seen.has(String(p.id))).map(p => {
       const merchant = p.description || p.statement_descriptor || p.point_of_interaction?.business_info?.sub_unit || "Mercado Pago";
       return {
         mp_payment_id: String(p.id),
@@ -82,12 +85,9 @@ export async function POST(req) {
 
     let inserted = [];
     if (rows.length) {
-      // ignore-duplicates: lo ya sincronizado (y lo que recategorizaste a mano) no se pisa.
-      const r = await sb(`/rest/v1/mp_expenses?on_conflict=mp_payment_id`, {
-        method: "POST", body: JSON.stringify(rows),
-        headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
-      });
-      inserted = Array.isArray(r) ? r : [];
+      const r = await sb(`/rest/v1/mp_expenses`, { method: "POST", body: JSON.stringify(rows), headers: { Prefer: "return=representation" } });
+      if (!Array.isArray(r)) throw new Error(`No se pudieron guardar: ${JSON.stringify(r).slice(0, 200)}`);
+      inserted = r;
     }
     return Response.json({ found: payments.length, inserted: inserted.length });
   } catch (e) {
