@@ -19,7 +19,7 @@ const KEY = "ac_cookie_consent";
 // (admin, portal del cliente, agentes, ARGENMAQ) no se carga ningún pixel, así que
 // preguntar ahí es puro ruido: se le pedía consentimiento al propio equipo.
 const PRIVADAS = [
-  "/admin", "/portal", "/agente", "/gi", "/cinabrio", "/feedback",
+  "/admin", "/portal", "/agente", "/gi", "/kairo", "/feedback",
   "/track", "/retiro", "/factura", "/presupuesto", "/cotizacion", "/ccfinanciera", "/cc/",
 ];
 

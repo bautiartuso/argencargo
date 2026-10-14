@@ -13,6 +13,10 @@ const nextConfig = {
       '/api/cron/studio-publisher': ['./docs/marca/**'],
     },
   },
+  // Cinabrio se reemplazó por Kairo: el ícono viejo en la pantalla de inicio sigue llegando.
+  async redirects() {
+    return [{ source: '/cinabrio', destination: '/kairo', permanent: true }];
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'nhfslvixhlbiyfmedmbr.supabase.co' },
