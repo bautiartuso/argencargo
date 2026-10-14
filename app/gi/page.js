@@ -10,12 +10,11 @@ import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
 import { GI_CANALES, GI_ESTADOS, GI_FLUJO, resumenGI, totalAceptado, canalMasBarato, totalCanal, costosProveedor } from "../../lib/gi";
 import {
-  C, LOGO, MONO, GOLD_GRADIENT, dq, dqTodos, arr, ok, ac, ensureFresh, sesionInicial, saveSession, clearSession, usarSesionPropia,
+  C, BG, LOGO, MONO, GOLD_GRADIENT, dq, dqTodos, arr, ok, ac, ensureFresh, sesionInicial, saveSession, clearSession, usarSesionPropia,
   fmtDate, fmtDateShort, fmtDateTime, fmtUSD, usd0, hace, hoyISO, nombre, buildQuoteWaMessage, cleanWaNumber, useMovil,
   Btn, Pill, Caja, Titulo, Chips, Vacio, Cargando, Modal, Campo, inp, Opciones, Dato, Fila, Codigo, Volver,
 } from "./_base";
 import { CotizadorWizard } from "./_cotizador";
-import { ContactsPanel, PaneSettings } from "./_contactos";
 
 const CSS = `@keyframes giShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 *{-webkit-tap-highlight-color:transparent}
@@ -94,7 +93,7 @@ function useDatos(token, rol) {
   const [d, setD] = useState(null);
   const cargar = useCallback(async () => {
     const plata = rol !== "empleado";
-    const [reqs, comms, ops, cobros, pagos, earnings, socios, settings] = await Promise.all([
+    const [reqs, comms, ops, cobros, pagos, earnings, socios, settings, clientesSocio] = await Promise.all([
       dq("gi_quote_requests", { token, filters: "?select=*,clients(id,first_name,last_name,client_code,whatsapp,email,gi_partner_id,gi_commission_pct),gi_quotes(*),gi_quote_request_products(id)&order=created_at.desc" }),
       dq("gi_quote_communications", { token, filters: "?select=quote_id,request_id,type,created_at,meta,content&order=created_at.desc&limit=2000" }),
       dq("operations", { token, filters: "?service_type=eq.gestion_integral&select=id,operation_code,status,channel,origin,client_id,description,budget_total,total_anticipos,eta,closed_at,created_at,gi_partner_id,gi_admin_owned,gi_commission_pct,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(id,first_name,last_name,client_code,whatsapp,gi_partner_id,gi_commission_pct)&order=created_at.desc" }),
@@ -103,10 +102,11 @@ function useDatos(token, rol) {
       plata ? dq("gi_partner_earnings", { token, filters: "?select=*&order=closed_at.desc" }) : [],
       dq("profiles", { token, filters: "?is_gi_partner=eq.true&select=id,email,gi_partner_pct" }),
       dq("gi_settings", { token, filters: "?select=default_fx_rate&limit=1" }),
+      plata ? dq("clients", { token, filters: "?gi_partner_id=not.is.null&select=id,first_name,last_name,client_code,gi_partner_id,gi_commission_pct&order=first_name.asc" }) : [],
     ]);
     setD({
       reqs: arr(reqs), comms: arr(comms), ops: arr(ops), cobros: arr(cobros), pagos: arr(pagos),
-      earnings: arr(earnings), socios: arr(socios), fx: Number(arr(settings)[0]?.default_fx_rate || 0),
+      earnings: arr(earnings), socios: arr(socios), fx: Number(arr(settings)[0]?.default_fx_rate || 0), clientesSocio: arr(clientesSocio),
     });
   }, [token, rol]);
   useEffect(() => { cargar(); const iv = setInterval(() => { if (!document.hidden) cargar(); }, 90000); return () => clearInterval(iv); }, [cargar]);
@@ -153,7 +153,8 @@ function Shell({ sesion, perfil, onLogout }) {
   const movil = useMovil();
   const [d, recargar] = useDatos(token, rol);
   const [nav, setNav] = useState(() => { try { return JSON.parse(sessionStorage.getItem("gi_nav") || "null") || { p: "inicio" }; } catch { return { p: "inicio" }; } });
-  const ir = useCallback((p, extra = {}) => { const n = { p, ...extra }; setNav(n); try { sessionStorage.setItem("gi_nav", JSON.stringify(n)); } catch {} window.scrollTo(0, 0); }, []);
+  const [menu, setMenu] = useState(false);
+  const ir = useCallback((p, extra = {}) => { const n = { p, ...extra }; setNav(n); setMenu(false); try { sessionStorage.setItem("gi_nav", JSON.stringify(n)); } catch {} window.scrollTo(0, 0); }, []);
   // Links directos desde el admin: /gi?op=<id> o /gi?cot=<id>
   useEffect(() => {
     const u = new URLSearchParams(window.location.search);
@@ -163,77 +164,70 @@ function Shell({ sesion, perfil, onLogout }) {
   }, [ir]);
   const ctx = { token, rol, perfil, d, recargar, ir, movil };
 
-  const pendientes = d ? d.reqs.filter((r) => { const e = estadoCot(r, d.comms); return ["por_cotizar", "aceptada"].includes(e.k); }).length : 0;
-  const NAV = [
-    { k: "inicio", l: "Inicio" },
-    { k: "cotizaciones", l: "Cotizaciones", badge: pendientes },
-    { k: "operaciones", l: "Operaciones" },
-    { k: "clientes", l: "Clientes" },
-    rol === "admin" ? { k: "socios", l: "Socios" } : rol === "socio" ? { k: "socios", l: "Mis comisiones" } : null,
-    { k: "contactos", l: "Contactos" },
-    rol === "admin" ? { k: "config", l: "Configuración" } : null,
+  const pendientes = d ? d.reqs.filter((r) => ["por_cotizar", "aceptada"].includes(estadoCot(r, d.comms).k)).length : 0;
+  const SECCIONES = [
+    { s: "Gestión", items: [{ k: "inicio", l: "Inicio" }, { k: "cotizaciones", l: "Cotizaciones", badge: pendientes }, { k: "operaciones", l: "Operaciones" }] },
+    { s: "Equipo", items: [rol === "admin" ? { k: "socios", l: "Socios" } : rol === "socio" ? { k: "socios", l: "Mis comisiones" } : null, { k: "contactos", l: "Contactos" }].filter(Boolean) },
+    rol === "admin" ? { s: "Ajustes", items: [{ k: "config", l: "Configuración" }] } : null,
   ].filter(Boolean);
-  const NAV_MOVIL = ["inicio", "cotizaciones", "operaciones", "clientes", "mas"];
+  const NAV = SECCIONES.flatMap((x) => x.items);
 
   let cuerpo;
   if (!d) cuerpo = <Cargando />;
-  else if (nav.p === "inicio") cuerpo = <Inicio ctx={ctx} />;
   else if (nav.p === "cotizaciones") cuerpo = nav.wizard ? <CotizadorWizard token={token} requestId={nav.wizard} profileId={perfil.id} onBack={() => { recargar(); ir("cotizaciones", { id: nav.wizard }); }} /> : nav.id ? <CotDetalle ctx={ctx} id={nav.id} /> : <Cotizaciones ctx={ctx} />;
   else if (nav.p === "operaciones") cuerpo = nav.id ? <OpDetalle ctx={ctx} id={nav.id} /> : <Operaciones ctx={ctx} />;
-  else if (nav.p === "clientes") cuerpo = <Clientes ctx={ctx} />;
-  else if (nav.p === "socios") cuerpo = <Socios ctx={ctx} />;
-  else if (nav.p === "contactos") cuerpo = <Contactos token={token} />;
-  else if (nav.p === "config" && rol === "admin") cuerpo = <PaneSettings token={token} />;
-  else if (nav.p === "mas") cuerpo = <Mas nav={NAV} ir={ir} perfil={perfil} rol={rol} onLogout={onLogout} />;
+  else if (nav.p === "socios" && rol !== "empleado") cuerpo = <Socios ctx={ctx} />;
+  else if (nav.p === "contactos") cuerpo = <Contactos ctx={ctx} />;
+  else if (nav.p === "config" && rol === "admin") cuerpo = <Configuracion ctx={ctx} />;
   else cuerpo = <Inicio ctx={ctx} />;
 
   const rolTxt = rol === "admin" ? "Admin" : rol === "empleado" ? "Empleado" : "Socio GI";
-  return <div style={{ minHeight: "100vh", background: C.bg, color: C.txt, fontFamily: "'Inter','Segoe UI',sans-serif" }}>
-    {!movil && <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 228, background: C.panel, borderRight: `1px solid ${C.line}`, display: "flex", flexDirection: "column", zIndex: 5 }}>
-      <div style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", gap: 10 }}>
-        <img src={LOGO} alt="Argencargo" style={{ height: 28, width: "auto" }} />
-        <span style={{ fontSize: 9, fontWeight: 900, padding: "3px 7px", borderRadius: 5, background: GOLD_GRADIENT, color: "#0A1628", letterSpacing: "0.14em" }}>GI</span>
-      </div>
-      <nav style={{ flex: 1, padding: "12px 10px", overflowY: "auto" }}>
-        {NAV.map((it) => { const on = nav.p === it.k; return <button key={it.k} onClick={() => ir(it.k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", marginBottom: 2, borderRadius: 10, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: on ? 800 : 600, background: on ? C.goldBg : "transparent", color: on ? C.txt : C.sub, fontFamily: "inherit", textAlign: "left" }}>
-          <Ico k={it.k} c={on ? C.goldHi : C.mute} />
-          <span style={{ flex: 1 }}>{it.l}</span>
-          {it.badge > 0 && <span style={{ fontSize: 10.5, fontWeight: 900, padding: "1px 7px", borderRadius: 999, background: C.gold, color: "#0A1628" }}>{it.badge}</span>}
-        </button>; })}
-      </nav>
-      <div style={{ padding: 14, borderTop: `1px solid ${C.line}` }}>
-        <p style={{ fontSize: 12.5, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{perfil.email}</p>
-        <p style={{ fontSize: 11, color: C.mute, margin: "2px 0 10px" }}>{rolTxt}</p>
-        <Btn small full onClick={onLogout}>Cerrar sesión</Btn>
-      </div>
-    </aside>}
-    {movil && <header style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "rgba(8,18,33,0.92)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.line}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <img src={LOGO} alt="Argencargo" style={{ height: 24, width: "auto" }} />
-        <span style={{ fontSize: 8.5, fontWeight: 900, padding: "2px 6px", borderRadius: 4, background: GOLD_GRADIENT, color: "#0A1628", letterSpacing: "0.14em" }}>GI</span>
-      </div>
-      <span style={{ fontSize: 11, color: C.mute }}>{rolTxt}</span>
-    </header>}
-    <main style={{ marginLeft: movil ? 0 : 228, padding: movil ? "16px 16px 96px" : "28px 32px 48px" }}>
-      <div style={{ maxWidth: 1180, margin: "0 auto" }}>{cuerpo}</div>
-    </main>
-    {movil && <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 6, display: "grid", gridTemplateColumns: `repeat(${NAV_MOVIL.length},1fr)`, background: "rgba(13,26,46,0.97)", backdropFilter: "blur(12px)", borderTop: `1px solid ${C.line}`, paddingBottom: "env(safe-area-inset-bottom)" }}>
-      {NAV_MOVIL.map((k) => { const it = k === "mas" ? { k, l: "Más" } : NAV.find((x) => x.k === k); const on = nav.p === k || (k === "mas" && !NAV_MOVIL.includes(nav.p)); return <button key={k} onClick={() => ir(k)} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 2px 8px", border: "none", background: "transparent", color: on ? C.goldHi : C.mute, fontSize: 10.5, fontWeight: on ? 800 : 600, fontFamily: "inherit", cursor: "pointer" }}>
-        <Ico k={k} c={on ? C.goldHi : C.mute} s={21} />{it?.l}
-        {it?.badge > 0 && <span style={{ position: "absolute", top: 5, left: "calc(50% + 6px)", fontSize: 9, fontWeight: 900, minWidth: 16, padding: "0 4px", borderRadius: 999, background: C.gold, color: "#0A1628" }}>{it.badge}</span>}
-      </button>; })}
-    </nav>}
-  </div>;
-}
-
-function Mas({ nav, ir, perfil, rol, onLogout }) {
-  const extra = nav.filter((x) => !["inicio", "cotizaciones", "operaciones", "clientes"].includes(x.k));
-  return <div>
-    <Titulo sub={perfil.email}>Más</Titulo>
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {extra.map((it) => <Fila key={it.k} onClick={() => ir(it.k)}><Ico k={it.k} c={C.goldHi} /><span style={{ flex: 1, fontWeight: 700 }}>{it.l}</span><span style={{ color: C.mute }}>›</span></Fila>)}
+  const iniciales = (perfil.email || "GI").slice(0, 2).toUpperCase();
+  const barra = <>
+    <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, position: "relative" }}>
+      <img src={LOGO} alt="Argencargo" style={{ width: "100%", height: "auto", maxHeight: 50, objectFit: "contain" }} />
+      <span style={{ fontSize: 9.5, fontWeight: 900, padding: "3px 10px", borderRadius: 5, background: GOLD_GRADIENT, color: "#0A1628", letterSpacing: "0.18em" }}>GESTIÓN INTEGRAL</span>
+      {movil && <button onClick={() => setMenu(false)} aria-label="Cerrar menú" style={{ position: "absolute", right: 12, top: 12, background: "none", border: "none", color: C.sub, fontSize: 20, cursor: "pointer" }}>✕</button>}
     </div>
-    <div style={{ marginTop: 20 }}><Btn full onClick={onLogout}>Cerrar sesión</Btn></div>
+    <nav style={{ flex: 1, padding: "10px 10px 14px", overflowY: "auto" }}>
+      {SECCIONES.map((sec) => <div key={sec.s} style={{ marginTop: 16 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.32)", margin: "0 0 6px", padding: "0 14px", textTransform: "uppercase", letterSpacing: "0.14em" }}>{sec.s}</p>
+        {sec.items.map((it) => { const on = nav.p === it.k; return <button key={it.k} onClick={() => ir(it.k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "9px 14px", marginBottom: 1, borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: on ? 700 : 500, background: on ? "linear-gradient(90deg, rgba(184,149,106,0.12), rgba(184,149,106,0.02))" : "transparent", color: on ? "#fff" : "rgba(255,255,255,0.55)", fontFamily: "inherit", textAlign: "left", position: "relative" }}>
+          {on && <span style={{ position: "absolute", left: -10, top: 7, bottom: 7, width: 3, borderRadius: "0 3px 3px 0", background: GOLD_GRADIENT }} />}
+          <Ico k={it.k} c={on ? C.goldHi : "rgba(255,255,255,0.45)"} s={17} />
+          <span style={{ flex: 1 }}>{it.l}</span>
+          {it.badge > 0 && <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: GOLD_GRADIENT, color: "#0A1628" }}>{it.badge}</span>}
+        </button>; })}
+      </div>)}
+    </nav>
+    <div style={{ padding: "14px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{ width: 34, height: 34, flexShrink: 0, borderRadius: "50%", background: "linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))", border: "1px solid rgba(184,149,106,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: C.goldHi }}>{iniciales}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: "#fff", margin: 0 }}>{rolTxt}</p>
+          <p style={{ fontSize: 10.5, color: "rgba(255,255,255,0.4)", margin: "1px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{perfil.email}</p>
+        </div>
+      </div>
+      <button onClick={onLogout} style={{ width: "100%", padding: "8px 10px", fontSize: 11.5, background: "transparent", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, color: "rgba(255,255,255,0.55)", cursor: "pointer", fontWeight: 600, letterSpacing: "0.04em", fontFamily: "inherit" }}>Cerrar sesión</button>
+    </div>
+  </>;
+
+  return <div style={{ minHeight: "100vh", background: BG, color: C.txt, fontFamily: "'Inter','Segoe UI',sans-serif" }}>
+    {!movil && <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 220, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(12px)", borderRight: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", zIndex: 5 }}>{barra}</aside>}
+    {movil && <header style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, padding: "0 16px", background: "rgba(10,22,40,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <button onClick={() => setMenu(true)} aria-label="Abrir menú" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)", padding: "8px 10px", borderRadius: 8, cursor: "pointer", display: "inline-flex" }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+      </button>
+      <img src={LOGO} alt="Argencargo" style={{ height: 30, objectFit: "contain" }} />
+      <span style={{ fontSize: 8.5, fontWeight: 900, padding: "3px 7px", borderRadius: 4, background: GOLD_GRADIENT, color: "#0A1628", letterSpacing: "0.14em" }}>GI</span>
+    </header>}
+    {movil && menu && <>
+      <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 40 }} />
+      <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 270, background: "#0b1729", borderRight: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", zIndex: 41 }}>{barra}</aside>
+    </>}
+    <main style={{ marginLeft: movil ? 0 : 220, padding: movil ? "18px 16px 40px" : "30px 36px 48px" }}>
+      <div style={{ maxWidth: 1240, margin: "0 auto" }}>{cuerpo}</div>
+    </main>
   </div>;
 }
 
@@ -241,7 +235,7 @@ function Mas({ nav, ir, perfil, rol, onLogout }) {
 // INICIO: lo que hay que hacer hoy, en listas planas
 // ────────────────────────────────────────────
 function Inicio({ ctx }) {
-  const { d, rol, ir } = ctx;
+  const { d, rol, ir, movil } = ctx;
   const cots = d.reqs.map((r) => ({ r, e: estadoCot(r, d.comms) }));
   const ahora = Date.now();
   const aceptadas = cots.filter((x) => x.e.k === "aceptada");
@@ -258,93 +252,162 @@ function Inicio({ ctx }) {
   const paraCerrar = activas.filter((o) => o.status === "entregada" && Number(o.budget_total || 0) - (cobradoPor[o.id] || 0) <= 0.5);
   const pagosPend = d.pagos.filter((p) => !p.is_paid && p.type !== "refund");
   const totalSaldo = conSaldo.reduce((s, x) => s + x.saldo, 0);
-  const enviadas = cots.filter((x) => x.e.k === "enviada").length;
+  const enCurso = activas.reduce((s, o) => s + Number(o.budget_total || 0), 0);
 
-  const Grupo = ({ titulo, items, c, render }) => items.length === 0 ? null : <Caja title={<span style={{ color: c }}>{titulo} · {items.length}</span>}>
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{items.slice(0, 8).map(render)}</div>
-  </Caja>;
-  const filaCot = ({ r, e }) => <Fila key={r.id} onClick={() => ir("cotizaciones", { id: r.id })}>
-    <Codigo>{r.request_code}</Codigo>
-    <span style={{ flex: 1, minWidth: 0, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(r.clients)}</span>
-    <Pill c={e.c}>{e.l}</Pill>
-  </Fila>;
-  const filaOp = ({ o, saldo }) => <Fila key={o.id} onClick={() => ir("operaciones", { id: o.id })}>
-    <Codigo>{o.operation_code}</Codigo>
-    <span style={{ flex: 1, minWidth: 0, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(o.clients)}</span>
-    {saldo != null ? <span style={{ fontWeight: 800, color: C.green, fontVariantNumeric: "tabular-nums" }}>{usd0(saldo)}</span> : <Pill c={(GI_ESTADOS[o.status] || {}).c}>{(GI_ESTADOS[o.status] || {}).l || o.status}</Pill>}
-  </Fila>;
-  const nada = !aceptadas.length && !porCotizar.length && !borradores.length && !vistasSinResp.length && !sinAbrir.length && !porVencer.length && !paraCobrar.length && !paraCerrar.length && !(rol === "admin" && pagosPend.length);
+  // Números de los últimos 90 días.
+  const desde90 = ahora - 90 * 86400e3;
+  const conRespuesta = cots.filter((x) => x.e.q && new Date(x.r.created_at).getTime() > desde90 && ["aceptada", "convertida", "rechazada", "vencida"].includes(x.e.k));
+  const ganadas = conRespuesta.filter((x) => ["aceptada", "convertida"].includes(x.e.k)).length;
+  const tasa = conRespuesta.length ? Math.round((ganadas / conRespuesta.length) * 100) : null;
+  const mesIni = new Date(); mesIni.setDate(1); mesIni.setHours(0, 0, 0, 0);
+  const cotMes = cots.filter((x) => new Date(x.r.created_at) >= mesIni).length;
+
+  const tareas = [
+    { t: "Aceptadas · pasar a operación", c: C.green, items: aceptadas.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <Pill c={C.green}>Aceptada</Pill>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
+    { t: "Para cobrar · listas para entregar", c: C.green, items: paraCobrar.map(({ o, saldo }) => ({ k: o.id, code: o.operation_code, n: nombre(o.clients), der: <strong style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>{usd0(saldo)}</strong>, go: () => ir("operaciones", { id: o.id }) })) },
+    rol === "admin" ? { t: "Para cerrar · entregadas y cobradas", c: C.goldHi, items: paraCerrar.map((o) => ({ k: o.id, code: o.operation_code, n: nombre(o.clients), der: <Pill c={C.goldHi}>Cerrar</Pill>, go: () => ir("operaciones", { id: o.id }) })) } : null,
+    { t: "Pedidos sin cotizar", c: C.amber, items: porCotizar.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <span style={{ fontSize: 12, color: C.mute }}>{hace(x.r.created_at)}</span>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
+    { t: "La vieron y no respondieron", c: C.blue, items: vistasSinResp.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <span style={{ fontSize: 12, color: C.mute }}>vista {hace(x.e.ultimaVista)}</span>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
+    { t: "Enviadas hace más de 2 días sin abrir", c: C.sub, items: sinAbrir.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: null, go: () => ir("cotizaciones", { id: x.r.id }) })) },
+    { t: "Vencen en menos de 2 días", c: C.red, items: porVencer.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <span style={{ fontSize: 12, color: C.red }}>{fmtDateShort(x.e.q.expires_at)}</span>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
+    { t: "Borradores sin enviar", c: C.violet, items: borradores.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: null, go: () => ir("cotizaciones", { id: x.r.id }) })) },
+    rol === "admin" ? { t: "Pagos a proveedor pendientes", c: C.amber, items: pagosPend.map((p) => ({ k: p.id, code: p.operations?.operation_code || "—", n: p.notes || "Pago a proveedor", der: <strong style={{ color: C.amber, fontVariantNumeric: "tabular-nums" }}>{Number(p.amount_usd || 0) > 0 ? usd0(p.amount_usd) : `ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}`}</strong>, go: () => ir("operaciones", { id: p.operation_id }) })) } : null,
+  ].filter((g) => g && g.items.length);
+
+  // Actividad reciente: lo que hizo el cliente con las cotizaciones.
+  const reqPorQuote = {}; d.reqs.forEach((r) => (r.gi_quotes || []).forEach((q) => { reqPorQuote[q.id] = r; }));
+  const actividad = d.comms.filter((c) => ["link_viewed", "accepted", "rejected", "account_created", "converted"].includes(c.type)).slice(0, 12).map((c) => ({ c, r: reqPorQuote[c.quote_id] || d.reqs.find((r) => r.id === c.request_id) })).filter((x) => x.r);
+
+  const Stat = ({ l, v, sub, c }) => <div style={{ padding: "16px 18px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 14 }}>
+    <p style={{ fontSize: 10.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>{l}</p>
+    <p style={{ fontSize: 24, fontWeight: 800, margin: 0, color: c || C.txt, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{v}</p>
+    {sub && <p style={{ fontSize: 11.5, color: C.mute, margin: "5px 0 0" }}>{sub}</p>}
+  </div>;
 
   return <div>
-    <Titulo sub={`${enviadas} ${enviadas === 1 ? "cotización" : "cotizaciones"} esperando respuesta · ${activas.length} ${activas.length === 1 ? "operación" : "operaciones"} en curso · ${usd0(totalSaldo)} por cobrar`} right={<Btn v="gold" onClick={() => ir("cotizaciones", { nueva: 1 })}>+ Nueva cotización</Btn>}>Inicio</Titulo>
-    {nada && <Vacio>Todo al día. No hay nada pendiente.</Vacio>}
-    <Grupo titulo="Aceptadas · pasar a operación" c={C.green} items={aceptadas} render={filaCot} />
-    <Grupo titulo="Para cobrar · listas para entregar" c={C.green} items={paraCobrar} render={filaOp} />
-    {rol === "admin" && <Grupo titulo="Para cerrar · entregadas y cobradas" c={C.goldHi} items={paraCerrar.map((o) => ({ o }))} render={filaOp} />}
-    <Grupo titulo="Pedidos sin cotizar" c={C.amber} items={porCotizar} render={filaCot} />
-    <Grupo titulo="La vieron y no respondieron" c={C.blue} items={vistasSinResp} render={filaCot} />
-    <Grupo titulo="Enviadas hace más de 2 días sin abrir" c={C.sub} items={sinAbrir} render={filaCot} />
-    <Grupo titulo="Vencen en menos de 2 días" c={C.red} items={porVencer} render={filaCot} />
-    <Grupo titulo="Borradores sin enviar" c={C.violet} items={borradores} render={filaCot} />
-    {rol === "admin" && <Grupo titulo="Pagos a proveedor pendientes" c={C.amber} items={pagosPend} render={(p) => <Fila key={p.id} onClick={() => ir("operaciones", { id: p.operation_id })}>
-      <Codigo>{p.operations?.operation_code || "—"}</Codigo>
-      <span style={{ flex: 1, minWidth: 0, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.notes || "Pago a proveedor"}</span>
-      <span style={{ fontWeight: 800, color: C.amber, fontVariantNumeric: "tabular-nums" }}>{Number(p.amount_usd || 0) > 0 ? usd0(p.amount_usd) : `ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}`}</span>
-    </Fila>} />}
+    <Titulo eyebrow="Gestión Integral" sub="Lo que hay que mover hoy: respuestas de clientes, cobros, cierres y pedidos sin cotizar." right={<Btn v="gold" onClick={() => ir("cotizaciones", { nueva: 1 })}>+ Nueva cotización</Btn>}>Inicio</Titulo>
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : "repeat(4,1fr)", gap: 12, marginBottom: 18 }}>
+      <Stat l="Cotizaciones del mes" v={String(cotMes)} sub={`${cots.filter((x) => x.e.k === "enviada").length} esperando respuesta`} />
+      <Stat l="Aceptación" v={tasa == null ? "—" : `${tasa}%`} sub="últimos 90 días" c={tasa == null ? C.mute : tasa >= 40 ? C.green : C.amber} />
+      <Stat l="En curso" v={usd0(enCurso)} sub={`${activas.length} ${activas.length === 1 ? "operación" : "operaciones"}`} />
+      <Stat l="Por cobrar" v={usd0(totalSaldo)} sub={`${conSaldo.length} con saldo`} c={totalSaldo > 0 ? C.amber : C.txt} />
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1.35fr 1fr", gap: 14, alignItems: "start" }}>
+      <div>
+        {tareas.length === 0 ? <Caja title="Para hacer"><p style={{ margin: 0, color: C.mute, fontSize: 13.5 }}>Todo al día, no hay nada pendiente.</p></Caja> : tareas.map((g) => <Caja key={g.t} title={<span style={{ color: g.c }}>{g.t} · {g.items.length}</span>} pad={12}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {g.items.slice(0, 6).map((it) => <div key={it.k} onClick={it.go} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 8px", borderRadius: 9, cursor: "pointer" }} onMouseEnter={(e) => { e.currentTarget.style.background = C.cardHi; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+              <Codigo>{it.code}</Codigo>
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.n}</span>
+              {it.der}
+            </div>)}
+            {g.items.length > 6 && <p style={{ margin: "4px 8px 0", fontSize: 12, color: C.mute }}>y {g.items.length - 6} más</p>}
+          </div>
+        </Caja>)}
+      </div>
+      <div>
+        <Caja title="Operaciones en curso" right={<Btn small v="ghost" onClick={() => ir("operaciones")}>Ver todas</Btn>} pad={12}>
+          {activas.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>No hay operaciones en curso.</p> : activas.slice(0, 6).map((o) => { const st = GI_ESTADOS[o.status] || { l: o.status, c: C.sub }; const i = GI_FLUJO.indexOf(o.status); const pct = i < 0 ? 0 : Math.round(((i + 1) / (GI_FLUJO.length - 1)) * 100); return <div key={o.id} onClick={() => ir("operaciones", { id: o.id })} style={{ padding: "10px 8px", borderRadius: 9, cursor: "pointer" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Codigo>{o.operation_code}</Codigo>
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(o.clients)}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: st.c }}>{st.l}</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 4, background: "rgba(255,255,255,0.06)", marginTop: 8, overflow: "hidden" }}><div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: st.c, borderRadius: 4 }} /></div>
+          </div>; })}
+        </Caja>
+        <Caja title="Actividad de clientes" pad={12}>
+          {actividad.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin movimientos.</p> : actividad.map(({ c, r }, i) => { const t = TIPO_EV[c.type] || { i: "·", l: c.type }; return <div key={i} onClick={() => ir("cotizaciones", { id: r.id })} style={{ display: "flex", gap: 10, padding: "8px", borderRadius: 9, cursor: "pointer", alignItems: "center" }}>
+            <span style={{ width: 20, textAlign: "center" }}>{t.i}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(r.clients)} <span style={{ color: C.mute, fontWeight: 500 }}>· {r.request_code}</span></p>
+              <p style={{ margin: "1px 0 0", fontSize: 11.5, color: C.mute }}>{t.l}</p>
+            </div>
+            <span style={{ fontSize: 11, color: C.mute, whiteSpace: "nowrap" }}>{hace(c.created_at)}</span>
+          </div>; })}
+        </Caja>
+      </div>
+    </div>
+  </div>;
+}
+
+// Tablero por etapas: columnas en la compu, secciones apiladas en el celu. Lo cerrado va aparte.
+function Tablero({ cols, movil, render, vacio = "—" }) {
+  const conItems = movil ? cols.filter((c) => c.items.length) : cols;
+  if (movil && !conItems.length) return <Vacio>Nada en curso.</Vacio>;
+  return <div style={{ display: movil ? "block" : "grid", gridTemplateColumns: movil ? undefined : `repeat(${cols.length},minmax(0,1fr))`, gap: 12, alignItems: "start", marginBottom: 18 }}>
+    {conItems.map((col) => <div key={col.k} style={{ background: movil ? "transparent" : "rgba(255,255,255,0.02)", border: movil ? "none" : `1px solid ${C.line}`, borderRadius: 14, padding: movil ? 0 : 10, marginBottom: movil ? 16 : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: movil ? "0 2px 8px" : "4px 4px 10px" }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.c }} />
+        <span style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: C.sub }}>{col.l}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: C.mute }}>{col.items.length}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {col.items.length === 0 ? <p style={{ margin: "4px 4px 8px", fontSize: 12, color: C.mute }}>{vacio}</p> : col.items.map(render)}
+      </div>
+    </div>)}
+  </div>;
+}
+
+function Tarjeta({ onClick, arriba, titulo, abajo, acento }) {
+  return <div onClick={onClick} style={{ padding: "11px 12px", background: "rgba(10,22,40,0.7)", border: `1px solid ${C.line}`, borderLeft: `3px solid ${acento || C.line}`, borderRadius: 10, cursor: "pointer", transition: "border-color 120ms" }}
+    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(201,164,106,0.4)"; e.currentTarget.style.borderLeftColor = acento || C.gold; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.borderLeftColor = acento || C.line; }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>{arriba}</div>
+    <p style={{ margin: "6px 0 0", fontWeight: 700, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}</p>
+    {abajo && <div style={{ marginTop: 6, fontSize: 11.5, color: C.mute, display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>{abajo}</div>}
+  </div>;
+}
+
+function Historial({ titulo, items, render }) {
+  const [abierto, setAbierto] = useState(false);
+  if (!items.length) return null;
+  return <div>
+    <button onClick={() => setAbierto((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", color: C.sub, fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", padding: "6px 0", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      <span style={{ display: "inline-block", transform: abierto ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>{titulo} · {items.length}
+    </button>
+    {abierto && <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>{items.map(render)}</div>}
+  </div>;
+}
+
+function Cotizaciones({ ctx }) {
+  const { d, ir, movil } = ctx;
+  const [q, setQ] = useState("");
+  const [nueva, setNueva] = useState(false);
+  useEffect(() => { try { const n = JSON.parse(sessionStorage.getItem("gi_nav") || "{}"); if (n.nueva) { setNueva(true); sessionStorage.setItem("gi_nav", JSON.stringify({ p: "cotizaciones" })); } } catch {} }, []);
+  const s = q.trim().toLowerCase();
+  const filas = d.reqs.map((r) => ({ r, e: estadoCot(r, d.comms) })).filter((x) => !s || `${x.r.request_code} ${nombre(x.r.clients)} ${x.r.clients?.client_code || ""}`.toLowerCase().includes(s));
+  const de = (ks) => filas.filter((x) => ks.includes(x.e.k));
+  const cols = [
+    { k: "pc", l: "Por cotizar", c: C.amber, items: de(["por_cotizar"]) },
+    { k: "bo", l: "Borradores", c: C.violet, items: de(["borrador"]) },
+    { k: "en", l: "Esperando respuesta", c: C.blue, items: de(["enviada"]) },
+    { k: "ac", l: "Aceptadas", c: C.green, items: de(["aceptada"]) },
+  ];
+  const tarjeta = ({ r, e }) => {
+    const qt = e.q; const total = qt ? (totalAceptado(qt) || canalMasBarato(qt)?.t || 0) : 0;
+    return <Tarjeta key={r.id} onClick={() => ir("cotizaciones", { id: r.id })} acento={e.c}
+      arriba={<><Codigo>{r.request_code}</Codigo><span style={{ fontSize: 11, color: e.c, fontWeight: 700 }}>{e.k === "enviada" ? (e.sinAbrir ? "sin abrir" : `vista ${hace(e.ultimaVista)}`) : hace(r.created_at)}</span></>}
+      titulo={nombre(r.clients)}
+      abajo={<><span>{total > 0 ? `${totalAceptado(qt) ? "" : "desde "}${usd0(total)}` : "sin precio"}</span>{qt?.expires_at && e.k === "enviada" ? <span>vence {fmtDateShort(qt.expires_at)}</span> : null}</>} />;
+  };
+  const cerradas = de(["convertida", "rechazada", "vencida"]);
+  return <div>
+    <Titulo eyebrow="Gestión Integral" sub="Cada pedido de cotización desde que entra hasta que el cliente responde. Tocá una para ver el detalle, el historial y mandarla." right={<Btn v="gold" onClick={() => setNueva(true)}>+ Nueva cotización</Btn>}>Cotizaciones</Titulo>
+    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código o cliente" style={{ ...inp, marginBottom: 14, maxWidth: movil ? "100%" : 360 }} />
+    <Tablero cols={cols} movil={movil} render={tarjeta} vacio="Ninguna" />
+    <Historial titulo="Convertidas, rechazadas y vencidas" items={cerradas} render={({ r, e }) => <Fila key={r.id} onClick={() => ir("cotizaciones", { id: r.id })}>
+      <Codigo>{r.request_code}</Codigo>
+      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(r.clients)}</span>
+      {e.vistas > 0 && <span style={{ fontSize: 11.5, color: C.mute }}>{e.vistas} vistas</span>}
+      <Pill c={e.c}>{e.k === "convertida" && e.q?.operation_id ? `→ ${d.ops.find((o) => o.id === e.q.operation_id)?.operation_code || "Operación"}` : e.l}</Pill>
+    </Fila>} />
+    {nueva && <NuevaCotizacion ctx={ctx} onClose={() => setNueva(false)} />}
   </div>;
 }
 
 // ────────────────────────────────────────────
 // COTIZACIONES
 // ────────────────────────────────────────────
-function Cotizaciones({ ctx }) {
-  const { d, ir, movil } = ctx;
-  const [f, setF] = useState("activas");
-  const [q, setQ] = useState("");
-  const [nueva, setNueva] = useState(false);
-  useEffect(() => { try { const n = JSON.parse(sessionStorage.getItem("gi_nav") || "{}"); if (n.nueva) { setNueva(true); sessionStorage.setItem("gi_nav", JSON.stringify({ p: "cotizaciones" })); } } catch {} }, []);
-  const filas = d.reqs.map((r) => ({ r, e: estadoCot(r, d.comms) }));
-  const grupos = {
-    activas: (x) => ["por_cotizar", "borrador", "enviada", "aceptada"].includes(x.e.k),
-    por_cotizar: (x) => x.e.k === "por_cotizar",
-    borrador: (x) => x.e.k === "borrador",
-    enviada: (x) => x.e.k === "enviada",
-    aceptada: (x) => x.e.k === "aceptada",
-    convertida: (x) => x.e.k === "convertida",
-    perdidas: (x) => ["rechazada", "vencida"].includes(x.e.k),
-  };
-  const s = q.trim().toLowerCase();
-  const lista = filas.filter(grupos[f]).filter((x) => !s || `${x.r.request_code} ${nombre(x.r.clients)} ${x.r.clients?.client_code || ""}`.toLowerCase().includes(s));
-  const chips = [["activas", "En curso"], ["por_cotizar", "Por cotizar"], ["borrador", "Borradores"], ["enviada", "Enviadas"], ["aceptada", "Aceptadas"], ["convertida", "Convertidas"], ["perdidas", "Rechazadas / vencidas"]].map(([k, l]) => ({ k, l, n: filas.filter(grupos[k]).length }));
-
-  return <div>
-    <Titulo right={<Btn v="gold" onClick={() => setNueva(true)}>+ Nueva cotización</Btn>}>Cotizaciones</Titulo>
-    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código o cliente" style={{ ...inp, marginBottom: 12 }} />
-    <Chips items={chips} value={f} onChange={setF} />
-    {lista.length === 0 ? <Vacio>No hay cotizaciones acá.</Vacio> : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {lista.map(({ r, e }) => {
-        const qt = e.q;
-        const total = qt ? (totalAceptado(qt) || canalMasBarato(qt)?.t || 0) : 0;
-        return <Fila key={r.id} onClick={() => ir("cotizaciones", { id: r.id })} style={{ flexWrap: movil ? "wrap" : "nowrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-            <Codigo>{r.request_code}</Codigo>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p style={{ margin: 0, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(r.clients)}</p>
-              <p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{fmtDateShort(r.created_at)}{qt?.expires_at && ["enviada", "borrador"].includes(e.k) ? ` · vence ${fmtDateShort(qt.expires_at)}` : ""}{e.vistas > 1 ? ` · ${e.vistas} vistas` : ""}</p>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: movil ? 0 : "auto" }}>
-            {total > 0 && <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", fontSize: 13 }}>{totalAceptado(qt) ? "" : "desde "}{usd0(total)}</span>}
-            <Pill c={e.c}>{e.l}</Pill>
-          </div>
-        </Fila>;
-      })}
-    </div>}
-    {nueva && <NuevaCotizacion ctx={ctx} onClose={() => setNueva(false)} />}
-  </div>;
-}
-
-// Alta de cotización: cliente existente (admin/empleado ven todos) o cliente nuevo.
 function NuevaCotizacion({ ctx, onClose }) {
   const { token, rol, perfil, d, ir, recargar } = ctx;
   const staff = rol !== "socio";
@@ -610,44 +673,36 @@ function CotDetalle({ ctx, id }) {
 // ────────────────────────────────────────────
 function Operaciones({ ctx }) {
   const { d, rol, ir, movil } = ctx;
-  const [f, setF] = useState("curso");
   const [q, setQ] = useState("");
-  const cobradoPor = {}; d.cobros.forEach((c) => { cobradoPor[c.operation_id] = (cobradoPor[c.operation_id] || 0) + Number(c.amount_usd || 0); });
   const pagosPor = {}; d.pagos.forEach((p) => { (pagosPor[p.operation_id] = pagosPor[p.operation_id] || []).push(p); });
-  const filas = d.ops.map((o) => {
-    const res = resumenGI({ op: o, cobros: d.cobros.filter((c) => c.operation_id === o.id), pagosProveedor: pagosPor[o.id] || [], fx: d.fx, socio: d.socios.find((s) => s.id === (o.gi_partner_id || o.clients?.gi_partner_id)) });
-    return { o, res };
-  });
-  const G = {
-    curso: (x) => !["operacion_cerrada", "cancelada"].includes(x.o.status),
-    cobrar: (x) => !["cancelada"].includes(x.o.status) && x.res.saldo > 0.5,
-    cerradas: (x) => x.o.status === "operacion_cerrada",
-    todas: () => true,
-  };
   const s = q.trim().toLowerCase();
-  const lista = filas.filter(G[f]).filter((x) => !s || `${x.o.operation_code} ${nombre(x.o.clients)} ${x.o.description || ""}`.toLowerCase().includes(s));
+  const filas = d.ops.filter((o) => !s || `${o.operation_code} ${nombre(o.clients)} ${o.description || ""}`.toLowerCase().includes(s)).map((o) => ({
+    o, res: resumenGI({ op: o, cobros: d.cobros.filter((c) => c.operation_id === o.id), pagosProveedor: pagosPor[o.id] || [], fx: d.fx, socio: d.socios.find((x) => x.id === (o.gi_partner_id || o.clients?.gi_partner_id)) }),
+  }));
+  const de = (ks) => filas.filter((x) => ks.includes(x.o.status));
+  const cols = [
+    { k: "or", l: "En origen", c: GI_ESTADOS.pendiente.c, items: de(["pendiente", "en_deposito_origen", "en_preparacion"]) },
+    { k: "vi", l: "Viajando", c: GI_ESTADOS.en_transito.c, items: de(["en_transito"]) },
+    { k: "ar", l: "En Argentina", c: GI_ESTADOS.en_aduana.c, items: de(["arribo_argentina", "en_aduana"]) },
+    { k: "en", l: "Para entregar", c: GI_ESTADOS.entregada.c, items: de(["entregada"]) },
+  ];
   const verPlata = rol !== "empleado";
+  const tarjeta = ({ o, res }) => { const st = GI_ESTADOS[o.status] || { l: o.status, c: C.sub }; return <Tarjeta key={o.id} onClick={() => ir("operaciones", { id: o.id })} acento={st.c}
+    arriba={<><Codigo>{o.operation_code}</Codigo><span style={{ fontSize: 11, color: st.c, fontWeight: 700 }}>{st.l}</span></>}
+    titulo={nombre(o.clients)}
+    abajo={<><span>{GI_CANALES[o.channel]?.nombre || o.channel}{o.eta ? ` · ETA ${fmtDateShort(o.eta)}` : ""}</span><span style={{ color: res.saldo > 0.5 ? C.amber : C.green, fontWeight: 700 }}>{res.saldo > 0.5 ? `debe ${usd0(res.saldo)}` : "cobrada"}</span></>} />; };
+  const cerradas = de(["operacion_cerrada", "cancelada"]);
   return <div>
-    <Titulo>Operaciones</Titulo>
-    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código o cliente" style={{ ...inp, marginBottom: 12 }} />
-    <Chips value={f} onChange={setF} items={[["curso", "En curso"], ["cobrar", "Con saldo"], ["cerradas", "Cerradas"], ["todas", "Todas"]].map(([k, l]) => ({ k, l, n: filas.filter(G[k]).length }))} />
-    {lista.length === 0 ? <Vacio>No hay operaciones acá.</Vacio> : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {lista.map(({ o, res }) => { const st = GI_ESTADOS[o.status] || { l: o.status, c: C.sub }; return <Fila key={o.id} onClick={() => ir("operaciones", { id: o.id })} style={{ flexWrap: movil ? "wrap" : "nowrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-          <Codigo>{o.operation_code}</Codigo>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <p style={{ margin: 0, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(o.clients)}</p>
-            <p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{GI_CANALES[o.channel]?.nombre || o.channel}{o.eta && !["operacion_cerrada", "cancelada"].includes(o.status) ? ` · ETA ${fmtDateShort(o.eta)}` : ""}</p>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginLeft: movil ? 0 : "auto", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: C.mute }}>Total </span><strong>{usd0(res.venta)}</strong></span>
-          {res.saldo > 0.5 && <span style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: C.amber }}>Saldo <strong>{usd0(res.saldo)}</strong></span>}
-          {verPlata && <span style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: (o.status === "operacion_cerrada" ? res.real : res.ganancia) >= 0 ? C.green : C.red }}>{rol === "socio" ? "Comisión" : "Ganancia"} <strong>{usd0(rol === "socio" ? res.comision : (o.status === "operacion_cerrada" ? res.real : res.ganancia))}</strong></span>}
-          <Pill c={st.c}>{st.l}</Pill>
-        </div>
-      </Fila>; })}
-    </div>}
+    <Titulo eyebrow="Gestión Integral" sub="Las operaciones de GI según dónde está la mercadería. Adentro de cada una se cobran, se cargan costos y se cierran.">Operaciones</Titulo>
+    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código o cliente" style={{ ...inp, marginBottom: 14, maxWidth: movil ? "100%" : 360 }} />
+    <Tablero cols={cols} movil={movil} render={tarjeta} vacio="Ninguna" />
+    <Historial titulo="Cerradas" items={cerradas} render={({ o, res }) => <Fila key={o.id} onClick={() => ir("operaciones", { id: o.id })}>
+      <Codigo>{o.operation_code}</Codigo>
+      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(o.clients)}</span>
+      <span style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{usd0(res.venta)}</span>
+      {verPlata && <span style={{ fontSize: 12.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: (rol === "socio" ? res.comision : res.real) >= 0 ? C.green : C.red }}>{rol === "socio" ? "comisión " : ""}{usd0(rol === "socio" ? res.comision : res.real)}</span>}
+      <Pill c={(GI_ESTADOS[o.status] || {}).c}>{(GI_ESTADOS[o.status] || {}).l}</Pill>
+    </Fila>} />
   </div>;
 }
 
@@ -937,33 +992,6 @@ function CostoModal({ op, token, tarjetas, pagos, onClose, onListo }) {
 // ────────────────────────────────────────────
 // CLIENTES
 // ────────────────────────────────────────────
-function Clientes({ ctx }) {
-  const { token, rol, d, ir } = ctx;
-  const [q, setQ] = useState("");
-  const [edit, setEdit] = useState(null);
-  const mapa = new Map();
-  const tocar = (c) => { if (!c?.id) return null; if (!mapa.has(c.id)) mapa.set(c.id, { c, cots: 0, ops: 0, vendido: 0, abiertas: 0 }); return mapa.get(c.id); };
-  d.reqs.forEach((r) => { const x = tocar(r.clients); if (x) x.cots++; });
-  d.ops.forEach((o) => { const x = tocar(o.clients); if (x) { x.ops++; if (o.status !== "cancelada") x.vendido += Number(o.budget_total || 0); if (!["operacion_cerrada", "cancelada"].includes(o.status)) x.abiertas++; } });
-  const s = q.trim().toLowerCase();
-  const lista = [...mapa.values()].filter((x) => !s || `${nombre(x.c)} ${x.c.client_code || ""}`.toLowerCase().includes(s)).sort((a, b) => b.vendido - a.vendido || b.cots - a.cots);
-  const socioDe = (id) => d.socios.find((p) => p.id === id);
-  return <div>
-    <Titulo sub={`${lista.length} cliente${lista.length === 1 ? "" : "s"} con cotizaciones u operaciones de GI`}>Clientes</Titulo>
-    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente" style={{ ...inp, marginBottom: 12 }} />
-    {lista.length === 0 ? <Vacio>Sin clientes todavía.</Vacio> : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {lista.map(({ c, cots, ops, vendido, abiertas }) => { const so = socioDe(c.gi_partner_id); return <Fila key={c.id} onClick={rol === "admin" ? () => setEdit(c) : undefined}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 700 }}>{nombre(c)} <span style={{ fontFamily: MONO, fontSize: 11, color: C.goldHi, fontWeight: 600 }}>{c.client_code}</span></p>
-          <p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{cots} cotiz. · {ops} op.{abiertas ? ` (${abiertas} en curso)` : ""}{rol !== "socio" ? ` · ${so ? `socio ${so.email.split("@")[0]}${c.gi_commission_pct != null ? ` ${c.gi_commission_pct}%` : ""}` : "Argencargo"}` : ""}</p>
-        </div>
-        {vendido > 0 && <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{usd0(vendido)}</span>}
-      </Fila>; })}
-    </div>}
-    {edit && <ClienteSocioModal c={edit} d={d} token={token} onClose={() => setEdit(null)} onListo={() => { setEdit(null); ctx.recargar(); }} />}
-  </div>;
-}
-
 function ClienteSocioModal({ c, d, token, onClose, onListo }) {
   const [sel, setSel] = useState(c.gi_partner_id || "");
   const [pct, setPct] = useState(c.gi_commission_pct != null ? String(c.gi_commission_pct) : "");
@@ -986,6 +1014,8 @@ function Socios({ ctx }) {
   const { token, rol, perfil, d, recargar } = ctx;
   const [invitar, setInvitar] = useState(false);
   const [pagando, setPagando] = useState(null);
+  const [asignar, setAsignar] = useState(null);
+  const [editCli, setEditCli] = useState(null);
   const opDe = (id) => d.ops.find((o) => o.id === id);
   const socios = rol === "admin" ? d.socios : [{ id: perfil.id, email: perfil.email, gi_partner_pct: perfil.gi_partner_pct }];
 
@@ -1019,14 +1049,15 @@ function Socios({ ctx }) {
   };
 
   return <div>
-    <Titulo right={rol === "admin" ? <Btn v="gold" onClick={() => setInvitar(true)}>+ Socio</Btn> : null}>{rol === "admin" ? "Socios" : "Mis comisiones"}</Titulo>
+    <Titulo eyebrow="Equipo" sub={rol === "admin" ? "Cada socio con sus clientes, el % que cobra y las comisiones de las operaciones cerradas para liquidar." : "Tus clientes, el % que cobrás con cada uno y las comisiones de las operaciones cerradas."} right={rol === "admin" ? <Btn v="gold" onClick={() => setInvitar(true)}>+ Socio</Btn> : null}>{rol === "admin" ? "Socios" : "Mis comisiones"}</Titulo>
     {socios.length === 0 && <Vacio>Todavía no hay socios.</Vacio>}
     {socios.map((s) => {
       const ea = d.earnings.filter((e) => e.partner_id === s.id);
       const aPagar = ea.filter((e) => !e.paid_to_partner);
       const totalAPagar = aPagar.reduce((a, e) => a + Number(e.commission_usd || 0), 0);
       const pagado = ea.filter((e) => e.paid_to_partner).reduce((a, e) => a + Number(e.paid_amount_usd ?? e.commission_usd ?? 0), 0);
-      const nClientes = new Set(d.ops.filter((o) => (o.gi_partner_id || o.clients?.gi_partner_id) === s.id).map((o) => o.client_id)).size;
+      const susClientes = d.clientesSocio.filter((c) => c.gi_partner_id === s.id);
+      const nClientes = susClientes.length;
       const enCurso = d.ops.filter((o) => !o.gi_admin_owned && (o.gi_partner_id || o.clients?.gi_partner_id) === s.id && !["operacion_cerrada", "cancelada"].includes(o.status));
       return <Caja key={s.id} title={<span style={{ color: C.txt, textTransform: "none", letterSpacing: 0, fontSize: 15 }}>{s.email}</span>} right={rol === "admin" ? <div style={{ display: "flex", gap: 6 }}><Btn small onClick={() => cambiarPct(s)}>{Number(s.gi_partner_pct || 0)}% general</Btn><Btn small v="ghost" onClick={() => quitar(s)}>Quitar acceso</Btn></div> : null}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 14, marginBottom: 14 }}>
@@ -1036,6 +1067,16 @@ function Socios({ ctx }) {
           <Dato label="Clientes" val={String(nClientes)} />
         </div>
         {rol === "admin" && aPagar.length > 0 && <Btn v="gold" small onClick={() => liquidar(s, aPagar)} disabled={pagando === s.id} style={{ marginBottom: 12 }}>{pagando === s.id ? "Liquidando…" : `Liquidar ${fmtUSD(totalAPagar)}`}</Btn>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 8px" }}>
+          <p style={{ margin: 0, fontSize: 11.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em" }}>Clientes</p>
+          {rol === "admin" && <Btn small v="ghost" onClick={() => setAsignar(s)}>+ Asignar cliente</Btn>}
+        </div>
+        {susClientes.length === 0 ? <p style={{ margin: "0 0 14px", color: C.mute, fontSize: 13 }}>Sin clientes asignados.</p> : <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+          {susClientes.map((c) => <button key={c.id} onClick={rol === "admin" ? () => setEditCli(c) : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, border: `1px solid ${C.line}`, background: C.card, color: C.txt, fontSize: 12.5, fontWeight: 600, cursor: rol === "admin" ? "pointer" : "default", fontFamily: "inherit" }}>
+            {nombre(c)}<span style={{ fontWeight: 800, color: C.goldHi }}>{c.gi_commission_pct != null ? c.gi_commission_pct : Number(s.gi_partner_pct || 0)}%</span>
+          </button>)}
+        </div>}
+        <p style={{ margin: "0 0 4px", fontSize: 11.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em" }}>Comisiones</p>
         {ea.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin operaciones cerradas todavía.</p> : <div style={{ display: "flex", flexDirection: "column" }}>
           {ea.map((e) => { const o = opDe(e.operation_id); return <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${C.line}`, fontSize: 13 }}>
             <Codigo>{o?.operation_code || "—"}</Codigo>
@@ -1047,6 +1088,8 @@ function Socios({ ctx }) {
       </Caja>;
     })}
     {invitar && <InvitarSocio token={token} onClose={() => setInvitar(false)} onListo={() => recargar()} />}
+    {asignar && <AsignarClienteModal ctx={ctx} socio={asignar} onClose={() => setAsignar(null)} />}
+    {editCli && <ClienteSocioModal c={editCli} d={d} token={token} onClose={() => setEditCli(null)} onListo={() => { setEditCli(null); recargar(); }} />}
   </div>;
 }
 
@@ -1082,12 +1125,183 @@ function InvitarSocio({ token, onClose, onListo }) {
 // ────────────────────────────────────────────
 // CONTACTOS
 // ────────────────────────────────────────────
-function Contactos({ token }) {
-  const [t, setT] = useState("suppliers");
+function AsignarClienteModal({ ctx, socio, onClose }) {
+  const { token, recargar } = ctx;
+  const [clientes, setClientes] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [cli, setCli] = useState(null);
+  const [pct, setPct] = useState("");
+  useEffect(() => { (async () => { setClientes(await dqTodos("clients", { token, filters: "?select=id,first_name,last_name,client_code,gi_partner_id&order=first_name.asc" })); })(); }, [token]);
+  const s = busca.trim().toLowerCase();
+  const encontrados = (clientes || []).filter((c) => s.length >= 2 && `${c.first_name || ""} ${c.last_name || ""} ${c.client_code || ""}`.toLowerCase().includes(s)).slice(0, 8);
+  const guardar = async () => {
+    if (!cli) return;
+    const r = await dq("clients", { method: "PATCH", token, filters: `?id=eq.${cli.id}`, body: { gi_partner_id: socio.id, gi_commission_pct: pct !== "" ? Number(pct) : null } });
+    if (!ok(r)) { toast.error("No se pudo asignar"); return; }
+    toast.success(`${nombre(cli)} asignado`); recargar(); onClose();
+  };
+  return <Modal title={`Asignar cliente a ${socio.email.split("@")[0]}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={!cli}>Asignar</Btn></>}>
+    {cli ? <Fila style={{ marginBottom: 12 }}><span style={{ flex: 1, fontWeight: 800 }}>{nombre(cli)} <span style={{ fontFamily: MONO, fontSize: 11, color: C.goldHi }}>{cli.client_code}</span></span><Btn small onClick={() => setCli(null)}>Cambiar</Btn></Fila> : <Campo label="Buscar cliente">
+      <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nombre o código" style={inp} />
+      {encontrados.length > 0 && <div style={{ marginTop: 6, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+        {encontrados.map((c) => <button key={c.id} type="button" onClick={() => setCli(c)} style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.line}`, background: "transparent", color: C.txt, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, textAlign: "left" }}>
+          <strong>{nombre(c)}</strong><span style={{ fontFamily: MONO, fontSize: 11, color: C.goldHi }}>{c.client_code}</span>
+        </button>)}
+      </div>}
+    </Campo>}
+    <Campo label={`% para el socio con este cliente (vacío = ${Number(socio.gi_partner_pct || 0)}% general)`}><input inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value.replace(",", "."))} style={inp} /></Campo>
+  </Modal>;
+}
+
+// ────────────────────────────────────────────
+// CONTACTOS
+// ────────────────────────────────────────────
+const CONTACTOS = {
+  suppliers: { tabla: "gi_suppliers", l: "Proveedores", uno: "proveedor", grupo: "rubro", grupos: ["Indumentaria", "Electrónica", "Calzado", "Hogar", "Cosmética", "Juguetería", "Deportes", "Otros"],
+    campos: [{ k: "name", l: "Nombre" }, { k: "rubro", l: "Rubro", grupo: true }, { k: "country", l: "País", opciones: ["China", "USA"] }, { k: "city", l: "Ciudad" }, { k: "phone", l: "WhatsApp / teléfono" }, { k: "email", l: "Email" }, { k: "wechat", l: "WeChat" }, { k: "moq", l: "Pedido mínimo (MOQ)", num: true }, { k: "lead_time_days", l: "Producción (días)", num: true }, { k: "notes", l: "Notas", largo: true }] },
+  purchase_agents: { tabla: "gi_purchase_agents", l: "Agentes de compra", uno: "agente", grupo: "rubro", grupos: ["Indumentaria", "Electrónica", "Calzado", "General", "Otros"],
+    campos: [{ k: "name", l: "Nombre" }, { k: "rubro", l: "Rubro", grupo: true }, { k: "base_city", l: "Ciudad" }, { k: "phone", l: "WhatsApp / teléfono" }, { k: "email", l: "Email" }, { k: "wechat", l: "WeChat" }, { k: "commission_pct", l: "Comisión %", num: true }, { k: "commission_fixed_usd", l: "Comisión fija USD", num: true }, { k: "notes", l: "Notas", largo: true }] },
+  forwarders: { tabla: "gi_forwarders", l: "Embarcadores", uno: "embarcador", grupo: "city", grupos: ["Shanghái", "Guangzhou", "Shenzhen", "Yiwu", "Ningbo", "Miami", "Los Ángeles", "Otros"],
+    campos: [{ k: "name", l: "Nombre" }, { k: "city", l: "Ciudad", grupo: true }, { k: "phone", l: "WhatsApp / teléfono" }, { k: "email", l: "Email" }, { k: "modes", l: "Modos", multi: ["aereo", "maritimo"] }, { k: "notes", l: "Notas", largo: true }] },
+};
+
+function Contactos({ ctx }) {
+  const { token, rol, movil } = ctx;
+  const [tipo, setTipo] = useState("suppliers");
+  const [items, setItems] = useState(null);
+  const [q, setQ] = useState("");
+  const [edit, setEdit] = useState(null);
+  const cfg = CONTACTOS[tipo];
+  const cargar = useCallback(async () => { setItems(null); setItems(arr(await dq(cfg.tabla, { token, filters: "?select=*&order=name.asc" }))); }, [cfg.tabla, token]);
+  useEffect(() => { cargar(); }, [cargar]);
+  const s = q.trim().toLowerCase();
+  const lista = (items || []).filter((it) => !s || JSON.stringify([it.name, it[cfg.grupo], it.city, it.notes]).toLowerCase().includes(s));
+  const grupos = {}; lista.forEach((it) => { const g = it[cfg.grupo] || "Sin clasificar"; (grupos[g] = grupos[g] || []).push(it); });
+  const wa = (tel) => { const n = String(tel || "").replace(/[^\d]/g, ""); return n.length >= 8 ? `https://wa.me/${n}` : null; };
+  const borrar = async (it) => {
+    if (!await confirmDialog(`¿Borrar ${it.name}?`, { danger: true })) return;
+    await dq(cfg.tabla, { method: "DELETE", token, filters: `?id=eq.${it.id}` }); toast.success("Borrado"); setEdit(null); cargar();
+  };
   return <div>
-    <Chips value={t} onChange={setT} items={[{ k: "suppliers", l: "Proveedores" }, { k: "agents", l: "Agentes de compra" }, { k: "forwarders", l: "Embarcadores" }]} />
-    {t === "suppliers" && <ContactsPanel token={token} type="suppliers" title="Proveedores" desc="" groupBy="rubro" rubroOptions={["Indumentaria", "Electrónica", "Calzado", "Hogar", "Cosmética", "Juguetería", "Deportes", "Otros"]} fields={[{ k: "name", l: "Nombre", req: true }, { k: "rubro", l: "Rubro", select: true }, { k: "country", l: "País", options: ["China", "USA"] }, { k: "city", l: "Ciudad" }, { k: "email", l: "Email" }, { k: "phone", l: "Teléfono" }, { k: "wechat", l: "WeChat" }, { k: "moq", l: "MOQ", num: true }, { k: "lead_time_days", l: "Lead time (días)", num: true }, { k: "notes", l: "Notas", textarea: true }]} />}
-    {t === "agents" && <ContactsPanel token={token} type="purchase_agents" title="Agentes de compra" desc="" groupBy="rubro" rubroOptions={["Indumentaria", "Electrónica", "Calzado", "General", "Otros"]} fields={[{ k: "name", l: "Nombre", req: true }, { k: "rubro", l: "Rubro", select: true }, { k: "base_city", l: "Ciudad base" }, { k: "email", l: "Email" }, { k: "phone", l: "Teléfono" }, { k: "wechat", l: "WeChat" }, { k: "commission_pct", l: "Comisión %", num: true }, { k: "commission_fixed_usd", l: "Comisión fija USD", num: true }, { k: "notes", l: "Notas", textarea: true }]} />}
-    {t === "forwarders" && <ContactsPanel token={token} type="forwarders" title="Embarcadores" desc="" groupBy="city" rubroOptions={["Shanghái", "Guangzhou", "Shenzhen", "Yiwu", "Ningbo", "Miami", "Los Ángeles", "Otros"]} fields={[{ k: "name", l: "Nombre", req: true }, { k: "city", l: "Ciudad", select: true }, { k: "email", l: "Email" }, { k: "phone", l: "Teléfono" }, { k: "modes_str", l: "Modos (coma separado)", placeholder: "aereo,maritimo" }, { k: "notes", l: "Notas", textarea: true }]} />}
+    <Titulo eyebrow="Equipo" sub="Proveedores, agentes de compra y embarcadores con los que trabajamos, para tenerlos a mano al cotizar." right={<Btn v="gold" onClick={() => setEdit({})}>+ Nuevo {cfg.uno}</Btn>}>Contactos</Titulo>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "inline-flex", padding: 4, background: C.card, border: `1px solid ${C.line}`, borderRadius: 12 }}>
+        {Object.entries(CONTACTOS).map(([k, c]) => <button key={k} onClick={() => setTipo(k)} style={{ padding: "8px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, background: tipo === k ? C.goldBg : "transparent", color: tipo === k ? C.goldHi : C.sub }}>{c.l}</button>)}
+      </div>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" style={{ ...inp, maxWidth: movil ? "100%" : 280 }} />
+    </div>
+    {items === null ? <Cargando /> : lista.length === 0 ? <Vacio>No hay {cfg.l.toLowerCase()} cargados.</Vacio> : Object.entries(grupos).sort((a, b) => a[0].localeCompare(b[0])).map(([g, its]) => <div key={g} style={{ marginBottom: 18 }}>
+      <p style={{ fontSize: 11.5, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>{g} · {its.length}</p>
+      <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
+        {its.map((it) => <div key={it.id} onClick={() => setEdit(it)} style={{ padding: 14, background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, cursor: "pointer" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.goldBg, color: C.goldHi, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(it.name || "?").slice(0, 1).toUpperCase()}</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <p style={{ margin: 0, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: C.mute }}>{[it.city || it.base_city, it.country, it.moq ? `MOQ ${it.moq}` : null, it.lead_time_days ? `${it.lead_time_days} días` : null, it.commission_pct ? `${it.commission_pct}%` : null, Array.isArray(it.modes) && it.modes.length ? it.modes.join(" / ") : null].filter(Boolean).join(" · ") || "—"}</p>
+            </div>
+          </div>
+          {it.notes && <p style={{ margin: "10px 0 0", fontSize: 12.5, color: C.sub, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{it.notes}</p>}
+          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
+            {wa(it.phone) && <a href={wa(it.phone)} target="_blank" rel="noopener" style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, background: "rgba(37,211,102,0.12)", color: "#4ade80", textDecoration: "none" }}>WhatsApp</a>}
+            {it.email && <a href={`mailto:${it.email}`} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, background: "rgba(96,165,250,0.12)", color: C.blue, textDecoration: "none" }}>Email</a>}
+            {it.wechat && <button onClick={async () => { try { await navigator.clipboard.writeText(it.wechat); toast.success("WeChat copiado"); } catch {} }} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, background: "rgba(255,255,255,0.06)", color: C.sub, border: "none", cursor: "pointer", fontFamily: "inherit" }}>WeChat: {it.wechat}</button>}
+          </div>
+        </div>)}
+      </div>
+    </div>)}
+    {edit && <ContactoModal cfg={cfg} item={edit} token={token} puedeBorrar={rol === "admin"} onBorrar={borrar} onClose={() => setEdit(null)} onListo={() => { setEdit(null); cargar(); }} />}
+  </div>;
+}
+
+function ContactoModal({ cfg, item, token, puedeBorrar, onBorrar, onClose, onListo }) {
+  const nuevo = !item.id;
+  const [f, setF] = useState(() => { const o = {}; cfg.campos.forEach((c) => { o[c.k] = c.multi ? (Array.isArray(item[c.k]) ? item[c.k] : []) : item[c.k] ?? ""; }); return o; });
+  const [g, setG] = useState(false);
+  const guardar = async () => {
+    if (!String(f.name || "").trim()) { toast.error("Poné el nombre"); return; }
+    setG(true);
+    const body = {};
+    cfg.campos.forEach((c) => { body[c.k] = c.multi ? (f[c.k].length ? f[c.k] : null) : c.num ? (f[c.k] === "" ? null : Number(f[c.k])) : (String(f[c.k] || "").trim() || null); });
+    const r = nuevo ? await dq(cfg.tabla, { method: "POST", token, body }) : await dq(cfg.tabla, { method: "PATCH", token, filters: `?id=eq.${item.id}`, body: { ...body, updated_at: new Date().toISOString() } });
+    setG(false);
+    if (!ok(r)) { toast.error("No se pudo guardar"); return; }
+    toast.success(nuevo ? "Creado" : "Guardado"); onListo();
+  };
+  return <Modal title={nuevo ? `Nuevo ${cfg.uno}` : item.name} onClose={onClose} footer={<>{!nuevo && puedeBorrar && <Btn v="ghost" onClick={() => onBorrar(item)} style={{ color: C.red, marginRight: "auto" }}>Borrar</Btn>}<Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={g}>{g ? "Guardando…" : "Guardar"}</Btn></>}>
+    {cfg.campos.map((c) => <Campo key={c.k} label={c.l}>
+      {c.grupo ? <Opciones value={f[c.k]} onChange={(v) => setF({ ...f, [c.k]: v })} items={cfg.grupos.map((x) => ({ k: x, l: x }))} />
+        : c.opciones ? <Opciones value={f[c.k]} onChange={(v) => setF({ ...f, [c.k]: v })} cols={c.opciones.length} items={c.opciones.map((x) => ({ k: x, l: x }))} />
+        : c.multi ? <div style={{ display: "flex", gap: 6 }}>{c.multi.map((m) => { const on = f[c.k].includes(m); return <button key={m} type="button" onClick={() => setF({ ...f, [c.k]: on ? f[c.k].filter((x) => x !== m) : [...f[c.k], m] })} style={{ flex: 1, padding: "9px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${on ? C.gold : C.line}`, background: on ? C.goldBg : "transparent", color: on ? C.goldHi : C.sub }}>{m === "aereo" ? "Aéreo" : "Marítimo"}</button>; })}</div>
+        : c.largo ? <textarea value={f[c.k]} onChange={(e) => setF({ ...f, [c.k]: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} />
+        : <input value={f[c.k]} inputMode={c.num ? "decimal" : undefined} onChange={(e) => setF({ ...f, [c.k]: e.target.value })} style={inp} />}
+    </Campo>)}
+  </Modal>;
+}
+
+// ────────────────────────────────────────────
+// CONFIGURACIÓN: términos y condiciones de la cotización
+// ────────────────────────────────────────────
+const TERMINOS_SUGERIDOS = `Qué incluye:
+- Búsqueda y coordinación con el proveedor en origen.
+- Control visual de la mercadería con fotos antes del embarque.
+- Flete internacional con seguro de la mercadería.
+- Despacho de aduana, impuestos y tasas de importación.
+- Entrega en nuestra oficina o envío a domicilio, según lo que elijas.
+
+Precio:
+- El precio es final, en dólares, con la mercadería puesta en Argentina.
+- Vale hasta la fecha de vencimiento de la cotización.
+- Puede cambiar si cambian las cantidades, si el proveedor modifica medidas o peso de los bultos, o si la Aduana clasifica la mercadería distinto.
+
+Pagos:
+- Se paga según el plan de pagos de la cotización. La producción arranca con el primer pago.
+- Pesos por transferencia al tipo de cambio del día del pago; dólares en efectivo o USDT.
+
+Plazos:
+- Los plazos son estimados: dependen de la producción del proveedor, de la naviera o aerolínea y de la Aduana.
+
+Responsabilidades:
+- Argencargo responde por la logística, el despacho y la entrega.
+- Los defectos de fabricación son responsabilidad del proveedor; nosotros gestionamos el reclamo.
+- No respondemos por demoras de Aduana o de fuerza mayor ajenas a nuestro control.
+
+Cancelación:
+- Una vez hecho el pago al proveedor, el anticipo no se puede devolver salvo que el proveedor lo reintegre.`;
+
+function TerminosVista({ texto }) {
+  return <div style={{ fontSize: 13, lineHeight: 1.6 }}>{String(texto || "").split("\n").map((l, i) => {
+    const t = l.trim();
+    if (!t) return <div key={i} style={{ height: 8 }} />;
+    if (/:$/.test(t) && !t.startsWith("-")) return <p key={i} style={{ margin: "6px 0 2px", fontWeight: 800, color: C.goldHi, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.replace(/:$/, "")}</p>;
+    if (t.startsWith("-")) return <p key={i} style={{ margin: "2px 0", paddingLeft: 14, position: "relative", color: C.sub }}><span style={{ position: "absolute", left: 0, color: C.gold }}>•</span>{t.replace(/^-\s*/, "")}</p>;
+    return <p key={i} style={{ margin: "2px 0", color: C.sub }}>{t}</p>;
+  })}</div>;
+}
+
+function Configuracion({ ctx }) {
+  const { token, movil } = ctx;
+  const [fila, setFila] = useState(null);
+  const [texto, setTexto] = useState("");
+  const [g, setG] = useState(false);
+  useEffect(() => { (async () => { const r = arr(await dq("gi_settings", { token, filters: "?select=id,terms_and_conditions,updated_at&limit=1" }))[0] || {}; setFila(r); setTexto(r.terms_and_conditions || ""); })(); }, [token]);
+  const guardar = async () => {
+    setG(true);
+    const r = await dq("gi_settings", { method: "PATCH", token, filters: `?id=eq.${fila.id}`, body: { terms_and_conditions: texto, updated_at: new Date().toISOString() } });
+    setG(false);
+    if (!ok(r)) { toast.error("No se pudo guardar"); return; }
+    setFila({ ...fila, terms_and_conditions: texto }); toast.success("Términos guardados");
+  };
+  const cambio = fila && texto !== (fila.terms_and_conditions || "");
+  return <div>
+    <Titulo eyebrow="Ajustes" sub="Los términos y condiciones que ve el cliente en cada cotización. El envío a domicilio, el tipo de cambio y la oficina salen de Argencargo.">Configuración</Titulo>
+    {!fila ? <Cargando /> : <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1fr 1fr", gap: 14, alignItems: "start" }}>
+      <Caja title="Términos y condiciones" right={<Btn small v="ghost" onClick={async () => { if (!texto.trim() || await confirmDialog("¿Reemplazar el texto por la versión sugerida? No se guarda hasta que toques Guardar.")) setTexto(TERMINOS_SUGERIDOS); }}>Usar versión sugerida</Btn>}>
+        <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={movil ? 16 : 26} style={{ ...inp, resize: "vertical", fontSize: 13.5, lineHeight: 1.55 }} />
+        <p style={{ margin: "8px 0 12px", fontSize: 12, color: C.mute }}>Títulos terminados en “:” y cada punto empezando con “-”.</p>
+        <Btn v="gold" onClick={guardar} disabled={!cambio || g}>{g ? "Guardando…" : cambio ? "Guardar" : "Guardado"}</Btn>
+      </Caja>
+      <Caja title="Así lo ve el cliente"><TerminosVista texto={texto} /></Caja>
+    </div>}
   </div>;
 }

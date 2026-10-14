@@ -8,9 +8,11 @@ export const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 export const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 
 // Paleta (navy + dorado de Argencargo).
+// Fondo y paleta iguales al admin (#0A1628 con brillos dorado/azul).
+export const BG = "radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.10), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(96,165,250,0.06), transparent 50%), #0A1628";
 export const C = {
-  bg: "#081221",
-  panel: "#0d1a2e",
+  bg: "#0A1628",
+  panel: "#0f1d33",
   card: "rgba(255,255,255,0.035)",
   cardHi: "rgba(255,255,255,0.06)",
   line: "rgba(255,255,255,0.08)",
@@ -173,11 +175,13 @@ export function Caja({ title, right, children, pad = 16, style = {} }) {
   </section>;
 }
 
-export function Titulo({ children, sub, right }) {
-  return <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+// Encabezado de cada sección: mini título dorado, título y descripción.
+export function Titulo({ children, sub, right, eyebrow }) {
+  return <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
     <div style={{ minWidth: 0 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, color: C.txt }}>{children}</h1>
-      {sub && <p style={{ fontSize: 13, color: C.sub, margin: "4px 0 0" }}>{sub}</p>}
+      {eyebrow && <p style={{ fontSize: 10.5, fontWeight: 800, color: C.gold, textTransform: "uppercase", letterSpacing: "0.16em", margin: "0 0 6px" }}>{eyebrow}</p>}
+      <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, color: C.txt }}>{children}</h1>
+      {sub && <p style={{ fontSize: 13.5, color: C.sub, margin: "6px 0 0", lineHeight: 1.5, maxWidth: 640 }}>{sub}</p>}
     </div>
     {right}
   </div>;

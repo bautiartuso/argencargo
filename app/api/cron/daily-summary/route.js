@@ -101,6 +101,12 @@ function renderHtml({ yesterdayDate, opsCreatedYesterday, opsCobradasYesterday, 
 
 export async function GET(req) {
   if (!(await isAuth(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
+  // GI: el TC con el que se estiman costos en pesos sin dolarizar sale del dólar blue del día
+  // (antes se cargaba a mano en Configuración de GI).
+  try {
+    const blue = await fetch("https://dolarapi.com/v1/dolares/blue").then((r) => r.json());
+    if (Number(blue?.venta) > 0) await fetch(`${SB_URL}/rest/v1/gi_settings?id=not.is.null`, { method: "PATCH", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" }, body: JSON.stringify({ default_fx_rate: Number(blue.venta) }) });
+  } catch {}
   if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurado" }, { status: 500 });
 
   const url = new URL(req.url);

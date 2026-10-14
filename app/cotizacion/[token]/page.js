@@ -158,7 +158,7 @@ export default function CotizacionPublica({ params }) {
   if (err) return <div style={pageStyle()}><div style={{ maxWidth: 480, padding: 30, background: "rgba(255,255,255,0.04)", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 16, fontWeight: 600, color: "#f87171" }}>{err}</p></div></div>;
   if (!data) return null;
 
-  const { quote, rates, settings, rol, vencida } = data;
+  const { quote, settings, rol, vencida } = data;
   const esCliente = rol === "cliente";
   // "unit_cost_usd" acá NO es el costo del proveedor: es el peso del producto en el total
   // repartido por unidad (lo usa el PDF para prorratear). El servidor nunca manda costos.
@@ -176,45 +176,13 @@ export default function CotizacionPublica({ params }) {
 
   // Calcular peso facturable total (kg = bruto, cbm volumetrico) entre todos los productos para elegir tier correcto.
   const totalKg = Number(data.carga?.kg || 0), totalCbm = Number(data.carga?.cbm || 0);
-  const activeRates = rates.filter(r => r.cost_usd && Number(r.cost_usd) > 0);
-  // Filtrar zonas según la declarada por el socio en el wizard.
-  // Si delivery_zone está vacía, intentar inferir por la ficha del cliente.
-  const inferZoneFromClient = () => {
-    const cl = clientData;
-    const txt = `${cl.city || ""} ${cl.province || ""}`.toLowerCase();
-    if (!txt.trim()) return null;
-    if (/\bcaba\b|capital federal|ciudad aut[oó]noma/.test(txt)) return "CABA";
-    if (/buenos aires|gba|provincia/.test(txt)) {
-      if (/(san isidro|vicente l[oó]pez|tigre|pilar|escobar|maschwitz|martinez|olivos|nordelta|beccar|acassuso|san fernando|del viso)/.test(txt)) return "GBA Norte";
-      if (/(lomas|quilmes|avellaneda|berazategui|lan[uú]s|florencio varela|adrogu[eé])/.test(txt)) return "GBA Sur";
-      if (/(mor[oó]n|matanza|merlo|moreno|ituzaing[oó]|hurlingham|ramos mej[ií]a|haedo|caseros)/.test(txt)) return "GBA Oeste";
-      return null; // no inferimos GBA genérico — mejor dejar que el socio elija
-    }
-    return "Interior";
-  };
-  const declaredZone = quote.delivery_zone || inferZoneFromClient();
-  const zoneOptions = {};
-  if (declaredZone === "Interior") {
-    // No mostramos opciones — el cliente ve un mensaje "a coordinar" más abajo.
-  } else if (declaredZone) {
-    const tiers = activeRates.filter(r => r.zone === declaredZone).sort((a, b) => Number(a.cost_usd) - Number(b.cost_usd));
-    if (tiers.length > 0) {
-      const fits = tiers.find(t => totalKg <= Number(t.max_kg || Infinity) && totalCbm <= Number(t.max_cbm || Infinity));
-      zoneOptions[declaredZone] = fits || tiers[tiers.length - 1];
-    }
-  } else {
-    const zonesSeen = new Set(activeRates.map(r => r.zone));
-    for (const zone of zonesSeen) {
-      const tiers = activeRates.filter(r => r.zone === zone).sort((a, b) => Number(a.cost_usd) - Number(b.cost_usd));
-      const fits = tiers.find(t => totalKg <= Number(t.max_kg || Infinity) && totalCbm <= Number(t.max_cbm || Infinity));
-      zoneOptions[zone] = fits || tiers[tiers.length - 1];
-    }
-  }
-  const isInterior = declaredZone === "Interior";
-
+  // Entrega: retiro por oficina, envío a domicilio con las tarifas de Argencargo (si la ficha tiene
+  // localidad conocida, esa; si no, CABA) u otra localidad a coordinar.
+  const ent = data.entrega || {};
+  const domicilio = ent.domicilio || (ent.caba != null ? { zona: "CABA", costo: ent.caba } : null);
   const selChannel = channels.find(c => c.key === selectedChannel);
   const channelTotal = selChannel ? selChannel.total : 0;
-  const deliveryCost = selectedDelivery === "oficina" ? 0 : (zoneOptions[selectedDelivery]?.cost_usd ? Number(zoneOptions[selectedDelivery].cost_usd) : 0);
+  const deliveryCost = domicilio && selectedDelivery === domicilio.zona ? Number(domicilio.costo || 0) : 0;
   const finalTotal = channelTotal + deliveryCost;
 
   // Distribuir el total del canal + envío proporcional al FOB de cada producto.
@@ -302,15 +270,15 @@ export default function CotizacionPublica({ params }) {
               <p style={qdSecTitleStyle()}>¿Cómo querés recibirla?</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
                 <DelivRow label="Retiro por oficina" meta={settings ? `${settings.office_address || ""} · ${settings.office_locality || ""} · ${settings.office_hours || ""}` : "Sin costo"} price="Incluido" selected={selectedDelivery === "oficina"} onClick={() => setSelectedDelivery("oficina")}/>
-                {Object.values(zoneOptions).map(zone => <DelivRow key={zone.zone} label={`Envío a ${zone.zone}`} meta="Coordinamos día y horario" price={`+ ${fmtUSD(zone.cost_usd)}`} selected={selectedDelivery === zone.zone} onClick={() => setSelectedDelivery(zone.zone)}/>)}
-                {isInterior && <DelivRow label="Envío a domicilio" meta="Coordinamos costo y plazo según localidad" price="A coordinar" selected={selectedDelivery === "interior_coordinar"} onClick={() => setSelectedDelivery("interior_coordinar")}/>}
+                {domicilio && <DelivRow label={`Envío a domicilio · ${domicilio.zona}`} meta="Coordinamos día y horario" price={`+ ${fmtUSD(domicilio.costo)}`} selected={selectedDelivery === domicilio.zona} onClick={() => setSelectedDelivery(domicilio.zona)}/>}
+                <DelivRow label={domicilio ? "Envío a otra localidad" : "Envío a domicilio"} meta="Te pasamos costo y plazo según la localidad" price="A coordinar" selected={selectedDelivery === "coordinar"} onClick={() => setSelectedDelivery("coordinar")}/>
               </div>
             </div>
 
             <div style={qdTotalBarStyle()}>
               <div>
                 <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase" }}>Total</p>
-                <p style={{ fontSize: 10.5, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{selChannel?.name || "—"} · {selectedDelivery === "oficina" ? "Retiro por oficina" : `Envío a ${selectedDelivery}`}</p>
+                <p style={{ fontSize: 10.5, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{selChannel?.name || "—"} · {selectedDelivery === "oficina" ? "Retiro por oficina" : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}</p>
               </div>
               <p style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", fontFeatureSettings: '"tnum"' }}>{fmtUSD(finalTotal)}</p>
             </div>
@@ -331,13 +299,19 @@ export default function CotizacionPublica({ params }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <TimeStep n="1" name="Producción" meta={maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto"}/>
                 <TimeStep n="2" name="Envío y arribo" meta={selChannel ? channelTransitText(selChannel) : "—"}/>
-                <TimeStep n="3" name="Entrega final" meta={selChannel ? `${totalDaysText(selChannel, maxLead)} · ${selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Belgrano CABA"}` : `Envío a ${selectedDelivery}`}` : "—"}/>
+                <TimeStep n="3" name="Entrega final" meta={selChannel ? `${totalDaysText(selChannel, maxLead)} · ${selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Belgrano CABA"}` : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}` : "—"}/>
               </div>
             </div>
 
             {settings?.terms_and_conditions && <details style={{ padding: "9px 12px", background: "#fff", border: "1px solid #ebe6db", borderRadius: 9, fontSize: 11, color: "#555" }}>
               <summary style={{ cursor: "pointer", fontWeight: 700, color: "#1a1a1a", fontSize: 10.5, letterSpacing: "0.04em", textTransform: "uppercase" }}>Términos y condiciones</summary>
-              <div style={{ paddingTop: 8, marginTop: 8, borderTop: "1px solid #ebe6db", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{settings.terms_and_conditions}</div>
+              <div style={{ paddingTop: 8, marginTop: 8, borderTop: "1px solid #ebe6db", lineHeight: 1.55 }}>{String(settings.terms_and_conditions).split("\n").map((l, i) => {
+                const t = l.trim();
+                if (!t) return <div key={i} style={{ height: 6 }} />;
+                if (/:$/.test(t) && !t.startsWith("-")) return <p key={i} style={{ margin: "6px 0 2px", fontWeight: 800, color: "#0A1628", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.replace(/:$/, "")}</p>;
+                if (t.startsWith("-")) return <p key={i} style={{ margin: "2px 0", paddingLeft: 12, position: "relative" }}><span style={{ position: "absolute", left: 0, color: "#B8956A" }}>•</span>{t.replace(/^-\s*/, "")}</p>;
+                return <p key={i} style={{ margin: "2px 0" }}>{t}</p>;
+              })}</div>
             </details>}
 
             {vencida ? <div style={{ padding: "14px 16px", background: "#fff4f4", border: "1px solid #f3c4c4", borderRadius: 10, textAlign: "center" }}>
@@ -363,7 +337,7 @@ export default function CotizacionPublica({ params }) {
                 <div style={{ padding: "12px 14px", background: "rgba(184,149,106,0.10)", border: "1px solid rgba(184,149,106,0.3)", borderRadius: 10, marginBottom: 18 }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: "#8b6f4a", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>Servicio elegido</p>
                   <p style={{ fontSize: 14, fontWeight: 700, color: "#0A1628", margin: "4px 0 0" }}>{selChannel?.name || "—"}</p>
-                  <p style={{ fontSize: 13, fontWeight: 800, color: "#B8956A", margin: "2px 0 0" }}>{fmtUSD(finalTotal)} · {selectedDelivery === "oficina" ? "Retiro por oficina" : selectedDelivery === "interior_coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}</p>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: "#B8956A", margin: "2px 0 0" }}>{fmtUSD(finalTotal)} · {selectedDelivery === "oficina" ? "Retiro por oficina" : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}</p>
                 </div>
                 <div style={{ display: "flex", gap: 10 }}>
                   <button onClick={() => setShowConfirm(false)} style={{ flex: 1, padding: "12px 20px", background: "transparent", color: "#0A1628", border: "1.5px solid rgba(10,22,40,0.2)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>

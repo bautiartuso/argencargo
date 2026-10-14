@@ -16386,7 +16386,7 @@ function AdminDashboard({session,onLogout}){
   const readNav=()=>{if(typeof window==="undefined")return null;try{return JSON.parse(localStorage.getItem("ac_admin_nav")||"null");}catch{return null;}};
   const initNav=readNav()||{};
   // Vuelta del permiso de Gmail (/admin?mail=ok): abre la solapa Email.
-  const [page,setPage]=useState(()=>{try{if(new URLSearchParams(window.location.search).get("mail"))return "mail";}catch{}return initNav.page==="entregas"?"operations":(initNav.page||"operations");});
+  const [page,setPage]=useState(()=>{try{if(new URLSearchParams(window.location.search).get("mail"))return "mail";}catch{}return ["entregas","gi_requests"].includes(initNav.page)?"operations":(initNav.page||"operations");});
   const [selOp,setSelOp]=useState(initNav.selOp||null);
   const [selOpTab,setSelOpTab]=useState(null); // solapa inicial al entrar a una op desde otro panel (ej. "Entregas")
   const [selClient,setSelClient]=useState(initNav.selClient||null);
@@ -16447,9 +16447,6 @@ function AdminDashboard({session,onLogout}){
       {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
       {key:"facturas",label:"Facturación",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M9 13h6","M9 17h4"]},
       {key:"ccfin",label:"CC Financiera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
-    ]},
-    {section:"Gestión Integral",items:[
-      {key:"gi_requests",label:"Gestión Integral",p:["M12 2L4 8l8 14 8-14-8-6z","M4 8h16","M12 2v20"]},
     ]},
     {section:"Configuración",items:[
       {key:"settings",label:"Ajustes",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
@@ -16582,11 +16579,6 @@ function AdminDashboard({session,onLogout}){
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
       {page==="calc"&&<AdminCalculator token={token}/>}
-      {page==="gi_requests"&&<div style={{maxWidth:560,margin:"40px auto",padding:"28px 26px",textAlign:"center",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:16}}>
-        <span style={{fontSize:10,fontWeight:900,padding:"4px 10px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.14em"}}>GESTIÓN INTEGRAL</span>
-        <p style={{fontSize:18,fontWeight:800,color:"#fff",margin:"14px 0 18px"}}>Cotizaciones, operaciones y socios de GI</p>
-        <a href="/gi" style={{display:"inline-block",padding:"12px 22px",borderRadius:10,background:GOLD_GRADIENT,color:"#0A1628",fontWeight:800,fontSize:14,textDecoration:"none"}}>Abrir el panel GI →</a>
-      </div>}
       {page==="settings"&&<AdminSettings token={token} session={session}/>}
     </div></div>
   </div>;
