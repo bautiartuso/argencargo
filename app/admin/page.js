@@ -10592,6 +10592,64 @@ function ReclamosDeposito({token,signups=[],onCount}){
 // ── Huérfanos (11/10/2026): bultos que el agente registró sin cliente. Se ven separados por
 // agente y se asignan al DEPÓSITO de un cliente (no a una operación: desde el 13/09 el cliente arma
 // la importación). Se pueden tildar varios y asignarlos todos juntos.
+// Reenvío a otro depósito (15/10/2026): Bautista elige bultos del depósito de un agente y le pide
+// que los mande a otro depósito con otro shipping mark. El agente lo ve en su panel y contesta.
+function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,historial=[],onClose,onSaved}){
+  const [sel,setSel]=useState(()=>new Set(packages.map(p=>p.id)));
+  const [destino,setDestino]=useState("");
+  const [datos,setDatos]=useState("");
+  const [mark,setMark]=useState(cliente?.client_code||"");
+  const [nota,setNota]=useState("");
+  const [g,setG]=useState(false);
+  const destinos=[];const vistos=new Set();
+  historial.forEach(r=>{const k=String(r.destino_nombre||"").trim().toLowerCase();if(k&&!vistos.has(k)){vistos.add(k);destinos.push(r);}});
+  const toggle=(id)=>setSel(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
+  const guardar=async()=>{
+    if(!sel.size){toast("Elegí al menos un bulto","error");return;}
+    if(!destino.trim()){toast("Poné a qué depósito va","error");return;}
+    if(!mark.trim()){toast("Poné el shipping mark","error");return;}
+    setG(true);
+    const r=await dq("forward_requests",{method:"POST",token,headers:{Prefer:"return=representation"},body:{agent_id:agentId||null,package_ids:[...sel],client_id:cliente?.id||null,operation_id:operationId||null,destino_nombre:destino.trim(),destino_datos:datos.trim()||null,shipping_mark:mark.trim(),note:nota.trim()||null}});
+    setG(false);
+    const fila=Array.isArray(r)?r[0]:r;
+    if(!fila?.id){alertDialog(String(r?.message||"").includes("forward_requests")?"Falta correr el SQL de reenvíos en Supabase (migrations/2026_10_15_reenvios.sql).":"No se pudo pedir el reenvío: "+(r?.message||"error"));return;}
+    toast(`Reenvío pedido a ${agentName||"el agente"}`,"success");onSaved();
+  };
+  const inp={width:"100%",padding:"10px 12px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.14)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"};
+  const lbl={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 6px"};
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"30px 12px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"18px 20px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>↪ Reenviar a otro depósito</h3>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
+      </div>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}>{agentName||"Agente"} · <span style={{fontFamily:"monospace",color:GOLD_LIGHT,fontWeight:700}}>{cliente?.client_code||"—"}</span></p>
+      <p style={lbl}>Bultos</p>
+      <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:14,maxHeight:220,overflowY:"auto"}}>
+        {packages.map(p=>{const on=sel.has(p.id);const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"";return <button key={p.id} type="button" onClick={()=>toggle(p.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,border:`1.5px solid ${on?"rgba(96,165,250,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(96,165,250,0.1)":"transparent",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+          <span style={{width:18,height:18,borderRadius:5,border:`2px solid ${on?"#60a5fa":"rgba(255,255,255,0.3)"}`,background:on?"#60a5fa":"transparent",color:"#0A1628",fontSize:12,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{on?"✓":""}</span>
+          <span style={{flex:1,minWidth:0,fontFamily:"monospace",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.package_number?`#${p.package_number} · `:""}{String(p.national_tracking||"sin tracking").split(/[\s,;|]+/)[0]}</span>
+          <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>{dim}{Number(p.gross_weight_kg)>0?` · ${Number(p.gross_weight_kg).toLocaleString("es-AR")} kg`:""}{Number(p.quantity)>1?` ×${p.quantity}`:""}</span>
+        </button>;})}
+      </div>
+      <p style={lbl}>Depósito destino</p>
+      {destinos.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {destinos.slice(0,8).map(d=><button key={d.id} type="button" onClick={()=>{setDestino(d.destino_nombre);setDatos(d.destino_datos||"");}} style={{padding:"6px 11px",fontSize:12,fontWeight:700,borderRadius:99,border:`1px solid ${destino===d.destino_nombre?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.14)"}`,background:destino===d.destino_nombre?"rgba(96,165,250,0.14)":"transparent",color:destino===d.destino_nombre?"#93c5fd":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"}}>{d.destino_nombre}</button>)}
+      </div>}
+      <input value={destino} onChange={e=>setDestino(e.target.value)} placeholder="Nombre del depósito (ej: Luna · Depo 1)" style={{...inp,marginBottom:8}}/>
+      <textarea value={datos} onChange={e=>setDatos(e.target.value)} rows={3} placeholder="Dirección, contacto y teléfono del depósito" style={{...inp,resize:"vertical",marginBottom:14}}/>
+      <p style={lbl}>Shipping mark</p>
+      <input value={mark} onChange={e=>setMark(e.target.value)} placeholder="Lo que tiene que escribir en la caja" style={{...inp,fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:16,marginBottom:14}}/>
+      <p style={lbl}>Nota para el agente (opcional)</p>
+      <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: mandar por camión, no por courier" style={{...inp,marginBottom:16}}/>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="secondary" small onClick={onClose}>Cancelar</Btn>
+        <Btn small onClick={guardar} disabled={g}>{g?"Pidiendo…":`Pedir reenvío (${sel.size} bulto${sel.size!==1?"s":""})`}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
 function HuerfanosPanel({token,unassigned,setUnassigned,signups,onFlash}){
   const [sel,setSel]=useState(()=>new Set());
   const [clientes,setClientes]=useState([]);const [cliId,setCliId]=useState("");const [busca,setBusca]=useState("");const [abierto,setAbierto]=useState(false);
@@ -10705,6 +10763,8 @@ function AgentsPanel({token}){
   const [expandedOp,setExpandedOp]=useState(null);
   const [depositItems,setDepositItems]=useState([]);
   const [repackReqs,setRepackReqs]=useState([]);
+  const [reenvios,setReenvios]=useState([]); // pedidos de reenvío a otro depósito (forward_requests)
+  const [reenvioModal,setReenvioModal]=useState(null); // {agentId,agentName,cliente,operationId,packages}
   const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set());
   const [reclamosN,setReclamosN]=useState(0); // reclamos de depósito abiertos (badge de la solapa)
   const [opsLiberadas,setOpsLiberadas]=useState(()=>new Set()); // ops con evento de liberación de aduana del courier // códigos FL con "Extraer bultos con IA" ya aplicado
@@ -10714,7 +10774,7 @@ function AgentsPanel({token}){
   const [flightProgress,setFlightProgress]=useState(null); // overlay de progreso de createFlight {label,current,total}
   const load=async()=>{setLo(true);
     // Ola 1: lo liviano + lo que define qué ops nos importan (depósito y vuelos).
-    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos,notasExtr,recl]=await Promise.all([
+    const [r,u,depOps,fl,flOps,fii,accM,rpkReqs,sueltos,notasExtr,recl,reenv]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
@@ -10727,8 +10787,10 @@ function AgentsPanel({token}){
       // Los bultos ya quedan con flight_id al despachar, así que la marca de que se extrajo el
       // desglose del courier es la nota que deja ExtraerBultosModal en la op.
       dq("op_communications",{token,filters:"?content=ilike.*foto%20del%20courier%20(FL-*&select=content"}).catch(()=>[]),
-      dq("deposit_claims",{token,filters:"?status=in.(pendiente,no_encontrado)&select=id"}).catch(()=>[])
+      dq("deposit_claims",{token,filters:"?status=in.(pendiente,no_encontrado)&select=id"}).catch(()=>[]),
+      dq("forward_requests",{token,filters:"?select=*,clients(client_code,first_name,last_name)&order=created_at.desc&limit=60"}).catch(()=>[])
     ]);
+    setReenvios(Array.isArray(reenv)?reenv:[]);
     setReclamosN(Array.isArray(recl)?recl.length:0);
     // Liberación de aduana según el tracking del courier, para las ops de vuelos que todavía viajan.
     try{
@@ -10758,7 +10820,8 @@ function AgentsPanel({token}){
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);
     // allOps (ops sin consolidar, para asignar huérfanos) sale de depOps: era una query casi duplicada.
     setAllOps((Array.isArray(depOps)?depOps:[]).filter(o=>!o.consolidation_confirmed));
-    setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);setDepSueltos(Array.isArray(sueltos)?sueltos:[]);
+    // Los bultos ya reenviados a otro depósito salieron del depósito de este agente.
+    setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs((Array.isArray(depPkgs)?depPkgs:[]).filter(p=>!p.reenviado_at));setDepSueltos((Array.isArray(sueltos)?sueltos:[]).filter(p=>!p.reenviado_at));
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
     setDepositItems(Array.isArray(depItems)?depItems:[]);
     setRepackReqs(Array.isArray(rpkReqs)?rpkReqs:[]);
@@ -11345,7 +11408,20 @@ function AgentsPanel({token}){
           toast(`${code} creada`,"success");load();
         }catch(e){alertDialog("No se pudo crear: "+e.message);}
       };
+      const reenviosAbiertos=reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede");
+      const cancelarReenvio=async(r)=>{if(!await confirmDialog(`¿Cancelar el reenvío a ${r.destino_nombre}?`))return;await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"cancelado",resolved_at:new Date().toISOString()}});toast("Reenvío cancelado","success");load();};
       return <div>
+        {reenvioModal&&<ReenvioModal token={token} {...reenvioModal} historial={reenvios} onClose={()=>setReenvioModal(null)} onSaved={()=>{setReenvioModal(null);load();}}/>}
+        {reenviosAbiertos.length>0&&<div style={{marginBottom:14,borderRadius:12,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.06)",overflow:"hidden"}}>
+          <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(96,165,250,0.2)"}}>↪ Reenvíos pedidos · {reenviosAbiertos.length}</p>
+          {reenviosAbiertos.map(r=>{const ag=approvedAgents.find(a=>a.auth_user_id===r.agent_id);const n=(r.package_ids||[]).length;return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{flex:"1 1 280px",minWidth:0}}>
+              <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={{fontFamily:"monospace"}}>{r.shipping_mark}</span></p>
+              <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${new Date(r.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}, esperando al agente`}</p>
+            </div>
+            <button onClick={()=>cancelarReenvio(r)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
+          </div>;})}
+        </div>}
         {selectedOps.length>0&&(()=>{
           const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
           const riOps=selObjs.filter(o=>o.clients?.tax_condition==="responsable_inscripto");
@@ -11495,6 +11571,7 @@ function AgentsPanel({token}){
                           {hasSnap&&<button onClick={(e)=>{e.stopPropagation();setExpandedRepack(isOpen?null:o.id);}} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>{isOpen?"Ocultar detalle":"Ver bultos antes/después"}</button>}
                         </>;})()}
                         {canRepack&&<button onClick={(e)=>{e.stopPropagation();requestRepackForOp(o);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🔄 Pedir reempaque</button>}
+                        {pkgsOfOp.length>0&&<button onClick={(e)=>{e.stopPropagation();const ag=approvedAgents.find(a=>a.auth_user_id===o.created_by_agent_id);setReenvioModal({agentId:o.created_by_agent_id||pkgsOfOp[0]?.registered_by_agent_id,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:o.client_id,client_code:o.clients?.client_code},operationId:o.id,packages:pkgsOfOp});}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito</button>}
                       </div>
                     </div>
                     {rpk?.status==="done"&&expandedRepack===o.id&&(()=>{const oSnap=Array.isArray(rpk.original_packages_snapshot)?rpk.original_packages_snapshot:null;const nSnap=Array.isArray(rpk.new_packages_snapshot)?rpk.new_packages_snapshot:null;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
@@ -11605,6 +11682,7 @@ function AgentsPanel({token}){
                   <span style={{textAlign:"right"}}><button onClick={e=>{e.stopPropagation();crearPorCliente(cid,g.pk);}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,cursor:"pointer",whiteSpace:"nowrap"}}>Crear importación por él</button></span>
                 </div>
                 {open&&<div style={{padding:"0 14px 12px 40px"}}>
+                  <div style={{display:"flex",justifyContent:"flex-end",padding:"4px 0 8px"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito</button></div>
                   <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 92px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
                     <span>#</span><span>Tracking</span><span style={{textAlign:"center"}}>Llegó</span><span style={{textAlign:"center"}}>Medidas (cm)</span><span style={{textAlign:"right"}}>Bruto</span><span style={{textAlign:"right"}}>Volumétrico</span><span style={{textAlign:"center"}}>Escaneo</span>
                   <span style={{textAlign:"center"}}>Mover</span></div>

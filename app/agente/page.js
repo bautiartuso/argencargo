@@ -262,6 +262,21 @@ const I18N={
     push_android_step2:"Tocá «Instalar app» o «Agregar a pantalla principal»",
     push_android_step3:"Abrí Argencargo desde el ícono que apareció — NO desde Chrome",
     push_android_step4:"Volvé acá y se activarán las notificaciones automáticamente",
+    fwd_title:"Reenvíos que te pedimos",
+    fwd_sub:"Mandá estos bultos al depósito indicado, con este shipping mark.",
+    fwd_mark:"Shipping mark",
+    fwd_dest:"Depósito destino",
+    fwd_note:"Nota",
+    fwd_pkgs:"Bultos",
+    fwd_copy:"Copiar",
+    fwd_copied:"Copiado",
+    fwd_sent:"Enviado",
+    fwd_cant:"No se puede",
+    fwd_tracking_ph:"Tracking del envío (opcional)",
+    fwd_reason_ph:"¿Por qué no se puede? (opcional)",
+    fwd_confirm:"Confirmar",
+    fwd_done_ok:"Avisamos que lo enviaste",
+    fwd_done_no:"Avisamos que no se puede",
     claim_title:"Paquetes reclamados por Argencargo",
     claim_sub:"El cliente dice que ya llegaron. Buscalos y registralos.",
     claim_arrived:"Llegó",
@@ -614,6 +629,21 @@ const I18N={
     push_android_step2:"点击「安装应用」或「添加到主屏幕」",
     push_android_step3:"从主屏幕图标打开 Argencargo（不要从 Chrome 打开）",
     push_android_step4:"回到这里，通知会自动开启",
+    fwd_title:"需要转寄的包裹",
+    fwd_sub:"请把这些包裹寄到指定仓库，并写上这个唛头。",
+    fwd_mark:"唛头",
+    fwd_dest:"目的仓库",
+    fwd_note:"备注",
+    fwd_pkgs:"包裹",
+    fwd_copy:"复制",
+    fwd_copied:"已复制",
+    fwd_sent:"已寄出",
+    fwd_cant:"无法寄出",
+    fwd_tracking_ph:"转寄单号（可选）",
+    fwd_reason_ph:"为什么无法寄出？（可选）",
+    fwd_confirm:"确认",
+    fwd_done_ok:"已通知我们您已寄出",
+    fwd_done_no:"已通知我们无法寄出",
     claim_title:"Argencargo 追查的包裹",
     claim_sub:"客户说这些包裹已到仓库。请找到并登记。",
     claim_arrived:"已到",
@@ -988,6 +1018,9 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [repackNo,setRepackNo]=useState(null); // id del pedido que el agente marca "no se puede"
   const [repackNoMotivo,setRepackNoMotivo]=useState("");
   const [claims,setClaims]=useState([]); // reclamos de depósito pendientes (deposit_claims)
+  const [reenvios,setReenvios]=useState([]); // reenvíos a otro depósito pedidos por Argencargo (forward_requests)
+  const [fwdAccion,setFwdAccion]=useState(null); // {id, tipo:"ok"|"no"}
+  const [fwdTexto,setFwdTexto]=useState("");
   const [claimReg,setClaimReg]=useState(null); // reclamo que se está registrando con "Llegó"
   const [showForm,setShowForm]=useState(false);
   const [editPkg,setEditPkg]=useState(null);
@@ -1006,15 +1039,17 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const toggleGrp=(k)=>setGrpCerrados(prev=>{const n=new Set(prev);if(n.has(k))n.delete(k);else n.add(k);try{localStorage.setItem("ac_agent_grp",JSON.stringify([...n]));}catch(e){}return n;});
 
   const reloadAll=async()=>{
-    const [pk,fl,fo,acc,rp,cl]=await Promise.all([
+    const [pk,fl,fo,acc,rp,cl,fw]=await Promise.all([
       dq("operation_packages",{token,filters:`?select=*,operations(operation_code,client_id,channel,status,created_by_agent_id,clients(client_code,first_name)),clients(client_code,first_name)${adminRef.current?"":`&registered_by_agent_id=eq.${userId}`}&order=created_at.desc&limit=${adminRef.current?1000:150}`}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*,operations(status,operation_code,eta)"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"}),
-      dq("deposit_claims",{token,filters:"?status=eq.pendiente&select=id,tracking,tracking_norm,client_id,agent_id,origin,note,created_at,clients(client_code,first_name,last_name)&order=created_at.asc"}).catch(()=>[])
+      dq("deposit_claims",{token,filters:"?status=eq.pendiente&select=id,tracking,tracking_norm,client_id,agent_id,origin,note,created_at,clients(client_code,first_name,last_name)&order=created_at.asc"}).catch(()=>[]),
+      dq("forward_requests",{token,filters:"?status=eq.pendiente&select=*,clients(client_code,first_name)&order=created_at.asc"}).catch(()=>[])
     ]);
     setClaims(Array.isArray(cl)?cl:[]);
+    setReenvios(Array.isArray(fw)?fw:[]);
     setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);setRepackRequests(Array.isArray(rp)?rp:[]);
   };
 
@@ -1061,6 +1096,26 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const origenAgente=/estados unidos|usa|united states/i.test(String(signup?.country||""))?"USA":"China";
   // Cada reclamo va a un agente (agent_id); los viejos sin agente los ve cualquiera de China.
   const misReclamos=claims.filter(c=>esAdmin||(c.agent_id?c.agent_id===userId:origenAgente==="China"));
+  // Reenvío a otro depósito (15/10/2026): el agente avisa si lo mandó (con tracking) o si no se puede.
+  // Al enviarse, los bultos salen de su depósito (reenviado_at) y le llega aviso al admin.
+  const responderReenvio=async(r,tipo)=>{
+    const txt=fwdTexto.trim();const ahora=new Date().toISOString();
+    const body=tipo==="ok"?{status:"enviado",tracking_envio:txt||null,resolved_at:ahora,resolved_by:userId}:{status:"no_se_puede",agent_notes:txt||null,resolved_at:ahora,resolved_by:userId};
+    await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body});
+    const ids=(r.package_ids||[]).filter(Boolean);
+    if(tipo==="ok"&&ids.length)await dq("operation_packages",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{reenviado_at:ahora,reenvio_id:r.id}});
+    try{
+      const cod=r.clients?.client_code||"";
+      const texto=tipo==="ok"?`↪ El agente reenvió ${ids.length} bulto${ids.length!==1?"s":""}${cod?` de ${cod}`:""} a ${r.destino_nombre} (mark ${r.shipping_mark})${txt?` · tracking ${txt}`:""}.`:`↪ El agente avisó que no puede reenviar a ${r.destino_nombre}${txt?`: ${txt}`:""}.`;
+      if(r.operation_id)await dq("op_communications",{method:"POST",token,body:{operation_id:r.operation_id,type:"note",direction:"in",content:texto}});
+      const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+      const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+      if(adminId)await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:tipo==="ok"?`↪ Reenvío hecho · ${cod}`:`↪ Reenvío no posible · ${cod}`,body:texto,link:null}});
+    }catch(e){console.error("reenvio aviso",e);}
+    setFwdAccion(null);setFwdTexto("");
+    await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);
+  };
+  const copiar=async(v)=>{try{await navigator.clipboard.writeText(v);flash(t.fwd_copied||"Copiado");}catch(e){}};
   const reclamoNoEncontrado=async(c)=>{
     setClaims(p=>p.filter(x=>x.id!==c.id));
     try{
@@ -1124,6 +1179,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const EN_DEPOSITO=new Set(["pendiente","en_deposito_origen","en_preparacion"]);
   const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean));
   const depositPkgsAll=packages.filter(p=>{
+    if(p.reenviado_at)return false;                        // ya se reenvió a otro depósito
     if(!p.operation_id)return true;                       // suelto: el cliente todavia no armo la importacion
     // Los bultos de operaciones marítimas no son del agente aéreo (AC-0014 marítimo A aparecía acá).
     if(String(p.operations?.channel||"").includes("maritimo"))return false;
@@ -1247,6 +1303,46 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           <button onClick={()=>repackImposible(r)} style={{padding:"10px 16px",fontSize:13,fontWeight:800,borderRadius:10,border:"1px solid rgba(var(--ink),0.25)",background:"rgba(var(--ink),0.08)",color:"var(--tx)",cursor:"pointer",fontFamily:"inherit"}}>{t.repack_imposible_send||"Avisar que no se puede"}</button>
         </div>}
       </div>)}
+    </div>}
+    {/* Reenvíos a otro depósito (15/10/2026). */}
+    {reenvios.length>0&&<div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(96,165,250,0.5)",background:"rgba(96,165,250,0.07)",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(96,165,250,0.25)"}}>
+        <span style={{fontSize:22}}>↪</span>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>{t.fwd_title} <span style={{color:"#60a5fa"}}>· {reenvios.length}</span></p>
+          <p style={{fontSize:11.5,color:"rgba(var(--ink),0.65)",margin:"2px 0 0"}}>{t.fwd_sub}</p>
+        </div>
+      </div>
+      {reenvios.map((r,i)=>{const pk=packages.filter(p=>(r.package_ids||[]).includes(p.id));const acc=fwdAccion?.id===r.id?fwdAccion.tipo:null;const lbl={fontSize:10,fontWeight:800,color:"rgba(var(--ink),0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 4px"};return <div key={r.id} style={{padding:"14px 16px",borderTop:i?"1px solid rgba(var(--ink),0.08)":"none"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+          <div>
+            <p style={lbl}>{t.fwd_mark}</p>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:20,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:"var(--tx)",wordBreak:"break-all"}}>{r.shipping_mark}</span>
+              <button onClick={()=>copiar(r.shipping_mark)} style={{padding:"4px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_copy}</button>
+            </div>
+          </div>
+          <div>
+            <p style={lbl}>{t.fwd_dest}</p>
+            <p style={{margin:0,fontSize:14,fontWeight:800,color:"var(--tx)"}}>{r.destino_nombre}</p>
+            {r.destino_datos&&<p style={{margin:"3px 0 0",fontSize:12.5,color:"rgba(var(--ink),0.75)",whiteSpace:"pre-wrap"}}>{r.destino_datos}</p>}
+            <button onClick={()=>copiar(`${r.destino_nombre}\n${r.destino_datos||""}`.trim())} style={{marginTop:6,padding:"4px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_copy}</button>
+          </div>
+        </div>
+        {r.note&&<p style={{margin:"10px 0 0",fontSize:12.5,color:"var(--amber)"}}><b>{t.fwd_note}:</b> {r.note}</p>}
+        <p style={{...lbl,margin:"12px 0 4px"}}>{t.fwd_pkgs} · {pk.length||(r.package_ids||[]).length}</p>
+        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+          {pk.map(p=><p key={p.id} style={{margin:0,fontSize:12.5,fontFamily:"'JetBrains Mono',monospace",color:"rgba(var(--ink),0.8)"}}>{String(p.national_tracking||"—").split(/[\s,;|]+/)[0]} · {p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm} cm`:"—"}{Number(p.gross_weight_kg)>0?` · ${p.gross_weight_kg} kg`:""}{Number(p.quantity)>1?` ×${p.quantity}`:""}</p>)}
+        </div>
+        {acc?<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
+          <input autoFocus value={fwdTexto} onChange={e=>setFwdTexto(e.target.value)} placeholder={acc==="ok"?t.fwd_tracking_ph:t.fwd_reason_ph} style={{flex:"1 1 220px",padding:"9px 12px",fontSize:14,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
+          <button onClick={()=>{setFwdAccion(null);setFwdTexto("");}} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+          <button onClick={()=>responderReenvio(r,acc)} style={{padding:"9px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_confirm}</button>
+        </div>:<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12,justifyContent:"flex-end"}}>
+          <button onClick={()=>{setFwdAccion({id:r.id,tipo:"no"});setFwdTexto("");}} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>✕ {t.fwd_cant}</button>
+          <button onClick={()=>{setFwdAccion({id:r.id,tipo:"ok"});setFwdTexto("");}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>✓ {t.fwd_sent}</button>
+        </div>}
+      </div>;})}
     </div>}
     {/* Reclamos de depósito (09/10/2026): paquetes que el cliente dice que llegaron y no están registrados. */}
     {misReclamos.length>0&&<div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.07)",overflow:"hidden"}}>
