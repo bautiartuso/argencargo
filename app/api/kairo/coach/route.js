@@ -55,8 +55,12 @@ const REVIEW_SCHEMA = {
     cambios: {
       type: "array",
       items: {
-        type: "object", additionalProperties: false, required: ["rutina", "ejercicio", "sugerencia", "reemplazo"],
-        properties: { rutina: { type: "string" }, ejercicio: { type: "string" }, sugerencia: { type: "string" }, reemplazo: { type: "string", description: "Ejercicio que lo reemplaza, o vacío si no se reemplaza." } },
+        type: "object", additionalProperties: false, required: ["tipo", "rutina", "ejercicio", "sugerencia", "reemplazo"],
+        properties: {
+          tipo: { type: "string", enum: ["cambiar", "agregar", "sacar", "reordenar", "series"], description: "cambiar = reemplazar por otro; agregar = sumar un ejercicio; sacar = quitarlo; reordenar = moverlo de lugar; series = ajustar series/repeticiones/descanso." },
+          rutina: { type: "string" }, ejercicio: { type: "string" }, sugerencia: { type: "string", description: "Qué hacer y por qué, concreto (ej. 'pasalo al principio: es el compuesto más pesado')." },
+          reemplazo: { type: "string", description: "Ejercicio nuevo si es cambiar o agregar; vacío si no aplica." },
+        },
       },
     },
     volumen: {
@@ -138,6 +142,18 @@ async function plan(uid, routineId) {
   return Response.json({ plan: content });
 }
 
+// Topes semanales para controlar el gasto de IA (el admin no tiene tope). El plan de cada entreno
+// no tiene tope: se arma solo, una vez por entreno.
+const WEEKLY = { review: [3, "análisis de rutinas"], strategy: [1, "cálculo de alimentación"] };
+async function overLimit(uid, kind) {
+  const [max, label] = WEEKLY[kind];
+  const weekAgo = new Date(Date.now() - 7 * 86400e3).toISOString();
+  const done = arr(await sb(`/rest/v1/kairo_ai?user_id=eq.${uid}&kind=eq.${kind}&created_at=gte.${weekAgo}&select=created_at&order=created_at.asc`));
+  if (done.length < max) return null;
+  const next = new Date(new Date(done[0].created_at).getTime() + 7 * 86400e3);
+  return Response.json({ error: `Ya usaste ${max === 1 ? "el" : `los ${max}`} ${label} de esta semana. Se libera el ${next.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })}.` }, { status: 429 });
+}
+
 async function review(uid) {
   const routines = await loadRoutines(uid, null);
   if (!routines.length) return Response.json({ error: "Todavía no cargaste rutinas" }, { status: 400 });
@@ -150,7 +166,7 @@ async function review(uid) {
     return `  - ${i.exercise.name} (${i.exercise.muscle}): ${i.sets}×${i.rep_min}–${i.rep_max}, descanso ${i.rest_sec}s${h.length ? ` · últimas: ${h.map(x => x.series).join(" | ")}` : ""}`;
   }).join("\n")).join("\n\n");
   const profile = await loadProfile(uid);
-  const user = `${profileText(profile)}\n\nRevisá estas rutinas en función de ese objetivo. Decí si son efectivas para el objetivo, calculá las series semanales por grupo muscular (contando los días de cada rutina), y proponé cambios concretos (ejercicio por ejercicio) solo donde valga la pena.\nEntrenamientos hechos en las últimas 4 semanas: ${recent.length}.\n\n${text}`;
+  const user = `${profileText(profile)}\n\nRevisá estas rutinas a fondo en función de ese objetivo: si son efectivas, la distribución de grupos musculares entre los días, el orden de los ejercicios dentro de cada rutina (compuestos pesados primero, aislados al final), si sobra o falta volumen, y las series y repeticiones de cada ejercicio. Calculá las series semanales por grupo muscular (contando los días de cada rutina o la rotación) y proponé cambios concretos solo donde valga la pena: reemplazar un ejercicio, agregar uno que falte, sacar uno que sobre, cambiarlo de lugar o ajustar sus series.\nEntrenamientos hechos en las últimas 4 semanas: ${recent.length}.\n\n${text}`;
   const content = await ask(user, REVIEW_SCHEMA, "kairo-coach-review");
   await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "review", content }), headers: { Prefer: "return=minimal" } });
   return Response.json({ review: content });
@@ -158,14 +174,16 @@ async function review(uid) {
 
 const STRATEGY_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["resumen", "calorias_dia", "proteina_g", "ritmo_peso_semanal_kg", "entrenamiento", "alimentacion", "progreso"],
+  required: ["resumen", "calorias_dia", "proteina_g", "carbohidratos_g", "grasas_g", "ritmo_peso_semanal_kg", "alimentacion", "micronutrientes", "progreso"],
   properties: {
-    resumen: { type: "string", description: "La estrategia en 2-3 frases, en criollo y concreto." },
-    calorias_dia: { type: "integer", description: "Calorías diarias objetivo (días de entrenamiento promedio)." },
+    resumen: { type: "string", description: "La estrategia de alimentación en 2-3 frases, en criollo y concreto." },
+    calorias_dia: { type: "integer", description: "Calorías diarias objetivo (día promedio, contando el entrenamiento)." },
     proteina_g: { type: "integer" },
+    carbohidratos_g: { type: "integer" },
+    grasas_g: { type: "integer" },
     ritmo_peso_semanal_kg: { type: "number", description: "Cambio de peso semanal buscado (negativo = bajar)." },
-    entrenamiento: { type: "array", items: { type: "string" }, description: "3-5 pautas concretas para el gimnasio." },
-    alimentacion: { type: "array", items: { type: "string" }, description: "3-5 pautas concretas para comer." },
+    alimentacion: { type: "array", items: { type: "string" }, description: "3-5 pautas concretas para comer, respetando sus reglas de alimentación." },
+    micronutrientes: { type: "array", items: { type: "string" }, description: "2-4 tips de micronutrientes a cuidar con este objetivo y este volumen de entrenamiento (ej. hierro, magnesio, vitamina D, sodio y potasio si suda mucho), con alimentos simples donde conseguirlos." },
     progreso: {
       type: "object", additionalProperties: false, required: ["estado", "lectura"],
       properties: {
@@ -183,8 +201,9 @@ async function strategy(uid) {
   const since = new Date(Date.now() - 28 * 86400e3).toISOString();
   const recent = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=gte.${since}&select=started_at`));
   const fmt = (l) => [l.log_date, l.peso_kg && `${l.peso_kg} kg`, l.grasa_pct && `${l.grasa_pct}% grasa`, l.cintura_cm && `cintura ${l.cintura_cm}`, l.pecho_cm && `pecho ${l.pecho_cm}`, l.brazo_cm && `brazo ${l.brazo_cm}`, l.muslo_cm && `muslo ${l.muslo_cm}`, l.cadera_cm && `cadera ${l.cadera_cm}`, l.cuello_cm && `cuello ${l.cuello_cm}`].filter(Boolean).join(", ");
-  const user = `${profileText(profile)}\n\nArmá su estrategia (gimnasio + alimentación) para ese objetivo y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
+  const user = `${profileText(profile)}\n\nArmá su estrategia de alimentación para ese objetivo (calorías y macros: proteína, carbohidratos y grasas que cierren con las calorías) con tips de micronutrientes, y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
   const content = await ask(user, STRATEGY_SCHEMA, "kairo-coach-strategy");
+  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "strategy", content }), headers: { Prefer: "return=minimal" } });
   await sb(`/rest/v1/kairo_profile?user_id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({ estrategia: content, estrategia_at: new Date().toISOString() }) });
   return Response.json({ strategy: content });
 }
@@ -195,8 +214,8 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   try {
     if (body.action === "plan" && body.routine_id) return await plan(me.id, body.routine_id);
-    if (body.action === "review") return await review(me.id);
-    if (body.action === "strategy") return await strategy(me.id);
+    if (body.action === "review") return (me.role !== "admin" && await overLimit(me.id, "review")) || await review(me.id);
+    if (body.action === "strategy") return (me.role !== "admin" && await overLimit(me.id, "strategy")) || await strategy(me.id);
     return Response.json({ error: "Acción inválida" }, { status: 400 });
   } catch (e) {
     console.error("[kairo coach]", e);

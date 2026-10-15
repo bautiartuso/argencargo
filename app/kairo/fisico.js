@@ -947,7 +947,7 @@ function ReviewSheet({ token, onClose }) {
     })();
   }, [token, run]);
   return <Sheet title="Análisis de tus rutinas" onClose={onClose}>
-    {err ? <p style={{ color: C.danger, fontSize: 14 }}>{err}</p> : !r ? <p style={{ color: C.sub, fontSize: 14, lineHeight: 1.5 }}>Analizando rutinas, volumen por músculo e historial de cargas…</p> : <>
+    {err ? <p style={{ color: C.danger, fontSize: 14 }}>{err}</p> : !r ? <p style={{ color: C.sub, fontSize: 14, lineHeight: 1.5 }}>Analizando distribución, orden, volumen por músculo e historial de cargas…</p> : <>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span className="k-num" style={{ fontSize: 44, fontWeight: 500, color: r.puntaje >= 7 ? C.pos : r.puntaje >= 5 ? C.warn : C.neg }}>{r.puntaje}</span>
         <span style={{ color: C.sub }}>/ 10</span>
@@ -957,7 +957,7 @@ function ReviewSheet({ token, onClose }) {
       {r.problemas?.length > 0 && <><Label>A corregir</Label>{r.problemas.map((x, i) => <Bullet key={i} color={C.warn}>{x}</Bullet>)}</>}
       {r.cambios?.length > 0 && <><Label>Cambios sugeridos</Label>
         {r.cambios.map((c, i) => <div key={i} style={{ background: C.cardHi, borderRadius: 14, padding: 12, marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: C.sub }}>{c.rutina}</div>
+          <div style={{ fontSize: 12, color: C.sub }}>{c.tipo && <span style={{ color: { cambiar: C.blue, agregar: C.pos, sacar: C.neg, reordenar: C.warn, series: C.lime }[c.tipo] || C.sub, fontWeight: 600 }}>{{ cambiar: "Cambiar", agregar: "Agregar", sacar: "Sacar", reordenar: "Reordenar", series: "Series" }[c.tipo]} · </span>}{c.rutina}</div>
           <div style={{ fontSize: 15, marginTop: 2 }}>{c.ejercicio}{c.reemplazo ? <span style={{ color: C.lime }}> → {c.reemplazo}</span> : null}</div>
           <div style={{ fontSize: 13, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{c.sugerencia}</div>
         </div>)}
@@ -970,6 +970,7 @@ function ReviewSheet({ token, onClose }) {
         </div>
       </>}
       <button className="k-press" onClick={run} style={{ ...btnGhost, marginTop: 18 }}>Volver a analizar</button>
+      <div style={{ fontSize: 12, color: C.dim, textAlign: "center", marginTop: 8 }}>Las cargas de cada entreno se ajustan solas, sin tocar nada.</div>
       {r.at && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", marginTop: 8 }}>Análisis del {dayLabel(ymd(new Date(r.at)))}</div>}
     </>}
   </Sheet>;

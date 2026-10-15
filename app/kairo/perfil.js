@@ -88,14 +88,19 @@ export default function Perfil({ token, isAdmin }) {
 
     {/* Estrategia de la IA */}
     {p?.objetivo && <>
-      <SectionTitle right={<button onClick={askStrategy} disabled={thinking} style={linkBtn}>{thinking ? "Pensando…" : st ? "Actualizar" : ""}</button>}>Tu estrategia</SectionTitle>
+      <SectionTitle right={<button onClick={askStrategy} disabled={thinking} style={linkBtn}>{thinking ? "Pensando…" : st ? "Actualizar" : ""}</button>}>Tu estrategia de alimentación</SectionTitle>
       {!st ? <button className="k-press" onClick={askStrategy} disabled={thinking} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        <Icon d={I.spark} size={18} />{thinking ? "La IA está armando tu estrategia…" : "Armar mi estrategia con IA"}
+        <Icon d={I.spark} size={18} />{thinking ? "La IA está calculando tus calorías y macros…" : "Calcular calorías y macros con IA"}
       </button> : <div style={card}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+          <div><span className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.lime }}>{st.calorias_dia.toLocaleString("es-AR")}</span><span style={{ color: C.sub }}> kcal/día</span></div>
+          <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{st.ritmo_peso_semanal_kg > 0 ? "+" : ""}{Number(st.ritmo_peso_semanal_kg).toLocaleString("es-AR", { maximumFractionDigits: 2 })} kg/sem</span>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-          <MiniStat label="Calorías/día" value={st.calorias_dia.toLocaleString("es-AR")} color={C.lime} />
           <MiniStat label="Proteína" value={`${st.proteina_g} g`} />
-          <MiniStat label="Peso/semana" value={`${st.ritmo_peso_semanal_kg > 0 ? "+" : ""}${Number(st.ritmo_peso_semanal_kg).toLocaleString("es-AR", { maximumFractionDigits: 2 })} kg`} />
+          {st.carbohidratos_g != null && <MiniStat label="Carbohidratos" value={`${st.carbohidratos_g} g`} />}
+          {st.grasas_g != null && <MiniStat label="Grasas" value={`${st.grasas_g} g`} />}
+          
         </div>
         <p style={{ fontSize: 14, lineHeight: 1.5, margin: "14px 0 0" }}>{st.resumen}</p>
         {st.progreso && <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: C.cardHi }}>
@@ -121,11 +126,12 @@ export default function Perfil({ token, isAdmin }) {
 }
 
 function Pautas({ st }) {
-  const [tab, setTab] = useState("entrenamiento");
+  const tabs = [["alimentacion", "Alimentación"], ["micronutrientes", "Micronutrientes"], ["entrenamiento", "Gimnasio"]].filter(([k]) => st[k]?.length);
+  const [tab, setTab] = useState(tabs[0]?.[0] || "alimentacion");
   const list = st[tab] || [];
   return <div style={{ marginTop: 14 }}>
     <div style={{ display: "flex", gap: 6 }}>
-      {[["entrenamiento", "Gimnasio"], ["alimentacion", "Alimentación"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className="k-press" style={{ padding: "7px 14px", borderRadius: 999, fontSize: 13, border: `0.5px solid ${tab === k ? C.lime : C.line}`, background: tab === k ? "rgba(198,244,50,0.1)" : "transparent", color: tab === k ? C.lime : C.sub }}>{l}</button>)}
+      {tabs.map(([k, l]) => <button key={k} onClick={() => setTab(k)} className="k-press" style={{ padding: "7px 14px", borderRadius: 999, fontSize: 13, border: `0.5px solid ${tab === k ? C.lime : C.line}`, background: tab === k ? "rgba(198,244,50,0.1)" : "transparent", color: tab === k ? C.lime : C.sub }}>{l}</button>)}
     </div>
     <div style={{ marginTop: 10 }}>{list.map((x, i) => <div key={i} style={{ display: "flex", gap: 10, fontSize: 14, lineHeight: 1.45, marginBottom: 8 }}><span style={{ width: 5, height: 5, borderRadius: 3, background: C.lime, marginTop: 8, flexShrink: 0 }} /><span>{x}</span></div>)}</div>
   </div>;
@@ -279,6 +285,7 @@ export function resizeImage(file, size) {
 function Users({ token }) {
   const [list, setList] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
   const auth = () => ({ Authorization: `Bearer ${loadSession()?.token || token}` });
   const load = useCallback(async () => {
     const r = await fetch("/api/kairo/users", { headers: auth() }).then(r => r.json()).catch(() => ({}));
@@ -289,15 +296,17 @@ function Users({ token }) {
     <SectionTitle right={<button onClick={() => setAdding(true)} style={linkBtn}>+ Crear usuario</button>}>Usuarios de Kairo</SectionTitle>
     <div style={{ ...card, padding: "2px 16px" }}>
       {!list ? <p style={{ color: C.sub, fontSize: 14 }}>Cargando…</p> : list.length === 0 ? <p style={{ color: C.sub, fontSize: 14 }}>Todavía no hay usuarios.</p> :
-        list.map((u, i) => <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < list.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+        list.map((u, i) => <button key={u.id} disabled={u.role !== "kairo"} onClick={() => setEditing(u)} style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < list.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
           <Avatar src={u.avatar} size={36} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 15 }}>{u.nombre || "Sin nombre"}</div>
-            <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 15 }}>{u.nombre || "Todavía no entró"}{u.role !== "kairo" && <span style={{ fontSize: 12, color: C.dim }}> · vos</span>}</div>
+            <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
           </div>
-        </div>)}
+          {u.role === "kairo" && <Icon d={I.right} size={16} color={C.dim} />}
+        </button>)}
     </div>
     {adding && <NewUserSheet auth={auth} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
+    {editing && <EditUserSheet auth={auth} user={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
   </>;
 }
 
@@ -318,6 +327,44 @@ function NewUserSheet({ auth, onClose, onSaved }) {
     <Label>Contraseña</Label>
     <input type="text" autoComplete="new-password" autoCapitalize="none" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} placeholder="Mínimo 6 caracteres" style={field} />
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Creando…" : "Crear usuario"}</button>
+  </Sheet>;
+}
+
+function EditUserSheet({ auth, user, onClose, onSaved }) {
+  const [email, setEmail] = useState(user.email || "");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const save = async () => {
+    const body = { id: user.id, ...(email.trim() !== user.email ? { email } : {}), ...(password ? { password } : {}) };
+    if (!body.email && !body.password) return onClose();
+    setSaving(true);
+    const r = await fetch("/api/kairo/users", { method: "PATCH", headers: { "Content-Type": "application/json", ...auth() }, body: JSON.stringify(body) }).then(r => r.json()).catch(() => ({ error: "Sin conexión" }));
+    setSaving(false);
+    if (r.error) return pushToast(r.error);
+    pushToast("Usuario actualizado"); onSaved();
+  };
+  const del = async () => {
+    setSaving(true);
+    const r = await fetch(`/api/kairo/users?id=${user.id}`, { method: "DELETE", headers: auth() }).then(r => r.json()).catch(() => ({ error: "Sin conexión" }));
+    setSaving(false);
+    if (r.error) return pushToast(r.error);
+    pushToast("Usuario eliminado"); onSaved();
+  };
+  return <Sheet title={user.nombre || "Usuario"} onClose={onClose}>
+    <Label>Email</Label>
+    <input type="email" autoComplete="off" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value)} style={field} />
+    <Label>Nueva contraseña (dejala vacía para no cambiarla)</Label>
+    <input type="text" autoComplete="new-password" autoCapitalize="none" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" style={field} />
+    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : "Guardar"}</button>
+    {!confirmDel ? <button onClick={() => setConfirmDel(true)} className="k-press" style={{ ...btnGhost, marginTop: 10, color: C.danger }}>Eliminar usuario</button>
+      : <div style={{ marginTop: 12, padding: 14, borderRadius: 14, background: "rgba(255,92,92,0.08)", border: `0.5px solid rgba(255,92,92,0.35)` }}>
+        <div style={{ fontSize: 14, lineHeight: 1.45 }}>Se borra la cuenta y todo lo que cargó (rutinas, entrenos, peso, finanzas, historias). No se puede deshacer.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+          <button className="k-press" onClick={() => setConfirmDel(false)} style={btnGhost}>Cancelar</button>
+          <button className="k-press" onClick={del} disabled={saving} style={{ ...btnGhost, color: C.danger, borderColor: "rgba(255,92,92,0.5)" }}>Eliminar</button>
+        </div>
+      </div>}
   </Sheet>;
 }
 

@@ -2,6 +2,7 @@
 // Kairo · social. Historias de 24 h (tipo Instagram: al terminar un entreno o cuando quieras) y el
 // perfil de cada usuario (foto, objetivo, cómo viene y sus últimos entrenos).
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, MiniStat, card, dayLabel, ymd } from "./ui";
 
@@ -11,22 +12,23 @@ const seenSet = () => { try { return new Set(JSON.parse(localStorage.getItem(SEE
 const markSeen = (id) => { try { const s = seenSet(); s.add(id); localStorage.setItem(SEEN_KEY, JSON.stringify([...s].slice(-400))); } catch {} };
 const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 60 ? `${Math.max(1, m)} min` : `${Math.round(m / 60)} h`; };
 
-// Achica la foto manteniendo la proporción (lado mayor `max`), en jpg.
-export function shrink(file, max, q = 0.78) {
+// Achica la foto manteniendo la proporción (lado mayor `max`), en jpg. src: File o data URL.
+export function shrink(src, max, q = 0.78) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       const k = Math.min(1, max / Math.max(img.width, img.height));
       const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(img.src); resolve(c.toDataURL("image/jpeg", q));
+      if (typeof src !== "string") URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL("image/jpeg", q));
     };
-    img.onerror = reject; img.src = URL.createObjectURL(file);
+    img.onerror = reject; img.src = typeof src === "string" ? src : URL.createObjectURL(src);
   });
 }
 
-export async function postStory(token, file, caption) {
-  const [image, thumb] = await Promise.all([shrink(file, 1350), shrink(file, 220, 0.7)]);
+export async function postStory(token, src, caption) {
+  const [image, thumb] = await Promise.all([shrink(src, 1350), shrink(src, 220, 0.7)]);
   const r = await dq("kairo_stories", { method: "POST", token, body: { image, thumb, caption: caption || null } });
   if (!Array.isArray(r) || !r[0]) { pushToast("No se pudo subir la historia"); return false; }
   pushToast("Historia subida");
@@ -34,14 +36,67 @@ export async function postStory(token, file, caption) {
   return true;
 }
 
-// Botón que abre la cámara/galería y sube la historia.
+// Botón que abre la cámara de Kairo y sube la historia. Solo fotos del momento: no hay galería.
 export function StoryPicker({ token, caption, children, onDone, style }) {
-  const ref = useRef(null);
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const send = async (src) => { setOpen(false); setBusy(true); const ok = await postStory(token, src, caption); setBusy(false); if (ok) onDone?.(); };
   return <>
-    <button onClick={() => ref.current?.click()} disabled={busy} className="k-press" style={style}>{busy ? "Subiendo…" : children}</button>
-    <input ref={ref} type="file" accept="image/*" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return; setBusy(true); const ok = await postStory(token, f, caption); setBusy(false); if (ok) onDone?.(); }} />
+    <button onClick={() => setOpen(true)} disabled={busy} className="k-press" style={style}>{busy ? "Subiendo…" : children}</button>
+    {open && createPortal(<Camera caption={caption} onShot={send} onClose={() => setOpen(false)} />, document.querySelector(".k-root") || document.body)}
   </>;
+}
+
+// Cámara a pantalla completa. La selfie se muestra como espejo mientras la sacás (como Instagram)
+// pero se guarda derecha, como te ven los demás. Si el navegador no da acceso a la cámara, abre la
+// del sistema (también solo cámara, sin galería).
+function Camera({ caption, onShot, onClose }) {
+  const video = useRef(null), stream = useRef(null), fallback = useRef(null);
+  const [facing, setFacing] = useState("environment");
+  const [shot, setShot] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        stream.current?.getTracks().forEach(t => t.stop());
+        const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false });
+        if (!alive) { st.getTracks().forEach(t => t.stop()); return; }
+        stream.current = st;
+        if (video.current) { video.current.srcObject = st; await video.current.play().catch(() => {}); }
+        setErr("");
+      } catch { if (alive) setErr("nocam"); }
+    })();
+    return () => { alive = false; };
+  }, [facing]);
+  useEffect(() => () => stream.current?.getTracks().forEach(t => t.stop()), []);
+  const take = () => {
+    const v = video.current; if (!v?.videoWidth) return;
+    const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0);
+    setShot(c.toDataURL("image/jpeg", 0.9));
+  };
+  const btn = { width: 46, height: 46, borderRadius: 23, border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 };
+  return <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "#000", display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {shot ? <img src={shot} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+        : err ? <div style={{ color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<br /><button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
+        : <video ref={video} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: facing === "user" ? "scaleX(-1)" : "none" }} />}
+      <input ref={fallback} type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setShot(await shrink(f, 1920, 0.9)); }} />
+      <button onClick={onClose} aria-label="Cerrar cámara" style={{ ...btn, position: "absolute", top: "calc(env(safe-area-inset-top) + 12px)", left: 14 }}>×</button>
+      {caption && <div style={{ position: "absolute", bottom: 16, left: 16, right: 16, textAlign: "center", color: "#fff", fontSize: 14, fontWeight: 500, textShadow: "0 1px 6px rgba(0,0,0,0.7)" }}>{caption}</div>}
+    </div>
+    <div style={{ padding: "18px 24px calc(env(safe-area-inset-bottom) + 22px)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {shot ? <>
+        <button onClick={() => setShot(null)} style={{ ...btn, width: "auto", padding: "0 18px", borderRadius: 23, fontSize: 15 }}>Repetir</button>
+        <button onClick={() => { stream.current?.getTracks().forEach(t => t.stop()); onShot(shot); }} style={{ ...btn, width: "auto", padding: "0 22px", borderRadius: 23, background: C.lime, color: C.limeInk, fontSize: 15, fontWeight: 600 }}>Subir historia</button>
+      </> : <>
+        <span style={{ width: 46 }} />
+        <button onClick={take} disabled={!!err} aria-label="Sacar foto" style={{ width: 74, height: 74, borderRadius: 37, border: "4px solid #fff", background: "transparent", padding: 4 }}><span style={{ display: "block", width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} /></button>
+        <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} disabled={!!err} aria-label="Dar vuelta la cámara" style={btn}>⟲</button>
+      </>}
+    </div>
+  </div>;
 }
 
 // Fila de historias de Inicio: la tuya primero (con + para subir), después las de tus amigos.
