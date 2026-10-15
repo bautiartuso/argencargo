@@ -262,10 +262,11 @@ const I18N={
     push_android_step2:"Tocá «Instalar app» o «Agregar a pantalla principal»",
     push_android_step3:"Abrí Argencargo desde el ícono que apareció — NO desde Chrome",
     push_android_step4:"Volvé acá y se activarán las notificaciones automáticamente",
-    fwd_title:"Reenvíos que te pedimos",
-    fwd_sub:"Mandá estos bultos al depósito indicado, con este shipping mark.",
+    fwd_title:"Bultos a enviar a otro depósito",
+    fwd_check:"Por favor chequeá que el shipping mark esté escrito exactamente igual en cada caja.",
+    fwd_sub:"Mandá estos bultos al depósito indicado, respetando el shipping mark.",
     fwd_mark:"Shipping mark",
-    fwd_dest:"Depósito destino",
+    fwd_dest:"Enviar a",
     fwd_note:"Nota",
     fwd_pkgs:"Bultos",
     fwd_copy:"Copiar",
@@ -629,10 +630,11 @@ const I18N={
     push_android_step2:"点击「安装应用」或「添加到主屏幕」",
     push_android_step3:"从主屏幕图标打开 Argencargo（不要从 Chrome 打开）",
     push_android_step4:"回到这里，通知会自动开启",
-    fwd_title:"需要转寄的包裹",
-    fwd_sub:"请把这些包裹寄到指定仓库，并写上这个唛头。",
+    fwd_title:"需要寄往其他仓库的包裹",
+    fwd_check:"请确认每个箱子上的唛头与上面完全一致。",
+    fwd_sub:"请把这些包裹寄到指定仓库，并严格按照唛头标注。",
     fwd_mark:"唛头",
-    fwd_dest:"目的仓库",
+    fwd_dest:"寄往",
     fwd_note:"备注",
     fwd_pkgs:"包裹",
     fwd_copy:"复制",
@@ -1098,7 +1100,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const misReclamos=claims.filter(c=>esAdmin||(c.agent_id?c.agent_id===userId:origenAgente==="China"));
   // Reenvío a otro depósito (15/10/2026): el agente avisa si lo mandó (con tracking) o si no se puede.
   // Al enviarse, los bultos salen de su depósito (reenviado_at) y le llega aviso al admin.
-  const responderReenvio=async(r,tipo)=>{
+  const responderGrupo=async(grupo,tipo)=>{for(const r of grupo)await responderReenvio(r,tipo,true);setFwdAccion(null);setFwdTexto("");await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);};
+  const responderReenvio=async(r,tipo,enGrupo=false)=>{
     const txt=fwdTexto.trim();const ahora=new Date().toISOString();
     const body=tipo==="ok"?{status:"enviado",tracking_envio:txt||null,resolved_at:ahora,resolved_by:userId}:{status:"no_se_puede",agent_notes:txt||null,resolved_at:ahora,resolved_by:userId};
     await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body});
@@ -1112,6 +1115,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
       if(adminId)await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:tipo==="ok"?`↪ Reenvío hecho · ${cod}`:`↪ Reenvío no posible · ${cod}`,body:texto,link:null}});
     }catch(e){console.error("reenvio aviso",e);}
+    if(enGrupo)return;
     setFwdAccion(null);setFwdTexto("");
     await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);
   };
@@ -1304,46 +1308,45 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         </div>}
       </div>)}
     </div>}
-    {/* Reenvíos a otro depósito (15/10/2026). */}
-    {reenvios.length>0&&<div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(96,165,250,0.5)",background:"rgba(96,165,250,0.07)",overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(96,165,250,0.25)"}}>
-        <span style={{fontSize:22}}>↪</span>
-        <div style={{flex:1,minWidth:0}}>
-          <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>{t.fwd_title} <span style={{color:"#60a5fa"}}>· {reenvios.length}</span></p>
-          <p style={{fontSize:11.5,color:"rgba(var(--ink),0.65)",margin:"2px 0 0"}}>{t.fwd_sub}</p>
+    {/* Bultos a enviar a otro depósito (15/10/2026). Los pedidos con la misma dirección y el mismo
+        shipping mark van juntos: se mandan en el mismo envío. */}
+    {reenvios.length>0&&(()=>{
+      const grupos={};reenvios.forEach(r=>{const k=`${String(r.destino_datos||r.destino_nombre||"").trim()}|${String(r.shipping_mark||"").trim()}`;(grupos[k]=grupos[k]||[]).push(r);});
+      const lista=Object.values(grupos);
+      const lbl={fontSize:9.5,fontWeight:800,color:"rgba(var(--ink),0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 3px"};
+      const btnS={padding:"3px 9px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"};
+      return <div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(96,165,250,0.5)",background:"rgba(96,165,250,0.07)",overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(96,165,250,0.25)"}}>
+          <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>↪ {t.fwd_title} <span style={{color:"#60a5fa"}}>· {reenvios.reduce((a2,r)=>a2+(r.package_ids||[]).length,0)}</span></p>
+          <p style={{fontSize:11.5,color:"rgba(var(--ink),0.65)",margin:"2px 0 6px"}}>{t.fwd_sub}</p>
+          <p style={{fontSize:11.5,fontWeight:700,color:"var(--amber)",margin:0,padding:"5px 9px",borderRadius:8,background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.35)",display:"inline-block"}}>⚠ {t.fwd_check}</p>
         </div>
-      </div>
-      {reenvios.map((r,i)=>{const pk=packages.filter(p=>(r.package_ids||[]).includes(p.id));const acc=fwdAccion?.id===r.id?fwdAccion.tipo:null;const lbl={fontSize:10,fontWeight:800,color:"rgba(var(--ink),0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 4px"};return <div key={r.id} style={{padding:"14px 16px",borderTop:i?"1px solid rgba(var(--ink),0.08)":"none"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
-          <div>
+        {lista.map((grupo,i)=>{const r=grupo[0];const ids=grupo.flatMap(x=>x.package_ids||[]);const pk=packages.filter(p=>ids.includes(p.id));const acc=fwdAccion?.id===r.id?fwdAccion.tipo:null;const notas=[...new Set(grupo.map(x=>x.note).filter(Boolean))];return <div key={r.id} style={{padding:"10px 14px",borderTop:i?"1px solid rgba(var(--ink),0.08)":"none",display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+          <div style={{flex:"1 1 220px",minWidth:0}}>
             <p style={lbl}>{t.fwd_mark}</p>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:20,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:"var(--tx)",wordBreak:"break-all"}}>{r.shipping_mark}</span>
-              <button onClick={()=>copiar(r.shipping_mark)} style={{padding:"4px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_copy}</button>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:16,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:"var(--tx)",wordBreak:"break-all"}}>{r.shipping_mark}</span>
+              <button onClick={()=>copiar(r.shipping_mark)} style={btnS}>{t.fwd_copy}</button>
             </div>
+            <p style={{...lbl,margin:"8px 0 3px"}}>{t.fwd_pkgs} · {ids.length}</p>
+            {pk.map(p=><p key={p.id} style={{margin:0,fontSize:12,fontFamily:"'JetBrains Mono',monospace",color:"rgba(var(--ink),0.8)"}}>{String(p.national_tracking||"—").split(/[\s,;|]+/)[0]} · {p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}{Number(p.gross_weight_kg)>0?` · ${p.gross_weight_kg} kg`:""}</p>)}
           </div>
-          <div>
+          <div style={{flex:"1.4 1 260px",minWidth:0}}>
             <p style={lbl}>{t.fwd_dest}</p>
-            <p style={{margin:0,fontSize:14,fontWeight:800,color:"var(--tx)"}}>{r.destino_nombre}</p>
-            {r.destino_datos&&<p style={{margin:"3px 0 0",fontSize:12.5,color:"rgba(var(--ink),0.75)",whiteSpace:"pre-wrap"}}>{r.destino_datos}</p>}
-            <button onClick={()=>copiar(`${r.destino_nombre}\n${r.destino_datos||""}`.trim())} style={{marginTop:6,padding:"4px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_copy}</button>
+            <p style={{margin:0,fontSize:12.5,color:"var(--tx)",whiteSpace:"pre-wrap",lineHeight:1.45}}>{r.destino_datos||r.destino_nombre}</p>
+            <button onClick={()=>copiar(String(r.destino_datos||r.destino_nombre||"").trim())} style={{...btnS,marginTop:5}}>{t.fwd_copy}</button>
+            {notas.map((n,k)=><p key={k} style={{margin:"6px 0 0",fontSize:12,color:"var(--amber)"}}><b>{t.fwd_note}:</b> {n}</p>)}
           </div>
-        </div>
-        {r.note&&<p style={{margin:"10px 0 0",fontSize:12.5,color:"var(--amber)"}}><b>{t.fwd_note}:</b> {r.note}</p>}
-        <p style={{...lbl,margin:"12px 0 4px"}}>{t.fwd_pkgs} · {pk.length||(r.package_ids||[]).length}</p>
-        <div style={{display:"flex",flexDirection:"column",gap:3}}>
-          {pk.map(p=><p key={p.id} style={{margin:0,fontSize:12.5,fontFamily:"'JetBrains Mono',monospace",color:"rgba(var(--ink),0.8)"}}>{String(p.national_tracking||"—").split(/[\s,;|]+/)[0]} · {p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm} cm`:"—"}{Number(p.gross_weight_kg)>0?` · ${p.gross_weight_kg} kg`:""}{Number(p.quantity)>1?` ×${p.quantity}`:""}</p>)}
-        </div>
-        {acc?<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
-          <input autoFocus value={fwdTexto} onChange={e=>setFwdTexto(e.target.value)} placeholder={acc==="ok"?t.fwd_tracking_ph:t.fwd_reason_ph} style={{flex:"1 1 220px",padding:"9px 12px",fontSize:14,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
-          <button onClick={()=>{setFwdAccion(null);setFwdTexto("");}} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-          <button onClick={()=>responderReenvio(r,acc)} style={{padding:"9px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_confirm}</button>
-        </div>:<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12,justifyContent:"flex-end"}}>
-          <button onClick={()=>{setFwdAccion({id:r.id,tipo:"no"});setFwdTexto("");}} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>✕ {t.fwd_cant}</button>
-          <button onClick={()=>{setFwdAccion({id:r.id,tipo:"ok"});setFwdTexto("");}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>✓ {t.fwd_sent}</button>
-        </div>}
-      </div>;})}
-    </div>}
+          <div style={{flex:"0 0 auto",display:"flex",gap:6,alignItems:"center",alignSelf:"center"}}>
+            {acc?<>
+              <input autoFocus value={fwdTexto} onChange={e=>setFwdTexto(e.target.value)} placeholder={t.fwd_tracking_ph} style={{width:200,padding:"8px 10px",fontSize:13,borderRadius:9,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
+              <button onClick={()=>{setFwdAccion(null);setFwdTexto("");}} style={{...btnS,padding:"8px 10px"}}>✕</button>
+              <button onClick={()=>responderGrupo(grupo,"ok")} style={{padding:"8px 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_confirm}</button>
+            </>:<button onClick={()=>{setFwdAccion({id:r.id,tipo:"ok"});setFwdTexto("");}} style={{padding:"8px 16px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>✓ {t.fwd_sent}</button>}
+          </div>
+        </div>;})}
+      </div>;
+    })()}
     {/* Reclamos de depósito (09/10/2026): paquetes que el cliente dice que llegaron y no están registrados. */}
     {misReclamos.length>0&&<div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.07)",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(251,191,36,0.25)"}}>

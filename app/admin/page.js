@@ -10634,7 +10634,9 @@ function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,hist
       </div>
       <p style={lbl}>Depósito destino</p>
       {destinos.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-        {destinos.slice(0,8).map(d=><button key={d.id} type="button" onClick={()=>{setDestino(d.destino_nombre);setDatos(d.destino_datos||"");}} style={{padding:"6px 11px",fontSize:12,fontWeight:700,borderRadius:99,border:`1px solid ${destino===d.destino_nombre?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.14)"}`,background:destino===d.destino_nombre?"rgba(96,165,250,0.14)":"transparent",color:destino===d.destino_nombre?"#93c5fd":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"}}>{d.destino_nombre}</button>)}
+        {destinos.slice(0,8).map(d=><button key={d.id} type="button" onClick={()=>{setDestino(d.destino_nombre);setDatos(d.destino_datos||"");
+          // El mark de ese depósito se reusa; si llevaba el código del cliente anterior, va el de este cliente.
+          const viejo=d.clients?.client_code;let mk=String(d.shipping_mark||"");if(viejo&&cliente?.client_code&&mk.includes(viejo))mk=mk.split(viejo).join(cliente.client_code);if(mk)setMark(mk);}} style={{padding:"6px 11px",fontSize:12,fontWeight:700,borderRadius:99,border:`1px solid ${destino===d.destino_nombre?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.14)"}`,background:destino===d.destino_nombre?"rgba(96,165,250,0.14)":"transparent",color:destino===d.destino_nombre?"#93c5fd":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"}}>{d.destino_nombre}</button>)}
       </div>}
       <input value={destino} onChange={e=>setDestino(e.target.value)} placeholder="Nombre del depósito (ej: Luna · Depo 1)" style={{...inp,marginBottom:8}}/>
       <textarea value={datos} onChange={e=>setDatos(e.target.value)} rows={3} placeholder="Dirección, contacto y teléfono del depósito" style={{...inp,resize:"vertical",marginBottom:14}}/>
@@ -10821,7 +10823,12 @@ function AgentsPanel({token}){
     // allOps (ops sin consolidar, para asignar huérfanos) sale de depOps: era una query casi duplicada.
     setAllOps((Array.isArray(depOps)?depOps:[]).filter(o=>!o.consolidation_confirmed));
     // Los bultos ya reenviados a otro depósito salieron del depósito de este agente.
-    setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs((Array.isArray(depPkgs)?depPkgs:[]).filter(p=>!p.reenviado_at));setDepSueltos((Array.isArray(sueltos)?sueltos:[]).filter(p=>!p.reenviado_at));
+    // Con reenvío pedido (todavía pendiente) tampoco: se van del depósito y se ven en "Reenvíos pedidos".
+    const enReenvio=new Set((Array.isArray(reenv)?reenv:[]).filter(r=>r.status==="pendiente").flatMap(r=>r.package_ids||[]));
+    const pkgsDep=(Array.isArray(depPkgs)?depPkgs:[]).filter(p=>!p.reenviado_at&&!enReenvio.has(p.id));
+    const opsConPkgs=new Set(pkgsDep.map(p=>p.operation_id));
+    const todasEnReenvio=(o)=>(Array.isArray(depPkgs)?depPkgs:[]).some(p=>p.operation_id===o.id&&(p.reenviado_at||enReenvio.has(p.id)))&&!opsConPkgs.has(o.id);
+    setDepositOps((Array.isArray(depOps)?depOps:[]).filter(o=>!todasEnReenvio(o)));setDepositPkgs(pkgsDep);setDepSueltos((Array.isArray(sueltos)?sueltos:[]).filter(p=>!p.reenviado_at&&!enReenvio.has(p.id)));
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
     setDepositItems(Array.isArray(depItems)?depItems:[]);
     setRepackReqs(Array.isArray(rpkReqs)?rpkReqs:[]);
