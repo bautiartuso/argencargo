@@ -5588,8 +5588,16 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
           if(!(Array.isArray(insL)?insL[0]:insL)?.id)throw new Error("No se pudo preservar el cobro previo");
           prevTotal=legacy;
         }
-        const body={operation_id:op.id,payment_date:hoy,amount_usd:cobroUsd,currency:monedaCobro,payment_method:metodo==="crypto"?"cripto":metodo,receipt_url:receipt.url||null};
-        if(esArs){body.amount_ars=nMonto;body.exchange_rate=nTc;}
+        // Pagó de más (AC-0243, 15/10/2026: debía 786,88 y pagó 800): antes el cobro quedaba abierto
+        // y el excedente no iba a ningún lado. Ahora se pregunta: queda a favor o se dio el vuelto.
+        let cobroFinal=cobroUsd,excedente=0;
+        const sobra=Math.round((prevTotal+cobroUsd-(saldo+cobradoPrevio))*100)/100;
+        if(!sinMontos&&sobra>0.01){
+          const aFavor=await confirmDialog(`Pagó USD ${sobra.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más. ¿Qué hacemos con la diferencia?`,{title:"Pagó de más",confirmText:"Queda a su favor",cancelText:"Le di el vuelto"});
+          if(aFavor)excedente=sobra;else cobroFinal=Math.round((cobroUsd-sobra)*100)/100;
+        }
+        const body={operation_id:op.id,payment_date:hoy,amount_usd:cobroFinal,currency:monedaCobro,payment_method:metodo==="crypto"?"cripto":metodo,receipt_url:receipt.url||null};
+        if(esArs){body.amount_ars=cobroFinal===cobroUsd?nMonto:Math.round(cobroFinal*nTc*100)/100;body.exchange_rate=nTc;}
         if(metodo==="transferencia"){body.ars_destination=destino;body.commission_pct=destino==="financiera"?nCom:null;}
         const ins=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
         const inserted=Array.isArray(ins)?ins[0]:ins;
@@ -5599,11 +5607,14 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
             await dq("cc_solfin_movements",{method:"POST",token,body:{date:hoy,type:"ingreso",currency:"ARS",amount:nMonto,commission_pct:nCom||null,commission_amount:nCom>0?comArs:null,net_amount:nMonto-comArs,provisional_rate:nTc,description:`Cobro ${op.operation_code}${op.clients?.client_code?` · ${op.clients.client_code}`:""}`,image_url:receipt.url||null,operation_id:op.id,client_payment_id:inserted.id,auto_generated:true}});
           }catch(e){console.error("cc solfin mov",e);}
         }
-        const newTotal=prevTotal+cobroUsd;
+        const newTotal=prevTotal+cobroFinal;
         const upd={collected_amount:newTotal,collection_method:metodo==="crypto"?"cripto":metodo,collection_currency:"USD",collection_date:hoy};
-        // Cobro exacto (o de mas por centavos): cerramos el cobro. Con diferencia real queda
-        // abierto para resolverla desde la op ("Cerrar cobro" del editor).
-        if(Math.abs(newTotal-(saldo+cobradoPrevio))<=0.01)upd.is_collected=true;
+        // Cobro exacto (o de mas por centavos): cerramos el cobro. Si pagó de más ya se resolvió
+        // arriba (a favor o vuelto). Si pagó de menos queda abierto ("Cerrar cobro" del editor).
+        if(Math.abs(newTotal-(saldo+cobradoPrevio))<=0.01||excedente>0)upd.is_collected=true;
+        if(excedente>0&&op.client_id){
+          await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:excedente,description:`Excedente de ${op.operation_code}`,payment_method:metodo==="crypto"?"cripto":metodo,currency:"USD",amount_original:excedente,movement_date:hoy}});
+        }
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
       }
       if(!soloCobro)await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});
