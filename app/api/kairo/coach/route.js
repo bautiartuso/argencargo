@@ -95,7 +95,29 @@ async function history(uid, exerciseIds, perExercise = 4) {
       if (!w) { if (byWorkout.length >= perExercise) continue; w = { workout_id: s.workout_id, fecha: s.created_at.slice(0, 10), sets: [] }; byWorkout.push(w); }
       w.sets.push(s);
     }
-    out[id] = byWorkout.map(w => ({ fecha: w.fecha, series: w.sets.sort((a, b) => a.set_index - b.set_index).map(s => `${Number(s.weight_kg)}×${s.reps}`).join(", ") }));
+    out[id] = byWorkout.map(w => {
+      const sets = w.sets.sort((a, b) => a.set_index - b.set_index);
+      return { fecha: w.fecha, raw: sets.map(s => ({ kg: Number(s.weight_kg), reps: s.reps })), series: sets.map(s => `${Number(s.weight_kg)}×${s.reps}`).join(", ") };
+    });
+  }
+  return out;
+}
+
+// Progresión exacta, serie por serie (doble progresión de a una repetición):
+//  · si en una serie llegaste a la meta de la vez pasada (o no había meta) → +1 repetición con el mismo peso;
+//  · si ya estás en el tope del rango → sube el peso un salto y vuelve al piso del rango;
+//  · si no llegaste a la meta → se repite esa misma meta.
+const STEP = (equipment, kg) => /mancuerna|barra z/i.test(equipment || "") ? (kg < 5 ? 1 : 2) : /corporal/i.test(equipment || "") ? 0 : 2.5;
+function progression(item, lastSets, prevTargets) {
+  if (!lastSets?.length) return null;
+  const out = [];
+  for (let i = 0; i < item.sets; i++) {
+    const done = lastSets[Math.min(i, lastSets.length - 1)];
+    const goal = prevTargets?.[i];
+    if (goal && (done.reps < goal.reps || done.kg < goal.kg)) { out.push({ kg: goal.kg, reps: goal.reps }); continue; }
+    if (done.reps + 1 <= item.rep_max) { out.push({ kg: done.kg, reps: done.reps + 1 }); continue; }
+    const step = STEP(item.exercise.equipment, done.kg);
+    out.push(step ? { kg: Math.round((done.kg + step) * 2) / 2, reps: item.rep_min } : { kg: done.kg, reps: done.reps + 1 });
   }
   return out;
 }
@@ -132,12 +154,24 @@ async function plan(uid, routineId) {
   }
 
   const hist = await history(uid, routine.items.map(i => i.exercise_id));
+  // Metas de la vez pasada (el plan que se usó en el último entreno de esta rutina).
+  const prevPlan = last && lastWorkout && last.created_at < lastWorkout.finished_at ? last.content : null;
+  const proposals = {};
   const lines = routine.items.map(i => {
     const h = hist[i.exercise_id] || [];
-    return `- exercise_id ${i.exercise_id} · ${i.exercise.name} (${i.exercise.muscle}, ${i.exercise.equipment || "—"}) · objetivo de la rutina: ${i.sets} series de ${i.rep_min}–${i.rep_max} reps\n  Últimas sesiones (la más reciente primero): ${h.length ? h.map(x => `${x.fecha}: ${x.series}`).join(" | ") : "sin historial"}`;
+    const prev = prevPlan?.ejercicios?.find(e => e.exercise_id === i.exercise_id)?.series || null;
+    const prop = progression(i, h[0]?.raw, prev);
+    if (prop) proposals[i.exercise_id] = prop;
+    const fmt = (l) => l.map(x => `${x.kg}×${x.reps}`).join(", ");
+    return `- exercise_id ${i.exercise_id} · ${i.exercise.name} (${i.exercise.muscle}, ${i.exercise.equipment || "—"}) · ${i.sets} series, tope de repeticiones ${i.rep_max} (piso ${i.rep_min})\n  Últimas sesiones (la más reciente primero): ${h.length ? h.map(x => `${x.fecha}: ${x.series}`).join(" | ") : "sin historial"}${prev ? `\n  Meta de la vez pasada: ${fmt(prev)}` : ""}${prop ? `\n  PROPUESTA DE HOY (progresión calculada): ${fmt(prop)}` : ""}`;
   }).join("\n");
-  const user = `${profileText(profile)}\n\nHoy entrena la rutina "${routine.name}". Para cada ejercicio decidí qué hacer hoy y devolvé exactamente una serie por cada serie objetivo (kilos y repeticiones a buscar). Usá el exercise_id tal cual.\n\n${lines}`;
+  const user = `${profileText(profile)}\n\nHoy entrena la rutina "${routine.name}". Para cada ejercicio devolvé exactamente una serie por cada serie de la rutina, con kilos y repeticiones exactos (nunca rangos). Si hay PROPUESTA DE HOY, devolvela tal cual: la progresión ya está calculada (+1 repetición por serie si cumplió la meta anterior, sube el peso al llegar al tope, repite la meta si no llegó). Solo apartate de la propuesta con un motivo claro (estancamiento de 3+ sesiones, una caída fuerte, una lesión o un objetivo de definición que pida sostener cargas) y en ese caso usá accion "mantener", "bajar_peso" o "cambiar". Si no hay historial, proponé una carga inicial conservadora. Usá el exercise_id tal cual.\n\n${lines}`;
   const content = await ask(user, PLAN_SCHEMA, "kairo-coach-plan");
+  // La progresión manda: si la IA cambió números sin un motivo de los permitidos, se usa la calculada.
+  for (const e of content.ejercicios || []) {
+    const prop = proposals[e.exercise_id];
+    if (prop && !["mantener", "bajar_peso", "cambiar"].includes(e.accion)) e.series = prop;
+  }
   await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "plan", routine_id: routineId, content }), headers: { Prefer: "return=minimal" } });
   return Response.json({ plan: content });
 }

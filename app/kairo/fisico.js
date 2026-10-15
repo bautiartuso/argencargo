@@ -262,7 +262,7 @@ function RoutineCard({ r, big, onStart }) {
         {r.items.map(i => <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Thumb ex={i.exercise} size={32} />
           <span style={{ flex: 1, fontSize: 14, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.exercise.name}</span>
-          <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{i.sets} × {i.rep_min}–{i.rep_max}</span>
+          <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{i.sets} series</span>
         </div>)}
       </div>
       <button className="k-press" onClick={onStart} disabled={!r.items.length} style={{ ...btnLime, marginTop: 16 }}>Empezar entreno</button>
@@ -508,7 +508,7 @@ function ExerciseBlock({ it, ssLabel, target, update, toggle, onInfo, onMenu, on
       <span style={{ marginTop: 1 }}><Icon d={I.spark} size={14} color={C.lime} /></span>
       <span>{showAction && <span style={{ color: it.ai.accion === "cambiar" || it.ai.accion === "bajar_peso" ? C.warn : C.lime, fontWeight: 500 }}>{ACTION_LABEL[it.ai.accion]} · </span>}{it.ai.nota}</span>
     </div>}
-    <button onClick={onRest} style={{ ...linkBtn, display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 13, color: C.blue }}><Icon d={I.timer} size={15} />Descanso: {restLabel(it.rest_sec)} · {it.rep_min}–{it.rep_max} reps</button>
+    <button onClick={onRest} style={{ ...linkBtn, display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 13, color: C.blue }}><Icon d={I.timer} size={15} />Descanso: {restLabel(it.rest_sec)}</button>
     <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 8, alignItems: "center", marginTop: 12, fontSize: 11, color: C.dim, letterSpacing: "0.04em" }}>
       <span>SERIE</span><span>META</span><span style={{ textAlign: "center" }}>KG</span><span style={{ textAlign: "center" }}>REPS</span><span style={{ textAlign: "center" }}>✓</span>
     </div>
@@ -822,6 +822,7 @@ function RoutineSheet({ token, routine, exercises, count, onClose, onSaved }) {
     </div>
     <div style={{ fontSize: 12, color: C.dim, margin: "8px 2px 0", lineHeight: 1.45 }}>¿Rotás sin días fijos (pecho, espalda, pierna, descanso…)? Dejalos vacíos y armá la rotación en Rutinas → "Cómo organizás los días".</div>
     <Label>Ejercicios</Label>
+    <div style={{ fontSize: 12, color: C.dim, margin: "-2px 2px 10px", lineHeight: 1.45 }}>En cada entreno Kairo te pide kilos y repeticiones exactos por serie: +1 repetición si cumpliste la vez pasada; al llegar al tope sube el peso y vuelve al piso.</div>
     {items.length === 0 && <div style={{ fontSize: 14, color: C.sub, marginBottom: 8 }}>Todavía no agregaste ejercicios.</div>}
     <div style={{ display: "grid", gap: 8 }}>
       {items.map((it, ix) => { const ex = exOf(it.exercise_id); return <div key={ix} style={{ background: C.cardHi, borderRadius: 16, padding: 12, minWidth: 0, borderLeft: it.superset != null ? `3px solid ${C.lime}` : "3px solid transparent" }}>
@@ -836,8 +837,8 @@ function RoutineSheet({ token, routine, exercises, count, onClose, onSaved }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginTop: 10 }}>
           <NumField label="Series" value={it.sets} onChange={v => setItem(ix, { sets: Math.max(1, v) })} />
-          <NumField label="Reps mín" value={it.rep_min} onChange={v => setItem(ix, { rep_min: Math.max(1, v) })} />
-          <NumField label="Reps máx" value={it.rep_max} onChange={v => setItem(ix, { rep_max: Math.max(it.rep_min, v) })} />
+          <NumField label="Reps piso" value={it.rep_min} onChange={v => setItem(ix, { rep_min: Math.max(1, v) })} />
+          <NumField label="Reps tope" value={it.rep_max} onChange={v => setItem(ix, { rep_max: Math.max(it.rep_min, v) })} />
           <NumField label="Desc. (s)" value={it.rest_sec} onChange={v => setItem(ix, { rest_sec: v })} />
         </div>
         {ix < items.length - 1 && <button onClick={() => toggleLink(ix)} style={{ ...linkBtn, marginTop: 10, fontSize: 12.5, color: it.superset != null && it.superset === items[ix + 1].superset ? C.lime : C.sub }}>{it.superset != null && it.superset === items[ix + 1].superset ? "✓ En superserie con el de abajo · tocá para separar" : "+ Superserie con el de abajo"}</button>}
