@@ -3,7 +3,7 @@
 -- 1) Rol propio "kairo" en profiles: esas cuentas solo entran a /kairo (el portal, agentes, GI y el
 --    admin las rechazan). Se crean desde Kairo → Perfil → Usuarios (solo el admin).
 -- 2) Cada dato de Kairo pasa a ser de su usuario (user_id) y cada uno ve solo lo suyo. Lo que ya
---    existe queda del dueño actual (bautiartuso21@gmail.com).
+--    existe queda del dueño actual (admin@argencargo.com).
 -- 3) La biblioteca de ejercicios es compartida; los ejercicios propios llevan created_by.
 -- 4) Perfil: una fila por usuario (antes era una sola con id = 1), con fecha de nacimiento y la
 --    organización de los días (días fijos o rotación).
@@ -23,7 +23,7 @@ end $$;
 do $$
 declare owner uuid; t text;
 begin
-  select id into owner from auth.users where lower(email) = 'bautiartuso21@gmail.com' limit 1;
+  select id into owner from auth.users where lower(email) = 'admin@argencargo.com' limit 1;
   foreach t in array array['kairo_routines','kairo_routine_exercises','kairo_workouts','kairo_sets','kairo_ai','kairo_body_logs',
                            'kairo_incomes','kairo_budgets','kairo_merchant_rules','mp_expenses','mp_expense_categories','mp_salary_withdrawals'] loop
     if to_regclass('public.' || t) is null then continue; end if;
