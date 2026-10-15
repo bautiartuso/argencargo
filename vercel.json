@@ -29,6 +29,10 @@
       "schedule": "0 14 * * *"
     },
     {
+      "path": "/api/kairo/reminders",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/kairo/mp-sync",
       "schedule": "*/15 * * * *"
     },

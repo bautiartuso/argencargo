@@ -56,7 +56,7 @@ function beep() {
   });
   try { navigator.vibrate?.([200, 80, 200]); } catch {}
 }
-async function ensurePush(token) {
+export async function ensurePush(token) {
   try {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
     const VAPID = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";

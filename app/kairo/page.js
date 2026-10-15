@@ -4,6 +4,7 @@ import { dq, loadSession, clearSession, ac, saveSession } from "../../lib/sb-cli
 import Fisico, { WorkoutLayer } from "./fisico";
 import Perfil, { Welcome } from "./perfil";
 import Inicio from "./hoy";
+import Nutricion from "./nutricion";
 import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn } from "./ui";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -94,7 +95,7 @@ function App({ session }) {
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
           {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
           {tab === "perfil" && <Perfil token={session.token} isAdmin={session.profile?.role === "admin"} />}
-      {tab === "nutricion" && <Soon tab={TABS.find(t => t.id === tab)} />}
+      {tab === "nutricion" && <Nutricion token={session.token} onProfile={() => go("perfil")} />}
         </div>
       </main>
       <WorkoutLayer token={session.token} />

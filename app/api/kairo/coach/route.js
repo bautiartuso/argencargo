@@ -178,7 +178,7 @@ async function plan(uid, routineId) {
 
 // Topes semanales para controlar el gasto de IA (el admin no tiene tope). El plan de cada entreno
 // no tiene tope: se arma solo, una vez por entreno.
-const WEEKLY = { review: [3, "análisis de rutinas"], strategy: [1, "cálculo de alimentación"] };
+const WEEKLY = { review: [3, "análisis de rutinas"], strategy: [1, "cálculo de alimentación"], nutrition: [2, "análisis de tu semana de comidas"] };
 async function overLimit(uid, kind) {
   const [max, label] = WEEKLY[kind];
   const weekAgo = new Date(Date.now() - 7 * 86400e3).toISOString();
@@ -234,12 +234,55 @@ async function strategy(uid) {
   const logs = arr(await sb(`/rest/v1/kairo_body_logs?user_id=eq.${uid}&select=log_date,peso_kg,grasa_pct,cintura_cm,pecho_cm,brazo_cm,muslo_cm,cadera_cm,cuello_cm&order=log_date.asc&limit=120`));
   const since = new Date(Date.now() - 28 * 86400e3).toISOString();
   const recent = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=gte.${since}&select=started_at`));
+  const supps = arr(await sb(`/rest/v1/kairo_supplements?user_id=eq.${uid}&active=eq.true&select=name,dose`));
   const fmt = (l) => [l.log_date, l.peso_kg && `${l.peso_kg} kg`, l.grasa_pct && `${l.grasa_pct}% grasa`, l.cintura_cm && `cintura ${l.cintura_cm}`, l.pecho_cm && `pecho ${l.pecho_cm}`, l.brazo_cm && `brazo ${l.brazo_cm}`, l.muslo_cm && `muslo ${l.muslo_cm}`, l.cadera_cm && `cadera ${l.cadera_cm}`, l.cuello_cm && `cuello ${l.cuello_cm}`].filter(Boolean).join(", ");
-  const user = `${profileText(profile)}\n\nArmá su estrategia de alimentación para ese objetivo (calorías y macros: proteína, carbohidratos y grasas que cierren con las calorías) con tips de micronutrientes, y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
+  const user = `${profileText(profile)}\n\nArmá su estrategia de alimentación para ese objetivo (calorías y macros: proteína, carbohidratos y grasas que cierren con las calorías) con tips de micronutrientes (teniendo en cuenta los suplementos que ya toma: ${supps.length ? supps.map(x => x.name + (x.dose ? ` ${x.dose}` : "")).join(", ") : "ninguno"}), y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
   const content = await ask(user, STRATEGY_SCHEMA, "kairo-coach-strategy");
   await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "strategy", content }), headers: { Prefer: "return=minimal" } });
   await sb(`/rest/v1/kairo_profile?user_id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({ estrategia: content, estrategia_at: new Date().toISOString() }) });
   return Response.json({ strategy: content });
+}
+
+// Análisis de la semana de comidas (la plantilla fija L–D) contra el objetivo y los suplementos.
+const NUTRITION_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["resumen", "dias", "faltantes", "sugerencias"],
+  properties: {
+    resumen: { type: "string", description: "2-3 frases: si la semana cierra con el objetivo y qué es lo más importante a corregir." },
+    dias: {
+      type: "array", description: "Un elemento por día (lunes a domingo).",
+      items: {
+        type: "object", additionalProperties: false, required: ["dia", "estado", "nota"],
+        properties: { dia: { type: "string" }, estado: { type: "string", enum: ["bien", "faltan", "sobran", "sin_cargar"] }, nota: { type: "string", description: "Qué pasa ese día en una frase (ej. 'faltan ~300 kcal y 40 g de proteína')." } },
+      },
+    },
+    faltantes: {
+      type: "array", description: "Nutrientes que quedan cortos o desbalanceados con esta forma de comer (micro o macro).",
+      items: {
+        type: "object", additionalProperties: false, required: ["nutriente", "detalle", "cubierto_por"],
+        properties: { nutriente: { type: "string" }, detalle: { type: "string" }, cubierto_por: { type: "string", description: "Suplemento que ya toma y lo cubre, o vacío si no está cubierto." } },
+      },
+    },
+    sugerencias: { type: "array", items: { type: "string" }, description: "3-5 cambios simples y repetibles (mismos alimentos de todos los días, cantidades concretas). Nada de recetas elaboradas." },
+  },
+};
+const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+async function nutrition(uid) {
+  const profile = await loadProfile(uid);
+  const plan = arr(await sb(`/rest/v1/kairo_meal_plan?user_id=eq.${uid}&select=dow,meal,name,qty,kcal,protein_g,carbs_g,fat_g&order=dow.asc,sort_order.asc`));
+  if (!plan.length) return Response.json({ error: "Primero cargá tu semana de comidas" }, { status: 400 });
+  const supps = arr(await sb(`/rest/v1/kairo_supplements?user_id=eq.${uid}&active=eq.true&select=name,dose,times`));
+  const st = profile?.estrategia;
+  const target = st ? `Objetivo diario: ${st.calorias_dia} kcal · ${st.proteina_g} g proteína · ${st.carbohidratos_g ?? "?"} g carbohidratos · ${st.grasas_g ?? "?"} g grasas.` : "Objetivo diario: todavía no calculado (estimalo con el perfil).";
+  const days = DIAS.map((d, i) => {
+    const items = plan.filter(p => p.dow === i);
+    if (!items.length) return `${d}: sin cargar`;
+    const sum = items.reduce((a, x) => ({ k: a.k + Number(x.kcal), p: a.p + Number(x.protein_g), c: a.c + Number(x.carbs_g), g: a.g + Number(x.fat_g) }), { k: 0, p: 0, c: 0, g: 0 });
+    return `${d} (total ${Math.round(sum.k)} kcal · P ${Math.round(sum.p)} · C ${Math.round(sum.c)} · G ${Math.round(sum.g)}): ` + items.map(x => `[${x.meal}] ${x.name}${x.qty ? ` ${x.qty}` : ""}`).join("; ");
+  }).join("\n");
+  const user = `${profileText(profile)}\n${target}\nSuplementos que toma: ${supps.length ? supps.map(s => `${s.name}${s.dose ? ` (${s.dose})` : ""}`).join(", ") : "ninguno"}.\n\nAnalizá su semana de comidas (come de forma repetitiva a propósito; no le propongas recetas). Decí día por día si llega al objetivo, qué nutrientes le quedan cortos o desbalanceados (fibra, hierro, calcio, omega 3, potasio, vitaminas, etc.) y si algún suplemento que ya toma lo cubre. Las sugerencias tienen que ser cambios simples con los mismos alimentos o agregados fáciles.\n\n${days}`;
+  const content = await ask(user, NUTRITION_SCHEMA, "kairo-coach-nutrition");
+  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "nutrition", content }), headers: { Prefer: "return=minimal" } });
+  return Response.json({ nutrition: content });
 }
 
 export async function POST(req) {
@@ -249,6 +292,7 @@ export async function POST(req) {
   try {
     if (body.action === "plan" && body.routine_id) return await plan(me.id, body.routine_id);
     if (body.action === "review") return (me.role !== "admin" && await overLimit(me.id, "review")) || await review(me.id);
+    if (body.action === "nutrition") return (me.role !== "admin" && await overLimit(me.id, "nutrition")) || await nutrition(me.id);
     if (body.action === "strategy") return (me.role !== "admin" && await overLimit(me.id, "strategy")) || await strategy(me.id);
     return Response.json({ error: "Acción inválida" }, { status: 400 });
   } catch (e) {
