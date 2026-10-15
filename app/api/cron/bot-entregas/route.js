@@ -78,6 +78,7 @@ export async function GET(req) {
   const conItems = new Set(itemsAll.map((i) => i.operation_id));
   for (const op of cand) {
     const c = op.clients || {};
+    if (op.sent_notifications?.silenciada) continue; // op silenciada a mano: nunca se le escribe
     // La entrega directa por courier es solo del aéreo A (un RI en marítimo se avisa como cualquiera).
     const riDir = op.channel === "aereo_blanco" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
     if (riDir) continue;
@@ -122,10 +123,11 @@ export async function GET(req) {
     } catch (e) { console.error("[bot-entregas] aviso", op.operation_code, e.message); }
   }
 
-  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
+  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,sent_notifications,clients(first_name,last_name,client_code,whatsapp)`);
 
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
     if (!enHorario && !dry) { out.recordatorios_fuera_de_horario = true; break; }
+    if (op.sent_notifications?.silenciada) continue;
     const base = new Date(op.bot_coord_reminder_at || op.delivery_ready_at).getTime();
     if (now - base < H60) continue;
     const num = waNumber(op.clients?.whatsapp);
@@ -166,7 +168,7 @@ export async function GET(req) {
     const riOps = (Array.isArray(r2.body) ? r2.body : []).filter((op) => {
       const c = op.clients || {};
       const riDir = op.channel === "aereo_blanco" && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
-      return riDir && !op.sent_notifications?.wa_ri_cobro && waNumber(c.whatsapp);
+      return riDir && !op.sent_notifications?.wa_ri_cobro && !op.sent_notifications?.silenciada && waNumber(c.whatsapp);
     });
     if (riOps.length) {
       const pagosRes = await sb(`/operation_client_payments?operation_id=in.(${riOps.map((o) => o.id).join(",")})&select=operation_id,amount_usd`);

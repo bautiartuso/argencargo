@@ -264,6 +264,8 @@ export async function POST(req) {
 
     // Check ya enviado
     const sentKey = `email_${trigger}`;
+    // Op silenciada a mano (AC-0327, 15/10/2026): nunca se le avisa nada al cliente, ni con force.
+    if (op.sent_notifications?.silenciada) return Response.json({ skipped: "silenciada" });
     if (!force && op.sent_notifications?.[sentKey]) {
       return Response.json({ skipped: "already_sent", at: op.sent_notifications[sentKey] });
     }
