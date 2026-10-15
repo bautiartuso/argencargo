@@ -547,7 +547,7 @@ function ExerciseInfo({ ex, token, onClose }) {
   const best = hist?.reduce((a, h) => h.best > (a?.best || 0) ? h : a, null);
   return <Sheet title={ex.name} onClose={onClose}>
     <div style={{ display: "flex", justifyContent: "center", background: C.cardHi, borderRadius: 18, padding: "18px 0 14px" }}>
-      <BodyMap primary={ex.muscles_primary || []} secondary={ex.muscles_secondary || []} size={190} />
+      <BodyMap primary={ex.muscles_primary || []} secondary={ex.muscles_secondary || []} size={230} labels />
     </div>
     <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
       <div style={{ fontSize: 13, lineHeight: 1.6 }}>
@@ -752,9 +752,9 @@ function ExercisePicker({ token, multi, onClose, onPick }) {
   const list = (all || []).filter(e => (!muscle || e.muscle === muscle) && (!q || norm(e.name).includes(norm(q))));
   const tap = (e) => multi ? setSel(sel.some(x => x.id === e.id) ? sel.filter(x => x.id !== e.id) : [...sel, e]) : onPick([e]);
   if (creating) return <CreateExercise token={token} initialName={q} onClose={() => setCreating(false)} onCreated={(ex) => { setAll([...(all || []), ex]); setCreating(false); tap(ex); }} />;
-  return <Sheet title={multi ? "Agregar ejercicios" : "Elegir ejercicio"} onClose={onClose}>
+  return <Sheet title={multi ? "Agregar ejercicios" : "Elegir ejercicio"} onClose={onClose} tall>
     <div style={{ display: "flex", gap: 8 }}>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar ejercicio" style={{ ...field, flex: 1 }} />
+      <input type="search" name="kairo-ejercicio" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} enterKeyHint="search" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()} placeholder="Buscar ejercicio" style={{ ...field, flex: 1 }} />
       <button onClick={() => setCreating(true)} className="k-press" style={{ ...btnGhost, width: "auto", padding: "0 14px", fontSize: 14, color: C.lime, whiteSpace: "nowrap" }}>+ Crear</button>
     </div>
     <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "12px -2px 4px", paddingBottom: 4 }}>
@@ -795,7 +795,7 @@ function CreateExercise({ token, initialName, onClose, onCreated }) {
   const chip = (on) => ({ padding: "8px 12px", borderRadius: 999, fontSize: 13.5, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.cardHi, color: on ? C.limeInk : C.text, fontWeight: on ? 600 : 400 });
   return <Sheet title="Crear ejercicio" onClose={onClose}>
     <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Press de pecho convergente (máquina)" style={field} />
-    <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}><BodyMap primary={main ? [main] : []} secondary={extra} size={130} /></div>
+    <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}><BodyMap primary={main ? [main] : []} secondary={extra} size={170} labels /></div>
     <Label>Músculo principal</Label>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{Object.entries(MUSCLE_ES).filter(([k]) => k !== "neck").map(([k, l]) => <button key={k} onClick={() => setMain(k)} className="k-press" style={chip(main === k)}>{l}</button>)}</div>
     <Label>Secundarios (opcional)</Label>

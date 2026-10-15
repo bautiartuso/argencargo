@@ -1025,6 +1025,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=*&limit=1`})
     ]);
     const role=Array.isArray(prof)&&prof[0]?prof[0].role:null;
+    // Las cuentas de Kairo (app personal) no entran a ningún panel de Argencargo.
+    if(role==="kairo"){clearSession();window.location.reload();return;}
     if(role==="admin"){
       // tutorial_completed:true — el signup sintético del admin no tiene ficha donde persistir
       // el tutorial, así que sin esto el overlay aparecía en CADA ingreso del admin.

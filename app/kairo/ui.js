@@ -74,10 +74,12 @@ export const MiniStat = ({ label, value, color }) => <div style={{ background: C
 </div>;
 
 // ─────── Sheets ───────
-export function Sheet({ title, onClose, children }) {
+// tall: ocupa casi toda la pantalla aunque el contenido sea corto (buscadores: con el teclado
+// abierto, una hoja que se achica queda escondida detrás del teclado en el iPhone).
+export function Sheet({ title, onClose, children, tall }) {
   useEffect(() => { const o = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = o; }; }, []);
   return <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.55)", animation: "kFade 160ms", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-    <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, maxHeight: "88dvh", overflowY: "auto", background: C.card, borderTop: `0.5px solid ${C.line}`, borderRadius: "22px 22px 0 0", padding: "10px 18px calc(env(safe-area-inset-bottom) + 18px)", animation: "kUp 260ms cubic-bezier(.2,.9,.3,1)" }}>
+    <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, maxHeight: "88dvh", ...(tall ? { height: "calc(100dvh - env(safe-area-inset-top) - 16px)", maxHeight: "none" } : {}), overflowY: "auto", background: C.card, borderTop: `0.5px solid ${C.line}`, borderRadius: "22px 22px 0 0", padding: "10px 18px calc(env(safe-area-inset-bottom) + 18px)", animation: "kUp 260ms cubic-bezier(.2,.9,.3,1)" }}>
       <div style={{ width: 36, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" }} />
       <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 14, letterSpacing: "-0.01em" }}>{title}</div>
       {children}
