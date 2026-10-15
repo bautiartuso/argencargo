@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession, clearSession, ac, saveSession } from "../../lib/sb-client";
-import Fisico from "./fisico";
+import Fisico, { WorkoutLayer } from "./fisico";
 import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn } from "./ui";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -84,6 +84,7 @@ function App({ session }) {
       {["nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
         </div>
       </main>
+      <WorkoutLayer token={session.token} />
       <nav style={{ flexShrink: 0, background: C.bg, borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(16px, min(env(safe-area-inset-bottom), 22px))" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex" }}>
           {TABS.map(t => {

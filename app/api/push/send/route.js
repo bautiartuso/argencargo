@@ -116,7 +116,7 @@ function vapidJwt(audience) {
   return `${signingInput}.${b64uEncode(sig)}`;
 }
 
-async function sendOne(sub, title, body, url, tag) {
+async function sendOne(sub, title, body, url, tag, urgency = "normal") {
   const payload = JSON.stringify(tag ? { title, body, url, tag } : { title, body, url });
   const encrypted = encryptPayload(payload, sub.p256dh, sub.auth);
   const audience = new URL(sub.endpoint).origin;
@@ -129,7 +129,7 @@ async function sendOne(sub, title, body, url, tag) {
       "Content-Type": "application/octet-stream",
       "Content-Encoding": "aes128gcm",
       TTL: "86400",
-      Urgency: "normal",
+      Urgency: urgency,
     },
     body: encrypted.body,
   });
@@ -141,7 +141,9 @@ export async function POST(req) {
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
       return Response.json({ ok: false, error: "VAPID keys not configured" }, { status: 500 });
     }
-    const { user_id, title, body, url, tag, portal } = await req.json();
+    // strict: solo a las suscripciones de ese portal (sin caer a las demás). urgency: "high" para avisos
+    // que tienen que llegar ya (fin de descanso en Kairo).
+    const { user_id, title, body, url, tag, portal, strict, urgency } = await req.json();
     if (!user_id || !title) return Response.json({ ok: false, error: "missing fields" }, { status: 400 });
 
     // El portal es una PREFERENCIA, no un filtro duro. Un mismo usuario puede estar suscripto desde
@@ -159,6 +161,7 @@ export async function POST(req) {
     if (portal && Array.isArray(allSubs)) {
       const delPortal = allSubs.filter((x) => x.portal === portal);
       if (delPortal.length > 0) subs = delPortal;
+      else if (strict) return Response.json({ ok: true, skipped: "no_portal_subscriptions" });
       else fallbackPortal = true;
     }
     if (!Array.isArray(subs) || subs.length === 0) {
@@ -168,7 +171,7 @@ export async function POST(req) {
     const results = [];
     for (const s of subs) {
       try {
-        const r = await sendOne(s, title, body, url, tag);
+        const r = await sendOne(s, title, body, url, tag, urgency === "high" ? "high" : "normal");
         results.push(r);
         // Si el endpoint reporta gone (404/410), borrarlo
         if (r.status === 404 || r.status === 410) {

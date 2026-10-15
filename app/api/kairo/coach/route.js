@@ -33,19 +33,21 @@ async function isAdmin(req) {
   return Array.isArray(p) && p[0]?.role === "admin";
 }
 
-const COACH = `Sos el entrenador personal de una sola persona, dentro de su app Kairo. Hablás en castellano rioplatense, directo y corto, como un buen coach de gimnasio: concreto, sin vueltas ni frases de relleno.
-Su objetivo es el mayor desarrollo físico posible (hipertrofia y fuerza), entrenando de forma sostenible y sin lesionarse.
-Principios que aplicás:
-- Sobrecarga progresiva con doble progresión: dentro del rango de repeticiones de la rutina, primero se suben repeticiones; cuando todas las series llegan al tope del rango con buena técnica, se sube el peso (≈2,5 kg en compuestos, 1–2 kg o el salto mínimo de mancuerna en aislados) y se vuelve al piso del rango.
-- Si en las últimas sesiones no progresó o bajó, mantenés o bajás un poco el peso; si se estancó 3+ sesiones, sugerís cambiar la variante del ejercicio.
-- Volumen semanal razonable: ~10–20 series efectivas por grupo muscular grande; cuidás el balance empuje/tracción y que nada quede sin trabajar.
-- Si no hay historial de un ejercicio, proponés un punto de partida conservador para encontrar el peso de trabajo.
-Los kilos van con un decimal como máximo y en saltos que existan en un gimnasio.`;
+const COACH = `Sos el preparador físico de una sola persona dentro de su app Kairo. Escribís en castellano rioplatense con lenguaje técnico de entrenamiento: preciso, sobrio y profesional, como un coach de alto rendimiento. Nada de frases motivacionales, saludos, emojis ni relleno.
+Planificás según su perfil (objetivo, experiencia, medidas, lesiones). Criterios:
+- Volumen (superávit): prioridad hipertrofia; doble progresión, empujar cerca del fallo (RIR 1–2), volumen semanal alto (12–20 series por grupo grande).
+- Definición (déficit): conservar fuerza y masa; mantener cargas, no perseguir PRs, recortar volumen accesorio si la recuperación cae; RIR 1–3.
+- Recomposición: progresión conservadora de carga y reps, volumen moderado-alto, RIR 1–2.
+- Mantenimiento: sostener cargas con volumen mínimo eficaz (~6–10 series por grupo).
+- Fuerza: compuestos en rangos bajos (3–6), progresión de carga lineal, descansos largos; accesorios en 8–12.
+Progresión: doble progresión dentro del rango de la rutina — primero reps; cuando todas las series llegan al tope con técnica, se sube la carga (≈2,5 kg compuestos, salto mínimo disponible en aislados) y se vuelve al piso del rango. Sin progreso en 2 sesiones: mantener; caída o estancamiento de 3+ sesiones: bajar 5–10 % o cambiar la variante. Sin historial: estimar una carga de trabajo conservadora según experiencia, sexo y peso corporal.
+Ajustá a la experiencia: principiante progresa más rápido y necesita menos volumen; avanzado, progresiones más chicas.
+Respetá lesiones y limitaciones: nunca propongas cargar una zona lesionada.
+Kilos con un decimal como máximo y en saltos reales de gimnasio.`;
 
 const PLAN_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["mensaje", "ejercicios"],
+  type: "object", additionalProperties: false, required: ["ejercicios"],
   properties: {
-    mensaje: { type: "string", description: "Una o dos frases para arrancar el entreno de hoy." },
     ejercicios: {
       type: "array",
       items: {
@@ -54,7 +56,7 @@ const PLAN_SCHEMA = {
           exercise_id: { type: "string" },
           accion: { type: "string", enum: ["subir_peso", "subir_reps", "mantener", "bajar_peso", "primera_vez", "cambiar"] },
           series: { type: "array", items: { type: "object", additionalProperties: false, required: ["kg", "reps"], properties: { kg: { type: "number" }, reps: { type: "integer" } } } },
-          nota: { type: "string", description: "Por qué, en una frase corta." },
+          nota: { type: "string", description: "Indicación técnica de ejecución o de esfuerzo para hoy (RIR, tempo, rango, cue técnico), máximo 14 palabras, en tono profesional. No digas 'primera vez' ni des ánimo." },
         },
       },
     },
@@ -112,6 +114,16 @@ async function history(exerciseIds, perExercise = 4) {
   return out;
 }
 
+const OBJ = { volumen: "Volumen (superávit calórico)", definicion: "Definición (déficit calórico)", recomposicion: "Recomposición corporal", mantenimiento: "Mantenimiento", fuerza: "Fuerza" };
+async function loadProfile() {
+  const [p] = arr(await sb(`/rest/v1/kairo_profile?id=eq.1&select=*`));
+  return p || null;
+}
+function profileText(p) {
+  if (!p) return "Perfil: no cargado (asumí hipertrofia general, nivel intermedio).";
+  return `Perfil: objetivo ${OBJ[p.objetivo] || p.objetivo || "—"} · experiencia ${p.experiencia || "—"} · ${p.sexo || "—"}, ${p.edad || "—"} años, ${p.peso_kg || "—"} kg, ${p.altura_cm || "—"} cm · entrena ${p.dias_semana || "—"} días/semana${p.lesiones ? ` · lesiones/limitaciones: ${p.lesiones}` : ""}${p.notas ? ` · notas: ${p.notas}` : ""}.`;
+}
+
 async function ask(user, schema, feature) {
   const text = await callClaudeText({ system: COACH, user, max_tokens: 8000, json_schema: schema, thinking: "adaptive", model: MODEL, feature });
   return JSON.parse(text);
@@ -122,10 +134,11 @@ async function plan(routineId) {
   if (!routine) return Response.json({ error: "Rutina no encontrada" }, { status: 404 });
   if (!routine.items.length) return Response.json({ error: "La rutina no tiene ejercicios" }, { status: 400 });
 
-  // Reusa el plan si no hubo un entreno de esta rutina después de generarlo.
+  // Reusa el plan si no hubo un entreno de esta rutina ni cambió el perfil después de generarlo.
+  const profile = await loadProfile();
   const [last] = arr(await sb(`/rest/v1/kairo_ai?kind=eq.plan&routine_id=eq.${routineId}&select=content,created_at&order=created_at.desc&limit=1`));
   const [lastWorkout] = arr(await sb(`/rest/v1/kairo_workouts?routine_id=eq.${routineId}&finished_at=not.is.null&select=finished_at&order=finished_at.desc&limit=1`));
-  if (last && (!lastWorkout || last.created_at > lastWorkout.finished_at)) {
+  if (last && (!lastWorkout || last.created_at > lastWorkout.finished_at) && (!profile || last.created_at > profile.updated_at)) {
     const ids = new Set(routine.items.map(i => i.exercise_id));
     if (last.content.ejercicios?.every(e => ids.has(e.exercise_id))) return Response.json({ plan: last.content, cached: true });
   }
@@ -135,7 +148,7 @@ async function plan(routineId) {
     const h = hist[i.exercise_id] || [];
     return `- exercise_id ${i.exercise_id} · ${i.exercise.name} (${i.exercise.muscle}, ${i.exercise.equipment || "—"}) · objetivo de la rutina: ${i.sets} series de ${i.rep_min}–${i.rep_max} reps\n  Últimas sesiones (la más reciente primero): ${h.length ? h.map(x => `${x.fecha}: ${x.series}`).join(" | ") : "sin historial"}`;
   }).join("\n");
-  const user = `Hoy entrena la rutina "${routine.name}". Para cada ejercicio decidí qué hacer hoy y devolvé exactamente una serie por cada serie objetivo (kilos y repeticiones a buscar). Usá el exercise_id tal cual.\n\n${lines}`;
+  const user = `${profileText(profile)}\n\nHoy entrena la rutina "${routine.name}". Para cada ejercicio decidí qué hacer hoy y devolvé exactamente una serie por cada serie objetivo (kilos y repeticiones a buscar). Usá el exercise_id tal cual.\n\n${lines}`;
   const content = await ask(user, PLAN_SCHEMA, "kairo-coach-plan");
   await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ kind: "plan", routine_id: routineId, content }), headers: { Prefer: "return=minimal" } });
   return Response.json({ plan: content });
@@ -152,7 +165,8 @@ async function review() {
     const h = hist[i.exercise_id] || [];
     return `  - ${i.exercise.name} (${i.exercise.muscle}): ${i.sets}×${i.rep_min}–${i.rep_max}, descanso ${i.rest_sec}s${h.length ? ` · últimas: ${h.map(x => x.series).join(" | ")}` : ""}`;
   }).join("\n")).join("\n\n");
-  const user = `Revisá estas rutinas. Decí si son efectivas para el objetivo, calculá las series semanales por grupo muscular (contando los días de cada rutina), y proponé cambios concretos (ejercicio por ejercicio) solo donde valga la pena.\nEntrenamientos hechos en las últimas 4 semanas: ${recent.length}.\n\n${text}`;
+  const profile = await loadProfile();
+  const user = `${profileText(profile)}\n\nRevisá estas rutinas en función de ese objetivo. Decí si son efectivas para el objetivo, calculá las series semanales por grupo muscular (contando los días de cada rutina), y proponé cambios concretos (ejercicio por ejercicio) solo donde valga la pena.\nEntrenamientos hechos en las últimas 4 semanas: ${recent.length}.\n\n${text}`;
   const content = await ask(user, REVIEW_SCHEMA, "kairo-coach-review");
   await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ kind: "review", content }), headers: { Prefer: "return=minimal" } });
   return Response.json({ review: content });
