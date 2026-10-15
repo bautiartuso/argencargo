@@ -9,7 +9,7 @@ import CarrierLogo from "../components/CarrierLogo";
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8C99B";
 const MAX_ADJ = 3.2 * 1024 * 1024; // límite de Vercel para el cuerpo de la request (~4,5 MB en base64)
-const AUTO = ["DHL", "FedEx", "UPS", "WhatsApp", "DMARC"];
+const AUTO = ["DHL", "FedEx", "UPS", "WhatsApp", "DMARC", "DHL avisos"];
 
 const useCelu = () => { const [c, setC] = useState(false); useEffect(() => { const f = () => setC(window.innerWidth < 760); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []); return c; };
 const Ico = ({ d, s = 17 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x, i) => <path key={i} d={x} />)}</svg>;
@@ -135,7 +135,7 @@ export default function MailPanel({ token }) {
   // Carpetas de DHL, FedEx y UPS: con el logo de la empresa en vez del ícono de carpeta.
   const marca = (l) => { const x = String(l || "").toLowerCase(); return x === "dhl" ? "dhl" : x === "fedex" ? "fedex" : x === "ups" ? "ups" : null; };
   const itemNav = (k, l, ic, n) => { const on = carpeta === k; const mk = ic === I.carpeta ? marca(l) : null; const wa = ic === I.carpeta && String(l).toLowerCase() === "whatsapp"; return <button key={k} onClick={() => elegir(k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.16)" : "transparent", color: on ? GOLD_LIGHT : "rgba(255,255,255,0.72)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>{mk ? <CarrierLogo k={mk} alto={24} radio={6} /> : wa ? <>{WA}WhatsApp</> : <><Ico d={ic} />{l}</>}{n > 0 && <span style={{ marginLeft: "auto", minWidth: 22, textAlign: "center", fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#ef4444", color: "#fff" }}>{n}</span>}</button>; };
-  const ordenCarpetas = [...carpetas].sort((a, b) => { const ia = AUTO.findIndex((x) => x.toLowerCase() === a.nombre.toLowerCase()), ib = AUTO.findIndex((x) => x.toLowerCase() === b.nombre.toLowerCase()); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.nombre.localeCompare(b.nombre); });
+  const ordenCarpetas = [...carpetas].sort((a, b) => { const ia = AUTO.findIndex((x) => x.toLowerCase() === a.nombre.toLowerCase()), ib = AUTO.findIndex((x) => x.toLowerCase() === b.nombre.toLowerCase()); const rk = (n, i) => (/avisos/i.test(n) ? 200 : i < 0 ? 99 : i); return rk(a.nombre, ia) - rk(b.nombre, ib) || a.nombre.localeCompare(b.nombre); });
 
   const panelCarpetas = <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
     <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ height: 44, marginBottom: 12, borderRadius: 12, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Redactar</button>
