@@ -654,9 +654,9 @@ function EditableItemRow({item,editable,token,onChange}){
 // El aviso de baterías sobrevive al congelamiento de la mercadería: es un dato operativo del vuelo,
 // no plata. Guarda por /api/portal/baterias, que avisa al admin y deja el hito en el seguimiento.
 // Sí / No de baterías (11/10/2026): un selector de dos partes, prolijo, sin texto de ejemplos.
-function SiNoBaterias({value,onChange,disabled}){
+function SiNoBaterias({value,onChange,disabled,lockNo}){
   const {t}=useT();
-  const opt=(v,l,c)=>{const on=value===v;return <button type="button" disabled={disabled} onClick={()=>onChange(v)} style={{minWidth:96,height:38,padding:"0 18px",borderRadius:9,border:"none",cursor:disabled?"wait":"pointer",fontFamily:"inherit",fontSize:13.5,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:on?c:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.65)",boxShadow:on?`0 4px 14px ${c}55`:"none",transition:"background 150ms, color 150ms"}}>{on&&<span aria-hidden="true">✓</span>}{l}</button>;};
+  const opt=(v,l,c)=>{const on=value===v;const off=disabled||(lockNo&&v===false);return <button type="button" disabled={off} onClick={()=>{if(!off)onChange(v);}} style={{minWidth:96,height:38,padding:"0 18px",borderRadius:9,border:"none",cursor:disabled?"wait":"pointer",fontFamily:"inherit",fontSize:13.5,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,background:on?c:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.65)",boxShadow:on?`0 4px 14px ${c}55`:"none",transition:"background 150ms, color 150ms"}}>{on&&<span aria-hidden="true">✓</span>}{l}</button>;};
   return <div role="radiogroup" style={{display:"inline-flex",gap:4,padding:4,borderRadius:12,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)"}}>
     {opt(true,t("common.yes"),"#fbbf24")}{opt(false,t("common.no"),"#4ade80")}
   </div>;
@@ -665,7 +665,9 @@ function BateriasAviso({op,token,onSaved}){
   const {t}=useT();
   const [val,setVal]=useState(op.has_battery==null?null:!!op.has_battery);
   const [saving,setSaving]=useState(false);const [okAt,setOkAt]=useState(false);
-  const guardar=async(v)=>{if(saving||v===val)return;setVal(v);setSaving(true);setOkAt(false);
+  // Ya viajó declarada con baterías: el "No" se traba (15/10/2026, AC-0327). Pasar a "Sí" se puede.
+  const bloqueado=!!op.has_battery&&["en_transito","arribo_argentina","en_aduana"].includes(op.status);
+  const guardar=async(v)=>{if(saving||v===val||(bloqueado&&v===false))return;setVal(v);setSaving(true);setOkAt(false);
     try{const r=await fetch("/api/portal/baterias",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({op_id:op.id,has_battery:v})});
       const d=await r.json().catch(()=>null);
       if(!r.ok){toast(t("merc.saveError"),"error");setVal(op.has_battery==null?null:!!op.has_battery);}
@@ -675,9 +677,10 @@ function BateriasAviso({op,token,onSaved}){
   return <div style={{marginTop:14,padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.04)"}}>
     <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#fff"}}>{t("calc.goodsQ")}</span>
-      <SiNoBaterias value={val} onChange={guardar} disabled={saving}/>
+      <SiNoBaterias value={val} onChange={guardar} disabled={saving} lockNo={bloqueado}/>
       {okAt&&<span style={{fontSize:11.5,color:"#4ade80",fontWeight:700}}>✓</span>}
     </div>
+    {bloqueado&&<p style={{margin:"8px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{t("merc.battLocked")}</p>}
   </div>;
 }
 function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){

@@ -39,6 +39,16 @@ export async function POST(req) {
   if (!op) return Response.json({ error: "op_no_encontrada" }, { status: 404 });
   if (["entregada", "operacion_cerrada", "cancelada"].includes(op.status)) return Response.json({ error: "op_cerrada" }, { status: 409 });
   if (!!op.has_battery === body.has_battery) return Response.json({ ok: true, sin_cambios: true });
+  // Si ya viajó declarada con baterías no se puede pasar a "No" (15/10/2026, AC-0327): ni por estado
+  // de la op ni por estar en un vuelo despachado. El admin lo cambia desde la op si hace falta.
+  if (op.has_battery && body.has_battery === false && !isAdmin) {
+    let viajo = ["en_transito", "arribo_argentina", "en_aduana"].includes(op.status);
+    if (!viajo) {
+      const fo = await svc(`/rest/v1/flight_operations?operation_id=eq.${opId}&select=flights(status,dispatched_at)`);
+      viajo = (arr(fo) || []).some((x) => x.flights && (x.flights.dispatched_at || ["despachado", "recibido"].includes(x.flights.status)));
+    }
+    if (viajo) return Response.json({ error: "ya_viajo_con_baterias" }, { status: 409 });
+  }
 
   const up = await svc(`/rest/v1/operations?id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ has_battery: body.has_battery }) });
   if (!up.ok) return Response.json({ error: "no_se_guardo", detail: up.data }, { status: 500 });
