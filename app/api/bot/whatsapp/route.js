@@ -443,6 +443,17 @@ export async function POST(req) {
       return Response.json({ ok: true });
     }
     const phone = String(msg.from || "").replace(/\D/g, "");
+    // Meta reintenta el webhook si tardamos en contestar (leer un comprobante lleva varios segundos)
+    // y el mismo mensaje se procesaba 2 o 3 veces: comprobante duplicado, reenvío doble a los
+    // internos y respuestas repetidas (Javier Fernández / Pablo Visconti, 15/10/2026). Traba atómica
+    // por id de mensaje: si ya existe el marcador, este reintento se descarta.
+    if (msg.id) {
+      const lock = await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/_wamid/${encodeURIComponent(msg.id)}.txt`, { method: "POST", headers: { Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "text/plain", "x-upsert": "false" }, body: phone }).catch(() => null);
+      if (lock && !lock.ok) {
+        const t = await lock.text().catch(() => "");
+        if (/exist|duplicate/i.test(t)) { console.log("[bot/whatsapp] reintento de Meta descartado", msg.id); return Response.json({ ok: true, duplicado: true }); }
+      }
+    }
     let text = null;
     let logContent = null;   // lo que se guarda en el historial visible para el admin
     let logExtra = {};
@@ -618,7 +629,9 @@ export async function POST(req) {
         const e = acreditado.entrega || {};
         // Coordinada = confirmada en el link, tenga o no día: por transportista no hay día ni franja
         // (AC-0287, 14/10/2026: ya estaba confirmada por transportista y Argy le pidió coordinar).
-        const entregaTxt = e.confirmada
+        const entregaTxt = e.entregada
+          ? "La carga YA FUE ENTREGADA (el courier la dejó en su domicilio): no hay nada que coordinar. Decile solo que el pago quedó acreditado y la operación paga. NO le preguntes cómo ni cuándo recibirla."
+          : e.confirmada
           ? (e.modalidad === "carrier"
             ? "Su entrega YA está coordinada: va por transportista y el equipo le avisa apenas se despache. NO le preguntes cómo ni cuándo recibirla."
             : `Su entrega YA está coordinada${e.dia ? ` (${e.dia}${e.franja ? `, ${e.franja}` : ""}${e.modalidad === "propio" ? ", envío a domicilio" : e.modalidad === "oficina" ? ", retiro por oficina" : ""})` : ""}: recordásela en una línea, sin volver a preguntar cómo ni cuándo.`)
