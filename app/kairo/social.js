@@ -47,8 +47,8 @@ export function StoryPicker({ token, caption, children, onDone, style }) {
   </>;
 }
 
-// Cámara a pantalla completa. La selfie se muestra como espejo mientras la sacás (como Instagram)
-// pero se guarda derecha, como te ven los demás. Si el navegador no da acceso a la cámara, abre la
+// Cámara a pantalla completa. Sin espejo en ningún momento: lo que ves al sacar la foto (también la
+// selfie) es exactamente lo que se sube. Si el navegador no da acceso a la cámara, abre la
 // del sistema (también solo cámara, sin galería).
 function Camera({ caption, onShot, onClose }) {
   const video = useRef(null), stream = useRef(null), fallback = useRef(null);
@@ -81,7 +81,7 @@ function Camera({ caption, onShot, onClose }) {
     <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
       {shot ? <img src={shot} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
         : err ? <div style={{ color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<br /><button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
-        : <video ref={video} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: facing === "user" ? "scaleX(-1)" : "none" }} />}
+        : <video ref={video} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
       <input ref={fallback} type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setShot(await shrink(f, 1920, 0.9)); }} />
       <button onClick={onClose} aria-label="Cerrar cámara" style={{ ...btn, position: "absolute", top: "calc(env(safe-area-inset-top) + 12px)", left: 14 }}>×</button>
       {caption && <div style={{ position: "absolute", bottom: 16, left: 16, right: 16, textAlign: "center", color: "#fff", fontSize: 14, fontWeight: 500, textShadow: "0 1px 6px rgba(0,0,0,0.7)" }}>{caption}</div>}
