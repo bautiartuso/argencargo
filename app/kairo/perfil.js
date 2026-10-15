@@ -63,7 +63,7 @@ export default function Perfil({ token, isAdmin }) {
     <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "6px 2px 0" }}>
       <button onClick={() => fileRef.current?.click()} aria-label="Cambiar foto de perfil" className="k-press" style={{ width: 76, height: 76, borderRadius: 38, border: `2px solid ${C.lime}`, padding: 2, background: "none", flexShrink: 0 }}>
         <span style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: C.cardHi, color: C.sub }}>
-          {p?.avatar ? <img src={p.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={30} />}
+          {p?.avatar ? <img src={p.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: C.lime }}><Icon d={I.plus} size={20} sw={2.2} /><span style={{ fontSize: 9.5, fontWeight: 600, lineHeight: 1.1, textAlign: "center" }}>Cargá tu<br />foto</span></span>}
         </span>
       </button>
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => pickPhoto(e.target.files?.[0])} />
@@ -83,7 +83,7 @@ export default function Perfil({ token, isAdmin }) {
       <div style={{ fontSize: 18, fontWeight: 600 }}>{OBJ_LABEL[p.objetivo]}</div>
       {p.tendencia && <div style={{ fontSize: 14, color: C.lime, marginTop: 2 }}>{p.tendencia}</div>}
       {p.objetivo_detalle && <div style={{ fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 1.45 }}>"{p.objetivo_detalle}"</div>}
-      <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>{[p.sexo, (p.fecha_nacimiento || p.edad) && `${ageOf(p.fecha_nacimiento) ?? p.edad} años`, p.altura_cm && `${n1(p.altura_cm)} cm`, p.experiencia, p.dias_semana && `${p.dias_semana} días/sem`].filter(Boolean).join(" · ")}</div>
+      <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>{[p.sexo, (p.fecha_nacimiento || p.edad) && `${ageOf(p.fecha_nacimiento) ?? p.edad} años`, p.altura_cm && `${n1(p.altura_cm)} cm`, p.peso_kg && `${n1(p.peso_kg)} kg`, p.experiencia].filter(Boolean).join(" · ")}</div>
     </button>}
 
     {/* Estrategia de la IA */}
@@ -171,9 +171,8 @@ function ObjectiveSheet({ token, p, onClose, onSaved }) {
   const tendencias = OBJETIVOS.find(([k]) => k === f.objetivo)?.[2] || [];
   const save = async () => {
     if (!f.nombre?.trim()) return pushToast("Poné tu nombre");
-    if (!f.objetivo) return pushToast("Elegí tu objetivo");
     setSaving(true);
-    await saveProfile(token, { nombre: f.nombre?.trim() || null, objetivo: f.objetivo, tendencia: f.tendencia || null, objetivo_detalle: f.objetivo_detalle?.trim() || null, experiencia: f.experiencia || null, sexo: f.sexo || null, fecha_nacimiento: f.fecha_nacimiento || null, edad: ageOf(f.fecha_nacimiento), altura_cm: num(f.altura_cm) || null, dias_semana: Number(f.dias_semana) || null, lesiones: f.lesiones?.trim() || null, updated_at: new Date().toISOString() });
+    await saveProfile(token, { nombre: f.nombre?.trim() || null, objetivo: f.objetivo || null, tendencia: f.tendencia || null, objetivo_detalle: f.objetivo_detalle?.trim() || null, experiencia: f.experiencia || null, sexo: f.sexo || null, fecha_nacimiento: f.fecha_nacimiento || null, edad: ageOf(f.fecha_nacimiento), altura_cm: num(f.altura_cm) || null, lesiones: f.lesiones?.trim() || null, updated_at: new Date().toISOString() });
     setSaving(false); pushToast("Objetivo guardado"); onSaved();
   };
   return <Sheet title="Tu objetivo" onClose={onClose}>
@@ -191,15 +190,16 @@ function ObjectiveSheet({ token, p, onClose, onSaved }) {
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{[["principiante", "Menos de 1 año"], ["intermedio", "1 a 3 años"], ["avanzado", "Más de 3"]].map(([k, l]) => <button key={k} onClick={() => set("experiencia", k)} className="k-press" style={chip(f.experiencia === k)}>{l}</button>)}</div>
     <Label>Sexo</Label>
     <div style={{ display: "flex", gap: 8 }}>{[["hombre", "Hombre"], ["mujer", "Mujer"]].map(([k, l]) => <button key={k} onClick={() => set("sexo", k)} className="k-press" style={chip(f.sexo === k)}>{l}</button>)}</div>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-      <label><Label>Nacimiento{f.fecha_nacimiento ? ` · ${ageOf(f.fecha_nacimiento)} años` : ""}</Label><input type="date" value={f.fecha_nacimiento || ""} onChange={e => set("fecha_nacimiento", e.target.value)} style={{ ...field, colorScheme: "dark" }} /></label>
-      <label><Label>Altura (cm)</Label><input inputMode="numeric" value={f.altura_cm ?? ""} onChange={e => set("altura_cm", e.target.value)} style={field} /></label>
+    <Label>Fecha de nacimiento{f.fecha_nacimiento ? ` · ${ageOf(f.fecha_nacimiento)} años` : ""}</Label>
+    <input type="date" value={f.fecha_nacimiento || ""} onChange={e => set("fecha_nacimiento", e.target.value)} style={{ ...field, colorScheme: "dark", minWidth: 0, WebkitAppearance: "none", appearance: "none", minHeight: 48 }} />
+    <Label>Altura</Label>
+    <div style={{ ...field, display: "flex", alignItems: "center", gap: 6 }}>
+      <input inputMode="numeric" value={f.altura_cm ?? ""} onChange={e => set("altura_cm", e.target.value.replace(/[^\d]/g, ""))} placeholder="178" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16 }} />
+      <span style={{ color: C.sub }}>cm</span>
     </div>
-    <Label>Días de gimnasio por semana</Label>
-    <div style={{ display: "flex", gap: 8 }}>{[2, 3, 4, 5, 6].map(n => <button key={n} onClick={() => set("dias_semana", n)} className="k-press" style={{ ...chip(Number(f.dias_semana) === n), flex: 1, textAlign: "center" }}>{n}</button>)}</div>
     <Label>Lesiones o limitaciones</Label>
     <input value={f.lesiones || ""} onChange={e => set("lesiones", e.target.value)} placeholder="Ej: hombro derecho" style={field} />
-    <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>El peso se toma de tu último registro en "Peso y medidas".</div>
+    <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>El peso lo cargás en Inicio. Podés guardar ahora y completar el resto después.</div>
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 18 }}>{saving ? "Guardando…" : "Guardar"}</button>
   </Sheet>;
 }
@@ -260,7 +260,7 @@ export function LogSheet({ token, log, last, onClose, onSaved }) {
 }
 
 // Achica la foto en el celular antes de guardarla (cuadrada, jpg liviano).
-function resizeImage(file, size) {
+export function resizeImage(file, size) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -302,7 +302,7 @@ function Users({ token }) {
 }
 
 function NewUserSheet({ auth, onClose, onSaved }) {
-  const [f, setF] = useState({ nombre: "", email: "", password: "" });
+  const [f, setF] = useState({ email: "", password: "" });
   const [saving, setSaving] = useState(false);
   const save = async () => {
     setSaving(true);
@@ -312,9 +312,7 @@ function NewUserSheet({ auth, onClose, onSaved }) {
     pushToast("Usuario creado"); onSaved();
   };
   return <Sheet title="Crear usuario" onClose={onClose}>
-    <p style={{ fontSize: 13, color: C.sub, margin: "-4px 0 0", lineHeight: 1.45 }}>La cuenta entra solo a Kairo (no ve nada de Argencargo). Pasale el email y la contraseña; después la puede cambiar.</p>
-    <Label>Nombre</Label>
-    <input value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} placeholder="Ej: Juan" style={field} />
+    <p style={{ fontSize: 13, color: C.sub, margin: "-4px 0 0", lineHeight: 1.45 }}>La cuenta entra solo a Kairo (no ve nada de Argencargo). Pasale el email y la contraseña: cuando entre por primera vez, pone su nombre, su foto y sus datos.</p>
     <Label>Email</Label>
     <input type="email" autoComplete="off" autoCapitalize="none" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} placeholder="juan@gmail.com" style={field} />
     <Label>Contraseña</Label>
@@ -327,4 +325,37 @@ export function Avatar({ src, size = 40 }) {
   return <span style={{ width: size, height: size, borderRadius: size / 2, overflow: "hidden", background: C.cardHi, color: C.sub, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
     {src ? <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={size * 0.48} />}
   </span>;
+}
+
+// Primera vez que entra un usuario (la cuenta la crea el admin solo con email y contraseña):
+// pone su nombre (obligatorio), y si quiere su foto y su fecha de nacimiento.
+export function Welcome({ token, onDone }) {
+  const [nombre, setNombre] = useState("");
+  const [nac, setNac] = useState("");
+  const [avatar, setAvatar] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef(null);
+  const save = async () => {
+    if (!nombre.trim()) return pushToast("Poné tu nombre");
+    setSaving(true);
+    await saveProfile(token, { nombre: nombre.trim(), fecha_nacimiento: nac || null, edad: ageOf(nac), avatar, updated_at: new Date().toISOString() });
+    setSaving(false); onDone();
+  };
+  return <div style={{ position: "fixed", inset: 0, zIndex: 80, background: C.bg, overflowY: "auto" }}>
+    <div style={{ maxWidth: 420, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 48px) 24px 40px" }}>
+      <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em" }}>Bienvenido a kairo<span style={{ color: C.lime }}>.</span></div>
+      <p style={{ color: C.sub, fontSize: 15, lineHeight: 1.5, margin: "8px 0 28px" }}>Contanos cómo te llamás. Lo demás (objetivo, rutinas, comidas) lo vas completando cuando quieras.</p>
+      <button onClick={() => fileRef.current?.click()} className="k-press" style={{ width: 96, height: 96, borderRadius: 48, border: `2px solid ${C.lime}`, padding: 3, background: "none", display: "block", margin: "0 auto" }}>
+        <span style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: C.cardHi, color: C.lime }}>
+          {avatar ? <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><Icon d={I.plus} size={22} sw={2.2} /><span style={{ fontSize: 11, fontWeight: 600 }}>Tu foto</span></span>}
+        </span>
+      </button>
+      <input ref={fileRef} type="file" accept="image/*" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setAvatar(await resizeImage(f, 256)); }} />
+      <Label>Tu nombre *</Label>
+      <input autoFocus value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Cómo te llamás" style={field} />
+      <Label>Fecha de nacimiento (opcional)</Label>
+      <input type="date" value={nac} onChange={e => setNac(e.target.value)} style={{ ...field, colorScheme: "dark", minHeight: 48, WebkitAppearance: "none", appearance: "none" }} />
+      <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 26 }}>{saving ? "Guardando…" : "Empezar"}</button>
+    </div>
+  </div>;
 }

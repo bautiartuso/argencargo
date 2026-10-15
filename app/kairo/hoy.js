@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, SectionTitle, card, btnLime, linkBtn, ars, monthName, curMonth, today, dayLabel, Bar } from "./ui";
 import { startWorkout, todayPlan } from "./fisico";
-import { LogSheet, Spark, MeasuresTable, Avatar } from "./perfil";
+import { LogSheet, Spark, MeasuresTable, Avatar, saveProfile } from "./perfil";
 
 const n1 = (v) => Number(v).toLocaleString("es-AR", { maximumFractionDigits: 1 });
 
@@ -40,6 +40,7 @@ export default function Hoy({ token, me, fin, go }) {
     if (!v) return pushToast("Poné tu peso");
     if (todayLog) await dq("kairo_body_logs", { method: "PATCH", token, filters: `?id=eq.${todayLog.id}`, body: { peso_kg: v } });
     else await dq("kairo_body_logs", { method: "POST", token, body: { log_date: today(), peso_kg: v } });
+    await saveProfile(token, { peso_kg: v });
     setPeso(""); pushToast("Peso registrado"); load();
   };
 

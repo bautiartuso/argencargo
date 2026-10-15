@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession, clearSession, ac, saveSession } from "../../lib/sb-client";
 import Fisico, { WorkoutLayer } from "./fisico";
-import Perfil from "./perfil";
+import Perfil, { Welcome } from "./perfil";
 import Inicio from "./hoy";
 import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn } from "./ui";
 
@@ -76,7 +76,7 @@ function App({ session }) {
   // Tu perfil (nombre, foto, organización de días): lo usan Inicio y la barra de abajo.
   const [me, setMe] = useState(null);
   useEffect(() => {
-    const load = () => dq("kairo_profile", { token: session.token, filters: "?select=*&limit=1" }).then(r => setMe(Array.isArray(r) ? r[0] || {} : {}));
+    const load = () => dq("kairo_profile", { token: session.token, filters: "?select=*&limit=1" }).then(r => setMe(Array.isArray(r) ? r[0] || {} : null));
     load(); window.addEventListener("kairo-profile", load);
     return () => window.removeEventListener("kairo-profile", load);
   }, [session.token]);
@@ -98,6 +98,7 @@ function App({ session }) {
         </div>
       </main>
       <WorkoutLayer token={session.token} />
+      {me && !me.nombre && <Welcome token={session.token} onDone={() => window.dispatchEvent(new Event("kairo-profile"))} />}
       <nav style={{ flexShrink: 0, background: C.bg, borderTop: `0.5px solid ${C.line}`, paddingBottom: "max(16px, min(env(safe-area-inset-bottom), 22px))" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", display: "flex" }}>
           {TABS.map(t => {

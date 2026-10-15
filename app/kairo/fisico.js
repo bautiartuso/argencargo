@@ -113,7 +113,7 @@ async function buildItems(token, list) {
     return {
       key: Math.random().toString(36).slice(2), exercise_id: i.exercise.id, name: i.exercise.name, media_id: i.exercise.media_id || null,
       mp: i.exercise.muscles_primary || [], ms: i.exercise.muscles_secondary || [],
-      rest_sec: i.rest_sec ?? 90, rep_min: i.rep_min ?? 8, rep_max: i.rep_max ?? 12, prev, ai: null,
+      rest_sec: i.rest_sec ?? 90, rep_min: i.rep_min ?? 8, rep_max: i.rep_max ?? 12, ss: i.superset ?? null, prev, ai: null,
       sets: Array.from({ length: i.sets || Math.max(prev.length, 3) }, () => ({ kg: "", reps: "", done: false })),
     };
   });
@@ -157,11 +157,8 @@ export default function Fisico({ token, onProfile }) {
   const others = gym.routines.filter(r => !todays.includes(r));
 
   return <>
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
+    <div style={{ display: "flex", justifyContent: "center" }}>
       <Segmented value={view} onChange={setView} options={[["entrenar", "Entrenar"], ["rutinas", "Rutinas"], ["progreso", "Progreso"]]} />
-      <button onClick={onProfile} aria-label="Tu perfil" className="k-press" style={{ position: "absolute", right: 0, width: 38, height: 38, borderRadius: 19, border: `0.5px solid ${C.line}`, background: C.card, color: C.sub, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Icon d={I.user} size={18} />
-      </button>
     </div>
 
     {gym.lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
@@ -377,8 +374,27 @@ function Workout({ token, draft, now, setDraft, onMinimize, onDone }) {
     const repsV = s.reps !== "" ? s.reps : t ? String(t.reps) : "";
     if (repsV === "") return pushToast("Poné las repeticiones");
     update(it.key, si, { done: true, kg: kgV || "0", reps: repsV });
-    startRest(it.rest_sec, nextLabel(it.key, si));
+    // En superserie no se descansa entre ejercicios: recién al cerrar la vuelta (el último del grupo).
+    const items = latest.current.items, ix = items.findIndex(x => x.key === it.key);
+    const nextInGroup = it.ss != null && items[ix + 1]?.ss === it.ss;
+    if (nextInGroup) { const n = items[ix + 1]; pushToast(`Superserie: ahora ${n.name}`); return; }
+    const first = it.ss != null ? items.findIndex(x => x.ss === it.ss) : ix;
+    startRest(it.rest_sec, it.ss != null && first !== ix ? `${items[first].name} · siguiente vuelta` : nextLabel(it.key, si));
   };
+  // Reordenar y armar superseries durante el entreno.
+  const moveItem = (key, d) => {
+    const items = [...latest.current.items], i = items.findIndex(x => x.key === key), j = i + d;
+    if (j < 0 || j >= items.length) return;
+    [items[i], items[j]] = [items[j], items[i]];
+    setDraft({ ...latest.current, changed: true, items });
+  };
+  const linkNext = (key) => {
+    const items = latest.current.items, i = items.findIndex(x => x.key === key);
+    if (i < 0 || i >= items.length - 1) return pushToast("No hay un ejercicio abajo para unir");
+    const g = items[i].ss ?? items[i + 1].ss ?? (Math.max(0, ...items.map(x => x.ss || 0)) + 1);
+    setDraft({ ...latest.current, changed: true, items: items.map((x, k) => k === i || k === i + 1 ? { ...x, ss: g } : x) });
+  };
+  const unlink = (key) => setDraft({ ...latest.current, changed: true, items: latest.current.items.map(x => x.key === key ? { ...x, ss: null } : x) });
 
   const done = draft.items.flatMap(it => it.sets.filter(s => s.done));
   const volume = done.reduce((a, s) => a + num(s.kg) * num(s.reps), 0);
@@ -417,7 +433,7 @@ function Workout({ token, draft, now, setDraft, onMinimize, onDone }) {
     <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: `6px 0 ${rest ? 170 : 40}px` }}>
         {loadingAi && <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: C.sub, padding: "12px 18px 0" }}><Icon d={I.spark} size={15} color={C.lime} />Calculando cargas de hoy según tu historial…</div>}
-        {draft.items.map(it => <ExerciseBlock key={it.key} it={it} target={target} update={update} toggle={toggle}
+        {draft.items.map((it, ix) => <ExerciseBlock key={it.key} it={it} ssLabel={ssLabel(draft.items, ix)} target={target} update={update} toggle={toggle}
           onInfo={() => setSheet({ type: "info", ex: { id: it.exercise_id, name: it.name, media_id: it.media_id, muscles_primary: it.mp, muscles_secondary: it.ms } })}
           onMenu={() => setSheet({ type: "menu", it })}
           onRest={() => setSheet({ type: "rest", it })}
@@ -437,6 +453,13 @@ function Workout({ token, draft, now, setDraft, onMinimize, onDone }) {
     {sheet?.type === "menu" && <Sheet title={sheet.it.name} onClose={() => setSheet(null)}>
       <div style={{ display: "grid", gap: 8 }}>
         <button className="k-press" style={btnGhost} onClick={() => setSheet({ type: "info", ex: { id: sheet.it.exercise_id, name: sheet.it.name, media_id: sheet.it.media_id, muscles_primary: sheet.it.mp, muscles_secondary: sheet.it.ms } })}>Ver técnica y progreso</button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button className="k-press" style={btnGhost} onClick={() => { moveItem(sheet.it.key, -1); setSheet(null); }}>↑ Subir</button>
+          <button className="k-press" style={btnGhost} onClick={() => { moveItem(sheet.it.key, 1); setSheet(null); }}>↓ Bajar</button>
+        </div>
+        {sheet.it.ss != null
+          ? <button className="k-press" style={btnGhost} onClick={() => { unlink(sheet.it.key); setSheet(null); }}>Sacar de la superserie</button>
+          : <button className="k-press" style={btnGhost} onClick={() => { linkNext(sheet.it.key); setSheet(null); }}>Superserie con el de abajo</button>}
         <button className="k-press" style={btnGhost} onClick={() => setSheet({ type: "replace", it: sheet.it })}>Reemplazar ejercicio</button>
         <button className="k-press" style={btnGhost} onClick={() => { mapItems(x => x.key !== sheet.it.key ? x : { ...x, sets: x.sets.length > 1 ? x.sets.slice(0, -1) : x.sets }); setSheet(null); }}>Quitar la última serie</button>
         <button className="k-press" style={{ ...btnGhost, color: C.danger }} onClick={() => { setDraft({ ...latest.current, changed: true, items: latest.current.items.filter(x => x.key !== sheet.it.key) }); setSheet(null); }}>Quitar ejercicio</button>
@@ -461,9 +484,19 @@ const Stat = ({ label, value, color }) => <div style={{ flex: 1, minWidth: 0 }}>
   <div className="k-num" style={{ fontSize: 17, fontWeight: 500, marginTop: 2, color: color || C.text, whiteSpace: "nowrap" }}>{value}</div>
 </div>;
 
-function ExerciseBlock({ it, target, update, toggle, onInfo, onMenu, onRest, onAddSet }) {
+// "Superserie A · 1/2" para los ejercicios agrupados (los del mismo ss, uno detrás del otro).
+function ssLabel(items, ix) {
+  const it = items[ix];
+  if (it.ss == null) return null;
+  const groups = [...new Set(items.filter(x => x.ss != null).map(x => x.ss))];
+  const same = items.filter(x => x.ss === it.ss);
+  return `Superserie ${String.fromCharCode(65 + groups.indexOf(it.ss))} · ${same.indexOf(it) + 1}/${same.length}`;
+}
+
+function ExerciseBlock({ it, ssLabel, target, update, toggle, onInfo, onMenu, onRest, onAddSet }) {
   const showAction = it.ai && ACTION_LABEL[it.ai.accion];
-  return <div style={{ padding: "18px 16px 6px", borderBottom: `0.5px solid ${C.line}` }}>
+  return <div style={{ padding: "18px 16px 6px", borderBottom: `0.5px solid ${C.line}`, borderLeft: ssLabel ? `3px solid ${C.lime}` : "3px solid transparent" }}>
+    {ssLabel && <div style={{ fontSize: 11.5, fontWeight: 600, color: C.lime, letterSpacing: "0.04em", marginBottom: 8 }}>{ssLabel.toUpperCase()}</div>}
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       <button onClick={onInfo} aria-label="Ver ejercicio" style={{ background: "none", border: "none", padding: 0 }}><Thumb ex={{ muscles_primary: it.mp, muscles_secondary: it.ms }} size={46} /></button>
       <button onClick={onInfo} style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, textAlign: "left", color: C.text, fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.25 }}>{it.name}</button>
@@ -531,7 +564,7 @@ function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) 
     await dq("kairo_sets", { method: "POST", token, body: rows });
     if (updateRoutine && draft.routine_id) {
       await dq("kairo_routine_exercises", { method: "DELETE", token, filters: `?routine_id=eq.${draft.routine_id}` });
-      await dq("kairo_routine_exercises", { method: "POST", token, body: draft.items.map((it, i) => ({ routine_id: draft.routine_id, exercise_id: it.exercise_id, sort_order: i, sets: it.sets.length, rep_min: it.rep_min, rep_max: it.rep_max, rest_sec: it.rest_sec })) });
+      await dq("kairo_routine_exercises", { method: "POST", token, body: draft.items.map((it, i) => ({ routine_id: draft.routine_id, exercise_id: it.exercise_id, sort_order: i, sets: it.sets.length, rep_min: it.rep_min, rep_max: it.rep_max, rest_sec: it.rest_sec, superset: it.ss ?? null })) });
     }
     setSaving(false);
     pushToast(`Entreno guardado · ${rows.length} series · ${Math.round(volume).toLocaleString("es-AR")} kg`);
@@ -741,7 +774,14 @@ function DaysSheet({ token, routines, dias, onClose, onSaved }) {
 function RoutineSheet({ token, routine, exercises, count, onClose, onSaved }) {
   const [name, setName] = useState(routine?.name || "");
   const [days, setDays] = useState(routine?.days || []);
-  const [items, setItems] = useState(() => (routine?.items || []).map(i => ({ exercise_id: i.exercise_id, sets: i.sets, rep_min: i.rep_min, rep_max: i.rep_max, rest_sec: i.rest_sec })));
+  const [items, setItems] = useState(() => (routine?.items || []).map(i => ({ exercise_id: i.exercise_id, sets: i.sets, rep_min: i.rep_min, rep_max: i.rep_max, rest_sec: i.rest_sec, superset: i.superset ?? null })));
+  const toggleLink = (ix) => {
+    const a = items[ix], b = items[ix + 1];
+    if (!b) return;
+    if (a.superset != null && a.superset === b.superset) return setItems(items.map((x, k) => k === ix + 1 ? { ...x, superset: null } : x));
+    const g = a.superset ?? b.superset ?? (Math.max(0, ...items.map(x => x.superset || 0)) + 1);
+    setItems(items.map((x, k) => k === ix || k === ix + 1 ? { ...x, superset: g } : x));
+  };
   const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -768,14 +808,15 @@ function RoutineSheet({ token, routine, exercises, count, onClose, onSaved }) {
 
   return <Sheet title={routine ? "Editar rutina" : "Nueva rutina"} onClose={onClose}>
     <input value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Pecho y tríceps" style={{ ...field, fontSize: 17, fontWeight: 500 }} />
-    <Label>Días</Label>
+    <Label>Días (opcional)</Label>
     <div style={{ display: "flex", gap: 6 }}>
       {DAYS.map((d, i) => { const on = days.includes(i); return <button key={i} onClick={() => setDays(on ? days.filter(x => x !== i) : [...days, i])} className="k-press" style={{ flex: 1, height: 40, borderRadius: 12, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.cardHi, color: on ? C.limeInk : C.text, fontWeight: on ? 600 : 400, fontSize: 14 }}>{d}</button>; })}
     </div>
+    <div style={{ fontSize: 12, color: C.dim, margin: "8px 2px 0", lineHeight: 1.45 }}>¿Rotás sin días fijos (pecho, espalda, pierna, descanso…)? Dejalos vacíos y armá la rotación en Rutinas → "Cómo organizás los días".</div>
     <Label>Ejercicios</Label>
     {items.length === 0 && <div style={{ fontSize: 14, color: C.sub, marginBottom: 8 }}>Todavía no agregaste ejercicios.</div>}
     <div style={{ display: "grid", gap: 8 }}>
-      {items.map((it, ix) => { const ex = exOf(it.exercise_id); return <div key={ix} style={{ background: C.cardHi, borderRadius: 16, padding: 12 }}>
+      {items.map((it, ix) => { const ex = exOf(it.exercise_id); return <div key={ix} style={{ background: C.cardHi, borderRadius: 16, padding: 12, minWidth: 0, borderLeft: it.superset != null ? `3px solid ${C.lime}` : "3px solid transparent" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Thumb ex={ex} size={34} />
           <span style={{ flex: 1, fontSize: 15, fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex?.name || "—"}</span>
@@ -785,12 +826,13 @@ function RoutineSheet({ token, routine, exercises, count, onClose, onSaved }) {
             <SmallBtn onClick={() => setItems(items.filter((_, i) => i !== ix))} label="Quitar">×</SmallBtn>
           </span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginTop: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginTop: 10 }}>
           <NumField label="Series" value={it.sets} onChange={v => setItem(ix, { sets: Math.max(1, v) })} />
           <NumField label="Reps mín" value={it.rep_min} onChange={v => setItem(ix, { rep_min: Math.max(1, v) })} />
           <NumField label="Reps máx" value={it.rep_max} onChange={v => setItem(ix, { rep_max: Math.max(it.rep_min, v) })} />
           <NumField label="Desc. (s)" value={it.rest_sec} onChange={v => setItem(ix, { rest_sec: v })} />
         </div>
+        {ix < items.length - 1 && <button onClick={() => toggleLink(ix)} style={{ ...linkBtn, marginTop: 10, fontSize: 12.5, color: it.superset != null && it.superset === items[ix + 1].superset ? C.lime : C.sub }}>{it.superset != null && it.superset === items[ix + 1].superset ? "✓ En superserie con el de abajo · tocá para separar" : "+ Superserie con el de abajo"}</button>}
       </div>; })}
     </div>
     <button className="k-press" onClick={() => setPicking(true)} style={{ ...btnGhost, marginTop: 10, color: C.lime }}>+ Agregar ejercicios</button>
@@ -804,11 +846,14 @@ const SmallBtn = ({ children, onClick, label }) => <button onClick={onClick} ari
 function NumField({ label, value, onChange }) {
   return <label style={{ display: "block" }}>
     <div style={{ fontSize: 10.5, color: C.sub, marginBottom: 4 }}>{label}</div>
-    <input inputMode="numeric" value={value} onChange={e => onChange(Number(e.target.value.replace(/[^\d]/g, "")) || 0)} className="k-num" style={{ ...cell, height: 36, background: C.card }} />
+    <input inputMode="numeric" value={value} onChange={e => onChange(Number(e.target.value.replace(/[^\d]/g, "")) || 0)} className="k-num" style={{ ...cell, height: 36, background: C.card, minWidth: 0 }} />
   </label>;
 }
 
-// Selector de ejercicios (uno o varios), con foto, filtro por músculo y alta de propios.
+// Categorías del buscador: grupo (como está en kairo_exercises.muscle) → músculo para dibujar.
+const CATS = [["Pecho", "chest"], ["Espalda", "lats"], ["Hombros", "shoulders"], ["Bíceps", "biceps"], ["Tríceps", "triceps"], ["Piernas", "quadriceps"], ["Glúteos", "glutes"], ["Gemelos", "calves"], ["Abdomen", "abdominals"], ["Trapecios", "traps"], ["Antebrazos", "forearms"]];
+
+// Selector de ejercicios (uno o varios), con figura, categorías por músculo y alta de propios.
 function ExercisePicker({ token, multi, onClose, onPick }) {
   const [all, setAll] = useState(null);
   const [q, setQ] = useState("");
@@ -816,7 +861,7 @@ function ExercisePicker({ token, multi, onClose, onPick }) {
   const [sel, setSel] = useState([]);
   const [creating, setCreating] = useState(false);
   useEffect(() => { dq("kairo_exercises", { token, filters: "?select=*&order=muscle.asc,name.asc" }).then(r => setAll(Array.isArray(r) ? r : [])); }, [token]);
-  const muscles = useMemo(() => [...new Set((all || []).map(e => e.muscle))], [all]);
+  const muscles = useMemo(() => CATS.filter(([g]) => (all || []).some(e => e.muscle === g)), [all]);
   const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const list = (all || []).filter(e => (!muscle || e.muscle === muscle) && (!q || norm(e.name).includes(norm(q))));
   const tap = (e) => multi ? setSel(sel.some(x => x.id === e.id) ? sel.filter(x => x.id !== e.id) : [...sel, e]) : onPick([e]);
@@ -826,8 +871,11 @@ function ExercisePicker({ token, multi, onClose, onPick }) {
       <input type="search" name="kairo-ejercicio" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} enterKeyHint="search" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()} placeholder="Buscar ejercicio" style={{ ...field, flex: 1 }} />
       <button onClick={() => setCreating(true)} className="k-press" style={{ ...btnGhost, width: "auto", padding: "0 14px", fontSize: 14, color: C.lime, whiteSpace: "nowrap" }}>+ Crear</button>
     </div>
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "12px -2px 4px", paddingBottom: 4 }}>
-      {muscles.map(m => <button key={m} onClick={() => setMuscle(muscle === m ? null : m)} className="k-press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999, fontSize: 13, border: `0.5px solid ${muscle === m ? C.lime : C.line}`, background: muscle === m ? C.lime : C.cardHi, color: muscle === m ? C.limeInk : C.text }}>{m}</button>)}
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", margin: "12px -18px 4px", padding: "0 18px 6px" }}>
+      {muscles.map(([g, key]) => { const on = muscle === g; return <button key={g} onClick={() => setMuscle(on ? null : g)} className="k-press" style={{ flexShrink: 0, width: 74, padding: "8px 0 7px", borderRadius: 16, border: `1px solid ${on ? C.lime : C.line}`, background: on ? "rgba(198,244,50,0.08)" : C.cardHi, color: on ? C.lime : C.text, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+        <BodyMap primary={[key]} side="auto" zoom size={44} />
+        <span style={{ fontSize: 11.5, fontWeight: on ? 600 : 500 }}>{g}</span>
+      </button>; })}
     </div>
     {!all ? <p style={{ color: C.sub, fontSize: 14 }}>Cargando…</p> : <div style={{ marginTop: 6, paddingBottom: multi && sel.length ? 70 : 0 }}>
       {list.map((e, i) => { const on = sel.some(x => x.id === e.id); return <button key={e.id} onClick={() => tap(e)} style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", padding: "9px 2px", borderBottom: i < list.length - 1 ? `0.5px solid ${C.line}` : "none", display: "flex", alignItems: "center", gap: 12 }}>

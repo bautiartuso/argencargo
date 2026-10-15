@@ -1,6 +1,7 @@
 // /api/kairo/users   (solo el admin de Kairo)
 //   GET                          → usuarios de Kairo (nombre, email, foto)
-//   POST { email, password, nombre } → crea la cuenta con rol "kairo": entra solo a /kairo.
+//   POST { email, password }    → crea la cuenta con rol "kairo": entra solo a /kairo. El nombre y
+//                                  lo demás los completa la persona al entrar por primera vez.
 
 import { SB_URL } from "../../../../lib/sb-client";
 import { sb, arr, kairoUser } from "../../../../lib/kairo-server";
@@ -28,12 +29,11 @@ export async function POST(req) {
   const mail = String(email || "").trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return Response.json({ error: "Email inválido" }, { status: 400 });
   if (!password || String(password).length < 6) return Response.json({ error: "La contraseña tiene que tener al menos 6 caracteres" }, { status: 400 });
-  if (!String(nombre || "").trim()) return Response.json({ error: "Falta el nombre" }, { status: 400 });
 
   const r = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",
     headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ email: mail, password, email_confirm: true, user_metadata: { first_name: String(nombre).trim() } }),
+    body: JSON.stringify({ email: mail, password, email_confirm: true }),
   });
   const u = await r.json().catch(() => ({}));
   if (!r.ok || !u?.id) return Response.json({ error: /already|registered|exists/i.test(u?.msg || u?.message || "") ? "Ya existe una cuenta con ese email" : (u?.msg || u?.message || "No se pudo crear la cuenta") }, { status: 400 });
@@ -48,6 +48,6 @@ export async function POST(req) {
     await fetch(`${SB_URL}/auth/v1/admin/users/${u.id}`, { method: "DELETE", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
     return Response.json({ error: "No se pudo asignar el rol de Kairo (¿corriste el SQL de usuarios?)" }, { status: 500 });
   }
-  await sb(`/rest/v1/kairo_profile`, { method: "POST", body: JSON.stringify({ user_id: u.id, nombre: String(nombre).trim() }), headers: { Prefer: "return=minimal" } });
+  await sb(`/rest/v1/kairo_profile`, { method: "POST", body: JSON.stringify({ user_id: u.id, nombre: String(nombre || "").trim() || null }), headers: { Prefer: "return=minimal" } });
   return Response.json({ ok: true, id: u.id });
 }
