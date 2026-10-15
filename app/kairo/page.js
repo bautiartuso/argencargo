@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession, clearSession, ac, saveSession } from "../../lib/sb-client";
 import Fisico, { WorkoutLayer } from "./fisico";
+import Perfil from "./perfil";
 import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn } from "./ui";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -63,13 +64,13 @@ const TABS = [
   { id: "fisico", label: "Físico", icon: I.gym },
   { id: "nutricion", label: "Nutrición", icon: I.food },
   { id: "finanzas", label: "Finanzas", icon: I.wallet },
-  { id: "objetivos", label: "Objetivos", icon: I.target },
+  { id: "perfil", label: "Perfil", icon: I.user },
 ];
 
 function App({ session }) {
   const [tab, setTab] = useState("finanzas");
   const scroller = useRef(null);
-  useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t); } catch {} }, []);
+  useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t === "objetivos" ? "perfil" : t); } catch {} }, []);
   const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
   const fin = useFinance(session.token);
 
@@ -80,8 +81,9 @@ function App({ session }) {
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
           {tab === "hoy" && <Hoy fin={fin} go={go} />}
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
-          {tab === "fisico" && <Fisico token={session.token} />}
-      {["nutricion", "objetivos"].includes(tab) && <Soon tab={TABS.find(t => t.id === tab)} />}
+          {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
+      {tab === "perfil" && <Perfil token={session.token} />}
+      {tab === "nutricion" && <Soon tab={TABS.find(t => t.id === tab)} />}
         </div>
       </main>
       <WorkoutLayer token={session.token} />
@@ -188,9 +190,9 @@ function Hoy({ fin, go }) {
       {fin.uncategorized.length > 0 && <div style={{ fontSize: 13, color: C.lime, marginTop: 12 }}>{fin.uncategorized.length} gasto{fin.uncategorized.length > 1 ? "s" : ""} sin categoría</div>}
     </button>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-      {TABS.filter(t => ["fisico", "nutricion", "objetivos"].includes(t.id)).map(t =>
+      {TABS.filter(t => ["fisico", "nutricion", "perfil"].includes(t.id)).map(t =>
         <button key={t.id} className="k-press" onClick={() => go(t.id)} style={{ ...card, textAlign: "left", color: C.sub, display: "flex", flexDirection: "column", gap: 10 }}>
-          <Icon d={t.icon} size={20} /><span style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{t.label}</span><span style={{ fontSize: 12 }}>{t.id === "fisico" ? "Entrenar hoy" : "Próximamente"}</span>
+          <Icon d={t.icon} size={20} /><span style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{t.label}</span><span style={{ fontSize: 12 }}>{t.id === "fisico" ? "Entrenar hoy" : t.id === "perfil" ? "Objetivo y progreso" : "Próximamente"}</span>
         </button>)}
     </div>
   </>;

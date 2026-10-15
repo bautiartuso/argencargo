@@ -5,6 +5,7 @@
 // tu perfil (objetivo, experiencia, medidas).
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
+import BodyMap from "./body";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd } from "./ui";
 
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -14,7 +15,6 @@ const DRAFT_KEY = "kairo_workout";
 const WORKOUT_EVENT = "kairo-workout";
 const ACTION_LABEL = { subir_peso: "Subir carga", subir_reps: "Subir reps", mantener: "Mantener", bajar_peso: "Bajar carga", cambiar: "Cambiar variante" };
 const MUSCLE_ES = { abdominals: "Abdomen", abductors: "Abductores", adductors: "Aductores", biceps: "Bíceps", calves: "Gemelos", chest: "Pecho", forearms: "Antebrazos", glutes: "Glúteos", hamstrings: "Isquiotibiales", lats: "Dorsales", "lower back": "Lumbares", "middle back": "Espalda media", neck: "Cuello", quadriceps: "Cuádriceps", shoulders: "Hombros", traps: "Trapecios", triceps: "Tríceps" };
-const OBJETIVOS = [["volumen", "Volumen"], ["definicion", "Definición"], ["recomposicion", "Recomposición"], ["mantenimiento", "Mantenimiento"], ["fuerza", "Fuerza"]];
 const REST_OPTIONS = [0, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240];
 
 const IMG = (id, n = 0) => `https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/${encodeURIComponent(id)}/${n}.jpg`;
@@ -120,7 +120,7 @@ async function buildItems(token, list) {
 }
 
 // ─────── Sección ───────
-export default function Fisico({ token }) {
+export default function Fisico({ token, onProfile }) {
   const gym = useGym(token);
   const [view, setView] = useState("entrenar");
   const [sheet, setSheet] = useState(null);
@@ -140,15 +140,15 @@ export default function Fisico({ token }) {
   return <>
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
       <Segmented value={view} onChange={setView} options={[["entrenar", "Entrenar"], ["rutinas", "Rutinas"], ["progreso", "Progreso"]]} />
-      <button onClick={() => setSheet({ type: "profile" })} aria-label="Tu perfil" className="k-press" style={{ position: "absolute", right: 0, width: 38, height: 38, borderRadius: 19, border: `0.5px solid ${C.line}`, background: C.card, color: C.sub, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <button onClick={onProfile} aria-label="Tu perfil" className="k-press" style={{ position: "absolute", right: 0, width: 38, height: 38, borderRadius: 19, border: `0.5px solid ${C.line}`, background: C.card, color: C.sub, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Icon d={I.user} size={18} />
       </button>
     </div>
 
     {gym.lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
-      {gym.profile === null && <button className="k-press" onClick={() => setSheet({ type: "profile" })} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 18, display: "flex", gap: 12, alignItems: "center", borderColor: "rgba(198,244,50,0.3)" }}>
+      {!gym.profile?.objetivo && <button className="k-press" onClick={onProfile} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 18, display: "flex", gap: 12, alignItems: "center", borderColor: "rgba(198,244,50,0.3)" }}>
         <Icon d={I.spark} size={20} color={C.lime} />
-        <span style={{ flex: 1 }}><span style={{ fontSize: 15, fontWeight: 500, display: "block" }}>Completá tu perfil</span><span style={{ fontSize: 13, color: C.sub }}>Objetivo, experiencia y medidas: la IA planifica con eso.</span></span>
+        <span style={{ flex: 1 }}><span style={{ fontSize: 15, fontWeight: 500, display: "block" }}>Definí tu objetivo</span><span style={{ fontSize: 13, color: C.sub }}>Volumen, definición, recomposición… La IA planifica las cargas con eso.</span></span>
         <Icon d={I.right} size={16} color={C.sub} />
       </button>}
 
@@ -192,7 +192,6 @@ export default function Fisico({ token }) {
 
     {sheet?.type === "routine" && <RoutineSheet token={token} routine={sheet.routine} exercises={gym.exercises} count={gym.routines.length} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "review" && <ReviewSheet token={token} onClose={() => setSheet(null)} />}
-    {sheet?.type === "profile" && <ProfileSheet token={token} profile={gym.profile} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "workout" && <WorkoutDetail w={sheet.w} exercises={gym.exercises} token={token} onClose={() => setSheet(null)} onDeleted={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "exercise" && <ExerciseInfo ex={sheet.ex} token={token} onClose={() => setSheet(null)} />}
   </>;
@@ -208,12 +207,10 @@ function DayDots({ days }) {
   return <span style={{ display: "flex", gap: 3 }}>{DAYS.map((d, i) => <span key={i} style={{ width: 17, height: 17, borderRadius: 9, fontSize: 9.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", background: days?.includes(i) ? C.lime : "transparent", color: days?.includes(i) ? C.limeInk : C.dim }}>{d}</span>)}</span>;
 }
 
+// Miniatura del ejercicio: la figura con los músculos que trabaja (del lado que más se ve).
 function Thumb({ ex, size = 44, ring }) {
-  const [err, setErr] = useState(false);
-  const id = ex?.media_id;
-  return <span style={{ width: size, height: size, borderRadius: size / 2, background: "#fff", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: ring ? `2px solid ${C.card}` : "none" }}>
-    {id && !err ? <img src={IMG(id)} alt="" loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      : <span style={{ color: "#999" }}><Icon d={I.gym} size={size * 0.5} /></span>}
+  return <span style={{ width: size, height: size, borderRadius: size / 2, background: C.cardHi, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: ring ? `2px solid ${C.card}` : `0.5px solid ${C.line}` }}>
+    <BodyMap primary={ex?.muscles_primary || []} secondary={ex?.muscles_secondary || []} side="auto" zoom size={size * 0.96} />
   </span>;
 }
 
@@ -235,7 +232,7 @@ function RoutineCard({ r, big, onStart }) {
         <div style={{ fontSize: big ? 21 : 16, fontWeight: 600, letterSpacing: "-0.02em" }}>{r.name}</div>
         <div style={{ fontSize: 13, color: C.sub, marginTop: 3 }}>{r.items.length} ejercicios · {sets} series</div>
       </div>
-      {big ? <BodyMap primary={muscles} size={64} /> : <button className="k-press" onClick={onStart} disabled={!r.items.length} style={{ ...btnGhost, width: "auto", padding: "9px 16px", fontSize: 14 }}>Empezar</button>}
+      {big ? <BodyMap primary={muscles} size={70} /> : <button className="k-press" onClick={onStart} disabled={!r.items.length} style={{ ...btnGhost, width: "auto", padding: "9px 16px", fontSize: 14 }}>Empezar</button>}
     </div>
     {big && <>
       <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
@@ -263,34 +260,6 @@ function WeekStats({ workouts }) {
       <MiniStat label="Volumen" value={`${fmtKg(vol / 1000)} t`} />
     </div>
   </>;
-}
-
-// ─────── Mapa de músculos (frente y espalda) ───────
-const FRONT = [
-  ["shoulders", "e", 13, 25, 5, 4], ["shoulders", "e", 43, 25, 5, 4],
-  ["chest", "e", 23, 29, 5.2, 4.4], ["chest", "e", 33, 29, 5.2, 4.4],
-  ["biceps", "e", 10.5, 36, 3, 6], ["biceps", "e", 45.5, 36, 3, 6],
-  ["forearms", "e", 8.5, 50, 2.6, 6.5], ["forearms", "e", 47.5, 50, 2.6, 6.5],
-  ["abdominals", "r", 23.5, 35, 9, 17], ["adductors", "e", 28, 62, 1.8, 6],
-  ["quadriceps", "e", 23.5, 67, 4.4, 11], ["quadriceps", "e", 32.5, 67, 4.4, 11],
-  ["calves", "e", 23.5, 91, 2.8, 8], ["calves", "e", 32.5, 91, 2.8, 8],
-];
-const BACK = [
-  ["traps", "e", 28, 21.5, 8, 3.6], ["shoulders", "e", 13, 25, 5, 4], ["shoulders", "e", 43, 25, 5, 4],
-  ["lats", "e", 21.5, 36, 4.5, 8], ["lats", "e", 34.5, 36, 4.5, 8], ["middle back", "r", 24.5, 26, 7, 12], ["lower back", "r", 24.5, 40, 7, 8],
-  ["triceps", "e", 10.5, 36, 3, 6], ["triceps", "e", 45.5, 36, 3, 6], ["forearms", "e", 8.5, 50, 2.6, 6.5], ["forearms", "e", 47.5, 50, 2.6, 6.5],
-  ["glutes", "e", 23.5, 55, 4.8, 4.6], ["glutes", "e", 32.5, 55, 4.8, 4.6], ["abductors", "e", 17.5, 57, 1.6, 3.6], ["abductors", "e", 38.5, 57, 1.6, 3.6],
-  ["hamstrings", "e", 23.5, 70, 4.3, 9.5], ["hamstrings", "e", 32.5, 70, 4.3, 9.5],
-  ["calves", "e", 23.5, 90, 3.2, 8], ["calves", "e", 32.5, 90, 3.2, 8],
-];
-function BodyMap({ primary = [], secondary = [], size = 90 }) {
-  const fill = (m) => primary.includes(m) ? C.lime : secondary.includes(m) ? "rgba(198,244,50,0.38)" : "#2A2D33";
-  const fig = (parts, dx) => <g transform={`translate(${dx},0)`}>
-    <circle cx="28" cy="10" r="5.5" fill="#2A2D33" />
-    <rect x="25.5" y="15" width="5" height="4" rx="1.5" fill="#2A2D33" />
-    {parts.map(([m, t, x, y, a, b], i) => t === "e" ? <ellipse key={i} cx={x} cy={y} rx={a} ry={b} fill={fill(m)} /> : <rect key={i} x={x} y={y} width={a} height={b} rx="2.6" fill={fill(m)} />)}
-  </g>;
-  return <svg width={size * 1.15} height={size} viewBox="0 0 120 104" aria-hidden="true">{fig(FRONT, 0)}{fig(BACK, 62)}</svg>;
 }
 
 // ─────── Entreno en vivo (capa a pantalla completa; vive en el shell) ───────
@@ -471,7 +440,7 @@ function ExerciseBlock({ it, target, update, toggle, onInfo, onMenu, onRest, onA
   const showAction = it.ai && ACTION_LABEL[it.ai.accion];
   return <div style={{ padding: "18px 16px 6px", borderBottom: `0.5px solid ${C.line}` }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <button onClick={onInfo} aria-label="Ver ejercicio" style={{ background: "none", border: "none", padding: 0 }}><Thumb ex={{ media_id: it.media_id }} size={44} /></button>
+      <button onClick={onInfo} aria-label="Ver ejercicio" style={{ background: "none", border: "none", padding: 0 }}><Thumb ex={{ muscles_primary: it.mp, muscles_secondary: it.ms }} size={46} /></button>
       <button onClick={onInfo} style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, textAlign: "left", color: C.text, fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.25 }}>{it.name}</button>
       <button onClick={onMenu} aria-label="Opciones del ejercicio" className="k-press" style={{ ...roundIcon, width: 34, height: 34, border: "none", background: "transparent", color: C.sub }}><Icon d={I.dots} size={20} sw={3.2} /></button>
     </div>
@@ -481,13 +450,13 @@ function ExerciseBlock({ it, target, update, toggle, onInfo, onMenu, onRest, onA
     </div>}
     <button onClick={onRest} style={{ ...linkBtn, display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 13, color: C.blue }}><Icon d={I.timer} size={15} />Descanso: {restLabel(it.rest_sec)} · {it.rep_min}–{it.rep_max} reps</button>
     <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 8, alignItems: "center", marginTop: 12, fontSize: 11, color: C.dim, letterSpacing: "0.04em" }}>
-      <span>SERIE</span><span>ESPERADO</span><span style={{ textAlign: "center" }}>KG</span><span style={{ textAlign: "center" }}>REPS</span><span style={{ textAlign: "center" }}>✓</span>
+      <span>SERIE</span><span>META</span><span style={{ textAlign: "center" }}>KG</span><span style={{ textAlign: "center" }}>REPS</span><span style={{ textAlign: "center" }}>✓</span>
     </div>
     {it.sets.map((s, si) => {
       const t = target(it, si);
       return <div key={si} style={{ display: "grid", gridTemplateColumns: COLS, gap: 8, alignItems: "center", marginTop: 7, borderRadius: 12, background: s.done ? "rgba(74,222,128,0.08)" : "transparent", transition: "background 200ms" }}>
         <span style={{ height: 38, borderRadius: 10, background: C.card, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 600 }}>{si + 1}</span>
-        <span className="k-num" style={{ fontSize: 14, color: t ? C.text : C.dim, opacity: 0.8, whiteSpace: "nowrap" }}>{t ? `${fmtKg(t.kg)} kg × ${t.reps}` : "—"}</span>
+        <span className="k-num" style={{ fontSize: 13.5, color: t ? C.sub : C.dim, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t ? <><span style={{ color: C.text }}>{fmtKg(t.kg)}</span> kg × <span style={{ color: C.text }}>{t.reps}</span></> : "—"}</span>
         <input inputMode="decimal" value={s.kg} placeholder={t ? fmtKg(t.kg) : "0"} onChange={e => update(it.key, si, { kg: e.target.value })} className="k-num" style={cell} />
         <input inputMode="numeric" value={s.reps} placeholder={t ? String(t.reps) : "0"} onChange={e => update(it.key, si, { reps: e.target.value.replace(/[^\d]/g, "") })} className="k-num" style={cell} />
         <button onClick={() => toggle(it, si)} aria-label={s.done ? "Desmarcar serie" : "Marcar serie hecha"} className="k-press" style={{ height: 38, borderRadius: 10, border: "none", background: s.done ? C.pos : C.card, color: s.done ? "#05210F" : C.sub, display: "flex", alignItems: "center", justifyContent: "center", transition: "background 160ms" }}>
@@ -499,7 +468,7 @@ function ExerciseBlock({ it, target, update, toggle, onInfo, onMenu, onRest, onA
   </div>;
 }
 
-const COLS = "40px minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) 44px";
+const COLS = "36px minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr) 44px";
 const cell = { width: "100%", height: 38, border: `0.5px solid ${C.line}`, borderRadius: 10, background: "transparent", color: C.text, textAlign: "center", fontSize: 16, outline: "none", padding: 0 };
 
 function RestBar({ rest, now, onShift, onSkip }) {
@@ -577,16 +546,21 @@ function ExerciseInfo({ ex, token, onClose }) {
   }, [id, token]);
   const best = hist?.reduce((a, h) => h.best > (a?.best || 0) ? h : a, null);
   return <Sheet title={ex.name} onClose={onClose}>
-    {ex.media_id && <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", borderRadius: 18, overflow: "hidden", background: "#fff" }}>
-      {[0, 1].map(n => <img key={n} src={IMG(ex.media_id, n)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: frame === n ? 1 : 0, transition: "opacity 350ms" }} />)}
-    </div>}
-    <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 16 }}>
-      <BodyMap primary={ex.muscles_primary || []} secondary={ex.muscles_secondary || []} size={96} />
+    <div style={{ display: "flex", justifyContent: "center", background: C.cardHi, borderRadius: 18, padding: "18px 0 14px" }}>
+      <BodyMap primary={ex.muscles_primary || []} secondary={ex.muscles_secondary || []} size={190} />
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
       <div style={{ fontSize: 13, lineHeight: 1.6 }}>
         {(ex.muscles_primary || []).length > 0 && <div><span style={{ color: C.sub }}>Principal: </span>{ex.muscles_primary.map(m => MUSCLE_ES[m] || m).join(", ")}</div>}
         {(ex.muscles_secondary || []).length > 0 && <div><span style={{ color: C.sub }}>Secundarios: </span>{ex.muscles_secondary.map(m => MUSCLE_ES[m] || m).join(", ")}</div>}
       </div>
     </div>
+    {ex.media_id && <>
+      <Label>Cómo se hace</Label>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 3", borderRadius: 16, overflow: "hidden", background: "#fff" }}>
+        {[0, 1].map(n => <img key={n} src={IMG(ex.media_id, n)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: frame === n ? 1 : 0, transition: "opacity 350ms" }} />)}
+      </div>
+    </>}
     <Label>Tu progreso</Label>
     {!hist ? <p style={{ color: C.sub, fontSize: 14 }}>Cargando…</p> : hist.length === 0 ? <p style={{ color: C.sub, fontSize: 14, margin: 0 }}>Todavía no lo registraste.</p> : <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -694,40 +668,6 @@ function streak(workouts) {
   return n;
 }
 
-// ─────── Perfil para la IA ───────
-function ProfileSheet({ token, profile, onClose, onSaved }) {
-  const [p, setP] = useState(() => ({ objetivo: "", experiencia: "", sexo: "", edad: "", peso_kg: "", altura_cm: "", dias_semana: "", lesiones: "", notas: "", ...(profile || {}) }));
-  const [saving, setSaving] = useState(false);
-  const set = (k, v) => setP({ ...p, [k]: v });
-  const save = async () => {
-    if (!p.objetivo) return pushToast("Elegí tu objetivo");
-    setSaving(true);
-    const body = { id: 1, objetivo: p.objetivo, experiencia: p.experiencia || null, sexo: p.sexo || null, edad: Number(p.edad) || null, peso_kg: num(p.peso_kg) || null, altura_cm: num(p.altura_cm) || null, dias_semana: Number(p.dias_semana) || null, lesiones: p.lesiones?.trim() || null, notas: p.notas?.trim() || null, updated_at: new Date().toISOString() };
-    await dq("kairo_profile", { method: "POST", token, filters: "?on_conflict=id", body, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
-    setSaving(false); pushToast("Perfil guardado"); onSaved();
-  };
-  const Chips = ({ k, options }) => <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-    {options.map(([v, l]) => { const on = String(p[k]) === String(v); return <button key={v} onClick={() => set(k, v)} className="k-press" style={{ padding: "9px 14px", borderRadius: 999, fontSize: 14, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.cardHi, color: on ? C.limeInk : C.text, fontWeight: on ? 600 : 400 }}>{l}</button>; })}
-  </div>;
-  return <Sheet title="Tu perfil" onClose={onClose}>
-    <p style={{ fontSize: 13, color: C.sub, margin: "-4px 0 0", lineHeight: 1.45 }}>La IA decide cargas, volumen y progresión con estos datos. Actualizalos cuando cambies de etapa.</p>
-    <Label>Objetivo</Label><Chips k="objetivo" options={OBJETIVOS} />
-    <Label>Experiencia</Label><Chips k="experiencia" options={[["principiante", "Principiante (<1 año)"], ["intermedio", "Intermedio (1–3)"], ["avanzado", "Avanzado (3+)"]]} />
-    <Label>Sexo</Label><Chips k="sexo" options={[["hombre", "Hombre"], ["mujer", "Mujer"]]} />
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-      <label><Label>Edad</Label><input inputMode="numeric" value={p.edad ?? ""} onChange={e => set("edad", e.target.value)} style={field} /></label>
-      <label><Label>Peso (kg)</Label><input inputMode="decimal" value={p.peso_kg ?? ""} onChange={e => set("peso_kg", e.target.value)} style={field} /></label>
-      <label><Label>Altura (cm)</Label><input inputMode="numeric" value={p.altura_cm ?? ""} onChange={e => set("altura_cm", e.target.value)} style={field} /></label>
-    </div>
-    <Label>Días por semana</Label><Chips k="dias_semana" options={[2, 3, 4, 5, 6].map(n => [n, String(n)])} />
-    <Label>Lesiones o limitaciones</Label>
-    <input value={p.lesiones ?? ""} onChange={e => set("lesiones", e.target.value)} placeholder="Ej: hombro derecho, lumbar" style={field} />
-    <Label>Algo más que la IA deba saber</Label>
-    <input value={p.notas ?? ""} onChange={e => set("notas", e.target.value)} placeholder="Ej: priorizo pecho y hombros" style={field} />
-    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : "Guardar perfil"}</button>
-  </Sheet>;
-}
-
 // ─────── Rutina: crear / editar ───────
 function RoutineSheet({ token, routine, exercises, count, onClose, onSaved }) {
   const [name, setName] = useState(routine?.name || "");
@@ -805,19 +745,18 @@ function ExercisePicker({ token, multi, onClose, onPick }) {
   const [q, setQ] = useState("");
   const [muscle, setMuscle] = useState(null);
   const [sel, setSel] = useState([]);
+  const [creating, setCreating] = useState(false);
   useEffect(() => { dq("kairo_exercises", { token, filters: "?select=*&order=muscle.asc,name.asc" }).then(r => setAll(Array.isArray(r) ? r : [])); }, [token]);
   const muscles = useMemo(() => [...new Set((all || []).map(e => e.muscle))], [all]);
   const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const list = (all || []).filter(e => (!muscle || e.muscle === muscle) && (!q || norm(e.name).includes(norm(q))));
   const tap = (e) => multi ? setSel(sel.some(x => x.id === e.id) ? sel.filter(x => x.id !== e.id) : [...sel, e]) : onPick([e]);
-  const create = async () => {
-    const r = await dq("kairo_exercises", { method: "POST", token, body: { name: q.trim(), muscle: muscle || "Otro", is_custom: true } });
-    const ex = Array.isArray(r) ? r[0] : null;
-    if (!ex) return pushToast("Ese ejercicio ya existe");
-    setAll([...(all || []), ex]); tap(ex);
-  };
+  if (creating) return <CreateExercise token={token} initialName={q} onClose={() => setCreating(false)} onCreated={(ex) => { setAll([...(all || []), ex]); setCreating(false); tap(ex); }} />;
   return <Sheet title={multi ? "Agregar ejercicios" : "Elegir ejercicio"} onClose={onClose}>
-    <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar ejercicio" style={field} />
+    <div style={{ display: "flex", gap: 8 }}>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar ejercicio" style={{ ...field, flex: 1 }} />
+      <button onClick={() => setCreating(true)} className="k-press" style={{ ...btnGhost, width: "auto", padding: "0 14px", fontSize: 14, color: C.lime, whiteSpace: "nowrap" }}>+ Crear</button>
+    </div>
     <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "12px -2px 4px", paddingBottom: 4 }}>
       {muscles.map(m => <button key={m} onClick={() => setMuscle(muscle === m ? null : m)} className="k-press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999, fontSize: 13, border: `0.5px solid ${muscle === m ? C.lime : C.line}`, background: muscle === m ? C.lime : C.cardHi, color: muscle === m ? C.limeInk : C.text }}>{m}</button>)}
     </div>
@@ -827,11 +766,43 @@ function ExercisePicker({ token, multi, onClose, onPick }) {
         <span style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 15, display: "block" }}>{e.name}</span><span style={{ fontSize: 12, color: C.sub }}>{e.muscle}{e.equipment ? ` · ${e.equipment}` : ""}</span></span>
         {multi && <span style={{ width: 22, height: 22, borderRadius: 11, border: `1.5px solid ${on ? C.lime : C.dim}`, background: on ? C.lime : "transparent", color: C.limeInk, display: "flex", alignItems: "center", justifyContent: "center" }}>{on && <Icon d={I.check} size={13} sw={2.8} />}</span>}
       </button>; })}
-      {q.trim() && !list.some(e => norm(e.name) === norm(q.trim())) && <button className="k-press" onClick={create} style={{ ...btnGhost, marginTop: 12 }}>Crear "{q.trim()}"{muscle ? ` · ${muscle}` : ""}</button>}
+      {q.trim() && !list.some(e => norm(e.name) === norm(q.trim())) && <button className="k-press" onClick={() => setCreating(true)} style={{ ...btnGhost, marginTop: 12 }}>Crear "{q.trim()}"</button>}
     </div>}
     {multi && sel.length > 0 && <div style={{ position: "sticky", bottom: 0, paddingTop: 10, background: C.card }}>
       <button className="k-press" onClick={() => onPick(sel)} style={btnLime}>Agregar {sel.length} ejercicio{sel.length > 1 ? "s" : ""}</button>
     </div>}
+  </Sheet>;
+}
+
+// Alta de un ejercicio propio: nombre, músculo principal (para la figura y la IA) y equipo.
+const GROUP_OF = { chest: "Pecho", lats: "Espalda", "middle back": "Espalda", "lower back": "Espalda", traps: "Espalda", shoulders: "Hombros", biceps: "Bíceps", triceps: "Tríceps", forearms: "Antebrazos", quadriceps: "Piernas", hamstrings: "Piernas", adductors: "Piernas", abductors: "Glúteos", glutes: "Glúteos", calves: "Gemelos", abdominals: "Abdomen", neck: "Cuello" };
+function CreateExercise({ token, initialName, onClose, onCreated }) {
+  const [name, setName] = useState(initialName || "");
+  const [main, setMain] = useState(null);
+  const [extra, setExtra] = useState([]);
+  const [equip, setEquip] = useState("Máquina");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!name.trim()) return pushToast("Ponele un nombre");
+    if (!main) return pushToast("Elegí el músculo principal");
+    setSaving(true);
+    const r = await dq("kairo_exercises", { method: "POST", token, body: { name: name.trim(), muscle: GROUP_OF[main] || "Otro", equipment: equip, is_custom: true, muscles_primary: [main], muscles_secondary: extra.filter(m => m !== main) } });
+    setSaving(false);
+    const ex = Array.isArray(r) ? r[0] : null;
+    if (!ex) return pushToast("Ya existe un ejercicio con ese nombre");
+    pushToast("Ejercicio creado"); onCreated(ex);
+  };
+  const chip = (on) => ({ padding: "8px 12px", borderRadius: 999, fontSize: 13.5, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.cardHi, color: on ? C.limeInk : C.text, fontWeight: on ? 600 : 400 });
+  return <Sheet title="Crear ejercicio" onClose={onClose}>
+    <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Press de pecho convergente (máquina)" style={field} />
+    <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}><BodyMap primary={main ? [main] : []} secondary={extra} size={130} /></div>
+    <Label>Músculo principal</Label>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{Object.entries(MUSCLE_ES).filter(([k]) => k !== "neck").map(([k, l]) => <button key={k} onClick={() => setMain(k)} className="k-press" style={chip(main === k)}>{l}</button>)}</div>
+    <Label>Secundarios (opcional)</Label>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{Object.entries(MUSCLE_ES).filter(([k]) => k !== "neck" && k !== main).map(([k, l]) => { const on = extra.includes(k); return <button key={k} onClick={() => setExtra(on ? extra.filter(x => x !== k) : [...extra, k])} className="k-press" style={chip(on)}>{l}</button>; })}</div>
+    <Label>Equipo</Label>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{["Máquina", "Polea", "Barra", "Mancuernas", "Peso corporal", "Otro"].map(e => <button key={e} onClick={() => setEquip(e)} className="k-press" style={chip(equip === e)}>{e}</button>)}</div>
+    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : "Crear ejercicio"}</button>
   </Sheet>;
 }
 

@@ -43,7 +43,9 @@ Planificás según su perfil (objetivo, experiencia, medidas, lesiones). Criteri
 Progresión: doble progresión dentro del rango de la rutina — primero reps; cuando todas las series llegan al tope con técnica, se sube la carga (≈2,5 kg compuestos, salto mínimo disponible en aislados) y se vuelve al piso del rango. Sin progreso en 2 sesiones: mantener; caída o estancamiento de 3+ sesiones: bajar 5–10 % o cambiar la variante. Sin historial: estimar una carga de trabajo conservadora según experiencia, sexo y peso corporal.
 Ajustá a la experiencia: principiante progresa más rápido y necesita menos volumen; avanzado, progresiones más chicas.
 Respetá lesiones y limitaciones: nunca propongas cargar una zona lesionada.
-Kilos con un decimal como máximo y en saltos reales de gimnasio.`;
+Kilos con un decimal como máximo y en saltos reales de gimnasio.
+Respetá siempre las "reglas" que la persona te dejó (por ejemplo, si prioriza máquinas sobre peso libre).
+Las indicaciones que ve en el gimnasio tienen que entenderse aunque sea principiante: lenguaje simple y concreto, sin siglas ni jerga (nada de "RIR", "RPE", "1RM", "tempo 3-1-1"). Si hace falta el concepto, decilo en criollo: por ejemplo "cortá la serie cuando te queden 2 repeticiones más en el tanque".`;
 
 const PLAN_SCHEMA = {
   type: "object", additionalProperties: false, required: ["ejercicios"],
@@ -56,7 +58,7 @@ const PLAN_SCHEMA = {
           exercise_id: { type: "string" },
           accion: { type: "string", enum: ["subir_peso", "subir_reps", "mantener", "bajar_peso", "primera_vez", "cambiar"] },
           series: { type: "array", items: { type: "object", additionalProperties: false, required: ["kg", "reps"], properties: { kg: { type: "number" }, reps: { type: "integer" } } } },
-          nota: { type: "string", description: "Indicación técnica de ejecución o de esfuerzo para hoy (RIR, tempo, rango, cue técnico), máximo 14 palabras, en tono profesional. No digas 'primera vez' ni des ánimo." },
+          nota: { type: "string", description: "Indicación para hoy, máximo 16 palabras: un detalle de técnica o de esfuerzo, en palabras simples que entienda un principiante, sin siglas. Tono profesional. No digas 'primera vez' ni des ánimo." },
         },
       },
     },
@@ -121,7 +123,7 @@ async function loadProfile() {
 }
 function profileText(p) {
   if (!p) return "Perfil: no cargado (asumí hipertrofia general, nivel intermedio).";
-  return `Perfil: objetivo ${OBJ[p.objetivo] || p.objetivo || "—"} · experiencia ${p.experiencia || "—"} · ${p.sexo || "—"}, ${p.edad || "—"} años, ${p.peso_kg || "—"} kg, ${p.altura_cm || "—"} cm · entrena ${p.dias_semana || "—"} días/semana${p.lesiones ? ` · lesiones/limitaciones: ${p.lesiones}` : ""}${p.notas ? ` · notas: ${p.notas}` : ""}.`;
+  return `Perfil: objetivo ${OBJ[p.objetivo] || p.objetivo || "—"}${p.tendencia ? ` (${p.tendencia})` : ""}${p.objetivo_detalle ? ` · en sus palabras: "${p.objetivo_detalle}"` : ""}${p.reglas_gym ? ` · reglas para el entrenamiento: "${p.reglas_gym}"` : ""}${p.reglas_nutricion ? ` · reglas para la alimentación: "${p.reglas_nutricion}"` : ""} · experiencia ${p.experiencia || "—"} · ${p.sexo || "—"}, ${p.edad || "—"} años, ${p.peso_kg || "—"} kg, ${p.altura_cm || "—"} cm · entrena ${p.dias_semana || "—"} días/semana${p.lesiones ? ` · lesiones/limitaciones: ${p.lesiones}` : ""}${p.notas ? ` · notas: ${p.notas}` : ""}.`;
 }
 
 async function ask(user, schema, feature) {
@@ -172,12 +174,46 @@ async function review() {
   return Response.json({ review: content });
 }
 
+const STRATEGY_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["resumen", "calorias_dia", "proteina_g", "ritmo_peso_semanal_kg", "entrenamiento", "alimentacion", "progreso"],
+  properties: {
+    resumen: { type: "string", description: "La estrategia en 2-3 frases, en criollo y concreto." },
+    calorias_dia: { type: "integer", description: "Calorías diarias objetivo (días de entrenamiento promedio)." },
+    proteina_g: { type: "integer" },
+    ritmo_peso_semanal_kg: { type: "number", description: "Cambio de peso semanal buscado (negativo = bajar)." },
+    entrenamiento: { type: "array", items: { type: "string" }, description: "3-5 pautas concretas para el gimnasio." },
+    alimentacion: { type: "array", items: { type: "string" }, description: "3-5 pautas concretas para comer." },
+    progreso: {
+      type: "object", additionalProperties: false, required: ["estado", "lectura"],
+      properties: {
+        estado: { type: "string", enum: ["en_camino", "lento", "desviado", "sin_datos"] },
+        lectura: { type: "string", description: "Qué dicen el peso y las medidas respecto del objetivo (ej. baja el peso pero sube el brazo: recomposición funcionando). Si no hay datos suficientes, qué registrar." },
+      },
+    },
+  },
+};
+
+async function strategy() {
+  const profile = await loadProfile();
+  if (!profile?.objetivo) return Response.json({ error: "Primero cargá tu objetivo" }, { status: 400 });
+  const logs = arr(await sb(`/rest/v1/kairo_body_logs?select=log_date,peso_kg,grasa_pct,cintura_cm,pecho_cm,brazo_cm,muslo_cm,cadera_cm,cuello_cm&order=log_date.asc&limit=120`));
+  const since = new Date(Date.now() - 28 * 86400e3).toISOString();
+  const recent = arr(await sb(`/rest/v1/kairo_workouts?finished_at=gte.${since}&select=started_at`));
+  const fmt = (l) => [l.log_date, l.peso_kg && `${l.peso_kg} kg`, l.grasa_pct && `${l.grasa_pct}% grasa`, l.cintura_cm && `cintura ${l.cintura_cm}`, l.pecho_cm && `pecho ${l.pecho_cm}`, l.brazo_cm && `brazo ${l.brazo_cm}`, l.muslo_cm && `muslo ${l.muslo_cm}`, l.cadera_cm && `cadera ${l.cadera_cm}`, l.cuello_cm && `cuello ${l.cuello_cm}`].filter(Boolean).join(", ");
+  const user = `${profileText(profile)}\n\nArmá su estrategia (gimnasio + alimentación) para ese objetivo y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
+  const content = await ask(user, STRATEGY_SCHEMA, "kairo-coach-strategy");
+  await sb(`/rest/v1/kairo_profile?id=eq.1`, { method: "PATCH", body: JSON.stringify({ estrategia: content, estrategia_at: new Date().toISOString() }) });
+  return Response.json({ strategy: content });
+}
+
 export async function POST(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "No autorizado" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   try {
     if (body.action === "plan" && body.routine_id) return await plan(body.routine_id);
     if (body.action === "review") return await review();
+    if (body.action === "strategy") return await strategy();
     return Response.json({ error: "Acción inválida" }, { status: 400 });
   } catch (e) {
     console.error("[kairo coach]", e);
