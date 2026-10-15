@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today } from "./ui";
 
+export { MEDIDAS };
 export const OBJETIVOS = [
   ["volumen", "Volumen", ["Limpio: subir despacio con poca grasa", "Agresivo: subir rápido"]],
   ["definicion", "Definición", ["Suave: bajar sin perder fuerza", "Agresiva: bajar rápido"]],
@@ -18,24 +19,24 @@ const ESTADO = { en_camino: ["Vas bien", C.pos], lento: ["Avance lento", C.warn]
 const n1 = (v) => Number(v).toLocaleString("es-AR", { maximumFractionDigits: 1 });
 const num = (s) => Number(String(s).replace(",", ".")) || 0;
 
-async function saveProfile(token, patch) {
-  return dq("kairo_profile", { method: "POST", token, filters: "?on_conflict=id", body: { id: 1, ...patch }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+export async function saveProfile(token, patch) {
+  const r = await dq("kairo_profile", { method: "POST", token, filters: "?on_conflict=user_id", body: { user_id: loadSession()?.user?.id, ...patch }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+  window.dispatchEvent(new Event("kairo-profile"));
+  return r;
 }
+export const ageOf = (d) => { if (!d) return null; const b = new Date(d + "T12:00:00"), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
 
-export default function Perfil({ token }) {
+export default function Perfil({ token, isAdmin }) {
   const [p, setP] = useState(undefined);
-  const [logs, setLogs] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [thinking, setThinking] = useState(false);
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
-    const [pr, lg] = await Promise.all([
-      dq("kairo_profile", { token, filters: "?id=eq.1&select=*" }),
-      dq("kairo_body_logs", { token, filters: "?select=*&order=log_date.desc,created_at.desc&limit=200" }),
+    const [pr] = await Promise.all([
+      dq("kairo_profile", { token, filters: "?select=*&limit=1" }),
     ]);
     setP(Array.isArray(pr) ? pr[0] || null : null);
-    setLogs(Array.isArray(lg) ? lg : []);
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
@@ -56,8 +57,6 @@ export default function Perfil({ token }) {
 
   if (p === undefined) return <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p>;
   const st = p?.estrategia;
-  const weights = logs.filter(l => l.peso_kg).slice().reverse();
-  const lastW = weights[weights.length - 1], firstW = weights[0];
 
   return <>
     {/* Encabezado */}
@@ -70,6 +69,7 @@ export default function Perfil({ token }) {
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => pickPhoto(e.target.files?.[0])} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em" }}>{p?.nombre || "Tu perfil"}</div>
+        {!p?.nombre && <button onClick={() => setSheet("objetivo")} style={{ ...linkBtn, fontSize: 13 }}>Poné tu nombre</button>}
         <div style={{ fontSize: 14, color: C.sub, marginTop: 2 }}>{p?.objetivo ? `${OBJ_LABEL[p.objetivo]}${p.tendencia ? ` · ${p.tendencia.split(":")[0].toLowerCase()}` : ""}` : "Definí tu objetivo"}</div>
       </div>
     </div>
@@ -83,7 +83,7 @@ export default function Perfil({ token }) {
       <div style={{ fontSize: 18, fontWeight: 600 }}>{OBJ_LABEL[p.objetivo]}</div>
       {p.tendencia && <div style={{ fontSize: 14, color: C.lime, marginTop: 2 }}>{p.tendencia}</div>}
       {p.objetivo_detalle && <div style={{ fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 1.45 }}>"{p.objetivo_detalle}"</div>}
-      <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>{[p.sexo, p.edad && `${p.edad} años`, p.altura_cm && `${n1(p.altura_cm)} cm`, p.experiencia, p.dias_semana && `${p.dias_semana} días/sem`].filter(Boolean).join(" · ")}</div>
+      <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>{[p.sexo, (p.fecha_nacimiento || p.edad) && `${ageOf(p.fecha_nacimiento) ?? p.edad} años`, p.altura_cm && `${n1(p.altura_cm)} cm`, p.experiencia, p.dias_semana && `${p.dias_semana} días/sem`].filter(Boolean).join(" · ")}</div>
     </button>}
 
     {/* Estrategia de la IA */}
@@ -107,27 +107,6 @@ export default function Perfil({ token }) {
       </div>}
     </>}
 
-    {/* Peso y medidas */}
-    <SectionTitle right={<button onClick={() => setSheet("log")} style={linkBtn}>+ Registrar</button>}>Peso y medidas</SectionTitle>
-    {!logs.length ? <button className="k-press" onClick={() => setSheet("log")} style={{ ...card, width: "100%", textAlign: "left", color: C.text }}>
-      <div style={{ fontSize: 15, fontWeight: 500 }}>Registrá tu peso</div>
-      <div style={{ fontSize: 13, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>Cuando quieras: todos los días o una vez por semana. Las medidas son opcionales pero dicen mucho: podés bajar de peso y aun así estar ganando músculo.</div>
-    </button> : <div style={card}>
-      {lastW && <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div><span className="k-num" style={{ fontSize: 34, fontWeight: 500 }}>{n1(lastW.peso_kg)}</span><span style={{ color: C.sub, fontSize: 15 }}> kg</span></div>
-        {firstW !== lastW && <span className="k-num" style={{ fontSize: 14, color: C.sub }}>{lastW.peso_kg - firstW.peso_kg > 0 ? "+" : ""}{n1(lastW.peso_kg - firstW.peso_kg)} kg desde {dayLabel(firstW.log_date)}</span>}
-      </div>}
-      {weights.length > 1 && <Spark values={weights.map(w => Number(w.peso_kg))} />}
-      <MeasuresTable logs={logs} />
-      <div style={{ marginTop: 10 }}>
-        {logs.slice(0, 6).map((l, i) => <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderTop: `0.5px solid ${C.line}`, fontSize: 13.5 }}>
-          <span style={{ color: C.sub }}>{dayLabel(l.log_date)}</span>
-          <span className="k-num" style={{ flex: 1, textAlign: "right", marginRight: 10 }}>{[l.peso_kg && `${n1(l.peso_kg)} kg`, ...MEDIDAS.filter(([k]) => l[k]).map(([k, lab]) => `${lab.toLowerCase()} ${n1(l[k])}`)].filter(Boolean).join(" · ")}</span>
-          <button onClick={() => setSheet({ edit: l })} aria-label="Editar registro" style={{ ...linkBtn, color: C.dim }}><Icon d={I.edit} size={15} /></button>
-        </div>)}
-      </div>
-    </div>}
-
     {/* Reglas para la IA */}
     <SectionTitle right={<button onClick={() => setSheet("reglas")} style={linkBtn}>Editar</button>}>Reglas para la IA</SectionTitle>
     <button className="k-press" onClick={() => setSheet("reglas")} style={{ ...card, width: "100%", textAlign: "left", color: C.text, display: "grid", gap: 10 }}>
@@ -137,7 +116,7 @@ export default function Perfil({ token }) {
 
     {sheet === "objetivo" && <ObjectiveSheet token={token} p={p} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet === "reglas" && <RulesSheet token={token} p={p} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
-    {(sheet === "log" || sheet?.edit) && <LogSheet token={token} log={sheet?.edit} last={logs[0]} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+    {isAdmin && <Users token={token} />}
   </>;
 }
 
@@ -157,7 +136,7 @@ const Rule = ({ label, text, placeholder }) => <div>
   <div style={{ fontSize: 14, marginTop: 2, color: text ? C.text : C.dim, lineHeight: 1.45 }}>{text || placeholder}</div>
 </div>;
 
-function MeasuresTable({ logs }) {
+export function MeasuresTable({ logs }) {
   const rows = MEDIDAS.map(([k, label]) => {
     const vals = logs.filter(l => l[k] != null);
     if (!vals.length) return null;
@@ -174,7 +153,7 @@ function MeasuresTable({ logs }) {
   </div>;
 }
 
-function Spark({ values }) {
+export function Spark({ values }) {
   const W = 320, H = 70, P = 6, max = Math.max(...values), min = Math.min(...values), span = max - min || 1;
   const pts = values.map((v, i) => [P + (i * (W - 2 * P)) / Math.max(1, values.length - 1), H - P - ((v - min) / span) * (H - 2 * P)]);
   return <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", marginTop: 10 }} aria-hidden="true">
@@ -186,18 +165,19 @@ function Spark({ values }) {
 const chip = (on) => ({ padding: "9px 14px", borderRadius: 999, fontSize: 14, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.cardHi, color: on ? C.limeInk : C.text, fontWeight: on ? 600 : 400, textAlign: "left" });
 
 function ObjectiveSheet({ token, p, onClose, onSaved }) {
-  const [f, setF] = useState(() => ({ nombre: "", objetivo: "", tendencia: "", objetivo_detalle: "", experiencia: "", sexo: "", edad: "", altura_cm: "", dias_semana: "", lesiones: "", ...(p || {}) }));
+  const [f, setF] = useState(() => ({ nombre: "", objetivo: "", tendencia: "", objetivo_detalle: "", experiencia: "", sexo: "", fecha_nacimiento: "", altura_cm: "", dias_semana: "", lesiones: "", ...(p || {}) }));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF({ ...f, [k]: v });
   const tendencias = OBJETIVOS.find(([k]) => k === f.objetivo)?.[2] || [];
   const save = async () => {
+    if (!f.nombre?.trim()) return pushToast("Poné tu nombre");
     if (!f.objetivo) return pushToast("Elegí tu objetivo");
     setSaving(true);
-    await saveProfile(token, { nombre: f.nombre?.trim() || null, objetivo: f.objetivo, tendencia: f.tendencia || null, objetivo_detalle: f.objetivo_detalle?.trim() || null, experiencia: f.experiencia || null, sexo: f.sexo || null, edad: Number(f.edad) || null, altura_cm: num(f.altura_cm) || null, dias_semana: Number(f.dias_semana) || null, lesiones: f.lesiones?.trim() || null, updated_at: new Date().toISOString() });
+    await saveProfile(token, { nombre: f.nombre?.trim() || null, objetivo: f.objetivo, tendencia: f.tendencia || null, objetivo_detalle: f.objetivo_detalle?.trim() || null, experiencia: f.experiencia || null, sexo: f.sexo || null, fecha_nacimiento: f.fecha_nacimiento || null, edad: ageOf(f.fecha_nacimiento), altura_cm: num(f.altura_cm) || null, dias_semana: Number(f.dias_semana) || null, lesiones: f.lesiones?.trim() || null, updated_at: new Date().toISOString() });
     setSaving(false); pushToast("Objetivo guardado"); onSaved();
   };
   return <Sheet title="Tu objetivo" onClose={onClose}>
-    <Label>Tu nombre</Label>
+    <Label>Tu nombre *</Label>
     <input value={f.nombre || ""} onChange={e => set("nombre", e.target.value)} placeholder="Cómo te llamamos" style={field} />
     <Label>Qué buscás</Label>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{OBJETIVOS.map(([k, l]) => <button key={k} onClick={() => setF({ ...f, objetivo: k, tendencia: "" })} className="k-press" style={chip(f.objetivo === k)}>{l}</button>)}</div>
@@ -212,7 +192,7 @@ function ObjectiveSheet({ token, p, onClose, onSaved }) {
     <Label>Sexo</Label>
     <div style={{ display: "flex", gap: 8 }}>{[["hombre", "Hombre"], ["mujer", "Mujer"]].map(([k, l]) => <button key={k} onClick={() => set("sexo", k)} className="k-press" style={chip(f.sexo === k)}>{l}</button>)}</div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-      <label><Label>Edad</Label><input inputMode="numeric" value={f.edad ?? ""} onChange={e => set("edad", e.target.value)} style={field} /></label>
+      <label><Label>Nacimiento{f.fecha_nacimiento ? ` · ${ageOf(f.fecha_nacimiento)} años` : ""}</Label><input type="date" value={f.fecha_nacimiento || ""} onChange={e => set("fecha_nacimiento", e.target.value)} style={{ ...field, colorScheme: "dark" }} /></label>
       <label><Label>Altura (cm)</Label><input inputMode="numeric" value={f.altura_cm ?? ""} onChange={e => set("altura_cm", e.target.value)} style={field} /></label>
     </div>
     <Label>Días de gimnasio por semana</Label>
@@ -243,7 +223,7 @@ function RulesSheet({ token, p, onClose, onSaved }) {
   </Sheet>;
 }
 
-function LogSheet({ token, log, last, onClose, onSaved }) {
+export function LogSheet({ token, log, last, onClose, onSaved }) {
   const [f, setF] = useState(() => ({ log_date: today(), peso_kg: "", ...Object.fromEntries(MEDIDAS.map(([k]) => [k, ""])), ...(log ? Object.fromEntries(Object.entries(log).map(([k, v]) => [k, v == null ? "" : String(v).replace(".", ",")])) : {}) }));
   const [more, setMore] = useState(!!log && MEDIDAS.some(([k]) => log[k] != null));
   const [saving, setSaving] = useState(false);
@@ -293,4 +273,58 @@ function resizeImage(file, size) {
     img.onerror = reject;
     img.src = URL.createObjectURL(file);
   });
+}
+
+// Usuarios de Kairo (solo el admin): crear cuentas para amigos. Entran solo a /kairo.
+function Users({ token }) {
+  const [list, setList] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const auth = () => ({ Authorization: `Bearer ${loadSession()?.token || token}` });
+  const load = useCallback(async () => {
+    const r = await fetch("/api/kairo/users", { headers: auth() }).then(r => r.json()).catch(() => ({}));
+    setList(r.users || []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  return <>
+    <SectionTitle right={<button onClick={() => setAdding(true)} style={linkBtn}>+ Crear usuario</button>}>Usuarios de Kairo</SectionTitle>
+    <div style={{ ...card, padding: "2px 16px" }}>
+      {!list ? <p style={{ color: C.sub, fontSize: 14 }}>Cargando…</p> : list.length === 0 ? <p style={{ color: C.sub, fontSize: 14 }}>Todavía no hay usuarios.</p> :
+        list.map((u, i) => <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < list.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+          <Avatar src={u.avatar} size={36} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 15 }}>{u.nombre || "Sin nombre"}</div>
+            <div style={{ fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</div>
+          </div>
+        </div>)}
+    </div>
+    {adding && <NewUserSheet auth={auth} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
+  </>;
+}
+
+function NewUserSheet({ auth, onClose, onSaved }) {
+  const [f, setF] = useState({ nombre: "", email: "", password: "" });
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    const r = await fetch("/api/kairo/users", { method: "POST", headers: { "Content-Type": "application/json", ...auth() }, body: JSON.stringify(f) }).then(r => r.json()).catch(() => ({ error: "Sin conexión" }));
+    setSaving(false);
+    if (r.error) return pushToast(r.error);
+    pushToast("Usuario creado"); onSaved();
+  };
+  return <Sheet title="Crear usuario" onClose={onClose}>
+    <p style={{ fontSize: 13, color: C.sub, margin: "-4px 0 0", lineHeight: 1.45 }}>La cuenta entra solo a Kairo (no ve nada de Argencargo). Pasale el email y la contraseña; después la puede cambiar.</p>
+    <Label>Nombre</Label>
+    <input value={f.nombre} onChange={e => setF({ ...f, nombre: e.target.value })} placeholder="Ej: Juan" style={field} />
+    <Label>Email</Label>
+    <input type="email" autoComplete="off" autoCapitalize="none" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} placeholder="juan@gmail.com" style={field} />
+    <Label>Contraseña</Label>
+    <input type="text" autoComplete="new-password" autoCapitalize="none" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} placeholder="Mínimo 6 caracteres" style={field} />
+    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Creando…" : "Crear usuario"}</button>
+  </Sheet>;
+}
+
+export function Avatar({ src, size = 40 }) {
+  return <span style={{ width: size, height: size, borderRadius: size / 2, overflow: "hidden", background: C.cardHi, color: C.sub, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+    {src ? <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={size * 0.48} />}
+  </span>;
 }

@@ -1,4 +1,4 @@
-// POST /api/kairo/rest   (sesión de admin)
+// POST /api/kairo/rest   (usuario de Kairo)
 //   { seconds, title, body } → programa el aviso de fin de descanso y devuelve { id }.
 //                              La función queda viva (waitUntil) hasta la hora y manda el push
 //                              al celular, salvo que se haya cancelado.
@@ -7,30 +7,11 @@
 // Los descansos de más de ~4 min no se avisan por push (límite de la función).
 
 import { waitUntil } from "@vercel/functions";
-import { SB_URL, SB_KEY } from "../../../../lib/sb-client";
+import { sb, kairoUser } from "../../../../lib/kairo-server";
 
-const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const MAX_WAIT = 280;
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
-
-const sb = async (path, init = {}) => {
-  const r = await fetch(`${SB_URL}${path}`, {
-    ...init,
-    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", ...(init.headers || {}) },
-  });
-  const t = await r.text();
-  try { return JSON.parse(t); } catch { return null; }
-};
-
-async function adminId(req) {
-  const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
-  if (!token) return null;
-  const u = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` } }).then(r => r.json()).catch(() => null);
-  if (!u?.id) return null;
-  const p = await sb(`/rest/v1/profiles?id=eq.${u.id}&select=role`);
-  return Array.isArray(p) && p[0]?.role === "admin" ? u.id : null;
-}
 
 async function fireWhenDue(id, fireAt) {
   await new Promise(r => setTimeout(r, Math.max(0, fireAt - Date.now())));
@@ -46,12 +27,13 @@ async function fireWhenDue(id, fireAt) {
 }
 
 export async function POST(req) {
-  const uid = await adminId(req);
-  if (!uid) return Response.json({ error: "No autorizado" }, { status: 401 });
+  const me = await kairoUser(req);
+  if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
+  const uid = me.id;
   const body = await req.json().catch(() => ({}));
 
   if (body.cancel) {
-    await sb(`/rest/v1/kairo_rest_timers?id=eq.${body.cancel}`, { method: "PATCH", body: JSON.stringify({ cancelled: true }) });
+    await sb(`/rest/v1/kairo_rest_timers?id=eq.${body.cancel}&user_id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({ cancelled: true }) });
     return Response.json({ ok: true });
   }
 

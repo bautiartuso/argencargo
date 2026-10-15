@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession, clearSession, ac, saveSession } from "../../lib/sb-client";
 import Fisico, { WorkoutLayer } from "./fisico";
 import Perfil from "./perfil";
+import Inicio from "./hoy";
 import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn } from "./ui";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -12,11 +13,14 @@ import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn,
 // Por ahora la sección completa es Finanzas (presupuesto mensual + Mercado Pago).
 // ──────────────────────────────────────────────────────────────────────
 
+// Quién entra a Kairo: el dueño (admin) y las cuentas creadas para amigos (rol "kairo").
+const KAIRO_ROLES = ["admin", "kairo"];
+
 // ─────── Root ───────
 export default function KairoPage() {
   const [session, setSession] = useState(null);
   const [ready, setReady] = useState(false);
-  useEffect(() => { const s = loadSession(); if (s?.token && s?.profile?.role === "admin") setSession(s); setReady(true); }, []);
+  useEffect(() => { const s = loadSession(); if (s?.token && KAIRO_ROLES.includes(s?.profile?.role)) setSession(s); setReady(true); }, []);
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
@@ -40,7 +44,7 @@ function Login({ onLogin }) {
       if (r?.error || !r?.access_token) { setErr("Email o contraseña incorrectos"); setLo(false); return; }
       const p = await dq("profiles", { token: r.access_token, filters: `?id=eq.${r.user.id}&select=*` });
       const prof = Array.isArray(p) ? p[0] : null;
-      if (prof?.role !== "admin") { setErr("Acceso denegado"); setLo(false); return; }
+      if (!KAIRO_ROLES.includes(prof?.role)) { setErr("Esta cuenta no tiene acceso a Kairo"); setLo(false); return; }
       const ss = { token: r.access_token, refresh_token: r.refresh_token, user: r.user, profile: prof };
       saveSession(ss); onLogin(ss);
     } catch { setErr("Sin conexión"); }
@@ -60,7 +64,7 @@ function Login({ onLogin }) {
 
 // ─────── Shell con barra inferior ───────
 const TABS = [
-  { id: "hoy", label: "Hoy", icon: I.home },
+  { id: "hoy", label: "Inicio", icon: I.home },
   { id: "fisico", label: "Físico", icon: I.gym },
   { id: "nutricion", label: "Nutrición", icon: I.food },
   { id: "finanzas", label: "Finanzas", icon: I.wallet },
@@ -68,7 +72,14 @@ const TABS = [
 ];
 
 function App({ session }) {
-  const [tab, setTab] = useState("finanzas");
+  const [tab, setTab] = useState("hoy");
+  // Tu perfil (nombre, foto, organización de días): lo usan Inicio y la barra de abajo.
+  const [me, setMe] = useState(null);
+  useEffect(() => {
+    const load = () => dq("kairo_profile", { token: session.token, filters: "?select=*&limit=1" }).then(r => setMe(Array.isArray(r) ? r[0] || {} : {}));
+    load(); window.addEventListener("kairo-profile", load);
+    return () => window.removeEventListener("kairo-profile", load);
+  }, [session.token]);
   const scroller = useRef(null);
   useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t === "objetivos" ? "perfil" : t); } catch {} }, []);
   const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
@@ -79,10 +90,10 @@ function App({ session }) {
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.bg }}>
       <main ref={scroller} style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
-          {tab === "hoy" && <Hoy fin={fin} go={go} />}
+          {tab === "hoy" && <Inicio token={session.token} me={me} fin={fin} go={go} />}
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
           {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
-      {tab === "perfil" && <Perfil token={session.token} />}
+          {tab === "perfil" && <Perfil token={session.token} isAdmin={session.profile?.role === "admin"} />}
       {tab === "nutricion" && <Soon tab={TABS.find(t => t.id === tab)} />}
         </div>
       </main>
@@ -92,7 +103,7 @@ function App({ session }) {
           {TABS.map(t => {
             const on = tab === t.id;
             return <button key={t.id} onClick={() => go(t.id)} aria-label={t.label} style={{ flex: 1, background: "none", border: "none", padding: "8px 0 2px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: on ? C.lime : C.dim }}>
-              <Icon d={t.icon} size={23} sw={on ? 1.9 : 1.6} />
+              {t.id === "perfil" && me?.avatar ? <span style={{ width: 25, height: 25, borderRadius: 13, overflow: "hidden", border: `1.5px solid ${on ? C.lime : "transparent"}`, display: "flex" }}><img src={me.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></span> : <Icon d={t.icon} size={23} sw={on ? 1.9 : 1.6} />}
               <span style={{ fontSize: 10.5, fontWeight: on ? 600 : 500 }}>{t.label}</span>
             </button>;
           })}
@@ -173,36 +184,12 @@ function useFinance(token) {
   return { month, setMonth, cats, exps, incomes, income, carry, monthLeft, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, uncategorized, lo, load };
 }
 
-// ─────── Hoy ───────
-function Hoy({ fin, go }) {
-  const d = new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
-  return <>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
-      <Wordmark /><span style={{ fontSize: 13, color: C.sub }}>{d[0].toUpperCase() + d.slice(1)}</span>
-    </div>
-    <button className="k-press" onClick={() => go("finanzas")} style={{ ...card, width: "100%", textAlign: "left", color: C.text, display: "block" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: C.sub }}><span>Finanzas · {monthName(curMonth()).toLowerCase()}</span><Icon d={I.right} size={16} /></div>
-      {fin.budget != null ? <>
-        <div className="k-num" style={{ fontSize: 30, fontWeight: 500, marginTop: 6, color: fin.monthLeft >= 0 ? C.pos : C.neg }}>{fin.monthLeft < 0 ? "−" : ""}{ars(Math.abs(fin.monthLeft))}</div>
-        <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>saldo del mes{fin.daysLeft > 0 && fin.monthLeft > 0 ? ` · ${ars(fin.monthLeft / fin.daysLeft)} por día` : ""}</div>
-        <Bar pct={fin.income > 0 ? fin.spent / fin.income : 1} color={C.blue} mark={fin.dayNow / fin.dim} />
-      </> : <div style={{ fontSize: 15, marginTop: 8 }}>Cargá tus ingresos del mes</div>}
-      {fin.uncategorized.length > 0 && <div style={{ fontSize: 13, color: C.lime, marginTop: 12 }}>{fin.uncategorized.length} gasto{fin.uncategorized.length > 1 ? "s" : ""} sin categoría</div>}
-    </button>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
-      {TABS.filter(t => ["fisico", "nutricion", "perfil"].includes(t.id)).map(t =>
-        <button key={t.id} className="k-press" onClick={() => go(t.id)} style={{ ...card, textAlign: "left", color: C.sub, display: "flex", flexDirection: "column", gap: 10 }}>
-          <Icon d={t.icon} size={20} /><span style={{ fontSize: 14, color: C.text, fontWeight: 500 }}>{t.label}</span><span style={{ fontSize: 12 }}>{t.id === "fisico" ? "Entrenar hoy" : t.id === "perfil" ? "Objetivo y progreso" : "Próximamente"}</span>
-        </button>)}
-    </div>
-  </>;
-}
-
 // ─────── Finanzas ───────
 function Finanzas({ fin, token }) {
   const { month, setMonth, cats, exps, incomes, income, carry, monthLeft, budget, spent, left, dim, dayNow, daysLeft, isCur, byCat, lo, load } = fin;
   const [sheet, setSheet] = useState(null); // {type:'cat', exp} | {type:'add'} | {type:'budget'}
   const [syncing, setSyncing] = useState(false);
+  const [noMp, setNoMp] = useState(false); // cuentas sin Mercado Pago conectado
   const [view, setView] = useState("mes");
 
   // Mercado Pago se sincroniza solo: un cron cada 15 min y además cada vez que abrís Finanzas.
@@ -212,6 +199,7 @@ function Finanzas({ fin, token }) {
       setSyncing(true);
       try {
         const r = await fetch("/api/kairo/mp-sync", { method: "POST", headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json());
+        if (alive && r.skipped) setNoMp(true);
         const n = (r.inserted || 0) + (r.insertedIncomes || 0);
         if (alive && n) { pushToast(`${n} movimiento${n > 1 ? "s" : ""} nuevo${n > 1 ? "s" : ""} de Mercado Pago`); load(); }
       } catch {}
@@ -296,8 +284,8 @@ function Finanzas({ fin, token }) {
         </div>}
 
       {/* Movimientos */}
-      <SectionTitle right={<span style={{ fontSize: 12, color: C.dim }}>{syncing ? "Actualizando Mercado Pago…" : "Mercado Pago al día"}</span>}>Movimientos</SectionTitle>
-      {moves.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Sin movimientos este mes. Lo que pagues o cobres con Mercado Pago aparece solo.</div> :
+      <SectionTitle right={!noMp && <span style={{ fontSize: 12, color: C.dim }}>{syncing ? "Actualizando Mercado Pago…" : "Mercado Pago al día"}</span>}>Movimientos</SectionTitle>
+      {moves.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Sin movimientos este mes. Cargá tus ingresos y gastos con los botones de arriba.</div> :
         <div style={{ ...card, padding: "2px 16px" }}>
           {moves.map(({ kind, row: e }, i) => {
             const last = i === moves.length - 1;
@@ -419,7 +407,7 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
     await dq("mp_expenses", { method: "PATCH", token, filters: `?id=eq.${exp.id}`, body: { category_id: cat, description: desc.trim() || null } });
     if (remember && exp.merchant && cat) {
       const key = merchantKey(exp.merchant);
-      await dq("kairo_merchant_rules", { method: "POST", token, filters: "?on_conflict=merchant_key", body: { merchant_key: key, category_id: cat, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+      await dq("kairo_merchant_rules", { method: "POST", token, filters: "?on_conflict=user_id,merchant_key", body: { user_id: loadSession()?.user?.id, merchant_key: key, category_id: cat, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
       // Los otros gastos del mismo comercio que siguen sin categoría también se ordenan.
       await dq("mp_expenses", { method: "PATCH", token, filters: `?merchant=eq.${encodeURIComponent(exp.merchant)}&category_id=is.null`, body: { category_id: cat } });
     }
@@ -431,7 +419,7 @@ function CategorySheet({ exp, cats, token, onClose, onSaved }) {
     if (exp.mp_payment_id) {
       await dq("mp_expenses", { method: "PATCH", token, filters: `?id=eq.${exp.id}`, body: { source: "ignorado", category_id: null } });
       if (always && exp.merchant) {
-        await dq("kairo_merchant_rules", { method: "POST", token, filters: "?on_conflict=merchant_key", body: { merchant_key: merchantKey(exp.merchant), category_id: null, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+        await dq("kairo_merchant_rules", { method: "POST", token, filters: "?on_conflict=user_id,merchant_key", body: { user_id: loadSession()?.user?.id, merchant_key: merchantKey(exp.merchant), category_id: null, updated_at: new Date().toISOString() }, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
         await dq("mp_expenses", { method: "PATCH", token, filters: `?merchant=eq.${encodeURIComponent(exp.merchant)}&category_id=is.null&source=eq.mp`, body: { source: "ignorado" } });
       }
     } else {

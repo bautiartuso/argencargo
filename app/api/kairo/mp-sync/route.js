@@ -6,33 +6,16 @@
 // Si el comercio tiene una regla en kairo_merchant_rules, entra ya categorizado.
 // Requiere MP_ACCESS_TOKEN (access token de producción de tu cuenta) y sesión de admin.
 
-import { SB_URL, SB_KEY } from "../../../../lib/sb-client";
+import { sb, kairoUser, mpOwnerId } from "../../../../lib/kairo-server";
 
-const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const MP_DESDE = "2026-10-13"; // hora Argentina; antes de esto la cuenta se usaba para otras cosas
 
-const sb = async (path, init = {}) => {
-  const r = await fetch(`${SB_URL}${path}`, {
-    ...init,
-    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", ...(init.headers || {}) },
-  });
-  const t = await r.text();
-  try { return JSON.parse(t); } catch { return null; }
-};
 
 const merchantKey = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
-async function isAdmin(req) {
-  const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
-  if (!token) return false;
-  const u = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` } }).then(r => r.json()).catch(() => null);
-  if (!u?.id) return false;
-  const p = await sb(`/rest/v1/profiles?id=eq.${u.id}&select=role`);
-  return Array.isArray(p) && p[0]?.role === "admin";
-}
 
 const mp = async (path) => {
   const r = await fetch(`https://api.mercadopago.com${path}`, { headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` } });
@@ -51,18 +34,24 @@ const counterpart = (p, side) => {
 const arDate = (iso) => new Date(new Date(iso).getTime() - 3 * 3600e3).toISOString().slice(0, 10);
 
 // POST: la app al abrir Finanzas (sesión de admin). GET: el cron de Vercel cada 15 min (CRON_SECRET).
+// La cuenta de Mercado Pago es una sola (la del dueño): para el resto de los usuarios no hace nada.
 export async function POST(req) {
-  if (!(await isAdmin(req))) return Response.json({ error: "No autorizado" }, { status: 401 });
-  return sync();
+  const me = await kairoUser(req);
+  if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
+  const owner = await mpOwnerId();
+  if (!owner || owner !== me.id) return Response.json({ ok: true, skipped: "sin Mercado Pago" });
+  return sync(owner);
 }
 
 export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) return Response.json({ error: "No autorizado" }, { status: 401 });
-  return sync();
+  const owner = await mpOwnerId();
+  if (!owner) return Response.json({ ok: true, skipped: "sin dueño" });
+  return sync(owner);
 }
 
-async function sync() {
+async function sync(uid) {
   if (!process.env.MP_ACCESS_TOKEN) return Response.json({ error: "Falta MP_ACCESS_TOKEN en Vercel" }, { status: 400 });
 
   try {
@@ -83,7 +72,7 @@ async function sync() {
     const OWN_MONEY = new Set(["account_fund"]);
     const payments = all.filter(p => p.status === "approved" && String(p.collector_id) !== String(me.id) && !OWN_MONEY.has(p.operation_type));
     const ownIds = all.filter(p => OWN_MONEY.has(p.operation_type)).map(p => String(p.id));
-    if (ownIds.length) await sb(`/rest/v1/mp_expenses?mp_payment_id=in.(${ownIds.join(",")})&source=eq.mp`, { method: "PATCH", body: JSON.stringify({ source: "ignorado" }) });
+    if (ownIds.length) await sb(`/rest/v1/mp_expenses?user_id=eq.${uid}&mp_payment_id=in.(${ownIds.join(",")})&source=eq.mp`, { method: "PATCH", body: JSON.stringify({ source: "ignorado" }) });
 
     // Diagnóstico (temporal): qué datos de la otra persona trae MP en transferencias y pagos.
     for (const p of [...all, ...received].filter(p => p.operation_type !== "regular_payment").slice(0, 6)) {
@@ -100,11 +89,11 @@ async function sync() {
       return Response.json({ preview: true, found: payments.length, sample: payments.slice(0, 3).map(p => ({ merchant: p.description, amount: p.transaction_amount })) });
     }
 
-    const rulesArr = await sb(`/rest/v1/kairo_merchant_rules?select=merchant_key,category_id`);
+    const rulesArr = await sb(`/rest/v1/kairo_merchant_rules?user_id=eq.${uid}&select=merchant_key,category_id`);
     // Regla con category_id null = "no es un gasto" para ese comercio/destinatario.
     const rules = new Map((Array.isArray(rulesArr) ? rulesArr : []).map(r => [r.merchant_key, r.category_id]));
     // Incluye los marcados como "no es un gasto" (source='ignorado') para no volver a traerlos.
-    const known = await sb(`/rest/v1/mp_expenses?mp_payment_id=not.is.null&select=mp_payment_id`);
+    const known = await sb(`/rest/v1/mp_expenses?user_id=eq.${uid}&mp_payment_id=not.is.null&select=mp_payment_id`);
     if (!Array.isArray(known)) throw new Error("No se pudo leer los gastos ya cargados");
     const seen = new Set(known.map(k => k.mp_payment_id));
 
@@ -114,6 +103,7 @@ async function sync() {
       const key = merchantKey(merchant);
       const ignored = rules.has(key) && rules.get(key) === null;
       return {
+        user_id: uid,
         mp_payment_id: String(p.id),
         source: ignored ? "ignorado" : "mp",
         merchant,
@@ -136,10 +126,11 @@ async function sync() {
     // Ingresos: lo que te pagaron a vos (transferencias recibidas, cobros). Lo que pagaste vos mismo
     // a tu propia cuenta no cuenta.
     const incomes = received.filter(p => p.status === "approved" && String(p.payer?.id) !== String(me.id) && !OWN_MONEY.has(p.operation_type));
-    const knownIn = await sb(`/rest/v1/kairo_incomes?mp_payment_id=not.is.null&select=mp_payment_id`);
+    const knownIn = await sb(`/rest/v1/kairo_incomes?user_id=eq.${uid}&mp_payment_id=not.is.null&select=mp_payment_id`);
     if (!Array.isArray(knownIn)) throw new Error("No se pudo leer los ingresos ya cargados (¿corriste el SQL de ingresos?)");
     const seenIn = new Set(knownIn.map(k => k.mp_payment_id));
     const inRows = incomes.filter(p => !seenIn.has(String(p.id))).map(p => ({
+      user_id: uid,
       mp_payment_id: String(p.id),
       source: "mp",
       description: p.description || counterpart(p, "payer") || (p.operation_type === "money_transfer" ? "Transferencia recibida" : "Cobro Mercado Pago"),

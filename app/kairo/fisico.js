@@ -87,7 +87,7 @@ function useGym(token) {
       dq("kairo_routine_exercises", { token, filters: "?select=*&order=sort_order.asc" }),
       dq("kairo_exercises", { token, filters: "?select=*&order=muscle.asc,name.asc" }),
       dq("kairo_workouts", { token, filters: "?select=*,sets:kairo_sets(exercise_id,weight_kg,reps,set_index)&finished_at=not.is.null&order=started_at.desc&limit=200" }),
-      dq("kairo_profile", { token, filters: "?id=eq.1&select=*" }),
+      dq("kairo_profile", { token, filters: "?select=*&limit=1" }),
     ]);
     const exs = Array.isArray(ex) ? ex : [];
     const items = (Array.isArray(it) ? it : []).map(i => ({ ...i, exercise: exs.find(e => e.id === i.exercise_id) })).filter(i => i.exercise);
@@ -120,22 +120,41 @@ async function buildItems(token, list) {
 }
 
 // ─────── Sección ───────
+// Arranca un entreno (desde Físico o desde Inicio).
+export async function startWorkout(token, routine) {
+  if (loadDraft()) { window.dispatchEvent(new CustomEvent("kairo-workout-open")); return pushToast("Ya tenés un entreno en curso"); }
+  unlockAudio(); ensurePush(token);
+  const items = await buildItems(token, routine.items);
+  saveDraft({ routine_id: routine.id, routine_name: routine.name, started_at: new Date().toISOString(), plan: false, items });
+  window.dispatchEvent(new CustomEvent("kairo-workout-open"));
+}
+
+// Qué toca hoy. Dos formas de organizar los días (perfil.dias):
+//  · días fijos: cada rutina tiene sus días de la semana.
+//  · rotación: una secuencia de rutinas y descansos que se repite sin importar el día de la semana
+//    (ej. pecho, espalda, pierna, descanso…); "inicio" es la fecha en que tocó el primer lugar.
+const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400e3);
+export function todayPlan(routines, dias) {
+  if (dias?.modo === "rotacion" && dias.orden?.length && dias.inicio) {
+    const n = dias.orden.length, i = ((daysBetween(dias.inicio, ymd(new Date())) % n) + n) % n;
+    const slot = dias.orden[i], next = dias.orden[(i + 1) % n];
+    const find = (id) => routines.find(r => r.id === id) || null;
+    return { modo: "rotacion", hoy: slot === "descanso" ? [] : [find(slot)].filter(Boolean), descanso: slot === "descanso", manana: next === "descanso" ? "Descanso" : find(next)?.name || null };
+  }
+  const dow = todayDow();
+  return { modo: "fijos", hoy: routines.filter(r => r.days?.includes(dow)), descanso: false, manana: null };
+}
+
 export default function Fisico({ token, onProfile }) {
   const gym = useGym(token);
   const [view, setView] = useState("entrenar");
   const [sheet, setSheet] = useState(null);
-
-  const start = async (routine) => {
-    if (loadDraft()) { window.dispatchEvent(new CustomEvent("kairo-workout-open")); return pushToast("Ya tenés un entreno en curso"); }
-    unlockAudio(); ensurePush(token);
-    const items = await buildItems(token, routine.items);
-    saveDraft({ routine_id: routine.id, routine_name: routine.name, started_at: new Date().toISOString(), plan: false, items });
-    window.dispatchEvent(new CustomEvent("kairo-workout-open"));
-  };
+  const start = (routine) => startWorkout(token, routine);
 
   const dow = todayDow();
-  const todays = gym.routines.filter(r => r.days?.includes(dow));
-  const others = gym.routines.filter(r => !r.days?.includes(dow));
+  const plan = todayPlan(gym.routines, gym.profile?.dias);
+  const todays = plan.hoy;
+  const others = gym.routines.filter(r => !todays.includes(r));
 
   return <>
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
@@ -154,8 +173,8 @@ export default function Fisico({ token, onProfile }) {
 
       {view === "entrenar" && <>
         {gym.routines.length === 0 ? <Empty onNew={() => setSheet({ type: "routine" })} /> : <>
-          <SectionTitle>Hoy · {DAYS_FULL[dow]}</SectionTitle>
-          {todays.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Hoy no tenés rutina asignada. Podés hacer cualquiera de abajo.</div>
+          <SectionTitle right={plan.manana && <span style={{ fontSize: 12, color: C.dim }}>Mañana: {plan.manana}</span>}>Hoy · {DAYS_FULL[dow]}{plan.modo === "rotacion" ? " · rotación" : ""}</SectionTitle>
+          {todays.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>{plan.descanso ? "Hoy te toca descanso. Si igual querés entrenar, elegí una de abajo." : "Hoy no tenés rutina asignada. Podés hacer cualquiera de abajo."}</div>
             : todays.map(r => <RoutineCard key={r.id} r={r} big onStart={() => start(r)} />)}
           {others.length > 0 && <>
             <SectionTitle>Otras rutinas</SectionTitle>
@@ -174,6 +193,11 @@ export default function Fisico({ token, onProfile }) {
             <Icon d={I.plus} size={18} sw={2.2} />Rutina
           </button>
         </div>
+        {gym.routines.length > 0 && <button className="k-press" onClick={() => setSheet({ type: "dias" })} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 12, display: "flex", alignItems: "center", gap: 12 }}>
+          <Icon d={I.timer} size={20} color={C.lime} />
+          <span style={{ flex: 1 }}><span style={{ fontSize: 15, fontWeight: 500, display: "block" }}>{gym.profile?.dias?.modo === "rotacion" ? "Rotación" : "Días fijos"}</span><span style={{ fontSize: 13, color: C.sub }}>{gym.profile?.dias?.modo === "rotacion" ? gym.profile.dias.orden.map(o => o === "descanso" ? "Descanso" : gym.routines.find(r => r.id === o)?.name || "—").join(" → ") : "Cada rutina en sus días de la semana"}</span></span>
+          <Icon d={I.right} size={16} color={C.sub} />
+        </button>}
         {gym.routines.length === 0 ? <div style={{ ...card, color: C.sub, fontSize: 14, marginTop: 18 }}>Creá tu primera rutina: nombre, días y ejercicios.</div> :
           <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
             {gym.routines.map(r => <button key={r.id} className="k-press" onClick={() => setSheet({ type: "routine", routine: r })} style={{ ...card, textAlign: "left", color: C.text, width: "100%" }}>
@@ -191,6 +215,7 @@ export default function Fisico({ token, onProfile }) {
     </>}
 
     {sheet?.type === "routine" && <RoutineSheet token={token} routine={sheet.routine} exercises={gym.exercises} count={gym.routines.length} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); gym.load(); }} />}
+    {sheet?.type === "dias" && <DaysSheet token={token} routines={gym.routines} dias={gym.profile?.dias} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "review" && <ReviewSheet token={token} onClose={() => setSheet(null)} />}
     {sheet?.type === "workout" && <WorkoutDetail w={sheet.w} exercises={gym.exercises} token={token} onClose={() => setSheet(null)} onDeleted={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "exercise" && <ExerciseInfo ex={sheet.ex} token={token} onClose={() => setSheet(null)} />}
@@ -666,6 +691,50 @@ function streak(workouts) {
     if (has) n++; else if (k > 0) break;
   }
   return n;
+}
+
+// Cómo organizás los días: fijos por rutina, o una rotación que se repite (pecho → espalda →
+// pierna → descanso…) sin importar el día de la semana.
+function DaysSheet({ token, routines, dias, onClose, onSaved }) {
+  const [modo, setModo] = useState(dias?.modo || "fijos");
+  const [orden, setOrden] = useState(dias?.orden?.length ? dias.orden : routines.map(r => r.id));
+  const curIdx = dias?.modo === "rotacion" && dias.inicio && dias.orden?.length ? (((daysBetween(dias.inicio, ymd(new Date())) % dias.orden.length) + dias.orden.length) % dias.orden.length) : 0;
+  const [hoy, setHoy] = useState(Math.min(curIdx, Math.max(0, orden.length - 1)));
+  const [saving, setSaving] = useState(false);
+  const label = (o) => o === "descanso" ? "Descanso" : routines.find(r => r.id === o)?.name || "—";
+  const move = (i, d) => { const j = i + d; if (j < 0 || j >= orden.length) return; const n = [...orden]; [n[i], n[j]] = [n[j], n[i]]; setOrden(n); if (hoy === i) setHoy(j); else if (hoy === j) setHoy(i); };
+  const save = async () => {
+    if (modo === "rotacion" && !orden.length) return pushToast("Agregá al menos una rutina");
+    setSaving(true);
+    const inicio = new Date(); inicio.setDate(inicio.getDate() - hoy);
+    const body = { user_id: loadSession()?.user?.id, dias: modo === "rotacion" ? { modo, orden, inicio: ymd(inicio) } : { modo: "fijos" } };
+    await dq("kairo_profile", { method: "POST", token, filters: "?on_conflict=user_id", body, headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+    setSaving(false); pushToast("Guardado"); onSaved();
+  };
+  const chip = (on) => ({ flex: 1, padding: "12px 10px", borderRadius: 14, fontSize: 14, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? "rgba(198,244,50,0.1)" : C.cardHi, color: on ? C.lime : C.text, fontWeight: on ? 600 : 400 });
+  return <Sheet title="Cómo organizás los días" onClose={onClose}>
+    <div style={{ display: "flex", gap: 8 }}>
+      <button onClick={() => setModo("fijos")} className="k-press" style={chip(modo === "fijos")}>Días fijos</button>
+      <button onClick={() => setModo("rotacion")} className="k-press" style={chip(modo === "rotacion")}>Rotación</button>
+    </div>
+    {modo === "fijos" ? <p style={{ fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "14px 2px 0" }}>Cada rutina se hace en los días de la semana que le marcás al editarla (por ejemplo, Pecho lunes y jueves).</p> : <>
+      <p style={{ fontSize: 13.5, color: C.sub, lineHeight: 1.5, margin: "14px 2px 0" }}>Armá la secuencia con tus rutinas y descansos: se repite una y otra vez, sin importar el día de la semana. Tocá la que te toca hoy.</p>
+      <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+        {orden.map((o, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: C.cardHi, borderRadius: 14, padding: "8px 10px", border: `0.5px solid ${hoy === i ? C.lime : "transparent"}` }}>
+          <span className="k-num" style={{ width: 22, fontSize: 13, color: C.dim }}>{i + 1}</span>
+          <button onClick={() => setHoy(i)} style={{ flex: 1, background: "none", border: "none", color: o === "descanso" ? C.sub : C.text, textAlign: "left", fontSize: 15, padding: "4px 0" }}>{label(o)}{hoy === i && <span style={{ fontSize: 12, color: C.lime }}> · hoy</span>}</button>
+          <SmallBtn onClick={() => move(i, -1)} label="Subir">↑</SmallBtn>
+          <SmallBtn onClick={() => move(i, 1)} label="Bajar">↓</SmallBtn>
+          <SmallBtn onClick={() => { setOrden(orden.filter((_, k) => k !== i)); setHoy(Math.max(0, hoy > i ? hoy - 1 : Math.min(hoy, orden.length - 2))); }} label="Quitar">×</SmallBtn>
+        </div>)}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+        {routines.map(r => <button key={r.id} onClick={() => setOrden([...orden, r.id])} className="k-press" style={{ padding: "8px 12px", borderRadius: 999, fontSize: 13.5, border: `0.5px solid ${C.line}`, background: C.card, color: C.text }}>+ {r.name}</button>)}
+        <button onClick={() => setOrden([...orden, "descanso"])} className="k-press" style={{ padding: "8px 12px", borderRadius: 999, fontSize: 13.5, border: `0.5px solid ${C.line}`, background: C.card, color: C.sub }}>+ Descanso</button>
+      </div>
+    </>}
+    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : "Guardar"}</button>
+  </Sheet>;
 }
 
 // ─────── Rutina: crear / editar ───────

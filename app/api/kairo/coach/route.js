@@ -1,4 +1,4 @@
-// POST /api/kairo/coach   (sesión de admin)
+// POST /api/kairo/coach   (usuario de Kairo; todo se lee y guarda con su user_id)
 // El entrenador con IA de Kairo · Físico.
 //   { action: "plan", routine_id }  → qué hacer hoy en cada ejercicio (kilos × reps por serie) según
 //                                     lo que venís levantando. Se guarda en kairo_ai y se reusa hasta
@@ -6,32 +6,12 @@
 //   { action: "review" }            → revisión de todas tus rutinas: si son efectivas, volumen por
 //                                     músculo, qué cambiar y por qué.
 
-import { SB_URL, SB_KEY } from "../../../../lib/sb-client";
 import { callClaudeText } from "../../../../lib/anthropic";
+import { sb, arr, kairoUser } from "../../../../lib/kairo-server";
 
-const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const MODEL = "claude-opus-5-5";
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
-
-const sb = async (path, init = {}) => {
-  const r = await fetch(`${SB_URL}${path}`, {
-    ...init,
-    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", ...(init.headers || {}) },
-  });
-  const t = await r.text();
-  try { return JSON.parse(t); } catch { return null; }
-};
-const arr = (x) => (Array.isArray(x) ? x : []);
-
-async function isAdmin(req) {
-  const token = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
-  if (!token) return false;
-  const u = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` } }).then(r => r.json()).catch(() => null);
-  if (!u?.id) return false;
-  const p = await sb(`/rest/v1/profiles?id=eq.${u.id}&select=role`);
-  return Array.isArray(p) && p[0]?.role === "admin";
-}
 
 const COACH = `Sos el preparador físico de una sola persona dentro de su app Kairo. Escribís en castellano rioplatense con lenguaje técnico de entrenamiento: preciso, sobrio y profesional, como un coach de alto rendimiento. Nada de frases motivacionales, saludos, emojis ni relleno.
 Planificás según su perfil (objetivo, experiencia, medidas, lesiones). Criterios:
@@ -91,17 +71,17 @@ const REVIEW_SCHEMA = {
 
 const DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
-async function loadRoutines(ids) {
+async function loadRoutines(uid, ids) {
   const filter = ids ? `&id=in.(${ids.join(",")})` : "";
-  const routines = arr(await sb(`/rest/v1/kairo_routines?select=id,name,days&order=sort_order.asc${filter}`));
+  const routines = arr(await sb(`/rest/v1/kairo_routines?user_id=eq.${uid}&select=id,name,days&order=sort_order.asc${filter}`));
   const items = routines.length ? arr(await sb(`/rest/v1/kairo_routine_exercises?routine_id=in.(${routines.map(r => r.id).join(",")})&select=*,exercise:kairo_exercises(id,name,muscle,equipment)&order=sort_order.asc`)) : [];
   return routines.map(r => ({ ...r, items: items.filter(i => i.routine_id === r.id) }));
 }
 
 // Últimas sesiones de cada ejercicio: [{ fecha, series: "60×10, 60×9, 60×8" }]
-async function history(exerciseIds, perExercise = 4) {
+async function history(uid, exerciseIds, perExercise = 4) {
   if (!exerciseIds.length) return {};
-  const sets = arr(await sb(`/rest/v1/kairo_sets?exercise_id=in.(${exerciseIds.join(",")})&select=exercise_id,workout_id,set_index,weight_kg,reps,created_at&order=created_at.desc&limit=1500`));
+  const sets = arr(await sb(`/rest/v1/kairo_sets?user_id=eq.${uid}&exercise_id=in.(${exerciseIds.join(",")})&select=exercise_id,workout_id,set_index,weight_kg,reps,created_at&order=created_at.desc&limit=1500`));
   const out = {};
   for (const id of exerciseIds) {
     const mine = sets.filter(s => s.exercise_id === id);
@@ -117,8 +97,10 @@ async function history(exerciseIds, perExercise = 4) {
 }
 
 const OBJ = { volumen: "Volumen (superávit calórico)", definicion: "Definición (déficit calórico)", recomposicion: "Recomposición corporal", mantenimiento: "Mantenimiento", fuerza: "Fuerza" };
-async function loadProfile() {
-  const [p] = arr(await sb(`/rest/v1/kairo_profile?id=eq.1&select=*`));
+const ageOf = (d) => { if (!d) return null; const b = new Date(d + "T12:00:00"), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
+async function loadProfile(uid) {
+  const [p] = arr(await sb(`/rest/v1/kairo_profile?user_id=eq.${uid}&select=*`));
+  if (p && p.fecha_nacimiento) p.edad = ageOf(p.fecha_nacimiento);
   return p || null;
 }
 function profileText(p) {
@@ -131,46 +113,46 @@ async function ask(user, schema, feature) {
   return JSON.parse(text);
 }
 
-async function plan(routineId) {
-  const [routine] = await loadRoutines([routineId]);
+async function plan(uid, routineId) {
+  const [routine] = await loadRoutines(uid, [routineId]);
   if (!routine) return Response.json({ error: "Rutina no encontrada" }, { status: 404 });
   if (!routine.items.length) return Response.json({ error: "La rutina no tiene ejercicios" }, { status: 400 });
 
   // Reusa el plan si no hubo un entreno de esta rutina ni cambió el perfil después de generarlo.
-  const profile = await loadProfile();
-  const [last] = arr(await sb(`/rest/v1/kairo_ai?kind=eq.plan&routine_id=eq.${routineId}&select=content,created_at&order=created_at.desc&limit=1`));
-  const [lastWorkout] = arr(await sb(`/rest/v1/kairo_workouts?routine_id=eq.${routineId}&finished_at=not.is.null&select=finished_at&order=finished_at.desc&limit=1`));
+  const profile = await loadProfile(uid);
+  const [last] = arr(await sb(`/rest/v1/kairo_ai?user_id=eq.${uid}&kind=eq.plan&routine_id=eq.${routineId}&select=content,created_at&order=created_at.desc&limit=1`));
+  const [lastWorkout] = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&routine_id=eq.${routineId}&finished_at=not.is.null&select=finished_at&order=finished_at.desc&limit=1`));
   if (last && (!lastWorkout || last.created_at > lastWorkout.finished_at) && (!profile || last.created_at > profile.updated_at)) {
     const ids = new Set(routine.items.map(i => i.exercise_id));
     if (last.content.ejercicios?.every(e => ids.has(e.exercise_id))) return Response.json({ plan: last.content, cached: true });
   }
 
-  const hist = await history(routine.items.map(i => i.exercise_id));
+  const hist = await history(uid, routine.items.map(i => i.exercise_id));
   const lines = routine.items.map(i => {
     const h = hist[i.exercise_id] || [];
     return `- exercise_id ${i.exercise_id} · ${i.exercise.name} (${i.exercise.muscle}, ${i.exercise.equipment || "—"}) · objetivo de la rutina: ${i.sets} series de ${i.rep_min}–${i.rep_max} reps\n  Últimas sesiones (la más reciente primero): ${h.length ? h.map(x => `${x.fecha}: ${x.series}`).join(" | ") : "sin historial"}`;
   }).join("\n");
   const user = `${profileText(profile)}\n\nHoy entrena la rutina "${routine.name}". Para cada ejercicio decidí qué hacer hoy y devolvé exactamente una serie por cada serie objetivo (kilos y repeticiones a buscar). Usá el exercise_id tal cual.\n\n${lines}`;
   const content = await ask(user, PLAN_SCHEMA, "kairo-coach-plan");
-  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ kind: "plan", routine_id: routineId, content }), headers: { Prefer: "return=minimal" } });
+  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "plan", routine_id: routineId, content }), headers: { Prefer: "return=minimal" } });
   return Response.json({ plan: content });
 }
 
-async function review() {
-  const routines = await loadRoutines(null);
+async function review(uid) {
+  const routines = await loadRoutines(uid, null);
   if (!routines.length) return Response.json({ error: "Todavía no cargaste rutinas" }, { status: 400 });
   const ids = [...new Set(routines.flatMap(r => r.items.map(i => i.exercise_id)))];
-  const hist = await history(ids, 3);
+  const hist = await history(uid, ids, 3);
   const since = new Date(Date.now() - 28 * 86400e3).toISOString();
-  const recent = arr(await sb(`/rest/v1/kairo_workouts?finished_at=gte.${since}&select=routine_name,started_at`));
+  const recent = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=gte.${since}&select=routine_name,started_at`));
   const text = routines.map(r => `Rutina "${r.name}" · días: ${r.days?.length ? r.days.map(d => DAYS[d]).join(", ") : "sin día fijo"}\n` + r.items.map(i => {
     const h = hist[i.exercise_id] || [];
     return `  - ${i.exercise.name} (${i.exercise.muscle}): ${i.sets}×${i.rep_min}–${i.rep_max}, descanso ${i.rest_sec}s${h.length ? ` · últimas: ${h.map(x => x.series).join(" | ")}` : ""}`;
   }).join("\n")).join("\n\n");
-  const profile = await loadProfile();
+  const profile = await loadProfile(uid);
   const user = `${profileText(profile)}\n\nRevisá estas rutinas en función de ese objetivo. Decí si son efectivas para el objetivo, calculá las series semanales por grupo muscular (contando los días de cada rutina), y proponé cambios concretos (ejercicio por ejercicio) solo donde valga la pena.\nEntrenamientos hechos en las últimas 4 semanas: ${recent.length}.\n\n${text}`;
   const content = await ask(user, REVIEW_SCHEMA, "kairo-coach-review");
-  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ kind: "review", content }), headers: { Prefer: "return=minimal" } });
+  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "review", content }), headers: { Prefer: "return=minimal" } });
   return Response.json({ review: content });
 }
 
@@ -194,26 +176,27 @@ const STRATEGY_SCHEMA = {
   },
 };
 
-async function strategy() {
-  const profile = await loadProfile();
+async function strategy(uid) {
+  const profile = await loadProfile(uid);
   if (!profile?.objetivo) return Response.json({ error: "Primero cargá tu objetivo" }, { status: 400 });
-  const logs = arr(await sb(`/rest/v1/kairo_body_logs?select=log_date,peso_kg,grasa_pct,cintura_cm,pecho_cm,brazo_cm,muslo_cm,cadera_cm,cuello_cm&order=log_date.asc&limit=120`));
+  const logs = arr(await sb(`/rest/v1/kairo_body_logs?user_id=eq.${uid}&select=log_date,peso_kg,grasa_pct,cintura_cm,pecho_cm,brazo_cm,muslo_cm,cadera_cm,cuello_cm&order=log_date.asc&limit=120`));
   const since = new Date(Date.now() - 28 * 86400e3).toISOString();
-  const recent = arr(await sb(`/rest/v1/kairo_workouts?finished_at=gte.${since}&select=started_at`));
+  const recent = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=gte.${since}&select=started_at`));
   const fmt = (l) => [l.log_date, l.peso_kg && `${l.peso_kg} kg`, l.grasa_pct && `${l.grasa_pct}% grasa`, l.cintura_cm && `cintura ${l.cintura_cm}`, l.pecho_cm && `pecho ${l.pecho_cm}`, l.brazo_cm && `brazo ${l.brazo_cm}`, l.muslo_cm && `muslo ${l.muslo_cm}`, l.cadera_cm && `cadera ${l.cadera_cm}`, l.cuello_cm && `cuello ${l.cuello_cm}`].filter(Boolean).join(", ");
   const user = `${profileText(profile)}\n\nArmá su estrategia (gimnasio + alimentación) para ese objetivo y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
   const content = await ask(user, STRATEGY_SCHEMA, "kairo-coach-strategy");
-  await sb(`/rest/v1/kairo_profile?id=eq.1`, { method: "PATCH", body: JSON.stringify({ estrategia: content, estrategia_at: new Date().toISOString() }) });
+  await sb(`/rest/v1/kairo_profile?user_id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({ estrategia: content, estrategia_at: new Date().toISOString() }) });
   return Response.json({ strategy: content });
 }
 
 export async function POST(req) {
-  if (!(await isAdmin(req))) return Response.json({ error: "No autorizado" }, { status: 401 });
+  const me = await kairoUser(req);
+  if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   try {
-    if (body.action === "plan" && body.routine_id) return await plan(body.routine_id);
-    if (body.action === "review") return await review();
-    if (body.action === "strategy") return await strategy();
+    if (body.action === "plan" && body.routine_id) return await plan(me.id, body.routine_id);
+    if (body.action === "review") return await review(me.id);
+    if (body.action === "strategy") return await strategy(me.id);
     return Response.json({ error: "Acción inválida" }, { status: 400 });
   } catch (e) {
     console.error("[kairo coach]", e);
