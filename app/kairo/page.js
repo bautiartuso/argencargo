@@ -88,7 +88,7 @@ function App({ session }) {
   // Shell fijo a pantalla completa con el scroll adentro y la barra al fondo del flujo.
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.bg }}>
-      <main ref={scroller} style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
+      <main ref={scroller} style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
           {tab === "hoy" && <Inicio token={session.token} me={me} fin={fin} go={go} />}
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}

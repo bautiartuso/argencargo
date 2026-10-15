@@ -6,6 +6,7 @@ import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, SectionTitle, card, btnLime, linkBtn, ars, monthName, curMonth, today, dayLabel, Bar } from "./ui";
 import { startWorkout, todayPlan } from "./fisico";
 import { LogSheet, Spark, MeasuresTable, Avatar, saveProfile } from "./perfil";
+import { StoriesBar, UserProfile } from "./social";
 
 const n1 = (v) => Number(v).toLocaleString("es-AR", { maximumFractionDigits: 1 });
 
@@ -13,6 +14,7 @@ export default function Hoy({ token, me, fin, go }) {
   const [routines, setRoutines] = useState(null);
   const [logs, setLogs] = useState([]);
   const [social, setSocial] = useState(null);
+  const [stories, setStories] = useState([]);
   const [peso, setPeso] = useState("");
   const [sheet, setSheet] = useState(null);
 
@@ -27,9 +29,13 @@ export default function Hoy({ token, me, fin, go }) {
     const items = (Array.isArray(it) ? it : []).map(i => ({ ...i, exercise: exs.find(e => e.id === i.exercise_id) })).filter(i => i.exercise);
     setRoutines((Array.isArray(r) ? r : []).map(rt => ({ ...rt, items: items.filter(i => i.routine_id === rt.id) })));
     setLogs(Array.isArray(lg) ? lg : []);
-    fetch("/api/kairo/social", { headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json()).then(r => setSocial(r.users || [])).catch(() => setSocial([]));
+    loadSocial();
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadSocial = useCallback(() => {
+    fetch("/api/kairo/social", { headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json()).then(r => { setSocial(r.users || []); setStories(r.stories || []); }).catch(() => setSocial([]));
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { window.addEventListener("kairo-stories", loadSocial); return () => window.removeEventListener("kairo-stories", loadSocial); }, [loadSocial]);
 
   const d = new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
   const plan = routines ? todayPlan(routines, me?.dias) : null;
@@ -52,6 +58,8 @@ export default function Hoy({ token, me, fin, go }) {
         <div style={{ fontSize: 13, color: C.sub }}>{d[0].toUpperCase() + d.slice(1)}</div>
       </div>
     </div>
+
+    <StoriesBar token={token} me={me} users={social || []} stories={stories} />
 
     {me && !me.nombre && <button className="k-press" onClick={() => go("perfil")} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginBottom: 10, borderColor: "rgba(198,244,50,0.3)" }}>
       <div style={{ fontSize: 15, fontWeight: 500 }}>Completá tu perfil</div>
@@ -94,7 +102,7 @@ export default function Hoy({ token, me, fin, go }) {
     {social && social.length > 1 && <>
       <SectionTitle right={<span style={{ fontSize: 12, color: C.dim }}>{monthName(curMonth())}</span>}>Ranking</SectionTitle>
       <div style={{ ...card, padding: "4px 14px" }}>
-        {social.map((u, i) => <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: i < social.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+        {social.map((u, i) => <button key={u.id} onClick={() => setSheet({ type: "user", id: u.id })} style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: i < social.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
           <span className="k-num" style={{ width: 18, fontSize: 14, color: i === 0 ? C.lime : C.dim, fontWeight: 600 }}>{i + 1}</span>
           <Avatar src={u.avatar} size={34} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -105,7 +113,7 @@ export default function Hoy({ token, me, fin, go }) {
             <div className="k-num" style={{ fontSize: 18, fontWeight: 500 }}>{u.entrenos_mes}</div>
             <div style={{ fontSize: 10.5, color: C.sub }}>entrenos</div>
           </div>
-        </div>)}
+        </button>)}
       </div>
     </>}
 
@@ -120,6 +128,7 @@ export default function Hoy({ token, me, fin, go }) {
       </button>
     </>}
 
+    {sheet?.type === "user" && <UserProfile token={token} id={sheet.id} onClose={() => setSheet(null)} />}
     {sheet?.type === "log" && <LogSheet token={token} last={logs[0]} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
   </>;
 }

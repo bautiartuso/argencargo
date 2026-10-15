@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import BodyMap from "./body";
+import { StoryPicker } from "./social";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd } from "./ui";
 
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -419,6 +420,7 @@ function Workout({ token, draft, now, setDraft, onMinimize, onDone }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{draft.routine_name}</div>
         </div>
+        <StoryPicker token={token} caption={draft.routine_name} style={roundIcon}><Icon d={I.camera} size={18} /></StoryPicker>
         <button onClick={() => setSheet({ type: "finish" })} className="k-press" style={{ ...btnLime, width: "auto", padding: "9px 18px", fontSize: 15 }}>Terminar</button>
       </div>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "4px 18px 12px", display: "flex", alignItems: "center" }}>
@@ -553,6 +555,7 @@ const pill = { border: `0.5px solid ${C.line}`, background: C.card, color: C.tex
 
 function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
+  const [storyStep, setStoryStep] = useState(null); // texto de la historia, una vez guardado el entreno
   const [updateRoutine, setUpdateRoutine] = useState(!!draft.changed);
   const save = async () => {
     if (!done) { onSaved(); pushToast("Entreno descartado: no marcaste series"); return; }
@@ -568,8 +571,13 @@ function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) 
     }
     setSaving(false);
     pushToast(`Entreno guardado · ${rows.length} series · ${Math.round(volume).toLocaleString("es-AR")} kg`);
-    onSaved();
+    setStoryStep(`${draft.routine_name} · ${clock(elapsed)} · ${Math.round(volume).toLocaleString("es-AR")} kg`);
   };
+  if (storyStep) return <Sheet title="¿Subís una foto a tu historia?" onClose={onSaved}>
+    <p style={{ fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "-4px 0 16px" }}>La ven tus amigos de Kairo durante 24 horas, con el resumen del entreno: <span style={{ color: C.text }}>{storyStep}</span></p>
+    <StoryPicker token={token} caption={storyStep} onDone={onSaved} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon d={I.camera} size={18} />Sacar o elegir foto</StoryPicker>
+    <button className="k-press" onClick={onSaved} style={{ ...btnGhost, marginTop: 8 }}>Ahora no</button>
+  </Sheet>;
   return <Sheet title="Terminar entreno" onClose={onClose}>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
       <MiniStat label="Duración" value={clock(elapsed)} />

@@ -1,6 +1,7 @@
 "use client";
 // Piezas compartidas de Kairo (tokens, íconos, hojas, botones). Cada sección importa de acá.
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export const C = {
   bg: "#0C0D10", card: "#15171B", cardHi: "#1C1F24", line: "#24262C",
@@ -47,6 +48,7 @@ export const I = {
   sync: "M20 11a8 8 0 0 0-14.9-3M4 5v3h3M4 13a8 8 0 0 0 14.9 3M20 19v-3h-3",
   edit: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
   check: "M5 12.5l4.5 4.5L19 7.5",
+  camera: "M4 8h3l2-2.5h6L17 8h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z",
   user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0",
   down: "M6 9l6 6 6-6",
   dots: "M12 5.5v.01M12 12v.01M12 18.5v.01",
@@ -63,7 +65,7 @@ export function Toast() {
   const [msg, setMsg] = useState(null);
   useEffect(() => { pushToast = (m) => { setMsg(m); setTimeout(() => setMsg(null), 2400); }; }, []);
   if (!msg) return null;
-  return <div style={{ position: "fixed", left: 16, right: 16, top: "calc(env(safe-area-inset-top) + 12px)", zIndex: 60, display: "flex", justifyContent: "center", animation: "kFade 160ms" }}>
+  return <div style={{ position: "fixed", left: 16, right: 16, top: "calc(env(safe-area-inset-top) + 12px)", zIndex: 120, display: "flex", justifyContent: "center", animation: "kFade 160ms" }}>
     <div style={{ background: C.cardHi, border: `0.5px solid ${C.line}`, borderRadius: 14, padding: "11px 16px", fontSize: 14 }}>{msg}</div>
   </div>;
 }
@@ -76,15 +78,19 @@ export const MiniStat = ({ label, value, color }) => <div style={{ background: C
 // ─────── Sheets ───────
 // tall: ocupa casi toda la pantalla aunque el contenido sea corto (buscadores: con el teclado
 // abierto, una hoja que se achica queda escondida detrás del teclado en el iPhone).
+// Se dibuja afuera de la zona que scrollea (portal a .k-root, que tiene la tipografía): adentro, el
+// iPhone dejaba la barra de abajo por encima de la hoja y tapaba los botones. z 100: arriba de todo
+// (también del entreno a pantalla completa).
 export function Sheet({ title, onClose, children, tall }) {
   useEffect(() => { const o = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = o; }; }, []);
-  return <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.55)", animation: "kFade 160ms", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+  if (typeof document === "undefined") return null;
+  return createPortal(<div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.55)", animation: "kFade 160ms", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
     <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, maxHeight: "88dvh", ...(tall ? { height: "calc(100dvh - env(safe-area-inset-top) - 16px)", maxHeight: "none" } : {}), overflowY: "auto", background: C.card, borderTop: `0.5px solid ${C.line}`, borderRadius: "22px 22px 0 0", padding: "10px 18px calc(env(safe-area-inset-bottom) + 18px)", animation: "kUp 260ms cubic-bezier(.2,.9,.3,1)" }}>
       <div style={{ width: 36, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" }} />
       <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 14, letterSpacing: "-0.01em" }}>{title}</div>
       {children}
     </div>
-  </div>;
+  </div>, document.querySelector(".k-root") || document.body);
 }
 
 // ─────── Piezas ───────
