@@ -15484,10 +15484,12 @@ function AdminCalculator({token}){
   const [showClientList,setShowClientList]=useState(false);
   const [clientOverrides,setClientOverrides]=useState([]); // tarifas custom del cliente del sistema seleccionado
   useEffect(()=>{if(!clientId){setClientOverrides([]);return;}(async()=>{const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${clientId}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);})();},[clientId,token]);
-  const [taxCond,setTaxCond]=useState("monotributo"); // 'responsable_inscripto' | 'monotributo'
+  // Régimen, marca y batería arrancan SIN marcar y se desmarcan cuando cambia el producto
+  // (16/10/2026): quedaban marcados de la cotización anterior y se olvidaba de revisarlos.
+  const [taxCond,setTaxCond]=useState(null); // 'responsable_inscripto' | 'monotributo' | null
   const [origin,setOrigin]=useState("China");
-  const [hasBrand,setHasBrand]=useState(false);
-  const [hasBattery,setHasBattery]=useState(false);
+  const [hasBrand,setHasBrand]=useState(null);
+  const [hasBattery,setHasBattery]=useState(null);
   const [products,setProducts]=useState([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
   // Los bultos llevan id propio y no indice: los productos guardan en que bulto viajan
   // (package_ids) y si se borra un bulto del medio los indices se corren, la asignacion no.
@@ -15515,7 +15517,7 @@ function AdminCalculator({token}){
         if(b.clientName)setClientName(b.clientName);
         if(b.taxCond)setTaxCond(b.taxCond);
         if(b.origin)setOrigin(b.origin);
-        setHasBrand(!!b.hasBrand);setHasBattery(!!b.hasBattery);
+        setHasBrand(typeof b.hasBrand==="boolean"?b.hasBrand:null);setHasBattery(typeof b.hasBattery==="boolean"?b.hasBattery:null);
         if(Array.isArray(b.products)&&b.products.length)setProducts(b.products.map(p=>({...p,classifying:false})));
         if(Array.isArray(b.pkgs)&&b.pkgs.length){setPkgs(b.pkgs);proxPkId.current=Math.max(0,...b.pkgs.map(p=>Number(p.id)||0))+1;}
         setRateOverride(b.rateOverride||{});setCostOverride(b.costOverride||{});setDesembolsoOverride(b.desembolsoOverride||{});
@@ -15531,7 +15533,7 @@ function AdminCalculator({token}){
     try{localStorage.setItem(CALC_BORRADOR,JSON.stringify({clientId,clientName,taxCond,origin,hasBrand,hasBattery,products:products.map(({classifying,...p})=>p),pkgs,rateOverride,costOverride,desembolsoOverride,canalesLink,firma:firmaCalc.current,calculado:autoCalc}));}catch{}
   },[restaurado,clientId,clientName,taxCond,origin,hasBrand,hasBattery,products,pkgs,rateOverride,costOverride,desembolsoOverride,canalesLink,autoCalc]);
   const nuevaCotizacion=()=>{
-    setClientId("");setClientName("");setTaxCond("monotributo");setOrigin("China");setHasBrand(false);setHasBattery(false);
+    setClientId("");setClientName("");setTaxCond(null);setOrigin("China");setHasBrand(null);setHasBattery(null);
     setProducts([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
     proxPkId.current=1;setPkgs([{id:0,qty:"1",length:"",width:"",height:"",weight:""}]);
     setRateOverride({});setCostOverride({});setDesembolsoOverride({});setCerts({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});setRecPctOv({});
@@ -15664,7 +15666,24 @@ function AdminCalculator({token}){
     setAutoCalc(true);
   };
   const unclassified=!hasBrand?products.filter(p=>toN(p.unit_price)>0&&!p.ncm):[];
-  const bloqueado=totalFob<=0||unclassified.length>0;
+  const faltanMarcas=[taxCond==null&&"régimen",hasBrand==null&&"marca",hasBattery==null&&"batería"].filter(Boolean);
+  const bloqueado=totalFob<=0||unclassified.length>0||faltanMarcas.length>0;
+  // Otro producto (ninguno de los anteriores sigue): se desmarcan régimen, marca y batería.
+  // Corregir el nombre (uno empieza con el otro) no cuenta como otro producto.
+  const firmaMarcas=useRef(null);
+  const firmaProd=products.map(p=>String(p.description||"").trim().toLowerCase()).filter(Boolean).join("|");
+  useEffect(()=>{
+    if(!restaurado)return;
+    const t=setTimeout(()=>{
+      const act=firmaProd?firmaProd.split("|"):[];if(!act.length)return;
+      const prev=firmaMarcas.current;
+      if(Array.isArray(prev)&&prev.length&&!act.some(a=>prev.some(b=>a===b||a.startsWith(b)||b.startsWith(a)))){
+        if(!clientId)setTaxCond(null);setHasBrand(null);setHasBattery(null);
+      }
+      firmaMarcas.current=act;
+    },900);
+    return()=>clearTimeout(t);
+  },[firmaProd,restaurado]); // eslint-disable-line react-hooks/exhaustive-deps
   // Recalcula sola con cada cambio una vez hecha la primera cuenta (antes quedaban números viejos
   // si se cambiaba un bulto y no se volvía a tocar Calcular).
   useEffect(()=>{
@@ -15993,7 +16012,7 @@ function AdminCalculator({token}){
 .qc-in{width:100%;height:40px;padding:0 12px;font-size:14px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:rgba(0,0,0,0.22);color:#fff;outline:none;font-family:inherit;transition:border-color .15s}
 .qc-in:focus{border-color:rgba(232,208,152,0.55)}
 .qc-in::placeholder{color:rgba(255,255,255,0.28)}
-.qc-seg{display:flex;gap:3px;padding:3px;height:40px;border-radius:10px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.07)}
+.qc-seg{display:flex;gap:3px;padding:3px;height:40px;border-radius:10px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.07)}.qc-seg.qc-falta{border-color:rgba(251,191,36,0.6);box-shadow:0 0 0 3px rgba(251,191,36,0.12)}
 .qc-seg button{flex:1;min-width:0;border:none;border-radius:7px;background:transparent;color:rgba(255,255,255,0.5);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px;transition:background .15s,color .15s}
 .qc-seg button small{font-weight:600;opacity:.65;margin-left:5px;font-size:11px}
 .qc-seg button.on{background:${GOLD_GRADIENT};color:#0A1628}
@@ -16119,7 +16138,7 @@ function AdminCalculator({token}){
   .qc-acts>*{flex:1}
 }`;
   const hayDatos=!!(clientName.trim()||products.some(p=>p.description||p.unit_price)||pkgs.some(p=>p.length||p.weight)||results);
-  const seg=(opts,val,set)=><div className="qc-seg">{opts.map(([v,l])=><button key={String(v)} type="button" className={val===v?"on":""} onClick={()=>set(v)}>{l}</button>)}</div>;
+  const seg=(opts,val,set)=><div className={`qc-seg${val==null?" qc-falta":""}`}>{opts.map(([v,l])=><button key={String(v)} type="button" className={val===v?"on":""} onClick={()=>set(v)}>{l}</button>)}</div>;
   // Valor editable solo para esta cotización: dorado cuando se tocó, ↺ vuelve al del sistema.
   const ovIn=(val,isOv,onCh,onReset)=><span className="qc-ov"><input inputMode="decimal" value={val} onChange={e=>onCh(e.target.value)} className={isOv?"on":""}/>{isOv&&<button type="button" onClick={onReset} title="Volver al valor del sistema">↺</button>}</span>;
   const sinOv=(set,k)=>()=>set(p=>{const c={...p};delete c[k];return c;});
@@ -16213,8 +16232,9 @@ function AdminCalculator({token}){
     {!autoCalc&&<div className="qc-calcrow">
       <button type="button" className="qc-calc" onClick={()=>calculate(false)} disabled={bloqueado}>Calcular cotización</button>
       {totalFob>0&&unclassified.length>0&&<p className="qc-warn">Falta la NCM de {unclassified.length} producto{unclassified.length>1?"s":""}</p>}
+      {faltanMarcas.length>0&&<p className="qc-warn">Marcá {faltanMarcas.join(", ")}</p>}
     </div>}
-    {autoCalc&&bloqueado&&<p className="qc-warn" style={{margin:"0 0 14px"}}>{totalFob<=0?"Falta el precio de los productos":`Falta la NCM de ${unclassified.length} producto${unclassified.length>1?"s":""}`}</p>}
+    {autoCalc&&bloqueado&&<p className="qc-warn" style={{margin:"0 0 14px"}}>{totalFob<=0?"Falta el precio de los productos":unclassified.length>0?`Falta la NCM de ${unclassified.length} producto${unclassified.length>1?"s":""}`:`Marcá ${faltanMarcas.join(", ")}`}</p>}
 
     {/* Resultados */}
     {results&&(results.channels.length===0
