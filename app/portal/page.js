@@ -1527,7 +1527,7 @@ function CalculatorPage({token,client,preset}){
   };
   // Detección de ropa/textiles + calzado. Por NCM (caps 50-63 textiles, 64 calzado) o keywords.
   // Si entra en esta categoría Y CBM < MIN_CBM_RESTRICTED → marítimo LCL/FCL NO se ofrece (restricción aduanera).
-  const MIN_CBM_RESTRICTED=5;
+  const MIN_CBM_RESTRICTED=1; // bajó de 5 a 1 m³ el 16/10/2026
   // Capítulos NCM textiles, calzado y tocados (sombreros/gorras): 50-65.
   // Agregado capítulo 65 (Sombreros y demás tocados) que estaba faltando.
   const RESTRICTED_CHAPTERS=new Set(["50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65"]);
@@ -1695,7 +1695,7 @@ function CalculatorPage({token,client,preset}){
     // Aéreo Integral AC (B) China: OCULTO para clientes (pedido 11/06/2026). El canal
     // sigue existiendo en la calculadora del admin — acá no se ofrece más.
 
-    // Restricción ropa/calzado: a partir del 01/05/2026, marítimo LCL/FCL solo si >= 5 CBM.
+    // Restricción ropa/calzado: a partir del 01/05/2026, marítimo LCL/FCL solo si >= 1 m³ (antes 5).
     // Marítimo Integral AC sigue siempre disponible (excepción del régimen).
     const blockMaritimoLclRestricted=isRestricted&&totCBM>0&&totCBM<MIN_CBM_RESTRICTED;
     // La regla de FOB minimo por m³ (USD 250/m³) se elimino el 03/08/2026 a pedido del usuario:
@@ -1707,7 +1707,7 @@ function CalculatorPage({token,client,preset}){
     // únicamente Marítimo Integral AC. El LCL factura mínimo 1 m³ (USD 600 a tarifa estándar).
     const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.5;
 
-    // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <5 CBM.
+    // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <1 m³.
     // Si totCBM>0 hay dimensiones cargadas (noDims puede haber quedado true del UX previo, lo ignoramos).
     if(conLcl&&!hasBrand&&!blockMaritimoLclRestricted&&!blockMaritimoLclLowFob&&!blockMaritimoLclMinCbm&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
       const certFlete=totCBM*certMarFict;
@@ -1719,7 +1719,7 @@ function CalculatorPage({token,client,preset}){
       channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
         flete,seguro,totalImp,totalSvc,total:totalImp+totalSvc,items,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
 
-    // Marítimo Integral AC (B) — siempre disponible (incluso para ropa/calzado <5 CBM).
+    // Marítimo Integral AC (B) — siempre disponible (incluso para ropa/calzado <1 m³).
     // Si totCBM>0 hay dimensiones cargadas. No chequeamos noDims porque puede estar en true por edge UX.
     if(totCBM>0&&!pkBd){const fleteRate=getFleteRate("maritimo_b",totCBM);let flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
       // Mínimo de servicio del Integral: USD 100 (10/08/2026). Se ajusta el flete para que
@@ -1730,7 +1730,7 @@ function CalculatorPage({token,client,preset}){
       //  - RI desde China: el Integral solo se ofrece con carga < 0,5 m³. Con 0,5+ va por LCL/FCL.
       //  - No-RI con 0,5+ m³: se muestra UNA sola opción marítima, la más barata (Integral o
       //    LCL/FCL con su mínimo de 1 m³). Con menos de 0,5 solo existe el Integral.
-      //  (Con marca o ropa/calzado <5 m³ el LCL no se ofrece y el Integral queda solo.)
+      //  (Con marca o ropa/calzado <1 m³ el LCL no se ofrece y el Integral queda solo.)
       const mBlanco=channels.find(c=>c.key==="maritimo_a_china");
       let hideNegro=false;
       if(conLcl&&isRI){

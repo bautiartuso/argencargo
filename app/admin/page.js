@@ -15175,7 +15175,7 @@ function QuotesList({token}){
         }
         if(k==="maritimo_a_china"){
           if(!(tt.cbm>0))return "Sin las dimensiones de los bultos no hay volumen (m³) para cotizar el marítimo.";
-          if(esRestringido&&tt.cbm<5)return `Textiles o calzado (capítulos 50 a 65) por LCL/FCL necesitan 5 m³ como mínimo y esta carga tiene ${tt.cbm.toFixed(3)} m³. Por debajo de eso va por Integral AC.`;
+          if(esRestringido&&tt.cbm<1)return `Textiles o calzado (capítulos 50 a 65) por LCL/FCL necesitan 1 m³ como mínimo y esta carga tiene ${tt.cbm.toFixed(3)} m³. Por debajo de eso va por Integral AC.`;
           if(tt.cbm<0.5)return `El marítimo LCL/FCL arranca en 0,5 m³ y esta carga tiene ${tt.cbm.toFixed(3)} m³.`;
           return null;
         }
