@@ -17725,6 +17725,7 @@ function MaritimePanel({token,allClients=[]}){
         const kCli=<div style={{minWidth:0}}>
               <span style={{display:"block",fontSize:14.5,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{c?.client_code||"—"}</span>
               <span style={{display:"block",fontSize:12.5,color:"rgba(255,255,255,0.75)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c?`${c.first_name||""} ${c.last_name||""}`.trim():(sh.client_name_snapshot||"Sin identificar")}</span>
+              {sh.tracking_number&&!esPlaceholder(sh)&&<span style={{display:"block",fontSize:11.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:"rgba(255,255,255,0.55)",marginTop:2,wordBreak:"break-all"}}>{sh.tracking_number}</span>}
             </div>;
         const kMerc=<div style={{minWidth:0}}>
               <div style={{fontSize:13,color:"#fff",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
