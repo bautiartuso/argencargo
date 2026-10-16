@@ -2415,124 +2415,264 @@ function ServicesPage({client}){
     </div>
   </div>;
 }
-// Cuenta corriente del cliente (rehecha el 11/10/2026): un saldo claro arriba, lo que hay por pagar
-// (importaciones listas para retirar y GI) y el libro de la cuenta con su saldo corriente, donde cada
-// renglón dice qué fue: importación pasada a la cuenta (con su costo, lo pagado y la deuda anterior
-// que traía), pagos con método/moneda/TC/comprobante, saldos a favor y ajustes.
+// Cuenta corriente del cliente (rehecha el 16/10/2026): la idea es que cualquiera la siga sin ayuda.
+// 1) Una frase con el estado de la cuenta y la cuentita de cómo se arma ese número.
+// 2) Lo que hay que pagar ahora (importaciones listas para retirar y GI), cada una con el
+//    desglose completo: de qué está hecho el costo, qué se sumó o descontó, qué se pagó y
+//    cuánto queda.
+// 3) El libro de movimientos por mes con el saldo después de cada uno; cada renglón se abre y
+//    explica en una frase qué pasó y de dónde sale la plata (mismo desglose de la importación,
+//    pagos con moneda/TC/comprobante, saldos a favor usados, etc.).
+// 4) Una ayuda corta de cómo leerla.
 function AccountPage({token,client,onRestartTutorial,onOpenOp}){
-  const {t}=useT();
+  const {t,lang}=useT();
+  const tx=(k,p)=>t(k,p); // (para el chequeo de i18n: asignaciones no son atributos JSX)
   const SKY="#8CC8F5";
   const [movs,setMovs]=useState([]);
-  const [paidByOp,setPaidByOp]=useState({});
+  const [paysByOp,setPaysByOp]=useState({});
+  const [pmtByOp,setPmtByOp]=useState({});
+  const [giItemsByOp,setGiItemsByOp]=useState({});
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
-  const [pendingOps,setPendingOps]=useState([]);
+  const [pendientes,setPendientes]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [abierto,setAbierto]=useState({});
+  const [ayuda,setAyuda]=useState(false);
+  const OPSEL="id,operation_code,description,channel,service_type,status,budget_total,budget_flete,budget_seguro,budget_taxes,budget_surcharge,shipping_to_door,shipping_cost,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd";
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
-    const[m,cl,giOps,giItems,giCliPmts,entregadaOps,entregadaCliPmts,entregadaPmtMgmt]=await Promise.all([
-      dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code,budget_total,debt_applied_usd,credit_applied_usd,discount_applied_usd)&order=created_at.asc`}),
-      dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`}),
-      dq("operations",{token,filters:`?client_id=eq.${client.id}&service_type=eq.gestion_integral&status=not.in.(operacion_cerrada,cancelada)&select=id,operation_code,description,eta,status,is_collected,channel,service_type&order=created_at.desc`}),
-      dq("operation_items",{token,filters:`?select=operation_id,quantity,unit_price_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
-      dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
-      dq("operations",{token,filters:`?client_id=eq.${client.id}&status=eq.entregada&service_type=neq.gestion_integral&is_collected=eq.false&select=id,operation_code,description,eta,status,channel,service_type,budget_total,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd&order=created_at.desc`}),
-      dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,status,service_type,is_collected)&operations.client_id=eq.${client.id}&operations.status=eq.entregada&operations.service_type=neq.gestion_integral&operations.is_collected=eq.false`}),
-      dq("payment_management",{token,filters:`?select=operation_id,client_amount_usd,operations!inner(client_id,status,service_type,is_collected)&operations.client_id=eq.${client.id}&operations.status=eq.entregada&operations.service_type=neq.gestion_integral&operations.is_collected=eq.false`})
-    ]);
-    const ml=Array.isArray(m)?m:[];
-    setMovs(ml);
-    // Lo pagado de cada importación pasada a la cuenta (para el detalle del renglón).
-    const opIds=[...new Set(ml.filter(x=>x.type==="debt"&&x.operation_id).map(x=>x.operation_id))];
-    if(opIds.length){const pg=await dq("operation_client_payments",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,amount_usd`});const pm={};(Array.isArray(pg)?pg:[]).forEach(p=>{pm[p.operation_id]=(pm[p.operation_id]||0)+Number(p.amount_usd||0);});setPaidByOp(pm);}
     const arr=(x)=>Array.isArray(x)?x:[];
-    const pendingGi=arr(giOps).map(o=>{
-      const total=arr(giItems).filter(i=>i.operation_id===o.id).reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
-      const cobrado=arr(giCliPmts).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      return {id:o.id,code:o.operation_code,desc:o.description||"",isGI:true,status:o.status,total,cobrado,saldo:Math.max(0,total-cobrado)};
-    }).filter(x=>x.saldo>0.01);
-    const pendingEntregada=arr(entregadaOps).map(o=>{
-      const cobrado=arr(entregadaCliPmts).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const pmtTot=arr(entregadaPmtMgmt).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-      const total=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0)+Math.max(0,pmtTot-Number(o.total_anticipos||0));
-      return {id:o.id,code:o.operation_code,desc:o.description||"",isGI:false,status:o.status,total,cobrado,saldo:Math.max(0,total-cobrado),deudaAnterior:Number(o.debt_applied_usd||0)};
-    }).filter(x=>x.saldo>0.01);
-    setPendingOps([...pendingGi,...pendingEntregada]);
+    const [m,cl,giOps,giItems,entregadaOps]=await Promise.all([
+      dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(${OPSEL})&order=created_at.asc`}),
+      dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`}),
+      dq("operations",{token,filters:`?client_id=eq.${client.id}&service_type=eq.gestion_integral&status=not.in.(operacion_cerrada,cancelada)&select=${OPSEL}&order=created_at.desc`}),
+      dq("operation_items",{token,filters:`?select=operation_id,description,quantity,unit_price_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
+      dq("operations",{token,filters:`?client_id=eq.${client.id}&status=eq.entregada&service_type=neq.gestion_integral&is_collected=eq.false&select=${OPSEL}&order=created_at.desc`})
+    ]);
+    const ml=arr(m);
+    const gi={};arr(giItems).forEach(i=>{(gi[i.operation_id]=gi[i.operation_id]||[]).push(i);});
+    setGiItemsByOp(gi);
+    // Pagos y gestiones de pago de todas las importaciones que aparecen en la cuenta.
+    const ids=[...new Set([...ml.map(x=>x.operation_id),...arr(giOps).map(o=>o.id),...arr(entregadaOps).map(o=>o.id)].filter(Boolean))];
+    const pb={},pm={};
+    if(ids.length){
+      const [pg,pmt]=await Promise.all([
+        dq("operation_client_payments",{token,filters:`?operation_id=in.(${ids.join(",")})&select=id,operation_id,amount_usd,payment_date,payment_method,currency,amount_ars,exchange_rate,notes&order=payment_date.asc,created_at.asc`}).catch(()=>[]),
+        dq("payment_management",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,client_amount_usd`}).catch(()=>[])
+      ]);
+      arr(pg).forEach(p=>{(pb[p.operation_id]=pb[p.operation_id]||[]).push(p);});
+      arr(pmt).forEach(p=>{pm[p.operation_id]=(pm[p.operation_id]||0)+Number(p.client_amount_usd||0);});
+    }
+    setPaysByOp(pb);setPmtByOp(pm);
+    setMovs(ml);
+    setPendientes([...arr(giOps),...arr(entregadaOps)]);
     if(Array.isArray(cl)&&cl[0])setBalance(Number(cl[0].account_balance_usd||0));
     setLoading(false);
   })();},[client?.id,token]);
+
+  const r2=v=>Math.round(Number(v||0)*100)/100;
   const usd2=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const fecha=d=>{try{return new Date(String(d).length<=10?d+"T12:00:00":d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
-  const pendTot=pendingOps.reduce((a,p)=>a+Number(p.saldo||0),0);
-  const neto=Math.round((balance-pendTot)*100)/100;
+  const signo=v=>`${v<-0.005?"−":v>0.005?"+":""}${usd2(Math.abs(v))}`;
+  const LOCALE={es:"es-AR",en:"en-US",zh:"zh-CN",ru:"ru-RU"}[lang]||"es-AR";
+  const aFecha=d=>new Date(String(d).length<=10?d+"T12:00:00":d);
+  const fecha=d=>{try{return aFecha(d).toLocaleDateString(LOCALE,{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
+  const mesDe=d=>{try{const s=aFecha(d).toLocaleDateString(LOCALE,{month:"long",year:"numeric"});return s.charAt(0).toUpperCase()+s.slice(1);}catch{return "";}};
+  const metodoTxt=(m)=>m==="transferencia"||m==="transfer"?tx("acc.mTransfer"):m==="efectivo"||m==="cash"?tx("acc.mCash"):m==="cripto"||m==="crypto"?tx("acc.mCrypto"):(m||"");
+
+  // ── Modelo de una importación: de qué está hecho el costo, qué se sumó/descontó, qué se pagó ──
+  const modelo=(o)=>{
+    if(!o)return null;
+    const isGI=o.service_type==="gestion_integral";
+    const isB=!!(o.channel||"").includes("negro");
+    const bt=Number(o.budget_total||0);
+    const ship=o.shipping_to_door?Number(o.shipping_cost||0):0;
+    const pmtPend=Math.max(0,Number(pmtByOp[o.id]||0)-Number(o.total_anticipos||0));
+    const lineas=[];let costo=0;
+    if(isGI){
+      (giItemsByOp[o.id]||[]).forEach(i=>{const q=Number(i.quantity||1),u=Number(i.unit_price_usd||0);if(q*u>0)lineas.push([`${i.description||tx("acc.cGoods")} × ${q}`,q*u]);});
+      costo=lineas.reduce((s,[,v])=>s+v,0);
+    }else{
+      if(isB){if(bt-ship>0.005)lineas.push([tx("op.integralService"),bt-ship]);}
+      else{
+        if(Number(o.budget_flete)>0.005)lineas.push([tx("imports.freight"),Number(o.budget_flete)]);
+        if(Number(o.budget_seguro)>0.005)lineas.push([tx("op.cargoInsurance"),Number(o.budget_seguro)]);
+        if(Number(o.budget_taxes)>0.005)lineas.push([tx("imports.taxes"),Number(o.budget_taxes)]);
+        if(Number(o.budget_surcharge)>0.005)lineas.push([tx("op.overweight"),Number(o.budget_surcharge)]);
+      }
+      if(ship>0.005)lineas.push([tx("op.homeDelivery"),ship]);
+      // Si el presupuesto se fijó a mano y las líneas no cierran, la diferencia se muestra como tal.
+      const suma=lineas.reduce((s,[,v])=>s+v,0);const dif=r2(bt-suma);
+      if(bt>0.005&&Math.abs(dif)>0.5)lineas.push([dif>0?tx("acc.cOther"):tx("acc.cBonus"),dif]);
+      if(pmtPend>0.005)lineas.push([tx("acc.cPmtMgmt"),pmtPend]);
+      costo=bt+pmtPend;
+    }
+    const deudaAnt=Number(o.debt_applied_usd||0),cred=Number(o.credit_applied_usd||0),desc=Number(o.discount_applied_usd||0);
+    const aPagar=r2(costo+deudaAnt-cred-desc);
+    const pagos=paysByOp[o.id]||[];
+    const pagado=r2(pagos.reduce((s,p)=>s+Number(p.amount_usd||0),0));
+    return {o,isGI,isB,lineas,costo:r2(costo),deudaAnt,cred,desc,aPagar,pagos,pagado,saldo:Math.max(0,r2(aPagar-pagado))};
+  };
+
+  const pend=pendientes.map(modelo).filter(m=>m&&m.saldo>0.01);
+  const pendTot=r2(pend.reduce((a,m)=>a+m.saldo,0));
+  const neto=r2(balance-pendTot);
   const isCredit=neto>0.005,isDebt=neto<-0.005;
-  const balColor=isCredit?"#22c55e":isDebt?"#f87171":"#fff";
-  // Libro: renglones con su saldo corriente (se calcula del más viejo al más nuevo, se muestra al revés).
-  const metodoTxt=(m)=>m==="transferencia"?t("acc.mTransfer"):m==="efectivo"?t("acc.mCash"):m==="cripto"?t("acc.mCrypto"):"";
-  const tx=(k,p)=>t(k,p); // (para el chequeo de i18n: asignaciones no son atributos JSX)
+  const colorNeto=isCredit?"#22c55e":isDebt?"#f87171":"#fff";
+
+  // ── Libro: cada movimiento con su concepto, su explicación y el saldo después ──
   let run=0;
   const libro=movs.map(x=>{
-    const amt=Number(x.amount_usd||0);run=Math.round((run+amt)*100)/100;
-    const code=x.operations?.operation_code||"";const o=x.operations||{};
-    let concepto=null;const detalle=[];
-    if(x.type==="debt"&&/cuenta corriente/i.test(x.description||"")&&code){
-      concepto=tx("acc.lnClosedOp",{op:code});
-      detalle.push(t("acc.lnCost",{v:usd2(Number(o.budget_total||0)-Number(o.discount_applied_usd||0))}));
-      const pag=Number(paidByOp[x.operation_id]||0);if(pag>0.005)detalle.push(t("acc.lnPaid",{v:usd2(pag)}));
-      if(Number(o.credit_applied_usd||0)>0.005)detalle.push(t("acc.lnCreditUsed",{v:usd2(o.credit_applied_usd)}));
-      if(Number(o.debt_applied_usd||0)>0.005)detalle.push(t("acc.lnPrevDebt",{v:usd2(o.debt_applied_usd)}));
-    }else if(x.type==="debt")concepto=code?t("acc.lnDebtOp",{op:code}):(x.description||t("acc.movDebt"));
-    else if(x.type==="applied")concepto=amt>0?t("acc.lnMovedToOp",{op:code||"—"}):t("acc.lnUsedInOp",{op:code||"—"});
-    else if(x.type==="overpayment")concepto=code?t("acc.lnOverpay",{op:code}):t("acc.movOverpayment");
-    else if(x.type==="payment"){
-      concepto=[t("acc.lnPayment"),metodoTxt(x.payment_method)].filter(Boolean).join(" · ");
-      if(x.currency==="ARS"&&Number(x.amount_original)>0)detalle.push(`ARS ${Number(x.amount_original).toLocaleString("es-AR",{maximumFractionDigits:2})}${Number(x.exchange_rate)>0?` ${t("acc.atRate",{v:Number(x.exchange_rate).toLocaleString("es-AR")})}`:""}`);
+    const amt=Number(x.amount_usd||0);run=r2(run+amt);
+    const o=x.operations||null;const code=o?.operation_code||"";
+    const m=o?modelo(o):null;
+    const esCierre=x.type==="debt"&&/cuenta corriente/i.test(x.description||"")&&!!code;
+    let concepto,explica=null,desglose=null,cierre=false;
+    if(esCierre){concepto=tx("acc.lnClosedOp",{op:code});explica=tx("acc.xClosed",{op:code});desglose=m;cierre=true;}
+    else if(x.type==="debt"){concepto=code?tx("acc.lnDebtOp",{op:code}):(x.description||tx("acc.movDebt"));explica=code?tx("acc.xDebt",{op:code}):null;desglose=m;cierre=true;}
+    else if(x.type==="applied"){
+      if(amt<0){concepto=tx("acc.lnCreditUsedOp",{op:code||"—"});explica=tx("acc.xUsedCredit",{v:usd2(Math.abs(amt)),op:code||"—"});}
+      else{concepto=tx("acc.lnDebtAdded",{op:code||"—"});explica=tx("acc.xDebtAdded",{v:usd2(amt),op:code||"—"});}
     }
-    else if(x.type==="adjustment")concepto=t("acc.lnAdjust");
-    else if(x.type==="refund")concepto=t("acc.lnRefund");
+    else if(x.type==="overpayment"){
+      concepto=code?tx("acc.lnOverpay",{op:code}):tx("acc.movOverpayment");
+      explica=m&&m.pagado>m.aPagar+0.005?tx("acc.xOverpay",{op:code,cost:usd2(m.aPagar),paid:usd2(m.pagado),v:usd2(amt)}):tx("acc.xOverpayGeneric",{v:usd2(amt)});
+      if(m&&m.pagos.length)desglose=m;
+    }
+    else if(x.type==="payment"){
+      concepto=[tx("acc.lnPayment"),metodoTxt(x.payment_method)].filter(Boolean).join(" · ");
+      const enPesos=x.currency==="ARS"&&Number(x.amount_original)>0;
+      explica=enPesos?tx("acc.xPaidArs",{ars:`ARS ${Number(x.amount_original).toLocaleString("es-AR",{maximumFractionDigits:2})}`,tc:Number(x.exchange_rate)>0?Number(x.exchange_rate).toLocaleString("es-AR"):"—",v:usd2(amt),m:metodoTxt(x.payment_method).toLowerCase()}):tx("acc.xPaidUsd",{v:usd2(amt),m:(metodoTxt(x.payment_method)||"").toLowerCase()});
+    }
+    else if(x.type==="adjustment"){concepto=amt>=0?tx("acc.lnAdjust"):tx("acc.lnAdjustMinus");explica=amt>=0?tx("acc.xAdjustPlus",{v:usd2(amt)}):tx("acc.xAdjustMinus",{v:usd2(Math.abs(amt))});}
+    else if(x.type==="refund"){concepto=tx("acc.lnRefund");explica=tx("acc.xRefund",{v:usd2(Math.abs(amt))});}
     else concepto=x.description||x.type;
-    return {id:x.id,fecha:x.movement_date||x.created_at,concepto,detalle,code,amt,saldo:run,recibo:x.receipt_url||null};
+    // La nota que cargó Argencargo (sin la parte que ya se explica sola).
+    const nota=x.type==="payment"?String(x.description||"").split(" · ").slice(3).join(" · ").trim():(x.type==="adjustment"||x.type==="refund")?String(x.description||"").trim():"";
+    return {id:x.id,fecha:x.movement_date||x.created_at,concepto,explica,desglose,cierre,code,amt,saldo:run,recibo:x.receipt_url||null,nota};
   }).reverse();
+
+  // ── Estilos ──
   const card={background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,overflow:"hidden"};
   const lblS={fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"};
-  const chipOp=(code)=>code?<button onClick={()=>onOpenOp?.(code)} style={{padding:"1px 8px",borderRadius:6,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,fontWeight:700,cursor:onOpenOp?"pointer":"default"}}>{code}</button>:null;
+  const subS={fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 14px",lineHeight:1.5};
+  const MONO="'JetBrains Mono','SF Mono',monospace";
+  const chipOp=(code)=>code?<button onClick={(e)=>{e.stopPropagation();onOpenOp?.(code);}} style={{padding:"1px 8px",borderRadius:6,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)",color:GOLD_LIGHT,fontFamily:MONO,fontSize:11.5,fontWeight:700,cursor:onOpenOp?"pointer":"default"}}>{code}</button>:null;
+  const toggle=(id)=>setAbierto(p=>({...p,[id]:!p[id]}));
+  const linea=(l,v,o={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:o.total?"9px 0 0":"6px 0",borderTop:o.total?"1px solid rgba(255,255,255,0.18)":"none",marginTop:o.total?4:0}}>
+    <span style={{fontSize:o.total?13:12.5,color:o.total?"#fff":"rgba(255,255,255,0.78)",fontWeight:o.total?800:500,lineHeight:1.45,minWidth:0}}>{l}</span>
+    <span style={{fontSize:o.total?14.5:12.5,fontWeight:o.total?800:600,color:o.color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{o.signed?signo(v):usd2(v)}</span>
+  </div>;
+  // Desglose completo de una importación: costo → sumas/descuentos → pagos → lo que queda.
+  const Desglose=(m,cierre)=><div style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.09)"}}>
+    <p style={{...lblS,color:SKY,marginBottom:4}}>{t("acc.whereFrom")}</p>
+    {m.lineas.map(([l,v],i)=><div key={i}>{linea(l,v)}</div>)}
+    {linea(t(m.isGI?"acc.cGoodsLanded":"acc.importCost"),m.costo,{total:true})}
+    {(m.deudaAnt>0.005||m.cred>0.005||m.desc>0.005)&&<div style={{marginTop:8}}>
+      {m.deudaAnt>0.005&&linea(t("acc.prevDebtAdded"),m.deudaAnt,{signed:true,color:"#fca5a5"})}
+      {m.cred>0.005&&linea(t("acc.creditApplied"),-m.cred,{signed:true,color:"#4ade80"})}
+      {m.desc>0.005&&linea(t("acc.discountApplied"),-m.desc,{signed:true,color:"#4ade80"})}
+      {linea(t("acc.totalToPay"),m.aPagar,{total:true})}
+    </div>}
+    {m.pagos.length>0&&<div style={{marginTop:10}}>
+      <p style={{...lblS,color:SKY,marginBottom:4}}>{t("acc.paymentsMade")}</p>
+      {m.pagos.map(p=>{const enPesos=p.currency==="ARS"&&Number(p.amount_ars)>0;return <div key={p.id}>{linea(<>{fecha(p.payment_date)} · {metodoTxt(p.payment_method)}{enPesos&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR",{maximumFractionDigits:2})}{Number(p.exchange_rate)>0?` · ${t("acc.atRate",{v:Number(p.exchange_rate).toLocaleString("es-AR")})}`:""}</span>}{p.notes&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{p.notes}</span>}</>,-Number(p.amount_usd||0),{signed:true,color:"#4ade80"})}</div>;})}
+      {linea(t("acc.totalPaid"),-m.pagado,{total:true,signed:true,color:"#4ade80"})}
+    </div>}
+    {!cierre&&m.pagado>m.aPagar+0.005?linea(t("acc.overpaidBy"),m.pagado-m.aPagar,{total:true,signed:true,color:"#4ade80"}):linea(t(cierre?"acc.movedToAccount":"acc.leftToPay"),m.saldo,{total:true,color:cierre?SKY:"#fb923c"})}
+  </div>;
+
   return <div>
     <div style={{marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <h2 style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("acc.title")}</h2>
       {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"7px 12px",fontSize:12,fontWeight:600,borderRadius:999,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>🎓 {t("acc.tutorialAgain")}</button>}
     </div>
-    {/* Saldo */}
+
+    {/* 1 · Estado de la cuenta y cómo se arma */}
     <div style={{padding:"22px 24px",borderRadius:18,marginBottom:22,background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.14), rgba(255,255,255,0.02))":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.13), rgba(255,255,255,0.02))":"linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":isDebt?"rgba(239,68,68,0.35)":"rgba(255,255,255,0.1)"}`}}>
-      <p style={{...lblS,margin:"0 0 8px"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
-      <p style={{fontSize:"clamp(30px,7vw,42px)",fontWeight:800,color:balColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":isDebt?"−":""}{usd2(Math.abs(neto))}</p>
-      {(Math.abs(balance)>0.005||pendTot>0.005)?<div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14}}>
-        {Math.abs(balance)>0.005&&<span style={{fontSize:12.5,padding:"5px 11px",borderRadius:999,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{t("acc.ccLine")} <b style={{color:balance<0?"#f87171":"#4ade80"}}>{balance<0?"−":"+"}{usd2(Math.abs(balance))}</b></span>}
-        {pendTot>0.005&&<span style={{fontSize:12.5,padding:"5px 11px",borderRadius:999,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{t("acc.toPickupLine")} <b style={{color:"#fb923c"}}>−{usd2(pendTot)}</b></span>}
-      </div>:<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"12px 0 0"}}>{t("acc.allSettled")}</p>}
-    </div>
-    {/* Por pagar */}
-    {pendingOps.length>0&&<div style={{marginBottom:22}}>
-      <p style={lblS}>{t("acc.toPay")}</p>
-      <div style={card}>{pendingOps.map((p,i)=><div key={p.id} onClick={()=>onOpenOp?.(p.code)} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none",cursor:onOpenOp?"pointer":"default"}}>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{chipOp(p.code)}{p.isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.06em",textTransform:"uppercase"}}>{t("acc.gi")}</span>}{p.status==="entregada"&&<span style={{fontSize:11,color:"#4ade80",fontWeight:700}}>{t("acc.readyForPickup")}</span>}</div>
-          <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.desc||""}{p.cobrado>0.005?`${p.desc?" · ":""}${t("acc.lnPaid",{v:usd2(p.cobrado)})}`:""}{p.deudaAnterior>0.005?` · ${t("acc.lnPrevDebt",{v:usd2(p.deudaAnterior)})}`:""}</p>
+      <p style={{...lblS,margin:"0 0 8px"}}>{t("acc.stateLbl")}</p>
+      <p style={{fontSize:"clamp(22px,5.5vw,30px)",fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em",lineHeight:1.2}}>
+        {loading?"…":isDebt?<>{t("acc.hDebtA")} <span style={{color:colorNeto,fontVariantNumeric:"tabular-nums"}}>{usd2(Math.abs(neto))}</span> {t("acc.hDebtB")}</>
+        :isCredit?<>{t("acc.hCreditA")} <span style={{color:colorNeto,fontVariantNumeric:"tabular-nums"}}>{usd2(neto)}</span> {t("acc.hCreditB")}</>
+        :t("acc.hEven")}
+      </p>
+      {!loading&&(Math.abs(balance)>0.005||pendTot>0.005)?<div style={{marginTop:16,padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.09)"}}>
+        <p style={{...lblS,color:SKY,marginBottom:6}}>{t("acc.howItAdds")}</p>
+        {Math.abs(balance)>0.005&&<div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0"}}>
+          <span style={{minWidth:0}}><span style={{display:"block",fontSize:13,color:"#fff",fontWeight:600}}>{t("acc.ccLine")}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.5)",lineHeight:1.45}}>{t("acc.ccExplain")}</span></span>
+          <b style={{color:balance<0?"#f87171":"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",fontSize:14}}>{signo(balance)}</b>
+        </div>}
+        {pendTot>0.005&&<div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0",borderTop:Math.abs(balance)>0.005?"1px solid rgba(255,255,255,0.07)":"none"}}>
+          <span style={{minWidth:0}}><span style={{display:"block",fontSize:13,color:"#fff",fontWeight:600}}>{t("acc.toPickupLine")}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.5)",lineHeight:1.45}}>{t("acc.pickExplain")}</span></span>
+          <b style={{color:"#fb923c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",fontSize:14}}>−{usd2(pendTot)}</b>
+        </div>}
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"9px 0 0",marginTop:4,borderTop:"1px solid rgba(255,255,255,0.18)"}}>
+          <span style={{fontSize:13,color:"#fff",fontWeight:800}}>{t("acc.yourTotal")}</span>
+          <b style={{color:colorNeto,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",fontSize:15}}>{signo(neto)}</b>
         </div>
-        <span style={{fontSize:17,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd2(p.saldo)}</span>
-      </div>)}</div>
+        {isCredit&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"10px 0 0",lineHeight:1.5}}>{t("acc.creditNote")}</p>}
+      </div>:!loading&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>{t("acc.nothingPending")}</p>}
+    </div>
+
+    {/* 2 · Por pagar ahora */}
+    {pend.length>0&&<div style={{marginBottom:24}}>
+      <p style={{...lblS,marginBottom:2}}>{t("acc.payNow")}</p>
+      <p style={subS}>{t("acc.payNowDesc")}</p>
+      <div style={card}>{pend.map((m,i)=>{const o=m.o;const op=!!abierto["p"+o.id];return <div key={o.id} style={{borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
+        <button onClick={()=>toggle("p"+o.id)} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{chipOp(o.operation_code)}{m.isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.06em",textTransform:"uppercase"}}>{t("acc.gi")}</span>}{o.status==="entregada"&&<span style={{fontSize:11,color:"#4ade80",fontWeight:700}}>{t("acc.readyForPickup")}</span>}</div>
+            <p style={{margin:"4px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||t("acc.noDesc")}</p>
+            <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{m.pagado>0.005?t("acc.youPaid",{paid:usd2(m.pagado),total:usd2(m.aPagar)}):t("acc.costIs",{v:usd2(m.aPagar)})}</p>
+          </div>
+          <div style={{textAlign:"right",whiteSpace:"nowrap"}}>
+            <span style={{display:"block",fontSize:17,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums"}}>{usd2(m.saldo)}</span>
+            <span style={{display:"block",fontSize:10.5,color:SKY,fontWeight:700,marginTop:2}}>{op?t("acc.hideDetail"):t("acc.seeDetail")} {op?"▲":"▼"}</span>
+          </div>
+        </button>
+        {op&&<div style={{padding:"0 16px 14px"}}>
+          {Desglose(m,false)}
+          {onOpenOp&&<button onClick={()=>onOpenOp(o.operation_code)} style={{marginTop:10,padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:9,border:"1px solid rgba(140,200,245,0.35)",background:"rgba(140,200,245,0.08)",color:SKY,cursor:"pointer"}}>{t("acc.viewImport")} →</button>}
+        </div>}
+      </div>;})}</div>
     </div>}
-    {/* Libro */}
-    <p style={lblS}>{t("acc.ledgerTitle")}</p>
+
+    {/* 3 · Libro de movimientos */}
+    <p style={{...lblS,marginBottom:2}}>{t("acc.ledgerTitle")}</p>
+    <p style={subS}>{t("acc.ledgerDesc")}</p>
     {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:libro.length===0?<p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>{t("acc.ledgerEmpty")}</p>
-    :<div style={card}>{libro.map((r,i)=>{const pos=r.amt>0;return <div key={r.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"13px 16px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
-      <span style={{width:32,height:32,flexShrink:0,borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",background:pos?"rgba(34,197,94,0.14)":"rgba(248,113,113,0.13)",color:pos?"#4ade80":"#f87171",fontSize:15,fontWeight:900}}>{pos?"↓":"↑"}</span>
-      <div style={{flex:1,minWidth:0}}>
-        <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{r.concepto}{r.code&&!r.concepto.includes(r.code)?chipOp(r.code):null}</p>
-        <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>{fecha(r.fecha)}{r.detalle.length?` · ${r.detalle.join(" · ")}`:""}{r.recibo&&<> · <a href={r.recibo} target="_blank" rel="noreferrer" style={{color:SKY,fontWeight:700}}>{t("acc.receipt")}</a></>}</p>
-      </div>
-      <div style={{textAlign:"right",whiteSpace:"nowrap"}}>
-        <p style={{margin:0,fontSize:15,fontWeight:800,color:pos?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{pos?"+":"−"}{usd2(Math.abs(r.amt))}</p>
-        <p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{t("acc.runBal")} {r.saldo<0?"−":""}{usd2(Math.abs(r.saldo))}</p>
-      </div>
+    :<div style={card}>{libro.map((r,i)=>{const pos=r.amt>0;const op=!!abierto[r.id];const mes=mesDe(r.fecha);const mesPrev=i?mesDe(libro[i-1].fecha):null;return <div key={r.id}>
+      {mes!==mesPrev&&<div style={{padding:"9px 16px 7px",background:"rgba(0,0,0,0.25)",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none",fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{mes}</div>}
+      <button onClick={()=>toggle(r.id)} style={{display:"flex",alignItems:"flex-start",gap:12,width:"100%",padding:"13px 16px",borderTop:"1px solid rgba(255,255,255,0.06)",background:op?"rgba(255,255,255,0.03)":"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
+        <span style={{width:32,height:32,flexShrink:0,borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",background:pos?"rgba(34,197,94,0.14)":"rgba(248,113,113,0.13)",color:pos?"#4ade80":"#f87171",fontSize:15,fontWeight:900}}>{pos?"↓":"↑"}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{r.concepto}{r.code&&!String(r.concepto).includes(r.code)?chipOp(r.code):null}</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>{fecha(r.fecha)} · <span style={{color:SKY,fontWeight:700}}>{op?t("acc.hideDetail"):t("acc.seeDetail")} {op?"▲":"▼"}</span></p>
+          <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{t("acc.after")} <b style={{whiteSpace:"nowrap",color:r.saldo<-0.005?"#f87171":r.saldo>0.005?"#4ade80":"rgba(255,255,255,0.7)"}}>{signo(r.saldo)}</b></p>
+        </div>
+        <p style={{margin:0,fontSize:15,fontWeight:800,color:pos?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",flexShrink:0}}>{signo(r.amt)}</p>
+      </button>
+      {op&&<div style={{padding:"0 16px 14px 60px",background:"rgba(255,255,255,0.03)"}} className="ac-acc-det">
+        {r.explica&&<p style={{margin:"0 0 10px",fontSize:13,color:"#fff",lineHeight:1.55}}>{r.explica}</p>}
+        {r.nota&&<p style={{margin:"0 0 10px",fontSize:12.5,color:"rgba(255,255,255,0.65)",lineHeight:1.5}}>{t("acc.note")}: {r.nota}</p>}
+        {r.desglose&&Desglose(r.desglose,r.cierre)}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+          {r.recibo&&<a href={r.recibo} target="_blank" rel="noreferrer" style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:9,border:"1px solid rgba(140,200,245,0.35)",background:"rgba(140,200,245,0.08)",color:SKY,textDecoration:"none"}}>📎 {t("acc.receipt")}</a>}
+          {r.code&&onOpenOp&&<button onClick={()=>onOpenOp(r.code)} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.8)",cursor:"pointer"}}>{t("acc.viewImport")} {r.code} →</button>}
+        </div>
+      </div>}
     </div>;})}</div>}
+
+    {/* 4 · Cómo leer la cuenta */}
+    <div style={{marginTop:22,...card}}>
+      <button onClick={()=>setAyuda(a=>!a)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"13px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
+        <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>💡 {t("acc.helpTitle")}</span><span style={{fontSize:11,color:SKY,fontWeight:700}}>{ayuda?"▲":"▼"}</span>
+      </button>
+      {ayuda&&<div style={{padding:"0 16px 14px"}}>
+        {[["+","#4ade80","rgba(34,197,94,0.14)",t("acc.helpPlus")],["−","#f87171","rgba(248,113,113,0.13)",t("acc.helpMinus")],["=","rgba(255,255,255,0.8)","rgba(255,255,255,0.08)",t("acc.helpBal")],["📦","#fb923c","rgba(251,146,60,0.12)",t("acc.helpPick")]].map(([s,c,bg,txt],i)=><div key={i} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"7px 0"}}>
+          <span style={{width:28,height:28,flexShrink:0,borderRadius:8,display:"inline-flex",alignItems:"center",justifyContent:"center",background:bg,color:c,fontSize:14,fontWeight:900}}>{s}</span>
+          <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.75)",lineHeight:1.5}}>{txt}</p>
+        </div>)}
+      </div>}
+    </div>
+    <style>{`@media (max-width:600px){.ac-acc-det{padding-left:16px!important}}`}</style>
   </div>;
 }
 function InternationalPaymentsPage({client,token}){
