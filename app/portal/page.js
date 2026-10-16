@@ -1919,7 +1919,10 @@ function CalculatorPage({token,client,preset}){
     const noDimsReason=noDims||tot.totCBM===0;
     const unavailable=[];
     if(isChina&&!hasAereo)unavailable.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",motivo:owPk?<>Uno de los bultos de tu envío ({fmt2(toN(owPk.weight))} kg) supera los 50 kg por pieza.<br/>{t("calc.courierMax50")}<br/>{t("calc.courierSplit")}</>:t("calc.noWeightDims")});
-    if(!hasMar)unavailable.push({key:"maritimo_b",name:"Marítimo Integral AC",motivo:noDimsReason?t("calc.noDimsSea"):t("calc.noSeaForCargo")});
+    // Sin marítimo: no se nombra el canal (se ofrece uno solo de los dos según las reglas) y se
+    // explica el motivo concreto.
+    const motivoMar=noDimsReason?t("calc.noDimsSea"):(esPkBd(origin)||origin==="España")?t("calc.seaAirOnlyOrigin",{o:origin}):results.blockMaritimoLclRestricted?t("calc.seaRestrictedMin",{n:fmt2(tot.totCBM)}):t("calc.noSeaForCargo");
+    if(!hasMar)unavailable.push({key:"maritimo",name:null,motivo:motivoMar});
     const ordered=[...calc.filter(c=>c.key.includes("aereo")),...calc.filter(c=>!c.key.includes("aereo"))];
     const RES_PANEL={...PANEL,padding:"24px"};
     const line=(l,v,opts={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:opts.total?"12px 0 0":"7px 0",borderTop:opts.total?"1px solid rgba(255,255,255,0.22)":"none",marginTop:opts.total?8:0}}><span style={{fontSize:opts.total?14:13,color:"#fff",fontWeight:opts.total?700:500,opacity:opts.total?1:0.92}}>{l}</span><span style={{fontSize:opts.total?18:13.5,fontWeight:opts.total?800:600,color:opts.total?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span></div>;
@@ -1953,7 +1956,7 @@ function CalculatorPage({token,client,preset}){
     const chHead=(ch,extraRight,sub,dim)=>{const isAereo=ch.key.includes("aereo");const [big,small]=chTitle(ch);return <>
       <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,opacity:dim?0.5:1}}>{isAereo?"✈️":"🚢"}</span>
       <span style={{flex:1,minWidth:0}}>
-        <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16,color:"#fff",letterSpacing:"-0.01em",opacity:dim?0.7:1}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span><span style={{fontWeight:500}}>{small}</span></span>{extraRight}</span>
+        <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16,color:"#fff",letterSpacing:"-0.01em",opacity:dim?0.7:1}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b>{small&&<><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span><span style={{fontWeight:500}}>{small}</span></>}</span>{extraRight}</span>
         <span style={{display:"block",fontSize:12.5,color:dim?"#fca5a5":SKY,marginTop:4,lineHeight:1.5}}>{sub}</span>
       </span>
     </>;};
