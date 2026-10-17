@@ -15499,6 +15499,7 @@ function AdminCalculator({token}){
   // Override manual del desaduanaje (gastos documentales aduana) por canal. Si el admin lo bonifica,
   // se ingresa un valor menor y el total se recalcula. Si está vacío, se usa el auto de la tabla.
   const [desembolsoOverride,setDesembolsoOverride]=useState({}); // {[chKey]: string}
+  const [owOverride,setOwOverride]=useState({}); // recargo por sobrepeso a mano (USD) por canal; 0 lo saca
   // Override manual del valor USD/kg del Courier Comercial para esta cotización puntual
   // (no toca la tarifa general ni la del cliente, solo esta cotización).
   const [rateOverride,setRateOverride]=useState({});const [costOverride,setCostOverride]=useState({}); // costo del agente editable por cotización (USD/kg o USD/m³) // {[chKey]: string}
@@ -15520,7 +15521,7 @@ function AdminCalculator({token}){
         setHasBrand(typeof b.hasBrand==="boolean"?b.hasBrand:null);setHasBattery(typeof b.hasBattery==="boolean"?b.hasBattery:null);
         if(Array.isArray(b.products)&&b.products.length)setProducts(b.products.map(p=>({...p,classifying:false})));
         if(Array.isArray(b.pkgs)&&b.pkgs.length){setPkgs(b.pkgs);proxPkId.current=Math.max(0,...b.pkgs.map(p=>Number(p.id)||0))+1;}
-        setRateOverride(b.rateOverride||{});setCostOverride(b.costOverride||{});setDesembolsoOverride(b.desembolsoOverride||{});
+        setRateOverride(b.rateOverride||{});setCostOverride(b.costOverride||{});setDesembolsoOverride(b.desembolsoOverride||{});setOwOverride(b.owOverride||{});
         if(Array.isArray(b.canalesLink))setCanalesLink(b.canalesLink);
         firmaCalc.current=b.firma||null;
         if(b.calculado)setAutoCalc(true);
@@ -15530,13 +15531,13 @@ function AdminCalculator({token}){
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if(!restaurado)return;
-    try{localStorage.setItem(CALC_BORRADOR,JSON.stringify({clientId,clientName,taxCond,origin,hasBrand,hasBattery,products:products.map(({classifying,...p})=>p),pkgs,rateOverride,costOverride,desembolsoOverride,canalesLink,firma:firmaCalc.current,calculado:autoCalc}));}catch{}
-  },[restaurado,clientId,clientName,taxCond,origin,hasBrand,hasBattery,products,pkgs,rateOverride,costOverride,desembolsoOverride,canalesLink,autoCalc]);
+    try{localStorage.setItem(CALC_BORRADOR,JSON.stringify({clientId,clientName,taxCond,origin,hasBrand,hasBattery,products:products.map(({classifying,...p})=>p),pkgs,rateOverride,costOverride,desembolsoOverride,owOverride,canalesLink,firma:firmaCalc.current,calculado:autoCalc}));}catch{}
+  },[restaurado,clientId,clientName,taxCond,origin,hasBrand,hasBattery,products,pkgs,rateOverride,costOverride,desembolsoOverride,owOverride,canalesLink,autoCalc]);
   const nuevaCotizacion=()=>{
     setClientId("");setClientName("");setTaxCond(null);setOrigin("China");setHasBrand(null);setHasBattery(null);
     setProducts([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
     proxPkId.current=1;setPkgs([{id:0,qty:"1",length:"",width:"",height:"",weight:""}]);
-    setRateOverride({});setCostOverride({});setDesembolsoOverride({});setCerts({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});setRecPctOv({});
+    setRateOverride({});setCostOverride({});setDesembolsoOverride({});setOwOverride({});setCerts({inal:{on:false,n:"1"},seg:{on:false,n:"1"}});setRecPctOv({});
     setResults(null);setLinkGenerado(null);setCanalesLink([]);setAutoCalc(false);firmaCalc.current=null;
     try{localStorage.removeItem(CALC_BORRADOR);}catch{}
   };
@@ -15626,7 +15627,7 @@ function AdminCalculator({token}){
     const firma=products.map(p=>norm(p.description)).filter(Boolean);
     const prev=firmaCalc.current;
     if(Array.isArray(prev)&&prev.length&&firma.length&&!firma.some(a=>prev.some(b=>a===b||a.startsWith(b)||b.startsWith(a)))){
-      setRateOverride({});setCostOverride({});setDesembolsoOverride({});
+      setRateOverride({});setCostOverride({});setDesembolsoOverride({});setOwOverride({});
     }
     firmaCalc.current=firma;
     const pctN=(v,def)=>(v==null||String(v).trim()==="")?def:toN(v);
@@ -15931,7 +15932,8 @@ function AdminCalculator({token}){
         let taxEff=0;
         if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
         else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
-        const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
+        const owOvL=owOverride[c.key];
+        const owEffLink=bd.isBlanco?((owOvL!=null&&String(owOvL).trim()!=="")?toN(owOvL):Number(c.overweightSurcharge||0)):0;
         const certL=certsDe(c.key);
         taxEff+=certL.total;
         const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+recargoDe(c).amt+certL.total);
@@ -16255,7 +16257,9 @@ function AdminCalculator({token}){
           if(bd.isBlanco&&bd.isAereo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+ivaDesEff;
           else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
           // Recargo por sobrepeso (aéreo) con fila propia; en el canal B el surcharge es el recargo por valor.
-          const owEff=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
+          const owAuto=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
+          const owOvStr=owOverride[ch.key];const hasOwOv=owOvStr!=null&&String(owOvStr).trim()!=="";
+          const owEff=hasOwOv?toN(owOvStr):owAuto;
           const rec=recargoDe(ch);const recValor=bd.isBlanco?0:rec.amt;
           const cert=certsDe(ch.key);
           const effTotal=(bd.isBlanco?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff):(fleteEff+recValor))+cert.total;
@@ -16286,7 +16290,7 @@ function AdminCalculator({token}){
                 <span>Recargo por valor</span>
                 <span className="qc-lr">{ovIn(rec.ov?String(recPctOv[ch.key]):String(Number(ch.surchargePct||0)),rec.ov&&Math.abs(rec.pct-Number(ch.surchargePct||0))>0.001,v=>setRecPctOv(p=>({...p,[ch.key]:v})),sinOv(setRecPctOv,ch.key))}<span className="qc-u">%</span><b>USD {fmt(recValor)}</b></span>
               </div>}
-              {owEff>0&&L("Recargo por sobrepeso",owEff)}
+              {bd.isBlanco&&bd.isAereo&&<div className="qc-l"><span>Recargo por sobrepeso</span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOwOv?owOvStr:String(owAuto),hasOwOv&&Math.abs(owEff-owAuto)>0.01,v=>setOwOverride(p=>({...p,[ch.key]:v})),sinOv(setOwOverride,ch.key))}</span></div>}
               {Number(ch.seguro||0)>0&&L("Seguro",ch.seguro)}
               {bd.isBlanco&&<>
                 {bd.derechos>0&&L("Derechos",bd.derechos)}
@@ -16318,7 +16322,7 @@ function AdminCalculator({token}){
               </>}
             </div>
             <div className="qc-total"><span>Total</span><strong>USD {fmt(effTotal)}</strong></div>
-            <button type="button" className="qc-pdf" onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd,certLines:cert.lines})}>📄 PDF</button>
+            <button type="button" className="qc-pdf" onClick={()=>printPdf({...ch,...(hasRateOv?{flete:fleteEff,fleteRate:fleteRateEff}:{}),overweightSurcharge:owEff},{desEff,ivaDesEff,effTotalImp,effTotal,bd,certLines:cert.lines})}>📄 PDF</button>
             {/* Costo (solo admin): el costo por rango cargado en Tarifas → Costos de flete. Antes
                 salía de un valor fijo de configuración y el Integral tomaba el mismo que LCL. */}
             {!esEmpleado()?(()=>{
