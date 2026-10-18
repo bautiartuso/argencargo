@@ -1,13 +1,15 @@
 // GET/POST /api/admin/historias — Historias destacadas (admin y empleado). Ver lib/historias.js.
 //
-// GET                                        → últimas historias generadas y portadas (bucket content-studio)
+// GET                                        → historias publicadas en Instagram (cs_settings historias_publicadas)
 // POST multipart {file}                      → sube la captura, Claude marca el recorte, arma la historia.
 //                                              Devuelve {url, captura:{url,ancho,alto}, bbox, nombre}
 // POST {action:"render", captura, bbox}      → vuelve a armar la historia con otro recorte (o sin recorte)
+// POST {action:"publicar", url}              → la sube a Instagram como historia (API del Estudio) y la anota como publicada
+// POST {action:"publicada", url}             → la anota como publicada (la subió él a mano desde el celular, etiquetando)
 // POST {action:"telegram", url, texto}       → manda la foto al Telegram del dueño para subirla desde el celular
 // POST {action:"portadas", rehacer?}         → genera (o devuelve) las portadas de los destacados
 
-import { sb, uploadStorage } from "../../../../lib/studio";
+import { sb, uploadStorage, igSettings, igPublish } from "../../../../lib/studio";
 import { callClaudeVision } from "../../../../lib/anthropic";
 import { htmlToPng } from "../../../../lib/chromium";
 import { tgNotify } from "../../../../lib/telegram";
@@ -69,10 +71,18 @@ async function renderYSubir(captura, bbox, nombre) {
   return uploadStorage(`historias/${Date.now()}_${slugDe(nombre)}.png`, png, "image/png");
 }
 
+async function publicadas() {
+  const r = await sb(`/cs_settings?key=eq.historias_publicadas&select=value`);
+  const v = Array.isArray(r.body) && r.body[0] ? r.body[0].value : null;
+  return Array.isArray(v) ? v : [];
+}
+async function guardarPublicadas(lista) {
+  await sb(`/cs_settings?on_conflict=key`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "historias_publicadas", value: lista.slice(0, 60), updated_at: new Date().toISOString() }) });
+}
+
 export async function GET(req) {
   if (!(await isStaff(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
-  const [historias, portadas] = await Promise.all([listar("historias"), listar("historias-portadas", 10)]);
-  return Response.json({ historias, portadas });
+  return Response.json({ publicadas: await publicadas() });
 }
 
 export async function POST(req) {
@@ -114,6 +124,26 @@ export async function POST(req) {
       const cap = { url: c.url, ancho: Number(c.ancho), alto: Number(c.alto) };
       const url = await renderYSubir(cap, bbox, body.nombre);
       return Response.json({ ok: true, url, bbox });
+    }
+    if (a === "publicar") {
+      const url = String(body.url || "");
+      if (!url.startsWith(PUB)) return Response.json({ error: "URL inválida" }, { status: 400 });
+      const cfg = await igSettings();
+      if (!cfg?.ig_user_id || !cfg?.access_token) return Response.json({ error: "Instagram no está conectado en el Content Studio" }, { status: 409 });
+      let media_id = null;
+      try { media_id = await igPublish({ kind: "story", images: [{ url }] }, cfg); }
+      catch (e) { return Response.json({ error: `Instagram: ${String(e?.message || e).slice(0, 200)}` }, { status: 502 }); }
+      const lista = [{ url, at: new Date().toISOString(), media_id, nombre: String(body.nombre || "") }, ...(await publicadas()).filter((x) => x.url !== url)];
+      await guardarPublicadas(lista);
+      return Response.json({ ok: true, media_id, publicadas: lista });
+    }
+    // La subió él desde el celular (para etiquetar al cliente): solo se anota como publicada.
+    if (a === "publicada") {
+      const url = String(body.url || "");
+      if (!url.startsWith(PUB)) return Response.json({ error: "URL inválida" }, { status: 400 });
+      const lista = [{ url, at: new Date().toISOString(), media_id: null, manual: true, nombre: String(body.nombre || "") }, ...(await publicadas()).filter((x) => x.url !== url)];
+      await guardarPublicadas(lista);
+      return Response.json({ ok: true, publicadas: lista });
     }
     if (a === "telegram") {
       const url = String(body.url || "");
