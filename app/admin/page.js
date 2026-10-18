@@ -16,6 +16,7 @@ import MailPanel from "./MailPanel";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
+import HistoriasPanel from "./components/HistoriasPanel";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 import { comprimirImagen } from "../../lib/img";
 
@@ -16729,6 +16730,7 @@ function AdminDashboard({session,onLogout}){
     ]},
     {section:"Marketing",items:[
       {key:"studio",label:"Content Studio",p:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
+      {key:"historias",label:"Historias",p:["M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8-4.3-4.1 5.9-.9z"]},
       {key:"blog",label:"Blog",p:["M4 4h16v16H4z","M8 8h8","M8 12h8","M8 16h5"]},
     ]},
     {section:"Finanzas",items:[
@@ -16857,6 +16859,7 @@ function AdminDashboard({session,onLogout}){
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
       {page==="bot"&&<BotPanel token={token}/>}
       {page==="studio"&&<StudioPanel token={token}/>}
+      {page==="historias"&&<HistoriasPanel token={token}/>}
       {page==="blog"&&<BlogPanel token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&(mtMuelleOn()?<MaritimePanel2 token={token} allClients={allClients}/>:<MaritimePanel token={token} allClients={allClients}/>)}
