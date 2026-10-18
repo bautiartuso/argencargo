@@ -11,7 +11,7 @@ import { sb, uploadStorage } from "../../../../lib/studio";
 import { callClaudeVision } from "../../../../lib/anthropic";
 import { htmlToPng } from "../../../../lib/chromium";
 import { tgNotify } from "../../../../lib/telegram";
-import { htmlHistoriaCaptura, htmlPortadaDestacado, PORTADAS, SCHEMA_RECORTE, normBbox, VARIANTES } from "../../../../lib/historias";
+import { htmlHistoriaCaptura, htmlPortadaDestacado, PORTADAS, SCHEMA_RECORTE, normBbox } from "../../../../lib/historias";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -64,10 +64,9 @@ function dimensiones(buf, mime) {
 
 const slugDe = (s) => String(s || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "cliente";
 
-const VARIANTE_DEFAULT = "A";
-async function renderYSubir(captura, bbox, nombre, variante = VARIANTE_DEFAULT) {
-  const png = await htmlToPng(htmlHistoriaCaptura({ captura: captura.url, ancho: captura.ancho, alto: captura.alto, bbox, variante }), { width: 1080, height: 1920 });
-  return uploadStorage(`historias/${Date.now()}_${slugDe(nombre)}${variante !== VARIANTE_DEFAULT ? `_${variante}` : ""}.png`, png, "image/png");
+async function renderYSubir(captura, bbox, nombre) {
+  const png = await htmlToPng(htmlHistoriaCaptura({ captura: captura.url, ancho: captura.ancho, alto: captura.alto, bbox }), { width: 1080, height: 1920 });
+  return uploadStorage(`historias/${Date.now()}_${slugDe(nombre)}.png`, png, "image/png");
 }
 
 export async function GET(req) {
@@ -103,8 +102,7 @@ export async function POST(req) {
         const d = JSON.parse(raw);
         if (d && d.es_resena !== false) { bbox = normBbox(d); nombre = String(d.nombre || "").trim(); }
       } catch (e) { console.warn("[historias] recorte", e?.message); }
-      const variante = VARIANTES.includes(String(fd.get("variante") || "")) ? String(fd.get("variante")) : VARIANTE_DEFAULT;
-      const url = fd.get("solo_recorte") ? null : await renderYSubir(captura, bbox, nombre, variante);
+      const url = fd.get("solo_recorte") ? null : await renderYSubir(captura, bbox, nombre);
       return Response.json({ ok: true, url, captura, bbox: bbox || normBbox(null), nombre, recortada: !!bbox });
     }
     const body = await req.json().catch(() => ({}));
@@ -114,13 +112,7 @@ export async function POST(req) {
       if (!String(c.url || "").startsWith(`${PUB}historias-capturas/`) || !(Number(c.ancho) > 0) || !(Number(c.alto) > 0)) return Response.json({ error: "Captura inválida" }, { status: 400 });
       const bbox = normBbox(body.bbox);
       const cap = { url: c.url, ancho: Number(c.ancho), alto: Number(c.alto) };
-      // {variantes:true} arma las cinco (para elegir plantilla por chat); si no, una sola.
-      if (body.variantes) {
-        const urls = {};
-        for (const v of VARIANTES) urls[v] = await renderYSubir(cap, bbox, body.nombre, v);
-        return Response.json({ ok: true, urls, bbox });
-      }
-      const url = await renderYSubir(cap, bbox, body.nombre, VARIANTES.includes(body.variante) ? body.variante : VARIANTE_DEFAULT);
+      const url = await renderYSubir(cap, bbox, body.nombre);
       return Response.json({ ok: true, url, bbox });
     }
     if (a === "telegram") {
