@@ -55,9 +55,13 @@ const round = (n) => ({ ...glass, width: n, height: n, borderRadius: n / 2, padd
 // Cámara a pantalla completa, como la de Instagram: la frontal se ve como un espejo (levantás la mano
 // derecha y se mueve la del lado derecho) y la foto sale igual a lo que viste. Se recorta al mismo
 // encuadre de la pantalla, así lo que subís es exactamente lo que estabas viendo.
+// Zoom con dos dedos (o tocando el "1,0×") en las dos cámaras: usa el zoom óptico del celular si el
+// navegador lo deja, y si no, acerca la imagen y recorta la foto igual a lo que ves.
 function Camera({ caption, avatar, onShot, onClose }) {
   const video = useRef(null), frame = useRef(null), stream = useRef(null), fallback = useRef(null);
+  const native = useRef(null), ptrs = useRef(new Map()), pinch = useRef(null);
   const [facing, setFacing] = useState("environment");
+  const [zoom, setZoom] = useState(1);
   const [shot, setShot] = useState(null);
   const [text, setText] = useState(caption || "");
   const [editing, setEditing] = useState(false);
@@ -71,7 +75,11 @@ function Camera({ caption, avatar, onShot, onClose }) {
         stream.current?.getTracks().forEach(t => t.stop());
         const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false });
         if (!alive) { st.getTracks().forEach(t => t.stop()); return; }
-        stream.current = st;
+        stream.current = st; native.current = null; setZoom(1);
+        try {
+          const track = st.getVideoTracks()[0], caps = track.getCapabilities?.(), base = track.getSettings?.().zoom;
+          if (caps?.zoom && base > 0 && caps.zoom.max > base) native.current = { track, base, max: caps.zoom.max / base };
+        } catch {}
         if (video.current) { video.current.srcObject = st; await video.current.play().catch(() => {}); }
         setErr("");
       } catch { if (alive) setErr("nocam"); }
@@ -79,12 +87,22 @@ function Camera({ caption, avatar, onShot, onClose }) {
     return () => { alive = false; };
   }, [facing]);
   useEffect(() => () => stream.current?.getTracks().forEach(t => t.stop()), []);
+  const setZ = (z) => {
+    const n = native.current, max = n ? Math.min(6, n.max) : 4;
+    z = Math.round(Math.max(1, Math.min(max, z)) * 20) / 20;
+    setZoom(z);
+    if (n) n.track.applyConstraints({ advanced: [{ zoom: n.base * z }] }).catch(() => { native.current = null; });
+  };
+  const digital = !native.current; // sin zoom óptico, se agranda la imagen y se recorta la foto
+  const onPD = (e) => { if (shot) return; ptrs.current.set(e.pointerId, [e.clientX, e.clientY]); if (ptrs.current.size === 2) { const [a, b] = [...ptrs.current.values()]; pinch.current = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: zoom }; } };
+  const onPM = (e) => { if (!ptrs.current.has(e.pointerId)) return; ptrs.current.set(e.pointerId, [e.clientX, e.clientY]); if (ptrs.current.size === 2 && pinch.current) { const [a, b] = [...ptrs.current.values()]; setZ(pinch.current.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.current.d); } };
+  const onPU = (e) => { ptrs.current.delete(e.pointerId); if (ptrs.current.size < 2) pinch.current = null; };
   const take = () => {
     const v = video.current, box = frame.current?.getBoundingClientRect(); if (!v?.videoWidth || !box) return;
-    // Parte del video que se ve en pantalla (object-fit: cover).
-    const k = Math.max(box.width / v.videoWidth, box.height / v.videoHeight);
-    const sw = box.width / k, sh = box.height / k, sx = (v.videoWidth - sw) / 2, sy = (v.videoHeight - sh) / 2;
-    const c = document.createElement("canvas"); c.width = Math.round(sw); c.height = Math.round(sh);
+    // Parte del video que se ve en pantalla (object-fit: cover, más el zoom digital si lo hay).
+    const k = Math.max(box.width / v.videoWidth, box.height / v.videoHeight), z = digital ? zoom : 1;
+    const sw = box.width / k / z, sh = box.height / k / z, sx = (v.videoWidth - sw) / 2, sy = (v.videoHeight - sh) / 2;
+    const c = document.createElement("canvas"); c.width = Math.round(box.width / k); c.height = Math.round(box.height / k);
     const ctx = c.getContext("2d");
     if (selfie) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
@@ -93,14 +111,15 @@ function Camera({ caption, avatar, onShot, onClose }) {
   };
   const top = "calc(env(safe-area-inset-top) + 10px)";
   return <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "#000", display: "flex", flexDirection: "column" }}>
-    <div ref={frame} style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: "0 0 22px 22px", background: "#0a0a0a" }}>
+    <div ref={frame} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU} onWheel={e => !shot && setZ(zoom - e.deltaY / 400)} style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: "0 0 22px 22px", background: "#0a0a0a", touchAction: "none" }}>
       {shot ? <img src={shot} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         : err ? <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
-        : <video ref={video} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: selfie ? "scaleX(-1)" : "none" }} />}
+        : <video ref={video} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: `${selfie ? "scaleX(-1) " : ""}scale(${digital ? zoom : 1})`, transition: "transform 80ms" }} />}
       <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: flash ? 0.75 : 0, transition: "opacity 160ms", pointerEvents: "none" }} />
       <input ref={fallback} type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setShot(await shrink(f, 1920, 0.9)); }} />
 
       <button onClick={shot ? () => { setShot(null); setEditing(false); } : onClose} aria-label={shot ? "Descartar foto" : "Cerrar cámara"} style={{ ...round(40), position: "absolute", top, left: 14 }}><Icon d={I.close} size={20} sw={2} /></button>
+      {!shot && !err && <button onClick={() => setZ(zoom > 1.05 ? 1 : 2)} aria-label="Zoom" style={{ ...round(40), position: "absolute", top, left: "50%", transform: "translateX(-50%)", width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600 }}>{zoom.toFixed(1).replace(".", ",")}×</button>}
       {shot && <button onClick={() => setEditing(true)} aria-label="Agregar texto" style={{ ...round(40), position: "absolute", top, right: 14 }}><Icon d={I.text} size={20} sw={2} /></button>}
 
       {shot && (editing

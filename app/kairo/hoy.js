@@ -100,8 +100,7 @@ export default function Hoy({ token, me, fin, go }) {
   const goal = me?.dias_semana || null;
 
   return <>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-      <button onClick={() => go("perfil")} aria-label="Tu perfil" style={{ background: "none", border: "none", padding: 0 }}><Avatar src={me?.avatar} size={44} /></button>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{me?.nombre ? `Hola, ${me.nombre.split(" ")[0]}` : "Hola"}</div>
         <div style={{ fontSize: 13, color: C.sub }}>{d[0].toUpperCase() + d.slice(1)}</div>
@@ -113,7 +112,15 @@ export default function Hoy({ token, me, fin, go }) {
 
     <StoriesBar token={token} me={me} users={social || []} stories={stories} onProfile={(id) => setSheet({ type: "user", id })} />
 
-    {perm === "default" && <button className="k-press" onClick={askPush} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 6, display: "flex", gap: 12, alignItems: "center", padding: 14 }}>
+    {/* Tu día: calorías, proteína y suplementos, pegado a las historias */}
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 4 }}>
+      <DayTile label="Calorías" onClick={() => go("nutricion")} value={day ? r0(day.kcal).toLocaleString("es-AR") : "—"} sub={st?.calorias_dia ? `de ${r0(st.calorias_dia).toLocaleString("es-AR")}` : "sin objetivo"} pct={st?.calorias_dia && day ? day.kcal / st.calorias_dia : 0} color={C.lime} />
+      <DayTile label="Proteína" onClick={() => go("nutricion")} value={day ? `${r0(day.p)} g` : "—"} sub={st?.proteina_g ? `de ${r0(st.proteina_g)} g` : "sin objetivo"} pct={st?.proteina_g && day ? day.p / st.proteina_g : 0} color={C.blue} />
+      <DayTile label="Suplementos" onClick={() => go("nutricion")} value={day ? (day.supps ? `${day.taken}/${day.supps}` : "—") : "—"} sub={day?.supps ? (day.taken === day.supps ? "todos tomados" : `${day.supps - day.taken} pendiente${day.supps - day.taken > 1 ? "s" : ""}`) : "sin cargar"} pct={day?.supps ? day.taken / day.supps : 0} color={C.pos} />
+    </div>
+
+
+    {perm === "default" && <button className="k-press" onClick={askPush} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 10, display: "flex", gap: 12, alignItems: "center", padding: 14 }}>
       <span style={{ width: 36, height: 36, borderRadius: 18, background: "rgba(61,123,255,0.15)", color: C.blue, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon d={I.bell} size={19} /></span>
       <span style={{ flex: 1 }}><span style={{ fontSize: 14.5, fontWeight: 500, display: "block" }}>Activá las notificaciones</span><span style={{ fontSize: 12.5, color: C.sub }}>Para enterarte cuando suben historias y no olvidarte los suplementos.</span></span>
     </button>}
@@ -122,14 +129,6 @@ export default function Hoy({ token, me, fin, go }) {
       <div style={{ fontSize: 15, fontWeight: 500 }}>Completá tu perfil</div>
       <div style={{ fontSize: 13, color: C.sub, marginTop: 3 }}>Tu nombre y tu objetivo: con eso Kairo arma tu plan.</div>
     </button>}
-
-    {/* Tu día */}
-    <SectionTitle>Tu día</SectionTitle>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-      <DayTile label="Calorías" onClick={() => go("nutricion")} value={day ? r0(day.kcal).toLocaleString("es-AR") : "—"} sub={st?.calorias_dia ? `de ${r0(st.calorias_dia).toLocaleString("es-AR")}` : "sin objetivo"} pct={st?.calorias_dia && day ? day.kcal / st.calorias_dia : 0} color={C.lime} />
-      <DayTile label="Proteína" onClick={() => go("nutricion")} value={day ? `${r0(day.p)} g` : "—"} sub={st?.proteina_g ? `de ${r0(st.proteina_g)} g` : "sin objetivo"} pct={st?.proteina_g && day ? day.p / st.proteina_g : 0} color={C.blue} />
-      <DayTile label="Suplementos" onClick={() => go("nutricion")} value={day ? (day.supps ? `${day.taken}/${day.supps}` : "—") : "—"} sub={day?.supps ? (day.taken === day.supps ? "todos tomados" : `${day.supps - day.taken} pendiente${day.supps - day.taken > 1 ? "s" : ""}`) : "sin cargar"} pct={day?.supps ? day.taken / day.supps : 0} color={C.pos} />
-    </div>
 
     {/* Tu semana */}
     <SectionTitle right={<button onClick={() => go("fisico")} style={linkBtn}>Físico</button>}>Tu semana</SectionTitle>
