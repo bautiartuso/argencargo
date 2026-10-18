@@ -16730,7 +16730,7 @@ function AdminDashboard({session,onLogout}){
     ]},
     {section:"Marketing",items:[
       {key:"studio",label:"Content Studio",p:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
-      {key:"historias",label:"Historias",p:["M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8-4.3-4.1 5.9-.9z"]},
+      {key:"historias",label:"Hist. de reseña",p:["M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8-4.3-4.1 5.9-.9z"]},
       {key:"blog",label:"Blog",p:["M4 4h16v16H4z","M8 8h8","M8 12h8","M8 16h5"]},
     ]},
     {section:"Finanzas",items:[
