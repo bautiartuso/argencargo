@@ -11,6 +11,7 @@
 // Todo con service role: bot_messages no tiene policies, así que el cliente nunca la toca.
 
 import { sendWaText, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
+import { igBotConfig, igTexts, igSaveTexts, igStats } from "../../../../lib/ig";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -112,6 +113,12 @@ export async function GET(req) {
   const url = new URL(req.url);
   const phone = digits(url.searchParams.get("phone"));
 
+  // Solapa Bot → Instagram: textos editables, si está conectado y cuántas derivaciones hizo.
+  if (url.searchParams.get("instagram") === "1") {
+    const [cfg, textos, stats] = await Promise.all([igBotConfig(), igTexts(), igStats()]);
+    return Response.json({ ...textos, configured: cfg.ok, source: cfg.source, username: cfg.username || null, app_secret: !!process.env.META_APP_SECRET, verify_token: !!process.env.IG_VERIFY_TOKEN, stats });
+  }
+
   // Globo del menú: cuántas conversaciones tienen mensajes del cliente sin ver.
   if (url.searchParams.get("count") === "1") {
     const r = await sb(`/bot_conversations?select=phone,last_user_at,admin_seen_at&last_user_at=not.is.null`);
@@ -148,6 +155,15 @@ export async function GET(req) {
 export async function POST(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
+
+  // Instagram: guardar los dos textos (JSON, antes del multipart de adjuntos).
+  if ((req.headers.get("content-type") || "").includes("application/json")) {
+    const peek = await req.clone().json().catch(() => null);
+    if (peek?.action === "instagram_settings") {
+      try { await igSaveTexts({ dm_text: peek.dm_text, comment_text: peek.comment_text }); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
+      return Response.json({ ok: true, ...(await igTexts()) });
+    }
+  }
 
   // Adjunto desde el chat (multipart: phone, caption, file).
   if ((req.headers.get("content-type") || "").includes("multipart/form-data")) {

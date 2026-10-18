@@ -153,3 +153,26 @@ panel: tiene que llegar el mail Y el WhatsApp.
 - Recordatorios: cron `app/api/cron/bot-entregas` (cada hora al minuto 30). `?dry=1` simula.
 - Aviso de carga lista: en `/api/notify` (trigger `retiro`), marca `sent_notifications.wa_retiro`.
 - Modo test del agente sin WhatsApp: `POST /api/bot/whatsapp` con `{test:true, from, text}` y `Authorization: Bearer BOT_TEST_SECRET`.
+
+## Instagram → WhatsApp (18/10/2026)
+
+Por Instagram **no se conversa**: cada DM y cada comentario de otra cuenta recibe una sola
+respuesta que manda al WhatsApp (`wa.me/5491125088580`). Webhook: `app/api/bot/instagram/route.js`
+(los pasos de Meta, con detalle, están en el encabezado de ese archivo). Textos editables en
+admin → Bot WhatsApp → **Instagram → WhatsApp**.
+
+Variables en Vercel (Production):
+- `IG_PAGE_TOKEN` — token de página de larga duración (permisos `instagram_manage_messages`,
+  `instagram_manage_comments`, `pages_manage_metadata`, `pages_messaging`, `instagram_basic`).
+- `IG_USER_ID` — id de la cuenta profesional de Instagram (`GET /{page-id}?fields=instagram_business_account`).
+- `IG_VERIFY_TOKEN` — texto inventado, el mismo que se pone en el webhook.
+- `META_APP_SECRET` — App secret de la app (Settings → Basic); valida la firma de cada evento.
+
+En Meta: cuenta IG profesional vinculada a la página de Facebook · Instagram → Mensajes →
+Herramientas conectadas → permitir acceso · misma app del bot de WhatsApp → Add product →
+Instagram · Webhooks → objeto Instagram → `https://www.argencargo.com.ar/api/bot/instagram`,
+campos `messages` y `comments`.
+
+Reglas: un usuario recibe el DM una vez cada 7 días (marcador en Storage `_ig/user/`); cada
+comentario se contesta una sola vez (`_ig/comment/`), en público solo si es de primer nivel.
+Si faltan variables, el webhook responde 200 sin hacer nada y avisa por Telegram una vez.

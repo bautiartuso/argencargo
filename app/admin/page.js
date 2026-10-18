@@ -4680,6 +4680,12 @@ function BotPanel({token}){
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
   const endRef=useRef(null);
   const fileRef=useRef(null);
+  // Instagram (18/10/2026): no conversa, deriva todo a WhatsApp. Acá se editan los dos textos.
+  const IG="__instagram__";
+  const [ig,setIg]=useState(null);           // {dm_text, comment_text, configured, source, username, app_secret, verify_token, stats}
+  const [igSaving,setIgSaving]=useState(false);
+  const loadIg=async()=>{try{setIg(await api("?instagram=1"));}catch(e){toast(e.message,"error");}};
+  const saveIg=async()=>{if(!ig)return;setIgSaving(true);try{const b=await api("",{method:"POST",body:JSON.stringify({action:"instagram_settings",dm_text:ig.dm_text,comment_text:ig.comment_text})});setIg(p=>({...p,dm_text:b.dm_text,comment_text:b.comment_text}));toast("Textos de Instagram guardados","success");}catch(e){toast(e.message,"error");}finally{setIgSaving(false);}};
   // Adjuntar un archivo (PDF, imagen…): sale por el número del bot con el texto escrito como pie.
   const sendFile=async(file)=>{
     if(!file||!sel)return;
@@ -4712,7 +4718,7 @@ function BotPanel({token}){
     else setThread(b);
     setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){if(!incremental)toast(e.message,"error");}};
   useEffect(()=>{loadList();const id=setInterval(()=>{if(!document.hidden)loadList();},30000);return()=>clearInterval(id);},[token]);
-  useEffect(()=>{if(!sel)return;loadThread(sel);let n=0;const id=setInterval(()=>{if(document.hidden)return;n++;loadThread(sel,n%6!==0);},10000);return()=>clearInterval(id);},[sel]);
+  useEffect(()=>{if(sel===IG){loadIg();return;}if(!sel)return;loadThread(sel);let n=0;const id=setInterval(()=>{if(document.hidden)return;n++;loadThread(sel,n%6!==0);},10000);return()=>clearInterval(id);},[sel]);
   useEffect(()=>{endRef.current?.scrollIntoView({block:"end"});},[thread?.messages?.length]);
   const send=async()=>{
     const t=txt.trim();if(!t||!sel)return;
@@ -4747,6 +4753,11 @@ function BotPanel({token}){
           <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{convs.length}</span>
         </div>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente o número" style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:12.5,outline:"none"}}/>
+        <button onClick={()=>setSel(IG)} style={{marginTop:8,width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:9,cursor:"pointer",border:`1px solid ${sel===IG?"rgba(225,48,108,0.5)":"rgba(255,255,255,0.1)"}`,background:sel===IG?"rgba(225,48,108,0.12)":"rgba(255,255,255,0.03)",color:"#fff",fontSize:12.5,fontWeight:700,textAlign:"left"}}>
+          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#e1306c" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#e1306c" stroke="none"/></svg>
+          <span style={{flex:1}}>Instagram → WhatsApp</span>
+          <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:600}}>textos</span>
+        </button>
       </div>
       <div style={{flex:1,overflowY:"auto"}}>
         {lo&&<p style={{padding:14,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
@@ -4766,7 +4777,36 @@ function BotPanel({token}){
     </div>}
     {showThread&&<div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
       {!sel&&<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.35)",fontSize:13}}>Elegí una conversación</div>}
-      {sel&&<>
+      {sel===IG&&<div style={{flex:1,overflowY:"auto",padding:isMobile?"14px":"18px 22px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+          {isMobile&&<button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",padding:0}}>‹</button>}
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>Instagram → WhatsApp</p>
+            <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Por Instagram no se conversa: cada mensaje y cada comentario recibe una sola respuesta que manda al WhatsApp.</p>
+          </div>
+        </div>
+        {!ig&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
+        {ig&&<>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+            {[
+              {ok:ig.configured,t:ig.configured?`Cuenta conectada${ig.username?` · @${ig.username}`:""} (${ig.source==="env"?"variables de Vercel":"la del Estudio"})`:"Sin cuenta: faltan IG_PAGE_TOKEN e IG_USER_ID en Vercel"},
+              {ok:ig.app_secret,t:ig.app_secret?"Firma de Meta validada":"Falta META_APP_SECRET en Vercel"},
+              {ok:ig.verify_token,t:ig.verify_token?"Webhook verificable":"Falta IG_VERIFY_TOKEN en Vercel"},
+            ].map((x,i)=><span key={i} style={{fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:7,background:x.ok?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",color:x.ok?"#4ade80":"#f87171",border:`1px solid ${x.ok?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`}}>{x.ok?"✓":"✕"} {x.t}</span>)}
+          </div>
+          <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Mensaje privado (DM y privado por comentario)</p>
+          <textarea value={ig.dm_text||""} onChange={e=>setIg(p=>({...p,dm_text:e.target.value}))} rows={4} maxLength={900} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",lineHeight:1.45}}/>
+          <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Se manda una sola vez por persona; si vuelve a escribir, recién se le repite pasados 7 días. Tiene que incluir el link del WhatsApp.</p>
+          <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Respuesta pública debajo del comentario</p>
+          <textarea value={ig.comment_text||""} onChange={e=>setIg(p=>({...p,comment_text:e.target.value}))} rows={2} maxLength={300} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",lineHeight:1.45}}/>
+          <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Solo en comentarios de primer nivel de otras cuentas; el autor además recibe el mensaje privado de arriba.</p>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <Btn onClick={saveIg} disabled={igSaving}>{igSaving?"Guardando…":"Guardar textos"}</Btn>
+            <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{Number(ig.stats?.dms||0)+Number(ig.stats?.comentarios||0)>0?`${ig.stats?.dms||0} privados · ${ig.stats?.comentarios||0} respuestas públicas${ig.stats?.last_at?` · última ${fmtHora(ig.stats.last_at)}`:""}`:"Todavía no derivó a nadie."}</span>
+          </div>
+        </>}
+      </div>}
+      {sel&&sel!==IG&&<>
         <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           {isMobile&&<button onClick={()=>{setSel(null);setThread(null);}} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",padding:0}}>‹</button>}
           <div style={{flex:1,minWidth:0}}>
