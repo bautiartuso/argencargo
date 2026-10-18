@@ -66,7 +66,10 @@ export async function POST(req) {
 
   if (action === "view" && story_id) {
     const [st] = arr(await sb(`/rest/v1/kairo_stories?id=eq.${story_id}&select=user_id`));
-    if (st && st.user_id !== me.id) await sb(`/rest/v1/kairo_story_views?on_conflict=story_id,viewer_id`, { method: "POST", body: JSON.stringify({ story_id, viewer_id: me.id }), headers: { Prefer: "resolution=ignore-duplicates,return=minimal" } }).catch(() => {});
+    if (st && st.user_id !== me.id) {
+      const r = await sb(`/rest/v1/kairo_story_views?on_conflict=story_id,viewer_id`, { method: "POST", body: JSON.stringify({ story_id, viewer_id: me.id }), headers: { Prefer: "resolution=ignore-duplicates,return=minimal" } }).catch(e => ({ message: String(e) }));
+      if (r && (r.code || r.message)) { console.error("[kairo story view]", r); return Response.json({ ok: false, error: r.message || r.code }); }
+    }
     return Response.json({ ok: true });
   }
 
