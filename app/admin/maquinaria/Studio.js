@@ -32,19 +32,30 @@ function proximoHueco(tipo, piezas) {
 export function Studio({ token }) {
   const [tab, setTab] = useState("calendario");
   const [hist, setHist] = useState([]); const [pubs, setPubs] = useState([]); const [piezas, setPiezas] = useState([]); const [ig, setIg] = useState(null);
-  const [cargando, setCargando] = useState(true); const [armando, setArmando] = useState(false); const [ocupado, setOcupado] = useState("");
+  const [cargando, setCargando] = useState(true); const [armando, setArmando] = useState(""); const [ocupado, setOcupado] = useState("");
   const [detalle, setDetalle] = useState(null); // pieza abierta en el panel lateral
   const api = async (method, body, query = "") => { const r = await fetch(`/api/argenmaq/studio${query}`, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: body ? JSON.stringify(body) : undefined }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `Error ${r.status}`); return d; };
   const marcar = (l, tipo) => l.map((c, i) => ({ ...c, _k: `${tipo}${i}-${Date.now()}` }));
-  const cargar = async (forzar = false) => {
-    if (forzar) setArmando(true); else setCargando(true);
-    try {
-      const [c, p] = await Promise.all([api("GET", null, `?accion=candidatos${forzar ? "&forzar=1" : ""}`), api("GET", null, "?accion=piezas")]);
-      setHist(marcar(c.historias || [], "h")); setPubs(marcar(c.publicaciones || [], "p")); setIg(c.ig || null); setPiezas(p.piezas || []);
-    } catch (e) { toast(e.message, "error"); }
-    setCargando(false); setArmando(false);
+  const cargar = async () => {
+    setCargando(true);
+    try { const [e, p] = await Promise.all([api("GET", null, "?accion=estado"), api("GET", null, "?accion=piezas")]); setIg(e.ig || null); setPiezas(p.piezas || []); }
+    catch (e) { toast(e.message, "error"); }
+    setCargando(false);
   };
   useEffect(() => { cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // El runner: arma N historias o N publicaciones, evitando las máquinas que ya están propuestas en pantalla.
+  const crear = async (tipo, n) => {
+    setArmando(tipo);
+    try {
+      const excluir = [...hist, ...pubs].map((c) => c.maquina_id).filter(Boolean).join(",");
+      const d = await api("GET", null, `?accion=candidatos&${tipo === "historia" ? "h" : "p"}=${n}&excluir=${excluir}`);
+      const nuevas = marcar(tipo === "historia" ? d.historias || [] : d.publicaciones || [], tipo[0]);
+      if (!nuevas.length) toast("No quedan datos para armar más piezas distintas hoy.", "warn");
+      (tipo === "historia" ? setHist : setPubs)((l) => [...nuevas, ...l]);
+    } catch (e) { toast(e.message, "error"); }
+    setArmando("");
+  };
+  const quitar = (c) => (c.tipo === "historia" ? setHist : setPubs)((l) => l.filter((x) => x._k !== c._k));
 
   const reemplazar = (p) => { setPiezas((l) => l.some((x) => x.id === p.id) ? l.map((x) => x.id === p.id ? p : x) : [p, ...l]); setDetalle((d) => d && d.id === p.id ? p : d); };
   const guardar = async (c, programada_at = null) => {
@@ -82,19 +93,15 @@ export function Studio({ token }) {
   return <>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginBottom: 18 }}>
       <Dato l="Programadas" v={programadas.length} sub={programadas[0] ? `próxima ${fmtHora(programadas.sort((a, b) => a.programada_at.localeCompare(b.programada_at))[0].programada_at)}` : "nada en agenda"} acento />
-      <Dato l="Listas para programar" v={listas.length} sub={hist.length + pubs.length ? `${hist.length} historias y ${pubs.length} publicaciones para armar hoy` : "sin propuestas hoy"} />
+      <Dato l="En la cola sin fecha" v={listas.length} sub={hist.length + pubs.length ? `${hist.length} historias y ${pubs.length} publicaciones propuestas, sin guardar` : "armá propuestas desde Historias o Publicaciones"} />
       <Dato l="Publicadas · 30 días" v={publicadas30.length} sub={`${publicadas30.filter((p) => p.tipo === "historia").length} historias · ${publicadas30.filter((p) => p.tipo !== "historia").length} en el perfil`} />
       <Dato l="Instagram" v={ig ? `@${ig.username || "argenmac_"}` : "Sin conectar"} sub={ig ? (errores.length ? `${errores.length} con error` : "publicación automática activa") : "las piezas se descargan y suben a mano"} color={ig ? OK : WARN} />
     </div>
-    <Barra>
-      <div style={{ flex: 1 }} />
-      <Btn onClick={() => cargar(true)} disabled={armando || cargando}>{armando ? "Armando propuestas nuevas…" : "Armar propuestas nuevas"}</Btn>
-    </Barra>
     <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["cola", "Cola", activas.filter((p) => p.estado !== "publicada").length], ["ig", ig ? `Instagram · @${ig.username || "argenmac_"}` : "Instagram · sin conectar"]]} />
 
     {tab === "calendario" && <Calendario piezas={activas} listas={listas} {...ctx} />}
-    {tab === "historias" && (cargando ? <p style={{ color: GRIS }}>Armando las historias de hoy…</p> : <Propuestas lista={hist} tipo="historia" piezas={piezas} ocupado={ocupado} onGuardar={guardar} onCambiar={(k, patch) => setHist((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} vacio="No hay historias para armar hoy. Cargá máquinas con foto y precio en el catálogo, o tocá “Armar propuestas nuevas”." sub="Duran 24 horas: llevan precio final y dos cuotas, nunca fecha de llegada. Cada historia con máquina lleva el link de la ficha para el sticker." />)}
-    {tab === "publicaciones" && (cargando ? <p style={{ color: GRIS }}>Armando las publicaciones de hoy…</p> : <Propuestas lista={pubs} tipo="post" piezas={piezas} ocupado={ocupado} onGuardar={guardar} onCambiar={(k, patch) => setPubs((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} vacio="No hay publicaciones para armar hoy." sub="Quedan en el perfil: sin precio, invitan a consultar. Los carruseles salen como una sola publicación con varias placas." />)}
+    {tab === "historias" && <Propuestas lista={hist} tipo="historia" piezas={piezas} ocupado={ocupado} creando={armando === "historia"} onCrear={(n) => crear("historia", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setHist((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="historias" sub="Duran 24 horas: llevan precio final y dos cuotas, nunca fecha de llegada. Cada historia con máquina lleva el link de la ficha para el sticker. Se alternan los formatos: máquina del día, ¿cuál elegís?, nueva en el catálogo, ¿cuánto sale?, un dato de cómo trabajamos, pedidos reales." />}
+    {tab === "publicaciones" && <Propuestas lista={pubs} tipo="post" piezas={piezas} ocupado={ocupado} creando={armando === "post"} onCrear={(n) => crear("post", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setPubs((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="publicaciones y carruseles" sub="Quedan en el perfil: sin precio, invitan a consultar. Se alternan ficha, carrusel de ficha (3 placas), 3 máquinas por rubro y carrusel por rubro (una placa por máquina)." />}
     {tab === "cola" && <Cola piezas={piezas} {...ctx} />}
     {tab === "ig" && <Instagram ig={ig} api={api} onCambio={(v) => setIg(v)} />}
 
@@ -103,16 +110,26 @@ export function Studio({ token }) {
 }
 
 // ── Propuestas del día (historias o publicaciones) ───────────────────────────
-function Propuestas({ lista, tipo, piezas, ocupado, onGuardar, onCambiar, vacio, sub }) {
-  if (!lista.length) return <Vacio>{vacio}</Vacio>;
+function Propuestas({ lista, tipo, piezas, ocupado, creando, onCrear, onQuitar, onGuardar, onCambiar, titulo, sub }) {
+  const [n, setN] = useState(tipo === "historia" ? 3 : 2); const max = tipo === "historia" ? 10 : 6;
   return <>
-    <p style={{ margin: "-4px 0 16px", fontSize: 13, color: GRIS }}>{sub}</p>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
-      {lista.map((c) => <Propuesta key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco(c.tipo, piezas)} onGuardar={onGuardar} onCambiar={(patch) => onCambiar(c._k, patch)} />)}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: CARD, border: `1px solid ${BORDE}`, borderRadius: 16, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 240 }}><b style={{ fontSize: 14 }}>Armar {titulo}</b><p style={{ margin: "4px 0 0", fontSize: 12.5, color: GRIS, lineHeight: 1.45 }}>{sub}</p></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Btn small onClick={() => setN((x) => Math.max(1, x - 1))} disabled={creando}>−</Btn>
+        <span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 800, minWidth: 34, textAlign: "center" }}>{n}</span>
+        <Btn small onClick={() => setN((x) => Math.min(max, x + 1))} disabled={creando}>+</Btn>
+        <Btn kind="lima" onClick={() => onCrear(n)} disabled={creando} style={{ marginLeft: 6 }}>{creando ? "Armando…" : `Crear ${n}`}</Btn>
+      </div>
     </div>
+    {creando && <p style={{ margin: "0 0 14px", fontSize: 13, color: GRIS }}>Eligiendo máquinas, dibujando las placas y redactando los textos. Tarda unos segundos.</p>}
+    {!lista.length && !creando ? <Vacio>Todavía no armaste {titulo}. Elegí cuántas querés y tocá “Crear”.</Vacio>
+      : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
+        {lista.map((c) => <Propuesta key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco(c.tipo, piezas)} onGuardar={onGuardar} onQuitar={() => onQuitar(c)} onCambiar={(patch) => onCambiar(c._k, patch)} />)}
+      </div>}
   </>;
 }
-function Propuesta({ c, ocupado, sugerido, onGuardar, onCambiar }) {
+function Propuesta({ c, ocupado, sugerido, onGuardar, onQuitar, onCambiar }) {
   const slides = c.datos?.slides || []; const [i, setI] = useState(0); const [prog, setProg] = useState(false); const [cuando, setCuando] = useState(aLocal(sugerido));
   const t = TIPO[c.tipo] || TIPO.post;
   return <div style={{ background: CARD, border: `1px solid ${BORDE}`, borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column" }}>
@@ -128,14 +145,18 @@ function Propuesta({ c, ocupado, sugerido, onGuardar, onCambiar }) {
         <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }}>Programar</Btn>
         <Btn onClick={() => onGuardar(c)} disabled={ocupado}>{ocupado ? "Guardando…" : "A la cola"}</Btn>
         <a href={urlImagen(slides[i] || slides[0])} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><Btn title="Ver grande">⤢</Btn></a>
+        <Btn onClick={onQuitar} title="Quitar esta propuesta">×</Btn>
       </div>}
     </div>
   </div>;
 }
 function Previa({ slides, tipo, i, setI, etiquetas, imagenes }) {
   const src = imagenes ? imagenes[i] || imagenes[0] : urlImagen(slides[i] || slides[0]); const n = imagenes ? imagenes.length : slides.length;
+  const [lista, setLista] = useState(false); useEffect(() => { setLista(false); }, [src]);
   return <div style={{ position: "relative", background: SUAVE }}>
-    <img src={src} alt="" style={{ width: "100%", aspectRatio: `1080/${alto(tipo)}`, objectFit: "cover", display: "block" }} loading="lazy" />
+    {!lista && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: GRIS, fontSize: 12, fontFamily: MONO, background: `linear-gradient(110deg, ${SUAVE} 40%, ${CARD} 50%, ${SUAVE} 60%)`, backgroundSize: "200% 100%", animation: "mqShimmer 1.4s linear infinite" }}>Dibujando…</div>}
+    <style>{`@keyframes mqShimmer{to{background-position:-200% 0}}`}</style>
+    <img src={src} alt="" onLoad={() => setLista(true)} style={{ width: "100%", aspectRatio: `1080/${alto(tipo)}`, objectFit: "cover", display: "block", opacity: lista ? 1 : 0, transition: "opacity .25s" }} loading="lazy" />
     <span style={{ position: "absolute", top: 10, left: 10, display: "flex", gap: 6 }}>{etiquetas}</span>
     {n > 1 && <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5 }}>{Array.from({ length: n }).map((_, k) => <button key={k} onClick={() => setI(k)} style={{ width: k === i ? 22 : 8, height: 8, borderRadius: 999, border: "none", background: k === i ? LIMA : "rgba(255,255,255,0.8)", cursor: "pointer", padding: 0, transition: "width .15s" }} aria-label={`Placa ${k + 1}`} />)}</div>}
   </div>;
@@ -156,20 +177,29 @@ function Calendario({ piezas, listas, ig, ocupado, programar, abrir }) {
         {celdas.map((d, k) => {
           if (!d) return <div key={k} />;
           const key = claveDia(d); const l = porDia[key] || []; const pasado = key < hoyK; const sel = key === diaSel;
-          return <button key={k} type="button" onClick={() => setDiaSel(key)} style={{ textAlign: "left", minHeight: 96, padding: 8, borderRadius: 12, border: `1px solid ${sel ? LIMA : BORDE}`, background: sel ? LIMA_SUAVE : key === hoyK ? SUAVE : CARD, cursor: "pointer", opacity: pasado && !l.length ? 0.5 : 1, display: "flex", flexDirection: "column", gap: 4 }}>
+          return <button key={k} type="button" onClick={() => setDiaSel(key)} style={{ textAlign: "left", minHeight: 118, padding: 7, borderRadius: 12, border: `1px solid ${sel ? LIMA : BORDE}`, background: sel ? LIMA_SUAVE : key === hoyK ? SUAVE : CARD, cursor: "pointer", opacity: pasado && !l.length ? 0.5 : 1, display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: key === hoyK ? 800 : 600, color: key === hoyK ? INK : GRIS }}>{d.getDate()}</span>
-            {l.slice(0, 3).map((p) => <Ficha key={p.id} p={p} />)}
-            {l.length > 3 && <span style={{ fontSize: 11, color: GRIS }}>+{l.length - 3} más</span>}
+            {l.slice(0, 2).map((p) => <Ficha key={p.id} p={p} />)}
+            {l.length > 2 && <span style={{ fontSize: 11, color: GRIS }}>+{l.length - 2} más</span>}
           </button>;
         })}
       </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 14, fontSize: 12, color: GRIS, flexWrap: "wrap" }}><Leyenda c={LIMA} l="Programada" /><Leyenda c={OK} l="Publicada" /><Leyenda c={BAD} l="Error" /><span style={{ fontFamily: MONO }}>H historia · P publicación · C carrusel</span></div>
+      <div style={{ display: "flex", gap: 14, marginTop: 14, fontSize: 12, color: GRIS, flexWrap: "wrap", alignItems: "center" }}><Leyenda c={LIMA} l="Historia" /><Leyenda c={SUAVE} l="Publicación" borde /><Leyenda c={SUAVE} l="Carrusel (doble borde)" borde doble /><span style={{ width: 1, height: 14, background: BORDE }} /><Leyenda c={OK} l="punto verde: publicada" punto /><Leyenda c={BAD} l="punto rojo: error" punto /></div>
     </Sec>
     <Dia key={diaSel} dia={diaSel} lista={porDia[diaSel] || []} listas={listas} ig={ig} ocupado={ocupado} programar={programar} abrir={abrir} />
   </div>;
 }
-const Leyenda = ({ c, l }) => <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: c, display: "inline-block" }} />{l}</span>;
-const Ficha = ({ p }) => { const e = ESTADO[p.estado] || ESTADO.aprobada; const t = TIPO[p.tipo] || TIPO.post; const bg = p.estado === "programada" ? LIMA : p.estado === "publicada" ? OK : p.estado === "error" ? BAD : SUAVE; return <span title={p.titulo} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, lineHeight: 1.2, minWidth: 0 }}><span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 800, width: 16, height: 16, borderRadius: 4, background: bg, color: p.estado === "programada" ? "#15171A" : "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none" }}>{t.letra}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: e.c === GRIS ? GRIS : INK }}>{soloHora(p.programada_at || p.publicada_at)} {p.titulo}</span></span>; };
+const Leyenda = ({ c, l, borde, doble, punto }) => <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: punto ? 8 : 14, height: punto ? 8 : 12, borderRadius: punto ? 999 : 3, background: c, display: "inline-block", border: borde ? `1px solid ${BORDE}` : "none", boxShadow: doble ? `2px 2px 0 ${BORDE}` : "none" }} />{l}</span>;
+// Cada pieza en el calendario: color por formato (historia amarilla, publicación gris, carrusel gris con doble borde),
+// y el estado con un punto (verde publicada, rojo error).
+const Ficha = ({ p }) => {
+  const esH = p.tipo === "historia", esC = p.tipo === "carrusel";
+  const estado = p.estado === "publicada" ? OK : p.estado === "error" ? BAD : null;
+  return <span title={`${TIPO[p.tipo]?.l || ""} · ${p.titulo}`} style={{ display: "flex", flexDirection: "column", gap: 1, padding: "4px 7px", borderRadius: 7, background: esH ? LIMA : SUAVE, color: esH ? "#15171A" : INK, border: `1px solid ${esH ? LIMA : BORDE}`, boxShadow: esC ? `2px 2px 0 ${BORDE}` : "none", minWidth: 0, opacity: p.estado === "publicada" ? 0.85 : 1 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>{estado && <span style={{ width: 7, height: 7, borderRadius: 999, background: estado, flex: "none" }} />}{soloHora(p.programada_at || p.publicada_at)} · {esH ? "Historia" : esC ? "Carrusel" : "Post"}</span>
+    <span style={{ fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo.replace(/^[^·]+·\s*/, "")}</span>
+  </span>;
+};
 
 function Dia({ dia, lista, listas, ig, ocupado, programar, abrir }) {
   const [sel, setSel] = useState(listas[0]?.id || ""); const [hora, setHora] = useState("12:00");
@@ -185,7 +215,7 @@ function Dia({ dia, lista, listas, ig, ocupado, programar, abrir }) {
     {!pasado && <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 14, display: "grid", gap: 10 }}>
       <b style={{ fontSize: 13 }}>Programar este día</b>
       {listas.length === 0 ? <p style={{ margin: 0, fontSize: 12.5, color: GRIS }}>No hay piezas en la cola. Armá una desde Historias o Publicaciones y mandala “A la cola”.</p> : <>
-        <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: 11, border: `1px solid ${BORDE}`, background: CARD, color: INK, fontSize: 13, fontWeight: 600 }}>{listas.map((p) => <option key={p.id} value={p.id}>{TIPO[p.tipo]?.letra} · {p.titulo}</option>)}</select>
+        <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: 11, border: `1px solid ${BORDE}`, background: CARD, color: INK, fontSize: 13, fontWeight: 600 }}>{listas.map((p) => <option key={p.id} value={p.id}>{TIPO[p.tipo]?.l} · {p.titulo}</option>)}</select>
         <div style={{ display: "flex", gap: 8 }}><Inp type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ width: 130 }} /><Btn kind="lima" onClick={confirmar} disabled={!elegida || ocupado.startsWith("programar")} style={{ flex: 1 }}>Programar</Btn></div>
         {!ig && <p style={{ margin: 0, fontSize: 12, color: WARN }}>Instagram no está conectado: lo programado no va a salir solo hasta que lo conectes.</p>}
       </>}

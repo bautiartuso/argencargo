@@ -4,7 +4,7 @@
 //   2. Los cinco pasos al estilo Shippar: sección amarilla que ocupa la pantalla mientras se desliza,
 //      tarjeta oscura con el paso a la izquierda y un gráfico animado a la derecha, y la línea abajo.
 //   3. Catálogo de maquinaria: 10 máquinas y al final "Ver catálogo completo".
-//   4. Por qué ARGENMAQ: tarjetas animadas (Argencargo, precio final, dos cuotas, 220 V, seguimiento, respaldo).
+//   4. Por qué ARGENMAQ: tarjetas animadas (precio final, dos cuotas, repuestos, seguimiento, respaldo).
 //   5. ¿No encontrás la máquina que buscás?
 import { useEffect, useRef, useState } from "react";
 import { useAM, Marco, MONO, WA, Ico, primeraFoto, precioVidriera, diasVia } from "./kit";
@@ -16,7 +16,7 @@ const K = "#15171A";
 // ── Gráficos con movimiento de las tarjetas de "Por qué ARGENMAQ" ─────────────────────────
 const Barras = () => <svg className="anim" viewBox="0 0 400 200" preserveAspectRatio="none" aria-hidden="true">{[40, 90, 140, 190, 240, 290, 340].map((x, i) => <rect key={x} x={x} y={30} width="26" height="150" rx="4" fill={i === 5 ? Y : "rgba(255,255,255,0.16)"} style={{ transformOrigin: "50% 180px", transformBox: "fill-box", animation: `subir 1.8s ${i * 0.15}s ease-out infinite alternate` }} />)}<line x1="30" y1="180" x2="380" y2="180" stroke="rgba(255,255,255,0.3)" /></svg>;
 const DosCuotas = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><g transform="translate(40 70)"><rect width="320" height="34" rx="17" fill="rgba(255,255,255,0.12)" /><rect width="320" height="34" rx="17" fill={Y} style={{ transformOrigin: "0 0", transformBox: "fill-box", animation: "llenarDos 4s ease-in-out infinite" }} /><text x="12" y="62" fontFamily={MONO} fontSize="11" letterSpacing="2" fill={Y}>1 · ANTICIPO</text><text x="308" y="62" textAnchor="end" fontFamily={MONO} fontSize="11" letterSpacing="2" fill="rgba(255,255,255,0.6)">2 · AL RECIBIR</text><line x1="190" y1="-8" x2="190" y2="42" stroke="rgba(255,255,255,0.5)" strokeDasharray="3 4" /></g></svg>;
-const Enchufe = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><g transform="translate(200 100)"><circle r="66" fill="none" stroke="rgba(128,128,128,0.18)" strokeWidth="13" /><circle r="66" fill="none" stroke={Y} strokeWidth="13" strokeDasharray="110 310" strokeLinecap="round" style={{ transformBox: "fill-box", transformOrigin: "center", animation: "girar 3s linear infinite" }} /><text textAnchor="middle" y="9" fontFamily={MONO} fontSize="25" fontWeight="600" fill="currentColor">220 V</text></g></svg>;
+const Engranaje = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><g transform="translate(200 100)"><g className="gira"><circle r="58" fill="none" stroke="var(--y)" strokeWidth="14" strokeDasharray="22 14" /><circle r="34" fill="none" stroke="rgba(128,128,128,0.35)" strokeWidth="10" /><circle r="10" fill="var(--y)" /></g><g transform="translate(96 -40)" className="giraInv"><circle r="30" fill="none" stroke="rgba(128,128,128,0.35)" strokeWidth="9" strokeDasharray="12 9" /><circle r="6" fill="var(--y)" /></g></g></svg>;
 const Seguimiento = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><line x1="40" y1="100" x2="360" y2="100" stroke="rgba(255,255,255,0.22)" strokeWidth="2" /><line x1="40" y1="100" x2="360" y2="100" stroke={Y} strokeWidth="2" style={{ strokeDasharray: 320, animation: "trazo 5s ease-in-out infinite" }} />{[40, 120, 200, 280, 360].map((x, i) => <g key={x}><circle cx={x} cy="100" r="9" fill={K} stroke={Y} strokeWidth="2" style={{ animation: `tick 5s ${i * 0.8}s infinite` }} /><circle cx={x} cy="100" r="4" fill={Y} style={{ animation: `tick 5s ${i * 0.8}s infinite` }} /></g>)}</svg>;
 const Respaldo = () => <svg className="anim" viewBox="0 0 400 200" aria-hidden="true"><g transform="translate(110 14)"><rect width="180" height="150" rx="14" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.2)" />{[0, 1, 2].map((i) => <g key={i} transform={`translate(22 ${26 + i * 40})`}><rect width="20" height="20" rx="6" fill="none" stroke={Y} /><path d="M5 10l4 4 7-8" fill="none" stroke={Y} strokeWidth="2.2" style={{ animation: `tick 2.4s ${i * 0.5}s infinite` }} /><rect x="34" y="5" width="100" height="10" rx="5" fill="rgba(255,255,255,0.22)" /></g>)}</g></svg>;
 
@@ -52,7 +52,7 @@ export function VisualPaso({ i, x, fotos }) {
     <div className="vpFila ok"><Ico d={TILDE} size={15} />{v.filas[0]}</div>
     <div className="vpFila ok"><Ico d={TILDE} size={15} />{v.filas[1]}</div>
     <div className="vpFila curso"><i className="punto" />{v.filas[2]}<em>{v.enCurso}</em></div>
-    <div className="vp220"><b>220 V</b><span>{v.lista}</span></div>
+    <div className="vp220"><Ico d={TILDE} size={20} /><span>{v.lista}</span></div>
   </div>;
 }
 
@@ -169,8 +169,9 @@ export const CSS_VP = `
 .amq .vpRuta b{font-size:16px}
 .amq .vpRuta .linea{position:relative;height:2px;background:repeating-linear-gradient(90deg,#5B6066 0 6px,transparent 6px 12px)}
 .amq .vpRuta .linea i{position:absolute;top:-5px;left:0;width:12px;height:12px;border-radius:50%;background:var(--y);box-shadow:0 0 0 5px rgba(255,210,0,0.2);animation:hBarco 3.2s ease-in-out infinite alternate}
-.amq .vp220{display:flex;align-items:center;justify-content:space-between;padding:18px;border-radius:14px;border:1px dashed rgba(255,210,0,0.5)}
-.amq .vp220 b{font-family:${MONO};font-size:28px;color:var(--y)}
+.amq .vp220{display:flex;align-items:center;gap:12px;padding:18px;border-radius:14px;border:1px dashed rgba(255,210,0,0.5)}
+.amq .vp220 svg{color:var(--y);flex:none}
+.amq .gira{animation:girar 9s linear infinite;transform-origin:center}.amq .giraInv{animation:girar 6s linear infinite reverse;transform-origin:center}@keyframes girar{to{transform:rotate(360deg)}}
 .amq .vp220 span{font-size:14px;color:#E4E6E8;font-weight:700}
 @keyframes hFila{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
 @keyframes hLlena{from{transform:scaleX(0)}to{transform:scaleX(1)}}
@@ -339,7 +340,7 @@ export const TXT_LANDING = {
     catT: "Catálogo de productos", catS: "Precio final puesto en nuestro depósito de CABA.", verTodo: "Ver catálogo completo",
     porQue: "Por qué ARGENMAQ",
     arg: { k: "PARTE DEL GRUPO ARGENCARGO", t: "Detrás de ARGENMAQ está Argencargo.", p: "Argencargo es una empresa de logística internacional y despacho de aduana con base en Buenos Aires: coordina el flete, el seguro y la aduana de cada importación. ARGENMAQ es su división de maquinaria, así que tu máquina viaja con un equipo que se dedica a esto.", ops: "Ya son más de {n} operaciones.", b1: "Conocer Argencargo", b2: "Quiénes somos" },
-    b: { precio: ["Precio final", "PUESTO EN CABA", "Máquina, flete y aduana en un solo número."], dos: ["Pagás en dos cuotas", "ANTICIPO + SALDO", "La segunda cuota, cuando llega."], v220: ["Lista para usar", "220 V · 50 HZ", "Todas se importan a 220 V. Llegan listas para usar."], seg: ["Seguimiento", "PRODUCCIÓN → EMBARQUE → ADUANA → ENTREGA", "Sabés dónde está tu máquina."], resp: ["Respaldo", "ARGENMAQ SIEMPRE PRESENTE", "Si algo pasa, hablás con nosotros, no con la fábrica."] },
+    b: { precio: ["Precio final", "PUESTO EN CABA", "Máquina, flete y aduana en un solo número."], dos: ["Pagás en dos cuotas", "ANTICIPO + SALDO", "La segunda cuota, cuando llega."], v220: ["Repuestos", "TAMBIÉN LOS TRAEMOS", "Si se rompe una pieza, la conseguimos en la misma fábrica."], seg: ["Seguimiento", "PRODUCCIÓN → EMBARQUE → ADUANA → ENTREGA", "Sabés dónde está tu máquina."], resp: ["Respaldo", "ARGENMAQ SIEMPRE PRESENTE", "Si algo pasa, hablás con nosotros, no con la fábrica."] },
     buscaT: ["¿No encontrás la máquina", "que buscás?"], buscaP: "Te la conseguimos. Contanos qué necesitás y te pasamos el precio final puesta en Argentina.",
     buscaB: "Pedila por WhatsApp", buscaWa: "Hola ARGENMAQ, estoy buscando una máquina que no está en el catálogo", rep: "¿Buscás un repuesto?",
   },
@@ -366,7 +367,7 @@ export const TXT_LANDING = {
     catT: "Product catalog", catS: "Final price delivered to our Buenos Aires warehouse.", verTodo: "See full catalog",
     porQue: "Why ARGENMAQ",
     arg: { k: "PART OF THE ARGENCARGO GROUP", t: "Argencargo is behind ARGENMAQ.", p: "Argencargo is an international freight forwarding and customs brokerage company based in Buenos Aires: it handles freight, insurance and customs for every import. ARGENMAQ is its machinery division, so your machine travels with a team that does this for a living.", ops: "Over {n} operations so far.", b1: "About Argencargo", b2: "About us" },
-    b: { precio: ["Final price", "LANDED IN BUENOS AIRES", "Machine, freight and customs in one number."], dos: ["Two instalments", "DEPOSIT + BALANCE", "The second one, when it arrives."], v220: ["Ready to use", "220 V · 50 HZ", "Every machine is imported at 220 V. Ready to use."], seg: ["Tracking", "PRODUCTION → SHIPPING → CUSTOMS → DELIVERY", "You know where your machine is."], resp: ["Backing", "ARGENMAQ ALWAYS THERE", "If anything happens, you talk to us, not the factory."] },
+    b: { precio: ["Final price", "LANDED IN BUENOS AIRES", "Machine, freight and customs in one number."], dos: ["Two instalments", "DEPOSIT + BALANCE", "The second one, when it arrives."], v220: ["Spare parts", "WE BRING THOSE TOO", "If a part breaks, we source it from the same factory."], seg: ["Tracking", "PRODUCTION → SHIPPING → CUSTOMS → DELIVERY", "You know where your machine is."], resp: ["Backing", "ARGENMAQ ALWAYS THERE", "If anything happens, you talk to us, not the factory."] },
     buscaT: ["Can't find the machine", "you need?"], buscaP: "We'll source it. Tell us what you need and we'll send you the final landed price in Argentina.",
     buscaB: "Ask on WhatsApp", buscaWa: "Hi ARGENMAQ, I'm looking for a machine that isn't in the catalog", rep: "Looking for a spare part?",
   },
@@ -393,7 +394,7 @@ export const TXT_LANDING = {
     catT: "Каталог товаров", catS: "Итоговая цена с доставкой на наш склад в Буэнос-Айресе.", verTodo: "Весь каталог",
     porQue: "Почему ARGENMAQ",
     arg: { k: "ЧАСТЬ ГРУППЫ ARGENCARGO", t: "За ARGENMAQ стоит Argencargo.", p: "Argencargo — компания международной логистики и таможенного оформления из Буэнос-Айреса: фрахт, страховка и таможня для каждого импорта. ARGENMAQ — её подразделение по оборудованию.", ops: "Уже более {n} операций.", b1: "Об Argencargo", b2: "О нас" },
-    b: { precio: ["Итоговая цена", "НА СКЛАДЕ В БУЭНОС-АЙРЕСЕ", "Машина, фрахт и таможня — одна цифра."], dos: ["Два платежа", "АВАНС + ОСТАТОК", "Второй — по прибытии."], v220: ["Готова к работе", "220 В · 50 ГЦ", "Все машины — на 220 В."], seg: ["Отслеживание", "ПРОИЗВОДСТВО → ОТГРУЗКА → ТАМОЖНЯ → ДОСТАВКА", "Вы знаете, где ваша машина."], resp: ["Поддержка", "ARGENMAQ ВСЕГДА РЯДОМ", "Если что-то случится, вы говорите с нами, а не с заводом."] },
+    b: { precio: ["Итоговая цена", "НА СКЛАДЕ В БУЭНОС-АЙРЕСЕ", "Машина, фрахт и таможня — одна цифра."], dos: ["Два платежа", "АВАНС + ОСТАТОК", "Второй — по прибытии."], v220: ["Запчасти", "ПРИВОЗИМ И ИХ", "Если деталь сломается, достанем её на том же заводе."], seg: ["Отслеживание", "ПРОИЗВОДСТВО → ОТГРУЗКА → ТАМОЖНЯ → ДОСТАВКА", "Вы знаете, где ваша машина."], resp: ["Поддержка", "ARGENMAQ ВСЕГДА РЯДОМ", "Если что-то случится, вы говорите с нами, а не с заводом."] },
     buscaT: ["Не нашли нужную", "машину?"], buscaP: "Найдём. Расскажите, что нужно, и мы назовём итоговую цену с доставкой в Аргентину.",
     buscaB: "Написать в WhatsApp", buscaWa: "Здравствуйте, ARGENMAQ! Ищу машину, которой нет в каталоге", rep: "Ищете запчасть?",
   },
@@ -431,7 +432,7 @@ export default function Landing({ destacadas, total, diasVia, ops }) {
       <div className="bento">
         <div className="bc ancha"><Barras /><span className="tag2">{b.precio[0]}</span><div className="lug">{b.precio[1]}</div><h3>{b.precio[2]}</h3></div>
         <div className="bc"><DosCuotas /><span className="tag2">{b.dos[0]}</span><div className="lug">{b.dos[1]}</div><h3>{b.dos[2]}</h3></div>
-        <div className="bc clara"><Enchufe /><span className="tag2">{b.v220[0]}</span><div className="lug" style={{ opacity: 0.7 }}>{b.v220[1]}</div><h3>{b.v220[2]}</h3></div>
+        <div className="bc clara"><Engranaje /><span className="tag2">{b.v220[0]}</span><div className="lug" style={{ opacity: 0.7 }}>{b.v220[1]}</div><h3>{b.v220[2]}</h3></div>
         <div className="bc"><Seguimiento /><span className="tag2">{b.seg[0]}</span><div className="lug">{b.seg[1]}</div><h3>{b.seg[2]}</h3></div>
         <div className="bc"><Respaldo /><span className="tag2">{b.resp[0]}</span><div className="lug">{b.resp[1]}</div><h3>{b.resp[2]}</h3></div>
       </div>

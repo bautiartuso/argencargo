@@ -125,7 +125,7 @@ const Ficha = ({ d, o }) => <div style={{ display: "flex", flexDirection: "colum
     {d.medidas?.[0] && <Spec l="MEDIDAS" v={d.medidas[0]} />}
     {d.medidas?.[1] && <Spec l="PESO" v={d.medidas[1]} />}
     {d.garantia && <Spec l="GARANTÍA" v={`${d.garantia} meses`} />}
-    <Spec l="TENSIÓN" v="220 V · 50 Hz" />
+    <Spec l="ORIGEN" v="Fábrica en China" />
   </div>
   <div style={{ display: "flex", marginTop: "auto", alignItems: "center", justifyContent: "space-between", padding: "22px 28px", borderRadius: 24, background: Y, color: K }}>
     <div style={{ display: "flex", fontSize: 26, fontWeight: 800 }}>Importada llave en mano. Puesta en tu negocio.</div>
@@ -214,7 +214,6 @@ const Specs = ({ d, o }) => <div style={{ display: "flex", flexDirection: "colum
     {d.medidas?.[1] && <Fila l="PESO" v={d.medidas[1]} />}
     {d.subrubro && <Fila l="TIPO" v={corta(d.subrubro, 28)} />}
     {d.garantia && <Fila l="GARANTÍA" v={`${d.garantia} meses de fábrica`} />}
-    <Fila l="TENSIÓN" v="220 V · 50 Hz" />
     <Fila l="ORIGEN" v="Fábrica en China" />
   </div>
   <div style={{ display: "flex", marginTop: "auto", fontSize: 24, fontWeight: 600, color: G }}>Consultá el precio final puesto en tu negocio, en dos cuotas.</div>

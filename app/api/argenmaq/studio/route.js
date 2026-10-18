@@ -1,5 +1,6 @@
 // /api/argenmaq/studio — Content Studio de ARGENMAQ (panel › Marketing › Content Studio).
-//   GET  ?accion=candidatos[&forzar=1]  → historias y publicaciones de hoy (cacheadas por día) + estado de Instagram
+//   GET  ?accion=candidatos&h=3&p=2&excluir=id,id → arma esa cantidad de historias y publicaciones (runner)
+//   GET  ?accion=estado                 → estado de Instagram
 //   GET  ?accion=piezas[&desde=&hasta=] → piezas guardadas (cola, calendario, historial)
 //   POST {accion:"guardar", pieza, programada_at?} → dibuja las imágenes, las sube y guarda (aprobada o programada)
 //   POST {accion:"programar", id, programada_at}   → la pone en el calendario (la publica el cron)
@@ -24,9 +25,13 @@ export async function GET(req) {
   const yo = await auth(req); if (!yo) return err("Sin acceso", 401);
   const u = new URL(req.url); const accion = u.searchParams.get("accion") || "candidatos";
   try {
+    const igEstado = async () => { const ig = await igCfg(); return ig?.ig_user_id ? { username: ig.username || null, connected_at: ig.connected_at || null } : null; };
+    if (accion === "estado") return Response.json({ ig: await igEstado() });
     if (accion === "candidatos") {
-      const [c, ig] = await Promise.all([candidatos({ forzar: u.searchParams.get("forzar") === "1" }), igCfg()]);
-      return Response.json({ historias: c.historias || [], publicaciones: c.publicaciones || [], fecha: c.fecha || null, ig: ig?.ig_user_id ? { username: ig.username || null, connected_at: ig.connected_at || null } : null });
+      const n = (k, max) => Math.max(0, Math.min(max, parseInt(u.searchParams.get(k) || "0", 10) || 0));
+      const excluir = String(u.searchParams.get("excluir") || "").split(",").filter(Boolean);
+      const c = await candidatos({ historias: n("h", 10), publicaciones: n("p", 6), excluir });
+      return Response.json({ historias: c.historias || [], publicaciones: c.publicaciones || [] });
     }
     if (accion === "piezas") {
       const piezas = await sbq(`/am_piezas?select=*&order=created_at.desc&limit=300`).catch(() => []);

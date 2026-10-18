@@ -58,7 +58,7 @@ const SECCIONES = [
     t: "6. Especificaciones y compatibilidad",
     p: [
       "Las especificaciones técnicas (medidas, potencia, tensión, capacidad de producción) son las que informa el fabricante y se detallan en el presupuesto. El Usuario es responsable de verificar que la máquina sea apta para su uso, su espacio y su instalación eléctrica.",
-      "Las máquinas se solicitan para 220 V / 50 Hz salvo que el presupuesto indique otra configuración. Las adaptaciones posteriores corren por cuenta del Usuario.",
+      "Las máquinas se solicitan con la configuración eléctrica que indica el presupuesto, según el modelo. Las adaptaciones posteriores corren por cuenta del Usuario.",
       "Las imágenes del catálogo son ilustrativas: pueden existir diferencias estéticas menores respecto de la unidad entregada.",
     ],
   },
