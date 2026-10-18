@@ -13369,7 +13369,9 @@ function ProyeccionTransito({token,usd}){
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>hoyAR());const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);});
   // Dashboard v2 (02/10/2026): solapas General / Aéreo A / Marítimo A / Marítimo B y año navegable.
-  const [vista,setVista]=useState("general");const [selYear,setSelYear]=useState(()=>Number(hoyAR().slice(0,4)));const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
+  const [vista,setVista]=useState("general");const [selYear,setSelYear]=useState(()=>Number(hoyAR().slice(0,4)));
+  // Devengado pro (18/10/2026): cuántos meses se ven y qué mes está abierto en detalle.
+  const [devMeses,setDevMeses]=useState(6);const [devMesSel,setDevMesSel]=useState(null);const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
   const celu=useEsCelu();
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code,tax_condition)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
@@ -13773,7 +13775,156 @@ function FinanceDashboard({token}){
     <div style={{height:16}}/>
 
     {(()=>{
-      // Tabla mensual: P&L Devengado vs Flujo de Caja (últimos 12 meses)
+      // ═══ Devengado pro (18/10/2026): estado de resultados por mes ═══
+      // Cada operación se imputa ENTERA al mes en que se cerró (servicio prestado), con lo que se
+      // cobró por ella y lo que costó, sin importar cuándo entró o salió la plata. Los gastos fijos
+      // van al mes de la fecha del gasto (la tarjeta también). Misma cuenta que calcGan: acá solo
+      // se abre por concepto para que se vea de dónde sale cada número.
+      const MN2=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+      const CANAL_LBL={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC",aereo_negro:"Aéreo Integral AC",gi:"Gestión Integral",otro:"Otros servicios"};
+      const partesOp=(o)=>{
+        const g=calcGan(o);
+        const pm=pmtsByOp[o.id]||[];
+        const pmtIng=pm.reduce((s2,x)=>s2+(x.client_paid?Number(x.client_paid_amount_usd??x.client_amount_usd??0):0),0);
+        const pmtCost=pm.reduce((s2,x)=>s2+(x.giro_status==="confirmado"?Number(x.giro_amount_usd||0)+Number(x.cost_comision_giro||0):0),0);
+        const isGI=o.service_type==="gestion_integral";
+        const prov=isGI?(supplierPmts||[]).filter(x=>x.operation_id===o.id&&x.is_paid).reduce((s2,x)=>s2+(x.type==="refund"?-1:1)*Number(x.amount_usd||0),0):0;
+        const canal=isGI?"gi":(CANAL_LBL[o.channel]?o.channel:"otro");
+        return {g,canal,ingCanal:g.ing-pmtIng,pmtIng,pmtCost,flete:Number(o.cost_flete||0),imp:Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0),seg:Number(o.cost_seguro||0),local:Number(o.cost_flete_local||0),otros:Number(o.cost_otros||0),prov};
+      };
+      const usdFE=(e)=>e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);
+      const meses=[];
+      for(let i=devMeses-1;i>=0;i--){
+        const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth(),y=d.getFullYear();
+        const ini=`${y}-${String(m+1).padStart(2,"0")}-01`;const nx=new Date(y,m+1,1);const fin=`${nx.getFullYear()}-${String(nx.getMonth()+1).padStart(2,"0")}-01`;
+        const en=(ds)=>{if(!ds)return false;const s2=String(ds).slice(0,10);return s2>=ini&&s2<fin;};
+        const opsM=closedOps.filter(o=>en(o.closed_at));
+        const ing={aereo_blanco:0,maritimo_blanco:0,maritimo_negro:0,aereo_negro:0,gi:0,otro:0,pagos:0,otrosIng:0};
+        const cos={flete:0,imp:0,seg:0,local:0,prov:0,giros:0,otros:0};
+        const detOps=[];
+        opsM.forEach(o=>{const x=partesOp(o);ing[x.canal]+=x.ingCanal;ing.pagos+=x.pmtIng;cos.flete+=x.flete;cos.imp+=x.imp;cos.seg+=x.seg;cos.local+=x.local;cos.prov+=x.prov;cos.giros+=x.pmtCost;cos.otros+=x.otros;detOps.push({o,x});});
+        const otrosIngList=finEntries.filter(e=>e.type==="ingreso"&&en(e.date));
+        ing.otrosIng=otrosIngList.reduce((s2,e)=>s2+usdFE(e),0);
+        const fijosList=fixedCostsManual.filter(e=>en(e.date));
+        const fijos={};fijosList.forEach(e=>{const k=e.category||"otros";fijos[k]=(fijos[k]||0)+usdFE(e);});
+        const totIng=Object.values(ing).reduce((a2,b2)=>a2+b2,0);
+        const totCos=Object.values(cos).reduce((a2,b2)=>a2+b2,0);
+        const totFij=Object.values(fijos).reduce((a2,b2)=>a2+b2,0);
+        meses.push({key:`${y}-${m}`,label:`${MN2[m]} ${y}`,corto:`${MN2[m]} ${String(y).slice(2)}`,ing,cos,fijos,totIng,totCos,bruto:totIng-totCos,totFij,neto:totIng-totCos-totFij,nOps:opsM.length,detOps,fijosList,otrosIngList,actual:i===0});
+      }
+      const catsFijos=[...new Set(meses.flatMap(x=>Object.keys(x.fijos)))].sort((a2,b2)=>(CAT_LBL[a2]||a2).localeCompare(CAT_LBL[b2]||b2));
+      const sumCol=(f)=>meses.reduce((s2,x)=>s2+f(x),0);
+      // Filas del estado de resultados. tipo: sec (título de sección), lin (línea), tot (subtotal), res (resultado), pct (porcentaje), info.
+      const filas=[
+        {tipo:"sec",label:"Ingresos"},
+        ...["aereo_blanco","maritimo_blanco","maritimo_negro","aereo_negro","gi","otro"].map(k=>({tipo:"lin",label:CANAL_LBL[k],f:x=>x.ing[k]})),
+        {tipo:"lin",label:"Gestión de pagos (cobrado)",f:x=>x.ing.pagos},
+        {tipo:"lin",label:"Otros ingresos",f:x=>x.ing.otrosIng},
+        {tipo:"tot",label:"Total ingresos",f:x=>x.totIng},
+        {tipo:"sec",label:"Costos directos de las operaciones"},
+        {tipo:"lin",label:"Flete internacional",f:x=>x.cos.flete,neg:true},
+        {tipo:"lin",label:"Impuestos y aduana",f:x=>x.cos.imp,neg:true},
+        {tipo:"lin",label:"Seguro",f:x=>x.cos.seg,neg:true},
+        {tipo:"lin",label:"Flete local y entregas",f:x=>x.cos.local,neg:true},
+        {tipo:"lin",label:"Proveedores (Gestión Integral)",f:x=>x.cos.prov,neg:true},
+        {tipo:"lin",label:"Giros y comisiones (gestión de pagos)",f:x=>x.cos.giros,neg:true},
+        {tipo:"lin",label:"Otros costos de operaciones",f:x=>x.cos.otros,neg:true},
+        {tipo:"tot",label:"Total costos directos",f:x=>x.totCos,neg:true},
+        {tipo:"res",label:"Margen bruto",f:x=>x.bruto},
+        {tipo:"pct",label:"Margen bruto sobre ingresos",f:x=>x.totIng>0?x.bruto/x.totIng*100:null},
+        {tipo:"sec",label:"Gastos fijos y de estructura"},
+        ...catsFijos.map(k=>({tipo:"lin",label:CAT_LBL[k]||k,f:x=>x.fijos[k]||0,neg:true})),
+        {tipo:"tot",label:"Total gastos fijos",f:x=>x.totFij,neg:true},
+        {tipo:"res",label:"Resultado neto del mes",f:x=>x.neto,final:true},
+        {tipo:"pct",label:"Margen neto sobre ingresos",f:x=>x.totIng>0?x.neto/x.totIng*100:null},
+        {tipo:"info",label:"Operaciones cerradas",f:x=>x.nOps},
+      ].filter(r=>r.tipo!=="lin"||Math.abs(sumCol(r.f))>0.005);
+      const n0=(v)=>Math.abs(v)<0.005?"—":Math.round(v).toLocaleString("es-AR");
+      const pct0=(v)=>v==null?"—":`${v.toFixed(0)}%`;
+      const colorRes=(v)=>v>0.005?"#22c55e":v<-0.005?"#ff6b6b":"rgba(255,255,255,0.4)";
+      const sel=meses.find(x=>x.key===devMesSel)||null;
+      const TH={padding:"8px 10px",fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap",textAlign:"right",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.1)"};
+      const celda=(r,v,extra={})=>{
+        if(r.tipo==="pct")return <td key={extra.k} style={{padding:"4px 10px",textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",...extra.st}}>{pct0(v)}</td>;
+        if(r.tipo==="info")return <td key={extra.k} style={{padding:"6px 10px",textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",...extra.st}}>{v||"—"}</td>;
+        if(r.tipo==="res")return <td key={extra.k} style={{padding:r.final?"10px":"8px 10px",textAlign:"right",fontSize:r.final?13.5:12.5,fontWeight:800,color:colorRes(v),fontVariantNumeric:"tabular-nums",...extra.st}}>{Math.abs(v)<0.005?"—":`${v<0?"−":""}${n0(Math.abs(v))}`}</td>;
+        if(r.tipo==="tot")return <td key={extra.k} style={{padding:"7px 10px",textAlign:"right",fontSize:12,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums",...extra.st}}>{r.neg&&Math.abs(v)>=0.005?`−${n0(v)}`:n0(v)}</td>;
+        return <td key={extra.k} style={{padding:"5px 10px",textAlign:"right",fontSize:12,color:r.neg?"rgba(255,140,140,0.85)":"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",...extra.st}}>{r.neg&&Math.abs(v)>=0.005?`−${n0(v)}`:n0(v)}</td>;
+      };
+      const rowStyle=(r)=>r.tipo==="sec"?{background:"rgba(255,255,255,0.035)"}:r.tipo==="tot"?{borderTop:"1px solid rgba(255,255,255,0.12)"}:r.tipo==="res"?{borderTop:"1.5px solid rgba(255,255,255,0.2)",background:r.final?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.03)"}:{};
+      const stickyTd={position:"sticky",left:0,background:"#0D1B33",zIndex:1};
+      const selSt=(x)=>x.key===devMesSel?{background:"rgba(96,165,250,0.08)"}:{};
+      return <>
+      <Card v2 title="Devengado · estado de resultados por mes" sub="Cada operación va entera al mes en que se cerró, con lo cobrado y lo que costó, cobres o pagues cuando sea · los gastos fijos, al mes del gasto · tocá un mes para ver qué lo compone">
+        <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:10}}>
+          {[[6,"6 meses"],[12,"12 meses"]].map(([n,l])=><button key={n} onClick={()=>setDevMeses(n)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:devMeses===n?"rgba(255,255,255,0.12)":"transparent",color:devMeses===n?"#fff":"rgba(255,255,255,0.55)",cursor:"pointer"}}>{l}</button>)}
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",minWidth:"100%"}}>
+            <thead>
+              <tr>
+                <th style={{...TH,...stickyTd,textAlign:"left",cursor:"default",color:"rgba(255,255,255,0.5)",minWidth:210}}>USD</th>
+                {meses.map(x=><th key={x.key} onClick={()=>setDevMesSel(devMesSel===x.key?null:x.key)} title="Ver el detalle del mes" style={{...TH,...selSt(x),color:x.key===devMesSel?"#93c5fd":x.actual?"#fff":"rgba(255,255,255,0.6)"}}>{x.corto}{x.actual&&<span style={{display:"block",fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.4)",letterSpacing:0,textTransform:"none"}}>en curso</span>}</th>)}
+                <th style={{...TH,cursor:"default",color:GOLD_LIGHT,borderLeft:"1px solid rgba(255,255,255,0.1)"}}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((r,ri)=><tr key={ri} style={rowStyle(r)}>
+                <td style={{...stickyTd,padding:r.tipo==="sec"?"9px 10px 5px":r.tipo==="res"?(r.final?"10px":"8px 10px"):r.tipo==="pct"||r.tipo==="info"?"4px 10px":"5px 10px",fontSize:r.tipo==="sec"?10.5:r.tipo==="res"?(r.final?13.5:12.5):r.tipo==="pct"||r.tipo==="info"?11:12,fontWeight:r.tipo==="sec"||r.tipo==="tot"||r.tipo==="res"?800:500,textTransform:r.tipo==="sec"?"uppercase":"none",letterSpacing:r.tipo==="sec"?"0.08em":0,color:r.tipo==="sec"?GOLD_LIGHT:r.tipo==="pct"||r.tipo==="info"?"rgba(255,255,255,0.45)":r.tipo==="lin"?"rgba(255,255,255,0.75)":"#fff",paddingLeft:r.tipo==="lin"?22:10,whiteSpace:"nowrap"}}>{r.label}</td>
+                {meses.map(x=>r.tipo==="sec"?<td key={x.key} style={selSt(x)}/>:celda(r,r.f(x),{k:x.key,st:selSt(x)}))}
+                {r.tipo==="sec"?<td style={{borderLeft:"1px solid rgba(255,255,255,0.1)"}}/>:r.tipo==="pct"?celda(r,(()=>{const ti=sumCol(x=>x.totIng);if(!(ti>0))return null;return r.label.includes("bruto")?sumCol(x=>x.bruto)/ti*100:sumCol(x=>x.neto)/ti*100;})(),{k:"t",st:{borderLeft:"1px solid rgba(255,255,255,0.1)"}}):celda(r,sumCol(r.f),{k:"t",st:{borderLeft:"1px solid rgba(255,255,255,0.1)",fontWeight:700}})}
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        {sel&&(()=>{
+          const opsOrd=[...sel.detOps].sort((a2,b2)=>b2.x.g.gan-a2.x.g.gan);
+          const canalTxt=(o)=>o.service_type==="gestion_integral"?"GI":(CM[o.channel]||o.channel||"—");
+          const nomCli=(o)=>o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
+          const TD2=(v,st={})=><td style={{padding:"7px 10px",fontSize:12,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",...st}}>{v}</td>;
+          return <div style={{marginTop:18,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.1)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:10}}>
+              <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{sel.label} <span style={{fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.5)"}}>· {sel.nOps} operación{sel.nOps!==1?"es":""} cerrada{sel.nOps!==1?"s":""} · resultado <b style={{color:colorRes(sel.neto)}}>{usd(sel.neto)}</b></span></p>
+              <button onClick={()=>setDevMesSel(null)} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>Cerrar</button>
+            </div>
+            {opsOrd.length>0?<div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:"rgba(255,255,255,0.03)"}}>{["Operación","Cliente","Servicio","Cerrada","Ingreso","Costo","Ganancia","%"].map((h,i)=><th key={h} style={{padding:"7px 10px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"rgba(255,255,255,0.5)",textAlign:i>=4?"right":"left",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <tbody>{opsOrd.map(({o,x})=>{const g=x.g;const mg=g.ing>0?g.gan/g.ing*100:null;return <tr key={o.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                  <td style={{padding:"7px 10px",fontSize:12,fontWeight:700,color:GOLD_LIGHT,fontFamily:"monospace",whiteSpace:"nowrap"}}>{o.operation_code}{o.lost_in_customs_at&&<span style={{marginLeft:6,fontSize:10,color:"#f87171"}}>retenida</span>}</td>
+                  <td style={{padding:"7px 10px",fontSize:12,color:"#fff",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nomCli(o)}</td>
+                  <td style={{padding:"7px 10px",fontSize:11.5,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{canalTxt(o)}</td>
+                  <td style={{padding:"7px 10px",fontSize:11.5,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{o.closed_at?formatDate(o.closed_at):"—"}</td>
+                  {TD2(usd(g.ing),{color:"rgba(255,255,255,0.8)"})}
+                  {TD2(usd(g.cost),{color:"rgba(255,140,140,0.85)"})}
+                  {TD2(usd(g.gan),{fontWeight:800,color:colorRes(g.gan)})}
+                  {TD2(mg==null?"—":`${mg.toFixed(0)}%`,{color:"rgba(255,255,255,0.5)"})}
+                </tr>;})}</tbody>
+              </table>
+            </div>:<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.45)"}}>No se cerró ninguna operación en {sel.label}.</p>}
+            {(sel.fijosList.length>0||sel.otrosIngList.length>0)&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
+              {sel.fijosList.length>0&&<div>
+                <p style={{margin:"0 0 6px",fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.5)"}}>Gastos fijos del mes · {usd(sel.totFij)}</p>
+                {[...sel.fijosList].sort((a2,b2)=>String(b2.date).localeCompare(String(a2.date))).map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:12}}>
+                  <span style={{color:"rgba(255,255,255,0.75)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"rgba(255,255,255,0.4)",marginRight:8}}>{formatDate(e.date)}</span>{e.description||CAT_LBL[e.category]||e.category||"Gasto"}{e.payment_method==="tarjeta_credito"&&!e.is_paid&&<span style={{marginLeft:6,fontSize:10,color:"#fbbf24"}}>tarjeta · pendiente</span>}</span>
+                  <span style={{color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usd(usdFE(e))}</span>
+                </div>)}
+              </div>}
+              {sel.otrosIngList.length>0&&<div>
+                <p style={{margin:"0 0 6px",fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.5)"}}>Otros ingresos del mes · {usd(sel.ing.otrosIng)}</p>
+                {sel.otrosIngList.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:12}}>
+                  <span style={{color:"rgba(255,255,255,0.75)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"rgba(255,255,255,0.4)",marginRight:8}}>{formatDate(e.date)}</span>{e.description||"Ingreso"}</span>
+                  <span style={{color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>+{usd(usdFE(e))}</span>
+                </div>)}
+              </div>}
+            </div>}
+          </div>;})()}
+      </Card>
+      <div style={{height:16}}/>
+      </>;
+    })()}
+    {(()=>{
+      // Tabla mensual de caja (últimos 12 meses): la plata que entró y salió de verdad.
       const MN2=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
       const rows=[];
       for(let i=11;i>=0;i--){
@@ -13784,14 +13935,6 @@ function FinanceDashboard({token}){
         const monthEnd=`${nextMonth.getFullYear()}-${String(nextMonth.getMonth()+1).padStart(2,"0")}-01`;
         const inMonth=(ds)=>{if(!ds)return false;const s=String(ds).slice(0,10);return s>=monthStart&&s<monthEnd;};
 
-        // === DEVENGADO (P&L) ===
-        // Ingresos: ops cerradas en el mes + sus pmts (client_amount)
-        const opsClosedInMonth=closedOps.filter(o=>inMonth(o.closed_at));
-        const devIng=opsClosedInMonth.reduce((s,o)=>s+calcGan(o).ing,0);
-        const devCostOp=opsClosedInMonth.reduce((s,o)=>s+calcGan(o).cost,0);
-        // Gastos fijos: por fecha del gasto (incluye tarjeta pendiente)
-        const devCostFijos=fixedCostsManual.filter(e=>inMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
-        const devGan=devIng-devCostOp-devCostFijos;
 
         // === CAJA (Cash Flow) === misma lógica exacta que el KPI "Ganancia neta del período" de arriba
         // (totalIng/totalCost), parametrizada por mes en vez de por el selector de período. Clave: los
@@ -13842,43 +13985,27 @@ function FinanceDashboard({token}){
         cashOut+=agentMvs.filter(m=>m.type==="anticipo"&&inMonth(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
         const cashNeto=cashIn-cashOut;
 
-        rows.push({label:`${MN2[m]} ${y}`,m,y,devIng,devCost:devCostOp+devCostFijos,devGan,cashIn,cashOut,cashNeto,opsCount:opsClosedInMonth.length});
+        rows.push({label:`${MN2[m]} ${y}`,m,y,cashIn,cashOut,cashNeto});
       }
       // Acumulado
-      const tot=rows.reduce((a,r)=>({devIng:a.devIng+r.devIng,devCost:a.devCost+r.devCost,devGan:a.devGan+r.devGan,cashIn:a.cashIn+r.cashIn,cashOut:a.cashOut+r.cashOut,cashNeto:a.cashNeto+r.cashNeto}),{devIng:0,devCost:0,devGan:0,cashIn:0,cashOut:0,cashNeto:0});
+      const tot=rows.reduce((a,r)=>({cashIn:a.cashIn+r.cashIn,cashOut:a.cashOut+r.cashOut,cashNeto:a.cashNeto+r.cashNeto}),{cashIn:0,cashOut:0,cashNeto:0});
 
-      return <Card v2 title="Resultados por mes" sub="Devengado: cuando se generó · Caja: cuando entró o salió la plata">
-        <p style={{display:"none"}}>
-          <b style={{color:"#60a5fa"}}>Devengado (P&L)</b>: imputa ingresos y costos en el mes en que se generó la operación o el gasto (no importa cuándo se cobra o paga). Esto refleja la <b>ganancia real del mes</b>. Gastos con tarjeta de crédito se cuentan en la <b>fecha del gasto</b>, aunque se paguen después.<br/>
-          <b style={{color:"#22c55e"}}>Caja (Cash Flow)</b>: solo cuenta la plata que efectivamente entró o salió en el mes. Los gastos con tarjeta pendientes aparecen en el mes del débito.
-        </p>
+      return <Card v2 title="Caja por mes" sub="Solo la plata que efectivamente entró o salió cada mes · últimos 12 meses">
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                <th rowSpan={2} style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase",verticalAlign:"bottom"}}>Mes</th>
-                <th rowSpan={2} style={{textAlign:"center",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase",verticalAlign:"bottom"}}>Ops cerradas</th>
-                <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#60a5fa",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(184,149,106,0.2)"}}>Devengado (P&L)</th>
-                <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#22c55e",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(34,197,94,0.2)"}}>Caja (Flujo)</th>
-              </tr>
-              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(184,149,106,0.7)",fontWeight:600,fontSize:10}}>Ingresos</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(184,149,106,0.7)",fontWeight:600,fontSize:10}}>Costos</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(184,149,106,0.7)",fontWeight:600,fontSize:10}}>Ganancia</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Entró</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Salió</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Neto</th>
+                <th style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Mes</th>
+                <th style={{textAlign:"right",padding:"8px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Entró</th>
+                <th style={{textAlign:"right",padding:"8px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Salió</th>
+                <th style={{textAlign:"right",padding:"8px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Neto</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(r=>{
-                const isEmpty=r.devIng===0&&r.cashIn===0&&r.cashOut===0&&r.devCost===0;
+                const isEmpty=r.cashIn===0&&r.cashOut===0;
                 return <tr key={r.label} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:isEmpty?0.3:1}}>
                   <td style={{padding:"8px 10px",fontWeight:600,color:"#fff"}}>{r.label}</td>
-                  <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.5)"}}>{r.opsCount||"—"}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.devIng>0?usd(r.devIng):"—"}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.devCost>0?usd(r.devCost):"—"}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:r.devGan>0?"#22c55e":r.devGan<0?"#ff6b6b":"rgba(255,255,255,0.4)"}}>{r.devGan!==0?usd(r.devGan):"—"}</td>
                   <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.cashIn>0?usd(r.cashIn):"—"}</td>
                   <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.cashOut>0?usd(r.cashOut):"—"}</td>
                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:r.cashNeto>0?"#22c55e":r.cashNeto<0?"#ff6b6b":"rgba(255,255,255,0.4)"}}>{r.cashNeto!==0?usd(r.cashNeto):"—"}</td>
@@ -13886,10 +14013,6 @@ function FinanceDashboard({token}){
               })}
               <tr style={{borderTop:"1.5px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.03)"}}>
                 <td style={{padding:"10px",fontWeight:700,color:"#fff",textTransform:"uppercase",fontSize:11}}>Total 12m</td>
-                <td style={{padding:"10px"}}></td>
-                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.devIng)}</td>
-                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.devCost)}</td>
-                <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:tot.devGan>0?"#22c55e":"#ff6b6b"}}>{usd(tot.devGan)}</td>
                 <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.cashIn)}</td>
                 <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.cashOut)}</td>
                 <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:tot.cashNeto>0?"#22c55e":"#ff6b6b"}}>{usd(tot.cashNeto)}</td>
@@ -13897,9 +14020,6 @@ function FinanceDashboard({token}){
             </tbody>
           </table>
         </div>
-        <p style={{display:"none"}}>
-          💡 Si el <b style={{color:"#60a5fa"}}>Devengado</b> es positivo pero el <b style={{color:"#22c55e"}}>Caja</b> es negativo, significa que la ganancia del mes está "atrapada" en cuentas por cobrar o tarjetas pendientes de débito — es ganancia real pero todavía no tenés la plata en la mano.
-        </p>
       </Card>;
     })()}
     </>}
