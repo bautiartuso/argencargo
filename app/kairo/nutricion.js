@@ -7,6 +7,7 @@ import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel, useRefresh, Skel, SkelCards } from "./ui";
 import { ensurePush } from "./fisico";
 import { adjustTarget, plannedBurn, cardioOn, sportName } from "./score";
+import { searchFoods, foodItem, normFood } from "./foods";
 
 const MEALS = [["desayuno", "Desayuno"], ["almuerzo", "Almuerzo"], ["merienda", "Merienda"], ["cena", "Cena"], ["snacks", "Snacks"]];
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -220,41 +221,98 @@ function MacroBar({ label, v, max, color }) {
   </div>;
 }
 
-// ─────── Agregar comida: escribís lo que comés y la IA lo separa con macros ───────
+// ─────── Agregar comida ───────
+// Buscás al instante en la base de alimentos (sin IA), elegís la cantidad y vas sumando. Recientes y
+// favoritos arriba para repetir en dos toques. Si querés escribirlo como lo dirías, la IA lo separa.
+const FAV_KEY = "kairo_fav_foods";
+const favsGet = () => { try { return JSON.parse(localStorage.getItem(FAV_KEY) || "[]"); } catch { return []; } };
+const favsSet = (l) => { try { localStorage.setItem(FAV_KEY, JSON.stringify(l.slice(0, 40))); } catch {} };
+const clean = ({ name, qty, kcal, protein_g, carbs_g, fat_g }) => ({ name, qty, kcal, protein_g, carbs_g, fat_g });
+
 function AddFood({ token, title, onClose, onAdd, planOption }) {
-  const [text, setText] = useState("");
-  const [items, setItems] = useState(null);
+  const [q, setQ] = useState("");
+  const [items, setItems] = useState([]);          // lo que vas sumando
+  const [pick, setPick] = useState(null);          // alimento de la base elegido, eligiendo cantidad
+  const [grams, setGrams] = useState("");
+  const [recent, setRecent] = useState([]);
+  const [favs, setFavs] = useState(() => favsGet());
   const [busy, setBusy] = useState(false);
   const [alsoPlan, setAlsoPlan] = useState(false);
-  const parse = async () => {
-    if (!text.trim()) return pushToast("Escribí qué comiste");
+  useEffect(() => {
+    dq("kairo_food_log", { token, filters: "?select=name,qty,kcal,protein_g,carbs_g,fat_g,created_at&order=created_at.desc&limit=120" }).then(r => {
+      const seen = new Set(), out = [];
+      for (const x of Array.isArray(r) ? r : []) { const k = normFood(x.name) + "|" + (x.qty || ""); if (seen.has(k)) continue; seen.add(k); out.push(clean(x)); if (out.length >= 12) break; }
+      setRecent(out);
+    });
+  }, [token]);
+  const results = useMemo(() => searchFoods(q, 8), [q]);
+  const isFav = (it) => favs.some(f => normFood(f.name) === normFood(it.name) && f.qty === it.qty);
+  const toggleFav = (it) => { const next = isFav(it) ? favs.filter(f => !(normFood(f.name) === normFood(it.name) && f.qty === it.qty)) : [clean(it), ...favs]; setFavs(next); favsSet(next); };
+  const add = (it) => { setItems([...items, clean(it)]); setPick(null); setQ(""); setGrams(""); };
+  const ai = async () => {
+    if (!q.trim()) return pushToast("Escribí qué comiste");
     setBusy(true);
-    const r = await fetch("/api/kairo/food", { method: "POST", headers: { "Content-Type": "application/json", ...auth(token) }, body: JSON.stringify({ text }) }).then(r => r.json()).catch(() => ({ error: "Sin conexión" }));
+    const r = await fetch("/api/kairo/food", { method: "POST", headers: { "Content-Type": "application/json", ...auth(token) }, body: JSON.stringify({ text: q }) }).then(r => r.json()).catch(() => ({ error: "Sin conexión" }));
     setBusy(false);
     if (r.error) return pushToast(r.error);
-    setItems(r.items || []);
+    setItems([...items, ...(r.items || []).map(clean)]); setQ("");
   };
-  const tot = items ? sum(items) : null;
-  return <Sheet title={title} onClose={onClose}>
-    {!items ? <>
-      <textarea autoFocus value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="Ej: 200 g de pollo con 150 g de arroz y una ensalada de tomate" style={{ ...field, resize: "none", lineHeight: 1.45 }} />
-      <div style={{ fontSize: 12, color: C.dim, marginTop: 8, lineHeight: 1.45 }}>Escribilo como lo dirías. Si ponés gramos es más preciso; si no, se estima una porción normal.</div>
-      <button className="k-press" onClick={parse} disabled={busy} style={{ ...btnLime, marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon d={I.spark} size={17} />{busy ? "Calculando…" : "Calcular"}</button>
-    </> : <>
-      <div style={{ ...card, padding: "2px 14px", background: C.cardHi }}>
+  const tot = sum(items);
+  const g = Number(String(grams).replace(",", ".")) || 0;
+  const quick = (it, i, list, star = true) => <button key={i} onClick={() => add(it)} style={{ ...rowBtn, padding: "9px 0", borderBottom: i < list.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+    <FoodText it={it} />
+    {star && <span onClick={e => { e.stopPropagation(); toggleFav(it); }} role="button" aria-label="Favorito" style={{ padding: "4px 2px 4px 8px", color: isFav(it) ? C.lime : C.dim, fontSize: 18, lineHeight: 1 }}>{isFav(it) ? "★" : "☆"}</span>}
+  </button>;
+
+  return <Sheet title={title} onClose={onClose} tall>
+    <div style={{ position: "relative" }}>
+      <input autoFocus value={q} onChange={e => { setQ(e.target.value); setPick(null); }} placeholder="Buscá un alimento o escribí lo que comiste" autoComplete="off" autoCorrect="off" style={{ ...field, paddingRight: q ? 40 : 14 }} />
+      {q && <button onClick={() => { setQ(""); setPick(null); }} aria-label="Borrar" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.dim, fontSize: 20, padding: 4 }}>×</button>}
+    </div>
+
+    {pick ? <div style={{ ...card, marginTop: 10, background: C.cardHi }}>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>{pick[0]}</div>
+      <div className="k-num" style={{ fontSize: 12.5, color: C.sub, marginTop: 2 }}>por 100 g: {pick[1]} kcal · P {pick[2]} · C {pick[3]} · G {pick[4]}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+        {[[pick[5], pick[6]], ["100 g", 100], ["150 g", 150], ["200 g", 200]].filter(([, v], k, arr) => arr.findIndex(x => x[1] === v) === k).map(([l, v]) => <button key={l} onClick={() => setGrams(String(v))} className="k-press" style={{ padding: "8px 12px", borderRadius: 999, fontSize: 13.5, border: `0.5px solid ${g === v ? C.lime : C.line}`, background: g === v ? C.lime : C.card, color: g === v ? C.limeInk : C.text, fontWeight: g === v ? 600 : 400 }}>{l}</button>)}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+        <div style={{ ...field, flex: 1, display: "flex", alignItems: "center", gap: 6, background: C.card }}>
+          <input inputMode="decimal" value={grams} onChange={e => setGrams(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="gramos" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16 }} />
+          <span style={{ color: C.sub }}>g</span>
+        </div>
+        <button className="k-press" onClick={() => g > 0 ? add(foodItem(pick, g)) : pushToast("Poné la cantidad")} style={{ ...btnLime, width: "auto", padding: "13px 18px" }}>Sumar</button>
+      </div>
+      {g > 0 && <div className="k-num" style={{ fontSize: 13, color: C.sub, marginTop: 10 }}>{(it => <>{it.kcal} kcal · P {it.protein_g} · C {it.carbs_g} · G {it.fat_g}</>)(foodItem(pick, g))}</div>}
+    </div>
+    : q.trim().length >= 2 ? <div style={{ marginTop: 10 }}>
+      {results.length > 0 && <div style={{ ...card, padding: "2px 14px" }}>
+        {results.map((f, i) => <button key={f[0]} onClick={() => { setPick(f); setGrams(String(f[6])); }} style={{ ...rowBtn, padding: "10px 0", borderBottom: i < results.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+          <span style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 15, display: "block" }}>{f[0]}</span><span className="k-num" style={{ fontSize: 12, color: C.dim }}>{f[5]} ({f[6]} g) · {Math.round(f[1] * f[6] / 100)} kcal · P {Math.round(f[2] * f[6] / 100)}</span></span>
+          <Icon d={I.plus} size={16} color={C.lime} />
+        </button>)}
+      </div>}
+      <button className="k-press" onClick={ai} disabled={busy} style={{ ...btnGhost, marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, borderColor: results.length ? C.line : "rgba(198,244,50,0.4)" }}><Icon d={I.spark} size={16} color={C.lime} />{busy ? "Calculando…" : results.length ? "No está: calcular con IA" : `Calcular "${q.trim().slice(0, 28)}" con IA`}</button>
+    </div>
+    : <>
+      {favs.length > 0 && <><Label>Favoritos</Label><div style={{ ...card, padding: "2px 14px" }}>{favs.map((it, i) => quick(it, i, favs))}</div></>}
+      {recent.length > 0 && <><Label>Recientes</Label><div style={{ ...card, padding: "2px 14px" }}>{recent.map((it, i) => quick(it, i, recent))}</div></>}
+      {!favs.length && !recent.length && <div style={{ fontSize: 13, color: C.dim, margin: "12px 2px 0", lineHeight: 1.5 }}>Empezá a escribir: pollo, arroz, huevo… Lo que sumes seguido queda en Recientes, y con la estrella lo guardás en Favoritos.</div>}
+    </>}
+
+    {items.length > 0 && <>
+      <Label>Vas sumando</Label>
+      <div style={{ ...card, padding: "2px 14px", borderColor: "rgba(198,244,50,0.3)" }}>
         {items.map((it, i) => <div key={i} style={{ ...rowBtn, borderBottom: i < items.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
           <FoodText it={it} />
           <button onClick={() => setItems(items.filter((_, k) => k !== i))} aria-label="Quitar" style={{ ...linkBtn, color: C.dim, fontSize: 18, padding: "0 4px" }}>×</button>
         </div>)}
       </div>
-      {tot && <div className="k-num" style={{ fontSize: 13, color: C.sub, margin: "10px 2px 0" }}>Total: <span style={{ color: C.text }}>{r0(tot.kcal)} kcal</span> · P {r0(tot.p)} · C {r0(tot.c)} · G {r0(tot.g)}</div>}
-      {planOption && <button onClick={() => setAlsoPlan(!alsoPlan)} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", color: C.text, padding: "16px 2px 0", fontSize: 14, textAlign: "left" }}>
+      <div className="k-num" style={{ fontSize: 13, color: C.sub, margin: "10px 2px 0" }}>Total: <span style={{ color: C.text }}>{r0(tot.kcal)} kcal</span> · P {r0(tot.p)} · C {r0(tot.c)} · G {r0(tot.g)}</div>
+      {planOption && <button onClick={() => setAlsoPlan(!alsoPlan)} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", color: C.text, padding: "14px 2px 0", fontSize: 14, textAlign: "left" }}>
         <span style={{ width: 22, height: 22, borderRadius: 7, border: `1.5px solid ${alsoPlan ? C.lime : C.dim}`, background: alsoPlan ? C.lime : "transparent", color: C.limeInk, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{alsoPlan && <Icon d={I.check} size={14} sw={2.6} />}</span>{planOption}
       </button>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8, marginTop: 18 }}>
-        <button className="k-press" onClick={() => setItems(null)} style={btnGhost}>Editar</button>
-        <button className="k-press" onClick={() => items.length && onAdd(items, alsoPlan)} style={btnLime}>Agregar</button>
-      </div>
+      <button className="k-press" onClick={() => onAdd(items, alsoPlan)} style={{ ...btnLime, marginTop: 16 }}>Agregar {items.length} {items.length === 1 ? "alimento" : "alimentos"}</button>
     </>}
   </Sheet>;
 }
