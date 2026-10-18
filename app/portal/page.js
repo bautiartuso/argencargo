@@ -822,6 +822,16 @@ function OperationDetail({op:opProp,token,client,onBack}){
   // (consolidation_confirmed) o cuando lo hizo en esta sesión (localConfirmed). Antes de eso no se puede
   // cargar la factura para evitar declaraciones por partes.
   const canDocument=op.consolidation_confirmed||localConfirmed;
+  const [deshaciendo,setDeshaciendo]=useState(false);
+  const deshacerImportacion=async()=>{
+    if(!await confirmDialog(t("op.undoImportConfirm",{op:op.operation_code,n:pkgs.length}),{confirmText:t("op.undoImport"),danger:true}))return;
+    setDeshaciendo(true);
+    try{const r=await fetch("/api/portal/eliminar-importacion",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({operation_id:op.id,client_id:client?.id})});const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok)throw new Error(d.error||"x");
+      toast(t("op.undoImportDone"),"success");onBack();}
+    catch(e){toast(t("op.undoImportError"),"error");}
+    setDeshaciendo(false);
+  };
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
   const chDocItem=(i,f,v)=>setDocItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
@@ -1090,7 +1100,15 @@ function OperationDetail({op:opProp,token,client,onBack}){
       {tabCur==="merc"&&<div style={PANEL}>
         <h3 style={{...H3,marginBottom:14}}>{t("imports.product")}</h3>
         {isEditable
-          ?<MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
+          ?<>
+            <MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
+            {/* Deshacer la importación (18/10/2026): mientras no hay mercadería ni presupuesto, el
+                cliente puede desarmarla y los bultos vuelven a su depósito (se equivocó al armarla). */}
+            {items.length===0&&!hasBudget&&<div style={{marginTop:18,paddingTop:14,borderTop:HAIR,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+              <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)",lineHeight:1.5,flex:"1 1 260px"}}>{t("op.undoImportDesc")}</p>
+              <button disabled={deshaciendo} onClick={deshacerImportacion} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(248,113,113,0.45)",background:"rgba(248,113,113,0.08)",color:"#fca5a5",cursor:deshaciendo?"wait":"pointer",whiteSpace:"nowrap"}}>{deshaciendo?"…":t("op.undoImport")}</button>
+            </div>}
+          </>
           :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>{t("op.goodsConfirmed")}</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
           {items.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:0}}>{t("op.noGoodsYet")}</p>}
           {items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
