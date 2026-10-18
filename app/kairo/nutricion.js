@@ -7,7 +7,7 @@ import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel, useRefresh, Skel, SkelCards } from "./ui";
 import { ensurePush } from "./fisico";
 import { adjustTarget, plannedBurn, cardioOn, sportName } from "./score";
-import { searchFoods, foodItem, normFood } from "./foods";
+import { searchFoods, foodItem, normFood, portionUnit, unitLabel } from "./foods";
 
 const MEALS = [["desayuno", "Desayuno"], ["almuerzo", "Almuerzo"], ["merienda", "Merienda"], ["cena", "Cena"], ["snacks", "Snacks"]];
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -234,6 +234,7 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
   const [items, setItems] = useState([]);          // lo que vas sumando
   const [pick, setPick] = useState(null);          // alimento de la base elegido, eligiendo cantidad
   const [grams, setGrams] = useState("");
+  const [units, setUnits] = useState("");          // cantidad en unidades/porciones (si la porción se puede contar)
   const [recent, setRecent] = useState([]);
   const [favs, setFavs] = useState(() => favsGet());
   const [busy, setBusy] = useState(false);
@@ -248,7 +249,13 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
   const results = useMemo(() => searchFoods(q, 8), [q]);
   const isFav = (it) => favs.some(f => normFood(f.name) === normFood(it.name) && f.qty === it.qty);
   const toggleFav = (it) => { const next = isFav(it) ? favs.filter(f => !(normFood(f.name) === normFood(it.name) && f.qty === it.qty)) : [clean(it), ...favs]; setFavs(next); favsSet(next); };
-  const add = (it) => { setItems([...items, clean(it)]); setPick(null); setQ(""); setGrams(""); };
+  const add = (it) => { setItems([...items, clean(it)]); setPick(null); setQ(""); setGrams(""); setUnits(""); };
+  const pu = pick ? portionUnit(pick) : null;
+  const fmtU = (n) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 2 });
+  const setU = (n) => { n = Math.max(0, Math.round(n * 4) / 4); setUnits(n ? String(n).replace(".", ",") : ""); setGrams(n ? String(Math.round(n * pu.grams)) : ""); };
+  const setG = (v) => { setGrams(v); const g = Number(String(v).replace(",", ".")) || 0; if (pu) setUnits(g && Math.abs(g / pu.grams - Math.round(g / pu.grams * 4) / 4) < 0.01 ? String(Math.round(g / pu.grams * 4) / 4).replace(".", ",") : ""); };
+  const uN = Number(String(units).replace(",", ".")) || 0;
+  const qtyText = pu && uN ? `${fmtU(uN)} ${unitLabel(uN, pu.unit)} (${Math.round(uN * pu.grams)} g)` : null;
   const ai = async () => {
     if (!q.trim()) return pushToast("Escribí qué comiste");
     setBusy(true);
@@ -273,21 +280,29 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
     {pick ? <div style={{ ...card, marginTop: 10, background: C.cardHi }}>
       <div style={{ fontSize: 16, fontWeight: 600 }}>{pick[0]}</div>
       <div className="k-num" style={{ fontSize: 12.5, color: C.sub, marginTop: 2 }}>por 100 g: {pick[1]} kcal · P {pick[2]} · C {pick[3]} · G {pick[4]}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
-        {[[pick[5], pick[6]], ["100 g", 100], ["150 g", 150], ["200 g", 200]].filter(([, v], k, arr) => arr.findIndex(x => x[1] === v) === k).map(([l, v]) => <button key={l} onClick={() => setGrams(String(v))} className="k-press" style={{ padding: "8px 12px", borderRadius: 999, fontSize: 13.5, border: `0.5px solid ${g === v ? C.lime : C.line}`, background: g === v ? C.lime : C.card, color: g === v ? C.limeInk : C.text, fontWeight: g === v ? 600 : 400 }}>{l}</button>)}
+      {pu && <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+        <button onClick={() => setU(uN - (uN > 1 ? 1 : 0.5))} aria-label="Menos" className="k-press" style={{ ...btnGhost, width: 44, padding: 0, height: 44, fontSize: 22, lineHeight: 1 }}>−</button>
+        <div style={{ ...field, flex: 1, display: "flex", alignItems: "center", gap: 6, background: C.card, height: 44, padding: "0 12px" }}>
+          <input inputMode="decimal" value={units} onChange={e => { const v = e.target.value.replace(/[^0-9.,]/g, ""); setUnits(v); const n = Number(v.replace(",", ".")) || 0; setGrams(n ? String(Math.round(n * pu.grams)) : ""); }} placeholder="0" className="k-num" style={{ width: 52, background: "none", border: "none", outline: "none", color: C.text, fontSize: 17, fontWeight: 600 }} />
+          <span style={{ color: C.sub, fontSize: 14, flex: 1 }}>{unitLabel(uN || 1, pu.unit)} <span style={{ color: C.dim }}>· {Math.round(pu.grams)} g c/u</span></span>
+        </div>
+        <button onClick={() => setU(uN + (uN >= 1 ? 1 : 0.5))} aria-label="Más" className="k-press" style={{ ...btnGhost, width: 44, padding: 0, height: 44, fontSize: 22, lineHeight: 1 }}>+</button>
+      </div>}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+        {[["100 g", 100], ["150 g", 150], ["200 g", 200], ["250 g", 250]].map(([l, v]) => <button key={l} onClick={() => setG(String(v))} className="k-press" style={{ padding: "7px 11px", borderRadius: 999, fontSize: 13, border: `0.5px solid ${g === v ? C.lime : C.line}`, background: g === v ? C.lime : C.card, color: g === v ? C.limeInk : C.text, fontWeight: g === v ? 600 : 400 }}>{l}</button>)}
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
         <div style={{ ...field, flex: 1, display: "flex", alignItems: "center", gap: 6, background: C.card }}>
-          <input inputMode="decimal" value={grams} onChange={e => setGrams(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="gramos" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16 }} />
+          <input inputMode="decimal" value={grams} onChange={e => setG(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="gramos" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16 }} />
           <span style={{ color: C.sub }}>g</span>
         </div>
-        <button className="k-press" onClick={() => g > 0 ? add(foodItem(pick, g)) : pushToast("Poné la cantidad")} style={{ ...btnLime, width: "auto", padding: "13px 18px" }}>Sumar</button>
+        <button className="k-press" onClick={() => g > 0 ? add(foodItem(pick, g, qtyText)) : pushToast("Poné la cantidad")} style={{ ...btnLime, width: "auto", padding: "13px 18px" }}>Sumar</button>
       </div>
       {g > 0 && <div className="k-num" style={{ fontSize: 13, color: C.sub, marginTop: 10 }}>{(it => <>{it.kcal} kcal · P {it.protein_g} · C {it.carbs_g} · G {it.fat_g}</>)(foodItem(pick, g))}</div>}
     </div>
     : q.trim().length >= 2 ? <div style={{ marginTop: 10 }}>
       {results.length > 0 && <div style={{ ...card, padding: "2px 14px" }}>
-        {results.map((f, i) => <button key={f[0]} onClick={() => { setPick(f); setGrams(String(f[6])); }} style={{ ...rowBtn, padding: "10px 0", borderBottom: i < results.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+        {results.map((f, i) => <button key={f[0]} onClick={() => { setPick(f); const u = portionUnit(f); setGrams(String(f[6])); setUnits(u ? String(u.n).replace(".", ",") : ""); }} style={{ ...rowBtn, padding: "10px 0", borderBottom: i < results.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
           <span style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 15, display: "block" }}>{f[0]}</span><span className="k-num" style={{ fontSize: 12, color: C.dim }}>{f[5]} ({f[6]} g) · {Math.round(f[1] * f[6] / 100)} kcal · P {Math.round(f[2] * f[6] / 100)}</span></span>
           <Icon d={I.plus} size={16} color={C.lime} />
         </button>)}

@@ -8,44 +8,59 @@ import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, field, btnLime
 import { shrink } from "./social";
 
 const n1 = (v) => Number(v).toLocaleString("es-AR", { maximumFractionDigits: 1 });
-const weeksStreak = (ws) => {
+export const weeksStreak = (ws) => {
   const mon = new Date(); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
   let k = 0;
   for (let i = 0; i < 60; i++) { const s = new Date(mon); s.setDate(s.getDate() - i * 7); const e = new Date(s); e.setDate(e.getDate() + 7); if (ws.some(w => { const d = new Date(w.started_at); return d >= s && d < e; })) k++; else if (i > 0) break; }
   return k;
 };
 
-// Cada logro: id, nombre, cómo se gana, ícono y la regla.
+// Cada logro: grupo, id, nombre, cómo se gana, ícono y la regla.
 const BADGES = [
-  ["primero", "Primer entreno", "Terminá tu primer entreno", I.gym, d => d.ws.length >= 1],
-  ["diez", "10 entrenos", "Diez entrenos terminados", I.gym, d => d.ws.length >= 10],
-  ["cincuenta", "50 entrenos", "Cincuenta entrenos", I.gym, d => d.ws.length >= 50],
-  ["cien", "100 entrenos", "Cien entrenos. Una bestia", I.fire, d => d.ws.length >= 100],
-  ["racha4", "Un mes seguido", "4 semanas seguidas entrenando", I.fire, d => d.streak >= 4],
-  ["racha12", "Tres meses seguidos", "12 semanas seguidas", I.fire, d => d.streak >= 12],
-  ["madrugador", "Madrugador", "3 entrenos antes de las 8", I.timer, d => d.ws.filter(w => new Date(w.started_at).getHours() < 8).length >= 3],
-  ["nocturno", "Nocturno", "3 entrenos después de las 21", I.timer, d => d.ws.filter(w => new Date(w.started_at).getHours() >= 21).length >= 3],
-  ["comida7", "Una semana contando", "7 días con comida cargada", I.food, d => d.foodDays >= 7],
-  ["comida30", "Un mes contando", "30 días con comida cargada", I.food, d => d.foodDays >= 30],
-  ["deporte5", "Deportista", "5 sesiones de deporte", I.fire, d => d.cardio >= 5],
-  ["objetivo", "Con rumbo", "Definiste tu objetivo", I.target, d => !!d.profile?.objetivo],
-  ["estrategia", "Con plan", "Calculaste tu estrategia", I.spark, d => !!d.profile?.estrategia],
-  ["foto", "Antes y después", "2 fotos de progreso", I.camera, d => d.photos >= 2],
+  ["Entrenamiento", "primero", "Primer entreno", "Terminá tu primer entreno", I.gym, d => d.ws.length >= 1],
+  ["Entrenamiento", "diez", "10 entrenos", "Diez entrenos terminados", I.gym, d => d.ws.length >= 10],
+  ["Entrenamiento", "cincuenta", "50 entrenos", "Cincuenta entrenos terminados", I.gym, d => d.ws.length >= 50],
+  ["Entrenamiento", "cien", "100 entrenos", "Cien entrenos. Una bestia", I.fire, d => d.ws.length >= 100],
+  ["Entrenamiento", "madrugador", "Madrugador", "3 entrenos empezados antes de las 8", I.timer, d => d.ws.filter(w => new Date(w.started_at).getHours() < 8).length >= 3],
+  ["Entrenamiento", "nocturno", "Nocturno", "3 entrenos empezados después de las 21", I.timer, d => d.ws.filter(w => new Date(w.started_at).getHours() >= 21).length >= 3],
+  ["Constancia", "racha4", "Un mes seguido", "4 semanas seguidas entrenando al menos una vez", I.fire, d => d.streak >= 4],
+  ["Constancia", "racha12", "Tres meses seguidos", "12 semanas seguidas entrenando", I.fire, d => d.streak >= 12],
+  ["Constancia", "racha26", "Medio año", "26 semanas seguidas entrenando", I.fire, d => d.streak >= 26],
+  ["Nutrición", "comida7", "Una semana contando", "7 días con comida cargada", I.food, d => d.foodDays >= 7],
+  ["Nutrición", "comida30", "Un mes contando", "30 días con comida cargada", I.food, d => d.foodDays >= 30],
+  ["Nutrición", "estrategia", "Con plan", "Calculaste tu estrategia de alimentación", I.spark, d => !!d.profile?.estrategia],
+  ["Deporte", "deporte5", "Deportista", "5 sesiones de deporte registradas", I.fire, d => d.cardio >= 5],
+  ["Deporte", "deporte25", "Atleta", "25 sesiones de deporte registradas", I.fire, d => d.cardio >= 25],
+  ["Perfil", "objetivo", "Con rumbo", "Definiste tu objetivo", I.target, d => !!d.profile?.objetivo],
+  ["Perfil", "foto", "Antes y después", "2 fotos de progreso cargadas", I.camera, d => d.photos >= 2],
 ];
 
 export function Achievements({ profile, ws, foodDays, cardio, photos }) {
+  const [open, setOpen] = useState(null);
   const d = { profile, ws, streak: weeksStreak(ws), foodDays, cardio, photos };
-  const list = BADGES.map(([id, name, how, icon, test]) => ({ id, name, how, icon, ok: !!test(d) }));
+  const list = BADGES.map(([group, id, name, how, icon, test]) => ({ group, id, name, how, icon, ok: !!test(d) }));
   const got = list.filter(b => b.ok).length;
+  const groups = [...new Set(list.map(b => b.group))];
   return <>
     <SectionTitle right={<span className="k-num" style={{ fontSize: 12, color: C.dim }}>{got} de {list.length}</span>}>Logros</SectionTitle>
-    <div style={{ ...card, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "14px 6px", padding: "16px 10px" }}>
-      {list.map(b => <div key={b.id} title={b.how} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, opacity: b.ok ? 1 : 0.38 }}>
-        <span style={{ width: 48, height: 48, borderRadius: 24, background: b.ok ? "rgba(198,244,50,0.14)" : C.cardHi, border: `1.5px solid ${b.ok ? C.lime : C.line}`, color: b.ok ? C.lime : C.sub, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={b.icon} size={22} sw={1.8} /></span>
-        <span style={{ fontSize: 10.5, textAlign: "center", lineHeight: 1.25, color: b.ok ? C.text : C.sub }}>{b.name}</span>
+    <div style={{ ...card, padding: "4px 12px 14px" }}>
+      {groups.map(gName => <div key={gName}>
+        <div style={{ fontSize: 12, color: C.sub, margin: "12px 2px 8px", display: "flex", justifyContent: "space-between" }}><span>{gName}</span><span className="k-num" style={{ color: C.dim }}>{list.filter(b => b.group === gName && b.ok).length}/{list.filter(b => b.group === gName).length}</span></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "10px 6px" }}>
+          {list.filter(b => b.group === gName).map(b => <button key={b.id} onClick={() => setOpen(b)} className="k-press" style={{ background: "none", border: "none", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, opacity: b.ok ? 1 : 0.4, color: C.text }}>
+            <span style={{ width: 48, height: 48, borderRadius: 24, background: b.ok ? "rgba(198,244,50,0.14)" : C.cardHi, border: `1.5px solid ${b.ok ? C.lime : C.line}`, color: b.ok ? C.lime : C.sub, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={b.icon} size={22} sw={1.8} /></span>
+            <span style={{ fontSize: 10.5, textAlign: "center", lineHeight: 1.25, color: b.ok ? C.text : C.sub }}>{b.name}</span>
+          </button>)}
+        </div>
       </div>)}
     </div>
-    <div style={{ fontSize: 12, color: C.dim, margin: "8px 2px 0", lineHeight: 1.45 }}>{(list.find(b => !b.ok) || {}).how ? `Próximo: ${list.find(b => !b.ok).how.toLowerCase()}.` : "Los tenés todos."}</div>
+    {open && <Sheet title={open.name} onClose={() => setOpen(null)}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ width: 64, height: 64, borderRadius: 32, background: open.ok ? "rgba(198,244,50,0.14)" : C.cardHi, border: `1.5px solid ${open.ok ? C.lime : C.line}`, color: open.ok ? C.lime : C.sub, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon d={open.icon} size={30} sw={1.8} /></span>
+        <span><span style={{ fontSize: 13, color: C.sub, display: "block" }}>{open.group}</span><span style={{ fontSize: 15, fontWeight: 600, color: open.ok ? C.lime : C.text }}>{open.ok ? "Conseguido" : "Todavía no"}</span></span>
+      </div>
+      <p style={{ fontSize: 15, lineHeight: 1.5, margin: "16px 0 0" }}>{open.how}.</p>
+    </Sheet>}
   </>;
 }
 

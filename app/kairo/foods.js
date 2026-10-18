@@ -186,8 +186,24 @@ export function searchFoods(q, limit = 8) {
   return scored.sort((a, b) => a[0] - b[0]).slice(0, limit).map(x => x[1]);
 }
 
-// Un alimento de la base en `grams`, listo para guardar.
-export function foodItem(f, grams) {
+// Un alimento de la base en `grams`, listo para guardar. `qty` es el texto que se muestra ("2 unidades (90 g)").
+export function foodItem(f, grams, qty) {
   const k = grams / 100;
-  return { name: f[0], qty: `${Number(grams).toLocaleString("es-AR")} g`, kcal: Math.round(f[1] * k), protein_g: Math.round(f[2] * k * 10) / 10, carbs_g: Math.round(f[3] * k * 10) / 10, fat_g: Math.round(f[4] * k * 10) / 10 };
+  return { name: f[0], qty: qty || `${Number(grams).toLocaleString("es-AR")} g`, kcal: Math.round(f[1] * k), protein_g: Math.round(f[2] * k * 10) / 10, carbs_g: Math.round(f[3] * k * 10) / 10, fat_g: Math.round(f[4] * k * 10) / 10 };
+}
+
+// La porción "3 cucharadas" (30 g) se puede contar de a una: { n: 3, unit: "cucharada", grams: 10 }.
+export function portionUnit(f) {
+  const m = String(f[5] || "").match(/^(\d+(?:[.,]\d+)?|\d+\/\d+)\s+(.+)$/);
+  if (!m) return null;
+  const n = m[1].includes("/") ? Number(m[1].split("/")[0]) / Number(m[1].split("/")[1]) : Number(m[1].replace(",", "."));
+  if (!n) return null;
+  return { n, unit: m[2], grams: f[6] / n };
+}
+const PLURAL = { unidad: "unidades", porción: "porciones", porcion: "porciones", scoop: "scoops" };
+export function unitLabel(count, unit) {
+  if (count === 1) return unit;
+  const [w, ...rest] = unit.split(" ");
+  const pl = PLURAL[w] || (/[aeiou]$/.test(w) ? w + "s" : w + "es");
+  return [pl, ...rest].join(" ");
 }

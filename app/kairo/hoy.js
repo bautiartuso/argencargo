@@ -34,9 +34,11 @@ export default function Hoy({ token, me, fin, go }) {
   const [week, setWeek] = useState([]);
   const [weekFood, setWeekFood] = useState([]);
   const [weekCardio, setWeekCardio] = useState([]);
-  const [social, setSocial] = useState(null);
-  const [stories, setStories] = useState([]);
-  const [actividad, setActividad] = useState([]);
+  // El grupo (ranking, historias, actividad) arranca con lo último que vimos, así no hay salto mientras se actualiza.
+  const cached = (() => { try { return JSON.parse(localStorage.getItem("kairo_social_cache") || "null"); } catch { return null; } })();
+  const [social, setSocial] = useState(cached?.users || null);
+  const [stories, setStories] = useState(cached?.stories || []);
+  const [actividad, setActividad] = useState(cached?.actividad || []);
   const [peso, setPeso] = useState("");
   const [metric, setMetric] = useState("entrenos");
   const [sheet, setSheet] = useState(null);
@@ -44,7 +46,7 @@ export default function Hoy({ token, me, fin, go }) {
   const [perm, setPerm] = useState(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
 
   const loadSocial = useCallback(() => {
-    fetch("/api/kairo/social", { headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json()).then(r => { setSocial(r.users || []); setStories(r.stories || []); setActividad(r.actividad || []); }).catch(() => setSocial([]));
+    fetch("/api/kairo/social", { headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json()).then(r => { setSocial(r.users || []); setStories(r.stories || []); setActividad(r.actividad || []); try { localStorage.setItem("kairo_social_cache", JSON.stringify({ users: r.users || [], stories: (r.stories || []).map(({ thumb, ...s }) => ({ ...s, thumb: thumb?.length > 60000 ? null : thumb })), actividad: r.actividad || [] })); } catch {} }).catch(() => setSocial(s => s || []));
   }, [token]);
   const load = useCallback(async () => {
     const t = today(), dow = (new Date().getDay() + 6) % 7;
@@ -148,9 +150,9 @@ export default function Hoy({ token, me, fin, go }) {
         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em" }}>{me?.nombre ? `Hola, ${me.nombre.split(" ")[0]}` : "Hola"}</div>
         <div style={{ fontSize: 13, color: C.sub }}>{d[0].toUpperCase() + d.slice(1)}</div>
       </div>
-      {myRow?.racha_semanas > 0 && <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 999, background: "rgba(198,244,50,0.1)", color: C.lime }}>
-        <Icon d={I.fire} size={16} sw={1.8} /><span className="k-num" style={{ fontSize: 14, fontWeight: 600 }}>{myRow.racha_semanas}</span>
-      </div>}
+      {myRow?.racha_semanas > 0 && <button onClick={() => setSheet({ type: "racha" })} className="k-press" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 999, border: "none", background: "rgba(198,244,50,0.1)", color: C.lime }}>
+        <Icon d={I.fire} size={16} sw={1.8} /><span className="k-num" style={{ fontSize: 14, fontWeight: 600 }}>{myRow.racha_semanas}</span><span style={{ fontSize: 12, fontWeight: 500 }}>sem</span>
+      </button>}
     </div>
 
     <StoriesBar token={token} me={me} users={social || []} stories={stories} onProfile={(id) => setSheet({ type: "user", id })} />
@@ -226,6 +228,7 @@ export default function Hoy({ token, me, fin, go }) {
     </div>
 
     {/* Tu grupo: los perfiles de todos */}
+    {social === null && <><SectionTitle>Tu grupo</SectionTitle><div style={{ display: "flex", gap: 10 }}>{[0, 1, 2].map(i => <Skel key={i} h={128} w={116} r={20} />)}</div></>}
     {others.length > 0 && <>
       <SectionTitle>Tu grupo</SectionTitle>
       <div style={{ display: "flex", gap: 10, overflowX: "auto", margin: "0 -16px", padding: "0 16px 2px", scrollbarWidth: "none" }}>
@@ -301,6 +304,10 @@ export default function Hoy({ token, me, fin, go }) {
         : <div style={{ fontSize: 12.5, color: C.dim, textAlign: "center" }}>{(w => w ? `Ya entrenaste hoy: ${w.routine_name || "entreno"}` : plan.descanso ? "Hoy no hay pesas" : routines.length ? "Hoy no tenés rutina asignada" : "Armá tu primera rutina en Físico")(week.find(w => ymd(new Date(w.started_at)) === today()))}{plan.manana ? ` · Mañana: ${plan.manana}` : ""}</div>}
     </div>}
 
+    {sheet?.type === "racha" && <Sheet title={`Racha de ${myRow?.racha_semanas} ${myRow?.racha_semanas === 1 ? "semana" : "semanas"}`} onClose={() => setSheet(null)}>
+      <p style={{ fontSize: 15, lineHeight: 1.55, margin: 0 }}>Son las semanas seguidas en las que entrenaste al menos una vez, contando esta. Se corta si pasa una semana entera (lunes a domingo) sin ningún entreno.</p>
+      <div style={{ ...card, marginTop: 14, fontSize: 13.5, color: C.sub, lineHeight: 1.5 }}>{week.length ? `Esta semana ya entrenaste ${week.length} ${week.length === 1 ? "vez" : "veces"}: la racha está a salvo.` : "Esta semana todavía no entrenaste: con un entreno antes del domingo la mantenés."}</div>
+    </Sheet>}
     {sheet?.type === "day" && <DaySheet d={days[sheet.i]} go={go} onClose={() => setSheet(null)} />}
     {sheet?.type === "user" && <UserProfile token={token} id={sheet.id} onClose={() => setSheet(null)} />}
     {sheet?.type === "log" && <LogSheet token={token} last={logs[0]} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}

@@ -37,10 +37,16 @@ function Wordmark({ size = 22 }) {
 
 function Login({ onLogin }) {
   const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
+  const [mode, setMode] = useState("login"); // login | signup
   const [err, setErr] = useState(""); const [lo, setLo] = useState(false);
   const submit = async () => {
     setLo(true); setErr("");
     try {
+      if (mode === "signup") {
+        if (pw.length < 6) { setErr("La contraseña tiene que tener al menos 6 caracteres"); setLo(false); return; }
+        const reg = await fetch("/api/kairo/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: pw }) }).then(r => r.json()).catch(() => ({ error: "Sin conexión" }));
+        if (reg.error) { setErr(reg.error); setLo(false); return; }
+      }
       const r = await ac("token?grant_type=password", { email, password: pw });
       if (r?.error || !r?.access_token) { setErr("Email o contraseña incorrectos"); setLo(false); return; }
       const p = await dq("profiles", { token: r.access_token, filters: `?id=eq.${r.user.id}&select=*` });
@@ -54,11 +60,15 @@ function Login({ onLogin }) {
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 24px", maxWidth: 420, margin: "0 auto" }}>
       <Wordmark size={34} />
-      <p style={{ color: C.sub, margin: "8px 0 32px", fontSize: 15 }}>Tu mejor versión, todos los días.</p>
-      <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email" placeholder="Email" style={field} />
-      <input value={pw} onChange={e => setPw(e.target.value)} type="password" autoComplete="current-password" placeholder="Contraseña" onKeyDown={e => e.key === "Enter" && submit()} style={{ ...field, marginTop: 10 }} />
+      <p style={{ color: C.sub, margin: "8px 0 28px", fontSize: 15 }}>Tu mejor versión, todos los días.</p>
+      <div style={{ display: "flex", background: C.card, border: `0.5px solid ${C.line}`, borderRadius: 999, padding: 3, marginBottom: 16 }}>
+        {[["login", "Iniciar sesión"], ["signup", "Crear cuenta"]].map(([k, l]) => <button key={k} onClick={() => { setMode(k); setErr(""); }} className="k-press" style={{ flex: 1, border: "none", borderRadius: 999, padding: "9px 0", fontSize: 14, fontWeight: 500, background: mode === k ? C.cardHi : "transparent", color: mode === k ? C.text : C.sub }}>{l}</button>)}
+      </div>
+      <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email" inputMode="email" placeholder="Email" style={field} />
+      <input value={pw} onChange={e => setPw(e.target.value)} type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder={mode === "signup" ? "Elegí una contraseña (6 o más)" : "Contraseña"} onKeyDown={e => e.key === "Enter" && submit()} style={{ ...field, marginTop: 10 }} />
       {err && <p style={{ color: C.danger, fontSize: 13, margin: "10px 2px 0" }}>{err}</p>}
-      <button className="k-press" onClick={submit} disabled={lo} style={{ ...btnLime, marginTop: 18 }}>{lo ? "Entrando…" : "Entrar"}</button>
+      <button className="k-press" onClick={submit} disabled={lo} style={{ ...btnLime, marginTop: 18 }}>{lo ? (mode === "signup" ? "Creando tu cuenta…" : "Entrando…") : mode === "signup" ? "Crear mi cuenta" : "Entrar"}</button>
+      {mode === "signup" && <p style={{ color: C.dim, fontSize: 12.5, margin: "14px 2px 0", lineHeight: 1.5, textAlign: "center" }}>Después te pedimos tu nombre, una foto y tu objetivo. Dos minutos.</p>}
     </div>
   );
 }
@@ -72,7 +82,7 @@ const TABS = [
   { id: "perfil", label: "Perfil", icon: I.user },
 ];
 
-function App({ session }) {
+function App({ session, onLogout }) {
   const [tab, setTab] = useState("hoy");
   // Tu perfil (nombre, foto, organización de días): lo usan Inicio y la barra de abajo.
   const [me, setMe] = useState(null);
@@ -121,7 +131,7 @@ function App({ session }) {
             {tab === "hoy" && <Inicio token={session.token} me={me} fin={fin} go={go} />}
             {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
             {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
-            {tab === "perfil" && <Perfil token={session.token} isAdmin={session.profile?.role === "admin"} />}
+            {tab === "perfil" && <Perfil token={session.token} isAdmin={session.profile?.role === "admin"} email={session.user?.email} onLogout={onLogout} />}
             {tab === "nutricion" && <Nutricion token={session.token} onProfile={() => go("perfil")} />}
           </div>
         </div>

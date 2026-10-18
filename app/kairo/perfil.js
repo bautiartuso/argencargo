@@ -5,7 +5,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today, useRefresh, Skel, SkelCards } from "./ui";
 import { adjustTarget, extraSplit, kcalFor, sportName } from "./score";
-import { Achievements, ProgressPhotos } from "./progreso";
+import { Achievements, ProgressPhotos, weeksStreak } from "./progreso";
+import { ensurePush } from "./fisico";
 
 export { MEDIDAS };
 export const OBJETIVOS = [
@@ -28,9 +29,10 @@ export async function saveProfile(token, patch) {
 }
 export const ageOf = (d) => { if (!d) return null; const b = new Date(d + "T12:00:00"), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
 
-export default function Perfil({ token, isAdmin }) {
+export default function Perfil({ token, isAdmin, email, onLogout }) {
   const [p, setP] = useState(undefined);
   const [sheet, setSheet] = useState(null);
+  const [perm, setPerm] = useState(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
   const [thinking, setThinking] = useState(false);
   const fileRef = useRef(null);
 
@@ -66,9 +68,13 @@ export default function Perfil({ token, isAdmin }) {
 
   if (p === undefined) return <><div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px 0" }}><Skel h={76} w={76} r={38} /><div style={{ flex: 1 }}><Skel h={22} w="60%" /><Skel h={14} w="40%" style={{ marginTop: 8 }} /></div></div><SkelCards n={3} h={96} /></>;
   const st = p?.estrategia;
+  const { base: dietaBase, ajustes } = splitDieta(p?.dieta);
+  const streak = weeksStreak(stats.ws);
+  const rowBtn = { ...card, width: "100%", textAlign: "left", color: C.text, display: "flex", alignItems: "center", gap: 12 };
+  const Chevron = () => <Icon d={I.right} size={16} color={C.dim} />;
 
   return <>
-    {/* Encabezado */}
+    {/* Encabezado: foto, nombre y tres números */}
     <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "6px 2px 0" }}>
       <button onClick={() => fileRef.current?.click()} aria-label="Cambiar foto de perfil" className="k-press" style={{ width: 76, height: 76, borderRadius: 38, border: `2px solid ${C.lime}`, padding: 2, background: "none", flexShrink: 0 }}>
         <span style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: C.cardHi, color: C.sub }}>
@@ -76,67 +82,106 @@ export default function Perfil({ token, isAdmin }) {
         </span>
       </button>
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => pickPhoto(e.target.files?.[0])} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em" }}>{p?.nombre || "Tu perfil"}</div>
-        {!p?.nombre && <button onClick={() => setSheet("objetivo")} style={{ ...linkBtn, fontSize: 13 }}>Poné tu nombre</button>}
-        <div style={{ fontSize: 14, color: C.sub, marginTop: 2 }}>{p?.objetivo ? `${OBJ_LABEL[p.objetivo]}${p.tendencia ? ` · ${p.tendencia.split(":")[0].toLowerCase()}` : ""}` : "Definí tu objetivo"}</div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p?.nombre || "Tu perfil"}</div>
+        <div style={{ fontSize: 13.5, color: C.sub, marginTop: 2 }}>{[email, (p?.fecha_nacimiento || p?.edad) && `${ageOf(p.fecha_nacimiento) ?? p.edad} años`].filter(Boolean).join(" · ")}</div>
       </div>
     </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 16 }}>
+      <MiniStat label="Entrenos" value={stats.ws.length} />
+      <MiniStat label="Racha" value={`${streak} sem`} color={streak ? C.lime : undefined} />
+      <MiniStat label="Días contando" value={stats.foodDays} />
+    </div>
 
-    {/* Objetivo */}
-    <SectionTitle right={<button onClick={() => setSheet("objetivo")} style={linkBtn}>Editar</button>}>Tu objetivo</SectionTitle>
-    {!p?.objetivo ? <button className="k-press" onClick={() => setSheet("objetivo")} style={{ ...card, width: "100%", textAlign: "left", color: C.text, borderColor: "rgba(198,244,50,0.3)" }}>
-      <div style={{ fontSize: 16, fontWeight: 500 }}>Contale a Kairo qué buscás</div>
-      <div style={{ fontSize: 13, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>Con tu objetivo y tus datos, la IA arma tu estrategia de entrenamiento y alimentación.</div>
-    </button> : <button className="k-press" onClick={() => setSheet("objetivo")} style={{ ...card, width: "100%", textAlign: "left", color: C.text }}>
-      <div style={{ fontSize: 18, fontWeight: 600 }}>{OBJ_LABEL[p.objetivo]}</div>
-      {p.tendencia && <div style={{ fontSize: 14, color: C.lime, marginTop: 2 }}>{p.tendencia}</div>}
-      {p.objetivo_detalle && <div style={{ fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 1.45 }}>"{p.objetivo_detalle}"</div>}
-      <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>{[p.sexo, (p.fecha_nacimiento || p.edad) && `${ageOf(p.fecha_nacimiento) ?? p.edad} años`, p.altura_cm && `${n1(p.altura_cm)} cm`, p.peso_kg && `${n1(p.peso_kg)} kg`, p.experiencia].filter(Boolean).join(" · ")}</div>
+    {/* Objetivo: solo el título; el detalle se edita en la hoja */}
+    <SectionTitle>Tu objetivo</SectionTitle>
+    {!p?.objetivo ? <button className="k-press" onClick={() => setSheet("objetivo")} style={{ ...rowBtn, borderColor: "rgba(198,244,50,0.3)" }}>
+      <span style={{ width: 40, height: 40, borderRadius: 20, background: "rgba(198,244,50,0.12)", color: C.lime, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon d={I.target} size={20} /></span>
+      <span style={{ flex: 1 }}><span style={{ fontSize: 15, fontWeight: 500, display: "block" }}>Contale a Kairo qué buscás</span><span style={{ fontSize: 13, color: C.sub }}>Con eso la IA arma tu estrategia.</span></span><Chevron />
+    </button> : <button className="k-press" onClick={() => setSheet("objetivo")} style={rowBtn}>
+      <span style={{ width: 40, height: 40, borderRadius: 20, background: "rgba(198,244,50,0.12)", color: C.lime, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon d={I.target} size={20} /></span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 16, fontWeight: 600, display: "block" }}>{OBJ_LABEL[p.objetivo]}{p.tendencia ? <span style={{ color: C.sub, fontWeight: 400 }}> · {p.tendencia.split(":")[0]}</span> : null}</span>
+        <span style={{ fontSize: 12.5, color: C.sub, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[dietaBase !== DIETAS[0] ? dietaBase : null, ...ajustes, p.experiencia, p.altura_cm && `${n1(p.altura_cm)} cm`, p.peso_kg && `${n1(p.peso_kg)} kg`].filter(Boolean).join(" · ") || "Tocá para completar tus datos"}</span>
+      </span><Chevron />
     </button>}
 
-    {/* Estrategia de la IA */}
+    {/* Estrategia: los números; el resto en la hoja */}
     {p?.objetivo && <>
-      <SectionTitle right={<span style={{ display: "flex", gap: 14 }}>{st && <button onClick={() => setSheet("macros")} style={linkBtn}>Editar</button>}<button onClick={askStrategy} disabled={thinking} style={linkBtn}>{thinking ? "Pensando…" : st ? "Recalcular" : ""}</button></span>}>Tu estrategia de alimentación</SectionTitle>
+      <SectionTitle>Tu estrategia de alimentación</SectionTitle>
       {!st ? <button className="k-press" onClick={askStrategy} disabled={thinking} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
         <Icon d={I.spark} size={18} />{thinking ? "La IA está calculando tus calorías y macros…" : "Calcular calorías y macros con IA"}
-      </button> : <div style={card}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-          <div><span className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.lime }}>{st.calorias_dia.toLocaleString("es-AR")}</span><span style={{ color: C.sub }}> kcal/día{Array.isArray(p.cardio_plan) && p.cardio_plan.length ? " sin deporte" : ""}</span></div>
-          <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{st.ritmo_peso_semanal_kg > 0 ? "+" : ""}{Number(st.ritmo_peso_semanal_kg).toLocaleString("es-AR", { maximumFractionDigits: 2 })} kg/sem</span>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-          <MiniStat label="Proteína" value={`${st.proteina_g} g`} />
-          {st.carbohidratos_g != null && <MiniStat label="Carbohidratos" value={`${st.carbohidratos_g} g`} />}
-          {st.grasas_g != null && <MiniStat label="Grasas" value={`${st.grasas_g} g`} />}
-        </div>
-        {Array.isArray(p.cardio_plan) && p.cardio_plan.length > 0 && (sp => <div style={{ fontSize: 12.5, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>Los días con deporte el extra va {Math.round(sp.p * 100)} % a proteína, {Math.round(sp.c * 100)} % a carbohidratos y {Math.round(sp.g * 100)} % a grasas{sp.motivo ? ` (${sp.motivo.replace(/\.$/, "")})` : ""}: {p.cardio_plan.map(x => { const a = adjustTarget(st, kcalFor(x.kind, x.minutes, x.intensity, p.peso_kg)); return `${sportName(x.kind)} ≈ ${a.calorias_dia.toLocaleString("es-AR")} kcal · P ${a.proteina_g} · C ${a.carbohidratos_g} · G ${a.grasas_g}`; }).join(" · ")}.</div>)(extraSplit(st))}
-        {(p.dieta || st.manual) && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>{[p.dieta, st.manual && "objetivos editados a mano"].filter(Boolean).join(" · ")}</div>}
-        <p style={{ fontSize: 14, lineHeight: 1.5, margin: "14px 0 0" }}>{st.resumen}</p>
-        {st.progreso && <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: C.cardHi }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: ESTADO[st.progreso.estado]?.[1] || C.sub }}>{ESTADO[st.progreso.estado]?.[0] || "Progreso"}</div>
-          <div style={{ fontSize: 13.5, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{st.progreso.lectura}</div>
-        </div>}
-        <Pautas st={st} />
-        {p.estrategia_at && <div style={{ fontSize: 11.5, color: C.dim, marginTop: 12 }}>Actualizada {dayLabel(p.estrategia_at.slice(0, 10))}. Actualizala cuando registres medidas nuevas.</div>}
-      </div>}
+      </button> : <button className="k-press" onClick={() => setSheet("estrategia")} style={rowBtn}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}><span className="k-num" style={{ fontSize: 24, fontWeight: 600, color: C.lime, letterSpacing: "-0.02em" }}>{Number(st.calorias_dia).toLocaleString("es-AR")}</span><span style={{ fontSize: 13, color: C.sub }}>kcal/día{Array.isArray(p.cardio_plan) && p.cardio_plan.length ? " sin deporte" : ""}</span></span>
+          <span className="k-num" style={{ fontSize: 13, color: C.sub, display: "block", marginTop: 2 }}>P {st.proteina_g} · C {st.carbohidratos_g} · G {st.grasas_g} g{st.manual ? " · a mano" : ""}{st.progreso ? <span style={{ color: ESTADO[st.progreso.estado]?.[1] || C.sub }}> · {ESTADO[st.progreso.estado]?.[0]}</span> : null}</span>
+        </span><Chevron />
+      </button>}
     </>}
+
+    {/* Reglas: una línea cada una */}
+    <SectionTitle>Reglas para la IA</SectionTitle>
+    <button className="k-press" onClick={() => setSheet("reglas")} style={rowBtn}>
+      <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
+        <Rule label="Entrenamiento" text={p?.reglas_gym} placeholder="Ej: priorizo máquinas antes que peso libre" oneLine />
+        <Rule label="Alimentación" text={p?.reglas_nutricion} placeholder="Ej: comidas simples, pollo a la plancha y listo" oneLine />
+      </span><Chevron />
+    </button>
 
     <ProgressPhotos token={token} profile={p} />
     <Achievements profile={p} ws={stats.ws} foodDays={stats.foodDays} cardio={stats.cardio} photos={stats.photos} />
 
-    {/* Reglas para la IA */}
-    <SectionTitle right={<button onClick={() => setSheet("reglas")} style={linkBtn}>Editar</button>}>Reglas para la IA</SectionTitle>
-    <button className="k-press" onClick={() => setSheet("reglas")} style={{ ...card, width: "100%", textAlign: "left", color: C.text, display: "grid", gap: 10 }}>
-      <Rule label="Entrenamiento" text={p?.reglas_gym} placeholder="Ej: priorizo máquinas antes que peso libre" />
-      <Rule label="Alimentación" text={p?.reglas_nutricion} placeholder="Ej: comidas simples, pollo a la plancha y listo" />
-    </button>
+    {/* Ajustes */}
+    <SectionTitle>Ajustes</SectionTitle>
+    <div style={{ ...card, padding: "2px 16px" }}>
+      <button onClick={async () => { if (perm === "granted") return pushToast("Ya están activadas"); if (perm === "denied") return pushToast("Están bloqueadas: activalas desde Ajustes del iPhone → Kairo"); await ensurePush(token); setPerm(typeof Notification === "undefined" ? "unsupported" : Notification.permission); }} style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "13px 0", borderBottom: `0.5px solid ${C.line}` }}>
+        <Icon d={I.bell} size={20} color={C.sub} /><span style={{ flex: 1, fontSize: 15 }}>Notificaciones</span><span style={{ fontSize: 13, color: perm === "granted" ? C.pos : perm === "denied" ? C.neg : C.sub }}>{perm === "granted" ? "Activadas" : perm === "denied" ? "Bloqueadas" : perm === "unsupported" ? "No disponible" : "Activar"}</span>
+      </button>
+      <button onClick={() => setSheet("salir")} style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "13px 0" }}>
+        <Icon d={I.close} size={20} color={C.sub} /><span style={{ flex: 1, fontSize: 15 }}>Cerrar sesión</span><span style={{ fontSize: 13, color: C.sub }}>{email}</span>
+      </button>
+    </div>
 
     {sheet === "objetivo" && <ObjectiveSheet token={token} p={p} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+    {sheet === "estrategia" && st && <StrategySheet p={p} st={st} thinking={thinking} onRecalc={askStrategy} onEdit={() => setSheet("macros")} onClose={() => setSheet(null)} />}
     {sheet === "macros" && <MacrosSheet token={token} st={st} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet === "reglas" && <RulesSheet token={token} p={p} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+    {sheet === "salir" && <Sheet title="¿Cerrás sesión?" onClose={() => setSheet(null)}>
+      <p style={{ fontSize: 14, color: C.sub, margin: "-4px 0 16px", lineHeight: 1.5 }}>Tus datos quedan guardados. Para volver, entrás con tu email y contraseña.</p>
+      <button className="k-press" onClick={onLogout} style={{ ...btnLime, background: "rgba(255,107,107,0.14)", color: C.neg }}>Cerrar sesión</button>
+      <button className="k-press" onClick={() => setSheet(null)} style={{ ...btnGhost, marginTop: 8 }}>Cancelar</button>
+    </Sheet>}
     {isAdmin && <Users token={token} />}
   </>;
+}
+
+// La estrategia completa: resumen, cómo viene el progreso, pautas, deporte, y los botones para editar o recalcular.
+function StrategySheet({ p, st, thinking, onRecalc, onEdit, onClose }) {
+  const sp = extraSplit(st);
+  return <Sheet title="Tu estrategia" onClose={onClose} tall>
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+      <div><span className="k-num" style={{ fontSize: 32, fontWeight: 600, color: C.lime, letterSpacing: "-0.02em" }}>{Number(st.calorias_dia).toLocaleString("es-AR")}</span><span style={{ color: C.sub }}> kcal/día{Array.isArray(p.cardio_plan) && p.cardio_plan.length ? " sin deporte" : ""}</span></div>
+      {st.ritmo_peso_semanal_kg != null && <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{st.ritmo_peso_semanal_kg > 0 ? "+" : ""}{Number(st.ritmo_peso_semanal_kg).toLocaleString("es-AR", { maximumFractionDigits: 2 })} kg/sem</span>}
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+      <MiniStat label="Proteína" value={`${st.proteina_g} g`} />
+      <MiniStat label="Carbohidratos" value={`${st.carbohidratos_g} g`} />
+      <MiniStat label="Grasas" value={`${st.grasas_g} g`} />
+    </div>
+    {(p.dieta || st.manual) && <div style={{ fontSize: 12.5, color: C.sub, marginTop: 10 }}>{[p.dieta, st.manual && "objetivos editados a mano"].filter(Boolean).join(" · ")}</div>}
+    {st.resumen && <p style={{ fontSize: 14.5, lineHeight: 1.55, margin: "14px 0 0" }}>{st.resumen}</p>}
+    {st.progreso && <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: C.cardHi }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: ESTADO[st.progreso.estado]?.[1] || C.sub }}>{ESTADO[st.progreso.estado]?.[0] || "Progreso"}</div>
+      <div style={{ fontSize: 13.5, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{st.progreso.lectura}</div>
+    </div>}
+    {Array.isArray(p.cardio_plan) && p.cardio_plan.length > 0 && <div style={{ fontSize: 13, color: C.sub, marginTop: 14, lineHeight: 1.55 }}>Los días con deporte el extra va {Math.round(sp.p * 100)} % a proteína, {Math.round(sp.c * 100)} % a carbohidratos y {Math.round(sp.g * 100)} % a grasas{sp.motivo ? ` (${sp.motivo.replace(/\.$/, "")})` : ""}: {p.cardio_plan.map(x => { const a = adjustTarget(st, kcalFor(x.kind, x.minutes, x.intensity, p.peso_kg)); return `${sportName(x.kind)} ≈ ${a.calorias_dia.toLocaleString("es-AR")} kcal · P ${a.proteina_g} · C ${a.carbohidratos_g} · G ${a.grasas_g}`; }).join(" · ")}.</div>}
+    <Pautas st={st} />
+    {p.estrategia_at && <div style={{ fontSize: 11.5, color: C.dim, marginTop: 14 }}>Actualizada {dayLabel(p.estrategia_at.slice(0, 10))}. Recalculala cuando registres medidas nuevas o cambies de objetivo.</div>}
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 18 }}>
+      <button className="k-press" onClick={onEdit} style={btnGhost}>Editar a mano</button>
+      <button className="k-press" onClick={onRecalc} disabled={thinking} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Icon d={I.spark} size={16} />{thinking ? "Pensando…" : "Recalcular"}</button>
+    </div>
+  </Sheet>;
 }
 
 function Pautas({ st }) {
@@ -151,9 +196,9 @@ function Pautas({ st }) {
   </div>;
 }
 
-const Rule = ({ label, text, placeholder }) => <div>
+const Rule = ({ label, text, placeholder, oneLine }) => <div style={{ minWidth: 0 }}>
   <div style={{ fontSize: 12, color: C.sub }}>{label}</div>
-  <div style={{ fontSize: 14, marginTop: 2, color: text ? C.text : C.dim, lineHeight: 1.45 }}>{text || placeholder}</div>
+  <div style={{ fontSize: 14, marginTop: 2, color: text ? C.text : C.dim, lineHeight: 1.45, ...(oneLine ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : {}) }}>{text || placeholder}</div>
 </div>;
 
 export function MeasuresTable({ logs }) {
@@ -447,33 +492,75 @@ export function Avatar({ src, size = 40 }) {
 
 // Primera vez que entra un usuario (la cuenta la crea el admin solo con email y contraseña):
 // pone su nombre (obligatorio), y si quiere su foto y su fecha de nacimiento.
+// Onboarding: la primera vez que entrás (la cuenta la creaste vos con email y contraseña). Tres pasos:
+// quién sos (foto obligatoria), qué buscás, cómo comés. Con eso Kairo ya puede armar tu estrategia.
 export function Welcome({ token, onDone }) {
-  const [nombre, setNombre] = useState("");
-  const [nac, setNac] = useState("");
-  const [avatar, setAvatar] = useState(null);
+  const [step, setStep] = useState(0);
+  const [f, setF] = useState({ nombre: "", avatar: null, fecha_nacimiento: "", sexo: "", altura_cm: "", objetivo: "", tendencia: "", experiencia: "", dias_semana: "", base: DIETAS[0], ajustes: [] });
   const [saving, setSaving] = useState(false);
   const fileRef = useRef(null);
-  const save = async () => {
-    if (!nombre.trim()) return pushToast("Poné tu nombre");
+  const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+  const tendencias = OBJETIVOS.find(([k]) => k === f.objetivo)?.[2] || [];
+  const next = () => {
+    if (step === 0) { if (!f.avatar) return pushToast("Subí una foto: tus amigos te reconocen por ella"); if (!f.nombre.trim()) return pushToast("Poné tu nombre"); }
+    if (step === 1 && !f.objetivo) return pushToast("Elegí qué buscás");
+    setStep(step + 1);
+  };
+  const finish = async () => {
     setSaving(true);
-    await saveProfile(token, { nombre: nombre.trim(), fecha_nacimiento: nac || null, edad: ageOf(nac), avatar, updated_at: new Date().toISOString() });
+    await saveProfile(token, { nombre: f.nombre.trim(), avatar: f.avatar, fecha_nacimiento: f.fecha_nacimiento || null, edad: ageOf(f.fecha_nacimiento), sexo: f.sexo || null, altura_cm: num(f.altura_cm) || null, objetivo: f.objetivo || null, tendencia: f.tendencia || null, experiencia: f.experiencia || null, dias_semana: Number(f.dias_semana) || null, dieta: joinDieta(f.base, f.ajustes), updated_at: new Date().toISOString() });
     setSaving(false); onDone();
   };
+  const titles = [["Quién sos", "Tu foto y tu nombre es lo que ven tus amigos en Kairo."], ["Qué buscás", "Con esto la IA arma tu estrategia y las cargas de cada entreno."], ["Cómo comés", "Para que los macros y los análisis respeten tu forma de comer."]];
   return <div style={{ position: "fixed", inset: 0, zIndex: 80, background: C.bg, overflowY: "auto" }}>
-    <div style={{ maxWidth: 420, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 48px) 24px 40px" }}>
-      <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em" }}>Bienvenido a kairo<span style={{ color: C.lime }}>.</span></div>
-      <p style={{ color: C.sub, fontSize: 15, lineHeight: 1.5, margin: "8px 0 28px" }}>Contanos cómo te llamás. Lo demás (objetivo, rutinas, comidas) lo vas completando cuando quieras.</p>
-      <button onClick={() => fileRef.current?.click()} className="k-press" style={{ width: 96, height: 96, borderRadius: 48, border: `2px solid ${C.lime}`, padding: 3, background: "none", display: "block", margin: "0 auto" }}>
-        <span style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: C.cardHi, color: C.lime }}>
-          {avatar ? <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><Icon d={I.plus} size={22} sw={2.2} /><span style={{ fontSize: 11, fontWeight: 600 }}>Tu foto</span></span>}
-        </span>
-      </button>
-      <input ref={fileRef} type="file" accept="image/*" hidden onChange={async e => { const f = e.target.files?.[0]; if (f) setAvatar(await resizeImage(f, 256)); }} />
-      <Label>Tu nombre *</Label>
-      <input autoFocus value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Cómo te llamás" style={field} />
-      <Label>Fecha de nacimiento (opcional)</Label>
-      <input type="date" value={nac} onChange={e => setNac(e.target.value)} style={{ ...field, colorScheme: "dark", minHeight: 48, WebkitAppearance: "none", appearance: "none" }} />
-      <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 26 }}>{saving ? "Guardando…" : "Empezar"}</button>
+    <div style={{ maxWidth: 420, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 36px) 24px calc(env(safe-area-inset-bottom) + 40px)" }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 26 }}>{[0, 1, 2].map(i => <span key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.lime : C.line, transition: "background 200ms" }} />)}</div>
+      <div style={{ fontSize: 13, color: C.lime, fontWeight: 600 }}>Paso {step + 1} de 3</div>
+      <div style={{ fontSize: 28, fontWeight: 600, letterSpacing: "-0.03em", marginTop: 4 }}>{titles[step][0]}</div>
+      <p style={{ color: C.sub, fontSize: 14.5, lineHeight: 1.5, margin: "8px 0 20px" }}>{titles[step][1]}</p>
+
+      {step === 0 && <div key="s0" className="k-tab">
+        <button onClick={() => fileRef.current?.click()} className="k-press" style={{ width: 110, height: 110, borderRadius: 55, border: `2px solid ${f.avatar ? C.lime : C.line}`, padding: 3, background: "none", display: "block", margin: "0 auto" }}>
+          <span style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: C.cardHi, color: C.lime }}>
+            {f.avatar ? <img src={f.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}><Icon d={I.camera} size={26} sw={1.8} /><span style={{ fontSize: 11.5, fontWeight: 600 }}>Tu foto *</span></span>}
+          </span>
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={async e => { const file = e.target.files?.[0]; if (file) set("avatar", await resizeImage(file, 256)); }} />
+        <Label>Tu nombre *</Label>
+        <input value={f.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Cómo te llamás" autoComplete="given-name" style={field} />
+        <Label>Fecha de nacimiento{f.fecha_nacimiento ? ` · ${ageOf(f.fecha_nacimiento)} años` : ""}</Label>
+        <input type="date" value={f.fecha_nacimiento} onChange={e => set("fecha_nacimiento", e.target.value)} style={{ ...field, colorScheme: "dark", minHeight: 48, WebkitAppearance: "none", appearance: "none" }} />
+        <Label>Sexo</Label>
+        <div style={{ display: "flex", gap: 8 }}>{[["hombre", "Hombre"], ["mujer", "Mujer"]].map(([k, l]) => <button key={k} onClick={() => set("sexo", k)} className="k-press" style={{ ...chip(f.sexo === k), flex: 1, textAlign: "center" }}>{l}</button>)}</div>
+        <Label>Altura</Label>
+        <div style={{ ...field, display: "flex", alignItems: "center", gap: 6 }}><input inputMode="numeric" value={f.altura_cm} onChange={e => set("altura_cm", e.target.value.replace(/[^\d]/g, ""))} placeholder="178" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16 }} /><span style={{ color: C.sub }}>cm</span></div>
+      </div>}
+
+      {step === 1 && <div key="s1" className="k-tab">
+        <Label>Qué buscás *</Label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{OBJETIVOS.map(([k, l]) => <button key={k} onClick={() => setF(prev => ({ ...prev, objetivo: k, tendencia: "" }))} className="k-press" style={chip(f.objetivo === k)}>{l}</button>)}</div>
+        {tendencias.length > 0 && <><Label>Con qué intención</Label><div style={{ display: "grid", gap: 8 }}>{tendencias.map(t => <button key={t} onClick={() => set("tendencia", t)} className="k-press" style={{ ...chip(f.tendencia === t), borderRadius: 14, padding: "11px 14px" }}>{t}</button>)}</div></>}
+        <Label>Experiencia entrenando</Label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{[["principiante", "Menos de 1 año"], ["intermedio", "1 a 3 años"], ["avanzado", "Más de 3"]].map(([k, l]) => <button key={k} onClick={() => set("experiencia", k)} className="k-press" style={chip(f.experiencia === k)}>{l}</button>)}</div>
+        <Label>Cuántos días por semana querés entrenar</Label>
+        <div style={{ display: "flex", gap: 6 }}>{[2, 3, 4, 5, 6].map(n => <button key={n} onClick={() => set("dias_semana", String(n))} className="k-press" style={{ ...chip(f.dias_semana === String(n)), flex: 1, textAlign: "center", padding: "10px 0" }}>{n}</button>)}</div>
+      </div>}
+
+      {step === 2 && <div key="s2" className="k-tab">
+        <Label>Tipo de alimentación</Label>
+        <div style={{ position: "relative" }}>
+          <select value={f.base} onChange={e => set("base", e.target.value)} style={{ ...field, appearance: "none", WebkitAppearance: "none", colorScheme: "dark", paddingRight: 40 }}>{DIETAS.map(d => <option key={d} value={d}>{d}</option>)}</select>
+          <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", display: "flex" }}><Icon d={I.down} size={16} color={C.sub} /></span>
+        </div>
+        <Label>Ajustes (los que quieras)</Label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{AJUSTES.map(a => { const on = f.ajustes.includes(a); return <button key={a} onClick={() => setF(prev => ({ ...prev, ajustes: on ? prev.ajustes.filter(x => x !== a) : [...prev.ajustes.filter(x => x !== OPUESTOS[a]), a] }))} className="k-press" style={{ ...chip(on), padding: "8px 13px", fontSize: 13.5 }}>{a}</button>; })}</div>
+        <div style={{ ...card, marginTop: 20, fontSize: 13.5, color: C.sub, lineHeight: 1.5 }}>Después, en Perfil, la IA te calcula calorías y macros con todo esto. El peso lo cargás en Inicio cuando quieras.</div>
+      </div>}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 28 }}>
+        {step > 0 && <button className="k-press" onClick={() => setStep(step - 1)} style={{ ...btnGhost, width: "auto", padding: "14px 18px" }}>Atrás</button>}
+        {step < 2 ? <button className="k-press" onClick={next} style={btnLime}>Seguir</button> : <button className="k-press" onClick={finish} disabled={saving} style={btnLime}>{saving ? "Guardando…" : "Empezar a usar Kairo"}</button>}
+      </div>
     </div>
   </div>;
 }
