@@ -7,6 +7,7 @@
 //                                     músculo, qué cambiar y por qué.
 
 import { callClaudeText } from "../../../../lib/anthropic";
+import { SPORTS, kcalFor, sportName } from "../../../kairo/score";
 import { sb, arr, kairoUser } from "../../../../lib/kairo-server";
 
 const MODEL = "claude-opus-5-5";
@@ -161,6 +162,7 @@ async function loadProfile(uid) {
 function profileText(p) {
   if (!p) return "Perfil: no cargado (asumí hipertrofia general, nivel intermedio).";
   return `Perfil: objetivo ${OBJ[p.objetivo] || p.objetivo || "—"}${p.tendencia ? ` (${p.tendencia})` : ""}${p.objetivo_detalle ? ` · en sus palabras: "${p.objetivo_detalle}"` : ""}${p.reglas_gym ? ` · reglas para el entrenamiento: "${p.reglas_gym}"` : ""}${p.dieta ? ` · tipo de alimentación: ${p.dieta} (respetalo a rajatabla: en keto los carbohidratos van a 20-30 g como mucho, en vegana nada de origen animal, en sin gluten nada con trigo/cebada/centeno; los ajustes mueven los macros sobre esa base: "más proteína" = 2,2-2,6 g/kg, "menos carbohidratos" = la mitad de lo habitual, "menos grasas" = 20 % de las calorías, etc.)` : ""}${p.reglas_nutricion ? ` · reglas para la alimentación: "${p.reglas_nutricion}"` : ""} · experiencia ${p.experiencia || "—"} · ${p.sexo || "—"}, ${p.edad || "—"} años, ${p.peso_kg || "—"} kg, ${p.altura_cm || "—"} cm · entrena ${p.dias_semana || "—"} días/semana${p.lesiones ? ` · lesiones/limitaciones: ${p.lesiones}` : ""}${p.notas ? ` · notas: ${p.notas}` : ""}.
+Deporte además de las pesas: ${Array.isArray(p.cardio_plan) && p.cardio_plan.length ? p.cardio_plan.map(x => `${sportName(x.kind)} ${x.minutes} min ${x.days.map(d => DAYS[d]).join("/")}${x.time ? ` a las ${x.time}` : ""} (≈ ${kcalFor(x.kind, x.minutes, x.intensity, p.peso_kg)} kcal por sesión)`).join("; ") : "ninguno"}. Esas calorías Kairo las suma al objetivo de cada día que corresponde: calculá calorias_dia SIN el deporte (solo basal + pesas + vida diaria).
 Suplementos que toma todos los días: ${p.supps?.length ? p.supps.map(suppLine).join("; ") : "ninguno"}. Tenelos en cuenta siempre: no le sugieras comida para cubrir algo que ya cubre un suplemento.
 Usa Kairo desde ${p.desde || "hace muy poco (todavía no registró entrenos)"}: no juzgues frecuencia ni adherencia con días anteriores a esa fecha (antes no registraba nada). Con menos de 3 semanas de datos, no saques conclusiones de constancia.`;
 }
@@ -323,7 +325,9 @@ async function nutrition(uid) {
     const items = plan.filter(p => p.dow === i);
     if (!items.length) return `${d}: sin cargar`;
     const sum = items.reduce((a, x) => ({ k: a.k + Number(x.kcal), p: a.p + Number(x.protein_g), c: a.c + Number(x.carbs_g), g: a.g + Number(x.fat_g) }), { k: 0, p: 0, c: 0, g: 0 });
-    return `${d} (total ${Math.round(sum.k)} kcal · P ${Math.round(sum.p)} · C ${Math.round(sum.c)} · G ${Math.round(sum.g)}): ` + items.map(x => `[${x.meal}] ${x.name}${x.qty ? ` ${x.qty}` : ""}`).join("; ");
+    const cardio = (Array.isArray(profile?.cardio_plan) ? profile.cardio_plan : []).filter(x => x.days?.includes(i));
+    const extra = cardio.reduce((a, x) => a + kcalFor(x.kind, x.minutes, x.intensity, profile?.peso_kg), 0);
+    return `${d}${extra ? ` [hace ${cardio.map(x => sportName(x.kind)).join(" y ")}: el objetivo de ese día sube ≈ ${extra} kcal, en carbohidratos y grasas]` : ""} (total ${Math.round(sum.k)} kcal · P ${Math.round(sum.p)} · C ${Math.round(sum.c)} · G ${Math.round(sum.g)}): ` + items.map(x => `[${x.meal}] ${x.name}${x.qty ? ` ${x.qty}` : ""}`).join("; ");
   }).join("\n");
   const user = `${profileText(profile)}\n${target}\n\nAnalizá su plan semanal de comidas (come de forma repetitiva a propósito; no le propongas recetas). Los suplementos son parte de su día: contalos (si toma omega 3 no le falta omega 3 aunque no coma pescado; si toma creatina, es para el entrenamiento). Decí día por día si llega al objetivo, qué nutrientes le quedan cortos o desbalanceados (fibra, hierro, calcio, potasio, vitaminas, etc.) y si algún suplemento lo cubre. Después armá el plan de acción: cambios concretos sobre los alimentos que ya come (cambiar 100 g de arroz por 100 g de papa, sumar 1 huevo en el desayuno, sacar algo que sobra), con el nombre exacto del alimento del plan y los días donde aplica.\n\n${days}`;
   const content = await ask(user, NUTRITION_SCHEMA, "kairo-coach-nutrition");

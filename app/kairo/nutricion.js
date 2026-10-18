@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel } from "./ui";
 import { ensurePush } from "./fisico";
+import { adjustTarget } from "./score";
 
 const MEALS = [["desayuno", "Desayuno"], ["almuerzo", "Almuerzo"], ["merienda", "Merienda"], ["cena", "Cena"], ["snacks", "Snacks"]];
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -66,18 +67,23 @@ function Today({ token, n }) {
   const [date, setDate] = useState(today());
   const [log, setLog] = useState([]);
   const [suppLog, setSuppLog] = useState([]);
+  const [burned, setBurned] = useState(0);
   const [adding, setAdding] = useState(null);
   const load = useCallback(async () => {
-    const [l, s] = await Promise.all([
+    const [l, s, c] = await Promise.all([
       dq("kairo_food_log", { token, filters: `?log_date=eq.${date}&select=*&order=created_at.asc` }),
       dq("kairo_supp_log", { token, filters: `?log_date=eq.${date}&select=*` }),
+      dq("kairo_cardio", { token, filters: `?log_date=eq.${date}&select=kcal` }),
     ]);
-    setLog(Array.isArray(l) ? l : []); setSuppLog(Array.isArray(s) ? s : []);
+    setLog(Array.isArray(l) ? l : []); setSuppLog(Array.isArray(s) ? s : []); setBurned((Array.isArray(c) ? c : []).reduce((a, x) => a + Number(x.kcal || 0), 0));
   }, [token, date]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { window.addEventListener("kairo-cardio", load); return () => window.removeEventListener("kairo-cardio", load); }, [load]);
   const dow = dowOf(date);
   const planToday = n.plan.filter(p => p.dow === dow);
-  const eaten = sum(log), t = n.target;
+  // Lo que quemaste haciendo deporte ese día se suma al objetivo (carbos y grasas; la proteína no cambia).
+  const eaten = sum(log), st = adjustTarget(n.target && { calorias_dia: n.target.kcal, proteina_g: n.target.p, carbohidratos_g: n.target.c, grasas_g: n.target.g }, burned);
+  const t = st ? { kcal: st.calorias_dia, p: st.proteina_g, c: st.carbohidratos_g, g: st.grasas_g } : null;
   const shift = (d) => { const x = new Date(date + "T12:00:00"); x.setDate(x.getDate() + d); const s = ymd(x); if (s <= today()) setDate(s); };
 
   const togglePlan = async (item) => {
@@ -114,6 +120,7 @@ function Today({ token, n }) {
         <MacroBar label="Grasas" v={eaten.g} max={t?.g} color={C.warn} />
       </div>
     </div>
+    {burned > 0 && <div style={{ fontSize: 12.5, color: C.sub, textAlign: "center", marginTop: 10 }}>Incluye <span style={{ color: C.blue }}>+{burned.toLocaleString("es-AR")} kcal</span> por el deporte de {date === today() ? "hoy" : "ese día"}</div>}
 
     {daySupps.length > 0 && <SuppDay supps={daySupps} isTaken={(s, slot) => suppLog.some(x => x.supplement_id === s.id && x.slot === slot)} onToggle={toggleSupp} />}
 

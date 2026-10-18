@@ -1,6 +1,9 @@
-// Kairo · éxito del día (0 a 100). La mitad es entrenar (o descansar si tocaba descanso); la otra
-// mitad es la comida: qué tan cerca quedaste de tu objetivo de proteína, carbohidratos y grasas.
-// Desvío de hasta 10 % en un macro vale el puntaje completo; de ahí baja derecho hasta 0 a un 60 %.
+// Kairo · éxito del día (0 a 100) y calorías del deporte. Compartido por Inicio, Nutrición y la IA.
+//
+// Partes del día: pesas (si tocaban o las hiciste), deporte (si tocaba o lo hiciste) y comida (siempre).
+// El deporte vale 15 %; lo que queda se reparte en partes iguales entre pesas y comida. Un día sin pesas
+// ni deporte es 100 % comida. La comida se mide por qué tan cerca quedaste de tu objetivo de proteína,
+// carbohidratos y grasas: hasta 10 % de desvío vale completo; de ahí baja derecho hasta 0 a un 60 %.
 export const MACROS = [["p", "Proteína", "proteina_g"], ["c", "Carbohidratos", "carbohidratos_g"], ["g", "Grasas", "grasas_g"]];
 
 export function macroScore(eaten, target) {
@@ -10,10 +13,46 @@ export function macroScore(eaten, target) {
   return dev <= 0.1 ? 1 : Math.max(0, (0.6 - dev) / 0.5);
 }
 
-// eaten: { p, c, g } del día · st: estrategia del perfil · trained: entrenó · rest: tocaba descanso
-export function dayScore({ eaten, st, trained, rest, logged }) {
-  const entreno = trained || rest ? 50 : 0;
+// eaten: { p, c, g } · st: objetivo del día (ya con el deporte sumado) · pesasPlan/pesasDone · cardioPlan (min) / cardioDone (min)
+export function dayScore({ eaten, st, pesasPlan, pesasDone, cardioPlan, cardioDone, logged }) {
+  const hasPesas = !!(pesasPlan || pesasDone), hasCardio = !!(cardioPlan || cardioDone);
+  const wCardio = hasCardio ? 15 : 0, wPesas = hasPesas ? (100 - wCardio) / 2 : 0, wComida = 100 - wCardio - wPesas;
   const macros = MACROS.map(([k, label, key]) => ({ k, label, eaten: eaten?.[k] || 0, target: st?.[key] ?? null, score: macroScore(eaten?.[k], st?.[key] ?? null) })).filter(m => m.target != null);
-  const comida = !macros.length ? null : !logged ? 0 : Math.round(50 * macros.reduce((a, m) => a + m.score, 0) / macros.length);
-  return { total: comida == null ? entreno * 2 : entreno + comida, entreno, comida, macros, trained, rest, sinObjetivo: comida == null };
+  const sinObjetivo = !macros.length;
+  const comida = sinObjetivo ? null : !logged ? 0 : macros.reduce((a, m) => a + m.score, 0) / macros.length;
+  const pesas = pesasDone ? 1 : 0;
+  const cardio = !hasCardio ? 0 : cardioPlan ? Math.min(1, (cardioDone || 0) / cardioPlan) : 1;
+  const parts = [
+    hasPesas && { id: "pesas", label: "Pesas", w: wPesas, got: pesas },
+    hasCardio && { id: "cardio", label: "Deporte", w: wCardio, got: cardio },
+    { id: "comida", label: "Comida", w: wComida, got: comida ?? 0 },
+  ].filter(Boolean);
+  // Sin objetivo de macros la comida no se puede medir: el día se reparte entre lo demás (o queda en 0 si no hay nada).
+  const usable = sinObjetivo ? parts.filter(x => x.id !== "comida") : parts;
+  const wSum = usable.reduce((a, x) => a + x.w, 0);
+  const total = wSum ? Math.round(usable.reduce((a, x) => a + x.w * x.got, 0) * 100 / wSum) : 0;
+  return { total, parts, macros, comida, sinObjetivo, pesasDone, pesasPlan, cardioPlan, cardioDone };
 }
+
+// Deportes con su MET (calorías por kilo y hora, aprox.). kcal = MET × peso × horas × intensidad.
+export const SPORTS = [
+  ["boxeo", "Boxeo", 9], ["natacion", "Natación", 7], ["running", "Running", 9.5], ["caminata", "Caminata", 3.5], ["bici", "Bicicleta", 7.5],
+  ["futbol", "Fútbol", 8], ["padel", "Pádel / tenis", 7], ["basquet", "Básquet", 7.5], ["hiit", "HIIT / funcional", 9], ["soga", "Salto de soga", 11],
+  ["remo", "Remo", 7], ["escalador", "Escalador / elíptico", 6], ["artes", "Artes marciales", 9], ["otro", "Otro", 6],
+];
+export const INTENSITY = { suave: 0.8, media: 1, fuerte: 1.2 };
+export const sportName = (kind) => SPORTS.find(s => s[0] === kind)?.[1] || kind;
+export function kcalFor(kind, minutes, intensity = "media", weightKg = 75) {
+  const met = SPORTS.find(s => s[0] === kind)?.[2] || 6;
+  return Math.round(met * (Number(weightKg) || 75) * (Number(minutes) || 0) / 60 * (INTENSITY[intensity] || 1));
+}
+
+// Objetivo del día con el deporte sumado: las calorías quemadas se reponen con carbohidratos y grasas en la
+// misma proporción de la estrategia (la proteína no cambia; con keto, casi todo va a grasas).
+export function adjustTarget(st, burned) {
+  if (!st || !burned) return st;
+  const c = Number(st.carbohidratos_g) || 0, g = Number(st.grasas_g) || 0, cal = c * 4 + g * 9;
+  const shareC = cal ? (c * 4) / cal : 0.6;
+  return { ...st, calorias_dia: Math.round(Number(st.calorias_dia) + burned), carbohidratos_g: Math.round(c + burned * shareC / 4), grasas_g: Math.round(g + burned * (1 - shareC) / 9), quemadas: burned };
+}
+export const cardioOn = (plan, dow) => (Array.isArray(plan) ? plan : []).filter(x => x.days?.includes(dow));

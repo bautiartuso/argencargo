@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import BodyMap from "./body";
 import { StoryPicker } from "./social";
+import Cardio from "./cardio";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd } from "./ui";
 
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -151,7 +152,8 @@ export const todayPlan = (routines, dias) => planOn(routines, dias, ymd(new Date
 
 export default function Fisico({ token, onProfile }) {
   const gym = useGym(token);
-  const [view, setView] = useState("entrenar");
+  // Inicio puede mandarte directo a una pestaña (ej. "Registrar" el deporte de hoy).
+  const [view, setView] = useState(() => { try { const v = sessionStorage.getItem("kairo_fisico_view"); if (v) { sessionStorage.removeItem("kairo_fisico_view"); return v; } } catch {} return "entrenar"; });
   const [sheet, setSheet] = useState(null);
   const start = (routine) => startWorkout(token, routine);
 
@@ -162,7 +164,7 @@ export default function Fisico({ token, onProfile }) {
 
   return <>
     <div style={{ display: "flex", justifyContent: "center" }}>
-      <Segmented value={view} onChange={setView} options={[["entrenar", "Entrenar"], ["rutinas", "Rutinas"], ["progreso", "Progreso"]]} />
+      <Segmented value={view} onChange={setView} options={[["entrenar", "Entrenar"], ["rutinas", "Rutinas"], ["deporte", "Deporte"], ["progreso", "Progreso"]]} />
     </div>
 
     {gym.lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
@@ -212,6 +214,7 @@ export default function Fisico({ token, onProfile }) {
           </div>}
       </>}
 
+      {view === "deporte" && <Cardio token={token} profile={gym.profile} onProfile={gym.load} />}
       {view === "progreso" && <Progress workouts={gym.workouts} exercises={gym.exercises} onOpenWorkout={(w) => setSheet({ type: "workout", w })} onOpenExercise={(ex) => setSheet({ type: "exercise", ex })} />}
     </>}
 
@@ -225,7 +228,7 @@ export default function Fisico({ token, onProfile }) {
 
 function Segmented({ value, onChange, options }) {
   return <div style={{ display: "flex", background: C.card, border: `0.5px solid ${C.line}`, borderRadius: 999, padding: 3 }}>
-    {options.map(([id, label]) => <button key={id} onClick={() => onChange(id)} className="k-press" style={{ border: "none", borderRadius: 999, padding: "7px 15px", fontSize: 14, fontWeight: 500, background: value === id ? C.cardHi : "transparent", color: value === id ? C.text : C.sub }}>{label}</button>)}
+    {options.map(([id, label]) => <button key={id} onClick={() => onChange(id)} className="k-press" style={{ border: "none", borderRadius: 999, padding: options.length > 3 ? "7px 11px" : "7px 15px", fontSize: 14, fontWeight: 500, background: value === id ? C.cardHi : "transparent", color: value === id ? C.text : C.sub }}>{label}</button>)}
   </div>;
 }
 
