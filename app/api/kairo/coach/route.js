@@ -243,7 +243,7 @@ async function review(uid) {
 
 const STRATEGY_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["resumen", "calorias_dia", "proteina_g", "carbohidratos_g", "grasas_g", "ritmo_peso_semanal_kg", "alimentacion", "micronutrientes", "progreso"],
+  required: ["resumen", "calorias_dia", "proteina_g", "carbohidratos_g", "grasas_g", "ritmo_peso_semanal_kg", "deporte_extra", "alimentacion", "micronutrientes", "progreso"],
   properties: {
     resumen: { type: "string", description: "La estrategia de alimentación en 2-3 frases, en criollo y concreto." },
     calorias_dia: { type: "integer", description: "Calorías diarias objetivo (día promedio, contando el entrenamiento)." },
@@ -251,6 +251,11 @@ const STRATEGY_SCHEMA = {
     carbohidratos_g: { type: "integer" },
     grasas_g: { type: "integer" },
     ritmo_peso_semanal_kg: { type: "number", description: "Cambio de peso semanal buscado (negativo = bajar)." },
+    deporte_extra: {
+      type: "object", additionalProperties: false, required: ["proteina_pct", "carbohidratos_pct", "grasas_pct", "motivo"],
+      description: "Los días que hace deporte (boxeo, natación, etc.) Kairo suma al objetivo las calorías quemadas. Cómo repartir ese extra entre los macros, en porcentaje de las calorías extra (suman 100), según su objetivo, su tipo de alimentación y el deporte que hace: en cardio pesa más el carbohidrato, en definición se cuida la proteína, en keto el extra va a grasas.",
+      properties: { proteina_pct: { type: "integer" }, carbohidratos_pct: { type: "integer" }, grasas_pct: { type: "integer" }, motivo: { type: "string", description: "Una frase: por qué ese reparto." } },
+    },
     alimentacion: { type: "array", items: { type: "string" }, description: "3-5 pautas concretas para comer, respetando sus reglas de alimentación." },
     micronutrientes: { type: "array", items: { type: "string" }, description: "2-4 tips de micronutrientes a cuidar con este objetivo y este volumen de entrenamiento (ej. hierro, magnesio, vitamina D, sodio y potasio si suda mucho), con alimentos simples donde conseguirlos." },
     progreso: {

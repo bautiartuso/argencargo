@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today } from "./ui";
-import { adjustTarget, kcalFor, sportName } from "./score";
+import { adjustTarget, extraSplit, kcalFor, sportName } from "./score";
 
 export { MEDIDAS };
 export const OBJETIVOS = [
@@ -102,7 +102,7 @@ export default function Perfil({ token, isAdmin }) {
           {st.carbohidratos_g != null && <MiniStat label="Carbohidratos" value={`${st.carbohidratos_g} g`} />}
           {st.grasas_g != null && <MiniStat label="Grasas" value={`${st.grasas_g} g`} />}
         </div>
-        {Array.isArray(p.cardio_plan) && p.cardio_plan.length > 0 && <div style={{ fontSize: 12.5, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>Los días con deporte el objetivo sube en proporción: {p.cardio_plan.map(x => { const a = adjustTarget(st, kcalFor(x.kind, x.minutes, x.intensity, p.peso_kg)); return `${sportName(x.kind)} ≈ ${a.calorias_dia.toLocaleString("es-AR")} kcal (P ${a.proteina_g})`; }).join(" · ")}.</div>}
+        {Array.isArray(p.cardio_plan) && p.cardio_plan.length > 0 && (sp => <div style={{ fontSize: 12.5, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>Los días con deporte el extra va {Math.round(sp.p * 100)} % a proteína, {Math.round(sp.c * 100)} % a carbohidratos y {Math.round(sp.g * 100)} % a grasas{sp.motivo ? ` (${sp.motivo.replace(/\.$/, "")})` : ""}: {p.cardio_plan.map(x => { const a = adjustTarget(st, kcalFor(x.kind, x.minutes, x.intensity, p.peso_kg)); return `${sportName(x.kind)} ≈ ${a.calorias_dia.toLocaleString("es-AR")} kcal · P ${a.proteina_g} · C ${a.carbohidratos_g} · G ${a.grasas_g}`; }).join(" · ")}.</div>)(extraSplit(st))}
         {(p.dieta || st.manual) && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>{[p.dieta, st.manual && "objetivos editados a mano"].filter(Boolean).join(" · ")}</div>}
         <p style={{ fontSize: 14, lineHeight: 1.5, margin: "14px 0 0" }}>{st.resumen}</p>
         {st.progreso && <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: C.cardHi }}>
@@ -231,14 +231,19 @@ function ObjectiveSheet({ token, p, onClose, onSaved }) {
 
 // Calorías y macros a mano (por si la IA no acertó, o para una dieta puntual). El éxito del día se mide con esto.
 function MacrosSheet({ token, st, onClose, onSaved }) {
-  const [f, setF] = useState({ kcal: st.calorias_dia ?? "", p: st.proteina_g ?? "", c: st.carbohidratos_g ?? "", g: st.grasas_g ?? "" });
+  const sp = extraSplit(st);
+  const [f, setF] = useState({ kcal: st.calorias_dia ?? "", p: st.proteina_g ?? "", c: st.carbohidratos_g ?? "", g: st.grasas_g ?? "", xp: String(Math.round(sp.p * 100)), xc: String(Math.round(sp.c * 100)), xg: String(Math.round(sp.g * 100)) });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF({ ...f, [k]: v.replace(/[^\d]/g, "") });
   const calc = (Number(f.p) || 0) * 4 + (Number(f.c) || 0) * 4 + (Number(f.g) || 0) * 9;
+  const xsum = (Number(f.xp) || 0) + (Number(f.xc) || 0) + (Number(f.xg) || 0);
   const save = async () => {
     if (!Number(f.kcal) || f.p === "") return pushToast("Poné al menos calorías y proteína");
+    if (xsum !== 100) return pushToast("El reparto del extra tiene que sumar 100 %");
     setSaving(true);
-    await saveProfile(token, { estrategia: { ...st, calorias_dia: Number(f.kcal), proteina_g: Number(f.p), carbohidratos_g: Number(f.c) || 0, grasas_g: Number(f.g) || 0, manual: true }, updated_at: new Date().toISOString() });
+    const xChanged = [f.xp, f.xc, f.xg].map(Number).join() !== [sp.p, sp.c, sp.g].map(x => Math.round(x * 100)).join();
+    const deporte_extra = { proteina_pct: Number(f.xp), carbohidratos_pct: Number(f.xc), grasas_pct: Number(f.xg), motivo: xChanged ? "Reparto elegido a mano" : (st.deporte_extra?.motivo || "") };
+    await saveProfile(token, { estrategia: { ...st, calorias_dia: Number(f.kcal), proteina_g: Number(f.p), carbohidratos_g: Number(f.c) || 0, grasas_g: Number(f.g) || 0, deporte_extra, manual: true }, updated_at: new Date().toISOString() });
     setSaving(false); pushToast("Objetivos guardados"); onSaved();
   };
   const row = (k, label, unit) => <div style={{ ...field, display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
@@ -253,6 +258,14 @@ function MacrosSheet({ token, st, onClose, onSaved }) {
     {row("c", "Carbohidratos", "g")}
     {row("g", "Grasas", "g")}
     <div className="k-num" style={{ fontSize: 12.5, color: Math.abs(calc - Number(f.kcal)) > 150 ? C.warn : C.dim, margin: "10px 2px 0" }}>Los macros suman {calc.toLocaleString("es-AR")} kcal{Math.abs(calc - Number(f.kcal)) > 150 ? " · no cierran con las calorías" : ""}</div>
+    <Label>Los días con deporte, el extra va a…</Label>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+      {[["xp", "Proteína"], ["xc", "Carbos"], ["xg", "Grasas"]].map(([k, l]) => <div key={k} style={{ ...field, padding: "10px 12px" }}>
+        <div style={{ fontSize: 11.5, color: C.sub }}>{l}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 2 }}><input inputMode="numeric" value={f[k]} onChange={e => set(k, e.target.value)} className="k-num" style={{ width: "100%", minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 17, fontWeight: 500 }} /><span style={{ color: C.sub, fontSize: 13 }}>%</span></div>
+      </div>)}
+    </div>
+    <div className="k-num" style={{ fontSize: 12.5, color: xsum === 100 ? C.dim : C.warn, margin: "8px 2px 0", lineHeight: 1.45 }}>{xsum === 100 ? `Lo que quemás haciendo deporte se reparte así entre los macros de ese día.${sp.motivo ? ` La IA propuso esto porque: ${sp.motivo.replace(/\.$/, "").toLowerCase()}.` : ""}` : `Suma ${xsum} %, tiene que dar 100 %.`}</div>
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 18 }}>{saving ? "Guardando…" : "Guardar"}</button>
   </Sheet>;
 }

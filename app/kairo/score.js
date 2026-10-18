@@ -48,12 +48,19 @@ export function kcalFor(kind, minutes, intensity = "media", weightKg = 75) {
 }
 
 // Objetivo del día con el deporte sumado. La estrategia es para un día SIN deporte; lo que quemás se
-// repone subiendo los tres macros en la misma proporción (más proteína también: el músculo se desgasta más).
+// repone según el reparto que fijó la IA para tu objetivo (st.deporte_extra: % del extra a cada macro;
+// ej. más carbohidrato para cardio, grasas en keto). Si no hay reparto, sube los tres en proporción.
+export function extraSplit(st) {
+  const d = st?.deporte_extra, ok = d && [d.proteina_pct, d.carbohidratos_pct, d.grasas_pct].every(x => Number.isFinite(Number(x))) && Math.abs(Number(d.proteina_pct) + Number(d.carbohidratos_pct) + Number(d.grasas_pct) - 100) <= 2;
+  if (ok) return { p: Number(d.proteina_pct) / 100, c: Number(d.carbohidratos_pct) / 100, g: Number(d.grasas_pct) / 100, motivo: d.motivo || "" };
+  const cal = (Number(st?.proteina_g) || 0) * 4 + (Number(st?.carbohidratos_g) || 0) * 4 + (Number(st?.grasas_g) || 0) * 9;
+  if (!cal) return { p: 0.2, c: 0.55, g: 0.25, motivo: "" };
+  return { p: (Number(st.proteina_g) || 0) * 4 / cal, c: (Number(st.carbohidratos_g) || 0) * 4 / cal, g: (Number(st.grasas_g) || 0) * 9 / cal, motivo: "" };
+}
 export function adjustTarget(st, burned) {
   if (!st || !burned || !Number(st.calorias_dia)) return st;
-  const k = 1 + burned / Number(st.calorias_dia);
-  const up = (v) => v == null ? v : Math.round(Number(v) * k);
-  return { ...st, calorias_dia: Math.round(Number(st.calorias_dia) + burned), proteina_g: up(st.proteina_g), carbohidratos_g: up(st.carbohidratos_g), grasas_g: up(st.grasas_g), quemadas: burned };
+  const s = extraSplit(st);
+  return { ...st, calorias_dia: Math.round(Number(st.calorias_dia) + burned), proteina_g: Math.round((Number(st.proteina_g) || 0) + burned * s.p / 4), carbohidratos_g: Math.round((Number(st.carbohidratos_g) || 0) + burned * s.c / 4), grasas_g: Math.round((Number(st.grasas_g) || 0) + burned * s.g / 9), quemadas: burned };
 }
 export const cardioOn = (plan, dow) => (Array.isArray(plan) ? plan : []).filter(x => x.days?.includes(dow));
 // Calorías del deporte planeado para un día de la semana (para armar la dieta por adelantado).
