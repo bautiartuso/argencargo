@@ -57,19 +57,26 @@ const round = (n) => ({ ...glass, width: n, height: n, borderRadius: n / 2, padd
 // encuadre de la pantalla, así lo que subís es exactamente lo que estabas viendo.
 // Zoom con dos dedos (o tocando el "1,0×") en las dos cámaras: usa el zoom óptico del celular si el
 // navegador lo deja, y si no, acerca la imagen y recorta la foto igual a lo que ves. Para el 0,5× pasa
-// a la cámara ultra gran angular (la trasera de los iPhone), si el celu la tiene.
+// a la cámara ultra gran angular de ese lado si el celu la tiene (o usa el zoom nativo si llega solo).
+// Flash: la linterna si el navegador la deja manejar; si no (o en la frontal), la pantalla se pone
+// blanca un instante al sacar la foto, como hace Instagram.
 function Camera({ caption, avatar, onShot, onClose }) {
   const video = useRef(null), frame = useRef(null), stream = useRef(null), fallback = useRef(null);
   const native = useRef(null), ptrs = useRef(new Map()), pinch = useRef(null), zoomRef = useRef(1);
   const [facing, setFacing] = useState("environment");
   const [zoom, setZoom] = useState(1);
-  const [ultra, setUltra] = useState(null); // deviceId de la ultra gran angular, si existe
+  const [ultras, setUltras] = useState({}); // deviceId de la ultra gran angular de cada lado, si existe
   const [dev, setDev] = useState(null);     // cámara usada cuando no es la principal (la ultra)
+  const [flash, setFlash] = useState(false);
+  const [white, setWhite] = useState(false); // pantalla blanca: flash de la frontal
+  const torch = useRef(false), flashRef = useRef(false); // linterna disponible / flash elegido
+  flashRef.current = flash;
+  const ultra = ultras[facing] || null;
   const factor = dev ? 0.5 : 1;             // cuánto vale el "1" de la cámara en uso
   const [shot, setShot] = useState(null);
   const [text, setText] = useState(caption || "");
   const [editing, setEditing] = useState(false);
-  const [flash, setFlash] = useState(false);
+  const [fx, setFx] = useState(false);
   const [err, setErr] = useState("");
   const selfie = facing === "user";
   useEffect(() => {
@@ -86,8 +93,15 @@ function Camera({ caption, avatar, onShot, onClose }) {
           if (caps?.zoom && base > 0 && caps.zoom.max > base) native.current = { track, base, min: caps.zoom.min / base, max: caps.zoom.max / base };
           const f = dev ? 0.5 : 1, rel = zoomRef.current / f;
           if (native.current && rel !== 1) track.applyConstraints({ advanced: [{ zoom: base * rel }] }).catch(() => {});
-          // Con el permiso dado ya se ven los nombres de las cámaras: buscamos la ultra gran angular.
-          if (facing === "environment" && !dev) navigator.mediaDevices.enumerateDevices?.().then(ds => { const u = ds.find(d => d.kind === "videoinput" && /ultra/i.test(d.label)); if (alive && u) setUltra(u.deviceId); }).catch(() => {});
+          torch.current = !!caps?.torch;
+          if (torch.current && flashRef.current) track.applyConstraints({ advanced: [{ torch: true }] }).catch(() => {});
+          // Con el permiso dado ya se ven los nombres de las cámaras: buscamos la ultra gran angular de cada lado.
+          if (!dev) navigator.mediaDevices.enumerateDevices?.().then(ds => {
+            const front = (d) => /front|frontal|delantera|facetime/i.test(d.label);
+            const cams = ds.filter(d => d.kind === "videoinput" && /ultra/i.test(d.label));
+            const u = { user: cams.find(front)?.deviceId, environment: cams.find(d => !front(d))?.deviceId };
+            if (alive) setUltras(u);
+          }).catch(() => {});
         } catch {}
         if (video.current) { video.current.srcObject = st; await video.current.play().catch(() => {}); }
         setErr("");
@@ -97,7 +111,7 @@ function Camera({ caption, avatar, onShot, onClose }) {
   }, [facing, dev]);
   useEffect(() => () => stream.current?.getTracks().forEach(t => t.stop()), []);
   const nativeWide = native.current?.min < 1 && !dev; // la cámara principal ya llega sola al 0,5×
-  const canHalf = facing === "environment" && (nativeWide || !!ultra);
+  const canHalf = nativeWide || !!ultra;
   const setZ = (z) => {
     const n = native.current;
     const lo = nativeWide ? Math.max(0.5, n.min) : canHalf ? 0.5 : 1, hi = (n ? Math.min(6, n.max) : 4) * factor;
@@ -110,12 +124,18 @@ function Camera({ caption, avatar, onShot, onClose }) {
     if (n) n.track.applyConstraints({ advanced: [{ zoom: n.base * (z / factor) }] }).catch(() => { native.current = null; });
   };
   const flip = () => { setDev(null); zoomRef.current = 1; setZoom(1); setFacing(selfie ? "environment" : "user"); };
+  const toggleFlash = () => {
+    const on = !flash; setFlash(on);
+    if (torch.current) stream.current?.getVideoTracks()[0]?.applyConstraints({ advanced: [{ torch: on }] }).catch(() => { torch.current = false; });
+  };
   const digital = !native.current; // sin zoom óptico, se agranda la imagen y se recorta la foto
   const onPD = (e) => { if (shot) return; ptrs.current.set(e.pointerId, [e.clientX, e.clientY]); if (ptrs.current.size === 2) { const [a, b] = [...ptrs.current.values()]; pinch.current = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: zoom }; } };
   const onPM = (e) => { if (!ptrs.current.has(e.pointerId)) return; ptrs.current.set(e.pointerId, [e.clientX, e.clientY]); if (ptrs.current.size === 2 && pinch.current) { const [a, b] = [...ptrs.current.values()]; setZ(pinch.current.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.current.d); } };
   const onPU = (e) => { ptrs.current.delete(e.pointerId); if (ptrs.current.size < 2) pinch.current = null; };
-  const take = () => {
+  const take = async () => {
     const v = video.current, box = frame.current?.getBoundingClientRect(); if (!v?.videoWidth || !box) return;
+    const screenFlash = flash && !torch.current; // sin linterna: la pantalla ilumina
+    if (screenFlash) { setWhite(true); await new Promise(r => setTimeout(r, 450)); }
     // Parte del video que se ve en pantalla (object-fit: cover, más el zoom digital si lo hay).
     const k = Math.max(box.width / v.videoWidth, box.height / v.videoHeight), z = digital ? zoom / factor : 1;
     const sw = box.width / k / z, sh = box.height / k / z, sx = (v.videoWidth - sw) / 2, sy = (v.videoHeight - sh) / 2;
@@ -123,20 +143,22 @@ function Camera({ caption, avatar, onShot, onClose }) {
     const ctx = c.getContext("2d");
     if (selfie) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
-    setFlash(true); setTimeout(() => setFlash(false), 160);
     setShot(c.toDataURL("image/jpeg", 0.9));
+    if (screenFlash) setTimeout(() => setWhite(false), 120); else { setFx(true); setTimeout(() => setFx(false), 160); }
   };
   const top = "calc(env(safe-area-inset-top) + 10px)";
   return <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "#000", display: "flex", flexDirection: "column" }}>
+    {white && <div style={{ position: "absolute", inset: 0, background: "#fff", zIndex: 5 }} />}
     <div ref={frame} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU} onWheel={e => !shot && setZ(zoom - e.deltaY / 400)} style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: "0 0 22px 22px", background: "#0a0a0a", touchAction: "none" }}>
       {shot ? <img src={shot} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         : err ? <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
         : <video ref={video} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: `${selfie ? "scaleX(-1) " : ""}scale(${digital ? zoom / factor : 1})`, transition: "transform 80ms" }} />}
-      <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: flash ? 0.75 : 0, transition: "opacity 160ms", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: fx ? 0.75 : 0, transition: "opacity 160ms", pointerEvents: "none" }} />
       <input ref={fallback} type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setShot(await shrink(f, 1920, 0.9)); }} />
 
       <button onClick={shot ? () => { setShot(null); setEditing(false); } : onClose} aria-label={shot ? "Descartar foto" : "Cerrar cámara"} style={{ ...round(40), position: "absolute", top, left: 14 }}><Icon d={I.close} size={20} sw={2} /></button>
       {!shot && !err && <button onClick={() => setZ(zoom < 0.95 ? 1 : zoom < 1.5 ? 2 : canHalf ? 0.5 : 1)} aria-label="Zoom" style={{ ...round(40), position: "absolute", top, left: "50%", transform: "translateX(-50%)", width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600 }}>{zoom.toFixed(1).replace(".", ",")}×</button>}
+      {!shot && !err && <button onClick={toggleFlash} aria-label={flash ? "Apagar flash" : "Prender flash"} style={{ ...round(40), position: "absolute", top, right: 14, background: flash ? "#fff" : "rgba(0,0,0,0.38)", color: flash ? "#000" : "#fff" }}><Icon d={I.bolt} size={20} sw={1.8} /></button>}
       {shot && <button onClick={() => setEditing(true)} aria-label="Agregar texto" style={{ ...round(40), position: "absolute", top, right: 14 }}><Icon d={I.text} size={20} sw={2} /></button>}
 
       {shot && (editing
