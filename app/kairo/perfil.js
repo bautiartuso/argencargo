@@ -88,7 +88,7 @@ export default function Perfil({ token, isAdmin }) {
 
     {/* Estrategia de la IA */}
     {p?.objetivo && <>
-      <SectionTitle right={<button onClick={askStrategy} disabled={thinking} style={linkBtn}>{thinking ? "Pensando…" : st ? "Actualizar" : ""}</button>}>Tu estrategia de alimentación</SectionTitle>
+      <SectionTitle right={<span style={{ display: "flex", gap: 14 }}>{st && <button onClick={() => setSheet("macros")} style={linkBtn}>Editar</button>}<button onClick={askStrategy} disabled={thinking} style={linkBtn}>{thinking ? "Pensando…" : st ? "Recalcular" : ""}</button></span>}>Tu estrategia de alimentación</SectionTitle>
       {!st ? <button className="k-press" onClick={askStrategy} disabled={thinking} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
         <Icon d={I.spark} size={18} />{thinking ? "La IA está calculando tus calorías y macros…" : "Calcular calorías y macros con IA"}
       </button> : <div style={card}>
@@ -100,8 +100,8 @@ export default function Perfil({ token, isAdmin }) {
           <MiniStat label="Proteína" value={`${st.proteina_g} g`} />
           {st.carbohidratos_g != null && <MiniStat label="Carbohidratos" value={`${st.carbohidratos_g} g`} />}
           {st.grasas_g != null && <MiniStat label="Grasas" value={`${st.grasas_g} g`} />}
-          
         </div>
+        {(p.dieta || st.manual) && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>{[p.dieta, st.manual && "objetivos editados a mano"].filter(Boolean).join(" · ")}</div>}
         <p style={{ fontSize: 14, lineHeight: 1.5, margin: "14px 0 0" }}>{st.resumen}</p>
         {st.progreso && <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: C.cardHi }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: ESTADO[st.progreso.estado]?.[1] || C.sub }}>{ESTADO[st.progreso.estado]?.[0] || "Progreso"}</div>
@@ -120,6 +120,7 @@ export default function Perfil({ token, isAdmin }) {
     </button>
 
     {sheet === "objetivo" && <ObjectiveSheet token={token} p={p} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+    {sheet === "macros" && <MacrosSheet token={token} st={st} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {sheet === "reglas" && <RulesSheet token={token} p={p} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
     {isAdmin && <Users token={token} />}
   </>;
@@ -168,18 +169,25 @@ export function Spark({ values }) {
   </svg>;
 }
 
+// Tipo de alimentación = base (keto, vegana…) + ajustes sobre esa misma dieta, como en Fitia
+// ("más proteína", "menos carbohidratos"…). Se guarda junto en kairo_profile.dieta: "Keto · Más proteína".
+export const DIETAS = ["Sin restricción", "Keto", "Low carb", "Vegetariana", "Vegana", "Pescetariana", "Sin gluten (celíaca)", "Sin lactosa", "Mediterránea", "Ayuno intermitente", "Paleo", "Carnívora"];
+export const AJUSTES = ["Más proteína", "Menos carbohidratos", "Más carbohidratos", "Menos grasas", "Sin azúcar", "Más fibra"];
+const OPUESTOS = { "Menos carbohidratos": "Más carbohidratos", "Más carbohidratos": "Menos carbohidratos" };
+const splitDieta = (d) => { const parts = String(d || "").split(" · ").filter(Boolean); const base = DIETAS.includes(parts[0]) ? parts[0] : DIETAS[0]; return { base, ajustes: parts.filter(x => AJUSTES.includes(x)) }; };
+const joinDieta = (base, ajustes) => [base !== DIETAS[0] ? base : null, ...ajustes].filter(Boolean).join(" · ") || null;
 const chip = (on) => ({ padding: "9px 14px", borderRadius: 999, fontSize: 14, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.cardHi, color: on ? C.limeInk : C.text, fontWeight: on ? 600 : 400, textAlign: "left" });
 
 function ObjectiveSheet({ token, p, onClose, onSaved }) {
-  const [f, setF] = useState(() => ({ nombre: "", objetivo: "", tendencia: "", objetivo_detalle: "", experiencia: "", sexo: "", fecha_nacimiento: "", altura_cm: "", dias_semana: "", lesiones: "", ...(p || {}) }));
+  const [f, setF] = useState(() => ({ nombre: "", objetivo: "", tendencia: "", objetivo_detalle: "", experiencia: "", sexo: "", fecha_nacimiento: "", altura_cm: "", dias_semana: "", lesiones: "", ...(p || {}), ...splitDieta(p?.dieta) }));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF({ ...f, [k]: v });
   const tendencias = OBJETIVOS.find(([k]) => k === f.objetivo)?.[2] || [];
   const save = async () => {
     if (!f.nombre?.trim()) return pushToast("Poné tu nombre");
     setSaving(true);
-    await saveProfile(token, { nombre: f.nombre?.trim() || null, objetivo: f.objetivo || null, tendencia: f.tendencia || null, objetivo_detalle: f.objetivo_detalle?.trim() || null, experiencia: f.experiencia || null, sexo: f.sexo || null, fecha_nacimiento: f.fecha_nacimiento || null, edad: ageOf(f.fecha_nacimiento), altura_cm: num(f.altura_cm) || null, lesiones: f.lesiones?.trim() || null, updated_at: new Date().toISOString() });
-    setSaving(false); pushToast("Objetivo guardado"); onSaved();
+    await saveProfile(token, { nombre: f.nombre?.trim() || null, objetivo: f.objetivo || null, tendencia: f.tendencia || null, objetivo_detalle: f.objetivo_detalle?.trim() || null, experiencia: f.experiencia || null, sexo: f.sexo || null, fecha_nacimiento: f.fecha_nacimiento || null, edad: ageOf(f.fecha_nacimiento), altura_cm: num(f.altura_cm) || null, lesiones: f.lesiones?.trim() || null, dieta: joinDieta(f.base, f.ajustes), updated_at: new Date().toISOString() });
+    setSaving(false); pushToast(p?.estrategia && joinDieta(f.base, f.ajustes) !== (p?.dieta || null) ? "Guardado. Recalculá tu estrategia para que los macros lo reflejen" : "Objetivo guardado"); onSaved();
   };
   return <Sheet title="Tu objetivo" onClose={onClose}>
     <Label>Tu nombre *</Label>
@@ -192,6 +200,15 @@ function ObjectiveSheet({ token, p, onClose, onSaved }) {
     </>}
     <Label>Contalo con tus palabras (opcional)</Label>
     <textarea value={f.objetivo_detalle || ""} onChange={e => set("objetivo_detalle", e.target.value)} rows={3} placeholder="Ej: quiero marcar abdomen para el verano sin perder lo que gané de pecho" style={{ ...field, resize: "vertical", lineHeight: 1.45 }} />
+    <Label>Tipo de alimentación</Label>
+    <div style={{ position: "relative" }}>
+      <select value={f.base} onChange={e => set("base", e.target.value)} style={{ ...field, appearance: "none", WebkitAppearance: "none", colorScheme: "dark", paddingRight: 40 }}>
+        {DIETAS.map(d => <option key={d} value={d}>{d}</option>)}
+      </select>
+      <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", display: "flex" }}><Icon d={I.down} size={16} color={C.sub} /></span>
+    </div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>{AJUSTES.map(a => { const on = f.ajustes.includes(a); return <button key={a} onClick={() => set("ajustes", on ? f.ajustes.filter(x => x !== a) : [...f.ajustes.filter(x => x !== OPUESTOS[a]), a])} className="k-press" style={{ ...chip(on), padding: "8px 13px", fontSize: 13.5 }}>{a}</button>; })}</div>
+    <div style={{ fontSize: 12, color: C.dim, marginTop: 8, lineHeight: 1.45 }}>La base y los ajustes los respeta la IA al calcular tus macros y al analizar tu plan semanal (en keto los carbohidratos van casi a cero; "más proteína" sube la proteína y baja el resto).</div>
     <Label>Experiencia entrenando</Label>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{[["principiante", "Menos de 1 año"], ["intermedio", "1 a 3 años"], ["avanzado", "Más de 3"]].map(([k, l]) => <button key={k} onClick={() => set("experiencia", k)} className="k-press" style={chip(f.experiencia === k)}>{l}</button>)}</div>
     <Label>Sexo</Label>
@@ -206,6 +223,34 @@ function ObjectiveSheet({ token, p, onClose, onSaved }) {
     <Label>Lesiones o limitaciones</Label>
     <input value={f.lesiones || ""} onChange={e => set("lesiones", e.target.value)} placeholder="Ej: hombro derecho" style={field} />
     <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>El peso lo cargás en Inicio. Podés guardar ahora y completar el resto después.</div>
+    <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 18 }}>{saving ? "Guardando…" : "Guardar"}</button>
+  </Sheet>;
+}
+
+// Calorías y macros a mano (por si la IA no acertó, o para una dieta puntual). El éxito del día se mide con esto.
+function MacrosSheet({ token, st, onClose, onSaved }) {
+  const [f, setF] = useState({ kcal: st.calorias_dia ?? "", p: st.proteina_g ?? "", c: st.carbohidratos_g ?? "", g: st.grasas_g ?? "" });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF({ ...f, [k]: v.replace(/[^\d]/g, "") });
+  const calc = (Number(f.p) || 0) * 4 + (Number(f.c) || 0) * 4 + (Number(f.g) || 0) * 9;
+  const save = async () => {
+    if (!Number(f.kcal) || f.p === "") return pushToast("Poné al menos calorías y proteína");
+    setSaving(true);
+    await saveProfile(token, { estrategia: { ...st, calorias_dia: Number(f.kcal), proteina_g: Number(f.p), carbohidratos_g: Number(f.c) || 0, grasas_g: Number(f.g) || 0, manual: true }, updated_at: new Date().toISOString() });
+    setSaving(false); pushToast("Objetivos guardados"); onSaved();
+  };
+  const row = (k, label, unit) => <div style={{ ...field, display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+    <span style={{ flex: 1, color: C.sub, fontSize: 14 }}>{label}</span>
+    <input inputMode="numeric" value={f[k]} onChange={e => set(k, e.target.value)} className="k-num" style={{ width: 80, textAlign: "right", background: "none", border: "none", outline: "none", color: C.text, fontSize: 17, fontWeight: 500 }} />
+    <span style={{ color: C.sub, width: 28 }}>{unit}</span>
+  </div>;
+  return <Sheet title="Tus objetivos del día" onClose={onClose}>
+    <p style={{ fontSize: 13, color: C.sub, margin: "-4px 0 6px", lineHeight: 1.45 }}>Lo que la IA calculó lo podés ajustar. En keto, por ejemplo, los carbohidratos van en 20 o 30. El éxito de cada día se mide contra esto.</p>
+    {row("kcal", "Calorías", "kcal")}
+    {row("p", "Proteína", "g")}
+    {row("c", "Carbohidratos", "g")}
+    {row("g", "Grasas", "g")}
+    <div className="k-num" style={{ fontSize: 12.5, color: Math.abs(calc - Number(f.kcal)) > 150 ? C.warn : C.dim, margin: "10px 2px 0" }}>Los macros suman {calc.toLocaleString("es-AR")} kcal{Math.abs(calc - Number(f.kcal)) > 150 ? " · no cierran con las calorías" : ""}</div>
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 18 }}>{saving ? "Guardando…" : "Guardar"}</button>
   </Sheet>;
 }

@@ -135,16 +135,19 @@ export async function startWorkout(token, routine) {
 //  · rotación: una secuencia de rutinas y descansos que se repite sin importar el día de la semana
 //    (ej. pecho, espalda, pierna, descanso…); "inicio" es la fecha en que tocó el primer lugar.
 const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400e3);
-export function todayPlan(routines, dias) {
+// Qué toca un día dado (ymd): rutinas de ese día y si es descanso (en días fijos, descanso = ningún día asignado).
+export function planOn(routines, dias, date) {
   if (dias?.modo === "rotacion" && dias.orden?.length && dias.inicio) {
-    const n = dias.orden.length, i = ((daysBetween(dias.inicio, ymd(new Date())) % n) + n) % n;
+    const n = dias.orden.length, i = ((daysBetween(dias.inicio, date) % n) + n) % n;
     const slot = dias.orden[i], next = dias.orden[(i + 1) % n];
     const find = (id) => routines.find(r => r.id === id) || null;
     return { modo: "rotacion", hoy: slot === "descanso" ? [] : [find(slot)].filter(Boolean), descanso: slot === "descanso", manana: next === "descanso" ? "Descanso" : find(next)?.name || null };
   }
-  const dow = todayDow();
-  return { modo: "fijos", hoy: routines.filter(r => r.days?.includes(dow)), descanso: false, manana: null };
+  const dow = (new Date(date + "T12:00:00").getDay() + 6) % 7;
+  const hoy = routines.filter(r => r.days?.includes(dow));
+  return { modo: "fijos", hoy, descanso: routines.length > 0 && !hoy.length && routines.some(r => r.days?.length), manana: null };
 }
+export const todayPlan = (routines, dias) => planOn(routines, dias, ymd(new Date()));
 
 export default function Fisico({ token, onProfile }) {
   const gym = useGym(token);
