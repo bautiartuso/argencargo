@@ -8,7 +8,7 @@ import { dq, loadSession } from "../../lib/sb-client";
 import BodyMap from "./body";
 import { StoryPicker } from "./social";
 import Cardio from "./cardio";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd, useRefresh } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd, useRefresh, Skel, SkelCards } from "./ui";
 
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const DAYS_FULL = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -168,7 +168,7 @@ export default function Fisico({ token, onProfile }) {
       <Segmented value={view} onChange={setView} options={[["entrenar", "Entrenar"], ["rutinas", "Rutinas"], ["deporte", "Deporte"], ["progreso", "Progreso"]]} />
     </div>
 
-    {gym.lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
+    {gym.lo ? <SkelCards n={3} h={96} /> : <>
       {!gym.profile?.objetivo && <button className="k-press" onClick={onProfile} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 18, display: "flex", gap: 12, alignItems: "center", borderColor: "rgba(198,244,50,0.3)" }}>
         <Icon d={I.spark} size={20} color={C.lime} />
         <span style={{ flex: 1 }}><span style={{ fontSize: 15, fontWeight: 500, display: "block" }}>Definí tu objetivo</span><span style={{ fontSize: 13, color: C.sub }}>Volumen, definición, recomposición… La IA planifica las cargas con eso.</span></span>
@@ -563,10 +563,22 @@ const pill = { border: `0.5px solid ${C.line}`, background: C.card, color: C.tex
 function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [storyStep, setStoryStep] = useState(null); // texto de la historia, una vez guardado el entreno
+  const [records, setRecords] = useState([]);       // récords de hoy (1RM estimado mejor que todo lo anterior)
   const [updateRoutine, setUpdateRoutine] = useState(!!draft.changed);
   const save = async () => {
     if (!done) { onSaved(); pushToast("Entreno descartado: no marcaste series"); return; }
     setSaving(true);
+    // Récords: el mejor 1RM estimado de hoy contra todo lo que registraste antes de ese ejercicio.
+    const ids = [...new Set(draft.items.filter(it => it.sets.some(x => x.done)).map(it => it.exercise_id))];
+    const prevSets = ids.length ? await dq("kairo_sets", { token, filters: `?exercise_id=in.(${ids.join(",")})&select=exercise_id,weight_kg,reps&limit=5000` }) : [];
+    const prevBest = {};
+    for (const x of Array.isArray(prevSets) ? prevSets : []) prevBest[x.exercise_id] = Math.max(prevBest[x.exercise_id] || 0, e1rm(Number(x.weight_kg), x.reps));
+    const recs = [];
+    for (const it of draft.items) {
+      const best = it.sets.filter(x => x.done).reduce((a, x) => { const e = e1rm(num(x.kg), Math.round(num(x.reps))); return e > a.e ? { e, kg: num(x.kg), reps: Math.round(num(x.reps)) } : a; }, { e: 0 });
+      if (best.e > 0 && prevBest[it.exercise_id] > 0 && best.e > prevBest[it.exercise_id] + 0.01) recs.push({ name: it.name, kg: best.kg, reps: best.reps, e: best.e, prev: prevBest[it.exercise_id] });
+    }
+    setRecords(recs);
     const w = await dq("kairo_workouts", { method: "POST", token, body: { routine_id: draft.routine_id, routine_name: draft.routine_name, started_at: draft.started_at, finished_at: new Date().toISOString() } });
     const wid = Array.isArray(w) ? w[0]?.id : null;
     if (!wid) { setSaving(false); return pushToast("No se pudo guardar, probá de nuevo"); }
@@ -578,10 +590,23 @@ function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) 
     }
     setSaving(false);
     pushToast(`Entreno guardado · ${rows.length} series · ${Math.round(volume).toLocaleString("es-AR")} kg`);
-    setStoryStep(`${draft.routine_name} · ${clock(elapsed)} · ${Math.round(volume).toLocaleString("es-AR")} kg`);
+    setStoryStep(`${draft.routine_name} · ${clock(elapsed)} · ${Math.round(volume).toLocaleString("es-AR")} kg${recs.length ? ` · ${recs.length} récord${recs.length > 1 ? "s" : ""}` : ""}`);
   };
-  if (storyStep) return <Sheet title="¿Subís una foto a tu historia?" onClose={onSaved}>
-    <p style={{ fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "-4px 0 16px" }}>La ven tus amigos de Kairo durante 24 horas, con el resumen del entreno: <span style={{ color: C.text }}>{storyStep}</span></p>
+  if (storyStep) return <Sheet title={records.length ? (records.length > 1 ? `¡${records.length} récords!` : "¡Récord!") : "Entreno guardado"} onClose={onSaved}>
+    {records.length > 0 && <>
+      <Confetti />
+      <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+        {records.map((r, i) => <div key={i} className="k-pop" style={{ background: "rgba(198,244,50,0.1)", border: `0.5px solid rgba(198,244,50,0.35)`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, animationDelay: `${i * 90}ms` }}>
+          <span style={{ width: 36, height: 36, borderRadius: 18, background: C.lime, color: C.limeInk, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon d={I.fire} size={19} sw={2} /></span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, display: "block" }}>{r.name}</span>
+            <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{fmtKg(r.kg)} kg × {r.reps} · 1RM {fmtKg(Math.round(r.e * 2) / 2)} kg <span style={{ color: C.lime }}>(+{fmtKg(Math.round((r.e - r.prev) * 2) / 2)})</span></span>
+          </span>
+        </div>)}
+      </div>
+    </>}
+    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>¿Subís una foto a tu historia?</div>
+    <p style={{ fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "0 0 16px" }}>La ven tus amigos de Kairo durante 24 horas, con el resumen del entreno: <span style={{ color: C.text }}>{storyStep}</span></p>
     <StoryPicker token={token} caption={storyStep} onDone={onSaved} style={{ ...btnLime, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon d={I.camera} size={18} />Sacar o elegir foto</StoryPicker>
     <button className="k-press" onClick={onSaved} style={{ ...btnGhost, marginTop: 8 }}>Ahora no</button>
   </Sheet>;
@@ -598,6 +623,40 @@ function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) 
     <button className="k-press" onClick={save} disabled={saving} style={{ ...btnLime, marginTop: 20 }}>{saving ? "Guardando…" : done ? "Guardar entreno" : "Salir sin guardar"}</button>
     <button className="k-press" onClick={onClose} style={{ ...btnGhost, marginTop: 8 }}>Seguir entrenando</button>
   </Sheet>;
+}
+
+// Papelitos que caen (solo CSS) para festejar un récord.
+function Confetti() {
+  const bits = useMemo(() => Array.from({ length: 36 }, (_, i) => ({ x: Math.random() * 100, d: 1.6 + Math.random() * 1.4, delay: Math.random() * 0.5, c: [C.lime, C.blue, "#fff", C.pos][i % 4], w: 6 + Math.random() * 6 })), []);
+  return <div aria-hidden="true" style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 101, overflow: "hidden" }}>
+    {bits.map((b, i) => <span key={i} style={{ position: "absolute", top: -12, left: `${b.x}%`, width: b.w, height: b.w * 0.6, background: b.c, borderRadius: 2, animation: `kConfetti ${b.d}s ${b.delay}s cubic-bezier(.2,.6,.4,1) forwards` }} />)}
+  </div>;
+}
+
+// Qué músculos trabajaste esta semana, pintados en la figura, y cuáles quedaron sin tocar.
+function WeekMuscles({ workouts, exercises }) {
+  const monday = new Date(); monday.setHours(0, 0, 0, 0); monday.setDate(monday.getDate() - todayDow());
+  const count = {};
+  for (const w of workouts) if (new Date(w.started_at) >= monday) for (const s of w.sets || []) {
+    const ex = exercises.find(e => e.id === s.exercise_id);
+    for (const m of ex?.muscles_primary || []) count[m] = (count[m] || 0) + 1;
+  }
+  const list = Object.entries(count).sort((a, b) => b[1] - a[1]);
+  const hot = list.filter(([, n]) => n >= 6).map(([m]) => m), warm = list.filter(([, n]) => n < 6).map(([m]) => m);
+  const MAIN = ["chest", "lats", "shoulders", "biceps", "triceps", "quadriceps", "hamstrings", "glutes", "calves", "abdominals"];
+  const missing = MAIN.filter(m => !count[m]);
+  return <>
+    <SectionTitle>Músculos de esta semana</SectionTitle>
+    <div style={{ ...card, display: "flex", gap: 14, alignItems: "center" }}>
+      <div style={{ flexShrink: 0 }}><BodyMap primary={hot} secondary={warm} size={150} /></div>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.6 }}>
+        {!list.length ? <span style={{ color: C.sub }}>Todavía no entrenaste esta semana.</span> : <>
+          {list.slice(0, 6).map(([m, n]) => <div key={m} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span>{MUSCLE_ES[m] || m}</span><span className="k-num" style={{ color: n >= 6 ? C.lime : C.sub }}>{n} series</span></div>)}
+          {missing.length > 0 && <div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>Sin trabajar: {missing.map(m => MUSCLE_ES[m]).join(", ")}</div>}
+        </>}
+      </div>
+    </div>
+  </>;
 }
 
 // ─────── Ficha del ejercicio: fotos, músculos y tu progreso ───────
@@ -635,7 +694,7 @@ function ExerciseInfo({ ex, token, onClose }) {
       </div>
     </>}
     <Label>Tu progreso</Label>
-    {!hist ? <p style={{ color: C.sub, fontSize: 14 }}>Cargando…</p> : hist.length === 0 ? <p style={{ color: C.sub, fontSize: 14, margin: 0 }}>Todavía no lo registraste.</p> : <>
+    {!hist ? <Skel h={64} r={14} /> : hist.length === 0 ? <p style={{ color: C.sub, fontSize: 14, margin: 0 }}>Todavía no lo registraste.</p> : <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
         <MiniStat label="Mejor serie" value={`${fmtKg(best.top.weight_kg)}×${best.top.reps}`} />
         <MiniStat label="1RM estimado" value={`${fmtKg(Math.round(best.best * 2) / 2)} kg`} color={C.lime} />
@@ -701,6 +760,8 @@ function Progress({ workouts, exercises, onOpenWorkout, onOpenExercise }) {
       <MiniStat label="Prom. semanal" value={`${fmtKg(Math.round((vals.reduce((a, b) => a + b, 0) / 12) * 10) / 10)}${unit ? " " + unit : ""}`} />
       <MiniStat label="Racha" value={`${streak(workouts)} sem`} />
     </div>
+
+    <WeekMuscles workouts={workouts} exercises={exercises} />
 
     {topEx.length > 0 && <>
       <SectionTitle>Ejercicios</SectionTitle>

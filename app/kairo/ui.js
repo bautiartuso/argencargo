@@ -22,8 +22,21 @@ export const CSS = `
   @keyframes kUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes kFade{from{opacity:0}to{opacity:1}}
   @keyframes kSpin{to{transform:rotate(360deg)}}
-  .k-num{font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+  @keyframes kTab{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .k-tab{animation:kTab 220ms cubic-bezier(.2,.9,.3,1)}
+  @keyframes kShimmer{from{background-position:-200% 0}to{background-position:200% 0}}
+  .k-skel{background:linear-gradient(90deg,${C.card} 25%,${C.cardHi} 50%,${C.card} 75%);background-size:200% 100%;animation:kShimmer 1.4s ease-in-out infinite;border-radius:12px}
+  @keyframes kPop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08);opacity:1}100%{transform:scale(1)}}
+  .k-pop{animation:kPop 420ms cubic-bezier(.2,.9,.3,1)}
+  @keyframes kConfetti{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
+  ::-webkit-scrollbar{display:none}
 `;
+
+// ─────── Esqueletos de carga (en vez de "Cargando…") ───────
+export const Skel = ({ h = 16, w = "100%", r = 12, style }) => <span className="k-skel" style={{ display: "block", height: h, width: w, borderRadius: r, ...style }} />;
+export function SkelCards({ n = 3, h = 88 }) {
+  return <div style={{ display: "grid", gap: 10, marginTop: 18 }}>{Array.from({ length: n }).map((_, i) => <Skel key={i} h={h} r={20} />)}</div>;
+}
 
 export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export const today = () => ymd(new Date());

@@ -5,7 +5,7 @@ import Fisico, { WorkoutLayer } from "./fisico";
 import Perfil, { Welcome } from "./perfil";
 import Inicio from "./hoy";
 import Nutricion from "./nutricion";
-import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn, useRefresh } from "./ui";
+import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn, useRefresh, SkelCards } from "./ui";
 
 // ──────────────────────────────────────────────────────────────────────
 // KAIRO · app personal (físico, nutrición, finanzas, objetivos). Mobile-first.
@@ -117,11 +117,13 @@ function App({ session }) {
           <span style={{ width: 34, height: 34, borderRadius: 17, background: C.card, border: `0.5px solid ${C.line}`, color: pull >= 56 || refreshing ? C.lime : C.sub, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(${refreshing ? 0 : pull * 4}deg)`, animation: refreshing ? "kSpin 800ms linear infinite" : "none" }}><Icon d={I.sync} size={17} sw={1.8} /></span>
         </div>
         <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px", transform: `translateY(${pull}px)`, transition: touch.current == null ? "transform 220ms cubic-bezier(.2,.9,.3,1)" : "none" }}>
-          {tab === "hoy" && <Inicio token={session.token} me={me} fin={fin} go={go} />}
-          {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
-          {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
-          {tab === "perfil" && <Perfil token={session.token} isAdmin={session.profile?.role === "admin"} />}
-      {tab === "nutricion" && <Nutricion token={session.token} onProfile={() => go("perfil")} />}
+          <div key={tab} className="k-tab">
+            {tab === "hoy" && <Inicio token={session.token} me={me} fin={fin} go={go} />}
+            {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
+            {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
+            {tab === "perfil" && <Perfil token={session.token} isAdmin={session.profile?.role === "admin"} />}
+            {tab === "nutricion" && <Nutricion token={session.token} onProfile={() => go("perfil")} />}
+          </div>
         </div>
       </main>
       <WorkoutLayer token={session.token} />
@@ -260,7 +262,7 @@ function Finanzas({ fin, token }) {
       <RoundBtn onClick={() => setMonth(shiftMonth(month, 1))} label="Mes siguiente"><Icon d={I.right} size={16} /></RoundBtn>
     </div>
 
-    {lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
+    {lo ? <SkelCards n={3} h={96} /> : <>
       {/* Resumen */}
       <button className="k-press" onClick={() => setSheet(budget != null ? { type: "budget" } : { type: "income" })} style={{ background: "none", border: "none", color: C.text, textAlign: "left", width: "100%", padding: "18px 2px 4px" }}>
         {budget != null ? <>
@@ -359,7 +361,7 @@ function Resumen({ token, cats }) {
       setData({ ins: Array.isArray(i) ? i : [], outs: Array.isArray(o) ? o : [] });
     })();
   }, [token]);
-  if (!data) return <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p>;
+  if (!data) return <SkelCards n={3} h={96} />;
 
   const months = [];
   for (let m = KAIRO_DESDE.slice(0, 7); m <= curMonth(); m = shiftMonth(m, 1)) months.push(m);

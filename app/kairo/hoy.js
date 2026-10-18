@@ -2,9 +2,9 @@
 // Kairo · Inicio. Lo primero que ves cada día: historias, cómo va tu día (comida y suplementos), tu
 // semana de entrenos, tu peso, tu grupo (perfiles de todos), qué anduvieron haciendo, el ranking y la
 // plata. El entreno de hoy va al final: se arranca desde Físico.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, btnLime, linkBtn, ars, monthName, curMonth, today, ymd, dayLabel, Bar, useRefresh } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, btnLime, linkBtn, ars, monthName, curMonth, today, ymd, dayLabel, Bar, useRefresh, Skel } from "./ui";
 import { startWorkout, todayPlan, planOn, ensurePush } from "./fisico";
 import { dayScore, adjustTarget, cardioOn, plannedBurn, sportName } from "./score";
 import { LogSheet, Spark, MeasuresTable, Avatar, saveProfile } from "./perfil";
@@ -16,6 +16,7 @@ const DOW = ["L", "M", "X", "J", "V", "S", "D"];
 const DAYS_FULL = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const mondayOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
 const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso)) / 60000); if (m < 60) return `hace ${Math.max(1, m)} min`; if (m < 1440) return `hace ${Math.round(m / 60)} h`; const d = Math.round(m / 1440); return d === 1 ? "ayer" : `hace ${d} días`; };
+const addMin = (hhmm, m) => { const [h, mi] = hhmm.split(":").map(Number); const t = h * 60 + mi + m; return `${String(Math.floor(t / 60) % 24).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
 const lastTrained = (iso) => { if (!iso) return "Sin entrenos"; const d = ymd(new Date(iso)); return d === today() ? "Entrenó hoy" : dayLabel(d) === "ayer" ? "Entrenó ayer" : `Hace ${Math.round((Date.now() - new Date(iso)) / 86400e3)} días`; };
 
 // Qué ordena el ranking (todo del mes en curso, solo entrenamiento).
@@ -39,6 +40,7 @@ export default function Hoy({ token, me, fin, go }) {
   const [peso, setPeso] = useState("");
   const [metric, setMetric] = useState("entrenos");
   const [sheet, setSheet] = useState(null);
+  const pesoRef = useRef(null);
   const [perm, setPerm] = useState(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
 
   const loadSocial = useCallback(() => {
@@ -52,7 +54,7 @@ export default function Hoy({ token, me, fin, go }) {
       dq("kairo_exercises", { token, filters: "?select=id,name,media_id,muscles_primary,muscles_secondary" }),
       dq("kairo_body_logs", { token, filters: "?select=*&order=log_date.desc,created_at.desc&limit=60" }),
       dq("kairo_food_log", { token, filters: `?log_date=gte.${ymd(mondayOf(new Date()))}&select=log_date,kcal,protein_g,carbs_g,fat_g` }),
-      dq("kairo_supplements", { token, filters: "?active=eq.true&select=id,times,days" }),
+      dq("kairo_supplements", { token, filters: "?active=eq.true&select=id,name,times,days" }),
       dq("kairo_supp_log", { token, filters: `?log_date=eq.${t}&select=supplement_id,slot` }),
       dq("kairo_workouts", { token, filters: `?finished_at=not.is.null&started_at=gte.${mondayOf(new Date()).toISOString()}&select=started_at,routine_name` }),
       dq("kairo_cardio", { token, filters: `?log_date=gte.${ymd(mondayOf(new Date()))}&select=log_date,kind,minutes,kcal` }),
@@ -67,7 +69,8 @@ export default function Hoy({ token, me, fin, go }) {
     const daySupps = (Array.isArray(supps) ? supps : []).filter(s => s.days?.includes(dow));
     const slots = daySupps.flatMap(s => (s.times?.length ? s.times : [""]).map(slot => s.id + "|" + slot));
     const taken = new Set((Array.isArray(slog) ? slog : []).map(x => x.supplement_id + "|" + x.slot));
-    setDay({ kcal: f.reduce((a, x) => a + Number(x.kcal || 0), 0), p: f.reduce((a, x) => a + Number(x.protein_g || 0), 0), supps: slots.length, taken: slots.filter(x => taken.has(x)).length });
+    const pending = daySupps.flatMap(s => (s.times?.length ? s.times : [""]).filter(slot => !taken.has(s.id + "|" + slot)).map(slot => ({ name: s.name, slot }))).sort((a, b) => (a.slot || "99").localeCompare(b.slot || "99"));
+    setDay({ kcal: f.reduce((a, x) => a + Number(x.kcal || 0), 0), p: f.reduce((a, x) => a + Number(x.protein_g || 0), 0), supps: slots.length, taken: slots.filter(x => taken.has(x)).length, pending, meals: f.length });
     setWeek(Array.isArray(ws) ? ws : []);
     loadSocial();
   }, [token, loadSocial]);
@@ -127,6 +130,18 @@ export default function Hoy({ token, me, fin, go }) {
   const scoreColor = (n) => n >= 80 ? C.lime : n >= 50 ? C.warn : C.neg;
   const goal = me?.dias_semana || null;
 
+  // Qué sigue: lo pendiente de hoy, en orden de urgencia. Se arma con datos, sin IA.
+  const hhmm = new Date().toTimeString().slice(0, 5), hour = new Date().getHours();
+  const next = [];
+  if (plan) for (const r of plan.hoy) if (!week.some(w => ymd(new Date(w.started_at)) === today())) next.push({ k: "gym", icon: I.gym, text: `Entrenar ${r.name}`, sub: `${r.items.length} ejercicio${r.items.length === 1 ? "" : "s"}`, color: C.lime, run: () => startWorkout(token, r) });
+  for (const c of cardioOn(me?.cardio_plan, todayIdx)) if (!weekCardio.some(x => x.log_date === today() && x.kind === c.kind)) next.push({ k: "cardio", icon: I.fire, text: `${sportName(c.kind)} ${c.minutes} min`, sub: c.time ? `a las ${c.time}` : "registralo cuando lo hagas", color: C.blue, run: () => { try { sessionStorage.setItem("kairo_fisico_view", "deporte"); } catch {} go("fisico"); } });
+  const dueSupp = day?.pending?.find(p => !p.slot || p.slot <= hhmm) || (day?.pending?.[0]?.slot <= addMin(hhmm, 60) ? day.pending[0] : null);
+  if (dueSupp) next.push({ k: "supp", icon: I.check, text: `Tomá ${dueSupp.name}`, sub: dueSupp.slot ? (dueSupp.slot <= hhmm ? `era a las ${dueSupp.slot}` : `a las ${dueSupp.slot}`) : "sin horario", color: dueSupp.slot && dueSupp.slot <= hhmm ? C.warn : C.pos, run: () => go("nutricion") });
+  if (day && !day.meals && hour >= 11) next.push({ k: "food", icon: I.food, text: "Cargá lo que comiste", sub: "todavía no hay nada hoy", color: C.sub, run: () => go("nutricion") });
+  else if (day && st?.proteina_g && hour >= 17 && st.proteina_g - day.p >= 20) next.push({ k: "prot", icon: I.food, text: `Te faltan ${r0(st.proteina_g - day.p)} g de proteína`, sub: "para llegar al objetivo de hoy", color: C.blue, run: () => go("nutricion") });
+  if (!todayLog && hour < 12 && logs.length) next.push({ k: "peso", icon: I.target, text: "Pesate", sub: "mejor en ayunas", color: C.sub, run: () => pesoRef.current?.focus() });
+  const todayScore = days[todayIdx]?.total ?? 0;
+
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -140,9 +155,31 @@ export default function Hoy({ token, me, fin, go }) {
 
     <StoriesBar token={token} me={me} users={social || []} stories={stories} onProfile={(id) => setSheet({ type: "user", id })} />
 
-    {/* Tu día: calorías, proteína y suplementos, pegado a las historias */}
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 4 }}>
-      <DayTile label="Calorías" onClick={() => go("nutricion")} value={day ? r0(day.kcal).toLocaleString("es-AR") : "—"} sub={st?.calorias_dia ? `de ${r0(st.calorias_dia).toLocaleString("es-AR")}${burnedToday ? ` (+${r0(burnedToday)} deporte${actualToday ? "" : " est."})` : ""}` : "sin objetivo"} pct={st?.calorias_dia && day ? day.kcal / st.calorias_dia : 0} color={C.lime} />
+    {/* Hoy en vivo: el éxito del día hasta ahora y qué sigue */}
+    {!day || !routines ? <Skel h={118} r={20} style={{ marginTop: 4 }} /> : <div style={{ ...card, marginTop: 4, display: "flex", gap: 14, alignItems: "center", padding: "14px 16px" }}>
+      <button onClick={() => setSheet({ type: "day", i: todayIdx })} aria-label="Cómo va tu día" style={{ background: "none", border: "none", padding: 0, position: "relative", width: 86, height: 86, flexShrink: 0 }}>
+        <svg width="86" height="86" viewBox="0 0 86 86" aria-hidden="true">
+          <circle cx="43" cy="43" r="37" fill="none" stroke={C.line} strokeWidth="7" />
+          {todayScore > 0 && <circle cx="43" cy="43" r="37" fill="none" stroke={scoreColor(todayScore)} strokeWidth="7" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 37 * todayScore / 100} ${2 * Math.PI * 37}`} transform="rotate(-90 43 43)" style={{ transition: "stroke-dasharray 700ms cubic-bezier(.2,.9,.3,1)" }} />}
+        </svg>
+        <span style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span className="k-num" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{todayScore}</span>
+          <span style={{ fontSize: 10.5, color: C.sub, marginTop: 3 }}>hoy</span>
+        </span>
+      </button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 6 }}>{next.length ? "Qué sigue" : "Todo al día"}</div>
+        {next.length ? next.slice(0, 3).map(n => <button key={n.k} onClick={n.run} className="k-press" style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "5px 0" }}>
+          <span style={{ width: 26, height: 26, borderRadius: 13, background: C.cardHi, color: n.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon d={n.icon} size={14} sw={2} /></span>
+          <span style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 500, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.text}</span><span style={{ fontSize: 11.5, color: C.sub }}>{n.sub}</span></span>
+          <Icon d={I.right} size={14} color={C.dim} />
+        </button>) : <div style={{ fontSize: 14, lineHeight: 1.45 }}>No te queda nada pendiente por ahora.{todayScore >= 80 ? " Gran día." : ""}</div>}
+      </div>
+    </div>}
+
+    {/* Tu día: calorías, proteína y suplementos */}
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+      <DayTile label="Calorías" onClick={() => go("nutricion")} value={day ? r0(day.kcal).toLocaleString("es-AR") : "—"} sub={st?.calorias_dia ? `de ${r0(st.calorias_dia).toLocaleString("es-AR")}${burnedToday ? ` · +${r0(burnedToday)} deporte${actualToday ? "" : " (est.)"}` : ""}` : "sin objetivo"} pct={st?.calorias_dia && day ? day.kcal / st.calorias_dia : 0} color={C.lime} />
       <DayTile label="Proteína" onClick={() => go("nutricion")} value={day ? `${r0(day.p)} g` : "—"} sub={st?.proteina_g ? `de ${r0(st.proteina_g)} g` : "sin objetivo"} pct={st?.proteina_g && day ? day.p / st.proteina_g : 0} color={C.blue} />
       <DayTile label="Suplementos" onClick={() => go("nutricion")} value={day ? (day.supps ? `${day.taken}/${day.supps}` : "—") : "—"} sub={day?.supps ? (day.taken === day.supps ? "todos tomados" : `${day.supps - day.taken} pendiente${day.supps - day.taken > 1 ? "s" : ""}`) : "sin cargar"} pct={day?.supps ? day.taken / day.supps : 0} color={C.pos} />
     </div>
@@ -178,7 +215,7 @@ export default function Hoy({ token, me, fin, go }) {
     <div style={card}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ flex: 1, display: "flex", alignItems: "baseline", gap: 6 }}>
-          <input inputMode="decimal" value={peso} onChange={e => setPeso(e.target.value)} placeholder={todayLog ? n1(todayLog.peso_kg) : weights.length ? n1(weights.at(-1).peso_kg) : "0"} className="k-num" style={{ width: "100%", minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 32, fontWeight: 500 }} />
+          <input ref={pesoRef} inputMode="decimal" value={peso} onChange={e => setPeso(e.target.value)} placeholder={todayLog ? n1(todayLog.peso_kg) : weights.length ? n1(weights.at(-1).peso_kg) : "0"} className="k-num" style={{ width: "100%", minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 32, fontWeight: 500 }} />
           <span style={{ color: C.sub }}>kg</span>
         </div>
         <button className="k-press" onClick={savePeso} style={{ ...btnLime, width: "auto", padding: "10px 16px", fontSize: 14 }}>{todayLog ? "Corregir" : "Guardar"}</button>
@@ -274,7 +311,7 @@ function DayTile({ label, value, sub, pct, color, onClick }) {
   return <button className="k-press" onClick={onClick} style={{ ...card, padding: "12px 12px 13px", textAlign: "left", color: C.text, minWidth: 0 }}>
     <div style={{ fontSize: 12, color: C.sub }}>{label}</div>
     <div className="k-num" style={{ fontSize: 19, fontWeight: 600, marginTop: 4, letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>{value}</div>
-    <div className="k-num" style={{ fontSize: 11, color: C.dim, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
+    <div className="k-num" style={{ fontSize: 11, color: C.dim, marginTop: 1, lineHeight: 1.3, minHeight: 28 }}>{sub}</div>
     <div style={{ height: 4, background: C.line, borderRadius: 2, marginTop: 9 }}><div style={{ width: `${Math.min(100, (pct || 0) * 100)}%`, height: 4, borderRadius: 2, background: pct > 1.08 && label !== "Suplementos" ? C.warn : color, transition: "width 500ms cubic-bezier(.2,.9,.3,1)" }} /></div>
   </button>;
 }
@@ -285,7 +322,7 @@ function DayRing({ value, color, today: now }) {
   return <span style={{ position: "relative", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>
     <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true" style={{ position: "absolute", inset: 0 }}>
       <circle cx="18" cy="18" r={R} fill="none" stroke={now ? C.sub : C.line} strokeWidth={value == null ? 1.5 : 3} strokeDasharray={value == null && !now ? "3 3" : "none"} />
-      {value != null && <circle cx="18" cy="18" r={R} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeDasharray={`${L * value / 100} ${L}`} transform="rotate(-90 18 18)" style={{ transition: "stroke-dasharray 500ms cubic-bezier(.2,.9,.3,1)" }} />}
+      {value > 0 && <circle cx="18" cy="18" r={R} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeDasharray={`${L * value / 100} ${L}`} transform="rotate(-90 18 18)" style={{ transition: "stroke-dasharray 500ms cubic-bezier(.2,.9,.3,1)" }} />}
     </svg>
     <span className="k-num" style={{ fontSize: value === 100 ? 9.5 : 10.5, fontWeight: 600, color: value == null ? C.dim : C.text }}>{value == null ? "" : value}</span>
   </span>;

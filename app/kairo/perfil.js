@@ -3,7 +3,7 @@
 // que arma la IA, peso y medidas cuando quieras (y si venís progresando), y tus reglas para la IA.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today, useRefresh } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today, useRefresh, Skel, SkelCards } from "./ui";
 import { adjustTarget, extraSplit, kcalFor, sportName } from "./score";
 
 export { MEDIDAS };
@@ -57,7 +57,7 @@ export default function Perfil({ token, isAdmin }) {
     pushToast("Foto actualizada"); load();
   };
 
-  if (p === undefined) return <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p>;
+  if (p === undefined) return <><div style={{ display: "flex", gap: 16, alignItems: "center", padding: "6px 2px 0" }}><Skel h={76} w={76} r={38} /><div style={{ flex: 1 }}><Skel h={22} w="60%" /><Skel h={14} w="40%" style={{ marginTop: 8 }} /></div></div><SkelCards n={3} h={96} /></>;
   const st = p?.estrategia;
 
   return <>

@@ -4,7 +4,7 @@
 // y los suplementos con horarios y recordatorios (la proteína en polvo va como comida).
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel, useRefresh } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel, useRefresh, Skel, SkelCards } from "./ui";
 import { ensurePush } from "./fisico";
 import { adjustTarget, plannedBurn, cardioOn, sportName } from "./score";
 
@@ -52,7 +52,7 @@ export default function Nutricion({ token, onProfile }) {
         {[["hoy", "Hoy"], ["semana", "Plan semanal"], ["supps", "Suplementos"]].map(([id, label]) => <button key={id} onClick={() => setView(id)} className="k-press" style={{ border: "none", borderRadius: 999, padding: "7px 14px", fontSize: 14, fontWeight: 500, background: view === id ? C.cardHi : "transparent", color: view === id ? C.text : C.sub }}>{label}</button>)}
       </div>
     </div>
-    {n.lo ? <p style={{ color: C.sub, textAlign: "center", padding: "60px 0" }}>Cargando…</p> : <>
+    {n.lo ? <SkelCards n={3} h={96} /> : <>
       {!n.target && view !== "supps" && <button className="k-press" onClick={onProfile} style={{ ...card, width: "100%", textAlign: "left", color: C.text, marginTop: 18, display: "flex", gap: 12, alignItems: "center", borderColor: "rgba(198,244,50,0.3)" }}>
         <Icon d={I.spark} size={20} color={C.lime} />
         <span style={{ flex: 1 }}><span style={{ fontSize: 15, fontWeight: 500, display: "block" }}>Calculá tus calorías y macros</span><span style={{ fontSize: 13, color: C.sub }}>En Perfil → Tu estrategia de alimentación. Con eso Kairo te dice cuánto te falta cada día.</span></span>
