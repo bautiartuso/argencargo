@@ -56,12 +56,16 @@ const round = (n) => ({ ...glass, width: n, height: n, borderRadius: n / 2, padd
 // derecha y se mueve la del lado derecho) y la foto sale igual a lo que viste. Se recorta al mismo
 // encuadre de la pantalla, así lo que subís es exactamente lo que estabas viendo.
 // Zoom con dos dedos (o tocando el "1,0×") en las dos cámaras: usa el zoom óptico del celular si el
-// navegador lo deja, y si no, acerca la imagen y recorta la foto igual a lo que ves.
+// navegador lo deja, y si no, acerca la imagen y recorta la foto igual a lo que ves. Para el 0,5× pasa
+// a la cámara ultra gran angular (la trasera de los iPhone), si el celu la tiene.
 function Camera({ caption, avatar, onShot, onClose }) {
   const video = useRef(null), frame = useRef(null), stream = useRef(null), fallback = useRef(null);
-  const native = useRef(null), ptrs = useRef(new Map()), pinch = useRef(null);
+  const native = useRef(null), ptrs = useRef(new Map()), pinch = useRef(null), zoomRef = useRef(1);
   const [facing, setFacing] = useState("environment");
   const [zoom, setZoom] = useState(1);
+  const [ultra, setUltra] = useState(null); // deviceId de la ultra gran angular, si existe
+  const [dev, setDev] = useState(null);     // cámara usada cuando no es la principal (la ultra)
+  const factor = dev ? 0.5 : 1;             // cuánto vale el "1" de la cámara en uso
   const [shot, setShot] = useState(null);
   const [text, setText] = useState(caption || "");
   const [editing, setEditing] = useState(false);
@@ -73,26 +77,39 @@ function Camera({ caption, avatar, onShot, onClose }) {
     (async () => {
       try {
         stream.current?.getTracks().forEach(t => t.stop());
-        const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false });
+        const size = { width: { ideal: 1920 }, height: { ideal: 1920 } };
+        const st = await navigator.mediaDevices.getUserMedia({ video: dev ? { deviceId: { exact: dev }, ...size } : { facingMode: facing, ...size }, audio: false });
         if (!alive) { st.getTracks().forEach(t => t.stop()); return; }
-        stream.current = st; native.current = null; setZoom(1);
+        stream.current = st; native.current = null;
         try {
           const track = st.getVideoTracks()[0], caps = track.getCapabilities?.(), base = track.getSettings?.().zoom;
-          if (caps?.zoom && base > 0 && caps.zoom.max > base) native.current = { track, base, max: caps.zoom.max / base };
+          if (caps?.zoom && base > 0 && caps.zoom.max > base) native.current = { track, base, min: caps.zoom.min / base, max: caps.zoom.max / base };
+          const f = dev ? 0.5 : 1, rel = zoomRef.current / f;
+          if (native.current && rel !== 1) track.applyConstraints({ advanced: [{ zoom: base * rel }] }).catch(() => {});
+          // Con el permiso dado ya se ven los nombres de las cámaras: buscamos la ultra gran angular.
+          if (facing === "environment" && !dev) navigator.mediaDevices.enumerateDevices?.().then(ds => { const u = ds.find(d => d.kind === "videoinput" && /ultra/i.test(d.label)); if (alive && u) setUltra(u.deviceId); }).catch(() => {});
         } catch {}
         if (video.current) { video.current.srcObject = st; await video.current.play().catch(() => {}); }
         setErr("");
-      } catch { if (alive) setErr("nocam"); }
+      } catch { if (alive) { if (dev) setDev(null); else setErr("nocam"); } }
     })();
     return () => { alive = false; };
-  }, [facing]);
+  }, [facing, dev]);
   useEffect(() => () => stream.current?.getTracks().forEach(t => t.stop()), []);
+  const nativeWide = native.current?.min < 1 && !dev; // la cámara principal ya llega sola al 0,5×
+  const canHalf = facing === "environment" && (nativeWide || !!ultra);
   const setZ = (z) => {
-    const n = native.current, max = n ? Math.min(6, n.max) : 4;
-    z = Math.round(Math.max(1, Math.min(max, z)) * 20) / 20;
-    setZoom(z);
-    if (n) n.track.applyConstraints({ advanced: [{ zoom: n.base * z }] }).catch(() => { native.current = null; });
+    const n = native.current;
+    const lo = nativeWide ? Math.max(0.5, n.min) : canHalf ? 0.5 : 1, hi = (n ? Math.min(6, n.max) : 4) * factor;
+    z = Math.round(Math.max(lo, Math.min(hi, z)) * 20) / 20;
+    zoomRef.current = z; setZoom(z);
+    if (!nativeWide && ultra) {
+      if (!dev && z < 1) return setDev(ultra); // pasa a la ultra gran angular
+      if (dev && z >= 1) return setDev(null);  // vuelve a la principal
+    }
+    if (n) n.track.applyConstraints({ advanced: [{ zoom: n.base * (z / factor) }] }).catch(() => { native.current = null; });
   };
+  const flip = () => { setDev(null); zoomRef.current = 1; setZoom(1); setFacing(selfie ? "environment" : "user"); };
   const digital = !native.current; // sin zoom óptico, se agranda la imagen y se recorta la foto
   const onPD = (e) => { if (shot) return; ptrs.current.set(e.pointerId, [e.clientX, e.clientY]); if (ptrs.current.size === 2) { const [a, b] = [...ptrs.current.values()]; pinch.current = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: zoom }; } };
   const onPM = (e) => { if (!ptrs.current.has(e.pointerId)) return; ptrs.current.set(e.pointerId, [e.clientX, e.clientY]); if (ptrs.current.size === 2 && pinch.current) { const [a, b] = [...ptrs.current.values()]; setZ(pinch.current.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.current.d); } };
@@ -100,7 +117,7 @@ function Camera({ caption, avatar, onShot, onClose }) {
   const take = () => {
     const v = video.current, box = frame.current?.getBoundingClientRect(); if (!v?.videoWidth || !box) return;
     // Parte del video que se ve en pantalla (object-fit: cover, más el zoom digital si lo hay).
-    const k = Math.max(box.width / v.videoWidth, box.height / v.videoHeight), z = digital ? zoom : 1;
+    const k = Math.max(box.width / v.videoWidth, box.height / v.videoHeight), z = digital ? zoom / factor : 1;
     const sw = box.width / k / z, sh = box.height / k / z, sx = (v.videoWidth - sw) / 2, sy = (v.videoHeight - sh) / 2;
     const c = document.createElement("canvas"); c.width = Math.round(box.width / k); c.height = Math.round(box.height / k);
     const ctx = c.getContext("2d");
@@ -114,12 +131,12 @@ function Camera({ caption, avatar, onShot, onClose }) {
     <div ref={frame} onPointerDown={onPD} onPointerMove={onPM} onPointerUp={onPU} onPointerCancel={onPU} onWheel={e => !shot && setZ(zoom - e.deltaY / 400)} style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: "0 0 22px 22px", background: "#0a0a0a", touchAction: "none" }}>
       {shot ? <img src={shot} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
         : err ? <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
-        : <video ref={video} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: `${selfie ? "scaleX(-1) " : ""}scale(${digital ? zoom : 1})`, transition: "transform 80ms" }} />}
+        : <video ref={video} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: `${selfie ? "scaleX(-1) " : ""}scale(${digital ? zoom / factor : 1})`, transition: "transform 80ms" }} />}
       <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: flash ? 0.75 : 0, transition: "opacity 160ms", pointerEvents: "none" }} />
       <input ref={fallback} type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setShot(await shrink(f, 1920, 0.9)); }} />
 
       <button onClick={shot ? () => { setShot(null); setEditing(false); } : onClose} aria-label={shot ? "Descartar foto" : "Cerrar cámara"} style={{ ...round(40), position: "absolute", top, left: 14 }}><Icon d={I.close} size={20} sw={2} /></button>
-      {!shot && !err && <button onClick={() => setZ(zoom > 1.05 ? 1 : 2)} aria-label="Zoom" style={{ ...round(40), position: "absolute", top, left: "50%", transform: "translateX(-50%)", width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600 }}>{zoom.toFixed(1).replace(".", ",")}×</button>}
+      {!shot && !err && <button onClick={() => setZ(zoom < 0.95 ? 1 : zoom < 1.5 ? 2 : canHalf ? 0.5 : 1)} aria-label="Zoom" style={{ ...round(40), position: "absolute", top, left: "50%", transform: "translateX(-50%)", width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600 }}>{zoom.toFixed(1).replace(".", ",")}×</button>}
       {shot && <button onClick={() => setEditing(true)} aria-label="Agregar texto" style={{ ...round(40), position: "absolute", top, right: 14 }}><Icon d={I.text} size={20} sw={2} /></button>}
 
       {shot && (editing
@@ -141,7 +158,7 @@ function Camera({ caption, avatar, onShot, onClose }) {
       </> : <>
         <span style={{ width: 46 }} />
         <button onClick={take} disabled={!!err} aria-label="Sacar foto" className="k-press" style={{ width: 78, height: 78, borderRadius: 39, border: "4px solid #fff", background: "transparent", padding: 5, opacity: err ? 0.3 : 1 }}><span style={{ display: "block", width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} /></button>
-        <button onClick={() => setFacing(selfie ? "environment" : "user")} disabled={!!err} aria-label="Dar vuelta la cámara" style={{ ...round(46), background: "rgba(255,255,255,0.12)" }}><Icon d={I.flip} size={22} sw={1.8} /></button>
+        <button onClick={flip} disabled={!!err} aria-label="Dar vuelta la cámara" style={{ ...round(46), background: "rgba(255,255,255,0.12)" }}><Icon d={I.flip} size={22} sw={1.8} /></button>
       </>}
     </div>
   </div>;
