@@ -33,28 +33,37 @@ export async function postStory(token, src, caption) {
   if (!Array.isArray(r) || !r[0]) { pushToast("No se pudo subir la historia"); return false; }
   pushToast("Historia subida");
   window.dispatchEvent(new Event("kairo-stories"));
+  // Les llega un aviso a los demás: "Turi subió una historia".
+  fetch("/api/kairo/social", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${loadSession()?.token || token}` }, body: JSON.stringify({ action: "posted" }) }).catch(() => {});
   return true;
 }
 
 // Botón que abre la cámara de Kairo y sube la historia. Solo fotos del momento: no hay galería.
-export function StoryPicker({ token, caption, children, onDone, style }) {
+export function StoryPicker({ token, caption, avatar, children, onDone, style }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const send = async (src) => { setOpen(false); setBusy(true); const ok = await postStory(token, src, caption); setBusy(false); if (ok) onDone?.(); };
+  const send = async (src, text) => { setOpen(false); setBusy(true); const ok = await postStory(token, src, text); setBusy(false); if (ok) onDone?.(); };
   return <>
     <button onClick={() => setOpen(true)} disabled={busy} className="k-press" style={style}>{busy ? "Subiendo…" : children}</button>
-    {open && createPortal(<Camera caption={caption} onShot={send} onClose={() => setOpen(false)} />, document.querySelector(".k-root") || document.body)}
+    {open && createPortal(<Camera caption={caption} avatar={avatar} onShot={send} onClose={() => setOpen(false)} />, document.querySelector(".k-root") || document.body)}
   </>;
 }
 
-// Cámara a pantalla completa. Sin espejo en ningún momento: lo que ves al sacar la foto (también la
-// selfie) es exactamente lo que se sube. Si el navegador no da acceso a la cámara, abre la
-// del sistema (también solo cámara, sin galería).
-function Camera({ caption, onShot, onClose }) {
-  const video = useRef(null), stream = useRef(null), fallback = useRef(null);
+const glass = { border: "none", background: "rgba(0,0,0,0.38)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" };
+const round = (n) => ({ ...glass, width: n, height: n, borderRadius: n / 2, padding: 0 });
+
+// Cámara a pantalla completa, como la de Instagram: la frontal se ve como un espejo (levantás la mano
+// derecha y se mueve la del lado derecho) y la foto sale igual a lo que viste. Se recorta al mismo
+// encuadre de la pantalla, así lo que subís es exactamente lo que estabas viendo.
+function Camera({ caption, avatar, onShot, onClose }) {
+  const video = useRef(null), frame = useRef(null), stream = useRef(null), fallback = useRef(null);
   const [facing, setFacing] = useState("environment");
   const [shot, setShot] = useState(null);
+  const [text, setText] = useState(caption || "");
+  const [editing, setEditing] = useState(false);
+  const [flash, setFlash] = useState(false);
   const [err, setErr] = useState("");
+  const selfie = facing === "user";
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -71,36 +80,56 @@ function Camera({ caption, onShot, onClose }) {
   }, [facing]);
   useEffect(() => () => stream.current?.getTracks().forEach(t => t.stop()), []);
   const take = () => {
-    const v = video.current; if (!v?.videoWidth) return;
-    const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d").drawImage(v, 0, 0);
+    const v = video.current, box = frame.current?.getBoundingClientRect(); if (!v?.videoWidth || !box) return;
+    // Parte del video que se ve en pantalla (object-fit: cover).
+    const k = Math.max(box.width / v.videoWidth, box.height / v.videoHeight);
+    const sw = box.width / k, sh = box.height / k, sx = (v.videoWidth - sw) / 2, sy = (v.videoHeight - sh) / 2;
+    const c = document.createElement("canvas"); c.width = Math.round(sw); c.height = Math.round(sh);
+    const ctx = c.getContext("2d");
+    if (selfie) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    setFlash(true); setTimeout(() => setFlash(false), 160);
     setShot(c.toDataURL("image/jpeg", 0.9));
   };
-  const btn = { width: 46, height: 46, borderRadius: 23, border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 };
+  const top = "calc(env(safe-area-inset-top) + 10px)";
   return <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "#000", display: "flex", flexDirection: "column" }}>
-    <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      {shot ? <img src={shot} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-        : err ? <div style={{ color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<br /><button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
-        : <video ref={video} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+    <div ref={frame} style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: "0 0 22px 22px", background: "#0a0a0a" }}>
+      {shot ? <img src={shot} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+        : err ? <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", padding: 24, fontSize: 15, lineHeight: 1.5 }}>No pudimos abrir la cámara dentro de Kairo.<button onClick={() => fallback.current?.click()} style={{ marginTop: 16, background: C.lime, color: C.limeInk, border: "none", borderRadius: 14, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}>Abrir la cámara del celular</button></div>
+        : <video ref={video} playsInline muted autoPlay style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: selfie ? "scaleX(-1)" : "none" }} />}
+      <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: flash ? 0.75 : 0, transition: "opacity 160ms", pointerEvents: "none" }} />
       <input ref={fallback} type="file" accept="image/*" capture="environment" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setShot(await shrink(f, 1920, 0.9)); }} />
-      <button onClick={onClose} aria-label="Cerrar cámara" style={{ ...btn, position: "absolute", top: "calc(env(safe-area-inset-top) + 12px)", left: 14 }}>×</button>
-      {caption && <div style={{ position: "absolute", bottom: 16, left: 16, right: 16, textAlign: "center", color: "#fff", fontSize: 14, fontWeight: 500, textShadow: "0 1px 6px rgba(0,0,0,0.7)" }}>{caption}</div>}
+
+      <button onClick={shot ? () => { setShot(null); setEditing(false); } : onClose} aria-label={shot ? "Descartar foto" : "Cerrar cámara"} style={{ ...round(40), position: "absolute", top, left: 14 }}><Icon d={I.close} size={20} sw={2} /></button>
+      {shot && <button onClick={() => setEditing(true)} aria-label="Agregar texto" style={{ ...round(40), position: "absolute", top, right: 14 }}><Icon d={I.text} size={20} sw={2} /></button>}
+
+      {shot && (editing
+        ? <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setEditing(false)}>
+            <input autoFocus value={text} onChange={e => setText(e.target.value.slice(0, 90))} onClick={e => e.stopPropagation()} onKeyDown={e => e.key === "Enter" && setEditing(false)} placeholder="Escribí algo…" enterKeyHint="done" style={{ width: "100%", background: "none", border: "none", outline: "none", color: "#fff", fontSize: 24, fontWeight: 600, textAlign: "center", textShadow: "0 1px 8px rgba(0,0,0,0.6)" }} />
+          </div>
+        : text && <button onClick={() => setEditing(true)} style={{ position: "absolute", left: 20, right: 20, bottom: 22, background: "none", border: "none", color: "#fff", fontSize: 17, fontWeight: 600, textAlign: "center", textShadow: "0 1px 8px rgba(0,0,0,0.7)", lineHeight: 1.35 }}>{text}</button>)}
+      {!shot && caption && <div style={{ position: "absolute", left: 20, right: 20, bottom: 22, textAlign: "center", color: "#fff", fontSize: 15, fontWeight: 600, textShadow: "0 1px 8px rgba(0,0,0,0.7)" }}>{caption}</div>}
     </div>
-    <div style={{ padding: "18px 24px calc(env(safe-area-inset-bottom) + 22px)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+
+    <div style={{ height: 116, padding: "0 22px env(safe-area-inset-bottom)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, boxSizing: "content-box" }}>
       {shot ? <>
-        <button onClick={() => setShot(null)} style={{ ...btn, width: "auto", padding: "0 18px", borderRadius: 23, fontSize: 15 }}>Repetir</button>
-        <button onClick={() => { stream.current?.getTracks().forEach(t => t.stop()); onShot(shot); }} style={{ ...btn, width: "auto", padding: "0 22px", borderRadius: 23, background: C.lime, color: C.limeInk, fontSize: 15, fontWeight: 600 }}>Subir historia</button>
+        <button onClick={() => { setShot(null); setEditing(false); }} style={{ ...glass, background: "rgba(255,255,255,0.12)", height: 46, borderRadius: 23, padding: "0 18px", fontSize: 15, gap: 8 }}><Icon d={I.camera} size={18} />Otra</button>
+        <button onClick={() => { stream.current?.getTracks().forEach(t => t.stop()); onShot(shot, text.trim()); }} className="k-press" style={{ height: 50, borderRadius: 25, border: "none", background: C.lime, color: C.limeInk, padding: "0 8px 0 6px", display: "flex", alignItems: "center", gap: 10, fontSize: 15.5, fontWeight: 600 }}>
+          <span style={{ width: 38, height: 38, borderRadius: 19, overflow: "hidden", background: "rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>{avatar ? <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={18} />}</span>
+          Tu historia
+          <span style={{ width: 30, height: 30, borderRadius: 15, background: C.limeInk, color: C.lime, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={I.right} size={16} sw={2.4} /></span>
+        </button>
       </> : <>
         <span style={{ width: 46 }} />
-        <button onClick={take} disabled={!!err} aria-label="Sacar foto" style={{ width: 74, height: 74, borderRadius: 37, border: "4px solid #fff", background: "transparent", padding: 4 }}><span style={{ display: "block", width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} /></button>
-        <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} disabled={!!err} aria-label="Dar vuelta la cámara" style={btn}>⟲</button>
+        <button onClick={take} disabled={!!err} aria-label="Sacar foto" className="k-press" style={{ width: 78, height: 78, borderRadius: 39, border: "4px solid #fff", background: "transparent", padding: 5, opacity: err ? 0.3 : 1 }}><span style={{ display: "block", width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} /></button>
+        <button onClick={() => setFacing(selfie ? "environment" : "user")} disabled={!!err} aria-label="Dar vuelta la cámara" style={{ ...round(46), background: "rgba(255,255,255,0.12)" }}><Icon d={I.flip} size={22} sw={1.8} /></button>
       </>}
     </div>
   </div>;
 }
 
 // Fila de historias de Inicio: la tuya primero (con + para subir), después las de tus amigos.
-export function StoriesBar({ token, me, users = [], stories = [] }) {
+export function StoriesBar({ token, me, users = [], stories = [], onProfile }) {
   const [viewer, setViewer] = useState(null);
   const [seen, setSeen] = useState(() => seenSet());
   const myId = loadSession()?.user?.id;
@@ -114,10 +143,10 @@ export function StoriesBar({ token, me, users = [], stories = [] }) {
   const open = (g) => setViewer({ groups: groups.slice(), index: groups.indexOf(g) });
 
   return <>
-    <div style={{ display: "flex", gap: 14, overflowX: "auto", margin: "0 -16px 6px", padding: "2px 16px 8px" }}>
+    <div style={{ display: "flex", gap: 14, overflowX: "auto", margin: "0 -16px 6px", padding: "2px 16px 8px", scrollbarWidth: "none" }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flexShrink: 0, position: "relative" }}>
-        {mine ? <Bubble src={me?.avatar} ring={mine.items.some(s => !seen.has(s.id)) ? C.lime : C.line} onClick={() => open(mine)} /> : <StoryPicker token={token} caption="" style={{ background: "none", border: "none", padding: 0 }}><Bubble src={me?.avatar} ring={C.line} /></StoryPicker>}
-        <span style={{ position: "absolute", top: 42, left: 42, width: 22, height: 22, display: "flex" }}><StoryPicker token={token} caption="" style={{ width: 22, height: 22, minHeight: 22, boxSizing: "border-box", borderRadius: 11, border: `2px solid ${C.bg}`, background: C.lime, color: C.limeInk, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 0, fontSize: 0 }}><Icon d={I.plus} size={12} sw={3} /></StoryPicker></span>
+        {mine ? <Bubble src={me?.avatar} ring={mine.items.some(s => !seen.has(s.id)) ? C.lime : C.line} onClick={() => open(mine)} /> : <StoryPicker token={token} caption="" avatar={me?.avatar} style={{ background: "none", border: "none", padding: 0 }}><Bubble src={me?.avatar} ring={C.line} /></StoryPicker>}
+        <span style={{ position: "absolute", top: 42, left: 42, width: 22, height: 22, display: "flex" }}><StoryPicker token={token} caption="" avatar={me?.avatar} style={{ width: 22, height: 22, minHeight: 22, boxSizing: "border-box", borderRadius: 11, border: `2px solid ${C.bg}`, background: C.lime, color: C.limeInk, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 0, fontSize: 0 }}><Icon d={I.plus} size={12} sw={3} /></StoryPicker></span>
         <span style={{ fontSize: 11.5, color: C.sub, whiteSpace: "nowrap" }}>Tu historia</span>
       </div>
       {others.map(g => { const u = info(g.user_id), unseen = g.items.some(s => !seen.has(s.id)); return <button key={g.user_id} onClick={() => open(g)} style={{ background: "none", border: "none", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flexShrink: 0, color: C.text }}>
@@ -125,7 +154,7 @@ export function StoriesBar({ token, me, users = [], stories = [] }) {
         <span style={{ fontSize: 11.5, color: unseen ? C.text : C.sub, maxWidth: 66, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(u.nombre || "").split(" ")[0]}</span>
       </button>; })}
     </div>
-    {viewer && <StoryViewer token={token} groups={viewer.groups} start={viewer.index} info={info} myId={myId} onSeen={(id) => { markSeen(id); setSeen(seenSet()); }} onClose={() => setViewer(null)} />}
+    {viewer && createPortal(<StoryViewer token={token} groups={viewer.groups} start={viewer.index} info={info} myId={myId} onProfile={onProfile} onSeen={(id) => { markSeen(id); setSeen(seenSet()); }} onClose={() => setViewer(null)} />, document.querySelector(".k-root") || document.body)}
   </>;
 }
 
@@ -137,48 +166,95 @@ function Bubble({ src, ring, onClick }) {
   </span>;
   return onClick ? <button onClick={onClick} style={{ background: "none", border: "none", padding: 0 }}>{inner}</button> : inner;
 }
+const Face = ({ src, size, border }) => <span style={{ width: size, height: size, borderRadius: size / 2, overflow: "hidden", background: C.cardHi, display: "inline-flex", alignItems: "center", justifyContent: "center", color: C.sub, flexShrink: 0, border }}>{src ? <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={size * 0.5} />}</span>;
 
-// Visor a pantalla completa: tocá a la derecha para avanzar, a la izquierda para volver.
-function StoryViewer({ token, groups, start, info, myId, onSeen, onClose }) {
+// Visor a pantalla completa: tocá a la derecha para avanzar, a la izquierda para volver y mantené
+// apretado para pausar. En las tuyas abajo ves quién la vio y la podés borrar.
+function StoryViewer({ token, groups, start, info, myId, onSeen, onProfile, onClose }) {
   const [gi, setGi] = useState(start);
   const [si, setSi] = useState(() => Math.max(0, groups[start].items.findIndex(s => !seenSet().has(s.id))));
   const [img, setImg] = useState(null);
-  const [t0, setT0] = useState(Date.now());
-  const [now, setNow] = useState(Date.now());
-  const [confirmDel, setConfirmDel] = useState(false);
-  const g = groups[gi], s = g?.items[si], u = g ? info(g.user_id) : {};
+  const [pct, setPct] = useState(0);
+  const [held, setHeld] = useState(false);
+  const [panel, setPanel] = useState(null); // "views" | "delete"
+  const elapsed = useRef(0), down = useRef(0);
+  const g = groups[gi], s = g?.items[si], u = g ? info(g.user_id) : {}, own = g?.user_id === myId;
+  const paused = held || !!panel || !img;
 
   useEffect(() => {
     if (!s) return;
-    setImg(null); setConfirmDel(false); onSeen(s.id);
-    dq("kairo_stories", { token, filters: `?id=eq.${s.id}&select=image` }).then(r => { setImg(Array.isArray(r) && r[0] ? r[0].image : s.thumb); setT0(Date.now()); });
+    setImg(null); setPanel(null); elapsed.current = 0; setPct(0); onSeen(s.id);
+    dq("kairo_stories", { token, filters: `?id=eq.${s.id}&select=image` }).then(r => setImg(Array.isArray(r) && r[0] ? r[0].image : s.thumb));
+    if (!own) fetch("/api/kairo/social", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${loadSession()?.token || token}` }, body: JSON.stringify({ action: "view", story_id: s.id }) }).catch(() => {});
   }, [gi, si]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 100); return () => clearInterval(t); }, []);
   const next = useCallback(() => { if (si < g.items.length - 1) setSi(si + 1); else if (gi < groups.length - 1) { setGi(gi + 1); setSi(0); } else onClose(); }, [si, gi, g, groups, onClose]);
-  const prev = () => { if (si > 0) setSi(si - 1); else if (gi > 0) { setGi(gi - 1); setSi(groups[gi - 1].items.length - 1); } };
-  useEffect(() => { if (img && !confirmDel && now - t0 >= STORY_MS) next(); }, [now]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prev = () => { if (si > 0) setSi(si - 1); else if (gi > 0) { setGi(gi - 1); setSi(groups[gi - 1].items.length - 1); } else { elapsed.current = 0; setPct(0); } };
+  useEffect(() => {
+    if (paused) return;
+    let last = Date.now();
+    const t = setInterval(() => { const n = Date.now(); elapsed.current += n - last; last = n; const p = elapsed.current / STORY_MS; if (p >= 1) { clearInterval(t); next(); } else setPct(p); }, 50);
+    return () => clearInterval(t);
+  }, [paused, next]);
   if (!s) return null;
-  const pct = img ? Math.min(1, (now - t0) / STORY_MS) : 0;
   const del = async () => { await dq("kairo_stories", { method: "DELETE", token, filters: `?id=eq.${s.id}` }); pushToast("Historia eliminada"); window.dispatchEvent(new Event("kairo-stories")); onClose(); };
+  // Toque corto = navegar; mantener = pausa.
+  const onDown = () => { down.current = Date.now(); setHeld(true); };
+  const onUp = (e) => {
+    setHeld(false);
+    if (Date.now() - down.current > 250) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    (e.clientX - r.left < r.width * 0.33 ? prev : next)();
+  };
+  const views = s.views || [];
+  const top = "calc(env(safe-area-inset-top) + 8px)";
 
-  return <div style={{ position: "fixed", inset: 0, zIndex: 90, background: "#000", display: "flex", flexDirection: "column" }}>
-    <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "calc(env(safe-area-inset-top) + 10px) 12px 0", zIndex: 2, background: "linear-gradient(rgba(0,0,0,0.55), transparent)" }}>
-      <div style={{ display: "flex", gap: 4 }}>{g.items.map((x, k) => <span key={x.id} style={{ flex: 1, height: 2.5, borderRadius: 2, background: "rgba(255,255,255,0.3)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", background: "#fff", width: `${k < si ? 100 : k === si ? pct * 100 : 0}%` }} /></span>)}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, paddingBottom: 14 }}>
-        <span style={{ width: 34, height: 34, borderRadius: 17, overflow: "hidden", background: C.cardHi, display: "flex", alignItems: "center", justifyContent: "center", color: C.sub }}>{u.avatar ? <img src={u.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={16} />}</span>
-        <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>{g.user_id === myId ? "Tu historia" : u.nombre}</span>
-        <span style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>{ago(s.created_at)}</span>
-        <span style={{ flex: 1 }} />
-        {g.user_id === myId && <button onClick={() => confirmDel ? del() : setConfirmDel(true)} style={{ background: "none", border: "none", color: confirmDel ? C.danger : "#fff", fontSize: 13, padding: 6 }}>{confirmDel ? "¿Borrar?" : "Borrar"}</button>}
-        <button onClick={onClose} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#fff", fontSize: 26, lineHeight: 1, padding: "0 4px" }}>×</button>
+  return <div style={{ position: "fixed", inset: 0, zIndex: 105, background: "#000", display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: own ? "0 0 22px 22px" : 0, background: "#0a0a0a" }}>
+      {img ? <img src={img} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }} /> : <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Cargando…</span>}
+      <div onPointerDown={onDown} onPointerUp={onUp} onPointerLeave={() => setHeld(false)} onContextMenu={e => e.preventDefault()} style={{ position: "absolute", inset: 0, touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }} />
+
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: `${top} 10px 26px`, background: "linear-gradient(rgba(0,0,0,0.55), transparent)", opacity: held ? 0 : 1, transition: "opacity 200ms", pointerEvents: held ? "none" : "auto" }}>
+        <div style={{ display: "flex", gap: 3 }}>{g.items.map((x, k) => <span key={x.id} style={{ flex: 1, height: 2.5, borderRadius: 2, background: "rgba(255,255,255,0.3)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", background: "#fff", width: `${k < si ? 100 : k === si ? pct * 100 : 0}%` }} /></span>)}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <button onClick={() => !own && onProfile && (onClose(), onProfile(g.user_id))} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", padding: 0, color: "#fff", minWidth: 0 }}>
+            <Face src={u.avatar} size={34} />
+            <span style={{ fontSize: 14.5, fontWeight: 600 }}>{own ? "Tu historia" : (u.nombre || "").split(" ")[0]}</span>
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>{ago(s.created_at)}</span>
+          </button>
+          <span style={{ flex: 1 }} />
+          <button onClick={onClose} aria-label="Cerrar" style={{ ...round(36), background: "transparent", backdropFilter: "none", WebkitBackdropFilter: "none" }}><Icon d={I.close} size={22} sw={2} /></button>
+        </div>
       </div>
+      {s.caption && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: `48px 20px ${own ? 20 : "calc(env(safe-area-inset-bottom) + 26px)"}`, background: "linear-gradient(transparent, rgba(0,0,0,0.6))", color: "#fff", fontSize: 16, fontWeight: 600, textAlign: "center", pointerEvents: "none", lineHeight: 1.35, opacity: held ? 0 : 1, transition: "opacity 200ms" }}>{s.caption}</div>}
     </div>
-    <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      {img ? <img src={img} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Cargando…</span>}
-      <button onClick={prev} aria-label="Anterior" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "35%", background: "none", border: "none" }} />
-      <button onClick={next} aria-label="Siguiente" style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "65%", background: "none", border: "none" }} />
-    </div>
-    {s.caption && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "40px 18px calc(env(safe-area-inset-bottom) + 22px)", background: "linear-gradient(transparent, rgba(0,0,0,0.7))", color: "#fff", fontSize: 15, fontWeight: 500, textAlign: "center", pointerEvents: "none" }}>{s.caption}</div>}
+
+    {own && <div style={{ height: 64, padding: "0 16px env(safe-area-inset-bottom)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, boxSizing: "content-box" }}>
+      <button onClick={() => setPanel("views")} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", color: "#fff", padding: 0, flex: 1, minWidth: 0 }}>
+        {views.length ? <span style={{ display: "flex" }}>{views.slice(0, 3).map((v, k) => <span key={v.id} style={{ marginLeft: k ? -8 : 0 }}><Face src={info(v.id).avatar} size={26} border="2px solid #000" /></span>)}</span> : <Icon d={I.eye} size={20} />}
+        <span style={{ fontSize: 14, fontWeight: 500 }}>{views.length ? `Visto por ${views.length}` : "Nadie la vio todavía"}</span>
+      </button>
+      <button onClick={() => setPanel("delete")} aria-label="Eliminar historia" style={{ ...round(42), background: "rgba(255,255,255,0.1)" }}><Icon d={I.trash} size={20} sw={1.8} /></button>
+    </div>}
+
+    {panel && <div onClick={() => setPanel(null)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-end" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", background: C.card, borderRadius: "22px 22px 0 0", padding: "10px 18px calc(env(safe-area-inset-bottom) + 18px)", maxHeight: "65%", overflowY: "auto", animation: "kUp 240ms cubic-bezier(.2,.9,.3,1)" }}>
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: C.line, margin: "0 auto 14px" }} />
+        {panel === "views" ? <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 16, fontWeight: 600 }}><Icon d={I.eye} size={19} color={C.sub} />{views.length ? `Visto por ${views.length}` : "Todavía nadie la vio"}</div>
+          {!views.length && <p style={{ fontSize: 13.5, color: C.sub, lineHeight: 1.5, margin: "8px 0 0" }}>Cuando alguien la abra, aparece acá.</p>}
+          <div style={{ marginTop: 8 }}>{views.map(v => { const x = info(v.id); return <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `0.5px solid ${C.line}` }}>
+            <Face src={x.avatar} size={40} />
+            <span style={{ flex: 1, fontSize: 15 }}>{x.nombre || "Usuario"}</span>
+            <span style={{ fontSize: 12.5, color: C.sub }}>hace {ago(v.at)}</span>
+          </div>; })}</div>
+        </> : <>
+          <div style={{ fontSize: 17, fontWeight: 600, textAlign: "center" }}>¿Eliminar esta historia?</div>
+          <div style={{ fontSize: 13.5, color: C.sub, textAlign: "center", marginTop: 6 }}>Deja de verse para todos.</div>
+          <button onClick={del} className="k-press" style={{ width: "100%", marginTop: 18, background: "rgba(255,107,107,0.14)", color: C.neg, border: "none", borderRadius: 14, padding: 14, fontSize: 15, fontWeight: 600 }}>Eliminar</button>
+          <button onClick={() => setPanel(null)} className="k-press" style={{ width: "100%", marginTop: 8, background: C.cardHi, color: C.text, border: "none", borderRadius: 14, padding: 14, fontSize: 15, fontWeight: 500 }}>Cancelar</button>
+        </>}
+      </div>
+    </div>}
   </div>;
 }
 
@@ -186,13 +262,14 @@ function StoryViewer({ token, groups, start, info, myId, onSeen, onClose }) {
 const ESTADO = { en_camino: ["Va bien", C.pos], lento: ["Avance lento", C.warn], desviado: ["Fuera de rumbo", C.neg], sin_datos: ["Sin datos todavía", C.sub] };
 export function UserProfile({ token, id, onClose }) {
   const [p, setP] = useState(null);
+  const [zoom, setZoom] = useState(false);
   useEffect(() => {
     fetch(`/api/kairo/social?user=${id}`, { headers: { Authorization: `Bearer ${loadSession()?.token || token}` } }).then(r => r.json()).then(r => setP(r.profile || { error: true })).catch(() => setP({ error: true }));
   }, [id, token]);
   return <Sheet title={p?.nombre || "Perfil"} onClose={onClose}>
     {!p ? <p style={{ color: C.sub, fontSize: 14 }}>Cargando…</p> : p.error ? <p style={{ color: C.sub, fontSize: 14 }}>No se pudo cargar.</p> : <>
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <span style={{ width: 76, height: 76, borderRadius: 38, overflow: "hidden", background: C.cardHi, display: "flex", alignItems: "center", justifyContent: "center", color: C.sub, border: `2px solid ${C.lime}`, flexShrink: 0 }}>{p.avatar ? <img src={p.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={30} />}</span>
+        <button onClick={() => p.avatar && setZoom(true)} aria-label="Ver foto" style={{ width: 84, height: 84, borderRadius: 42, overflow: "hidden", background: C.cardHi, display: "flex", alignItems: "center", justifyContent: "center", color: C.sub, border: `2px solid ${C.lime}`, flexShrink: 0, padding: 0 }}>{p.avatar ? <img src={p.avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon d={I.user} size={30} />}</button>
         <div>
           <div style={{ fontSize: 18, fontWeight: 600 }}>{p.objetivo || "Sin objetivo cargado"}</div>
           {p.tendencia && <div style={{ fontSize: 14, color: C.lime, marginTop: 2 }}>{p.tendencia}</div>}
@@ -207,6 +284,10 @@ export function UserProfile({ token, id, onClose }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: ESTADO[p.progreso.estado]?.[1] || C.sub }}>{ESTADO[p.progreso.estado]?.[0] || "Progreso"}</div>
         <div style={{ fontSize: 13.5, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{p.progreso.lectura}</div>
       </div>}
+      {zoom && createPortal(<div onClick={() => setZoom(false)} style={{ position: "fixed", inset: 0, zIndex: 115, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, animation: "kFade 180ms ease" }}>
+        <img src={p.avatar} alt={p.nombre} style={{ width: "min(88vw, 420px)", aspectRatio: "1", borderRadius: "50%", objectFit: "cover" }} />
+        <button aria-label="Cerrar" style={{ ...round(40), position: "absolute", top: "calc(env(safe-area-inset-top) + 12px)", right: 14 }}><Icon d={I.close} size={20} sw={2} /></button>
+      </div>, document.querySelector(".k-root") || document.body)}
       <SectionTitle>Últimos entrenos</SectionTitle>
       {!p.ultimos.length ? <div style={{ ...card, color: C.sub, fontSize: 14 }}>Todavía no entrenó.</div> :
         <div style={{ ...card, padding: "2px 16px" }}>{p.ultimos.map((w, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "11px 0", borderBottom: i < p.ultimos.length - 1 ? `0.5px solid ${C.line}` : "none" }}>

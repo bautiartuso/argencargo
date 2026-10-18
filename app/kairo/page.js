@@ -83,6 +83,14 @@ function App({ session }) {
   }, [session.token]);
   const scroller = useRef(null);
   useEffect(() => { try { const t = localStorage.getItem("kairo_tab"); if (t) setTab(t === "objetivos" ? "perfil" : t); } catch {} }, []);
+  // Al tocar una notificación ("Turi subió una historia") la app abre en la pestaña que dice.
+  useEffect(() => {
+    const open = (url) => { const t = new URL(url, location.origin).searchParams.get("tab"); if (t && TABS.some(x => x.id === t)) go(t); };
+    if (location.search.includes("tab=")) { open(location.href); history.replaceState(null, "", "/kairo"); }
+    const onMsg = (e) => e.data?.type === "kairo-open" && open(e.data.url);
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
   const fin = useFinance(session.token);
 

@@ -21,7 +21,7 @@ self.addEventListener("notificationclick", (event) => {
   const url = event.notification.data?.url || "/kairo";
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const c of all) if (c.url.includes("/kairo") && "focus" in c) return c.focus();
+    for (const c of all) if (c.url.includes("/kairo") && "focus" in c) { c.postMessage({ type: "kairo-open", url }); return c.focus(); }
     if (self.clients.openWindow) return self.clients.openWindow(url);
   })());
 });

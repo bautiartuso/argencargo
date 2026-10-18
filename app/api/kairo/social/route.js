@@ -1,5 +1,7 @@
 // GET /api/kairo/social          (usuario de Kairo)
 //   → ranking del mes entre usuarios (solo entrenamiento) + historias de las últimas 24 h.
+// POST /api/kairo/social { action: "posted" }           → avisa por push a los demás que subiste una historia
+// POST /api/kairo/social { action: "view", story_id }    → marca que viste una historia de otro
 // GET /api/kairo/social?user=<id> → perfil de otro usuario: foto, objetivo, cómo viene (lectura de
 //   la IA) y sus últimos entrenos. Nunca expone finanzas ni números de peso/medidas.
 
@@ -18,7 +20,7 @@ export async function GET(req) {
 
   const people = arr(await sb(`/rest/v1/kairo_profile?select=user_id,nombre,avatar`));
   const now = new Date(), monthStart = new Date(now.getFullYear(), now.getMonth(), 1), since = new Date(now.getTime() - 120 * 86400e3);
-  const workouts = arr(await sb(`/rest/v1/kairo_workouts?finished_at=not.is.null&started_at=gte.${since.toISOString()}&select=user_id,started_at,finished_at,sets:kairo_sets(weight_kg,reps)&order=started_at.desc&limit=5000`));
+  const workouts = arr(await sb(`/rest/v1/kairo_workouts?finished_at=not.is.null&started_at=gte.${since.toISOString()}&select=user_id,routine_name,started_at,finished_at,sets:kairo_sets(weight_kg,reps)&order=started_at.desc&limit=5000`));
   const week = mondayOf(now);
 
   const rows = people.map(p => {
@@ -42,7 +44,47 @@ export async function GET(req) {
   // Historias: las de 24 h (sin la imagen, que se pide al abrirla) y limpieza de las de más de 2 días.
   sb(`/rest/v1/kairo_stories?created_at=lt.${new Date(now.getTime() - 48 * 3600e3).toISOString()}`, { method: "DELETE" }).catch(() => {});
   const stories = arr(await sb(`/rest/v1/kairo_stories?created_at=gte.${new Date(now.getTime() - 24 * 3600e3).toISOString()}&select=id,user_id,thumb,caption,created_at&order=created_at.asc`));
-  return Response.json({ users: rows, stories });
+  // En las tuyas va quién las vio (los demás no lo ven).
+  const mine = stories.filter(s => s.user_id === me.id);
+  if (mine.length) {
+    const views = arr(await sb(`/rest/v1/kairo_story_views?story_id=in.(${mine.map(s => s.id).join(",")})&select=story_id,viewer_id,viewed_at&order=viewed_at.desc`));
+    for (const s of mine) s.views = views.filter(v => v.story_id === s.id).map(v => ({ id: v.viewer_id, at: v.viewed_at }));
+  }
+  // Actividad de la última semana: entrenos terminados de todos (sin cargas ni peso corporal).
+  const weekAgo = now.getTime() - 7 * 86400e3;
+  const actividad = workouts.filter(w => new Date(w.finished_at).getTime() >= weekAgo).slice(0, 20).map(w => ({
+    user_id: w.user_id, rutina: w.routine_name || "Entreno", at: w.finished_at,
+    minutos: Math.round((new Date(w.finished_at) - new Date(w.started_at)) / 60000), series: arr(w.sets).length,
+  }));
+  return Response.json({ users: rows, stories, actividad });
+}
+
+export async function POST(req) {
+  const me = await kairoUser(req);
+  if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
+  const { action, story_id } = await req.json().catch(() => ({}));
+
+  if (action === "view" && story_id) {
+    const [st] = arr(await sb(`/rest/v1/kairo_stories?id=eq.${story_id}&select=user_id`));
+    if (st && st.user_id !== me.id) await sb(`/rest/v1/kairo_story_views?on_conflict=story_id,viewer_id`, { method: "POST", body: JSON.stringify({ story_id, viewer_id: me.id }), headers: { Prefer: "resolution=ignore-duplicates,return=minimal" } }).catch(() => {});
+    return Response.json({ ok: true });
+  }
+
+  if (action === "posted") {
+    // Solo si de verdad subió una en los últimos minutos (para que no se pueda usar para spamear).
+    const [st] = arr(await sb(`/rest/v1/kairo_stories?user_id=eq.${me.id}&created_at=gte.${new Date(Date.now() - 5 * 60e3).toISOString()}&select=id&limit=1`));
+    if (!st) return Response.json({ ok: true, sent: 0 });
+    const people = arr(await sb(`/rest/v1/kairo_profile?select=user_id,nombre`));
+    const name = (people.find(p => p.user_id === me.id)?.nombre || "Alguien").split(" ")[0];
+    const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
+    const others = people.filter(p => p.user_id !== me.id);
+    await Promise.all(others.map(p => fetch(`${base}/api/push/send`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: p.user_id, portal: "kairo", strict: true, title: `${name} subió una historia`, body: "Tocá para verla", url: "/kairo?tab=hoy", tag: `kairo-story-${me.id}` }),
+    }).catch(() => {})));
+    return Response.json({ ok: true, sent: others.length });
+  }
+  return Response.json({ error: "Acción inválida" }, { status: 400 });
 }
 
 const OBJ = { volumen: "Volumen", definicion: "Definición", recomposicion: "Recomposición", mantenimiento: "Mantenimiento", fuerza: "Fuerza" };
