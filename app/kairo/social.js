@@ -67,6 +67,9 @@ function Camera({ caption, avatar, onShot, onClose }) {
   const [zoom, setZoom] = useState(1);
   const [ultras, setUltras] = useState({}); // deviceId de la ultra gran angular de cada lado, si existe
   const [dev, setDev] = useState(null);     // cámara usada cuando no es la principal (la ultra)
+  const [initZoom, setInitZoom] = useState(null); // zoom pedido al abrir la cámara (plan B si no lo toma en vivo)
+  const [noHalf, setNoHalf] = useState({});  // lados donde comprobamos que el 0,5× no funciona
+  const [, tick] = useState(0);
   const [flash, setFlash] = useState(false);
   const [white, setWhite] = useState(false); // pantalla blanca: flash de la frontal
   const torch = useRef(false), flashRef = useRef(false); // linterna disponible / flash elegido
@@ -85,14 +88,20 @@ function Camera({ caption, avatar, onShot, onClose }) {
       try {
         stream.current?.getTracks().forEach(t => t.stop());
         const size = { width: { ideal: 1920 }, height: { ideal: 1920 } };
-        const st = await navigator.mediaDevices.getUserMedia({ video: dev ? { deviceId: { exact: dev }, ...size } : { facingMode: facing, ...size }, audio: false });
+        const extra = initZoom ? { zoom: { ideal: initZoom } } : {};
+        const st = await navigator.mediaDevices.getUserMedia({ video: dev ? { deviceId: { exact: dev }, ...size, ...extra } : { facingMode: facing, ...size, ...extra }, audio: false });
         if (!alive) { st.getTracks().forEach(t => t.stop()); return; }
         stream.current = st; native.current = null;
         try {
-          const track = st.getVideoTracks()[0], caps = track.getCapabilities?.(), base = track.getSettings?.().zoom;
+          const track = st.getVideoTracks()[0], caps = track.getCapabilities?.(), got = track.getSettings?.().zoom;
+          // El "1" de esta cámara es su zoom al abrir, salvo que la abrimos ya pidiendo otro.
+          const base = initZoom && got > 0 ? initZoom / (zoomRef.current / (dev ? 0.5 : 1)) : got;
           if (caps?.zoom && base > 0 && caps.zoom.max > base) native.current = { track, base, min: caps.zoom.min / base, max: caps.zoom.max / base };
           const f = dev ? 0.5 : 1, rel = zoomRef.current / f;
-          if (native.current && rel !== 1) track.applyConstraints({ advanced: [{ zoom: base * rel }] }).catch(() => {});
+          if (initZoom) {
+            // Plan B: pedimos el zoom al abrir. Si tampoco lo tomó, este lado no llega al 0,5×.
+            if (!(got > 0) || Math.abs(got - initZoom) > 0.06) { setNoHalf(h => ({ ...h, [facing]: true })); zoomRef.current = 1; setZoom(1); pushToast("Esta cámara no llega a 0,5× desde Safari"); }
+          } else if (native.current && rel !== 1) applyZoom(track, base * rel);
           torch.current = !!caps?.torch;
           if (torch.current && flashRef.current) track.applyConstraints({ advanced: [{ torch: true }] }).catch(() => {});
           // Con el permiso dado ya se ven los nombres de las cámaras: buscamos la ultra gran angular de cada lado.
@@ -108,10 +117,25 @@ function Camera({ caption, avatar, onShot, onClose }) {
       } catch { if (alive) { if (dev) setDev(null); else setErr("nocam"); } }
     })();
     return () => { alive = false; };
-  }, [facing, dev]);
+  }, [facing, dev, initZoom]);
+  // Aplica el zoom nativo y comprueba que la cámara lo haya tomado (Safari a veces lo ignora en silencio).
+  const applyZoom = (track, value) => {
+    const target = Math.round(value * 100) / 100;
+    const check = () => {
+      const got = track.getSettings?.().zoom;
+      if (got > 0 && Math.abs(got - target) <= 0.06) return;
+      const n = native.current; if (!n || n.track !== track) return;
+      if (target < n.base) {
+        if (ultra && !dev) setDev(ultra);          // hay una ultra gran angular: vamos por ahí
+        else if (!initZoom) setInitZoom(target);   // probamos abrir la cámara ya con ese zoom
+      } else { native.current = null; tick(t => t + 1); } // acercar: lo hacemos agrandando la imagen
+    };
+    track.applyConstraints({ advanced: [{ zoom: target }] }).then(() => setTimeout(check, 200))
+      .catch(() => track.applyConstraints({ zoom: target }).then(() => setTimeout(check, 200)).catch(check));
+  };
   useEffect(() => () => stream.current?.getTracks().forEach(t => t.stop()), []);
-  const nativeWide = native.current?.min < 1 && !dev; // la cámara principal ya llega sola al 0,5×
-  const canHalf = nativeWide || !!ultra;
+  const nativeWide = native.current?.min < 1 && !dev && !noHalf[facing]; // la cámara principal ya llega sola al 0,5×
+  const canHalf = !noHalf[facing] && (nativeWide || !!ultra);
   const setZ = (z) => {
     const n = native.current;
     const lo = nativeWide ? Math.max(0.5, n.min) : canHalf ? 0.5 : 1, hi = (n ? Math.min(6, n.max) : 4) * factor;
@@ -121,9 +145,10 @@ function Camera({ caption, avatar, onShot, onClose }) {
       if (!dev && z < 1) return setDev(ultra); // pasa a la ultra gran angular
       if (dev && z >= 1) return setDev(null);  // vuelve a la principal
     }
-    if (n) n.track.applyConstraints({ advanced: [{ zoom: n.base * (z / factor) }] }).catch(() => { native.current = null; });
+    if (initZoom && z >= 1) return setInitZoom(null); // vuelve a abrir la cámara como siempre
+    if (n) applyZoom(n.track, n.base * (z / factor));
   };
-  const flip = () => { setDev(null); zoomRef.current = 1; setZoom(1); setFacing(selfie ? "environment" : "user"); };
+  const flip = () => { setDev(null); setInitZoom(null); zoomRef.current = 1; setZoom(1); setFacing(selfie ? "environment" : "user"); };
   const toggleFlash = () => {
     const on = !flash; setFlash(on);
     if (torch.current) stream.current?.getVideoTracks()[0]?.applyConstraints({ advanced: [{ torch: on }] }).catch(() => { torch.current = false; });
