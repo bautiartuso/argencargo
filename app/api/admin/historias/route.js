@@ -1,22 +1,24 @@
 // GET/POST /api/admin/historias — Historias destacadas (admin y empleado). Ver lib/historias.js.
 //
-// GET                                  → últimas historias generadas (bucket content-studio/historias)
-// POST multipart {file}                → lee la captura con Claude, arma la historia y la sube. Devuelve {url, datos}
-// POST {action:"render", datos}        → vuelve a armar la historia con los datos corregidos a mano
-// POST {action:"telegram", url, texto} → manda la foto al Telegram del dueño para subirla desde el celular
-// POST {action:"portadas"}             → genera (o devuelve) las portadas de los destacados
+// GET                                        → últimas historias generadas y portadas (bucket content-studio)
+// POST multipart {file}                      → sube la captura, Claude marca el recorte, arma la historia.
+//                                              Devuelve {url, captura:{url,ancho,alto}, bbox, nombre}
+// POST {action:"render", captura, bbox}      → vuelve a armar la historia con otro recorte (o sin recorte)
+// POST {action:"telegram", url, texto}       → manda la foto al Telegram del dueño para subirla desde el celular
+// POST {action:"portadas", rehacer?}         → genera (o devuelve) las portadas de los destacados
 
 import { sb, uploadStorage } from "../../../../lib/studio";
 import { callClaudeVision } from "../../../../lib/anthropic";
 import { htmlToPng } from "../../../../lib/chromium";
 import { tgNotify } from "../../../../lib/telegram";
-import { htmlHistoriaResena, htmlPortadaDestacado, PORTADAS, SCHEMA_RESENA } from "../../../../lib/historias";
+import { htmlHistoriaCaptura, htmlPortadaDestacado, PORTADAS, SCHEMA_RECORTE, normBbox } from "../../../../lib/historias";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
+const PUB = `${SB_URL}/storage/v1/object/public/content-studio/`;
 
 async function isStaff(req) {
   const auth = req.headers.get("authorization") || "";
@@ -28,29 +30,43 @@ async function isStaff(req) {
   } catch { return false; }
 }
 
-const limpiar = (d) => ({
-  nombre: String(d?.nombre || "").trim().slice(0, 60),
-  estrellas: Math.max(1, Math.min(5, Math.round(Number(d?.estrellas) || 5))),
-  fecha: String(d?.fecha || "").trim().slice(0, 40),
-  texto: String(d?.texto || "").trim().slice(0, 900),
-});
-
 async function listar(prefix, limit = 30) {
   const r = await fetch(`${SB_URL}/storage/v1/object/list/content-studio`, {
     method: "POST", headers: { Authorization: `Bearer ${SB_SERVICE}`, apikey: SB_SERVICE, "Content-Type": "application/json" },
     body: JSON.stringify({ prefix, limit, offset: 0, sortBy: { column: "created_at", order: "desc" } }),
   });
   const j = await r.json().catch(() => []);
-  return (Array.isArray(j) ? j : []).filter((f) => f.name && !f.name.startsWith(".")).map((f) => ({
-    name: f.name, created_at: f.created_at, url: `${SB_URL}/storage/v1/object/public/content-studio/${prefix}/${f.name}`,
-  }));
+  return (Array.isArray(j) ? j : []).filter((f) => f.name && !f.name.startsWith(".")).map((f) => ({ name: f.name, created_at: f.created_at, url: `${PUB}${prefix}/${f.name}` }));
 }
 
-async function renderYSubir(datos) {
-  const png = await htmlToPng(htmlHistoriaResena(datos), { width: 1080, height: 1920 });
-  const slug = (datos.nombre || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "cliente";
-  const url = await uploadStorage(`historias/${Date.now()}_${slug}.png`, png, "image/png");
-  return url;
+// Ancho y alto de un PNG/JPEG/WebP leyendo la cabecera (sin dependencias).
+function dimensiones(buf, mime) {
+  try {
+    if (mime.includes("png") && buf.length > 24) return { ancho: buf.readUInt32BE(16), alto: buf.readUInt32BE(20) };
+    if (mime.includes("jpeg") || mime.includes("jpg")) {
+      let i = 2;
+      while (i < buf.length) {
+        if (buf[i] !== 0xff) { i++; continue; }
+        const m = buf[i + 1];
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { alto: buf.readUInt16BE(i + 5), ancho: buf.readUInt16BE(i + 7) };
+        i += 2 + buf.readUInt16BE(i + 2);
+      }
+    }
+    if (mime.includes("webp") && buf.length > 30) {
+      const tag = buf.toString("ascii", 12, 16);
+      if (tag === "VP8X") return { ancho: 1 + buf.readUIntLE(24, 3), alto: 1 + buf.readUIntLE(27, 3) };
+      if (tag === "VP8L") { const b0 = buf[21], b1 = buf[22], b2 = buf[23], b3 = buf[24]; return { ancho: 1 + (((b1 & 0x3f) << 8) | b0), alto: 1 + (((b3 & 0xf) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)) }; }
+      if (tag === "VP8 ") return { ancho: buf.readUInt16LE(26) & 0x3fff, alto: buf.readUInt16LE(28) & 0x3fff };
+    }
+  } catch {}
+  return null;
+}
+
+const slugDe = (s) => String(s || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "cliente";
+
+async function renderYSubir(captura, bbox, nombre) {
+  const png = await htmlToPng(htmlHistoriaCaptura({ captura: captura.url, ancho: captura.ancho, alto: captura.alto, bbox }), { width: 1080, height: 1920 });
+  return uploadStorage(`historias/${Date.now()}_${slugDe(nombre)}.png`, png, "image/png");
 }
 
 export async function GET(req) {
@@ -68,31 +84,40 @@ export async function POST(req) {
       if (!file || typeof file === "string") return Response.json({ error: "Falta la captura" }, { status: 400 });
       if (file.size > 12 * 1024 * 1024) return Response.json({ error: "Máximo 12 MB" }, { status: 400 });
       const mime = file.type || "image/png";
-      const b64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-      const raw = await callClaudeVision({
-        system: "Leés capturas de pantalla de reseñas (Google, Instagram, WhatsApp) y devolvés los datos exactos. Nunca inventes ni corrijas el texto: copialo tal cual, incluidos errores. Si la imagen no es una reseña, es_resena=false.",
-        prompt: "Extraé la reseña de esta captura.",
-        images: [`data:${mime};base64,${b64}`],
-        json_schema: SCHEMA_RESENA, max_tokens: 1500, feature: "historias",
-      });
-      let d = null; try { d = JSON.parse(raw); } catch {}
-      if (!d || d.es_resena === false || !String(d.texto || "").trim()) return Response.json({ error: "No encontré una reseña en la captura. Probá con otra o cargá el texto a mano." }, { status: 422 });
-      const datos = limpiar(d);
-      const url = await renderYSubir(datos);
-      return Response.json({ ok: true, url, datos });
+      const buf = Buffer.from(await file.arrayBuffer());
+      const dim = dimensiones(buf, mime);
+      if (!dim) return Response.json({ error: "Formato no reconocido: usá PNG, JPG o WebP" }, { status: 400 });
+      const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+      const capUrl = await uploadStorage(`historias-capturas/${Date.now()}.${ext}`, buf, mime);
+      const captura = { url: capUrl, ancho: dim.ancho, alto: dim.alto };
+      // Claude marca dónde está la reseña dentro de la captura para recortar lo que sobra.
+      let bbox = null, nombre = "";
+      try {
+        const raw = await callClaudeVision({
+          system: "Mirás capturas de pantalla de reseñas (Google Maps, Instagram, WhatsApp) y devolvés dónde está la reseña dentro de la imagen, en porcentaje del ancho y del alto. El bloque va desde la foto y el nombre del autor hasta el final del texto de la reseña, incluyendo las estrellas. Dejá AFUERA la barra de estado del teléfono, el buscador, el nombre del negocio, las pestañas y los botones de Me gusta / Compartir. Si hay varias reseñas, elegí la que esté completa y más grande. Dejá un margen chico (1-2%) alrededor.",
+          prompt: `La imagen mide ${dim.ancho}×${dim.alto} px. Marcá el recorte de la reseña.`,
+          images: [`data:${mime};base64,${buf.toString("base64")}`],
+          json_schema: SCHEMA_RECORTE, max_tokens: 400, feature: "historias",
+        });
+        const d = JSON.parse(raw);
+        if (d && d.es_resena !== false) { bbox = normBbox(d); nombre = String(d.nombre || "").trim(); }
+      } catch (e) { console.warn("[historias] recorte", e?.message); }
+      const url = await renderYSubir(captura, bbox, nombre);
+      return Response.json({ ok: true, url, captura, bbox: bbox || normBbox(null), nombre, recortada: !!bbox });
     }
     const body = await req.json().catch(() => ({}));
     const a = body.action;
     if (a === "render") {
-      const datos = limpiar(body.datos);
-      if (!datos.texto) return Response.json({ error: "Falta el texto de la reseña" }, { status: 400 });
-      const url = await renderYSubir(datos);
-      return Response.json({ ok: true, url, datos });
+      const c = body.captura || {};
+      if (!String(c.url || "").startsWith(`${PUB}historias-capturas/`) || !(Number(c.ancho) > 0) || !(Number(c.alto) > 0)) return Response.json({ error: "Captura inválida" }, { status: 400 });
+      const bbox = normBbox(body.bbox);
+      const url = await renderYSubir({ url: c.url, ancho: Number(c.ancho), alto: Number(c.alto) }, bbox, body.nombre);
+      return Response.json({ ok: true, url, bbox });
     }
     if (a === "telegram") {
       const url = String(body.url || "");
-      if (!url.startsWith(`${SB_URL}/storage/v1/object/public/content-studio/`)) return Response.json({ error: "URL inválida" }, { status: 400 });
-      const r = await tgNotify(String(body.texto || "⭐ Historia para el destacado <b>Clientes</b>: guardala y subila desde Instagram."), { photo: url });
+      if (!url.startsWith(PUB)) return Response.json({ error: "URL inválida" }, { status: 400 });
+      const r = await tgNotify(String(body.texto || "⭐ Historia para Instagram: guardala, subila como historia y agregala al destacado <b>Clientes</b>."), { photo: url });
       if (r?.error || r?.skipped) return Response.json({ error: r.error || r.skipped }, { status: 500 });
       return Response.json({ ok: true });
     }

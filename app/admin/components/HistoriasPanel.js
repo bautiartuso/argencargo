@@ -22,8 +22,8 @@ export default function HistoriasPanel({ token }) {
   const [lista, setLista] = useState([]);
   const [portadas, setPortadas] = useState([]);
   const [busy, setBusy] = useState(null); // "leyendo" | "armando" | "telegram" | "portadas"
-  const [actual, setActual] = useState(null); // {url, datos}
-  const [datos, setDatos] = useState({ nombre: "", estrellas: 5, fecha: "", texto: "" });
+  const [actual, setActual] = useState(null); // {url, captura:{url,ancho,alto}, nombre, recortada}
+  const [bbox, setBbox] = useState({ x0: 0, y0: 0, x1: 100, y1: 100 }); // recorte en % de la captura
   const [arrastre, setArrastre] = useState(false);
   const fileRef = useRef(null);
 
@@ -42,8 +42,8 @@ export default function HistoriasPanel({ token }) {
     try {
       const fd = new FormData(); fd.append("file", file, file.name || "captura.png");
       const j = await api({ method: "POST", body: fd });
-      setActual({ url: j.url, datos: j.datos }); setDatos(j.datos);
-      toast("Historia armada", "success"); cargar();
+      setActual({ url: j.url, captura: j.captura, nombre: j.nombre, recortada: j.recortada }); setBbox(j.bbox);
+      toast(j.recortada ? "Historia armada" : "Historia armada con la captura entera (no pude ubicar la reseña)", j.recortada ? "success" : "error"); cargar();
     } catch (e) { toast(e.message, "error"); }
     setBusy(null);
   };
@@ -53,12 +53,16 @@ export default function HistoriasPanel({ token }) {
     window.addEventListener("paste", onPaste); return () => window.removeEventListener("paste", onPaste);
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const rehacer = async () => {
+  const rehacer = async (b = bbox) => {
+    if (!actual?.captura) return;
     setBusy("armando");
-    try { const j = await api({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "render", datos }) }); setActual({ url: j.url, datos: j.datos }); toast("Historia rehecha", "success"); cargar(); }
+    try { const j = await api({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "render", captura: actual.captura, bbox: b, nombre: actual.nombre }) }); setActual((p) => ({ ...p, url: j.url })); setBbox(j.bbox); toast("Historia rehecha", "success"); cargar(); }
     catch (e) { toast(e.message, "error"); }
     setBusy(null);
   };
+  const sinRecorte = { x0: 0, y0: 0, x1: 100, y1: 100 };
+  const esEntera = bbox.x0 === 0 && bbox.y0 === 0 && bbox.x1 === 100 && bbox.y1 === 100;
+  const num = (v) => Math.max(0, Math.min(100, Number(String(v).replace(",", ".")) || 0));
   const telegram = async (url) => {
     setBusy("telegram");
     try { await api({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "telegram", url }) }); toast("Enviada a tu Telegram", "success"); }
@@ -80,7 +84,7 @@ export default function HistoriasPanel({ token }) {
     <div style={{ display: "grid", gridTemplateColumns: actual ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: 16, alignItems: "start" }}>
       <div style={CARD}>
         <h3 style={H}>Nueva historia</h3>
-        <p style={SUB}>Reseña de Google, Instagram o WhatsApp. Se lee sola.</p>
+        <p style={SUB}>La captura de la reseña tal cual se ve en Google: foto, nombre, estrellas y texto.</p>
         <div onClick={() => !busy && fileRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setArrastre(true); }} onDragLeave={() => setArrastre(false)} onDrop={(e) => { e.preventDefault(); setArrastre(false); subir(e.dataTransfer.files?.[0]); }}
           style={{ marginTop: 16, padding: "38px 20px", borderRadius: 14, border: `2px dashed ${arrastre ? SKY : "rgba(255,255,255,0.18)"}`, background: arrastre ? "rgba(140,200,245,0.08)" : "rgba(0,0,0,0.18)", textAlign: "center", cursor: busy ? "wait" : "pointer" }}>
           {busy === "leyendo" ? <p style={{ margin: 0, fontSize: 14, color: SKY, fontWeight: 700 }}>Leyendo la reseña y armando la historia…</p>
@@ -88,26 +92,23 @@ export default function HistoriasPanel({ token }) {
         </div>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { subir(e.target.files?.[0]); e.target.value = ""; }} />
 
-        {actual && <div style={{ marginTop: 20 }}>
-          <h3 style={H}>Datos leídos</h3>
-          <p style={SUB}>Corregí lo que haga falta y rehacé la historia.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-            <div><label style={LBL}>Nombre</label><input style={INP} value={datos.nombre} onChange={(e) => setDatos((p) => ({ ...p, nombre: e.target.value }))} /></div>
-            <div><label style={LBL}>Fecha (como aparece)</label><input style={INP} value={datos.fecha} onChange={(e) => setDatos((p) => ({ ...p, fecha: e.target.value }))} placeholder="Hace un mes" /></div>
+        {actual?.captura && <div style={{ marginTop: 20 }}>
+          <h3 style={H}>Encuadre</h3>
+          <p style={SUB}>{actual.recortada ? "La reseña se recortó sola. Si quedó algo de más o de menos, ajustá los bordes." : "No pude ubicar la reseña: va la captura entera. Ajustá los bordes a mano."}</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 12 }}>
+            {[["y0", "Arriba"], ["y1", "Abajo"], ["x0", "Izquierda"], ["x1", "Derecha"]].map(([k, l]) => <div key={k}><label style={LBL}>{l} %</label><input inputMode="decimal" style={INP} value={bbox[k]} onChange={(e) => setBbox((p) => ({ ...p, [k]: e.target.value }))} onBlur={(e) => setBbox((p) => ({ ...p, [k]: num(e.target.value) }))} /></div>)}
           </div>
-          <div style={{ marginTop: 12 }}><label style={LBL}>Estrellas</label>
-            <div style={{ display: "flex", gap: 4 }}>{[1, 2, 3, 4, 5].map((n) => <button key={n} onClick={() => setDatos((p) => ({ ...p, estrellas: n }))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 26, color: n <= datos.estrellas ? "#FBBC04" : "rgba(255,255,255,0.2)", padding: 0 }}>★</button>)}</div>
-          </div>
-          <div style={{ marginTop: 12 }}><label style={LBL}>Texto de la reseña</label><textarea style={{ ...INP, minHeight: 120, resize: "vertical", lineHeight: 1.5 }} value={datos.texto} onChange={(e) => setDatos((p) => ({ ...p, texto: e.target.value }))} /></div>
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-            <button disabled={!!busy} onClick={rehacer} style={BTN("sky")}>{busy === "armando" ? "Armando…" : "↻ Rehacer con estos datos"}</button>
+            <button disabled={!!busy} onClick={() => rehacer({ x0: num(bbox.x0), y0: num(bbox.y0), x1: num(bbox.x1), y1: num(bbox.y1) })} style={BTN("sky")}>{busy === "armando" ? "Armando…" : "↻ Rehacer con este encuadre"}</button>
+            {!esEntera && <button disabled={!!busy} onClick={() => { setBbox(sinRecorte); rehacer(sinRecorte); }} style={BTN()}>Usar la captura entera</button>}
           </div>
+          <img src={actual.captura.url} alt="" style={{ display: "block", width: "100%", maxWidth: 260, marginTop: 14, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", opacity: 0.8 }} />
         </div>}
       </div>
 
       {actual && <div style={CARD}>
         <h3 style={H}>Historia lista</h3>
-        <p style={SUB}>1080 × 1920 · se sube desde el celular al destacado Clientes.</p>
+        <p style={SUB}>1080 × 1920 · la subís como historia desde el celular y la agregás al destacado Clientes.</p>
         <img src={actual.url} alt="" style={{ display: "block", width: "100%", maxWidth: 360, margin: "16px auto 0", borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 16px 40px rgba(0,0,0,0.4)" }} />
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
           <button disabled={!!busy} onClick={() => telegram(actual.url)} style={BTN("primary")}>{busy === "telegram" ? "Enviando…" : "📲 Mandar a mi Telegram"}</button>
@@ -139,7 +140,7 @@ export default function HistoriasPanel({ token }) {
       <h3 style={H}>Últimas historias</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 12, marginTop: 14 }}>
         {lista.map((f) => <div key={f.name} style={{ textAlign: "center" }}>
-          <img src={f.url} alt="" onClick={() => setActual({ url: f.url, datos })} style={{ width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", display: "block" }} />
+          <img src={f.url} alt="" onClick={() => setActual((p) => ({ ...(p || {}), url: f.url, captura: p?.captura || null }))} style={{ width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", display: "block" }} />
           <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 6 }}>
             <button onClick={() => telegram(f.url)} style={{ ...BTN("sky"), padding: "5px 9px", fontSize: 11 }}>📲</button>
             <button onClick={() => descargar(f.url, f.name)} style={{ ...BTN(), padding: "5px 9px", fontSize: 11 }}>⬇</button>
