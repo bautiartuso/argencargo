@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today } from "./ui";
+import { adjustTarget, kcalFor, sportName } from "./score";
 
 export { MEDIDAS };
 export const OBJETIVOS = [
@@ -93,7 +94,7 @@ export default function Perfil({ token, isAdmin }) {
         <Icon d={I.spark} size={18} />{thinking ? "La IA está calculando tus calorías y macros…" : "Calcular calorías y macros con IA"}
       </button> : <div style={card}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-          <div><span className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.lime }}>{st.calorias_dia.toLocaleString("es-AR")}</span><span style={{ color: C.sub }}> kcal/día</span></div>
+          <div><span className="k-num" style={{ fontSize: 30, fontWeight: 500, color: C.lime }}>{st.calorias_dia.toLocaleString("es-AR")}</span><span style={{ color: C.sub }}> kcal/día{Array.isArray(p.cardio_plan) && p.cardio_plan.length ? " sin deporte" : ""}</span></div>
           <span className="k-num" style={{ fontSize: 13, color: C.sub }}>{st.ritmo_peso_semanal_kg > 0 ? "+" : ""}{Number(st.ritmo_peso_semanal_kg).toLocaleString("es-AR", { maximumFractionDigits: 2 })} kg/sem</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -101,6 +102,7 @@ export default function Perfil({ token, isAdmin }) {
           {st.carbohidratos_g != null && <MiniStat label="Carbohidratos" value={`${st.carbohidratos_g} g`} />}
           {st.grasas_g != null && <MiniStat label="Grasas" value={`${st.grasas_g} g`} />}
         </div>
+        {Array.isArray(p.cardio_plan) && p.cardio_plan.length > 0 && <div style={{ fontSize: 12.5, color: C.sub, marginTop: 10, lineHeight: 1.5 }}>Los días con deporte el objetivo sube en proporción: {p.cardio_plan.map(x => { const a = adjustTarget(st, kcalFor(x.kind, x.minutes, x.intensity, p.peso_kg)); return `${sportName(x.kind)} ≈ ${a.calorias_dia.toLocaleString("es-AR")} kcal (P ${a.proteina_g})`; }).join(" · ")}.</div>}
         {(p.dieta || st.manual) && <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>{[p.dieta, st.manual && "objetivos editados a mano"].filter(Boolean).join(" · ")}</div>}
         <p style={{ fontSize: 14, lineHeight: 1.5, margin: "14px 0 0" }}>{st.resumen}</p>
         {st.progreso && <div style={{ marginTop: 14, padding: 12, borderRadius: 14, background: C.cardHi }}>

@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, btnLime, linkBtn, ars, monthName, curMonth, today, ymd, dayLabel, Bar } from "./ui";
 import { startWorkout, todayPlan, planOn, ensurePush } from "./fisico";
-import { dayScore, adjustTarget, cardioOn, sportName, kcalFor } from "./score";
+import { dayScore, adjustTarget, cardioOn, plannedBurn, sportName } from "./score";
 import { LogSheet, Spark, MeasuresTable, Avatar, saveProfile } from "./perfil";
 import { StoriesBar, UserProfile } from "./social";
 
@@ -81,8 +81,10 @@ export default function Hoy({ token, me, fin, go }) {
   const plan = routines ? todayPlan(routines, me?.dias) : null;
   const weights = logs.filter(l => l.peso_kg).slice().reverse();
   const todayLog = logs.find(l => l.log_date === today() && l.peso_kg);
-  // El objetivo de hoy incluye lo que quemaste haciendo deporte.
-  const burnedToday = weekCardio.filter(c => c.log_date === today()).reduce((a, c) => a + Number(c.kcal || 0), 0);
+  // El objetivo de hoy incluye el deporte: lo registrado, o el estimado del plan hasta que lo registres.
+  const todayDow = (new Date().getDay() + 6) % 7;
+  const actualToday = weekCardio.filter(c => c.log_date === today()).reduce((a, c) => a + Number(c.kcal || 0), 0);
+  const burnedToday = actualToday || plannedBurn(me?.cardio_plan, todayDow, me?.peso_kg);
   const st = adjustTarget(me?.estrategia, burnedToday);
   const myRow = social?.find(u => u.me);
   const others = (social || []).filter(u => !u.me);
@@ -115,7 +117,8 @@ export default function Hoy({ token, me, fin, go }) {
     const pesasPlan = plan.hoy.length > 0 || (plan.modo === "rotacion" && !plan.descanso);
     const pesasDone = week.some(w => ymd(new Date(w.started_at)) === date);
     const cPlan = cardioOn(me?.cardio_plan, i), cDone = weekCardio.filter(c => c.log_date === date);
-    const burned = cDone.reduce((a, c) => a + Number(c.kcal || 0), 0);
+    const actual = cDone.reduce((a, c) => a + Number(c.kcal || 0), 0);
+    const burned = actual || (i === todayIdx ? plannedBurn(me?.cardio_plan, i, me?.peso_kg) : 0); // hoy: el estimado hasta que lo registres
     const sc = dayScore({ eaten, st: adjustTarget(me?.estrategia, burned), pesasPlan, pesasDone, cardioPlan: cPlan.reduce((a, x) => a + Number(x.minutes || 0), 0), cardioDone: cDone.reduce((a, c) => a + Number(c.minutes || 0), 0), logged: food.length > 0 });
     return { i, l, date, today: i === todayIdx, eaten, burned, cPlan, cDone, ...sc };
   });
@@ -138,7 +141,7 @@ export default function Hoy({ token, me, fin, go }) {
 
     {/* Tu día: calorías, proteína y suplementos, pegado a las historias */}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 4 }}>
-      <DayTile label="Calorías" onClick={() => go("nutricion")} value={day ? r0(day.kcal).toLocaleString("es-AR") : "—"} sub={st?.calorias_dia ? `de ${r0(st.calorias_dia).toLocaleString("es-AR")}${burnedToday ? ` (+${r0(burnedToday)} deporte)` : ""}` : "sin objetivo"} pct={st?.calorias_dia && day ? day.kcal / st.calorias_dia : 0} color={C.lime} />
+      <DayTile label="Calorías" onClick={() => go("nutricion")} value={day ? r0(day.kcal).toLocaleString("es-AR") : "—"} sub={st?.calorias_dia ? `de ${r0(st.calorias_dia).toLocaleString("es-AR")}${burnedToday ? ` (+${r0(burnedToday)} deporte${actualToday ? "" : " est."})` : ""}` : "sin objetivo"} pct={st?.calorias_dia && day ? day.kcal / st.calorias_dia : 0} color={C.lime} />
       <DayTile label="Proteína" onClick={() => go("nutricion")} value={day ? `${r0(day.p)} g` : "—"} sub={st?.proteina_g ? `de ${r0(st.proteina_g)} g` : "sin objetivo"} pct={st?.proteina_g && day ? day.p / st.proteina_g : 0} color={C.blue} />
       <DayTile label="Suplementos" onClick={() => go("nutricion")} value={day ? (day.supps ? `${day.taken}/${day.supps}` : "—") : "—"} sub={day?.supps ? (day.taken === day.supps ? "todos tomados" : `${day.supps - day.taken} pendiente${day.supps - day.taken > 1 ? "s" : ""}`) : "sin cargar"} pct={day?.supps ? day.taken / day.supps : 0} color={C.pos} />
     </div>

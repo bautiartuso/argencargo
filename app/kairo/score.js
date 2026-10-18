@@ -47,12 +47,14 @@ export function kcalFor(kind, minutes, intensity = "media", weightKg = 75) {
   return Math.round(met * (Number(weightKg) || 75) * (Number(minutes) || 0) / 60 * (INTENSITY[intensity] || 1));
 }
 
-// Objetivo del día con el deporte sumado: las calorías quemadas se reponen con carbohidratos y grasas en la
-// misma proporción de la estrategia (la proteína no cambia; con keto, casi todo va a grasas).
+// Objetivo del día con el deporte sumado. La estrategia es para un día SIN deporte; lo que quemás se
+// repone subiendo los tres macros en la misma proporción (más proteína también: el músculo se desgasta más).
 export function adjustTarget(st, burned) {
-  if (!st || !burned) return st;
-  const c = Number(st.carbohidratos_g) || 0, g = Number(st.grasas_g) || 0, cal = c * 4 + g * 9;
-  const shareC = cal ? (c * 4) / cal : 0.6;
-  return { ...st, calorias_dia: Math.round(Number(st.calorias_dia) + burned), carbohidratos_g: Math.round(c + burned * shareC / 4), grasas_g: Math.round(g + burned * (1 - shareC) / 9), quemadas: burned };
+  if (!st || !burned || !Number(st.calorias_dia)) return st;
+  const k = 1 + burned / Number(st.calorias_dia);
+  const up = (v) => v == null ? v : Math.round(Number(v) * k);
+  return { ...st, calorias_dia: Math.round(Number(st.calorias_dia) + burned), proteina_g: up(st.proteina_g), carbohidratos_g: up(st.carbohidratos_g), grasas_g: up(st.grasas_g), quemadas: burned };
 }
 export const cardioOn = (plan, dow) => (Array.isArray(plan) ? plan : []).filter(x => x.days?.includes(dow));
+// Calorías del deporte planeado para un día de la semana (para armar la dieta por adelantado).
+export const plannedBurn = (plan, dow, weightKg) => cardioOn(plan, dow).reduce((a, x) => a + kcalFor(x.kind, x.minutes, x.intensity, weightKg), 0);

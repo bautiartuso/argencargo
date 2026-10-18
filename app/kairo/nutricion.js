@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel } from "./ui";
 import { ensurePush } from "./fisico";
-import { adjustTarget } from "./score";
+import { adjustTarget, plannedBurn, cardioOn, sportName } from "./score";
 
 const MEALS = [["desayuno", "Desayuno"], ["almuerzo", "Almuerzo"], ["merienda", "Merienda"], ["cena", "Cena"], ["snacks", "Snacks"]];
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -30,14 +30,16 @@ function useNutri(token) {
     const [p, s, pr] = await Promise.all([
       dq("kairo_meal_plan", { token, filters: "?select=*&order=dow.asc,sort_order.asc,created_at.asc" }),
       dq("kairo_supplements", { token, filters: "?select=*&order=sort_order.asc,created_at.asc" }),
-      dq("kairo_profile", { token, filters: "?select=estrategia,reglas_nutricion&limit=1" }),
+      dq("kairo_profile", { token, filters: "?select=estrategia,reglas_nutricion,cardio_plan,peso_kg&limit=1" }),
     ]);
     setPlan(Array.isArray(p) ? p : []); setSupps(Array.isArray(s) ? s : []); setProfile(Array.isArray(pr) ? pr[0] || null : null); setLo(false);
   }, [token]);
   useEffect(() => { load(); }, [load]);
   const st = profile?.estrategia;
   const target = st ? { kcal: st.calorias_dia, p: st.proteina_g, c: st.carbohidratos_g, g: st.grasas_g } : null;
-  return { plan, supps, target, lo, load };
+  // Objetivo de un día de la semana con el deporte planeado sumado (para armar la dieta por adelantado).
+  const targetOn = (dow) => { if (!st) return null; const b = plannedBurn(profile?.cardio_plan, dow, profile?.peso_kg); const a = adjustTarget(st, b); return { kcal: a.calorias_dia, p: a.proteina_g, c: a.carbohidratos_g, g: a.grasas_g, extra: b, sports: cardioOn(profile?.cardio_plan, dow).map(x => sportName(x.kind)) }; };
+  return { plan, supps, target, targetOn, lo, load };
 }
 
 export default function Nutricion({ token, onProfile }) {
@@ -82,7 +84,8 @@ function Today({ token, n }) {
   const dow = dowOf(date);
   const planToday = n.plan.filter(p => p.dow === dow);
   // Lo que quemaste haciendo deporte ese día se suma al objetivo (carbos y grasas; la proteína no cambia).
-  const eaten = sum(log), st = adjustTarget(n.target && { calorias_dia: n.target.kcal, proteina_g: n.target.p, carbohidratos_g: n.target.c, grasas_g: n.target.g }, burned);
+  const planned = date === today() ? (n.targetOn(dow)?.extra || 0) : 0, extra = burned || planned;
+  const eaten = sum(log), st = adjustTarget(n.target && { calorias_dia: n.target.kcal, proteina_g: n.target.p, carbohidratos_g: n.target.c, grasas_g: n.target.g }, extra);
   const t = st ? { kcal: st.calorias_dia, p: st.proteina_g, c: st.carbohidratos_g, g: st.grasas_g } : null;
   const shift = (d) => { const x = new Date(date + "T12:00:00"); x.setDate(x.getDate() + d); const s = ymd(x); if (s <= today()) setDate(s); };
 
@@ -120,7 +123,7 @@ function Today({ token, n }) {
         <MacroBar label="Grasas" v={eaten.g} max={t?.g} color={C.warn} />
       </div>
     </div>
-    {burned > 0 && <div style={{ fontSize: 12.5, color: C.sub, textAlign: "center", marginTop: 10 }}>Incluye <span style={{ color: C.blue }}>+{burned.toLocaleString("es-AR")} kcal</span> por el deporte de {date === today() ? "hoy" : "ese día"}</div>}
+    {extra > 0 && <div style={{ fontSize: 12.5, color: C.sub, textAlign: "center", marginTop: 10 }}>Incluye <span style={{ color: C.blue }}>+{extra.toLocaleString("es-AR")} kcal</span> por el deporte de {date === today() ? "hoy" : "ese día"}{!burned ? " (estimado hasta que lo registres)" : ""}</div>}
 
     {daySupps.length > 0 && <SuppDay supps={daySupps} isTaken={(s, slot) => suppLog.some(x => x.supplement_id === s.id && x.slot === slot)} onToggle={toggleSupp} />}
 
@@ -261,13 +264,13 @@ function Week({ token, n, onSupps }) {
   const [copying, setCopying] = useState(false);
   const [review, setReview] = useState(false);
   const items = n.plan.filter(p => p.dow === dow);
-  const tot = sum(items), t = n.target;
+  const tot = sum(items), t = n.targetOn(dow);
   const del = async (it) => { await dq("kairo_meal_plan", { method: "DELETE", token, filters: `?id=eq.${it.id}` }); n.load(); };
   const totals = DAYS.map((_, i) => sum(n.plan.filter(p => p.dow === i)).kcal);
 
   return <>
     <div style={{ display: "flex", gap: 6, marginTop: 18 }}>
-      {DAYS.map((d, i) => { const on = dow === i, k = totals[i], off = t && k && Math.abs(k - t.kcal) > t.kcal * 0.1; return <button key={i} onClick={() => setDow(i)} className="k-press" style={{ flex: 1, padding: "8px 0 6px", borderRadius: 12, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.card, color: on ? C.limeInk : C.text, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+      {DAYS.map((d, i) => { const on = dow === i, k = totals[i], ti = n.targetOn(i), off = ti && k && Math.abs(k - ti.kcal) > ti.kcal * 0.1; return <button key={i} onClick={() => setDow(i)} className="k-press" style={{ flex: 1, padding: "8px 0 6px", borderRadius: 12, border: `0.5px solid ${on ? C.lime : C.line}`, background: on ? C.lime : C.card, color: on ? C.limeInk : C.text, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>{d}</span>
         <span className="k-num" style={{ fontSize: 9.5, color: on ? C.limeInk : off ? C.warn : C.dim }}>{k ? Math.round(k / 100) / 10 + "k" : "—"}</span>
       </button>; })}
@@ -279,6 +282,7 @@ function Week({ token, n, onSupps }) {
         <span className="k-num" style={{ fontSize: 15 }}>{r0(tot.kcal).toLocaleString("es-AR")}{t ? <span style={{ color: C.sub }}> / {r0(t.kcal).toLocaleString("es-AR")}</span> : ""} kcal</span>
       </div>
       <div className="k-num" style={{ fontSize: 12.5, color: C.sub, marginTop: 4 }}>P {r0(tot.p)}{t ? `/${r0(t.p)}` : ""} · C {r0(tot.c)}{t?.c ? `/${r0(t.c)}` : ""} · G {r0(tot.g)}{t?.g ? `/${r0(t.g)}` : ""} g</div>
+      {t?.extra > 0 && <div style={{ fontSize: 12, color: C.blue, marginTop: 4 }}>Día con {t.sports.join(" y ")}: el objetivo sube {t.extra.toLocaleString("es-AR")} kcal</div>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
         <button className="k-press" onClick={() => setCopying(true)} disabled={!items.length} style={{ ...btnGhost, padding: "10px 8px", fontSize: 13.5, whiteSpace: "nowrap", opacity: items.length ? 1 : 0.5 }}>Copiar a otros días</button>
         <button className="k-press" onClick={() => setReview(true)} disabled={!n.plan.length} style={{ ...btnGhost, padding: "10px 8px", fontSize: 13.5, whiteSpace: "nowrap", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: n.plan.length ? 1 : 0.5 }}><Icon d={I.spark} size={15} color={C.lime} />Analizar con IA</button>
