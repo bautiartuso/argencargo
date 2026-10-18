@@ -45,29 +45,47 @@ const PLAN_SCHEMA = {
   },
 };
 
-const REVIEW_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["puntaje", "resumen", "fortalezas", "problemas", "cambios", "volumen"],
+// Revisión de rutinas: el conjunto + cada rutina, con cambios que se pueden aplicar con un botón.
+const CAMBIO = {
+  type: "object", additionalProperties: false,
+  required: ["id", "tipo", "item_id", "ejercicio_actual", "ejercicio_nuevo", "posicion", "series", "rep_min", "rep_max", "motivo"],
   properties: {
-    puntaje: { type: "integer", description: "Qué tan efectivas son las rutinas para el objetivo, de 1 a 10." },
-    resumen: { type: "string" },
+    id: { type: "string", description: "Identificador corto único (c1, c2…)." },
+    tipo: { type: "string", enum: ["cambiar", "agregar", "sacar", "reordenar", "series"] },
+    item_id: { type: "string", description: "item_id del ejercicio de la rutina al que se refiere (vacío si es agregar)." },
+    ejercicio_actual: { type: "string", description: "Nombre del ejercicio actual (vacío si es agregar)." },
+    ejercicio_nuevo: { type: "string", description: "Para cambiar o agregar: nombre EXACTO de la biblioteca. Vacío en los otros tipos." },
+    posicion: { type: "integer", description: "Para agregar o reordenar: lugar en la rutina empezando en 1. -1 si no aplica." },
+    series: { type: "integer", description: "Series nuevas (agregar o series). -1 si no cambia." },
+    rep_min: { type: "integer", description: "Piso de repeticiones nuevo. -1 si no cambia." },
+    rep_max: { type: "integer", description: "Tope de repeticiones nuevo. -1 si no cambia." },
+    motivo: { type: "string", description: "Por qué, en una frase concreta." },
+  },
+};
+const REVIEW_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["puntaje", "resumen", "fortalezas", "problemas", "volumen", "rutinas"],
+  properties: {
+    puntaje: { type: "integer", description: "Qué tan efectivo es el esquema completo para el objetivo, de 1 a 10." },
+    resumen: { type: "string", description: "El esquema completo en 2-3 frases." },
     fortalezas: { type: "array", items: { type: "string" } },
     problemas: { type: "array", items: { type: "string" } },
-    cambios: {
-      type: "array",
-      items: {
-        type: "object", additionalProperties: false, required: ["tipo", "rutina", "ejercicio", "sugerencia", "reemplazo"],
-        properties: {
-          tipo: { type: "string", enum: ["cambiar", "agregar", "sacar", "reordenar", "series"], description: "cambiar = reemplazar por otro; agregar = sumar un ejercicio; sacar = quitarlo; reordenar = moverlo de lugar; series = ajustar series/repeticiones/descanso." },
-          rutina: { type: "string" }, ejercicio: { type: "string" }, sugerencia: { type: "string", description: "Qué hacer y por qué, concreto (ej. 'pasalo al principio: es el compuesto más pesado')." },
-          reemplazo: { type: "string", description: "Ejercicio nuevo si es cambiar o agregar; vacío si no aplica." },
-        },
-      },
-    },
     volumen: {
       type: "array",
       items: {
         type: "object", additionalProperties: false, required: ["musculo", "series_semana", "opinion"],
         properties: { musculo: { type: "string" }, series_semana: { type: "integer" }, opinion: { type: "string", enum: ["poco", "bien", "mucho"] } },
+      },
+    },
+    rutinas: {
+      type: "array", description: "Una por rutina, en el mismo orden.",
+      items: {
+        type: "object", additionalProperties: false, required: ["routine_id", "nombre", "puntaje", "resumen", "cambios"],
+        properties: {
+          routine_id: { type: "string" }, nombre: { type: "string" },
+          puntaje: { type: "integer", description: "1 a 10." },
+          resumen: { type: "string", description: "Qué está bien y qué no de esta rutina, en 1-2 frases." },
+          cambios: { type: "array", items: CAMBIO, description: "Cambios concretos y aplicables; vacío si la rutina está bien." },
+        },
       },
     },
   },
@@ -78,7 +96,7 @@ const DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "
 async function loadRoutines(uid, ids) {
   const filter = ids ? `&id=in.(${ids.join(",")})` : "";
   const routines = arr(await sb(`/rest/v1/kairo_routines?user_id=eq.${uid}&select=id,name,days&order=sort_order.asc${filter}`));
-  const items = routines.length ? arr(await sb(`/rest/v1/kairo_routine_exercises?routine_id=in.(${routines.map(r => r.id).join(",")})&select=*,exercise:kairo_exercises(id,name,muscle,equipment)&order=sort_order.asc`)) : [];
+  const items = routines.length ? arr(await sb(`/rest/v1/kairo_routine_exercises?routine_id=in.(${routines.map(r => r.id).join(",")})&select=*,exercise:kairo_exercises(id,name,muscle,equipment)&order=sort_order.asc`)).filter(i => i.exercise) : [];
   return routines.map(r => ({ ...r, items: items.filter(i => i.routine_id === r.id) }));
 }
 
@@ -124,14 +142,27 @@ function progression(item, lastSets, prevTargets) {
 
 const OBJ = { volumen: "Volumen (superávit calórico)", definicion: "Definición (déficit calórico)", recomposicion: "Recomposición corporal", mantenimiento: "Mantenimiento", fuerza: "Fuerza" };
 const ageOf = (d) => { if (!d) return null; const b = new Date(d + "T12:00:00"), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
+// Suplementos activos con su total diario: la IA los tiene que considerar en todo (ej. si toma omega 3
+// no le pide pescado; si toma creatina lo tiene en cuenta para el entrenamiento y la hidratación).
+const n1 = (v) => Number(v).toLocaleString("es-AR", { maximumFractionDigits: 2 });
+function suppLine(s) {
+  const tomas = (s.times || []).length || 1;
+  if (s.amount) return `${s.name} ${n1(s.amount)} ${s.unit || ""} × ${tomas} toma${tomas > 1 ? "s" : ""} = ${n1(s.amount * tomas)} ${s.unit || ""} por día`.replace(/\s+/g, " ").trim();
+  return `${s.name}${s.dose ? ` ${s.dose}` : ""}${tomas > 1 ? ` (${tomas} tomas por día)` : ""}`;
+}
 async function loadProfile(uid) {
   const [p] = arr(await sb(`/rest/v1/kairo_profile?user_id=eq.${uid}&select=*`));
+  const supps = arr(await sb(`/rest/v1/kairo_supplements?user_id=eq.${uid}&active=eq.true&select=name,dose,amount,unit,times`));
+  const [first] = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=not.is.null&select=started_at&order=started_at.asc&limit=1`));
+  if (p) { p.supps = supps; p.desde = first?.started_at?.slice(0, 10) || null; }
   if (p && p.fecha_nacimiento) p.edad = ageOf(p.fecha_nacimiento);
   return p || null;
 }
 function profileText(p) {
   if (!p) return "Perfil: no cargado (asumí hipertrofia general, nivel intermedio).";
-  return `Perfil: objetivo ${OBJ[p.objetivo] || p.objetivo || "—"}${p.tendencia ? ` (${p.tendencia})` : ""}${p.objetivo_detalle ? ` · en sus palabras: "${p.objetivo_detalle}"` : ""}${p.reglas_gym ? ` · reglas para el entrenamiento: "${p.reglas_gym}"` : ""}${p.reglas_nutricion ? ` · reglas para la alimentación: "${p.reglas_nutricion}"` : ""} · experiencia ${p.experiencia || "—"} · ${p.sexo || "—"}, ${p.edad || "—"} años, ${p.peso_kg || "—"} kg, ${p.altura_cm || "—"} cm · entrena ${p.dias_semana || "—"} días/semana${p.lesiones ? ` · lesiones/limitaciones: ${p.lesiones}` : ""}${p.notas ? ` · notas: ${p.notas}` : ""}.`;
+  return `Perfil: objetivo ${OBJ[p.objetivo] || p.objetivo || "—"}${p.tendencia ? ` (${p.tendencia})` : ""}${p.objetivo_detalle ? ` · en sus palabras: "${p.objetivo_detalle}"` : ""}${p.reglas_gym ? ` · reglas para el entrenamiento: "${p.reglas_gym}"` : ""}${p.reglas_nutricion ? ` · reglas para la alimentación: "${p.reglas_nutricion}"` : ""} · experiencia ${p.experiencia || "—"} · ${p.sexo || "—"}, ${p.edad || "—"} años, ${p.peso_kg || "—"} kg, ${p.altura_cm || "—"} cm · entrena ${p.dias_semana || "—"} días/semana${p.lesiones ? ` · lesiones/limitaciones: ${p.lesiones}` : ""}${p.notas ? ` · notas: ${p.notas}` : ""}.
+Suplementos que toma todos los días: ${p.supps?.length ? p.supps.map(suppLine).join("; ") : "ninguno"}. Tenelos en cuenta siempre: no le sugieras comida para cubrir algo que ya cubre un suplemento.
+Usa Kairo desde ${p.desde || "hace muy poco (todavía no registró entrenos)"}: no juzgues frecuencia ni adherencia con días anteriores a esa fecha (antes no registraba nada). Con menos de 3 semanas de datos, no saques conclusiones de constancia.`;
 }
 
 async function ask(user, schema, feature) {
@@ -193,17 +224,19 @@ async function review(uid) {
   if (!routines.length) return Response.json({ error: "Todavía no cargaste rutinas" }, { status: 400 });
   const ids = [...new Set(routines.flatMap(r => r.items.map(i => i.exercise_id)))];
   const hist = await history(uid, ids, 3);
-  const since = new Date(Date.now() - 28 * 86400e3).toISOString();
-  const recent = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=gte.${since}&select=routine_name,started_at`));
-  const text = routines.map(r => `Rutina "${r.name}" · días: ${r.days?.length ? r.days.map(d => DAYS[d]).join(", ") : "sin día fijo"}\n` + r.items.map(i => {
-    const h = hist[i.exercise_id] || [];
-    return `  - ${i.exercise.name} (${i.exercise.muscle}): ${i.sets}×${i.rep_min}–${i.rep_max}, descanso ${i.rest_sec}s${h.length ? ` · últimas: ${h.map(x => x.series).join(" | ")}` : ""}`;
-  }).join("\n")).join("\n\n");
   const profile = await loadProfile(uid);
-  const user = `${profileText(profile)}\n\nRevisá estas rutinas a fondo en función de ese objetivo: si son efectivas, la distribución de grupos musculares entre los días, el orden de los ejercicios dentro de cada rutina (compuestos pesados primero, aislados al final), si sobra o falta volumen, y las series y repeticiones de cada ejercicio. Calculá las series semanales por grupo muscular (contando los días de cada rutina o la rotación) y proponé cambios concretos solo donde valga la pena: reemplazar un ejercicio, agregar uno que falte, sacar uno que sobre, cambiarlo de lugar o ajustar sus series.\nEntrenamientos hechos en las últimas 4 semanas: ${recent.length}.\n\n${text}`;
+  const desde = profile?.desde;
+  const done = desde ? arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=not.is.null&started_at=gte.${desde}&select=routine_name`)) : [];
+  const lib = arr(await sb(`/rest/v1/kairo_exercises?or=(created_by.is.null,created_by.eq.${uid})&select=name,muscle,equipment&order=muscle.asc,name.asc`));
+  const libText = Object.entries(lib.reduce((a, e) => { (a[e.muscle] ||= []).push(e.name); return a; }, {})).map(([m, n]) => `${m}: ${n.join(" · ")}`).join("\n");
+  const text = routines.map(r => `Rutina "${r.name}" (routine_id ${r.id}) · días: ${r.days?.length ? r.days.map(d => DAYS[d]).join(", ") : "sin día fijo"}\n` + r.items.map((i, k) => {
+    const h = hist[i.exercise_id] || [];
+    return `  ${k + 1}. [item_id ${i.id}] ${i.exercise.name} (${i.exercise.muscle}, ${i.exercise.equipment || "—"}): ${i.sets} series, reps ${i.rep_min}–${i.rep_max}, descanso ${i.rest_sec}s${h.length ? ` · últimas: ${h.map(x => x.series).join(" | ")}` : ""}`;
+  }).join("\n")).join("\n\n");
+  const user = `${profileText(profile)}\n\nRevisá su esquema de entrenamiento: primero el conjunto (distribución de grupos musculares entre los días, volumen semanal por músculo) y después cada rutina por separado (orden de los ejercicios —compuestos pesados primero—, si sobra o falta algo, series y repeticiones). Para cada rutina proponé cambios concretos y aplicables solo donde valga la pena: cambiar un ejercicio por otro, agregar uno, sacar uno, cambiarlo de lugar o ajustar series/repeticiones. Para cambiar o agregar usá SOLO nombres exactos de esta biblioteca:\n${libText}\n\nEntrenos registrados en Kairo desde que la usa: ${done.length}.\n\n${text}`;
   const content = await ask(user, REVIEW_SCHEMA, "kairo-coach-review");
-  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "review", content }), headers: { Prefer: "return=minimal" } });
-  return Response.json({ review: content });
+  const [row] = arr(await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "review", content }), headers: { Prefer: "return=representation" } }));
+  return Response.json({ review: content, id: row?.id });
 }
 
 const STRATEGY_SCHEMA = {
@@ -234,9 +267,8 @@ async function strategy(uid) {
   const logs = arr(await sb(`/rest/v1/kairo_body_logs?user_id=eq.${uid}&select=log_date,peso_kg,grasa_pct,cintura_cm,pecho_cm,brazo_cm,muslo_cm,cadera_cm,cuello_cm&order=log_date.asc&limit=120`));
   const since = new Date(Date.now() - 28 * 86400e3).toISOString();
   const recent = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${uid}&finished_at=gte.${since}&select=started_at`));
-  const supps = arr(await sb(`/rest/v1/kairo_supplements?user_id=eq.${uid}&active=eq.true&select=name,dose`));
   const fmt = (l) => [l.log_date, l.peso_kg && `${l.peso_kg} kg`, l.grasa_pct && `${l.grasa_pct}% grasa`, l.cintura_cm && `cintura ${l.cintura_cm}`, l.pecho_cm && `pecho ${l.pecho_cm}`, l.brazo_cm && `brazo ${l.brazo_cm}`, l.muslo_cm && `muslo ${l.muslo_cm}`, l.cadera_cm && `cadera ${l.cadera_cm}`, l.cuello_cm && `cuello ${l.cuello_cm}`].filter(Boolean).join(", ");
-  const user = `${profileText(profile)}\n\nArmá su estrategia de alimentación para ese objetivo (calorías y macros: proteína, carbohidratos y grasas que cierren con las calorías) con tips de micronutrientes (teniendo en cuenta los suplementos que ya toma: ${supps.length ? supps.map(x => x.name + (x.dose ? ` ${x.dose}` : "")).join(", ") : "ninguno"}), y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos en las últimas 4 semanas).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
+  const user = `${profileText(profile)}\n\nArmá su estrategia de alimentación para ese objetivo (calorías y macros: proteína, carbohidratos y grasas que cierren con las calorías) con tips de micronutrientes (teniendo en cuenta los suplementos que ya toma), y leé si viene progresando según su peso y medidas. Usá Mifflin-St Jeor para el gasto basal y ajustá por actividad (${recent.length} entrenamientos registrados en Kairo en las últimas 4 semanas; si empezó a usarla hace poco, guiate por los días por semana que declaró).\nRegistros de peso y medidas (más viejo primero):\n${logs.length ? logs.map(fmt).join("\n") : "sin registros"}`;
   const content = await ask(user, STRATEGY_SCHEMA, "kairo-coach-strategy");
   await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "strategy", content }), headers: { Prefer: "return=minimal" } });
   await sb(`/rest/v1/kairo_profile?user_id=eq.${uid}`, { method: "PATCH", body: JSON.stringify({ estrategia: content, estrategia_at: new Date().toISOString() }) });
@@ -245,7 +277,7 @@ async function strategy(uid) {
 
 // Análisis de la semana de comidas (la plantilla fija L–D) contra el objetivo y los suplementos.
 const NUTRITION_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["resumen", "dias", "faltantes", "sugerencias"],
+  type: "object", additionalProperties: false, required: ["resumen", "dias", "faltantes", "sugerencias", "acciones"],
   properties: {
     resumen: { type: "string", description: "2-3 frases: si la semana cierra con el objetivo y qué es lo más importante a corregir." },
     dias: {
@@ -262,7 +294,22 @@ const NUTRITION_SCHEMA = {
         properties: { nutriente: { type: "string" }, detalle: { type: "string" }, cubierto_por: { type: "string", description: "Suplemento que ya toma y lo cubre, o vacío si no está cubierto." } },
       },
     },
-    sugerencias: { type: "array", items: { type: "string" }, description: "3-5 cambios simples y repetibles (mismos alimentos de todos los días, cantidades concretas). Nada de recetas elaboradas." },
+    sugerencias: { type: "array", items: { type: "string" }, description: "1-3 consejos generales que no son un cambio puntual del plan (hidratación, horarios, cómo tomar un suplemento). Lo concreto va en acciones." },
+    acciones: {
+      type: "array", description: "Plan de acción: cambios concretos al plan semanal que la persona puede aplicar con un botón. Entre 2 y 6, los que más impacto tengan.",
+      items: {
+        type: "object", additionalProperties: false, required: ["id", "tipo", "dias", "comida", "alimento_actual", "nuevo", "motivo"],
+        properties: {
+          id: { type: "string", description: "Identificador corto único (a1, a2…)." },
+          tipo: { type: "string", enum: ["cambiar", "agregar", "sacar"] },
+          dias: { type: "array", items: { type: "integer" }, description: "Días donde aplica: 0 lunes … 6 domingo." },
+          comida: { type: "string", enum: ["desayuno", "almuerzo", "merienda", "cena", "snacks"] },
+          alimento_actual: { type: "string", description: "Para cambiar o sacar: nombre EXACTO del alimento como figura en el plan. Vacío si es agregar." },
+          nuevo: { type: "string", description: "Para cambiar o agregar: alimento con cantidad en lenguaje natural (ej. '200 g de papa hervida'). Vacío si es sacar." },
+          motivo: { type: "string", description: "Por qué, con el número que mueve (ej. '+25 g de proteína, llegás al objetivo')." },
+        },
+      },
+    },
   },
 };
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -270,7 +317,6 @@ async function nutrition(uid) {
   const profile = await loadProfile(uid);
   const plan = arr(await sb(`/rest/v1/kairo_meal_plan?user_id=eq.${uid}&select=dow,meal,name,qty,kcal,protein_g,carbs_g,fat_g&order=dow.asc,sort_order.asc`));
   if (!plan.length) return Response.json({ error: "Primero cargá tu semana de comidas" }, { status: 400 });
-  const supps = arr(await sb(`/rest/v1/kairo_supplements?user_id=eq.${uid}&active=eq.true&select=name,dose,times`));
   const st = profile?.estrategia;
   const target = st ? `Objetivo diario: ${st.calorias_dia} kcal · ${st.proteina_g} g proteína · ${st.carbohidratos_g ?? "?"} g carbohidratos · ${st.grasas_g ?? "?"} g grasas.` : "Objetivo diario: todavía no calculado (estimalo con el perfil).";
   const days = DIAS.map((d, i) => {
@@ -279,10 +325,10 @@ async function nutrition(uid) {
     const sum = items.reduce((a, x) => ({ k: a.k + Number(x.kcal), p: a.p + Number(x.protein_g), c: a.c + Number(x.carbs_g), g: a.g + Number(x.fat_g) }), { k: 0, p: 0, c: 0, g: 0 });
     return `${d} (total ${Math.round(sum.k)} kcal · P ${Math.round(sum.p)} · C ${Math.round(sum.c)} · G ${Math.round(sum.g)}): ` + items.map(x => `[${x.meal}] ${x.name}${x.qty ? ` ${x.qty}` : ""}`).join("; ");
   }).join("\n");
-  const user = `${profileText(profile)}\n${target}\nSuplementos que toma: ${supps.length ? supps.map(s => `${s.name}${s.dose ? ` (${s.dose})` : ""}`).join(", ") : "ninguno"}.\n\nAnalizá su semana de comidas (come de forma repetitiva a propósito; no le propongas recetas). Decí día por día si llega al objetivo, qué nutrientes le quedan cortos o desbalanceados (fibra, hierro, calcio, omega 3, potasio, vitaminas, etc.) y si algún suplemento que ya toma lo cubre. Las sugerencias tienen que ser cambios simples con los mismos alimentos o agregados fáciles.\n\n${days}`;
+  const user = `${profileText(profile)}\n${target}\n\nAnalizá su plan semanal de comidas (come de forma repetitiva a propósito; no le propongas recetas). Los suplementos son parte de su día: contalos (si toma omega 3 no le falta omega 3 aunque no coma pescado; si toma creatina, es para el entrenamiento). Decí día por día si llega al objetivo, qué nutrientes le quedan cortos o desbalanceados (fibra, hierro, calcio, potasio, vitaminas, etc.) y si algún suplemento lo cubre. Después armá el plan de acción: cambios concretos sobre los alimentos que ya come (cambiar 100 g de arroz por 100 g de papa, sumar 1 huevo en el desayuno, sacar algo que sobra), con el nombre exacto del alimento del plan y los días donde aplica.\n\n${days}`;
   const content = await ask(user, NUTRITION_SCHEMA, "kairo-coach-nutrition");
-  await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "nutrition", content }), headers: { Prefer: "return=minimal" } });
-  return Response.json({ nutrition: content });
+  const [row] = arr(await sb(`/rest/v1/kairo_ai`, { method: "POST", body: JSON.stringify({ user_id: uid, kind: "nutrition", content }), headers: { Prefer: "return=representation" } }));
+  return Response.json({ nutrition: content, id: row?.id });
 }
 
 export async function POST(req) {

@@ -214,7 +214,7 @@ export default function Fisico({ token, onProfile }) {
 
     {sheet?.type === "routine" && <RoutineSheet token={token} routine={sheet.routine} exercises={gym.exercises} count={gym.routines.length} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "dias" && <DaysSheet token={token} routines={gym.routines} dias={gym.profile?.dias} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); gym.load(); }} />}
-    {sheet?.type === "review" && <ReviewSheet token={token} onClose={() => setSheet(null)} />}
+    {sheet?.type === "review" && <ReviewSheet token={token} routines={gym.routines} exercises={gym.exercises} onApplied={gym.load} onClose={() => setSheet(null)} />}
     {sheet?.type === "workout" && <WorkoutDetail w={sheet.w} exercises={gym.exercises} token={token} onClose={() => setSheet(null)} onDeleted={() => { setSheet(null); gym.load(); }} />}
     {sheet?.type === "exercise" && <ExerciseInfo ex={sheet.ex} token={token} onClose={() => setSheet(null)} />}
   </>;
@@ -933,46 +933,122 @@ function CreateExercise({ token, initialName, onClose, onCreated }) {
 }
 
 // ─────── Revisión de la IA ───────
-function ReviewSheet({ token, onClose }) {
+// Aplica un cambio de la revisión sobre la rutina (cambiar, agregar, sacar, mover o ajustar series).
+const normName = (x) => String(x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+const findEx = (exercises, name) => { const n = normName(name); return exercises.find(e => normName(e.name) === n) || exercises.find(e => normName(e.name).includes(n) || n.includes(normName(e.name))); };
+async function applyChange(token, routine, exercises, c) {
+  if (!routine) throw new Error("No encontré esa rutina");
+  const items = routine.items;
+  const it = c.tipo === "agregar" ? null : items.find(i => i.id === c.item_id) || items.find(i => normName(i.exercise.name) === normName(c.ejercicio_actual));
+  if (c.tipo !== "agregar" && !it) throw new Error(`"${c.ejercicio_actual}" ya no está en la rutina`);
+  const has = (v) => v != null && v >= 0;
+  const renumber = async (list) => { for (let k = 0; k < list.length; k++) if (list[k].sort_order !== k) await dq("kairo_routine_exercises", { method: "PATCH", token, filters: `?id=eq.${list[k].id}`, body: { sort_order: k } }); };
+  if (c.tipo === "cambiar") {
+    const ex = findEx(exercises, c.ejercicio_nuevo);
+    if (!ex) throw new Error(`No encontré "${c.ejercicio_nuevo}" en la biblioteca`);
+    const body = { exercise_id: ex.id };
+    if (has(c.series)) body.sets = c.series; if (has(c.rep_min)) body.rep_min = c.rep_min; if (has(c.rep_max)) body.rep_max = c.rep_max;
+    await dq("kairo_routine_exercises", { method: "PATCH", token, filters: `?id=eq.${it.id}`, body });
+  } else if (c.tipo === "series") {
+    const body = {};
+    if (has(c.series)) body.sets = c.series; if (has(c.rep_min)) body.rep_min = c.rep_min; if (has(c.rep_max)) body.rep_max = c.rep_max;
+    if (!Object.keys(body).length) throw new Error("No hay nada para cambiar");
+    await dq("kairo_routine_exercises", { method: "PATCH", token, filters: `?id=eq.${it.id}`, body });
+  } else if (c.tipo === "sacar") {
+    await dq("kairo_routine_exercises", { method: "DELETE", token, filters: `?id=eq.${it.id}` });
+    await renumber(items.filter(i => i.id !== it.id));
+  } else if (c.tipo === "reordenar") {
+    const rest = items.filter(i => i.id !== it.id), at = Math.max(0, Math.min(rest.length, (c.posicion > 0 ? c.posicion : 1) - 1));
+    await renumber([...rest.slice(0, at), it, ...rest.slice(at)]);
+  } else if (c.tipo === "agregar") {
+    const ex = findEx(exercises, c.ejercicio_nuevo);
+    if (!ex) throw new Error(`No encontré "${c.ejercicio_nuevo}" en la biblioteca`);
+    const at = c.posicion > 0 ? Math.min(items.length, c.posicion - 1) : items.length;
+    const res = await dq("kairo_routine_exercises", { method: "POST", token, body: { routine_id: routine.id, exercise_id: ex.id, sort_order: at, sets: has(c.series) ? c.series : 3, rep_min: has(c.rep_min) ? c.rep_min : 8, rep_max: has(c.rep_max) ? c.rep_max : 12, rest_sec: 90 } });
+    const row = Array.isArray(res) ? res[0] : null;
+    if (!row) throw new Error("No se pudo agregar");
+    if (row.id) await renumber([...items.slice(0, at), row, ...items.slice(at)]);
+  }
+}
+
+const TIPOS = { cambiar: ["Cambiar", C.blue], agregar: ["Agregar", C.pos], sacar: ["Sacar", C.neg], reordenar: ["Mover", C.warn], series: ["Series", C.lime] };
+function ChangeCard({ c, done, busy, onApply }) {
+  const [label, color] = TIPOS[c.tipo] || [c.tipo, C.sub];
+  const reps = c.rep_min >= 0 && c.rep_max >= 0 ? (c.rep_min === c.rep_max ? `${c.rep_min} reps` : `${c.rep_min}–${c.rep_max} reps`) : "";
+  const detail = c.tipo === "cambiar" ? <><span style={{ color: C.sub, textDecoration: "line-through" }}>{c.ejercicio_actual}</span> → <span style={{ fontWeight: 500 }}>{c.ejercicio_nuevo}</span></>
+    : c.tipo === "agregar" ? <span style={{ fontWeight: 500 }}>+ {c.ejercicio_nuevo}{c.posicion > 0 ? <span style={{ color: C.sub, fontWeight: 400 }}> · {c.posicion}º lugar</span> : null}</span>
+    : c.tipo === "sacar" ? <span style={{ fontWeight: 500 }}>{c.ejercicio_actual}</span>
+    : c.tipo === "reordenar" ? <span style={{ fontWeight: 500 }}>{c.ejercicio_actual} <span style={{ color: C.sub, fontWeight: 400 }}>→ {c.posicion}º lugar</span></span>
+    : <span style={{ fontWeight: 500 }}>{c.ejercicio_actual} <span style={{ color: C.sub, fontWeight: 400 }}>→ {[c.series >= 0 && `${c.series} series`, reps].filter(Boolean).join(" · ")}</span></span>;
+  return <div style={{ background: C.cardHi, borderRadius: 14, padding: 12, marginBottom: 8, opacity: done ? 0.6 : 1 }}>
+    <div style={{ fontSize: 12, color, fontWeight: 600 }}>{label}</div>
+    <div style={{ fontSize: 15, marginTop: 3, lineHeight: 1.4 }}>{detail}</div>
+    <div style={{ fontSize: 13, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{c.motivo}</div>
+    {done ? <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.pos, fontSize: 13.5, marginTop: 10 }}><Icon d={I.check} size={15} sw={2.6} />Aplicado</div>
+      : <button className="k-press" onClick={onApply} disabled={!!busy} style={{ ...btnLime, padding: "10px 14px", fontSize: 14, marginTop: 10, opacity: busy && busy !== c.id ? 0.5 : 1 }}>{busy === c.id ? "Aplicando…" : "Aplicar"}</button>}
+  </div>;
+}
+
+function ReviewSheet({ token, routines, exercises, onApplied, onClose }) {
   const [r, setR] = useState(null);
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(null);
   const run = useCallback(async () => {
     setR(null); setErr("");
     const res = await api("/api/kairo/coach", token, { action: "review" }).catch(() => ({ error: "Sin conexión" }));
-    if (res.review) setR({ ...res.review, at: new Date().toISOString() }); else setErr(res.error || "No se pudo analizar");
+    if (res.review) setR({ c: res.review, id: res.id, at: new Date().toISOString() }); else setErr(res.error || "No se pudo analizar");
   }, [token]);
   useEffect(() => {
     (async () => {
-      const last = await dq("kairo_ai", { token, filters: "?kind=eq.review&select=content,created_at&order=created_at.desc&limit=1" });
-      if (Array.isArray(last) && last[0]) setR({ ...last[0].content, at: last[0].created_at }); else run();
+      const last = await dq("kairo_ai", { token, filters: "?kind=eq.review&select=id,content,created_at&order=created_at.desc&limit=1" });
+      if (Array.isArray(last) && last[0]) setR({ c: last[0].content, id: last[0].id, at: last[0].created_at }); else run();
     })();
   }, [token, run]);
+  const apply = async (rt, c) => {
+    setBusy(c.id);
+    try {
+      await applyChange(token, routines.find(x => x.id === rt.routine_id) || routines.find(x => normName(x.name) === normName(rt.nombre)), exercises, c);
+      const key = rt.routine_id + ":" + c.id, content = { ...r.c, aplicadas: [...(r.c.aplicadas || []), key] };
+      setR({ ...r, c: content });
+      if (r.id) await dq("kairo_ai", { method: "PATCH", token, filters: `?id=eq.${r.id}`, body: { content } });
+      onApplied(); pushToast("Rutina actualizada");
+    } catch (e) { pushToast(e.message || "No se pudo aplicar"); }
+    setBusy(null);
+  };
+  const x = r?.c;
+  const score = (n, size) => <span className="k-num" style={{ fontSize: size, fontWeight: 500, color: n >= 7 ? C.pos : n >= 5 ? C.warn : C.neg }}>{n}</span>;
   return <Sheet title="Análisis de tus rutinas" onClose={onClose}>
-    {err ? <p style={{ color: C.danger, fontSize: 14 }}>{err}</p> : !r ? <p style={{ color: C.sub, fontSize: 14, lineHeight: 1.5 }}>Analizando distribución, orden, volumen por músculo e historial de cargas…</p> : <>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span className="k-num" style={{ fontSize: 44, fontWeight: 500, color: r.puntaje >= 7 ? C.pos : r.puntaje >= 5 ? C.warn : C.neg }}>{r.puntaje}</span>
-        <span style={{ color: C.sub }}>/ 10</span>
-      </div>
-      <p style={{ fontSize: 15, lineHeight: 1.5, margin: "6px 0 0" }}>{r.resumen}</p>
-      {r.fortalezas?.length > 0 && <><Label>Lo que está bien</Label>{r.fortalezas.map((x, i) => <Bullet key={i} color={C.pos}>{x}</Bullet>)}</>}
-      {r.problemas?.length > 0 && <><Label>A corregir</Label>{r.problemas.map((x, i) => <Bullet key={i} color={C.warn}>{x}</Bullet>)}</>}
-      {r.cambios?.length > 0 && <><Label>Cambios sugeridos</Label>
-        {r.cambios.map((c, i) => <div key={i} style={{ background: C.cardHi, borderRadius: 14, padding: 12, marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: C.sub }}>{c.tipo && <span style={{ color: { cambiar: C.blue, agregar: C.pos, sacar: C.neg, reordenar: C.warn, series: C.lime }[c.tipo] || C.sub, fontWeight: 600 }}>{{ cambiar: "Cambiar", agregar: "Agregar", sacar: "Sacar", reordenar: "Reordenar", series: "Series" }[c.tipo]} · </span>}{c.rutina}</div>
-          <div style={{ fontSize: 15, marginTop: 2 }}>{c.ejercicio}{c.reemplazo ? <span style={{ color: C.lime }}> → {c.reemplazo}</span> : null}</div>
-          <div style={{ fontSize: 13, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{c.sugerencia}</div>
-        </div>)}
-      </>}
-      {r.volumen?.length > 0 && <><Label>Series semanales por músculo</Label>
+    {err ? <p style={{ color: C.danger, fontSize: 14 }}>{err}</p> : !x ? <p style={{ color: C.sub, fontSize: 14, lineHeight: 1.5 }}>Analizando el esquema completo y cada rutina: distribución, orden, volumen por músculo e historial de cargas…</p> : <>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>{score(x.puntaje, 44)}<span style={{ color: C.sub }}>/ 10 · tu esquema</span></div>
+      <p style={{ fontSize: 15, lineHeight: 1.5, margin: "6px 0 0" }}>{x.resumen}</p>
+      {x.fortalezas?.length > 0 && <><Label>Lo que está bien</Label>{x.fortalezas.map((t, i) => <Bullet key={i} color={C.pos}>{t}</Bullet>)}</>}
+      {x.problemas?.length > 0 && <><Label>A corregir</Label>{x.problemas.map((t, i) => <Bullet key={i} color={C.warn}>{t}</Bullet>)}</>}
+      {x.volumen?.length > 0 && <><Label>Series semanales por músculo</Label>
         <div style={{ background: C.cardHi, borderRadius: 14, padding: "0 14px" }}>
-          {r.volumen.map((v, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", fontSize: 14, borderBottom: i < r.volumen.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+          {x.volumen.map((v, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", fontSize: 14, borderBottom: i < x.volumen.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
             <span>{v.musculo}</span><span className="k-num" style={{ color: v.opinion === "bien" ? C.pos : C.warn }}>{v.series_semana} · {v.opinion}</span>
           </div>)}
         </div>
       </>}
+      {x.rutinas?.map(rt => <div key={rt.routine_id} style={{ marginTop: 22, paddingTop: 18, borderTop: `0.5px solid ${C.line}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" }}>{rt.nombre}</span>
+          <span>{score(rt.puntaje, 20)}<span style={{ color: C.sub, fontSize: 13 }}> / 10</span></span>
+        </div>
+        <p style={{ fontSize: 14, color: C.sub, lineHeight: 1.5, margin: "6px 0 10px" }}>{rt.resumen}</p>
+        {rt.cambios?.length ? rt.cambios.map(c => <ChangeCard key={c.id} c={c} busy={busy} done={x.aplicadas?.includes(rt.routine_id + ":" + c.id)} onApply={() => apply(rt, c)} />)
+          : <div style={{ fontSize: 13.5, color: C.pos, display: "flex", alignItems: "center", gap: 6 }}><Icon d={I.check} size={15} sw={2.6} />Así está bien</div>}
+      </div>)}
+      {!x.rutinas && x.cambios?.length > 0 && <><Label>Cambios sugeridos</Label>
+        {x.cambios.map((c, i) => <div key={i} style={{ background: C.cardHi, borderRadius: 14, padding: 12, marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: C.sub }}>{c.tipo && <span style={{ color: TIPOS[c.tipo]?.[1] || C.sub, fontWeight: 600 }}>{TIPOS[c.tipo]?.[0]} · </span>}{c.rutina}</div>
+          <div style={{ fontSize: 15, marginTop: 2 }}>{c.ejercicio}{c.reemplazo ? <span style={{ color: C.lime }}> → {c.reemplazo}</span> : null}</div>
+          <div style={{ fontSize: 13, color: C.sub, marginTop: 4, lineHeight: 1.45 }}>{c.sugerencia}</div>
+        </div>)}
+      </>}
       <button className="k-press" onClick={run} style={{ ...btnGhost, marginTop: 18 }}>Volver a analizar</button>
       <div style={{ fontSize: 12, color: C.dim, textAlign: "center", marginTop: 8 }}>Las cargas de cada entreno se ajustan solas, sin tocar nada.</div>
-      {r.at && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", marginTop: 8 }}>Análisis del {dayLabel(ymd(new Date(r.at)))}</div>}
+      {r.at && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", marginTop: 8 }}>{(l => /^(hoy|ayer)$/.test(l) ? `Análisis de ${l}` : `Análisis del ${l}`)(dayLabel(ymd(new Date(r.at))))}</div>}
     </>}
   </Sheet>;
 }
