@@ -16,7 +16,7 @@ const decodificar = (b64) => { const s = b64.replace(/-/g, "+").replace(/_/g, "/
 
 // ── Piezas comunes ───────────────────────────────────────────────────────────
 // Fondo de las piezas oscuras: un degradé suave (la grilla con dos gradientes tumbaba el dibujado).
-const Grilla = () => <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", backgroundImage: "linear-gradient(180deg, #1D2024 0%, #15171A 60%, #101214 100%)" }} />;
+const Grilla = () => <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", backgroundImage: "linear-gradient(180deg, #202327 0%, #15171A 75%, #15171A 100%)" }} />;
 // Sobre fondo amarillo el "MAQ" amarillo del logo se pierde: ahí va dentro de una pastilla negra.
 const Logo = ({ o, claro, h = 64 }) => <div style={{ display: "flex", alignItems: "center", ...(claro ? { background: K, borderRadius: 999, padding: "12px 26px 12px 16px" } : {}) }}>
   <img src={`${o}/argenmaq/isotipo-blanco.png`} height={claro ? h * 0.8 : h} style={{ height: claro ? h * 0.8 : h }} />
@@ -53,7 +53,7 @@ const MaquinaDia = ({ d, o }) => <div style={{ display: "flex", flexDirection: "
   <div style={{ display: "flex", fontSize: 22, color: G, letterSpacing: 3, marginTop: 30 }}>PUESTO EN TU NEGOCIO · FLETE Y ADUANA INCLUIDOS</div>
   <div style={{ display: "flex", fontSize: 104, fontWeight: 800, color: Y, letterSpacing: -4, lineHeight: 1, marginTop: 8 }}>{fmt(d.precio)}</div>
   <div style={{ display: "flex", marginTop: 32 }}><Cuotas d={d} /></div>
-  <div style={{ display: "flex", marginTop: 30 }}><Llega texto={`Llega aprox. el ${d.llega}`} /></div>
+  <div style={{ display: "flex", marginTop: 30 }}><Llega texto="Puesta en tu negocio, llave en mano" /></div>
   <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} texto="TOCÁ EL LINK PARA VER LA FICHA" /></div>
 </div>;
 
@@ -85,7 +85,7 @@ const EnViaje = ({ d, o }) => <div style={{ display: "flex", flexDirection: "col
   <div style={{ display: "flex", fontSize: 40, fontWeight: 600, lineHeight: 1.2, marginTop: 24, color: "rgba(21,23,26,0.75)" }}>{corta(d.nombre, 70)}{d.qty > 1 ? ` × ${d.qty}` : ""}</div>
   <div style={{ display: "flex", marginTop: 50 }}><FotoCard src={d.foto} h={620} /></div>
   <div style={{ display: "flex", marginTop: 54 }}><Ruta claro /></div>
-  {d.eta && <div style={{ display: "flex", marginTop: 44 }}><Llega texto={`Llega aprox. el ${d.eta}`} claro /></div>}
+  <div style={{ display: "flex", marginTop: 44 }}><Llega texto="Seguro y seguimiento incluidos" claro /></div>
   <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} claro texto="FLETE · SEGURO · ADUANA · ENTREGA: NOSOTROS" /></div>
 </div>;
 
@@ -148,6 +148,105 @@ const Rubro = ({ d, o }) => <div style={{ display: "flex", flexDirection: "colum
   <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} claro texto="PRECIO FINAL PUESTO EN TU NEGOCIO · EN DOS CUOTAS" /></div>
 </div>;
 
+
+// ── Historias con más personalidad ──────────────────────────────────────────
+const Nueva = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: Y, color: K, padding: "120px 72px 110px", position: "relative" }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} claro /><Etq fondo={K} color={Y}>RECIÉN LLEGADA AL CATÁLOGO</Etq></div>
+  <div style={{ display: "flex", fontSize: 110, fontWeight: 800, lineHeight: 0.95, letterSpacing: -5, marginTop: 64 }}>Nueva.</div>
+  <div style={{ display: "flex", marginTop: 44 }}><FotoCard src={d.foto} h={760} /></div>
+  <div style={{ display: "flex", fontSize: 44, fontWeight: 800, lineHeight: 1.15, marginTop: 40, letterSpacing: -1 }}>{corta(d.nombre, 64)}</div>
+  <div style={{ display: "flex", alignItems: "baseline", marginTop: 26 }}>
+    <div style={{ display: "flex", fontSize: 84, fontWeight: 800, letterSpacing: -3, lineHeight: 1 }}>{fmt(d.precio)}</div>
+    <div style={{ display: "flex", fontSize: 26, fontWeight: 600, marginLeft: 22, color: "rgba(21,23,26,0.7)" }}>puesta en tu negocio · en dos cuotas</div>
+  </div>
+  <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} claro texto="TOCÁ EL LINK PARA VER LA FICHA" /></div>
+</div>;
+
+const Opcion = ({ letra, m }) => <div style={{ display: "flex", flexDirection: "column", flex: 1, background: BL, borderRadius: 32, padding: 22, color: K }}>
+  <div style={{ display: "flex", width: 64, height: 64, borderRadius: 999, background: K, color: Y, fontSize: 34, fontWeight: 800, alignItems: "center", justifyContent: "center" }}>{letra}</div>
+  <div style={{ display: "flex", width: "100%", height: 400, alignItems: "center", justifyContent: "center", marginTop: 16, overflow: "hidden" }}>{m.foto && <img src={m.foto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />}</div>
+  <div style={{ display: "flex", fontSize: 26, fontWeight: 700, lineHeight: 1.2, marginTop: 14, height: 94, overflow: "hidden" }}>{corta(m.nombre, 56)}</div>
+  <div style={{ display: "flex", fontSize: 40, fontWeight: 800, letterSpacing: -1, marginTop: 10 }}>{fmt(m.precio)}</div>
+</div>;
+const CualElegis = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "120px 72px 110px", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} /><Etq>{String(d.rubro || "").toUpperCase()}</Etq></div>
+  <div style={{ display: "flex", fontSize: 96, fontWeight: 800, lineHeight: 0.98, letterSpacing: -4, marginTop: 64 }}>¿Cuál elegís?</div>
+  <div style={{ display: "flex", marginTop: 50, width: "100%" }}><Opcion letra="A" m={d.a || {}} /><div style={{ display: "flex", width: 22 }} /><Opcion letra="B" m={d.b || {}} /></div>
+  <div style={{ display: "flex", fontSize: 30, fontWeight: 600, color: G, marginTop: 40, lineHeight: 1.3 }}>Las dos con precio final puesto en tu negocio, en dos cuotas.</div>
+  <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} texto="RESPONDÉ A O B" /></div>
+</div>;
+
+const Sabias = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "120px 72px 110px", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} /><Etq>ASÍ TRABAJAMOS</Etq></div>
+  <div style={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "center" }}>
+    <div style={{ display: "flex", width: 120, height: 14, borderRadius: 999, background: Y }} />
+    <div style={{ display: "flex", fontSize: 108, fontWeight: 800, lineHeight: 0.98, letterSpacing: -5, marginTop: 44 }}>{d.titulo}</div>
+    <div style={{ display: "flex", fontSize: 42, fontWeight: 600, lineHeight: 1.3, marginTop: 44, color: G }}>{d.bajada}</div>
+  </div>
+  <div style={{ display: "flex" }}><Pie o={o} texto="MAQUINARIA LLAVE EN MANO" /></div>
+</div>;
+
+// ── Placas de carrusel (1080×1350), sin precio ──────────────────────────────
+const Portada = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "64px 64px 56px", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} h={56} /><Etq size={19}>{String(d.rubro || "MAQUINARIA").toUpperCase()}</Etq></div>
+  <div style={{ display: "flex", marginTop: 40 }}><FotoCard src={d.foto} h={800} radio={32} /></div>
+  <div style={{ display: "flex", fontSize: 50, fontWeight: 800, lineHeight: 1.1, marginTop: 40, letterSpacing: -1.5 }}>{corta(d.nombre, 60)}</div>
+  <div style={{ display: "flex", marginTop: "auto", alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ display: "flex", fontSize: 24, fontWeight: 600, color: G }}>Importada llave en mano. Puesta en tu negocio.</div>
+    <div style={{ display: "flex", fontSize: 22, fontWeight: 700, color: Y }}>Deslizá →</div>
+  </div>
+</div>;
+const Fila = ({ l, v }) => <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "26px 0", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+  <div style={{ display: "flex", fontSize: 22, letterSpacing: 3, color: G }}>{l}</div><div style={{ display: "flex", fontSize: 38, fontWeight: 800, textAlign: "right" }}>{v}</div>
+</div>;
+const Specs = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "64px 64px 56px", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} h={56} /><Etq size={19}>DATOS</Etq></div>
+  <div style={{ display: "flex", alignItems: "center", marginTop: 44 }}>
+    <div style={{ display: "flex", width: 260, height: 260, borderRadius: 28, background: BL, overflow: "hidden", alignItems: "center", justifyContent: "center", padding: 14 }}>{d.foto && <img src={d.foto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />}</div>
+    <div style={{ display: "flex", fontSize: 40, fontWeight: 800, lineHeight: 1.12, marginLeft: 34, flex: 1, letterSpacing: -1 }}>{corta(d.nombre, 64)}</div>
+  </div>
+  <div style={{ display: "flex", flexDirection: "column", marginTop: 40 }}>
+    {d.medidas?.[0] && <Fila l="MEDIDAS" v={d.medidas[0]} />}
+    {d.medidas?.[1] && <Fila l="PESO" v={d.medidas[1]} />}
+    {d.subrubro && <Fila l="TIPO" v={corta(d.subrubro, 28)} />}
+    {d.garantia && <Fila l="GARANTÍA" v={`${d.garantia} meses de fábrica`} />}
+    <Fila l="TENSIÓN" v="220 V · 50 Hz" />
+    <Fila l="ORIGEN" v="Fábrica en China" />
+  </div>
+  <div style={{ display: "flex", marginTop: "auto", fontSize: 24, fontWeight: 600, color: G }}>Consultá el precio final puesto en tu negocio, en dos cuotas.</div>
+</div>;
+const Incluye = ({ o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: Y, color: K, padding: "64px 64px 56px", position: "relative" }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} claro h={56} /><Etq fondo={K} color={Y} size={19}>LLAVE EN MANO</Etq></div>
+  <div style={{ display: "flex", fontSize: 76, fontWeight: 800, lineHeight: 1, letterSpacing: -3, marginTop: 50 }}>El precio final incluye:</div>
+  <div style={{ display: "flex", flexDirection: "column", marginTop: 44 }}>
+    {["La máquina, de fábrica", "Flete internacional", "Seguro de la carga", "Despacho de aduana", "Entrega en tu negocio", "Pago en dos cuotas"].map((t, i) => <div key={i} style={{ display: "flex", alignItems: "center", padding: "22px 28px", borderRadius: 22, background: K, color: BL, fontSize: 36, fontWeight: 700, marginBottom: 14 }}>
+      <div style={{ display: "flex", width: 18, height: 18, borderRadius: 999, background: Y, marginRight: 24 }} />{t}
+    </div>)}
+  </div>
+  <div style={{ display: "flex", marginTop: "auto", fontSize: 26, fontWeight: 700 }}>Sin trámites de aduana. De eso nos ocupamos nosotros.</div>
+</div>;
+const RubroPortada = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: Y, color: K, padding: "64px 64px 56px", position: "relative" }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} claro h={56} /><Etq fondo={K} color={Y} size={19}>CATÁLOGO</Etq></div>
+  <div style={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "center" }}>
+    <div style={{ display: "flex", fontSize: 240, fontWeight: 800, lineHeight: 0.9, letterSpacing: -12 }}>{d.n}</div>
+    <div style={{ display: "flex", fontSize: 76, fontWeight: 800, lineHeight: 1, letterSpacing: -3, marginTop: 20 }}>máquinas para {String(d.rubro || "").toLowerCase()}.</div>
+    <div style={{ display: "flex", fontSize: 34, fontWeight: 600, marginTop: 40, color: "rgba(21,23,26,0.7)" }}>Importadas llave en mano, puestas en tu negocio.</div>
+  </div>
+  <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 26, fontWeight: 800 }}>Deslizá →</div>
+</div>;
+const RubroItem = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "64px 64px 56px", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} h={56} /><Etq size={19}>{`${d.i} / ${d.n}`}</Etq></div>
+  <div style={{ display: "flex", marginTop: 40 }}><FotoCard src={d.foto} h={820} radio={32} /></div>
+  <div style={{ display: "flex", fontSize: 22, letterSpacing: 3, color: G, marginTop: 40 }}>{String(d.sub || "").toUpperCase()}</div>
+  <div style={{ display: "flex", fontSize: 46, fontWeight: 800, lineHeight: 1.1, marginTop: 12, letterSpacing: -1.5 }}>{corta(d.nombre, 60)}</div>
+  <div style={{ display: "flex", marginTop: "auto", fontSize: 24, fontWeight: 600, color: G }}>Consultá el precio final puesto en tu negocio.</div>
+</div>;
+
 // ── Historias destacadas (1080×1920): foto de fondo + un título + una bajada. Sin precio, sin CTA, sin plazos.
 // d.foto = escena de fondo (o nada: fondo negro liso), d.paso = número opcional, d.titulo, d.bajada, d.logoArg = logo apilado de Argencargo en lugar de foto.
 const Destacada = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, position: "relative" }}>
@@ -177,8 +276,8 @@ const Tapa = ({ d }) => <div style={{ display: "flex", width: "100%", height: "1
   <div style={{ display: "flex", position: "relative" }}>{ICONOS[d.icono] || ICONOS.pasos}</div>
 </div>;
 
-const PLANTILLAS = { maquina_dia: MaquinaDia, cuanto_sale: CuantoSale, en_viaje: EnViaje, llego: Llego, pedidos: Pedidos, ficha: Ficha, rubro: Rubro, destacada: Destacada, tapa: Tapa };
-const TAMANOS = { ficha: [1080, 1350], rubro: [1080, 1350], tapa: [1080, 1080] };
+const PLANTILLAS = { maquina_dia: MaquinaDia, cuanto_sale: CuantoSale, en_viaje: EnViaje, llego: Llego, pedidos: Pedidos, ficha: Ficha, rubro: Rubro, destacada: Destacada, tapa: Tapa, nueva: Nueva, cual_elegis: CualElegis, sabias: Sabias, portada: Portada, specs: Specs, incluye: Incluye, rubro_portada: RubroPortada, rubro_item: RubroItem };
+const TAMANOS = { ficha: [1080, 1350], rubro: [1080, 1350], portada: [1080, 1350], specs: [1080, 1350], incluye: [1080, 1350], rubro_portada: [1080, 1350], rubro_item: [1080, 1350], tapa: [1080, 1080] };
 
 export async function GET(req) {
   const u = new URL(req.url);

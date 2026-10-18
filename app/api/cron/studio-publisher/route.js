@@ -4,6 +4,7 @@ import { publicarPendientes, analizarPendientesCompetencia, radarCompetencia, lo
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify } from "../../../../lib/telegram";
 import { actualizarInsights } from "../../../../lib/ig-insights";
 import { publicarPendientesLinkedin } from "../../../../lib/linkedin";
+import { publicarProgramadas as publicarArgenmaq } from "../../../../lib/studio-argenmaq";
 export const maxDuration = 60;
 export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
@@ -12,6 +13,8 @@ export async function GET(req) {
   const pub = await publicarPendientes();
   // LinkedIn tiene su propia conexión: se publica aunque Instagram no esté conectado.
   let li = null; try { li = await publicarPendientesLinkedin(); } catch (e) { console.error("[studio] linkedin", e.message); }
+  // ARGENMAQ tiene su propio Instagram y su propia cola (am_piezas).
+  let am = null; try { am = await publicarArgenmaq(); } catch (e) { console.error("[studio] argenmaq", e.message); }
   // De paso, analiza de a 3 los posts de la competencia que faltan (cola en segundo plano).
   let competencia = 0; try { competencia = await analizarPendientesCompetencia(3); } catch (e) { console.error("[studio] competencia", e.message); }
   // Arranque de Análisis: si hay token y la tabla diaria está vacía, se llena ahora (después, dos veces por día).
@@ -45,5 +48,5 @@ export async function GET(req) {
       }
     }
   } catch (e) { console.error("[studio] telegram", e.message); }
-  return Response.json({ ok: true, ...pub, ...(li || {}), competencia_analizados: competencia });
+  return Response.json({ ok: true, ...pub, ...(li || {}), ...(am || {}), competencia_analizados: competencia });
 }

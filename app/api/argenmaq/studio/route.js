@@ -1,12 +1,15 @@
 // /api/argenmaq/studio — Content Studio de ARGENMAQ (panel › Marketing › Content Studio).
-//   GET  ?accion=candidatos  → piezas de hoy armadas con datos reales + piezas guardadas + estado de Instagram
-//   POST {accion:"guardar", pieza}      → dibuja las imágenes, las sube al storage y guarda la pieza (aprobada)
-//   POST {accion:"publicar", id}        → publica en el Instagram de ARGENMAQ
-//   POST {accion:"descartar", id}       → la marca descartada (para que no se repita la máquina igual)
-//   POST {accion:"ig_conectar", token}  → conecta la cuenta de Instagram de ARGENMAQ (separada de la de Argencargo)
-//   POST {accion:"ig_desconectar"}
-import { candidatos, sbq, quien, igCfg, igGuardar, subirImagen } from "../../../../lib/studio-argenmaq";
-import { igConnect, igPublish } from "../../../../lib/studio";
+//   GET  ?accion=candidatos[&forzar=1]  → historias y publicaciones de hoy (cacheadas por día) + estado de Instagram
+//   GET  ?accion=piezas[&desde=&hasta=] → piezas guardadas (cola, calendario, historial)
+//   POST {accion:"guardar", pieza, programada_at?} → dibuja las imágenes, las sube y guarda (aprobada o programada)
+//   POST {accion:"programar", id, programada_at}   → la pone en el calendario (la publica el cron)
+//   POST {accion:"desprogramar", id}               → vuelve a aprobada
+//   POST {accion:"publicar", id}                   → publica ahora en el Instagram de ARGENMAQ
+//   POST {accion:"celular", id}                    → la manda por Telegram con el link, para subirla a mano con sticker
+//   POST {accion:"descartar", id} · {accion:"texto", id, caption, hashtags}
+//   POST {accion:"ig_conectar", token} · {accion:"ig_desconectar"}
+import { candidatos, sbq, quien, igCfg, igGuardar, subirImagen, publicarPieza, mandarAlCelular } from "../../../../lib/studio-argenmaq";
+import { igConnect } from "../../../../lib/studio";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,18 +17,20 @@ export const maxDuration = 60;
 const codificar = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const auth = async (req) => quien((req.headers.get("authorization") || "").replace(/^Bearer /i, ""));
 const err = (m, s = 400) => Response.json({ error: m }, { status: s });
+const unaPieza = async (id) => { const [p] = await sbq(`/am_piezas?id=eq.${encodeURIComponent(id)}&select=*&limit=1`); return p || null; };
+const patch = async (id, body) => { const [p] = await sbq(`/am_piezas?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }); return p; };
 
 export async function GET(req) {
   const yo = await auth(req); if (!yo) return err("Sin acceso", 401);
-  const accion = new URL(req.url).searchParams.get("accion") || "candidatos";
+  const u = new URL(req.url); const accion = u.searchParams.get("accion") || "candidatos";
   try {
     if (accion === "candidatos") {
-      const [cands, guardadas, ig] = await Promise.all([
-        candidatos(),
-        sbq(`/am_piezas?select=*&order=created_at.desc&limit=60`).catch(() => []),
-        igCfg(),
-      ]);
-      return Response.json({ candidatos: cands, guardadas, ig: ig?.ig_user_id ? { username: ig.username || null, connected_at: ig.connected_at || null } : null });
+      const [c, ig] = await Promise.all([candidatos({ forzar: u.searchParams.get("forzar") === "1" }), igCfg()]);
+      return Response.json({ historias: c.historias || [], publicaciones: c.publicaciones || [], fecha: c.fecha || null, ig: ig?.ig_user_id ? { username: ig.username || null, connected_at: ig.connected_at || null } : null });
+    }
+    if (accion === "piezas") {
+      const piezas = await sbq(`/am_piezas?select=*&order=created_at.desc&limit=300`).catch(() => []);
+      return Response.json({ piezas });
     }
     return err("Acción desconocida");
   } catch (e) { return err(e.message, 500); }
@@ -47,24 +52,36 @@ export async function POST(req) {
         const png = Buffer.from(await r.arrayBuffer());
         imagenes.push(await subirImagen(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i + 1}.png`, png));
       }
-      const fila = { tipo: p.tipo === "post" ? "post" : "historia", plantilla: String(p.plantilla || "").slice(0, 40), titulo: String(p.titulo || "").slice(0, 200), maquina_id: p.maquina_id || null, datos: p.datos || null, caption: String(p.caption || "").slice(0, 2200), hashtags: String(p.hashtags || "").slice(0, 500), imagenes, estado: "aprobada", creado_por: yo.id };
+      const cuando = b.programada_at ? new Date(b.programada_at) : null;
+      if (cuando && Number.isNaN(cuando.getTime())) return err("Fecha inválida");
+      const tipo = ["historia", "post", "carrusel"].includes(p.tipo) ? p.tipo : "historia";
+      const fila = { tipo, plantilla: String(p.plantilla || "").slice(0, 40), titulo: String(p.titulo || "").slice(0, 200), maquina_id: p.maquina_id || null, link: p.link || null, datos: p.datos || null, caption: String(p.caption || "").slice(0, 2200), hashtags: String(p.hashtags || "").slice(0, 500), imagenes, estado: cuando ? "programada" : "aprobada", programada_at: cuando ? cuando.toISOString() : null, creado_por: yo.id };
       const [creada] = await sbq(`/am_piezas`, { method: "POST", body: JSON.stringify(fila) });
       return Response.json({ ok: true, pieza: creada });
     }
+    if (b.accion === "programar") {
+      const cuando = new Date(b.programada_at); if (Number.isNaN(cuando.getTime())) return err("Fecha inválida");
+      const p = await unaPieza(b.id); if (!p) return err("No existe la pieza", 404);
+      if (p.estado === "publicada") return err("Ya está publicada");
+      return Response.json({ ok: true, pieza: await patch(p.id, { estado: "programada", programada_at: cuando.toISOString(), error: null }) });
+    }
+    if (b.accion === "desprogramar") return Response.json({ ok: true, pieza: await patch(b.id, { estado: "aprobada", programada_at: null, error: null }) });
+    if (b.accion === "texto") return Response.json({ ok: true, pieza: await patch(b.id, { caption: String(b.caption || "").slice(0, 2200), hashtags: String(b.hashtags || "").slice(0, 500) }) });
     if (b.accion === "publicar") {
       const cfg = await igCfg();
       if (!cfg?.ig_user_id || !cfg?.access_token) return err("Primero conectá el Instagram de ARGENMAQ.");
-      const [p] = await sbq(`/am_piezas?id=eq.${encodeURIComponent(b.id)}&select=*&limit=1`);
-      if (!p) return err("No existe la pieza", 404);
+      const p = await unaPieza(b.id); if (!p) return err("No existe la pieza", 404);
       if (p.estado === "publicada") return err("Ya está publicada");
-      const igId = await igPublish({ kind: p.tipo === "historia" ? "story" : "feed", images: p.imagenes, caption: p.caption, hashtags: p.hashtags }, cfg);
-      const [act] = await sbq(`/am_piezas?id=eq.${encodeURIComponent(p.id)}`, { method: "PATCH", body: JSON.stringify({ estado: "publicada", ig_id: String(igId), publicada_at: new Date().toISOString() }) });
-      return Response.json({ ok: true, pieza: act });
+      try { return Response.json({ ok: true, pieza: await publicarPieza(p, cfg) }); }
+      catch (e) { await patch(p.id, { estado: "error", error: String(e.message).slice(0, 300) }).catch(() => {}); throw e; }
     }
-    if (b.accion === "descartar") {
-      const [act] = await sbq(`/am_piezas?id=eq.${encodeURIComponent(b.id)}`, { method: "PATCH", body: JSON.stringify({ estado: "descartada" }) });
-      return Response.json({ ok: true, pieza: act });
+    if (b.accion === "celular") {
+      const p = await unaPieza(b.id); if (!p) return err("No existe la pieza", 404);
+      const r = await mandarAlCelular(p);
+      if (!r || r.skipped || r.error) return err(`Telegram no respondió: ${r?.skipped || r?.error || "sin conexión"} (se conecta desde el Studio de Argencargo).`);
+      return Response.json({ ok: true });
     }
+    if (b.accion === "descartar") return Response.json({ ok: true, pieza: await patch(b.id, { estado: "descartada", programada_at: null }) });
     if (b.accion === "ig_conectar") {
       const cfg = await igConnect(String(b.token || "").trim(), String(b.ig_user_id || ""));
       await igGuardar(cfg);
