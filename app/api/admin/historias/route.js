@@ -95,7 +95,7 @@ export async function POST(req) {
       let bbox = null, nombre = "";
       try {
         const raw = await callClaudeVision({
-          system: "Mirás capturas de pantalla de reseñas (Google Maps, Instagram, WhatsApp) y devolvés dónde está la reseña dentro de la imagen, en porcentaje del ancho y del alto. El bloque va desde la foto y el nombre del autor hasta el final del texto de la reseña, incluyendo las estrellas. Dejá AFUERA la barra de estado del teléfono, el buscador, el nombre del negocio, las pestañas, y también la fila de abajo con el corazón / Me gusta / Responder / Compartir: el recorte termina en la última línea del texto de la reseña. Si hay varias reseñas, elegí la que esté completa y más grande. Dejá un margen chico (1-2%) alrededor.",
+          system: "Mirás capturas de pantalla de reseñas (Google Maps, Instagram, WhatsApp) y devolvés dónde está la reseña dentro de la imagen, en porcentaje del ancho y del alto. El bloque va desde la foto y el nombre del autor hasta el final del texto de la reseña, incluyendo las estrellas. Dejá AFUERA la barra de estado del teléfono, el buscador, el nombre del negocio y las pestañas. Dejá ADENTRO la fila de abajo del texto con el corazón / Me gusta / Responder (da realismo): el recorte termina justo debajo de esa fila. Si hay varias reseñas, elegí la que esté completa y más grande. Dejá un margen chico (1-2%) alrededor.",
           prompt: `La imagen mide ${dim.ancho}×${dim.alto} px. Marcá el recorte de la reseña.`,
           images: [`data:${mime};base64,${buf.toString("base64")}`],
           json_schema: SCHEMA_RECORTE, max_tokens: 400, feature: "historias",
