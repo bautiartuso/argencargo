@@ -20,8 +20,7 @@ const LBL = { display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 
 
 export default function HistoriasPanel({ token }) {
   const [lista, setLista] = useState([]);
-  const [portadas, setPortadas] = useState([]);
-  const [busy, setBusy] = useState(null); // "leyendo" | "armando" | "telegram" | "portadas"
+  const [busy, setBusy] = useState(null); // "leyendo" | "armando" | "telegram"
   const [actual, setActual] = useState(null); // {url, captura:{url,ancho,alto}, nombre, recortada}
   const [bbox, setBbox] = useState({ x0: 0, y0: 0, x1: 100, y1: 100 }); // recorte en % de la captura
   const [arrastre, setArrastre] = useState(false);
@@ -33,7 +32,7 @@ export default function HistoriasPanel({ token }) {
     if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
     return j;
   };
-  const cargar = async () => { try { const j = await api(); setLista(j.historias || []); setPortadas(j.portadas || []); } catch (e) { toast(e.message, "error"); } };
+  const cargar = async () => { try { const j = await api(); setLista(j.historias || []); } catch (e) { toast(e.message, "error"); } };
   useEffect(() => { cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const subir = async (file) => {
@@ -69,17 +68,10 @@ export default function HistoriasPanel({ token }) {
     catch (e) { toast(e.message, "error"); }
     setBusy(null);
   };
-  const generarPortadas = async (rehacerP = false) => {
-    setBusy("portadas");
-    try { const j = await api({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "portadas", rehacer: rehacerP }) }); setPortadas((j.portadas || []).map((p) => ({ name: `${p.key}.png`, url: p.url, nombre: p.nombre }))); toast("Portadas listas", "success"); }
-    catch (e) { toast(e.message, "error"); }
-    setBusy(null);
-  };
   const descargar = (url, name) => { const a = document.createElement("a"); a.href = url; a.download = name || "historia.png"; a.target = "_blank"; a.rel = "noreferrer"; document.body.appendChild(a); a.click(); a.remove(); };
-  const nombrePortada = (f) => ({ "clientes.png": "Clientes", "como-funciona.png": "Cómo funciona", "cotiza.png": "Cotizá" })[f.name] || f.nombre || f.name;
 
   return <div>
-    <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, margin: "0 0 18px" }}>Historias para el destacado <b style={{ color: "#fff" }}>Clientes</b>: pegás la captura de la reseña y sale la historia lista para subir.</p>
+    <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, margin: "0 0 18px" }}>Pegás la captura de la reseña de Google y sale la historia lista para subir a Instagram.</p>
 
     <div style={{ display: "grid", gridTemplateColumns: actual ? "minmax(0,1fr) minmax(0,1fr)" : "1fr", gap: 16, alignItems: "start" }}>
       <div style={CARD}>
@@ -114,25 +106,6 @@ export default function HistoriasPanel({ token }) {
           <button disabled={!!busy} onClick={() => telegram(actual.url)} style={BTN("primary")}>{busy === "telegram" ? "Enviando…" : "📲 Mandar a mi Telegram"}</button>
           <button onClick={() => descargar(actual.url, "historia-clientes.png")} style={BTN()}>⬇ Descargar</button>
         </div>
-      </div>}
-    </div>
-
-    <div style={CARD}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div><h3 style={H}>Portadas de los destacados</h3><p style={SUB}>Se hacen una vez: Clientes, Cómo funciona y Cotizá.</p></div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button disabled={!!busy} onClick={() => generarPortadas(portadas.length > 0)} style={BTN("sky")}>{busy === "portadas" ? "Generando…" : portadas.length ? "↻ Rehacer portadas" : "Generar portadas"}</button>
-        </div>
-      </div>
-      {portadas.length > 0 && <div style={{ display: "flex", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
-        {portadas.map((p) => <div key={p.name} style={{ textAlign: "center" }}>
-          <div style={{ width: 110, height: 110, borderRadius: "50%", overflow: "hidden", border: "2px solid rgba(255,255,255,0.15)", margin: "0 auto" }}><img src={p.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", transform: "scale(2.55)" }} /></div>
-          <p style={{ margin: "8px 0 4px", fontSize: 12.5, fontWeight: 700, color: "#fff" }}>{nombrePortada(p)}</p>
-          <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-            <button onClick={() => telegram(p.url)} style={{ ...BTN("sky"), padding: "6px 10px", fontSize: 11.5 }}>📲</button>
-            <button onClick={() => descargar(p.url, p.name)} style={{ ...BTN(), padding: "6px 10px", fontSize: 11.5 }}>⬇</button>
-          </div>
-        </div>)}
       </div>}
     </div>
 
