@@ -3,7 +3,7 @@
 // que arma la IA, peso y medidas cuando quieras (y si venís progresando), y tus reglas para la IA.
 import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today, useRefresh } from "./ui";
 import { adjustTarget, extraSplit, kcalFor, sportName } from "./score";
 
 export { MEDIDAS };
@@ -40,6 +40,7 @@ export default function Perfil({ token, isAdmin }) {
     setP(Array.isArray(pr) ? pr[0] || null : null);
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRefresh(load);
 
   const askStrategy = async () => {
     setThinking(true);

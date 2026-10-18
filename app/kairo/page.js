@@ -5,7 +5,7 @@ import Fisico, { WorkoutLayer } from "./fisico";
 import Perfil, { Welcome } from "./perfil";
 import Inicio from "./hoy";
 import Nutricion from "./nutricion";
-import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn } from "./ui";
+import { C, CSS, ymd, today, curMonth, ars, arsK, monthName, shiftMonth, daysIn, parseNum, merchantKey, dayLabel, I, Icon, pushToast, Toast, MiniStat, Sheet, Bar, Toggle, SectionTitle, Label, RoundBtn, card, field, btnLime, btnGhost, linkBtn, useRefresh } from "./ui";
 
 // ──────────────────────────────────────────────────────────────────────
 // KAIRO · app personal (físico, nutrición, finanzas, objetivos). Mobile-first.
@@ -94,11 +94,29 @@ function App({ session }) {
   const go = (t) => { setTab(t); try { localStorage.setItem("kairo_tab", t); } catch {} scroller.current?.scrollTo(0, 0); };
   const fin = useFinance(session.token);
 
+  // Deslizar hacia abajo desde arriba de todo = actualizar (como Instagram). Avisa a todas las pantallas.
+  const [pull, setPull] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const touch = useRef(null);
+  const onTouchStart = (e) => { touch.current = scroller.current?.scrollTop <= 0 && !refreshing ? e.touches[0].clientY : null; };
+  const onTouchMove = (e) => { if (touch.current == null) return; const dy = e.touches[0].clientY - touch.current; if (dy > 0 && scroller.current?.scrollTop <= 0) setPull(Math.min(96, dy * 0.45)); else if (pull) setPull(0); };
+  const onTouchEnd = async () => {
+    if (touch.current == null) return; touch.current = null;
+    if (pull < 56) return setPull(0);
+    setRefreshing(true); setPull(52);
+    window.dispatchEvent(new Event("kairo-refresh")); window.dispatchEvent(new Event("kairo-profile"));
+    await new Promise(r => setTimeout(r, 900));
+    setRefreshing(false); setPull(0);
+  };
+
   // Shell fijo a pantalla completa con el scroll adentro y la barra al fondo del flujo.
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.bg }}>
-      <main ref={scroller} style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" }}>
-        <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px" }}>
+      <main ref={scroller} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd} style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", position: "relative" }}>
+        <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, top: "calc(env(safe-area-inset-top) + 6px)", display: "flex", justifyContent: "center", pointerEvents: "none", opacity: Math.min(1, pull / 40), transform: `translateY(${pull - 40}px)`, transition: touch.current == null ? "transform 220ms cubic-bezier(.2,.9,.3,1), opacity 220ms" : "none" }}>
+          <span style={{ width: 34, height: 34, borderRadius: 17, background: C.card, border: `0.5px solid ${C.line}`, color: pull >= 56 || refreshing ? C.lime : C.sub, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(${refreshing ? 0 : pull * 4}deg)`, animation: refreshing ? "kSpin 800ms linear infinite" : "none" }}><Icon d={I.sync} size={17} sw={1.8} /></span>
+        </div>
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "calc(env(safe-area-inset-top) + 18px) 16px 28px", transform: `translateY(${pull}px)`, transition: touch.current == null ? "transform 220ms cubic-bezier(.2,.9,.3,1)" : "none" }}>
           {tab === "hoy" && <Inicio token={session.token} me={me} fin={fin} go={go} />}
           {tab === "finanzas" && <Finanzas fin={fin} token={session.token} />}
           {tab === "fisico" && <Fisico token={session.token} onProfile={() => go("perfil")} />}
@@ -173,6 +191,7 @@ function useFinance(token) {
     setIncomes(Array.isArray(b) ? b : []);
     setLo(false);
   }, [token, month]);
+  useRefresh(load);
   useEffect(() => { load(); }, [load]);
 
   const spent = exps.reduce((s, e) => s + Number(e.amount_ars || 0), 0);

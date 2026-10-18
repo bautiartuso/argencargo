@@ -21,6 +21,7 @@ export const CSS = `
   .k-press:active{transform:scale(0.97);opacity:.85}
   @keyframes kUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes kFade{from{opacity:0}to{opacity:1}}
+  @keyframes kSpin{to{transform:rotate(360deg)}}
   .k-num{font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
 `;
 
@@ -66,6 +67,13 @@ export const I = {
 export const Icon = ({ d, size = 22, color = "currentColor", sw = 1.6 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
 );
+
+// ─────── Deslizar para actualizar ───────
+// El shell (page.js) dispara "kairo-refresh" cuando deslizás hacia abajo desde arriba de todo; cada
+// pantalla que carga datos se engancha con este hook y vuelve a cargar.
+export function useRefresh(fn) {
+  useEffect(() => { if (!fn) return; window.addEventListener("kairo-refresh", fn); return () => window.removeEventListener("kairo-refresh", fn); }, [fn]);
+}
 
 // ─────── Toast ───────
 export let pushToast = () => {};

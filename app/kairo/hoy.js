@@ -4,7 +4,7 @@
 // plata. El entreno de hoy va al final: se arranca desde Físico.
 import { useState, useEffect, useCallback } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, btnLime, linkBtn, ars, monthName, curMonth, today, ymd, dayLabel, Bar } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, btnLime, linkBtn, ars, monthName, curMonth, today, ymd, dayLabel, Bar, useRefresh } from "./ui";
 import { startWorkout, todayPlan, planOn, ensurePush } from "./fisico";
 import { dayScore, adjustTarget, cardioOn, plannedBurn, sportName } from "./score";
 import { LogSheet, Spark, MeasuresTable, Avatar, saveProfile } from "./perfil";
@@ -72,6 +72,7 @@ export default function Hoy({ token, me, fin, go }) {
     loadSocial();
   }, [token, loadSocial]);
   useEffect(() => { load(); }, [load]);
+  useRefresh(load);
   useEffect(() => { window.addEventListener("kairo-stories", loadSocial); return () => window.removeEventListener("kairo-stories", loadSocial); }, [loadSocial]);
   useEffect(() => { window.addEventListener("kairo-cardio", load); return () => window.removeEventListener("kairo-cardio", load); }, [load]);
   // Si ya diste permiso, se asegura la suscripción (para que te lleguen las historias de los demás).

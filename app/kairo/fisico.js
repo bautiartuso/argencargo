@@ -8,7 +8,7 @@ import { dq, loadSession } from "../../lib/sb-client";
 import BodyMap from "./body";
 import { StoryPicker } from "./social";
 import Cardio from "./cardio";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, ymd, useRefresh } from "./ui";
 
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const DAYS_FULL = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -100,6 +100,7 @@ function useGym(token) {
     setLo(false);
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRefresh(load);
   useEffect(() => { const f = () => { if (!loadDraft()) load(); }; window.addEventListener(WORKOUT_EVENT, f); return () => window.removeEventListener(WORKOUT_EVENT, f); }, [load]);
   return { routines, exercises, workouts, profile, lo, load };
 }

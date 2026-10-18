@@ -4,7 +4,7 @@
 // y los suplementos con horarios y recordatorios (la proteína en polvo va como comida).
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel, useRefresh } from "./ui";
 import { ensurePush } from "./fisico";
 import { adjustTarget, plannedBurn, cardioOn, sportName } from "./score";
 
@@ -35,6 +35,7 @@ function useNutri(token) {
     setPlan(Array.isArray(p) ? p : []); setSupps(Array.isArray(s) ? s : []); setProfile(Array.isArray(pr) ? pr[0] || null : null); setLo(false);
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRefresh(load);
   const st = profile?.estrategia;
   const target = st ? { kcal: st.calorias_dia, p: st.proteina_g, c: st.carbohidratos_g, g: st.grasas_g } : null;
   // Objetivo de un día de la semana con el deporte planeado sumado (para armar la dieta por adelantado).
@@ -80,6 +81,7 @@ function Today({ token, n }) {
     setLog(Array.isArray(l) ? l : []); setSuppLog(Array.isArray(s) ? s : []); setBurned((Array.isArray(c) ? c : []).reduce((a, x) => a + Number(x.kcal || 0), 0));
   }, [token, date]);
   useEffect(() => { load(); }, [load]);
+  useRefresh(load);
   useEffect(() => { window.addEventListener("kairo-cardio", load); return () => window.removeEventListener("kairo-cardio", load); }, [load]);
   const dow = dowOf(date);
   const planToday = n.plan.filter(p => p.dow === dow);

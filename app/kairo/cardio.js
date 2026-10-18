@@ -4,7 +4,7 @@
 // sesión con sus calorías estimadas. Eso se suma al objetivo del día y vale un 15 % del éxito del día.
 import { useState, useEffect, useCallback } from "react";
 import { dq } from "../../lib/sb-client";
-import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel } from "./ui";
+import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, card, field, btnLime, btnGhost, linkBtn, today, ymd, dayLabel, useRefresh } from "./ui";
 import { saveProfile } from "./perfil";
 import { SPORTS, INTENSITY, sportName, kcalFor, cardioOn } from "./score";
 
@@ -25,6 +25,7 @@ export default function Cardio({ token, profile, onProfile }) {
     setLog(Array.isArray(r) ? r : []);
   }, [token]);
   useEffect(() => { load(); }, [load]);
+  useRefresh(load);
 
   const dow = dowOf(today());
   const todays = cardioOn(plan, dow);
