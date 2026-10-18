@@ -1756,6 +1756,7 @@ function CalculatorPage({token,client,preset}){
   // alternativas (channel_alternatives). Si el cliente vuelve atrás y recalcula, se actualiza la misma
   // fila. "Nueva cotización" resetea el id y la próxima crea otra fila.
   const savedQuoteIdRef=useRef(null);
+  const [savedQuoteNum,setSavedQuoteNum]=useState(null); // AGC-xxxxx de la cotización guardada (va en el WhatsApp)
   const saveChainRef=useRef(Promise.resolve());
   // Desglose línea por línea de cada vía (se guarda en channel_alternatives.detail: lo lee Mis cotizaciones y el link público).
   const detailOf=(ch)=>{const its=ch.items||[];const sm=f=>its.reduce((a,it)=>a+Number(f(it)||0),0);const d=[];
@@ -1786,12 +1787,18 @@ function CalculatorPage({token,client,preset}){
         if(savedQuoteIdRef.current){
           const r=await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${savedQuoteIdRef.current}`,body});
           const err=errorDeApi(r);if(err)throw new Error(err);
-        }else{
+          // Un PATCH que no toca ninguna fila (RLS sin permiso de update, o la fila borrada)
+          // vuelve como [] y no como error: el 18/10/2026 GABMIR recalculó y el WhatsApp
+          // decía USD 2.500 mientras la base guardaba la primera cuenta. En ese caso se crea
+          // una cotización nueva en vez de perder la actual.
+          if(Array.isArray(r)&&r.length===0){console.warn("[cotizaciones] el update no tocó la fila, se crea otra");savedQuoteIdRef.current=null;}
+        }
+        if(!savedQuoteIdRef.current){
           const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
           const err=errorDeApi(r);if(err)throw new Error(err);
           const id=Array.isArray(r)&&r[0]?r[0].id:null;
           if(!id)throw new Error("la base no devolvio la cotizacion creada");
-          savedQuoteIdRef.current=id;
+          savedQuoteIdRef.current=id;setSavedQuoteNum(r[0].quote_number?`AGC-${String(r[0].quote_number).padStart(5,"0")}`:null);
         }
       }catch(e){
         console.error("[cotizaciones] no se pudo guardar:",e?.message||e);
@@ -1811,7 +1818,7 @@ function CalculatorPage({token,client,preset}){
     setProducts(prods.length?prods.map(p=>({type:p.type||"general",description:p.description||"",unit_price:p.unit_price!=null?String(p.unit_price).replace(".",","):"",quantity:p.quantity!=null?String(p.quantity):"1",ncm:p.ncm||null,ncmLoading:false,ncmError:false,ncm_hint:p.ncm_hint||""})):[{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);
     setPkgs(pk.length?pk.map(x=>({qty:x.qty!=null?String(x.qty):"1",length:x.length!=null?String(x.length):"",width:x.width!=null?String(x.width):"",height:x.height!=null?String(x.height):"",weight:x.weight!=null?String(x.weight):"",product_ids:Array.isArray(x.product_ids)?x.product_ids:null})):[{qty:"1",length:"",width:"",height:"",weight:"",product_ids:null}]);
     setNoDims(!pk.some(x=>Number(x.length)>0&&Number(x.width)>0&&Number(x.height)>0)&&pk.some(x=>Number(x.weight)>0));
-    savedQuoteIdRef.current=preset.id||null;
+    savedQuoteIdRef.current=preset.id||null;setSavedQuoteNum(preset.quote_number?`AGC-${String(preset.quote_number).padStart(5,"0")}`:null);
     if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});
   },[preset]); // eslint-disable-line react-hooks/exhaustive-deps
   // Una sola pantalla (11/09/2026): si el cliente toca cualquier dato después de calcular, los
@@ -1819,10 +1826,15 @@ function CalculatorPage({token,client,preset}){
   const resultsRef=useRef(null);
   useEffect(()=>{if(results){setResults(null);setExpandedCh(null);}},[products,pkgs,delivery,hasBattery,noDims,origin]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{if(results&&resultsRef.current)resultsRef.current.scrollIntoView({behavior:"smooth",block:"start"});},[results]);
-  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=banderaOrigen(origin);const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.total+delivCost;
-    const usdF=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-    if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\n${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete Internacional"}: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${autoDelivLabel}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
-    return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\nEntrega en Destino: *${autoDelivLabel}*\nCosto de importación: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);};
+  // Mensaje de WhatsApp (rehecho el 18/10/2026): habla el cliente, no va dirigido a Bautista, lleva el
+  // número de cotización para encontrarla en el admin y el desglose de lo que paga. Sin bandera
+  // emoji: en WhatsApp de escritorio salía como "�".
+  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name||""} ${client.last_name||""}`.trim():"";const code=client?.client_code||"—";const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,totWeight);const total=ch.total+delivCost;
+    const usdF=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const cant=isAereo?`${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:`${totCBM.toFixed(4)} m³`;
+    const entrega=delivery==="oficina"?"Retiro por oficina (gratis)":delivery==="coordinar"?"Envío a coordinar":`Envío a domicilio CABA (${usdF(delivCost)})`;
+    const desglose=ch.isBlanco?`\n   · Impuestos: ${usdF(ch.totalImp||0)}\n   · ${ch.key==="maritimo_a_china"?"Servicio marítimo":"Flete internacional"}: ${usdF(ch.flete||0)}\n   · Seguro: ${usdF(ch.seguro||0)}${Number(ch.battExtra)>0?`\n   · Baterías: ${usdF(ch.battExtra)}`:""}${Number(ch.overweightSurcharge)>0?`\n   · Sobrepeso: ${usdF(ch.overweightSurcharge)}`:""}${delivCost>0?`\n   · Envío: ${usdF(delivCost)}`:""}`:"";
+    return encodeURIComponent(`Hola! Hice una cotización en el portal y quiero avanzar con la importación 🚀\n\n📋 Cotización *${savedQuoteNum||"nueva"}* · Cliente *${code}*${name?` (${name})`:""}\n\n🌏 Origen: *${origin}*\n📦 Mercadería: *${prodSummary}*\n💰 Valor de la mercadería: *${usdF(totalFob)}*\n${isAereo?"✈️":"🚢"} Vía: *${ch.name}* · ${cant}\n🏠 Entrega: *${entrega}*\n\n💵 *Costo de importación: ${usdF(total)}*${desglose}\n\n¿Cómo seguimos?`);};
 
   const usd=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
@@ -1851,7 +1863,7 @@ function CalculatorPage({token,client,preset}){
   const battRate=bateriaUsdKg(isRI);
   const flagOf=o=>o==="China"?"🇨🇳":o==="España"?"🇪🇸":"🇺🇸";
   const chTitle=ch=>({aereo_a_china:[t("calc.air"),"Courier comercial"],maritimo_a_china:[t("calc.sea"),"Carga FCL/LCL"],maritimo_b:[t("calc.sea"),"Integral AC"],aereo_b_spain:[t("calc.air"),"Integral AC"],aereo_b_usa:[t("calc.air"),"Integral AC"]})[ch.key]||[ch.key?.includes("aereo")?t("calc.air"):t("calc.sea"),ch.name];
-  const resetAll=()=>{setResults(null);setOrigin("");setStep(0);setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:"",product_ids:null}]);setNoDims(false);setDelivery("oficina");setHasBattery(null);setExpandedCh(null);savedQuoteIdRef.current=null;if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});};
+  const resetAll=()=>{setResults(null);setOrigin("");setStep(0);setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:"",product_ids:null}]);setNoDims(false);setDelivery("oficina");setHasBattery(null);setExpandedCh(null);savedQuoteIdRef.current=null;setSavedQuoteNum(null);if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});};
   const pickOrigin=k=>{if(k===origin)return;setOrigin(k);setHasBattery(null);setResults(null);setExpandedCh(null);setStep(1);};
   const PROD_COLS=isChina?"1fr 110px 90px 150px 170px":"1fr 110px 90px 230px";
   const validIdx=products.map((p,i)=>toN(p.unit_price)>0?i:-1).filter(i=>i>=0);
@@ -2176,7 +2188,7 @@ function QuotesPage({token,client,onEdit,onOpenOp}){
   const choose=async(q,a)=>{try{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}});setQuotes(p=>p.map(x=>x.id===q.id?{...x,client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}:x));toast(`Elegiste ${a.name}`,"success");}catch(e){toast(t("quotes.saveChoiceError"),"error");}};
   const delQuote=async(q)=>{if(!await confirmDialog(t("quotes.confirmDelete"),{confirmText:"Eliminar",danger:true}))return;await dq("quotes",{method:"DELETE",token,filters:`?id=eq.${q.id}`});setQuotes(p=>p.filter(x=>x.id!==q.id));toast(t("quotes.deleted"),"success");};
   const sendWA=(q)=>{const a=chosenOf(q)||cheapestOf(q);const prods=prodsOf(q);const summary=prods.map(p=>`${p.description||p.type} x${p.quantity}`).join(", ");const isAereo=(a?.key||"").includes("aereo");
-    const msg=encodeURIComponent(`Hola Bautista! Quiero avanzar con la cotización ${numOf(q)||fmtDate(q.created_at)} que tengo guardada en el portal.\n\nOrigen: *${q.origin}* ${flagOf(q.origin)}\nMercadería: *${summary}*\nVía: *${a?.name||"—"}*\nValor FOB: *${usd(q.total_fob)}*\n${isAereo?`Peso: *${fmt2(q.total_weight)} kg*`:`Volumen: *${Number(q.total_cbm||0).toFixed(3)} m³*`}\nCosto de importación: *${usd(a?.totalAbonar??q.total_cost)}*\nCotizada el ${fmtDate(q.created_at)} · válida hasta ${fmtDate(expiryOf(q))}\n\nCódigo cliente: *${q.client_code}*`);
+    const msg=encodeURIComponent(`Hola! Quiero avanzar con una cotización que tengo guardada en el portal 🚀\n\n📋 Cotización *${numOf(q)||fmtDate(q.created_at)}* · Cliente *${q.client_code}*\n\n🌏 Origen: *${q.origin}*\n📦 Mercadería: *${summary}*\n💰 Valor de la mercadería: *${usd(q.total_fob)}*\n${isAereo?"✈️":"🚢"} Vía: *${a?.name||"—"}* · ${isAereo?`${fmt2(q.total_weight)} kg`:`${Number(q.total_cbm||0).toFixed(3)} m³`}\n\n💵 *Costo de importación: ${usd(a?.totalAbonar??q.total_cost)}*\nCotizada el ${fmtDate(q.created_at)} · válida hasta ${fmtDate(expiryOf(q))}\n\n¿Cómo seguimos?`);
     window.open(`https://wa.me/5491125088580?text=${msg}`,"_blank");};
   if(lo)return <p style={{color:"rgba(255,255,255,0.6)",textAlign:"center",padding:"3rem 0"}}>Cargando…</p>;
   return <div>
