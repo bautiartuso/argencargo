@@ -148,8 +148,37 @@ const Rubro = ({ d, o }) => <div style={{ display: "flex", flexDirection: "colum
   <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} claro texto="PRECIO FINAL PUESTO EN TU NEGOCIO · EN DOS CUOTAS" /></div>
 </div>;
 
-const PLANTILLAS = { maquina_dia: MaquinaDia, cuanto_sale: CuantoSale, en_viaje: EnViaje, llego: Llego, pedidos: Pedidos, ficha: Ficha, rubro: Rubro };
-const TAMANOS = { ficha: [1080, 1350], rubro: [1080, 1350] };
+// ── Historias destacadas (1080×1920): foto de fondo + un título + una bajada. Sin precio, sin CTA, sin plazos.
+// d.foto = escena de fondo (o nada: fondo negro liso), d.paso = número opcional, d.titulo, d.bajada, d.logoArg = logo apilado de Argencargo en lugar de foto.
+const Destacada = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, position: "relative" }}>
+  {d.foto ? <img src={d.foto} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <Grilla />}
+  {d.foto && <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", backgroundImage: "linear-gradient(180deg, rgba(21,23,26,0.55) 0%, rgba(21,23,26,0.15) 35%, rgba(21,23,26,0.55) 62%, rgba(21,23,26,0.96) 100%)" }} />}
+  <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "120px 72px 150px", position: "relative" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} />{d.etiqueta && <Etq>{String(d.etiqueta).toUpperCase()}</Etq>}</div>
+    {d.logoArg && <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}><img src={`${o}/argencargo/logo-apilado-blanco.png`} style={{ width: 520 }} /></div>}
+    {d.pantalla && <div style={{ display: "flex", flex: 1, alignItems: "flex-end", justifyContent: "center", marginTop: 40 }}><div style={{ display: "flex", width: 560, height: 820, borderRadius: 48, overflow: "hidden", border: "10px solid #2A2D31", background: "#0D0F11" }}><img src={d.pantalla} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} /></div></div>}
+    <div style={{ display: "flex", flexDirection: "column", marginTop: "auto" }}>
+      {d.paso && <div style={{ display: "flex", alignItems: "center", marginBottom: 22 }}><div style={{ display: "flex", width: 76, height: 76, borderRadius: 999, background: Y, color: K, fontSize: 40, fontWeight: 800, alignItems: "center", justifyContent: "center" }}>{d.paso}</div>{d.de && <div style={{ display: "flex", marginLeft: 18, fontSize: 24, letterSpacing: 3, color: G }}>DE {d.de}</div>}</div>}
+      <div style={{ display: "flex", fontSize: d.titulo && d.titulo.length > 34 ? 66 : 78, fontWeight: 800, lineHeight: 1.02, letterSpacing: -2 }}>{d.titulo}</div>
+      {d.bajada && <div style={{ display: "flex", fontSize: 34, fontWeight: 600, lineHeight: 1.3, marginTop: 26, color: d.foto ? "rgba(255,255,255,0.9)" : G }}>{d.bajada}</div>}
+    </div>
+  </div>
+</div>;
+
+// Tapa de destacada (1080×1080): pictograma amarillo sobre negro, sin texto. Instagram la recorta en círculo.
+const ICONOS = {
+  pasos: <svg width="520" height="520" viewBox="0 0 24 24" fill="none" stroke={Y} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 19.5h4v-4h4v-4h4v-4h4" /><path d="M16.5 4.5l2.5 3-2.5 3" /></svg>,
+  lupa: <svg width="520" height="520" viewBox="0 0 24 24" fill="none" stroke={Y} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21" /></svg>,
+  engranaje: <svg width="520" height="520" viewBox="0 0 24 24" fill="none" stroke={Y} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" /><circle cx="12" cy="12" r="7" /></svg>,
+  avion: <svg width="520" height="520" viewBox="0 0 24 24" fill={Y} stroke={Y} strokeWidth="0.8" strokeLinejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" /></svg>,
+};
+const Tapa = ({ d }) => <div style={{ display: "flex", width: "100%", height: "100%", background: K, alignItems: "center", justifyContent: "center", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", position: "relative" }}>{ICONOS[d.icono] || ICONOS.pasos}</div>
+</div>;
+
+const PLANTILLAS = { maquina_dia: MaquinaDia, cuanto_sale: CuantoSale, en_viaje: EnViaje, llego: Llego, pedidos: Pedidos, ficha: Ficha, rubro: Rubro, destacada: Destacada, tapa: Tapa };
+const TAMANOS = { ficha: [1080, 1350], rubro: [1080, 1350], tapa: [1080, 1080] };
 
 export async function GET(req) {
   const u = new URL(req.url);
