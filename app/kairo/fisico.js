@@ -589,6 +589,8 @@ function FinishSheet({ token, draft, elapsed, volume, done, onClose, onSaved }) 
       await dq("kairo_routine_exercises", { method: "POST", token, body: draft.items.map((it, i) => ({ routine_id: draft.routine_id, exercise_id: it.exercise_id, sort_order: i, sets: it.sets.length, rep_min: it.rep_min, rep_max: it.rep_max, rest_sec: it.rest_sec, superset: it.ss ?? null })) });
     }
     setSaving(false);
+    // Les avisa a los demás (solo el primer entreno del día).
+    fetch("/api/kairo/social", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken(token)}` }, body: JSON.stringify({ action: "trained", rutina: draft.routine_name, minutos: Math.round(elapsed / 60) }) }).catch(() => {});
     pushToast(`Entreno guardado · ${rows.length} series · ${Math.round(volume).toLocaleString("es-AR")} kg`);
     setStoryStep(`${draft.routine_name} · ${clock(elapsed)} · ${Math.round(volume).toLocaleString("es-AR")} kg${recs.length ? ` · ${recs.length} récord${recs.length > 1 ? "s" : ""}` : ""}`);
   };

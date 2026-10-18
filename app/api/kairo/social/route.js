@@ -2,6 +2,8 @@
 //   → ranking del mes entre usuarios (solo entrenamiento) + historias de las últimas 24 h.
 // POST /api/kairo/social { action: "posted" }           → avisa por push a los demás que subiste una historia
 // POST /api/kairo/social { action: "view", story_id }    → marca que viste una historia de otro
+// POST /api/kairo/social { action: "react", story_id, emoji } → reaccionás a una historia (le llega un aviso al dueño)
+// POST /api/kairo/social { action: "trained", rutina, minutos } → avisa a los demás que terminaste de entrenar (1 vez por día)
 // GET /api/kairo/social?user=<id> → perfil de otro usuario: foto, objetivo, cómo viene (lectura de
 //   la IA) y sus últimos entrenos. Nunca expone finanzas ni números de peso/medidas.
 
@@ -47,8 +49,18 @@ export async function GET(req) {
   // En las tuyas va quién las vio (los demás no lo ven).
   const mine = stories.filter(s => s.user_id === me.id);
   if (mine.length) {
-    const views = arr(await sb(`/rest/v1/kairo_story_views?story_id=in.(${mine.map(s => s.id).join(",")})&select=story_id,viewer_id,viewed_at&order=viewed_at.desc`));
-    for (const s of mine) s.views = views.filter(v => v.story_id === s.id).map(v => ({ id: v.viewer_id, at: v.viewed_at }));
+    const ids = mine.map(s => s.id).join(",");
+    const [views, reacts] = await Promise.all([
+      arr(await sb(`/rest/v1/kairo_story_views?story_id=in.(${ids})&select=story_id,viewer_id,viewed_at&order=viewed_at.desc`)),
+      arr(await sb(`/rest/v1/kairo_story_reactions?story_id=in.(${ids})&select=story_id,user_id,emoji`)),
+    ]);
+    for (const s of mine) s.views = views.filter(v => v.story_id === s.id).map(v => ({ id: v.viewer_id, at: v.viewed_at, emoji: reacts.find(r => r.story_id === s.id && r.user_id === v.viewer_id)?.emoji || null }));
+  }
+  // Tus reacciones a las de los demás (para marcar cuál elegiste).
+  const others = stories.filter(s => s.user_id !== me.id);
+  if (others.length) {
+    const mineR = arr(await sb(`/rest/v1/kairo_story_reactions?user_id=eq.${me.id}&story_id=in.(${others.map(s => s.id).join(",")})&select=story_id,emoji`));
+    for (const s of others) s.my_emoji = mineR.find(r => r.story_id === s.id)?.emoji || null;
   }
   // Actividad de la última semana: entrenos terminados de todos (sin cargas ni peso corporal).
   const weekAgo = now.getTime() - 7 * 86400e3;
@@ -62,7 +74,8 @@ export async function GET(req) {
 export async function POST(req) {
   const me = await kairoUser(req);
   if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
-  const { action, story_id } = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({}));
+  const { action, story_id } = body;
 
   if (action === "view" && story_id) {
     const [st] = arr(await sb(`/rest/v1/kairo_stories?id=eq.${story_id}&select=user_id`));
@@ -71,6 +84,31 @@ export async function POST(req) {
       if (r && (r.code || r.message)) { console.error("[kairo story view]", r); return Response.json({ ok: false, error: r.message || r.code }); }
     }
     return Response.json({ ok: true });
+  }
+
+  const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
+  const push = (user_id, title, body, tag) => fetch(`${base}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id, portal: "kairo", strict: true, title, body, url: "/kairo?tab=hoy", tag }) }).catch(() => {});
+  const myName = async () => ((arr(await sb(`/rest/v1/kairo_profile?user_id=eq.${me.id}&select=nombre`))[0]?.nombre) || "Alguien").split(" ")[0];
+
+  if (action === "react" && story_id) {
+    const emoji = String(body.emoji || "").slice(0, 4);
+    const [st] = arr(await sb(`/rest/v1/kairo_stories?id=eq.${story_id}&select=user_id`));
+    if (!st || st.user_id === me.id || !emoji) return Response.json({ error: "No válido" }, { status: 400 });
+    const r = await sb(`/rest/v1/kairo_story_reactions?on_conflict=story_id,user_id`, { method: "POST", body: JSON.stringify({ story_id, user_id: me.id, emoji }), headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+    if (r && (r.code || r.message)) { console.error("[kairo react]", r); return Response.json({ ok: false, error: r.message || r.code }); }
+    await push(st.user_id, `${await myName()} reaccionó ${emoji} a tu historia`, "Tocá para verla", `kairo-react-${story_id}`);
+    return Response.json({ ok: true });
+  }
+
+  if (action === "trained") {
+    // Solo el primer entreno del día avisa, para no ser pesados.
+    const ar = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+    const todays = arr(await sb(`/rest/v1/kairo_workouts?user_id=eq.${me.id}&finished_at=not.is.null&started_at=gte.${ar}T03:00:00Z&select=id`));
+    if (todays.length > 1) return Response.json({ ok: true, sent: 0 });
+    const name = await myName();
+    const people = arr(await sb(`/rest/v1/kairo_profile?select=user_id&user_id=neq.${me.id}`));
+    await Promise.all(people.map(p => push(p.user_id, `${name} terminó de entrenar`, `${String(body.rutina || "Entreno").slice(0, 40)}${body.minutos ? ` · ${Number(body.minutos)} min` : ""}. Mandale fuerza con una reacción.`, `kairo-trained-${me.id}`)));
+    return Response.json({ ok: true, sent: people.length });
   }
 
   if (action === "posted") {

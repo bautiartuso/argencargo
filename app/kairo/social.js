@@ -256,6 +256,7 @@ function StoryViewer({ token, groups, start, info, myId, onSeen, onProfile, onCl
   const [pct, setPct] = useState(0);
   const [held, setHeld] = useState(false);
   const [panel, setPanel] = useState(null); // "views" | "delete"
+  const [reacted, setReacted] = useState({}); // story_id → emoji que mandaste en esta sesión
   const elapsed = useRef(0), down = useRef(0);
   const g = groups[gi], s = g?.items[si], u = g ? info(g.user_id) : {}, own = g?.user_id === myId;
   const paused = held || !!panel || !img;
@@ -286,6 +287,12 @@ function StoryViewer({ token, groups, start, info, myId, onSeen, onProfile, onCl
   };
   const views = s.views || [];
   const top = "calc(env(safe-area-inset-top) + 8px)";
+  const myEmoji = reacted[s.id] ?? s.my_emoji ?? null;
+  const react = async (emoji) => {
+    setReacted({ ...reacted, [s.id]: emoji }); setHeld(false);
+    const r = await fetch("/api/kairo/social", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${loadSession()?.token || token}` }, body: JSON.stringify({ action: "react", story_id: s.id, emoji }) }).then(r => r.json()).catch(() => ({}));
+    if (r?.ok) pushToast(`Le mandaste ${emoji} a ${(u.nombre || "").split(" ")[0]}`); else pushToast("No se pudo enviar");
+  };
 
   return <div style={{ position: "fixed", inset: 0, zIndex: 105, background: "#000", display: "flex", flexDirection: "column" }}>
     <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: own ? "0 0 22px 22px" : 0, background: "#0a0a0a" }}>
@@ -304,13 +311,16 @@ function StoryViewer({ token, groups, start, info, myId, onSeen, onProfile, onCl
           <button onClick={onClose} aria-label="Cerrar" style={{ ...round(36), background: "transparent", backdropFilter: "none", WebkitBackdropFilter: "none" }}><Icon d={I.close} size={22} sw={2} /></button>
         </div>
       </div>
-      {s.caption && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: `48px 20px ${own ? 20 : "calc(env(safe-area-inset-bottom) + 26px)"}`, background: "linear-gradient(transparent, rgba(0,0,0,0.6))", color: "#fff", fontSize: 16, fontWeight: 600, textAlign: "center", pointerEvents: "none", lineHeight: 1.35, opacity: held ? 0 : 1, transition: "opacity 200ms" }}>{s.caption}</div>}
+      {s.caption && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: `48px 20px ${own ? 20 : "calc(env(safe-area-inset-bottom) + 76px)"}`, background: "linear-gradient(transparent, rgba(0,0,0,0.6))", color: "#fff", fontSize: 16, fontWeight: 600, textAlign: "center", pointerEvents: "none", lineHeight: 1.35, opacity: held ? 0 : 1, transition: "opacity 200ms" }}>{s.caption}</div>}
     </div>
 
+    {!own && <div style={{ position: "absolute", left: 0, right: 0, bottom: "calc(env(safe-area-inset-bottom) + 18px)", display: "flex", justifyContent: "center", gap: 10, opacity: held ? 0 : 1, transition: "opacity 200ms" }}>
+      {["🔥", "💪", "😂", "❤️", "👏"].map(e => <button key={e} onClick={() => react(e)} className="k-press" style={{ width: 46, height: 46, borderRadius: 23, border: myEmoji === e ? `2px solid ${C.lime}` : "none", background: myEmoji === e ? "rgba(198,244,50,0.25)" : "rgba(0,0,0,0.38)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", transform: myEmoji === e ? "scale(1.12)" : "none", transition: "transform 160ms" }}>{e}</button>)}
+    </div>}
     {own && <div style={{ height: 64, padding: "0 16px env(safe-area-inset-bottom)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, boxSizing: "content-box" }}>
       <button onClick={() => setPanel("views")} style={{ display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", color: "#fff", padding: 0, flex: 1, minWidth: 0 }}>
         {views.length ? <span style={{ display: "flex" }}>{views.slice(0, 3).map((v, k) => <span key={v.id} style={{ marginLeft: k ? -8 : 0 }}><Face src={info(v.id).avatar} size={26} border="2px solid #000" /></span>)}</span> : <Icon d={I.eye} size={20} />}
-        <span style={{ fontSize: 14, fontWeight: 500 }}>{views.length ? `Visto por ${views.length}` : "Nadie la vio todavía"}</span>
+        <span style={{ fontSize: 14, fontWeight: 500 }}>{views.length ? `Visto por ${views.length}` : "Nadie la vio todavía"}{views.some(v => v.emoji) ? <span style={{ marginLeft: 8 }}>{[...new Set(views.filter(v => v.emoji).map(v => v.emoji))].slice(0, 4).join(" ")}</span> : null}</span>
       </button>
       <button onClick={() => setPanel("delete")} aria-label="Eliminar historia" style={{ ...round(42), background: "rgba(255,255,255,0.1)" }}><Icon d={I.trash} size={20} sw={1.8} /></button>
     </div>}
@@ -324,6 +334,7 @@ function StoryViewer({ token, groups, start, info, myId, onSeen, onProfile, onCl
           <div style={{ marginTop: 8 }}>{views.map(v => { const x = info(v.id); return <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `0.5px solid ${C.line}` }}>
             <Face src={x.avatar} size={40} />
             <span style={{ flex: 1, fontSize: 15 }}>{x.nombre || "Usuario"}</span>
+            {v.emoji && <span style={{ fontSize: 20 }}>{v.emoji}</span>}
             <span style={{ fontSize: 12.5, color: C.sub }}>hace {ago(v.at)}</span>
           </div>; })}</div>
         </> : <>

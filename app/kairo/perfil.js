@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { dq, loadSession } from "../../lib/sb-client";
 import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, field, btnLime, btnGhost, linkBtn, dayLabel, today, useRefresh, Skel, SkelCards } from "./ui";
 import { adjustTarget, extraSplit, kcalFor, sportName } from "./score";
+import { Achievements, ProgressPhotos } from "./progreso";
 
 export { MEDIDAS };
 export const OBJETIVOS = [
@@ -33,11 +34,17 @@ export default function Perfil({ token, isAdmin }) {
   const [thinking, setThinking] = useState(false);
   const fileRef = useRef(null);
 
+  const [stats, setStats] = useState({ ws: [], foodDays: 0, cardio: 0, photos: 0 });
   const load = useCallback(async () => {
-    const [pr] = await Promise.all([
+    const [pr, ws, fd, cd, ph] = await Promise.all([
       dq("kairo_profile", { token, filters: "?select=*&limit=1" }),
+      dq("kairo_workouts", { token, filters: "?select=started_at&finished_at=not.is.null&order=started_at.desc&limit=1000" }),
+      dq("kairo_food_log", { token, filters: "?select=log_date&order=log_date.desc&limit=3000" }),
+      dq("kairo_cardio", { token, filters: "?select=id&limit=1000" }),
+      dq("kairo_progress_photos", { token, filters: "?select=id" }),
     ]);
     setP(Array.isArray(pr) ? pr[0] || null : null);
+    setStats({ ws: Array.isArray(ws) ? ws : [], foodDays: new Set((Array.isArray(fd) ? fd : []).map(x => x.log_date)).size, cardio: Array.isArray(cd) ? cd.length : 0, photos: Array.isArray(ph) ? ph.length : 0 });
   }, [token]);
   useEffect(() => { load(); }, [load]);
   useRefresh(load);
@@ -114,6 +121,9 @@ export default function Perfil({ token, isAdmin }) {
         {p.estrategia_at && <div style={{ fontSize: 11.5, color: C.dim, marginTop: 12 }}>Actualizada {dayLabel(p.estrategia_at.slice(0, 10))}. Actualizala cuando registres medidas nuevas.</div>}
       </div>}
     </>}
+
+    <ProgressPhotos token={token} profile={p} />
+    <Achievements profile={p} ws={stats.ws} foodDays={stats.foodDays} cardio={stats.cardio} photos={stats.photos} />
 
     {/* Reglas para la IA */}
     <SectionTitle right={<button onClick={() => setSheet("reglas")} style={linkBtn}>Editar</button>}>Reglas para la IA</SectionTitle>
