@@ -9286,10 +9286,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   // y el CP. Así se combina cualquier nombre con cualquier dirección (19/10/2026).
   const nombreCli=c=>c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"";
   const dirCli=c=>[c.street,c.floor_apt,c.city,c.province].map(x=>(x||"").trim()).filter(Boolean).join(", ");
-  const aplicarIdentidad=({name,tax_id,phone,email},aviso)=>{const body={dest_name:name||"",dest_tax_id:tax_id||"",dest_phone:phone||"",dest_email:email||"",destination_address:[name,dest.dest_address,dest.dest_postal_code].filter(Boolean).join(", ")};setDest(prev=>({...prev,dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_phone:body.dest_phone,dest_email:body.dest_email}));updateFlight(body);onFlash(aviso);};
+  // Teléfono y email del destinatario son SIEMPRE los de Argencargo (19/10/2026): el courier nos
+  // llama a nosotros, no al cliente. Salen del guardado de la oficina; si falta, los fijos.
+  const contactoAC=(()=>{const o=savedAddrs.find(a=>a.is_default)||savedAddrs.find(a=>/loreto/i.test(a.label||""));return{phone:o?.phone||"+5491133875126",email:o?.email||"info@argencargo.com.ar"};})();
+  const aplicarIdentidad=({name,tax_id},aviso)=>{const phone=contactoAC.phone,email=contactoAC.email;const body={dest_name:name||"",dest_tax_id:tax_id||"",dest_phone:phone,dest_email:email,destination_address:[name,dest.dest_address,dest.dest_postal_code].filter(Boolean).join(", ")};setDest(prev=>({...prev,dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_phone:body.dest_phone,dest_email:body.dest_email}));updateFlight(body);onFlash(aviso);};
   const aplicarDireccion=({address,postal_code},aviso)=>{const body={dest_address:address||"",dest_postal_code:postal_code||"",destination_address:[dest.dest_name,address,postal_code].filter(Boolean).join(", ")};setDest(prev=>({...prev,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code}));updateFlight(body);onFlash(aviso);};
-  const applyCliente=(c)=>{const cuitArmado=!c.cuit&&c.dni?cuitDesdeDni(c.dni):"";aplicarIdentidad({name:nombreCli(c),tax_id:c.cuit||cuitArmado||c.dni||"",phone:c.whatsapp,email:c.email},`A nombre de ${nombreCli(c)}${cuitArmado?` · CUIT armado desde el DNI (${cuitArmado}); si es mujer va 27-`:""}`);};
-  const applyGuardado=(a)=>aplicarIdentidad({name:a.name,tax_id:a.tax_id,phone:a.phone,email:a.email},`A nombre de ${a.name||a.label}`);
+  const applyCliente=(c)=>{const cuitArmado=!c.cuit&&c.dni?cuitDesdeDni(c.dni):"";aplicarIdentidad({name:nombreCli(c),tax_id:c.cuit||cuitArmado||c.dni||""},`A nombre de ${nombreCli(c)}${cuitArmado?` · CUIT armado desde el DNI (${cuitArmado}); si es mujer va 27-`:""}`);};
+  const applyGuardado=(a)=>aplicarIdentidad({name:a.name,tax_id:a.tax_id},`A nombre de ${a.name||a.label}`);
   const applyDirCliente=(c)=>aplicarDireccion({address:dirCli(c),postal_code:c.postal_code},`Entrega en la dirección de ${nombreCli(c)}`);
   const applyOficina=(a)=>aplicarDireccion({address:a.address,postal_code:a.postal_code},`Entrega en ${a.label}`);
   const esOficina=a=>!!a.is_default||/loreto/i.test(a.label||"")||/loreto/i.test(a.address||"");
@@ -9889,8 +9892,8 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           const igual=(a,b)=>!!(a||"").trim()&&(a||"").trim().toLowerCase()===(b||"").trim().toLowerCase();
           return <div style={{display:"flex",flexDirection:"column",gap:10,padding:"12px 14px",marginBottom:14,borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
             <Grupo l="A nombre de">
-              {clientesVuelo.map(c=><Chip key={"c"+(c.id||c.cuit)} on={()=>applyCliente(c)} icon="👤" main={nombreCli(c)} sub={`${condCli(c)} · ${c.cuit?c.cuit:c.dni?"DNI "+c.dni:"sin CUIT"}`} color="#60a5fa" active={igual(dest.dest_name,nombreCli(c))} title={`Nombre, CUIT, teléfono y email del cliente${c.cuit?"":c.dni?". No tiene CUIT: se arma desde el DNI":""}`}/>)}
-              {guardados.map(a=><Chip key={"g"+a.id} on={()=>applyGuardado(a)} icon={esOficina(a)?"🏢":"📌"} main={a.name||a.label} sub={a.tax_id||a.label} color="#c4b5fd" active={igual(dest.dest_name,a.name)} title={`Nombre, CUIT, teléfono y email guardados (${a.label})`} onDel={()=>delAddr(a.id)}/>)}
+              {clientesVuelo.map(c=><Chip key={"c"+(c.id||c.cuit)} on={()=>applyCliente(c)} icon="👤" main={nombreCli(c)} sub={`${condCli(c)} · ${c.cuit?c.cuit:c.dni?"DNI "+c.dni:"sin CUIT"}`} color="#60a5fa" active={igual(dest.dest_name,nombreCli(c))} title={`Nombre y CUIT del cliente; teléfono y email siempre los de Argencargo${c.cuit?"":c.dni?". No tiene CUIT: se arma desde el DNI":""}`}/>)}
+              {guardados.map(a=><Chip key={"g"+a.id} on={()=>applyGuardado(a)} icon={esOficina(a)?"🏢":"📌"} main={a.name||a.label} sub={a.tax_id||a.label} color="#c4b5fd" active={igual(dest.dest_name,a.name)} title={`Nombre y CUIT guardados (${a.label}); teléfono y email siempre los de Argencargo`} onDel={()=>delAddr(a.id)}/>)}
               {clientesVuelo.length===0&&guardados.length===0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Sin clientes en el vuelo todavía.</span>}
             </Grupo>
             <Grupo l="Entregar en">
@@ -9906,7 +9909,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           return <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             <Panel icon="👤" t="Quién recibe" color="#60a5fa">
               <div style={{display:"flex",gap:10}}><F l="Nombre o razón social" k="dest_name" ph="A nombre de quién llega" flex={2}/><F l="CUIT" k="dest_tax_id" ph="20-12345678-9" mono/></div>
-              <div style={{display:"flex",gap:10}}><F l="Teléfono" k="dest_phone" ph="+54 9 11 ..." mono/><F l="Email" k="dest_email" ph="contacto@ejemplo.com" flex={1.6}/></div>
+              <div style={{display:"flex",gap:10}}><F l="Teléfono · Argencargo" k="dest_phone" ph="+54 9 11 ..." mono/><F l="Email · Argencargo" k="dest_email" ph="info@argencargo.com.ar" flex={1.6}/></div>
             </Panel>
             <Panel icon="📍" t="Dónde se entrega" color={IC}>
               <F l="Dirección" k="dest_address" ph="Calle y número, localidad, provincia"/>
