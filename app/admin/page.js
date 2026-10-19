@@ -9200,7 +9200,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,budget_flete,budget_seguro,cost_flete,cost_seguro,cost_impuestos_reales,cost_gasto_documental,cost_flete_local,cost_otros,collected_amount,collection_currency,collection_exchange_rate,collection_fee_pct,collection_method,credit_applied_usd,debt_applied_usd,is_collected,ri_argencargo_collects_taxes,channel,has_battery`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(id,client_code,first_name,last_name,tax_condition,company_name,cuit,dni,whatsapp,email,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,budget_flete,budget_seguro,cost_flete,cost_seguro,cost_impuestos_reales,cost_gasto_documental,cost_flete_local,cost_otros,collected_amount,collection_currency,collection_exchange_rate,collection_fee_pct,collection_method,credit_applied_usd,debt_applied_usd,is_collected,ri_argencargo_collects_taxes,channel,has_battery`});
     setFlightOpsData(Array.isArray(r)?r:[]);
     // Cobros de las ops del vuelo: hacen falta para descontar la comision real de cada transferencia
     // al calcular lo cobrado NETO en el detalle financiero.
@@ -9274,22 +9274,16 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const loadAddrs=async()=>{const r=await dq("shipping_addresses",{token,filters:"?select=*&order=is_default.desc,created_at.desc"});setSavedAddrs(Array.isArray(r)?r:[]);};
   useEffect(()=>{loadAddrs();},[]);
   const applyAddr=(a)=>{const body={dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")};setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});updateFlight(body);};
-  // Cliente RI del vuelo (si hay uno solo con datos): el autofill corre una vez y solo sobre
-  // campos vacíos — si pisaste algo por accidente, este botón lo vuelve a aplicar a demanda.
-  const riClientForDest=(()=>{
-    const ris=flightOpsData.map(o=>o.clients).filter(c=>c?.tax_condition==="responsable_inscripto"&&(c.company_name||c.cuit));
-    const uniq=Array.from(new Map(ris.map(c=>[c.cuit||c.company_name,c])).values());
-    return uniq.length===1?uniq[0]:null;
-  })();
-  const applyRiData=()=>{
-    const c=riClientForDest;if(!c)return;
+  // Clientes del vuelo (19/10/2026): desde ahora las cargas pueden salir a nombre del cliente aunque
+  // sea monotributista, así que hay un botón por cliente (no solo el RI). Pisa todos los campos del
+  // destinatario con la ficha del cliente; "Virrey Loreto" (la predeterminada guardada) va último.
+  const clientesVuelo=Array.from(new Map(flightOpsData.map(o=>o.clients).filter(c=>c&&(c.cuit||c.dni||c.company_name||c.last_name)).map(c=>[c.id||c.cuit||c.client_code,c])).values());
+  const applyCliente=(c)=>{
     const addr=[c.street,c.floor_apt,c.city,c.province].map(x=>(x||"").trim()).filter(Boolean).join(", ");
-    const body={dest_name:c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),dest_tax_id:c.cuit||""};
-    if(addr){body.dest_address=addr;body.destination_address=addr;}
-    if(c.postal_code)body.dest_postal_code=c.postal_code;
-    setDest(prev=>({...prev,dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,...(addr?{dest_address:addr}:{}),...(c.postal_code?{dest_postal_code:c.postal_code}:{})}));
+    const body={dest_name:c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),dest_tax_id:c.cuit||c.dni||"",dest_address:addr,dest_postal_code:c.postal_code||"",dest_phone:c.whatsapp||"",dest_email:c.email||"",destination_address:[c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),addr,c.postal_code].filter(Boolean).join(", ")};
+    setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});
     updateFlight(body);
-    onFlash(`Datos del RI aplicados (${body.dest_name})`);
+    onFlash(`Destinatario: ${body.dest_name}${addr?"":" (sin dirección en la ficha)"}`);
   };
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
   const delAddr=async(id)=>{if(!await confirmDialog("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
@@ -9858,14 +9852,17 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       const Linea=({l,v,mono})=><p style={{margin:"0 0 4px",fontSize:13,color:"#fff",display:"flex",gap:10}}><span style={{...FE_LBL,fontSize:9.5,minWidth:64,paddingTop:3}}>{l}</span><span style={{fontFamily:mono?"'JetBrains Mono',monospace":undefined,fontWeight:mono?600:500}}>{v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</span></p>;
       return <FeCard title="Destinatario" icon="📍" tone={cerrada?"ok":undefined}
         summary={cerrada?<FePill color="#22c55e" title="Con la factura presentada el destinatario queda fijo. Para cambiarlo, reabrí la factura.">🔒 Factura presentada · {formatDateShort(flight.invoice_presented_at)}</FePill>:null}
-        actions={cerrada?null:          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          {savedAddrs.length>0&&<select onChange={e=>{const a=savedAddrs.find(x=>x.id===e.target.value);if(a)applyAddr(a);e.target.value="";}} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
-            <option value="" style={{background:"#142038"}}>Cargar dirección guardada…</option>
-            {savedAddrs.map(a=><option key={a.id} value={a.id} style={{background:"#142038"}}>{a.label}{a.is_default?" ⭐":""}</option>)}
-          </select>}
-          {riClientForDest&&<button onClick={applyRiData} title={`Volver a cargar los datos del cliente RI: ${riClientForDest.company_name||""} · CUIT ${riClientForDest.cuit||"—"}`} style={{padding:"6px 10px",fontSize:11,fontWeight:700,border:"1px solid rgba(96,165,250,0.4)",borderRadius:6,background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>🏢 Usar datos del RI</button>}
-          <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(184,149,106,0.25)",borderRadius:6,background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
-        </div>}>
+        actions={cerrada?null:(()=>{
+          const btn=(key,on,txt,color,title)=><button key={key} type="button" onClick={on} title={title} style={{height:30,padding:"0 11px",fontSize:11.5,fontWeight:700,border:`1px solid ${color}55`,borderRadius:8,background:`${color}14`,color,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6}}>{txt}</button>;
+          const nombreCli=c=>c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code;
+          const condCli=c=>c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Mono":"CF";
+          const oficina=savedAddrs.find(a=>a.is_default);const otras=savedAddrs.filter(a=>!a.is_default);
+          return <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {clientesVuelo.map(c=>btn(c.id||c.cuit,()=>applyCliente(c),<><span>👤</span>{nombreCli(c)}<span style={{opacity:0.6,fontWeight:600}}>· {condCli(c)} {c.cuit||c.dni||""}</span></>,"#60a5fa",`Usar los datos de la ficha del cliente: ${nombreCli(c)} · ${c.cuit?"CUIT "+c.cuit:c.dni?"DNI "+c.dni:"sin CUIT/DNI"}${[c.street,c.city].filter(Boolean).length?" · "+[c.street,c.city].filter(Boolean).join(", "):" · sin dirección cargada"}`))}
+            {otras.map(a=>btn(a.id,()=>applyAddr(a),<><span>📌</span>{a.label}</>,"#c4b5fd",[a.name,a.address].filter(Boolean).join(" · ")))}
+            {oficina&&btn(oficina.id,()=>applyAddr(oficina),<><span>🏢</span>{oficina.label}</>,IC,`Dirección de la oficina: ${[oficina.name,oficina.address].filter(Boolean).join(" · ")}. Pisa nombre, CUIT y dirección.`)}
+            <button type="button" onClick={()=>{if(!showNewAddr)setNewAddr(p=>({...p,name:dest.dest_name||"",tax_id:dest.dest_tax_id||"",address:dest.dest_address||"",postal_code:dest.dest_postal_code||"",phone:dest.dest_phone||"",email:dest.dest_email||""}));setShowNewAddr(!showNewAddr);}} title="Guardar el destinatario actual como dirección predeterminada" style={{height:30,padding:"0 10px",fontSize:11,fontWeight:700,border:"1px dashed rgba(255,255,255,0.2)",borderRadius:8,background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit"}}>{showNewAddr?"✕":"+ Guardar"}</button>
+          </div>;})()}>
         {cerrada?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
           <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"12px 14px"}}>
             <p style={{...FE_LBL,marginBottom:8}}>Quién recibe</p>
