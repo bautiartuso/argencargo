@@ -74,9 +74,10 @@ export async function POST(req) {
   const raw = await req.text();
   const secret = process.env.META_APP_SECRET;
   if (!secret) { waitUntil(avisarFalta("falta META_APP_SECRET (no se puede validar la firma de Meta)")); return Response.json({ ok: true, skipped: "sin app secret" }); }
-  if (!firmaValida(raw, req.headers.get("x-hub-signature-256"), secret)) return Response.json({ error: "Firma inválida" }, { status: 401 });
+  if (!firmaValida(raw, req.headers.get("x-hub-signature-256"), secret)) { console.error("[bot/instagram] firma inválida (¿META_APP_SECRET de otra app?)", { con_firma: !!req.headers.get("x-hub-signature-256"), bytes: raw.length }); return Response.json({ error: "Firma inválida" }, { status: 401 }); }
   let body = null; try { body = JSON.parse(raw); } catch {}
-  if (body?.object !== "instagram" || !Array.isArray(body.entry)) return Response.json({ ok: true, ignored: true });
+  if (body?.object !== "instagram" || !Array.isArray(body.entry)) { console.log("[bot/instagram] evento ignorado", body?.object); return Response.json({ ok: true, ignored: true }); }
+  console.log("[bot/instagram] evento recibido", JSON.stringify(body).slice(0, 600));
 
   // Meta quiere el 200 rápido: el trabajo real sigue en segundo plano.
   waitUntil(procesar(body.entry).catch((e) => console.error("[bot/instagram]", e.message)));
