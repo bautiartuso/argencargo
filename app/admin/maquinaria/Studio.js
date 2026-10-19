@@ -93,17 +93,16 @@ export function Studio({ token }) {
   return <>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginBottom: 18 }}>
       <Dato l="Programadas" v={programadas.length} sub={programadas[0] ? `próxima ${fmtHora(programadas.sort((a, b) => a.programada_at.localeCompare(b.programada_at))[0].programada_at)}` : "nada en agenda"} acento />
-      <Dato l="Guardadas sin fecha" v={listas.length} sub={listas.length ? "las ves en Guardadas › Sin fecha" : "todo lo guardado tiene fecha"} />
+      <Dato l="Sin fecha o con error" v={listas.length + errores.length} sub={listas.length + errores.length ? "aparecen abajo del calendario para reprogramar" : "todo lo guardado tiene fecha"} color={errores.length ? BAD : undefined} />
       <Dato l="Publicadas · 30 días" v={publicadas30.length} sub={`${publicadas30.filter((p) => p.tipo === "historia").length} historias · ${publicadas30.filter((p) => p.tipo !== "historia").length} en el perfil`} />
       <Dato l="Instagram" v={ig ? `@${ig.username || "argenmaq_"}` : "Sin conectar"} sub={ig ? (errores.length ? `${errores.length} con error` : "publicación automática activa") : "las piezas se descargan y suben a mano"} color={ig ? OK : WARN} />
     </div>
-    <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["guiones", "Guiones de reels", guis.length], ["cola", "Guardadas", activas.length], ["ig", ig ? `Instagram · @${ig.username || "argenmaq_"}` : "Instagram · sin conectar"]]} />
+    <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["guiones", "Guiones de reels", guis.length], ["ig", ig ? `Instagram · @${ig.username || "argenmaq_"}` : "Instagram · sin conectar"]]} />
 
-    {tab === "calendario" && <Calendario piezas={activas} listas={listas} {...ctx} />}
+    {tab === "calendario" && <Calendario piezas={activas} listas={listas} errores={errores} {...ctx} />}
     {tab === "historias" && <Propuestas lista={hist} tipo="historia" piezas={piezas} ocupado={ocupado} creando={armando === "historia"} onCrear={(n) => crear("historia", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setHist((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="historias" sub="Duran 24 horas: llevan precio final y dos cuotas, nunca fecha de llegada. Cada historia con máquina lleva el link de la ficha para el sticker. Se alternan los formatos: máquina del día, ¿cuál elegís?, nueva en el catálogo, ¿cuánto sale?, un dato de cómo trabajamos, pedidos reales." />}
     {tab === "publicaciones" && <Propuestas lista={pubs} tipo="post" piezas={piezas} ocupado={ocupado} creando={armando === "post"} onCrear={(n) => crear("post", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setPubs((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="publicaciones y carruseles" sub="Quedan en el perfil: sin precio, invitan a consultar. Se alternan ficha, carrusel de ficha (3 placas), 3 máquinas por rubro y carrusel por rubro (una placa por máquina)." />}
     {tab === "guiones" && <Propuestas lista={guis} tipo="guion" piezas={piezas} ocupado={ocupado} creando={armando === "guion"} onCrear={(n) => crear("guion", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setGuis((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="guiones de reels" sub="El plan para filmar con el celular: gancho, escenas con lo que se ve y lo que se dice, textos en pantalla y caption. Salen de una máquina real, de un pedido real o de cómo trabajamos. Si lo agendás, ese día te llega por Telegram." />}
-    {tab === "cola" && <Cola piezas={piezas} {...ctx} />}
     {tab === "ig" && <Instagram ig={ig} api={api} onCambio={(v) => setIg(v)} />}
 
     {detalle && <Detalle p={detalle} onCerrar={() => setDetalle(null)} {...ctx} />}
@@ -249,7 +248,8 @@ function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar
 }
 
 // ── Calendario mensual ───────────────────────────────────────────────────────
-function Calendario({ piezas, listas, ig, ocupado, programar, abrir }) {
+function Calendario({ piezas, listas, ig, ocupado, programar, abrir, ...ctx }) {
+  const sueltas = piezas.filter((p) => p.estado === "aprobada" || p.estado === "error");
   const hoy = new Date(); const [vista, setVista] = useState({ y: hoy.getFullYear(), m: hoy.getMonth() }); const [diaSel, setDiaSel] = useState(claveDia(hoy));
   const porDia = useMemo(() => { const r = {}; piezas.forEach((p) => { const f = p.estado === "publicada" ? p.publicada_at : p.programada_at; if (!f) return; (r[claveDia(f)] = r[claveDia(f)] || []).push(p); }); Object.values(r).forEach((l) => l.sort((a, b) => String(a.programada_at || a.publicada_at).localeCompare(String(b.programada_at || b.publicada_at)))); return r; }, [piezas]);
   const primero = new Date(vista.y, vista.m, 1); const desde = (primero.getDay() + 6) % 7; const dias = new Date(vista.y, vista.m + 1, 0).getDate();
@@ -273,6 +273,10 @@ function Calendario({ piezas, listas, ig, ocupado, programar, abrir }) {
       <div style={{ display: "flex", gap: 14, marginTop: 14, fontSize: 12, color: GRIS, flexWrap: "wrap", alignItems: "center" }}><Leyenda c={LIMA} l="Historia" /><Leyenda c={SUAVE} l="Publicación" borde /><Leyenda c={SUAVE} l="Carrusel (doble borde)" borde doble /><Leyenda c="#7C3AED" l="Reel para filmar" /><span style={{ width: 1, height: 14, background: BORDE }} /><Leyenda c={OK} l="punto verde: publicada" punto /><Leyenda c={BAD} l="punto rojo: error" punto /></div>
     </Sec>
     <Dia key={diaSel} dia={diaSel} lista={porDia[diaSel] || []} listas={listas} ig={ig} ocupado={ocupado} programar={programar} abrir={abrir} />
+    {sueltas.length > 0 && <div style={{ gridColumn: "1 / -1" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "4px 0 10px" }}><h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Sin fecha o con error</h3><span style={{ fontSize: 12.5, color: GRIS }}>Piezas guardadas que todavía no están en el calendario. Abrilas para programarlas o descartarlas.</span></div>
+      <div style={{ display: "grid", gap: 8 }}>{sueltas.map((p) => <FilaPieza key={p.id} p={p} onAbrir={() => abrir(p)} ig={ig} ocupado={ocupado} {...ctx} />)}</div>
+    </div>}
   </div>;
 }
 const Leyenda = ({ c, l, borde, doble, punto }) => <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: punto ? 8 : 14, height: punto ? 8 : 12, borderRadius: punto ? 999 : 3, background: c, display: "inline-block", border: borde ? `1px solid ${BORDE}` : "none", boxShadow: doble ? `2px 2px 0 ${BORDE}` : "none" }} />{l}</span>;
@@ -300,7 +304,7 @@ function Dia({ dia, lista, listas, ig, ocupado, programar, abrir }) {
       </button>)}</div>}
     {!pasado && <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 14, display: "grid", gap: 10 }}>
       <b style={{ fontSize: 13 }}>Programar este día</b>
-      {listas.length === 0 ? <p style={{ margin: 0, fontSize: 12.5, color: GRIS }}>No hay piezas guardadas sin fecha. Las que quitás del calendario quedan en Guardadas para reprogramar.</p> : <>
+      {listas.length === 0 ? <p style={{ margin: 0, fontSize: 12.5, color: GRIS }}>No hay piezas guardadas sin fecha. Las que quitás del calendario quedan abajo, en “Sin fecha o con error”.</p> : <>
         <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: 11, border: `1px solid ${BORDE}`, background: CARD, color: INK, fontSize: 13, fontWeight: 600 }}>{listas.map((p) => <option key={p.id} value={p.id}>{TIPO[p.tipo]?.l} · {p.titulo}</option>)}</select>
         <div style={{ display: "flex", gap: 8 }}><Inp type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ width: 130 }} /><Btn kind="lima" onClick={confirmar} disabled={!elegida || ocupado.startsWith("programar")} style={{ flex: 1 }}>Programar</Btn></div>
         {!ig && <p style={{ margin: 0, fontSize: 12, color: WARN }}>Instagram no está conectado: lo programado no va a salir solo hasta que lo conectes.</p>}
@@ -309,17 +313,7 @@ function Dia({ dia, lista, listas, ig, ocupado, programar, abrir }) {
   </Sec>;
 }
 
-// ── Cola: todo lo guardado ───────────────────────────────────────────────────
-function Cola({ piezas, abrir, ...ctx }) {
-  const [f, setF] = useState("pendientes");
-  const filtros = [["pendientes", "Por salir", (p) => ["aprobada", "programada", "error"].includes(p.estado)], ["programadas", "Programadas", (p) => p.estado === "programada"], ["listas", "Sin fecha", (p) => p.estado === "aprobada"], ["errores", "Con error", (p) => p.estado === "error"], ["publicadas", "Publicadas", (p) => p.estado === "publicada"], ["descartadas", "Descartadas", (p) => p.estado === "descartada"]];
-  const activo = filtros.find((x) => x[0] === f) || filtros[0];
-  const lista = piezas.filter(activo[2]).sort((a, b) => String(a.programada_at || a.publicada_at || a.created_at).localeCompare(String(b.programada_at || b.publicada_at || b.created_at)) * (f === "publicadas" || f === "descartadas" ? -1 : 1));
-  return <>
-    <Barra>{filtros.map(([k, l, fn]) => <Pill key={k} small on={f === k} onClick={() => setF(k)}>{l} · {piezas.filter(fn).length}</Pill>)}</Barra>
-    {lista.length === 0 ? <Vacio>Nada por acá. Acá aparece todo lo que guardaste: lo programado, lo publicado, lo que quedó sin fecha y lo que dio error.</Vacio> : <div style={{ display: "grid", gap: 10 }}>{lista.map((p) => <FilaPieza key={p.id} p={p} onAbrir={() => abrir(p)} {...ctx} />)}</div>}
-  </>;
-}
+// ── Fila de pieza (sin fecha o con error, debajo del calendario) ────────────
 function FilaPieza({ p, onAbrir, ig, ocupado, publicar, desprogramar, descartar, celular, copiar }) {
   const e = ESTADO[p.estado] || ESTADO.aprobada; const t = TIPO[p.tipo] || TIPO.post; const imgs = p.imagenes || [];
   const fecha = p.estado === "publicada" ? `${p.tipo === "guion" ? "enviada al celular" : "publicada"} ${fmtHora(p.publicada_at)}` : p.estado === "programada" ? `${p.tipo === "guion" ? "para filmar" : "sale"} ${fmtHora(p.programada_at)}` : `guardada ${fmtHora(p.created_at)}`;
@@ -333,7 +327,7 @@ function FilaPieza({ p, onAbrir, ig, ocupado, publicar, desprogramar, descartar,
       {p.tipo !== "guion" && p.estado !== "publicada" && p.estado !== "descartada" && <Btn small kind="lima" onClick={() => publicar(p)} disabled={ocupado === `publicar${p.id}` || !ig} title={ig ? "" : "Conectá Instagram primero"}>{ocupado === `publicar${p.id}` ? "Publicando…" : "Publicar ahora"}</Btn>}
       {p.estado === "programada" && <Btn small onClick={() => desprogramar(p)}>Quitar fecha</Btn>}
       {(p.tipo === "historia" || p.tipo === "guion") && p.estado !== "descartada" && <Btn small onClick={() => celular(p)} disabled={ocupado === `celular${p.id}`} title={p.tipo === "guion" ? "Te manda el guion completo por Telegram" : "Te la manda por Telegram con el link, para subirla con el sticker"}>Al celular</Btn>}
-      <Btn small onClick={onAbrir}>Abrir</Btn>
+      <Btn small onClick={onAbrir}>{p.estado === "error" ? "Ver y reintentar" : "Programar"}</Btn>
       {["aprobada", "error"].includes(p.estado) && <Btn small kind="danger" onClick={() => descartar(p)}>Descartar</Btn>}
     </div>
   </div>;
