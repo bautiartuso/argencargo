@@ -9,6 +9,7 @@
 // "Publicar en Instagram" (por API, sin etiquetas) queda como atajo secundario.
 import { useEffect, useRef, useState } from "react";
 import { toast } from "../../../lib/ui";
+import { PLANTILLA } from "../../../lib/historias";
 
 const GOLD_LIGHT = "#E8D098", SKY = "#8CC8F5", NAVY = "#0A1628";
 const CARD = { background: "rgba(255,255,255,0.028)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 16, padding: 24 };
@@ -98,24 +99,27 @@ export default function HistoriasPanel({ token }) {
   const esEntera = bbox.x0 === 0 && bbox.y0 === 0 && bbox.x1 === 100 && bbox.y1 === 100;
 
   return <div style={{ maxWidth: 1180 }}>
-    <div style={{ marginBottom: 22 }}>
-      <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>Historia de reseña</h2>
-      <p style={{ ...SUB, fontSize: 13.5 }}>De la captura de Google a la historia de Instagram, con tu plantilla.</p>
-    </div>
-
-    {/* 1 · Pegar la captura */}
-    {!actual && <div style={{ ...CARD, padding: 14 }}>
+    {/* 1 · Pegar la captura: la zona es el protagonista, con la plantilla de muestra al costado */}
+    {!actual && <div className="ac-hist-drop" style={{ ...CARD, padding: 0, overflow: "hidden", display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", background: "linear-gradient(120deg, rgba(184,149,106,0.07) 0%, rgba(255,255,255,0.025) 45%, rgba(140,200,245,0.06) 100%)" }}>
       <div onClick={() => !busy && fileRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setArrastre(true); }} onDragLeave={() => setArrastre(false)} onDrop={(e) => { e.preventDefault(); setArrastre(false); subir(e.dataTransfer.files?.[0]); }}
-        style={{ padding: "64px 24px", borderRadius: 14, border: `2px dashed ${arrastre ? SKY : "rgba(255,255,255,0.16)"}`, background: arrastre ? "rgba(140,200,245,0.08)" : "rgba(0,0,0,0.18)", textAlign: "center", cursor: busy ? "wait" : "pointer", transition: "all 150ms" }}>
+        style={{ padding: "74px 40px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", cursor: busy ? "wait" : "pointer", background: arrastre ? "rgba(140,200,245,0.07)" : "transparent", transition: "background 150ms", minHeight: 360 }}>
         {busy === "leyendo" ? <>
-          <div style={{ width: 46, height: 46, borderRadius: "50%", border: "3px solid rgba(140,200,245,0.25)", borderTopColor: SKY, margin: "0 auto 18px", animation: "ac-spin 0.9s linear infinite" }} />
-          <p style={{ margin: 0, fontSize: 16, color: "#fff", fontWeight: 800 }}>Leyendo la reseña y armando la historia…</p>
-          <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "rgba(255,255,255,0.45)" }}>Tarda unos segundos.</p>
+          <div style={{ width: 54, height: 54, borderRadius: "50%", border: "3px solid rgba(232,208,152,0.2)", borderTopColor: GOLD_LIGHT, marginBottom: 22, animation: "ac-spin 0.9s linear infinite" }} />
+          <p style={{ margin: 0, fontSize: 17, color: "#fff", fontWeight: 800 }}>Armando la historia…</p>
         </> : <>
-          <div style={{ width: 64, height: 64, borderRadius: 18, background: "rgba(140,200,245,0.12)", border: "1px solid rgba(140,200,245,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 28 }}>📋</div>
-          <p style={{ margin: 0, fontSize: 18, color: "#fff", fontWeight: 800, letterSpacing: "-0.01em" }}>Pegá la captura de la reseña</p>
-          <p style={{ margin: "8px 0 0", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Ctrl+V, arrastrala hasta acá o tocá para elegirla</p>
+          <div style={{ width: 84, height: 84, borderRadius: "50%", padding: 2, background: "linear-gradient(135deg,#B8956A,#E8D098)", boxShadow: "0 12px 34px rgba(184,149,106,0.3)", marginBottom: 24 }}>
+            <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: NAVY, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="3" /><path d="M9 3v2h6V3" /><path d="M12 9v7" /><path d="M8.5 12.5 12 9l3.5 3.5" /></svg>
+            </div>
+          </div>
+          <p style={{ margin: 0, fontSize: 21, color: "#fff", fontWeight: 800, letterSpacing: "-0.01em" }}>Pegá la captura de la reseña</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
+            {["Ctrl + V", "Arrastrar", "Elegir archivo"].map((t) => <span key={t} style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.6)", background: "rgba(0,0,0,0.2)" }}>{t}</span>)}
+          </div>
         </>}
+      </div>
+      <div className="ac-hist-side" style={{ position: "relative", borderLeft: "1px solid rgba(255,255,255,0.06)", overflow: "hidden", background: "rgba(0,0,0,0.18)" }}>
+        <img src={PLANTILLA} alt="" style={{ position: "absolute", left: "50%", top: 34, width: 196, transform: "translateX(-50%) rotate(-6deg)", borderRadius: 22, boxShadow: "0 30px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.1)" }} />
       </div>
       <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { subir(e.target.files?.[0]); e.target.value = ""; }} />
     </div>}
@@ -155,7 +159,7 @@ export default function HistoriasPanel({ token }) {
 
     {/* 3 · Publicadas */}
     <div style={{ ...CARD, marginTop: 16 }}>
-      <h3 style={H}>Historias publicadas</h3>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><h3 style={H}>Publicadas</h3>{publicadas.length > 0 && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.4)", fontWeight: 700 }}>{publicadas.length}</span>}</div>
       {publicadas.length === 0 ? <p style={SUB}>Todavía no hay ninguna.</p>
         : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 14, marginTop: 16 }}>
           {publicadas.map((f) => <div key={f.url} style={{ textAlign: "center" }}>
@@ -166,6 +170,6 @@ export default function HistoriasPanel({ token }) {
           </div>)}
         </div>}
     </div>
-    <style>{`@keyframes ac-spin{to{transform:rotate(360deg)}} @media (max-width:760px){.ac-hist-res{grid-template-columns:1fr!important}}`}</style>
+    <style>{`@keyframes ac-spin{to{transform:rotate(360deg)}} @media (max-width:760px){.ac-hist-res,.ac-hist-drop{grid-template-columns:1fr!important}.ac-hist-side{display:none}}`}</style>
   </div>;
 }
