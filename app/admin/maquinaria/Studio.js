@@ -16,16 +16,17 @@ const fmtHora = (d) => d ? new Date(d).toLocaleString("es-AR", { weekday: "short
 const soloHora = (d) => new Date(d).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 const claveDia = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
 // Horarios sugeridos: historias al mediodía y a la tarde-noche, publicaciones a la tardecita. El primero libre.
-const HORAS = { historia: [12, 19.5], post: [18.5], carrusel: [18.5], guion: [10] };
+// Sugerencia: el primer día (de hoy en adelante) sin nada del mismo tipo, a las 11:00.
+const HORA_DEF = 11;
 function proximoHueco(tipo, piezas) {
-  const ocupados = new Set(piezas.filter((p) => p.estado === "programada").map((p) => `${claveDia(p.programada_at)} ${soloHora(p.programada_at)}`));
-  const base = new Date(); base.setSeconds(0, 0);
-  for (let d = 0; d < 14; d++) for (const h of HORAS[tipo] || HORAS.post) {
-    const x = new Date(base); x.setDate(x.getDate() + d); x.setHours(Math.floor(h), (h % 1) * 60, 0, 0);
+  const mismo = (p) => tipo === "guion" ? p.tipo === "guion" : (p.tipo === "historia") === (tipo === "historia") && p.tipo !== "guion";
+  const ocupados = new Set(piezas.filter((p) => p.estado === "programada" && mismo(p)).map((p) => claveDia(p.programada_at)));
+  for (let d = 0; d < 30; d++) {
+    const x = new Date(); x.setDate(x.getDate() + d); x.setHours(HORA_DEF, 0, 0, 0);
     if (x.getTime() < Date.now() + 10 * 60000) continue;
-    if (!ocupados.has(`${claveDia(x)} ${soloHora(x)}`)) return x;
+    if (!ocupados.has(claveDia(x))) return x;
   }
-  return new Date(Date.now() + 3600e3);
+  const x = new Date(); x.setDate(x.getDate() + 1); x.setHours(HORA_DEF, 0, 0, 0); return x;
 }
 
 export function Studio({ token }) {
@@ -135,12 +136,9 @@ function Propuesta({ c, ocupado, sugerido, piezas, onGuardar, onQuitar, onCambia
   const slides = c.datos?.slides || []; const [i, setI] = useState(0); const [prog, setProg] = useState(false);
   const t = TIPO[c.tipo] || TIPO.post;
   return <div style={{ background: CARD, border: `1px solid ${BORDE}`, borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-    <Previa slides={slides} tipo={c.tipo} i={i} setI={setI} etiquetas={<><Chip l={PLANT[c.plantilla] || c.plantilla} c="#15171A" bg={LIMA} /><Chip l={t.l} c={INK} bg="rgba(255,255,255,0.9)" /></>} />
+    <Previa slides={slides} tipo={c.tipo} i={i} setI={setI} etiquetas={<><Chip l={PLANT[c.plantilla] || c.plantilla} c="#15171A" bg={LIMA} /><Chip l={t.l} c="#15171A" bg="#FFFFFF" /></>} />
     <div style={{ padding: "12px 14px 14px", display: "grid", gap: 8 }}>
-      <b style={{ fontSize: 14, lineHeight: 1.3 }}>{c.titulo}</b>
-      <TA value={c.caption || ""} onChange={(e) => onCambiar({ caption: e.target.value })} style={{ minHeight: 92, fontSize: 13 }} />
-      <Inp value={c.hashtags || ""} onChange={(e) => onCambiar({ hashtags: e.target.value })} style={{ fontSize: 12, fontFamily: MONO }} />
-      {prog ? <SelectorFecha tipo={c.tipo} piezas={piezas} inicial={sugerido} ocupado={ocupado} onConfirmar={(d) => onGuardar(c, d.toISOString())} onCancelar={() => setProg(false)} />
+      {prog ? <SelectorFecha tipo={c.tipo} piezas={piezas} ocupado={ocupado} onConfirmar={(d) => onGuardar(c, d.toISOString())} onCancelar={() => setProg(false)} />
         : <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
           <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : "Programar"}</Btn>
           <a href={urlImagen(slides[i] || slides[0])} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "flex" }}><Btn title="Ver en grande" style={{ height: "100%" }}><Ico d={["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"]} /></Btn></a>
@@ -173,9 +171,7 @@ function PropuestaGuion({ c, ocupado, sugerido, piezas, onGuardar, onQuitar, onC
     </div>
     <div style={{ padding: "12px 14px 14px", display: "grid", gap: 10 }}>
       <Guion d={d} />
-      <TA value={c.caption || ""} onChange={(e) => onCambiar({ caption: e.target.value })} style={{ minHeight: 72, fontSize: 13 }} />
-      <Inp value={c.hashtags || ""} onChange={(e) => onCambiar({ hashtags: e.target.value })} style={{ fontSize: 12, fontFamily: MONO }} />
-      {prog ? <SelectorFecha tipo="guion" piezas={piezas} inicial={sugerido} ocupado={ocupado} onConfirmar={(dd) => onGuardar(c, dd.toISOString())} onCancelar={() => setProg(false)} />
+      {prog ? <SelectorFecha tipo="guion" piezas={piezas} ocupado={ocupado} onConfirmar={(dd) => onGuardar(c, dd.toISOString())} onCancelar={() => setProg(false)} />
         : <div style={{ display: "flex", gap: 8 }}>
           <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }} title="Elegí el día para filmarlo: ese día te llega por Telegram">{ocupado ? "Guardando…" : "Agendar para filmar"}</Btn>
           <Btn onClick={() => onGuardar(c)} disabled={ocupado} title="Guardarlo sin fecha">Guardar</Btn>
@@ -203,7 +199,8 @@ const esHistoria = (p) => p.tipo === "historia";
 function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar }) {
   const hoy = new Date(); const ini = inicial ? new Date(inicial) : hoy;
   const [vista, setVista] = useState({ y: ini.getFullYear(), m: ini.getMonth() });
-  const [dia, setDia] = useState(claveDia(ini)); const [hora, setHora] = useState(`${String(ini.getHours()).padStart(2, "0")}:${String(ini.getMinutes()).padStart(2, "0")}`);
+  const [dia, setDia] = useState(inicial ? claveDia(ini) : null); const [hh, setHh] = useState(inicial ? ini.getHours() : HORA_DEF); const [mm, setMm] = useState(inicial ? ini.getMinutes() : 0);
+  const hora = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
   const activas = useMemo(() => piezas.filter((p) => ["programada", "publicada", "error"].includes(p.estado) && (p.programada_at || p.publicada_at)), [piezas]);
   const porDia = useMemo(() => { const r = {}; activas.forEach((p) => { const k = claveDia(p.programada_at || p.publicada_at); (r[k] = r[k] || []).push(p); }); return r; }, [activas]);
   const primero = new Date(vista.y, vista.m, 1); const desde = (primero.getDay() + 6) % 7; const dias = new Date(vista.y, vista.m + 1, 0).getDate();
@@ -211,8 +208,8 @@ function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar
   const hoyK = claveDia(hoy); const mover = (n) => setVista((v) => { const d = new Date(v.y, v.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const delDia = (porDia[dia] || []).sort((a, b) => String(a.programada_at || a.publicada_at).localeCompare(String(b.programada_at || b.publicada_at)));
   const mismoTipo = tipo === "guion" ? delDia.filter((p) => p.tipo === "guion") : delDia.filter((p) => p.tipo !== "guion" && esHistoria(p) === (tipo === "historia"));
-  const presets = tipo === "historia" ? ["12:00", "19:30"] : tipo === "guion" ? ["10:00", "15:00"] : ["18:30", "12:30"];
-  const confirmar = () => { const [h, m] = hora.split(":").map(Number); const d = new Date(dia + "T12:00:00"); d.setHours(h || 0, m || 0, 0, 0); if (d.getTime() < Date.now()) { toast("Esa hora ya pasó", "warn"); return; } onConfirmar(d); };
+  const confirmar = () => { if (!dia) { toast("Elegí un día", "warn"); return; } const d = new Date(dia + "T12:00:00"); d.setHours(hh, mm, 0, 0); if (d.getTime() < Date.now()) { toast("Esa hora ya pasó", "warn"); return; } onConfirmar(d); };
+  const Paso = ({ v, onMenos, onMas }) => <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Btn small onClick={onMenos}>−</Btn><span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 800, minWidth: 34, textAlign: "center" }}>{String(v).padStart(2, "0")}</span><Btn small onClick={onMas}>+</Btn></span>;
   return <div style={{ display: "grid", gap: 10, padding: 10, borderRadius: 14, border: `1px solid ${LIMA}`, background: SUAVE }}>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <Btn small onClick={() => mover(-1)}>‹</Btn><b style={{ fontSize: 13 }}>{MESES[vista.m]} {vista.y}</b><Btn small onClick={() => mover(1)}>›</Btn>
@@ -233,17 +230,19 @@ function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar
       })}
     </div>
     <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: GRIS, fontFamily: MONO }}><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: LIMA, marginRight: 4 }} />historias</span><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: INK, marginRight: 4 }} />publicaciones y carruseles</span><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "#7C3AED", marginRight: 4 }} />reels para filmar</span></div>
+    {!dia ? <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 10, fontSize: 12.5, color: GRIS, textAlign: "center" }}>Tocá el día en que querés que salga.</div> : <>
     <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{new Date(dia + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}{dia === hoyK ? " · hoy" : ""}</div>
       {delDia.length === 0 ? <div style={{ fontSize: 12, color: GRIS }}>Nada programado ese día.</div>
         : <div style={{ display: "grid", gap: 3 }}>{delDia.map((p) => <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, minWidth: 0 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: p.tipo === "guion" ? "#7C3AED" : esHistoria(p) ? LIMA : INK, flex: "none" }} /><span style={{ fontFamily: MONO, color: GRIS }}>{soloHora(p.programada_at || p.publicada_at)}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</span>{p.estado === "publicada" && <span style={{ width: 6, height: 6, borderRadius: 999, background: OK, flex: "none" }} />}</div>)}</div>}
       {mismoTipo.length > 0 && <div style={{ fontSize: 11.5, color: WARN, marginTop: 4 }}>{tipo === "guion" ? `Ese día ya hay ${mismoTipo.length} reel${mismoTipo.length > 1 ? "s" : ""} para filmar.` : `Ese día ya ${mismoTipo.length === 1 ? "sale una" : `salen ${mismoTipo.length}`} ${tipo === "historia" ? "historia" : "publicación"}${mismoTipo.length > 1 ? (tipo === "historia" ? "s" : "es") : ""}.`}</div>}
     </div>
-    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-      {presets.map((h) => <Pill key={h} small on={hora === h} onClick={() => setHora(h)}>{h}</Pill>)}
-      <Inp type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ width: 104, padding: "6px 8px", fontSize: 12.5 }} />
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", borderRadius: 12, background: CARD, border: `1px solid ${BORDE}` }}>
+      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", color: GRIS }}>HORA</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Paso v={hh} onMenos={() => setHh((h) => (h + 23) % 24)} onMas={() => setHh((h) => (h + 1) % 24)} /><b style={{ fontSize: 20 }}>:</b><Paso v={mm} onMenos={() => setMm((m) => (m + 45) % 60)} onMas={() => setMm((m) => (m + 15) % 60)} /></span>
     </div>
-    <div style={{ display: "flex", gap: 8 }}><Btn kind="lima" onClick={confirmar} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : `Programar · ${new Date(dia + "T12:00:00").getDate()} ${MESES_C[new Date(dia + "T12:00:00").getMonth()]} ${hora}`}</Btn><Btn onClick={onCancelar}>Volver</Btn></div>
+    <div style={{ display: "flex", gap: 8 }}><Btn kind="lima" onClick={confirmar} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : `Programar · ${new Date(dia + "T12:00:00").getDate()} ${MESES_C[new Date(dia + "T12:00:00").getMonth()]} · ${hora}`}</Btn><Btn onClick={onCancelar}>Volver</Btn></div>
+    </>}
   </div>;
 }
 
@@ -292,7 +291,7 @@ const Ficha = ({ p }) => {
 };
 
 function Dia({ dia, lista, listas, ig, ocupado, programar, abrir }) {
-  const [sel, setSel] = useState(listas[0]?.id || ""); const [hora, setHora] = useState("12:00");
+  const [sel, setSel] = useState(listas[0]?.id || ""); const [hora, setHora] = useState("11:00");
   const fecha = new Date(dia + "T12:00:00"); const pasado = dia < claveDia(new Date());
   const elegida = listas.find((p) => p.id === sel);
   const confirmar = () => { if (!elegida) return; const [h, m] = hora.split(":").map(Number); const d = new Date(fecha); d.setHours(h, m, 0, 0); if (d.getTime() < Date.now()) { toast("Esa hora ya pasó", "warn"); return; } programar(elegida, d); };
@@ -351,7 +350,7 @@ function Detalle({ p, onCerrar, ig, ocupado, piezas, publicar, programar, despro
       {editable && cambio && <Btn kind="lima" small onClick={() => guardarTexto(p, caption, tags)} disabled={ocupado === `texto${p.id}`}>Guardar texto</Btn>}
       {p.link && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 12px", borderRadius: 12, background: SUAVE, fontSize: 12.5 }}><span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: MONO }}>{p.link}</span><Btn small onClick={() => copiar(p.link, "Link copiado")}>Copiar link</Btn></div>}
       {editable && (eligiendo
-        ? <SelectorFecha tipo={p.tipo} piezas={piezas.filter((x) => x.id !== p.id)} inicial={p.programada_at || proximoHueco(p.tipo, piezas)} ocupado={ocupado === `programar${p.id}`} onConfirmar={async (d) => { await programar(p, d); setEligiendo(false); }} onCancelar={() => setEligiendo(false)} />
+        ? <SelectorFecha tipo={p.tipo} piezas={piezas.filter((x) => x.id !== p.id)} inicial={p.programada_at || null} ocupado={ocupado === `programar${p.id}`} onConfirmar={async (d) => { await programar(p, d); setEligiendo(false); }} onCancelar={() => setEligiendo(false)} />
         : <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <Btn kind="lima" onClick={() => setEligiendo(true)}>{p.estado === "programada" ? "Cambiar la fecha" : p.tipo === "guion" ? "Agendar para filmar" : "Programar"}</Btn>
           {p.estado === "programada" && <Btn small onClick={() => desprogramar(p)}>Quitar fecha</Btn>}
