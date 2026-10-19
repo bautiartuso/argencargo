@@ -13144,7 +13144,8 @@ function FacturasPanel({token}){
   const [importe,setImporte]=useState("");const [detalle,setDetalle]=useState("Servicios logísticos");
   const [buscandoPadron,setBuscandoPadron]=useState(false);
   // Filtros de la lista
-  const [q,setQ]=useState("");const [filtro,setFiltro]=useState("todas");const [mes,setMes]=useState("");const [verTodoPorFacturar,setVerTodoPorFacturar]=useState(false);
+  const [q,setQ]=useState("");const [filtro,setFiltro]=useState("todas");const [mes,setMes]=useState(()=>hoyAR().slice(0,7));const [verTodoPorFacturar,setVerTodoPorFacturar]=useState(false);
+  const [omitidas,setOmitidas]=useState([]);const [verOmitidas,setVerOmitidas]=useState(false);
   // Nota de crédito: {f, modo:"total"|"parcial", importe, motivo}
   const [nc,setNc]=useState(null);const [emitiendoNc,setEmitiendoNc]=useState(false);const [errNc,setErrNc]=useState("");
   // Ops listas para entregar / entregadas que todavía no tienen factura emitida: se eligen de acá
@@ -13152,14 +13153,20 @@ function FacturasPanel({token}){
   const [facturables,setFacturables]=useState([]);
   const loadFacturables=async()=>{
     try{
-      const ops=await dq("operations",{token,filters:"?status=eq.entregada&select=id,operation_code,budget_total,delivery_completed_at,office_received_at,clients(first_name,last_name,client_code)&order=office_received_at.desc.nullslast&limit=200"});
+      const ops=await dq("operations",{token,filters:"?status=eq.entregada&select=id,operation_code,budget_total,delivery_completed_at,office_received_at,clients(first_name,last_name,client_code,tax_condition)&order=office_received_at.desc.nullslast&limit=200"});
       const conFactura=new Set(rows.filter(f=>f.status==="emitida"&&f.operation_id&&Number(f.tipo_cbte||11)!==13).map(f=>f.operation_id));
       setFacturables((Array.isArray(ops)?ops:[]).filter(o=>!conFactura.has(o.id)&&Number(o.budget_total)>0));
     }catch{setFacturables([]);}
   };
   useEffect(()=>{if(!lo)loadFacturables();},[lo,rows.length]);
   const COND={1:"IVA Responsable Inscripto",4:"IVA Sujeto Exento",5:"Consumidor Final",6:"Responsable Monotributo",7:"Sujeto No Categorizado",13:"Monotributista Social"};
-  const load=async()=>{setLo(true);try{const r=await fetch("/api/facturas",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json());setRows(r.facturas||[]);setConfigured(r.configured!==false);}catch{}setLo(false);};
+  const load=async()=>{setLo(true);try{const r=await fetch("/api/facturas",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json());setRows(r.facturas||[]);setConfigured(r.configured!==false);setOmitidas(Array.isArray(r.omitidas)?r.omitidas:[]);}catch{}setLo(false);};
+  // "No emitir factura": la op sale de Por facturar (se puede reponer desde "ocultas").
+  const omitir=async(o,reponer)=>{
+    if(!reponer&&!await confirmDialog(`¿No facturar ${o.operation_code} (${`${o.clients?.first_name||""} ${o.clients?.last_name||""}`.trim()})? Sale de "Por facturar"; la podés reponer desde "ocultas".`,{confirmText:"No facturar"}))return;
+    try{const r=await fetch("/api/facturas",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:reponer?"reponer":"omitir",operation_id:o.id})}).then(x=>x.json());if(r.error)throw new Error(r.error);setOmitidas(r.omitidas||[]);}
+    catch(e){toast(e.message,"error");}
+  };
   useEffect(()=>{load();},[token]);
   // TC por defecto al abrir el modal: blue del día (editable; si la op tiene cobros con TC, pisa esto).
   useEffect(()=>{if(!modal)return;(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(t=>t||String(d.venta));}}catch{}})();},[modal]);
@@ -13284,11 +13291,20 @@ function FacturasPanel({token}){
   const creditoDe=(f)=>(anuladaPor[f.id]||[]).reduce((s,n)=>s+Number(n.importe||0),0);
   const estadoDe=(f)=>{if(f.status==="error")return "error";if(f.status!=="emitida")return "pendiente";if(esNC(f))return "nc";const cr=creditoDe(f);if(cr>=Number(f.importe||0)-0.005)return "anulada";if(cr>0)return "parcial";return "emitida";};
   const mesAct=hoyAR().slice(0,7);
-  const delMes=rows.filter(f=>f.status==="emitida"&&!esNC(f)&&String(f.fecha||"").slice(0,7)===mesAct);
-  const ncMes=rows.filter(f=>f.status==="emitida"&&esNC(f)&&String(f.fecha||"").slice(0,7)===mesAct);
+  // Los números de arriba siguen al filtro de mes: el mes actual por defecto, o el total con "Todos".
+  const enMes=f=>!mes||String(f.fecha||"").slice(0,7)===mes;
+  const delMes=rows.filter(f=>f.status==="emitida"&&!esNC(f)&&enMes(f));
+  const ncMes=rows.filter(f=>f.status==="emitida"&&esNC(f)&&enMes(f));
+  const periodoTxt=!mes?"total":mes===mesAct?"este mes":mesTxtLargo(mes);
+  const omitSet=new Set(omitidas);
+  const porFacturar=facturables.filter(o=>!omitSet.has(o.id));
+  const esRI=o=>o.clients?.tax_condition==="responsable_inscripto";
+  const grupoRI=porFacturar.filter(esRI),grupoMono=porFacturar.filter(o=>!esRI(o));
+  const ocultas=facturables.filter(o=>omitSet.has(o.id));
   const totMes=delMes.reduce((a,f)=>a+Number(f.importe||0),0)-ncMes.reduce((a,f)=>a+Number(f.importe||0),0);
   const meses=[...new Set(rows.map(f=>String(f.fecha||"").slice(0,7)).filter(Boolean))].sort().reverse();
-  const mesTxt=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"short",year:"2-digit"});};
+  const mesTxt=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"short",year:"2-digit"}).replace(".","");};
+  const mesTxtLargo=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});};
   const qn=q.trim().toLowerCase();
   const lista=rows.filter(f=>{
     const est=estadoDe(f);
@@ -13307,49 +13323,63 @@ function FacturasPanel({token}){
   // ── UI ──
   const ESTADO={emitida:["Emitida","#4ade80","rgba(34,197,94,0.12)"],parcial:["Con NC parcial","#fbbf24","rgba(251,191,36,0.12)"],anulada:["Anulada","#f87171","rgba(248,113,113,0.12)"],nc:["Nota de crédito","#c4b5fd","rgba(167,139,250,0.15)"],error:["Error","#f87171","rgba(248,113,113,0.12)"],pendiente:["Pendiente","rgba(255,255,255,0.5)","rgba(255,255,255,0.06)"]};
   const chip=(k,extra)=>{const [l,c,bg]=ESTADO[k]||ESTADO.pendiente;return <span title={extra||""} style={{display:"inline-flex",alignItems:"center",fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:bg,color:c,whiteSpace:"nowrap"}}>{l}</span>;};
-  const kpi=(l,v,c,sub)=><div style={{padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",minWidth:0}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",whiteSpace:"nowrap"}}>{l}</p><p style={{fontSize:celu?17:20,fontWeight:800,color:c||"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p>{sub&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>{sub}</p>}</div>;
-  const iconBtn=(t,on,txt,color)=><button title={t} onClick={on} style={{height:32,padding:"0 10px",borderRadius:8,border:`1px solid ${color?color+"55":"rgba(255,255,255,0.1)"}`,background:color?color+"14":"rgba(255,255,255,0.03)",color:color||"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+  const kpi=(l,v,c,sub)=><div style={{padding:"11px 14px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",minWidth:0,display:"flex",flexDirection:"column",justifyContent:"center",minHeight:64}}><p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}{sub&&<span style={{marginLeft:6,textTransform:"none",letterSpacing:0,color:"rgba(255,255,255,0.35)",fontWeight:600}}>· {sub}</span>}</p><p style={{fontSize:celu?16:19,fontWeight:800,color:c||"#fff",margin:"4px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p></div>;
+  const iconBtn=(t,on,txt,color,w)=><button title={t} onClick={on} style={{height:32,width:w||"auto",padding:"0 10px",borderRadius:8,border:`1px solid ${color?color+"55":"rgba(255,255,255,0.1)"}`,background:color?color+"14":"rgba(255,255,255,0.03)",color:color||"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
   const seg=(opts,val,on)=><div style={{display:"flex",gap:3,padding:3,borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)"}}>{opts.map(([v,l])=><button key={v} type="button" onClick={()=>on(v)} style={{flex:1,height:34,fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:val===v?"rgba(184,149,106,0.25)":"transparent",color:val===v?"#fff":"rgba(255,255,255,0.55)",fontFamily:"inherit"}}>{l}</button>)}</div>;
   const paso=(n,t)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"20px 0 4px"}}><span style={{width:24,height:24,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:"rgba(184,149,106,0.2)",color:GOLD_LIGHT}}>{n}</span><p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>{t}</p></div>;
   const tab=(k,l)=><button key={k} onClick={()=>setFiltro(k)} style={{height:32,padding:"0 12px",borderRadius:8,border:"1px solid "+(filtro===k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"),background:filtro===k?"rgba(184,149,106,0.15)":"transparent",color:filtro===k?GOLD_LIGHT:"rgba(255,255,255,0.6)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}<span style={{marginLeft:6,opacity:0.6}}>{cnt(k)}</span></button>;
   const acciones=(f)=>{const est=estadoDe(f);if(f.status!=="emitida")return null;return <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:celu?"flex-start":"flex-end"}}>
-    {iconBtn(esNC(f)?"Ver nota de crédito":"Ver factura",()=>window.open(`/factura/${f.public_token}`,"_blank"),"Ver")}
-    {iconBtn("Copiar link",()=>{navigator.clipboard.writeText(`${window.location.origin}/factura/${f.public_token}`);toast("Link copiado","success");},"Link")}
-    {!esNC(f)&&(f.wa_sent_at?<span title={`Enviada el ${new Date(f.wa_sent_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`} style={{height:32,display:"inline-flex",alignItems:"center",padding:"0 8px",fontSize:12,fontWeight:800,color:"#4ade80"}}>✓ Enviada</span>:iconBtn("Mandar por WhatsApp",()=>mandarWa(f),"WhatsApp"))}
+    {iconBtn(esNC(f)?"Ver nota de crédito":"Ver factura",()=>window.open(`/factura/${f.public_token}`,"_blank"),"Ver",null,celu?undefined:48)}
+    {iconBtn("Copiar link",()=>{navigator.clipboard.writeText(`${window.location.origin}/factura/${f.public_token}`);toast("Link copiado","success");},"Link",null,celu?undefined:50)}
+    {!esNC(f)&&(f.wa_sent_at?<span title={`Enviada el ${new Date(f.wa_sent_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`} style={{height:32,width:celu?"auto":88,display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"0 8px",fontSize:12,fontWeight:800,color:"#4ade80"}}>✓ Enviada</span>:iconBtn("Mandar por WhatsApp",()=>mandarWa(f),"WhatsApp",null,celu?undefined:88))}
     {!esNC(f)&&est!=="anulada"&&iconBtn("Emitir nota de crédito contra esta factura",()=>abrirNc(f),"Nota de crédito","#f87171")}
   </div>;};
-  const COLS=celu?"1fr":"110px 70px minmax(0,1.6fr) 90px 130px 130px auto";
+  const vacio=<div style={{display:"flex",justifyContent:celu?"flex-start":"flex-end"}}/>;
+  // Anchos fijos (cada fila es su propia grilla: con "auto" cada una se ensanchaba distinto y no alineaban).
+  const COLS=celu?"1fr":"128px 64px minmax(0,1fr) 84px 140px 118px 318px";
 
   return <div>
     {/* Resumen del mes + alta */}
-    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr)) auto",gap:10,marginBottom:16,alignItems:"stretch"}}>
-      <div style={{gridColumn:celu?"1 / -1":"auto"}}>{kpi("Facturado este mes",`$ ${arsF(totMes)}`,null,ncMes.length?`neto de ${ncMes.length} nota${ncMes.length!==1?"s":""} de crédito`:null)}</div>
-      {kpi("Facturas del mes",String(delMes.length))}
-      {kpi("Notas de crédito",String(ncMes.length),ncMes.length?"#c4b5fd":"rgba(255,255,255,0.45)","este mes")}
-      {kpi("Por facturar",String(facturables.length),facturables.length?"#fbbf24":"rgba(255,255,255,0.45)","ops entregadas")}
-      <div style={{display:"flex",alignItems:"center",gridColumn:celu?"1 / -1":"auto"}}><Btn variant="gold" fullWidth={celu} onClick={()=>{setModal(true);setErr("");}}>+ Nueva factura</Btn></div>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr)) 190px",gap:8,marginBottom:14,alignItems:"stretch"}}>
+      <div style={{gridColumn:celu?"1 / -1":"auto"}}>{kpi("Facturado",`$ ${arsF(totMes)}`,null,periodoTxt+(ncMes.length?", neto de NC":""))}</div>
+      {kpi("Facturas",String(delMes.length),null,periodoTxt)}
+      {kpi("Notas de crédito",String(ncMes.length),ncMes.length?"#c4b5fd":null,periodoTxt)}
+      {kpi("Por facturar",String(porFacturar.length),porFacturar.length?"#fbbf24":null,"ops entregadas")}
+      <button onClick={()=>{setModal(true);setErr("");}} style={{gridColumn:celu?"1 / -1":"auto",minHeight:64,borderRadius:12,border:"1px solid rgba(184,149,106,0.6)",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0A1628",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 24px rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><span style={{fontSize:20,lineHeight:1}}>+</span>Nueva factura</button>
     </div>
     {!configured&&<div style={{padding:"12px 16px",marginBottom:14,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.35)",borderRadius:12,fontSize:12.5,color:"#fbbf24"}}>ARCA sin conectar: faltan ARCA_CUIT, ARCA_CERT y ARCA_KEY en Vercel.</div>}
 
     {/* Por facturar */}
-    {facturables.length>0&&<div style={{marginBottom:18,padding:"14px 16px",borderRadius:14,border:"1px solid rgba(251,191,36,0.2)",background:"rgba(251,191,36,0.04)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:10}}>
-        <p style={{fontSize:12,fontWeight:800,color:"#fbbf24",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Por facturar · {facturables.length}</p>
-        {facturables.length>8&&<button onClick={()=>setVerTodoPorFacturar(v=>!v)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{verTodoPorFacturar?"Ver menos":"Ver todas"}</button>}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
-        {(verTodoPorFacturar?facturables:facturables.slice(0,8)).map(o=>{const c=o.clients||{};return <button key={o.id} onClick={()=>abrirOp(o.operation_code)} style={{textAlign:"left",padding:"10px 12px",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",fontFamily:"inherit",minWidth:0}}>
-          <span style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span><span style={{fontSize:12,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>USD {Number(o.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></span>
+    {(porFacturar.length>0||ocultas.length>0)&&(()=>{
+      const tarjeta=(o,oculta)=>{const c=o.clients||{};return <div key={o.id} style={{display:"flex",alignItems:"stretch",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",minWidth:0,opacity:oculta?0.6:1}}>
+        <button onClick={()=>!oculta&&abrirOp(o.operation_code)} style={{flex:1,minWidth:0,textAlign:"left",padding:"9px 11px",border:"none",background:"transparent",color:"#fff",cursor:oculta?"default":"pointer",fontFamily:"inherit"}}>
+          <span style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:700,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{o.operation_code}</span><span style={{fontSize:12,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {Number(o.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></span>
           <span style={{display:"block",fontSize:13,fontWeight:700,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{`${c.first_name||""} ${c.last_name||""}`.trim()||"—"}</span>
-        </button>;})}
-      </div>
-    </div>}
+        </button>
+        <button onClick={()=>omitir(o,oculta)} title={oculta?"Volver a Por facturar":"No emitir factura"} style={{width:34,border:"none",borderLeft:"1px solid rgba(255,255,255,0.06)",background:"transparent",color:oculta?"#4ade80":"rgba(255,255,255,0.35)",fontSize:oculta?14:16,cursor:"pointer",fontFamily:"inherit",borderRadius:"0 11px 11px 0"}}>{oculta?"↺":"×"}</button>
+      </div>;};
+      const grupo=(titulo,lista,color)=><div style={{padding:"12px 14px",borderRadius:14,border:`1px solid ${color}33`,background:`${color}0a`,minWidth:0}}>
+        <p style={{fontSize:11.5,fontWeight:800,color,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{titulo} · {lista.length}</p>
+        {lista.length===0?<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Nada pendiente.</p>
+        :<div style={{display:"grid",gridTemplateColumns:celu?"1fr":"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>{(verTodoPorFacturar?lista:lista.slice(0,6)).map(o=>tarjeta(o,false))}</div>}
+        {lista.length>6&&!verTodoPorFacturar&&<button onClick={()=>setVerTodoPorFacturar(true)} style={{marginTop:8,background:"none",border:"none",color:"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>Ver las {lista.length}</button>}
+      </div>;
+      return <div style={{marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:10}}>
+          {grupo("Por facturar · Monotributistas y consumidores finales",grupoMono,"#fbbf24")}
+          {grupo("Por facturar · Responsables inscriptos",grupoRI,"#8CC8F5")}
+        </div>
+        {ocultas.length>0&&<div style={{marginTop:8}}>
+          <button onClick={()=>setVerOmitidas(v=>!v)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.45)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{verOmitidas?"▲":"▼"} {ocultas.length} sin facturar (ocultas)</button>
+          {verOmitidas&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr":"repeat(auto-fill,minmax(190px,1fr))",gap:8,marginTop:8}}>{ocultas.map(o=>tarjeta(o,true))}</div>}
+        </div>}
+      </div>;})()}
 
     {/* Filtros */}
     <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por cliente, CUIT, número u operación" style={{...inp,height:36,flex:"1 1 260px",fontSize:13}}/>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{[["todas","Todas"],["emitidas","Emitidas"],["anuladas","Anuladas"],["nc","Notas de crédito"],["errores","Errores"]].map(([k,l])=>tab(k,l))}</div>
-      {meses.length>1&&<div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{[["","Todos los meses"],...meses.slice(0,8).map(m=>[m,mesTxt(m)])].map(([m,l])=><button key={m} onClick={()=>setMes(m)} style={{height:32,padding:"0 10px",borderRadius:8,border:"1px solid "+(mes===m?"rgba(140,200,245,0.5)":"rgba(255,255,255,0.08)"),background:mes===m?"rgba(140,200,245,0.12)":"transparent",color:mes===m?"#8CC8F5":"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize"}}>{l}</button>)}</div>}
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{[["","Total"],...[...new Set([mesAct,...meses])].sort().reverse().slice(0,6).map(m=>[m,mesTxt(m)])].map(([m,l])=><button key={m} onClick={()=>setMes(m)} style={{height:32,padding:"0 10px",borderRadius:8,border:"1px solid "+(mes===m?"rgba(140,200,245,0.5)":"rgba(255,255,255,0.08)"),background:mes===m?"rgba(140,200,245,0.12)":"transparent",color:mes===m?"#8CC8F5":"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}</div>
     </div>
 
     {/* Lista */}
@@ -13370,12 +13400,12 @@ function FacturasPanel({token}){
         </div>;
         return <div key={f.id} style={{display:"grid",gridTemplateColumns:COLS,gap:12,alignItems:"center",padding:"11px 16px",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none",opacity:est==="anulada"?0.6:1,background:esNC(f)?"rgba(167,139,250,0.04)":"transparent"}}>
           <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,fontWeight:700,color:esNC(f)?"#c4b5fd":GOLD_LIGHT,whiteSpace:"nowrap"}}>{esNC(f)?"NC ":""}{nroF(f)}{f.environment!=="produccion"&&<span style={{fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",marginLeft:6,fontFamily:"inherit"}}>PRUEBA</span>}</span>
-          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{fechaF(f)}</span>
+          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fechaF(f)}</span>
           <div style={{minWidth:0}}><p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombreF}</p><p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[docF,extra].filter(Boolean).join(" · ")||" "}</p></div>
-          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(255,255,255,0.7)"}}>{f.operations?.operation_code||"—"}</span>
+          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{f.operations?.operation_code||"—"}</span>
           <span style={{fontSize:14,fontWeight:800,color:esNC(f)?"#c4b5fd":"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{esNC(f)?"−":""}$ {arsF(f.importe)}</span>
           <span>{chip(est,extra)}</span>
-          <div>{acciones(f)||<span/>}</div>
+          {acciones(f)||vacio}
         </div>;})}
     </div>}
 

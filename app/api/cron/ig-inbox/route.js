@@ -9,10 +9,10 @@
 //   · DM: el último mensaje del cliente en los últimos 30 min → DM con el texto ig_dm_text
 //     (una vez cada 7 días por persona).
 //   · Comentario de primer nivel de otra cuenta en cualquier publicación (últimos 30 min) → respuesta
-//     pública ig_comment_text + DM privado (misma regla de 7 días). Dedupe por comment_id.
+//     pública ig_comment_text + DM privado (uno por comentario, tope uno cada 24 h por persona). Dedupe por comment_id.
 // ?dry=1 devuelve qué contestaría sin mandar nada.
 
-import { igBotConfig, igTexts, igClaimEvent, igClaimUser, igReleaseUser, igSendDm, igPrivateReply, igPublicReply, igBumpStats } from "../../../../lib/ig";
+import { igBotConfig, igTexts, igClaimEvent, igClaimUser, igClaimCommentDm, igMarkUser, igReleaseUser, igSendDm, igPrivateReply, igPublicReply, igBumpStats } from "../../../../lib/ig";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -72,9 +72,9 @@ export async function GET(req) {
         if (!(await igClaimEvent("comment", cm.id))) continue;
         const pr = await igPublicReply(cfg, cm.id, textos.comment_text);
         if (pr.ok) await igBumpStats("comentarios"); else hecho.errores.push(`respuesta pública ${cm.id}: ${pr.error}`);
-        if (await igClaimUser(autor)) {
+        if (await igClaimCommentDm(autor)) {
           const dr = await igPrivateReply(cfg, cm.id, textos.dm_text);
-          if (dr.ok) await igBumpStats("dms"); else { await igReleaseUser(autor); hecho.errores.push(`privado ${cm.id}: ${dr.error}`); }
+          if (dr.ok) { await igBumpStats("dms"); await igMarkUser(autor); } else hecho.errores.push(`privado ${cm.id}: ${dr.error}`);
         }
         hecho.comentarios.push(cm.username || autor);
       }

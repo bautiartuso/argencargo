@@ -6,7 +6,7 @@
 //                        7 días por usuario). Se ignoran ecos propios, reacciones y leídos.
 //   · Comentario ajeno → respuesta pública "ig_comment_text" debajo del comentario (solo en
 //                        comentarios de primer nivel) + DM privado al autor con el mismo texto
-//                        del DM (misma regla de 7 días). Dedupe por id de comentario.
+//                        del DM (uno por comentario, tope uno cada 24 h por persona). Dedupe por comentario.
 // Los dos textos se editan en el admin → solapa Bot → Instagram (cs_settings).
 //
 // GET  → verificación del webhook de Meta (hub.challenge, IG_VERIFY_TOKEN).
@@ -42,7 +42,7 @@
 import crypto from "crypto";
 import { waitUntil } from "@vercel/functions";
 import { tgAlert } from "../../../../lib/telegram";
-import { igBotConfig, igTexts, igClaimEvent, igClaimUser, igReleaseUser, igSendDm, igPrivateReply, igPublicReply, igBumpStats } from "../../../../lib/ig";
+import { igBotConfig, igTexts, igClaimEvent, igClaimUser, igClaimCommentDm, igMarkUser, igReleaseUser, igSendDm, igPrivateReply, igPublicReply, igBumpStats } from "../../../../lib/ig";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -131,9 +131,9 @@ async function procesar(entries) {
         if (pr.ok) await igBumpStats("comentarios"); else await reportarError("respuesta pública", pr.error);
       }
       // DM privado al autor (misma regla de 7 días que los DMs).
-      if (autor && (await igClaimUser(autor))) {
+      if (autor && (await igClaimCommentDm(autor))) {
         const dr = await igPrivateReply(cfg, cid, textos.dm_text);
-        if (dr.ok) await igBumpStats("dms"); else { await igReleaseUser(autor); await reportarError("DM privado por comentario", dr.error); }
+        if (dr.ok) { await igBumpStats("dms"); await igMarkUser(autor); } else await reportarError("DM privado por comentario", dr.error);
       }
     }
   }

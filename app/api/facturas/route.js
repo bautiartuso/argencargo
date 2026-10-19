@@ -1,5 +1,7 @@
 // GET  /api/facturas?operation_id=… | ?limit=…  → facturas emitidas (admin)
 // POST /api/facturas → emite una Factura C vía ARCA y la guarda (admin)
+// POST /api/facturas {action:"omitir"|"reponer", operation_id} → marca/desmarca una op como "no se factura"
+//   (cs_settings facturas_omitidas, lista de ids) para que salga de "Por facturar".
 // POST /api/facturas {action:"nota_credito", invoice_id, importe?, motivo} → Nota de Crédito C (tipo 13)
 //   asociada a esa factura, por el total (default) o parcial. Queda en invoices con tipo_cbte 13 y
 //   anula_id = la factura (si la columna no existe todavía, la referencia va en el detalle).
@@ -36,6 +38,15 @@ async function isAdmin(req) {
   } catch { return false; }
 }
 
+async function omitidas() {
+  const r = await sb(`/cs_settings?key=eq.facturas_omitidas&select=value`);
+  const v = Array.isArray(r.body) && r.body[0] ? r.body[0].value : null;
+  return Array.isArray(v) ? v : [];
+}
+async function guardarOmitidas(lista) {
+  await sb(`/cs_settings?on_conflict=key`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "facturas_omitidas", value: lista.slice(0, 2000), updated_at: new Date().toISOString() }) });
+}
+
 export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
@@ -44,7 +55,7 @@ export async function GET(req) {
   const filt = opId ? `operation_id=eq.${opId}&` : "";
   const r = await sb(`/invoices?${filt}select=*,operations(operation_code),clients(first_name,last_name,client_code)&order=created_at.desc&limit=${limit}`);
   if (r.status >= 400) return Response.json({ error: JSON.stringify(r.body || "").slice(0, 200) }, { status: 500 });
-  return Response.json({ facturas: Array.isArray(r.body) ? r.body : [], configured: arcaReady() });
+  return Response.json({ facturas: Array.isArray(r.body) ? r.body : [], configured: arcaReady(), omitidas: await omitidas() });
 }
 
 const pad = (n, l) => String(n ?? 0).padStart(l, "0");
@@ -87,8 +98,16 @@ async function notaCredito(body) {
 
 export async function POST(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
-  if (!arcaReady()) return Response.json({ error: "ARCA sin configurar: faltan ARCA_CUIT / ARCA_CERT / ARCA_KEY en Vercel" }, { status: 500 });
   let body = null; try { body = await req.json(); } catch {}
+  if (body?.action === "omitir" || body?.action === "reponer") {
+    const id = String(body.operation_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: "Operación inválida" }, { status: 400 });
+    const lista = (await omitidas()).filter((x) => x !== id);
+    if (body.action === "omitir") lista.unshift(id);
+    await guardarOmitidas(lista);
+    return Response.json({ ok: true, omitidas: lista });
+  }
+  if (!arcaReady()) return Response.json({ error: "ARCA sin configurar: faltan ARCA_CUIT / ARCA_CERT / ARCA_KEY en Vercel" }, { status: 500 });
   if (body?.action === "nota_credito") return notaCredito(body);
   const docTipo = Number(body?.doc_tipo);
   const importe = Math.round(Number(body?.importe) * 100) / 100;
