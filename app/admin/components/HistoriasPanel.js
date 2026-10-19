@@ -145,14 +145,14 @@ export default function HistoriasPanel({ token }) {
               <button disabled={ocupado} onClick={() => publicarApi(g)} style={BTN()}>Publicar por la API</button>
             </div>
             <div style={{ display: "flex", gap: 14, marginTop: 10, justifyContent: "center" }}>
-              {g.captura && <button onClick={() => setEncuadre(enc ? null : { url: g.url, bbox: g.bbox || { x0: 0, y0: 0, x1: 100, y1: 100 } })} style={LINK()}>{enc ? "Ocultar encuadre" : "Encuadre"}</button>}
+              {g.captura && <button onClick={() => setEncuadre(enc ? null : { url: g.url, bbox: { yf: 0, ...(g.bbox || { x0: 0, y0: 0, x1: 100, y1: 100 }) } })} style={LINK()}>{enc ? "Ocultar encuadre" : "Encuadre"}</button>}
               <button disabled={ocupado} onClick={() => descartar(g)} style={LINK("rgba(255,255,255,0.45)")}>Descartar</button>
             </div>
             {enc && <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
-                {[["y0", "Arriba"], ["y1", "Abajo"], ["x0", "Izq."], ["x1", "Der."]].map(([k, l]) => <div key={k}><label style={LBL}>{l} %</label><input inputMode="decimal" style={INP} value={enc.bbox[k]} onChange={(e) => setEncuadre((p) => ({ ...p, bbox: { ...p.bbox, [k]: e.target.value } }))} /></div>)}
+                {[["y0", "Arriba"], ["y1", "Abajo"], ["x0", "Izq."], ["x1", "Der."], ["yf", "Foto hasta"]].map(([k, l]) => <div key={k}><label style={LBL}>{l} %</label><input inputMode="decimal" style={INP} value={enc.bbox[k]} onChange={(e) => setEncuadre((p) => ({ ...p, bbox: { ...p.bbox, [k]: e.target.value } }))} /></div>)}
               </div>
-              <button disabled={ocupado} onClick={() => rehacer(g, { x0: num(enc.bbox.x0), y0: num(enc.bbox.y0), x1: num(enc.bbox.x1), y1: num(enc.bbox.y1) })} style={BTN("sky", { marginTop: 10 })}>{ocupado ? "Armando…" : "↻ Rehacer"}</button>
+              <button disabled={ocupado} onClick={() => rehacer(g, { x0: num(enc.bbox.x0), y0: num(enc.bbox.y0), x1: num(enc.bbox.x1), y1: num(enc.bbox.y1), yf: num(enc.bbox.yf) })} style={BTN("sky", { marginTop: 10 })}>{ocupado ? "Armando…" : "↻ Rehacer"}</button>
             </div>}
           </div>; })}
         </div>}
