@@ -9303,8 +9303,10 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     const nuevo={};
     await Promise.all(faltan.map(async(c)=>{
       const busca=async(f)=>{const r=await dq("ncm_database",{token,filters:`?${f}&select=ncm_code,die,te,iva&limit=10`});return Array.isArray(r)&&r.length?r.reduce((m,x)=>Number(x.die||0)>Number(m.die||0)?x:m,r[0]):null;};
+      // ncm_database guarda los códigos con puntos (8528.59.00).
+      const con=[c.slice(0,4),c.slice(4,6),c.slice(6,8)].filter(Boolean).join(".");
       let h=null;
-      try{h=await busca(`ncm_code=eq.${c}`)||await busca(`ncm_code=like.${c.slice(0,6)}*`)||await busca(`ncm_code=like.${c.slice(0,4)}*`);}catch(e){}
+      try{h=await busca(`ncm_code=eq.${con}`)||await busca(`ncm_code=like.${con.slice(0,7)}*`)||await busca(`ncm_code=like.${c.slice(0,4)}*`);}catch(e){}
       nuevo[c]=h?{die:Number(h.die||0),te:Number(h.te||0),iva:Number(h.iva??21)}:null;
     }));
     setAlic(p=>({...p,...nuevo}));
