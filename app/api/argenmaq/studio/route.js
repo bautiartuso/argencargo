@@ -9,7 +9,7 @@
 //   POST {accion:"celular", id}                    → la manda por Telegram con el link, para subirla a mano con sticker
 //   POST {accion:"descartar", id} · {accion:"texto", id, caption, hashtags}
 //   POST {accion:"ig_conectar", token} · {accion:"ig_desconectar"}
-import { candidatos, sbq, quien, igCfg, igGuardar, subirImagen, publicarPieza, mandarAlCelular } from "../../../../lib/studio-argenmaq";
+import { candidatos, sbq, quien, igCfg, igGuardar, igRenovar, subirImagen, publicarPieza, mandarAlCelular } from "../../../../lib/studio-argenmaq";
 import { igConnect } from "../../../../lib/studio";
 
 export const dynamic = "force-dynamic";
@@ -73,8 +73,9 @@ export async function POST(req) {
     if (b.accion === "desprogramar") return Response.json({ ok: true, pieza: await patch(b.id, { estado: "aprobada", programada_at: null, error: null }) });
     if (b.accion === "texto") return Response.json({ ok: true, pieza: await patch(b.id, { caption: String(b.caption || "").slice(0, 2200), hashtags: String(b.hashtags || "").slice(0, 500) }) });
     if (b.accion === "publicar") {
-      const cfg = await igCfg();
+      let cfg = await igCfg();
       if (!cfg?.ig_user_id || !cfg?.access_token) return err("Primero conectá el Instagram de ARGENMAQ.");
+      cfg = await igRenovar(cfg);
       const p = await unaPieza(b.id); if (!p) return err("No existe la pieza", 404);
       if (p.estado === "publicada") return err("Ya está publicada");
       try { return Response.json({ ok: true, pieza: await publicarPieza(p, cfg) }); }
