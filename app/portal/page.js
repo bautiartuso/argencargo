@@ -8,6 +8,7 @@ import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
 import MaritimeCargoCards from "./components/MaritimeCargoCards";
 import { useT, LANGS } from "../../lib/i18n-portal";
+import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 import { armarDatosPortal, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import SupportPage from "./components/SupportPage";
 import { hoyAR } from "../../lib/fecha-ar";
@@ -116,6 +117,13 @@ const docsCerradas=(op,inFlight)=>!!op.docs_confirmed_at||!!inFlight||Number(op.
 // directa a domicilio (misma regla que esRiDir del admin). En "entregada" no corresponde decir
 // "Lista para retirar": ya la tiene; lo que queda es el pago (19/10/2026).
 const entregadaDirecta=(op,client)=>!!op.delivery_completed_at||(op.channel==="aereo_blanco"&&op.ri_entrega_directa!==false&&(op.ri_entrega_directa===true||client?.tax_condition==="responsable_inscripto"));
+// Seguimiento del courier en el portal (19/10/2026): de prueba, solo para DIEMAG en ops creadas desde
+// hoy (más AC-0293 explícita). El resto sigue viendo las novedades mezcladas como hasta ahora.
+const SEG_COURIER={desde:"2026-10-19",clientes:["DIEMAG"],ops:["AC-0293"]};
+const muestraCourier=(op,client)=>!!op?.international_tracking&&!!op?.international_carrier&&(SEG_COURIER.ops.includes(op.operation_code)||(SEG_COURIER.clientes.includes(client?.client_code)&&String(op.created_at||"").slice(0,10)>=SEG_COURIER.desde));
+const courierKey=(c)=>{const x=String(c||"").toLowerCase();return x.includes("dhl")?"dhl":x.includes("fedex")?"fedex":x.includes("ups")?"ups":null;};
+const courierUrl=(c,n)=>({dhl:`https://www.dhl.com/ar-es/home/tracking/tracking-express.html?submit=1&tracking-id=${encodeURIComponent(n)}`,fedex:`https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(n)}`,ups:`https://www.ups.com/track?tracknum=${encodeURIComponent(n)}`})[courierKey(c)]||null;
+const courierNombre=(c)=>({dhl:"DHL",fedex:"FedEx",ups:"UPS"})[courierKey(c)]||String(c||"");
 const stLabelOf=(op,t,client)=>op.status==="en_preparacion"&&op.docs_confirmed_at?t("opStatus.prep_confirmed"):op.status==="entregada"&&entregadaDirecta(op,client)?t("ol.delivered"):(SM[op.status]?t(SM[op.status].tk):op.status);
 const banderaOrigen=(o)=>({USA:"🇺🇸","España":"🇪🇸","Pakistán":"🇵🇰",Bangladesh:"🇧🇩"})[o]||"🇨🇳";
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
@@ -851,9 +859,12 @@ function OperationDetail({op:opProp,token,client,onBack}){
   setDeclaredItems(Array.isArray(fii)?fii:[]);
 
   setInFlight(Array.isArray(fl)&&fl.length>0);
+  const conCourier=muestraCourier(op,client);
   setRepackInfo(Array.isArray(rk)&&rk[0]?rk[0]:null);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
   if(e.source==="internal"&&String(e.title||"").startsWith("Estado actualizado"))return false;
+  // Con el bloque del courier se muestran TODOS sus movimientos (hasta el "datos recibidos")
+  if(conCourier&&e.source!=="internal")return true;
   // Filtrar eventos de pre-clearance aduanero de DHL: marcan location ARGENTINA aunque la carga esté en origen
   if(e.source==="dhl"&&String(e.description||"").toLowerCase().includes("customs clearance status updated"))return false;
   // Filtrar eventos DHL con title "SD" (Shipment Data — meta-evento sin valor real)
@@ -1194,9 +1205,28 @@ function OperationDetail({op:opProp,token,client,onBack}){
       </div>}
 
       {/* SEGUIMIENTO */}
-      {tabCur==="seg"&&<div style={PANEL}>
+      {tabCur==="seg"&&(()=>{const conCourier=muestraCourier(op,client);const evCourier=conCourier?events.filter(e=>e.source!=="internal"):[];const evNov=conCourier?events.filter(e=>e.source==="internal"):events;const ck=courierKey(op.international_carrier);const lg=ck?CARRIER_LOGOS[ck]:null;const cn=courierNombre(op.international_carrier);
+        // Título legible: DHL manda códigos ("SD") con la explicación en description.
+        const tituloEv=(e)=>{const tt=String(e.title||"").trim();return /^[A-Z]{1,3}$/.test(tt)&&e.description?e.description:tt||e.description||"";};
+        return <div style={PANEL}>
         <h3 style={{...H3,marginBottom:14}}>Seguimiento</h3>
-        {events.length===0&&pmts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("op.noNews")}</p>}
+        {conCourier&&<div style={{marginBottom:18,padding:"14px 16px",borderRadius:14,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              {lg&&<span style={{width:40,height:40,borderRadius:10,background:lg.bg,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg viewBox={lg.vb} width="30" height="30" style={{display:"block"}}><path d={lg.d} fill={lg.fill}/></svg></span>}
+              <div style={{minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{t("op.courierTrack").replace("{carrier}",cn)}</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{op.international_tracking}</p></div>
+            </div>
+            {courierUrl(op.international_carrier,op.international_tracking)&&<a href={courierUrl(op.international_carrier,op.international_tracking)} target="_blank" rel="noopener noreferrer" style={{fontSize:12,fontWeight:700,color:SKY,textDecoration:"none",border:"1px solid rgba(140,200,245,0.35)",borderRadius:999,padding:"6px 12px",whiteSpace:"nowrap"}}>{t("op.courierSee").replace("{carrier}",cn)} ↗</a>}
+          </div>
+          {evCourier.length===0?<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>{t("op.courierNoMoves").replace("{carrier}",cn)}</p>
+          :<div style={{position:"relative",paddingLeft:22}}><div style={{position:"absolute",left:6,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.1)"}}/>
+            {evCourier.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<evCourier.length-1?14:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?SKY:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(140,200,245,0.2)":"none"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><p style={{fontSize:13.5,fontWeight:700,color:i===0?"#fff":"rgba(255,255,255,0.7)",margin:0}}>{tituloEv(ev)}</p><p style={{fontSize:11.5,color:SKY,margin:0,fontWeight:600,whiteSpace:"nowrap"}}>{ev.occurred_at?new Date(ev.occurred_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p></div>
+              {(ev.location||(ev.description&&tituloEv(ev)!==ev.description))&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"2px 0 0",lineHeight:1.45}}>{tituloEv(ev)!==ev.description&&ev.description?ev.description:""}{ev.location?`${tituloEv(ev)!==ev.description&&ev.description?" · ":""}${ev.location}`:""}</p>}
+            </div>)}
+          </div>}
+        </div>}
+        {evNov.length===0&&pmts.length===0&&!conCourier&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("op.noNews")}</p>}
         {pmts.length>0&&<div>
           <p style={{...LBL,marginBottom:8}}>{t("op.supplierPayments")}</p>
           {pmts.map((pm,i)=>{const gs={pendiente:["Pendiente","#fbbf24"],enviado:["Enviado",SKY],confirmado:["Confirmado","#4ade80"]}[pm.giro_status]||[pm.giro_status,"#fff"];return <div key={pm.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none"}}>
@@ -1204,16 +1234,16 @@ function OperationDetail({op:opProp,token,client,onBack}){
             <span style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:pm.client_paid?"#4ade80":"#fbbf24",background:pm.client_paid?"rgba(74,222,128,0.12)":"rgba(251,191,36,0.12)"}}>{pm.client_paid?"Pagado":t("op.paymentPending")}</span><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:gs[1],background:`${gs[1]}1f`}}>Giro {gs[0]}</span><span style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(pm.client_amount_usd)}</span></span>
           </div>;})}
         </div>}
-        {events.length>0&&<div style={{marginTop:pmts.length?20:0,paddingTop:pmts.length?16:0,borderTop:pmts.length?HAIR:"none"}}>
+        {evNov.length>0&&<div style={{marginTop:pmts.length?20:0,paddingTop:pmts.length?16:0,borderTop:pmts.length?HAIR:"none"}}>
           <p style={{...LBL,marginBottom:12}}>Novedades</p>
           <div style={{position:"relative",paddingLeft:22}}><div style={{position:"absolute",left:6,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.1)"}}/>
-            {events.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<events.length-1?16:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?GOLD_LIGHT:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(232,208,152,0.2)":"none"}}/>
+            {evNov.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<evNov.length-1?16:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?GOLD_LIGHT:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(232,208,152,0.2)":"none"}}/>
               <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><p style={{fontSize:13.5,fontWeight:700,color:i===0?"#fff":"rgba(255,255,255,0.65)",margin:0}}>{ev.title}</p><p style={{fontSize:11.5,color:SKY,margin:0,fontWeight:600,whiteSpace:"nowrap"}}>{ev.occurred_at?new Date(ev.occurred_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p></div>
               {ev.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"2px 0 0",lineHeight:1.45}}>{ev.description}{ev.location?` · ${ev.location}`:""}</p>}
             </div>)}
           </div>
         </div>}
-      </div>}
+      </div>;})()}
 
       {/* COSTO POR PRODUCTO */}
       {tabCur==="costos"&&<div style={PANEL}>
