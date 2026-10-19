@@ -8,6 +8,7 @@ import { C, I, Icon, pushToast, Sheet, SectionTitle, Label, MiniStat, card, fiel
 import { ensurePush } from "./fisico";
 import { adjustTarget, plannedBurn, cardioOn, sportName } from "./score";
 import { searchFoods, foodItem, normFood, portionUnit, unitLabel } from "./foods";
+import { OffSearch, BarcodeScanner, offFetch } from "./scan";
 
 const MEALS = [["desayuno", "Desayuno"], ["almuerzo", "Almuerzo"], ["merienda", "Merienda"], ["cena", "Cena"], ["snacks", "Snacks"]];
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -235,6 +236,8 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
   const [pick, setPick] = useState(null);          // alimento de la base elegido, eligiendo cantidad
   const [grams, setGrams] = useState("");
   const [units, setUnits] = useState("");          // cantidad en unidades/porciones (si la porción se puede contar)
+  const [off, setOff] = useState(null);            // "search" | "scan" | { product } elegido de Open Food Facts
+  const [offG, setOffG] = useState("");
   const [recent, setRecent] = useState([]);
   const [favs, setFavs] = useState(() => favsGet());
   const [busy, setBusy] = useState(false);
@@ -256,6 +259,10 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
   const setG = (v) => { setGrams(v); const g = Number(String(v).replace(",", ".")) || 0; if (pu) setUnits(g && Math.abs(g / pu.grams - Math.round(g / pu.grams * 4) / 4) < 0.01 ? String(Math.round(g / pu.grams * 4) / 4).replace(".", ",") : ""); };
   const uN = Number(String(units).replace(",", ".")) || 0;
   const qtyText = pu && uN ? `${fmtU(uN)} ${unitLabel(uN, pu.unit)} (${Math.round(uN * pu.grams)} g)` : null;
+  // Producto de Open Food Facts → alimento con macros para esos gramos.
+  const offItem = (prod, grams) => { const k = grams / 100, r = (v) => Math.round((v || 0) * k * 10) / 10; return { name: prod.brand ? `${prod.name} (${prod.brand})` : prod.name, qty: prod.serving_g && Math.abs(grams - prod.serving_g) < 0.5 ? `1 porción (${grams} g)` : `${grams} g`, kcal: Math.round((prod.per100.kcal || 0) * k), protein_g: r(prod.per100.p), carbs_g: r(prod.per100.c), fat_g: r(prod.per100.g) }; };
+  const pickOff = (prod) => { if (prod.per100.kcal == null) return pushToast("Ese producto no tiene la tabla nutricional cargada"); setOff({ product: prod }); setOffG(String(prod.serving_g || 100)); setPick(null); setQ(""); };
+  const scanned = async (code) => { setOff("loading"); const r = await offFetch(token, { code }); if (r.product) pickOff(r.product); else { setOff(null); pushToast(r.error || "No lo encontré"); } };
   const ai = async () => {
     if (!q.trim()) return pushToast("Escribí qué comiste");
     setBusy(true);
@@ -272,12 +279,30 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
   </button>;
 
   return <Sheet title={title} onClose={onClose} tall>
-    <div style={{ position: "relative" }}>
-      <input autoFocus value={q} onChange={e => { setQ(e.target.value); setPick(null); }} placeholder="Buscá un alimento o escribí lo que comiste" autoComplete="off" autoCorrect="off" style={{ ...field, paddingRight: q ? 40 : 14 }} />
-      {q && <button onClick={() => { setQ(""); setPick(null); }} aria-label="Borrar" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.dim, fontSize: 20, padding: 4 }}>×</button>}
+    <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ position: "relative", flex: 1 }}>
+        <input autoFocus value={q} onChange={e => { setQ(e.target.value); setPick(null); setOff(null); }} placeholder="Buscá un alimento o escribí lo que comiste" autoComplete="off" autoCorrect="off" style={{ ...field, paddingRight: q ? 40 : 14 }} />
+        {q && <button onClick={() => { setQ(""); setPick(null); }} aria-label="Borrar" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.dim, fontSize: 20, padding: 4 }}>×</button>}
+      </div>
+      <button className="k-press" onClick={() => setOff("scan")} aria-label="Escanear código de barras" style={{ ...btnGhost, width: 50, padding: 0, color: C.lime, flexShrink: 0 }}><Icon d={I.scan} size={22} /></button>
     </div>
 
-    {pick ? <div style={{ ...card, marginTop: 10, background: C.cardHi }}>
+    {off?.product ? <div style={{ ...card, marginTop: 10, background: C.cardHi }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {off.product.image && <img src={off.product.image} alt="" style={{ width: 52, height: 52, borderRadius: 12, objectFit: "cover", background: "#fff", flexShrink: 0 }} />}
+        <span style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 16, fontWeight: 600, display: "block" }}>{off.product.name}</span><span className="k-num" style={{ fontSize: 12.5, color: C.sub }}>{[off.product.brand, off.product.quantity].filter(Boolean).join(" · ")} · por 100 g: {Math.round(off.product.per100.kcal)} kcal · P {off.product.per100.p ?? "?"} · C {off.product.per100.c ?? "?"} · G {off.product.per100.g ?? "?"}</span></span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+        {[off.product.serving_g && [`1 porción (${off.product.serving_g} g)`, off.product.serving_g], ["50 g", 50], ["100 g", 100], ["200 g", 200]].filter(Boolean).map(([l, v]) => <button key={l} onClick={() => setOffG(String(v))} className="k-press" style={{ padding: "7px 11px", borderRadius: 999, fontSize: 13, border: `0.5px solid ${Number(offG) === v ? C.lime : C.line}`, background: Number(offG) === v ? C.lime : C.card, color: Number(offG) === v ? C.limeInk : C.text, fontWeight: Number(offG) === v ? 600 : 400 }}>{l}</button>)}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+        <div style={{ ...field, flex: 1, display: "flex", alignItems: "center", gap: 6, background: C.card }}><input inputMode="decimal" value={offG} onChange={e => setOffG(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="gramos" className="k-num" style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: C.text, fontSize: 16 }} /><span style={{ color: C.sub }}>g</span></div>
+        <button className="k-press" onClick={() => { const gg = Number(String(offG).replace(",", ".")) || 0; if (!gg) return pushToast("Poné la cantidad"); add(offItem(off.product, gg)); setOff(null); }} style={{ ...btnLime, width: "auto", padding: "13px 18px" }}>Sumar</button>
+      </div>
+      {(Number(String(offG).replace(",", ".")) || 0) > 0 && <div className="k-num" style={{ fontSize: 13, color: C.sub, marginTop: 10 }}>{(it => <>{it.kcal} kcal · P {it.protein_g} · C {it.carbs_g} · G {it.fat_g}</>)(offItem(off.product, Number(String(offG).replace(",", ".")) || 0))}</div>}
+    </div>
+    : off === "loading" ? <Skel h={110} r={20} style={{ marginTop: 10 }} />
+    : pick ? <div style={{ ...card, marginTop: 10, background: C.cardHi }}>
       <div style={{ fontSize: 16, fontWeight: 600 }}>{pick[0]}</div>
       <div className="k-num" style={{ fontSize: 12.5, color: C.sub, marginTop: 2 }}>por 100 g: {pick[1]} kcal · P {pick[2]} · C {pick[3]} · G {pick[4]}</div>
       {pu && <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
@@ -307,13 +332,18 @@ function AddFood({ token, title, onClose, onAdd, planOption }) {
           <Icon d={I.plus} size={16} color={C.lime} />
         </button>)}
       </div>}
-      <button className="k-press" onClick={ai} disabled={busy} style={{ ...btnGhost, marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, borderColor: results.length ? C.line : "rgba(198,244,50,0.4)" }}><Icon d={I.spark} size={16} color={C.lime} />{busy ? "Calculando…" : results.length ? "No está: calcular con IA" : `Calcular "${q.trim().slice(0, 28)}" con IA`}</button>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+        <button className="k-press" onClick={() => setOff("search")} style={{ ...btnGhost, padding: "12px 8px", fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Icon d={I.search} size={15} />Marcas y productos</button>
+        <button className="k-press" onClick={ai} disabled={busy} style={{ ...btnGhost, padding: "12px 8px", fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, borderColor: results.length ? C.line : "rgba(198,244,50,0.4)" }}><Icon d={I.spark} size={15} color={C.lime} />{busy ? "Calculando…" : "Calcular con IA"}</button>
+      </div>
     </div>
     : <>
       {favs.length > 0 && <><Label>Favoritos</Label><div style={{ ...card, padding: "2px 14px" }}>{favs.map((it, i) => quick(it, i, favs))}</div></>}
       {recent.length > 0 && <><Label>Recientes</Label><div style={{ ...card, padding: "2px 14px" }}>{recent.map((it, i) => quick(it, i, recent))}</div></>}
-      {!favs.length && !recent.length && <div style={{ fontSize: 13, color: C.dim, margin: "12px 2px 0", lineHeight: 1.5 }}>Empezá a escribir: pollo, arroz, huevo… Lo que sumes seguido queda en Recientes, y con la estrella lo guardás en Favoritos.</div>}
+      {!favs.length && !recent.length && <div style={{ fontSize: 13, color: C.dim, margin: "12px 2px 0", lineHeight: 1.5 }}>Empezá a escribir: pollo, arroz, huevo… Lo que sumes seguido queda en Recientes, y con la estrella lo guardás en Favoritos. Con el código de barras cargás cualquier producto envasado.</div>}
     </>}
+    {off === "search" && <OffSearch token={token} type="food" initial={q} onPick={pickOff} onClose={() => setOff(null)} />}
+    {off === "scan" && <BarcodeScanner onCode={scanned} onClose={() => setOff(null)} />}
 
     {items.length > 0 && <>
       <Label>Vas sumando</Label>
@@ -523,23 +553,71 @@ function Supps({ token, n }) {
   </>;
 }
 
-// Suplementos comunes con su unidad y dosis por toma habitual (el "Otro" deja escribir cualquiera).
+// Suplementos comunes con su unidad y dosis por toma habitual, por grupo. "Otro" deja escribir cualquiera.
 const COMMON = [
-  ["Creatina", "g", 5], ["Magnesio", "mg", 300], ["Omega 3", "cápsulas", 1], ["Vitamina D3", "UI", 2000], ["Multivitamínico", "comprimidos", 1],
-  ["Zinc", "mg", 15], ["ZMA", "cápsulas", 3], ["Pre-entreno", "scoop", 1], ["Cafeína", "mg", 200], ["BCAA", "g", 5], ["EAA", "g", 10],
-  ["Glutamina", "g", 5], ["Beta-alanina", "g", 3], ["Citrulina", "g", 6], ["Taurina", "g", 1], ["Electrolitos", "scoop", 1],
-  ["L-teanina", "mg", 200], ["Ashwagandha", "mg", 600], ["Melatonina", "mg", 3], ["Colágeno", "g", 10], ["Vitamina C", "mg", 500],
-  ["Vitamina B12", "mcg", 1000], ["Hierro", "mg", 18], ["Calcio", "mg", 500], ["Probióticos", "cápsulas", 1], ["Psyllium", "g", 5],
+  // Rendimiento
+  ["Creatina", "g", 5, "Rendimiento"], ["Creatina HCl", "g", 2, "Rendimiento"], ["Beta-alanina", "g", 3, "Rendimiento"], ["Citrulina", "g", 6, "Rendimiento"], ["L-arginina", "g", 3, "Rendimiento"],
+  ["Pre-entreno", "scoop", 1, "Rendimiento"], ["Cafeína", "mg", 200, "Rendimiento"], ["Taurina", "g", 1, "Rendimiento"], ["BCAA", "g", 5, "Rendimiento"], ["EAA", "g", 10, "Rendimiento"],
+  ["Glutamina", "g", 5, "Rendimiento"], ["HMB", "g", 3, "Rendimiento"], ["L-carnitina", "g", 2, "Rendimiento"], ["Electrolitos", "scoop", 1, "Rendimiento"], ["Bicarbonato de sodio", "g", 15, "Rendimiento"],
+  // Vitaminas
+  ["Multivitamínico", "comprimidos", 1, "Vitaminas"], ["Vitamina D3", "UI", 2000, "Vitaminas"], ["Vitamina D3 + K2", "cápsulas", 1, "Vitaminas"], ["Vitamina C", "mg", 500, "Vitaminas"], ["Vitamina B12", "mcg", 1000, "Vitaminas"],
+  ["Complejo B", "comprimidos", 1, "Vitaminas"], ["Vitamina B6", "mg", 25, "Vitaminas"], ["Ácido fólico", "mcg", 400, "Vitaminas"], ["Biotina", "mcg", 2500, "Vitaminas"], ["Vitamina E", "UI", 400, "Vitaminas"],
+  ["Vitamina A", "UI", 5000, "Vitaminas"], ["Vitamina K2", "mcg", 100, "Vitaminas"],
+  // Minerales
+  ["Magnesio", "mg", 300, "Minerales"], ["Magnesio glicinato", "mg", 400, "Minerales"], ["Zinc", "mg", 15, "Minerales"], ["ZMA", "cápsulas", 3, "Minerales"], ["Hierro", "mg", 18, "Minerales"],
+  ["Calcio", "mg", 500, "Minerales"], ["Potasio", "mg", 99, "Minerales"], ["Selenio", "mcg", 100, "Minerales"], ["Cromo", "mcg", 200, "Minerales"], ["Yodo", "mcg", 150, "Minerales"],
+  // Grasas y articulaciones
+  ["Omega 3", "cápsulas", 1, "Grasas y articulaciones"], ["Aceite de pescado", "cápsulas", 2, "Grasas y articulaciones"], ["Aceite de krill", "cápsulas", 1, "Grasas y articulaciones"], ["Colágeno", "g", 10, "Grasas y articulaciones"],
+  ["Glucosamina", "mg", 1500, "Grasas y articulaciones"], ["Condroitina", "mg", 1200, "Grasas y articulaciones"], ["MSM", "g", 2, "Grasas y articulaciones"], ["Cúrcuma", "mg", 500, "Grasas y articulaciones"],
+  // Sueño y cabeza
+  ["L-teanina", "mg", 200, "Sueño y cabeza"], ["Melatonina", "mg", 3, "Sueño y cabeza"], ["Ashwagandha", "mg", 600, "Sueño y cabeza"], ["Glicina", "g", 3, "Sueño y cabeza"], ["Rhodiola", "mg", 300, "Sueño y cabeza"],
+  ["Ginseng", "mg", 400, "Sueño y cabeza"], ["L-tirosina", "mg", 500, "Sueño y cabeza"], ["Colina", "mg", 500, "Sueño y cabeza"], ["Inositol", "g", 2, "Sueño y cabeza"],
+  // Digestivo y otros
+  ["Probióticos", "cápsulas", 1, "Digestivo y otros"], ["Psyllium", "g", 5, "Digestivo y otros"], ["Enzimas digestivas", "cápsulas", 1, "Digestivo y otros"], ["Espirulina", "g", 3, "Digestivo y otros"],
+  ["Chlorella", "g", 3, "Digestivo y otros"], ["Té verde (EGCG)", "mg", 400, "Digestivo y otros"], ["Berberina", "mg", 500, "Digestivo y otros"], ["CoQ10", "mg", 100, "Digestivo y otros"], ["NAC", "mg", 600, "Digestivo y otros"],
+  ["Maca", "g", 3, "Digestivo y otros"], ["Tribulus", "mg", 500, "Digestivo y otros"],
 ];
 const UNITS = ["g", "mg", "mcg", "UI", "cápsulas", "comprimidos", "scoop", "ml", "gotas"];
+const normS = (x) => String(x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+// Selector propio de suplemento: lista por grupos con búsqueda, más buscar por marca o escanear.
+function SuppPicker({ token, value, onPick, onClose }) {
+  const [q, setQ] = useState("");
+  const [off, setOff] = useState(false);
+  const list = COMMON.filter(c => !q || normS(c[0]).includes(normS(q)));
+  const groups = [...new Set(list.map(c => c[3]))];
+  return <Sheet title="Elegí el suplemento" onClose={onClose} tall>
+    <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscá: creatina, omega, magnesio…" autoComplete="off" style={field} />
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+      <button className="k-press" onClick={() => setOff(true)} style={{ ...btnGhost, padding: "11px 8px", fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Icon d={I.scan} size={17} color={C.lime} />Marca o código</button>
+      <button className="k-press" onClick={() => onPick({ name: q.trim() || "", custom: true })} style={{ ...btnGhost, padding: "11px 8px", fontSize: 13.5 }}>{q.trim() ? `Usar "${q.trim().slice(0, 16)}"` : "Otro (escribirlo)"}</button>
+    </div>
+    {groups.map(g => <div key={g}>
+      <Label>{g}</Label>
+      <div style={{ ...card, padding: "2px 14px" }}>
+        {list.filter(c => c[3] === g).map((c, i, arr) => <button key={c[0]} onClick={() => onPick({ name: c[0], unit: c[1], amount: c[2] })} style={{ width: "100%", background: "none", border: "none", color: C.text, textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < arr.length - 1 ? `0.5px solid ${C.line}` : "none" }}>
+          <span style={{ flex: 1, fontSize: 15, fontWeight: value === c[0] ? 600 : 400, color: value === c[0] ? C.lime : C.text }}>{c[0]}</span>
+          <span className="k-num" style={{ fontSize: 12.5, color: C.sub }}>{n1(c[2])} {c[1]} por toma</span>
+        </button>)}
+      </div>
+    </div>)}
+    {!list.length && <div style={{ fontSize: 13.5, color: C.sub, marginTop: 14, lineHeight: 1.5 }}>No está en la lista. Usá "Marca o código" para buscarlo en Open Food Facts, o tocá "Usar" para escribirlo tal cual.</div>}
+    {off && <OffSearch token={token} type="supp" initial={q} onPick={(p) => {
+      // De la etiqueta: nombre + marca, y la porción si viene (ej. "1 capsule", "5 g").
+      const m = String(p.serving || "").match(/(\d+(?:[.,]\d+)?)\s*(g|mg|mcg|µg|ml|cap|cáp|caps|cápsula|capsule|comprimido|tablet|scoop)/i);
+      const unitMap = { µg: "mcg", cap: "cápsulas", cáp: "cápsulas", caps: "cápsulas", cápsula: "cápsulas", capsule: "cápsulas", comprimido: "comprimidos", tablet: "comprimidos" };
+      onPick({ name: p.brand ? `${p.name} (${p.brand})` : p.name, custom: true, amount: m ? Number(m[1].replace(",", ".")) : undefined, unit: m ? (unitMap[m[2].toLowerCase()] || m[2].toLowerCase()) : undefined });
+    }} onClose={() => setOff(false)} />}
+  </Sheet>;
+}
 
 function SuppSheet({ token, s, count, onClose, onSaved }) {
-  const known = (name) => COMMON.some(c => c[0] === name);
-  const [f, setF] = useState(() => ({ pick: !s ? "" : known(s.name) ? s.name : "otro", name: s?.name || "", amount: s?.amount != null ? String(s.amount).replace(".", ",") : "", unit: s?.unit || "g", dose: s?.dose || "", times: s?.times || ["09:00"], days: s?.days || [0, 1, 2, 3, 4, 5, 6], notes: s?.notes || "", active: s?.active ?? true }));
+  const [picking, setPicking] = useState(false);
+  const [f, setF] = useState(() => ({ name: s?.name || "", amount: s?.amount != null ? String(s.amount).replace(".", ",") : "", unit: s?.unit || "g", dose: s?.dose || "", times: s?.times || ["09:00"], days: s?.days || [0, 1, 2, 3, 4, 5, 6], notes: s?.notes || "", active: s?.active ?? true }));
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const set = (k, v) => setF({ ...f, [k]: v });
-  const pick = (v) => { const c = COMMON.find(x => x[0] === v); setF(c ? { ...f, pick: v, name: v, unit: c[1], amount: f.amount || String(c[2]).replace(".", ",") } : { ...f, pick: v, name: v === "otro" && known(f.name) ? "" : f.name }); };
+  const picked = (c) => { setPicking(false); setF({ ...f, name: c.name, unit: c.unit || f.unit, amount: c.amount != null ? String(c.amount).replace(".", ",") : f.amount }); };
   const amount = Number(String(f.amount).replace(",", ".")) || null, tomas = new Set(f.times.filter(Boolean)).size;
   // El horario nuevo va unas horas después del último (sin repetir ni pasarse de las 23).
   const nextTime = () => { const last = [...f.times].filter(Boolean).sort().pop(); if (!last) return "09:00"; let h = Math.min(23, Number(last.slice(0, 2)) + 5); while (f.times.includes(`${String(h).padStart(2, "0")}:00`) && h > 0) h--; return `${String(h).padStart(2, "0")}:00`; };
@@ -557,15 +635,11 @@ function SuppSheet({ token, s, count, onClose, onSaved }) {
   const del = async () => { await dq("kairo_supplements", { method: "DELETE", token, filters: `?id=eq.${s.id}` }); pushToast("Suplemento eliminado"); onSaved(); };
   return <Sheet title={s ? s.name : "Nuevo suplemento"} onClose={onClose}>
     <Label>Suplemento</Label>
-    <div style={{ position: "relative" }}>
-      <select value={f.pick} onChange={e => pick(e.target.value)} style={{ ...field, appearance: "none", WebkitAppearance: "none", colorScheme: "dark", color: f.pick ? C.text : C.dim, paddingRight: 40 }}>
-        <option value="" disabled>Elegí uno</option>
-        {COMMON.map(c => <option key={c[0]} value={c[0]}>{c[0]}</option>)}
-        <option value="otro">Otro…</option>
-      </select>
-      <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", display: "flex" }}><Icon d={I.down} size={16} color={C.sub} /></span>
-    </div>
-    {f.pick === "otro" && <input value={f.name} onChange={e => set("name", e.target.value)} placeholder="Nombre del suplemento" style={{ ...field, marginTop: 8 }} />}
+    <button onClick={() => setPicking(true)} className="k-press" style={{ ...field, textAlign: "left", display: "flex", alignItems: "center", gap: 10, color: f.name ? C.text : C.dim }}>
+      <span style={{ flex: 1, fontSize: 16 }}>{f.name || "Elegí de la lista, buscá la marca o escaneá"}</span><Icon d={I.right} size={16} color={C.sub} />
+    </button>
+    {f.name && <input value={f.name} onChange={e => set("name", e.target.value)} placeholder="Nombre" style={{ ...field, marginTop: 8, fontSize: 14, padding: "10px 14px" }} />}
+    {picking && <SuppPicker token={token} value={f.name} onPick={picked} onClose={() => setPicking(false)} />}
     <Label>Cantidad por toma</Label>
     <div style={{ display: "flex", gap: 8 }}>
       <input value={f.amount} onChange={e => set("amount", e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Ej: 2,5" style={{ ...field, flex: 1 }} />

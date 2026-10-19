@@ -21,19 +21,25 @@ export async function GET(req) {
   const due = arr(await sb(`/rest/v1/kairo_supplements?active=eq.true&times=ov.${encodeURIComponent(`{${slots.map(s => `"${s.hhmm}"`).join(",")}}`)}&days=cs.${encodeURIComponent(`{${dow}}`)}&select=id,user_id,name,dose,amount,unit,times`));
   if (!due.length) return Response.json({ ok: true, sent: 0 });
 
-  const taken = arr(await sb(`/rest/v1/kairo_supp_log?log_date=eq.${date}&supplement_id=in.(${due.map(d => d.id).join(",")})&select=supplement_id,slot`));
-  const done = new Set(taken.map(t => t.supplement_id + "|" + t.slot));
+  const takenRaw = await sb(`/rest/v1/kairo_supp_log?log_date=eq.${date}&supplement_id=in.(${due.map(d => d.id).join(",")})&select=supplement_id,slot`);
+  if (!Array.isArray(takenRaw)) console.error("[kairo reminders] no pude leer las tomas", takenRaw);
+  const taken = arr(takenRaw);
+  const key = (id, slot) => id + "|" + String(slot || "").trim().slice(0, 5);
+  const done = new Set(taken.map(t => key(t.supplement_id, t.slot)));
   const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
   let sent = 0;
   for (const s of due) {
     for (const { m, hhmm } of slots) {
-      if (!s.times?.includes(hhmm) || done.has(s.id + "|" + hhmm)) continue;
+      if (!s.times?.includes(hhmm)) continue;
+      if (done.has(key(s.id, hhmm))) { console.log(`[kairo reminders] ${s.name} ${hhmm} ya tildado (+${m} min), no aviso`); continue; }
       const dose = s.dose || (s.amount ? `${n1(s.amount)} ${s.unit || ""}`.trim() : "");
+      const n = (s.times || []).length, idx = (s.times || []).indexOf(hhmm) + 1, toma = n > 1 ? ` · toma ${idx} de ${n}` : "";
       const title = m === 0 ? `Hora de tu ${s.name}` : `Todavía no tomaste tu ${s.name}`;
-      const body = m === 0 ? (dose ? `${dose} · tocá para tildarlo` : "Tocá para tildarlo") : `Era a las ${hhmm}${dose ? ` · ${dose}` : ""}. Tomalo y tildalo en Kairo.`;
+      const body = m === 0 ? `${dose ? dose + " · " : ""}${hhmm}${toma} · tocá para tildarlo` : `La toma de las ${hhmm}${toma}${dose ? ` · ${dose}` : ""}. Tomala y tildala en Kairo.`;
+      console.log(`[kairo reminders] aviso ${s.name} ${hhmm} (+${m} min) a ${s.user_id}`);
       await fetch(`${base}/api/push/send`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: s.user_id, portal: "kairo", strict: true, urgency: "high", title, body, url: "/kairo", tag: `kairo-supp-${s.id}-${hhmm}` }),
+        body: JSON.stringify({ user_id: s.user_id, portal: "kairo", strict: true, urgency: "high", title, body, url: "/kairo?tab=nutricion", tag: `kairo-supp-${s.id}-${hhmm}` }),
       }).catch(() => {});
       sent++;
     }
