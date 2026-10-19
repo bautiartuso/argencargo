@@ -8,15 +8,15 @@ import { INK, GRIS, BORDE, SUAVE, CARD, LIMA, LIMA_SUAVE, OK, OK_BG, WARN, WARN_
 
 const codificar = (obj) => { const s = unescape(encodeURIComponent(JSON.stringify(obj))); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
 const urlImagen = (slide) => `/api/argenmaq/studio/imagen?d=${codificar(slide)}`;
-const PLANT = { maquina_dia: "Máquina del día", nueva: "Nueva en el catálogo", cual_elegis: "¿Cuál elegís?", cuanto_sale: "¿Cuánto sale?", en_viaje: "Salió de China", llego: "Llegó", pedidos: "Nos pidieron", sabias: "Así trabajamos", ficha: "Ficha", carrusel_ficha: "Carrusel de ficha", rubro: "Por rubro", carrusel_rubro: "Carrusel por rubro" };
-const TIPO = { historia: { l: "Historia", letra: "H", c: "#15171A", bg: LIMA }, post: { l: "Publicación", letra: "P", c: INK, bg: SUAVE }, carrusel: { l: "Carrusel", letra: "C", c: INK, bg: SUAVE } };
+const PLANT = { maquina_dia: "Máquina del día", nueva: "Nueva en el catálogo", cual_elegis: "¿Cuál elegís?", cuanto_sale: "¿Cuánto sale?", en_viaje: "Salió de China", llego: "Llegó", pedidos: "Nos pidieron", sabias: "Así trabajamos", kit: "Kit por rubro", dolar: "Dónde va cada dólar", opinion: "Opinión", raro: "Pedido de la semana", ficha: "Ficha", carrusel_ficha: "Carrusel de ficha", rubro: "Por rubro", carrusel_rubro: "Carrusel por rubro", reel: "Guion de reel" };
+const TIPO = { historia: { l: "Historia", letra: "H", c: "#15171A", bg: LIMA }, post: { l: "Publicación", letra: "P", c: INK, bg: SUAVE }, carrusel: { l: "Carrusel", letra: "C", c: INK, bg: SUAVE }, guion: { l: "Reel", letra: "R", c: "#fff", bg: "#7C3AED" } };
 const ESTADO = { aprobada: { l: "Lista", c: INK, bg: SUAVE }, programada: { l: "Programada", c: "#15171A", bg: LIMA }, publicada: { l: "Publicada", c: OK, bg: OK_BG }, descartada: { l: "Descartada", c: GRIS, bg: SUAVE }, error: { l: "Error", c: BAD, bg: BAD_BG } };
 const alto = (tipo) => tipo === "historia" ? 1920 : 1350;
 const fmtHora = (d) => d ? new Date(d).toLocaleString("es-AR", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 const soloHora = (d) => new Date(d).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 const claveDia = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
 // Horarios sugeridos: historias al mediodía y a la tarde-noche, publicaciones a la tardecita. El primero libre.
-const HORAS = { historia: [12, 19.5], post: [18.5], carrusel: [18.5] };
+const HORAS = { historia: [12, 19.5], post: [18.5], carrusel: [18.5], guion: [10] };
 function proximoHueco(tipo, piezas) {
   const ocupados = new Set(piezas.filter((p) => p.estado === "programada").map((p) => `${claveDia(p.programada_at)} ${soloHora(p.programada_at)}`));
   const base = new Date(); base.setSeconds(0, 0);
@@ -30,7 +30,7 @@ function proximoHueco(tipo, piezas) {
 
 export function Studio({ token }) {
   const [tab, setTab] = useState("calendario");
-  const [hist, setHist] = useState([]); const [pubs, setPubs] = useState([]); const [piezas, setPiezas] = useState([]); const [ig, setIg] = useState(null);
+  const [hist, setHist] = useState([]); const [pubs, setPubs] = useState([]); const [guis, setGuis] = useState([]); const [piezas, setPiezas] = useState([]); const [ig, setIg] = useState(null);
   const [cargando, setCargando] = useState(true); const [armando, setArmando] = useState(""); const [ocupado, setOcupado] = useState("");
   const [detalle, setDetalle] = useState(null); // pieza abierta en el panel lateral
   const api = async (method, body, query = "") => { const r = await fetch(`/api/argenmaq/studio${query}`, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: body ? JSON.stringify(body) : undefined }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `Error ${r.status}`); return d; };
@@ -46,15 +46,16 @@ export function Studio({ token }) {
   const crear = async (tipo, n) => {
     setArmando(tipo);
     try {
-      const excluir = [...hist, ...pubs].map((c) => c.maquina_id).filter(Boolean).join(",");
-      const d = await api("GET", null, `?accion=candidatos&${tipo === "historia" ? "h" : "p"}=${n}&excluir=${excluir}`);
-      const nuevas = marcar(tipo === "historia" ? d.historias || [] : d.publicaciones || [], tipo[0]);
+      const excluir = [...hist, ...pubs, ...guis].map((c) => c.maquina_id).filter(Boolean).join(",");
+      const d = await api("GET", null, `?accion=candidatos&${tipo === "historia" ? "h" : tipo === "guion" ? "g" : "p"}=${n}&excluir=${excluir}`);
+      const nuevas = marcar(tipo === "historia" ? d.historias || [] : tipo === "guion" ? d.guiones || [] : d.publicaciones || [], tipo[0]);
       if (!nuevas.length) toast("No quedan datos para armar más piezas distintas hoy.", "warn");
-      (tipo === "historia" ? setHist : setPubs)((l) => [...nuevas, ...l]);
+      (tipo === "historia" ? setHist : tipo === "guion" ? setGuis : setPubs)((l) => [...nuevas, ...l]);
     } catch (e) { toast(e.message, "error"); }
     setArmando("");
   };
-  const quitar = (c) => (c.tipo === "historia" ? setHist : setPubs)((l) => l.filter((x) => x._k !== c._k));
+  const setDe = (tipo) => tipo === "historia" ? setHist : tipo === "guion" ? setGuis : setPubs;
+  const quitar = (c) => setDe(c.tipo)((l) => l.filter((x) => x._k !== c._k));
 
   const reemplazar = (p) => { setPiezas((l) => l.some((x) => x.id === p.id) ? l.map((x) => x.id === p.id ? p : x) : [p, ...l]); setDetalle((d) => d && d.id === p.id ? p : d); };
   const guardar = async (c, programada_at = null) => {
@@ -62,8 +63,8 @@ export function Studio({ token }) {
     try {
       const d = await api("POST", { accion: "guardar", pieza: c, programada_at });
       reemplazar(d.pieza);
-      (c.tipo === "historia" ? setHist : setPubs)((l) => l.filter((x) => x._k !== c._k));
-      toast(programada_at ? `Programada para el ${fmtHora(programada_at)}` : "Guardada en la cola. Programala cuando quieras.");
+      setDe(c.tipo)((l) => l.filter((x) => x._k !== c._k));
+      toast(programada_at ? (c.tipo === "guion" ? `Agendado: te llega por Telegram el ${fmtHora(programada_at)}` : `Programada para el ${fmtHora(programada_at)}`) : "Guardada en la cola. Programala cuando quieras.");
     } catch (e) { toast(e.message, "error"); }
     setOcupado("");
   };
@@ -96,11 +97,12 @@ export function Studio({ token }) {
       <Dato l="Publicadas · 30 días" v={publicadas30.length} sub={`${publicadas30.filter((p) => p.tipo === "historia").length} historias · ${publicadas30.filter((p) => p.tipo !== "historia").length} en el perfil`} />
       <Dato l="Instagram" v={ig ? `@${ig.username || "argenmaq_"}` : "Sin conectar"} sub={ig ? (errores.length ? `${errores.length} con error` : "publicación automática activa") : "las piezas se descargan y suben a mano"} color={ig ? OK : WARN} />
     </div>
-    <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["cola", "Cola", activas.filter((p) => p.estado !== "publicada").length], ["ig", ig ? `Instagram · @${ig.username || "argenmaq_"}` : "Instagram · sin conectar"]]} />
+    <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["guiones", "Guiones de reels", guis.length], ["cola", "Cola", activas.filter((p) => p.estado !== "publicada").length], ["ig", ig ? `Instagram · @${ig.username || "argenmaq_"}` : "Instagram · sin conectar"]]} />
 
     {tab === "calendario" && <Calendario piezas={activas} listas={listas} {...ctx} />}
     {tab === "historias" && <Propuestas lista={hist} tipo="historia" piezas={piezas} ocupado={ocupado} creando={armando === "historia"} onCrear={(n) => crear("historia", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setHist((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="historias" sub="Duran 24 horas: llevan precio final y dos cuotas, nunca fecha de llegada. Cada historia con máquina lleva el link de la ficha para el sticker. Se alternan los formatos: máquina del día, ¿cuál elegís?, nueva en el catálogo, ¿cuánto sale?, un dato de cómo trabajamos, pedidos reales." />}
     {tab === "publicaciones" && <Propuestas lista={pubs} tipo="post" piezas={piezas} ocupado={ocupado} creando={armando === "post"} onCrear={(n) => crear("post", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setPubs((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="publicaciones y carruseles" sub="Quedan en el perfil: sin precio, invitan a consultar. Se alternan ficha, carrusel de ficha (3 placas), 3 máquinas por rubro y carrusel por rubro (una placa por máquina)." />}
+    {tab === "guiones" && <Propuestas lista={guis} tipo="guion" piezas={piezas} ocupado={ocupado} creando={armando === "guion"} onCrear={(n) => crear("guion", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setGuis((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="guiones de reels" sub="El plan para filmar con el celular: gancho, escenas con lo que se ve y lo que se dice, textos en pantalla y caption. Salen de una máquina real, de un pedido real o de cómo trabajamos. Si lo agendás, ese día te llega por Telegram." />}
     {tab === "cola" && <Cola piezas={piezas} {...ctx} />}
     {tab === "ig" && <Instagram ig={ig} api={api} onCambio={(v) => setIg(v)} />}
 
@@ -110,7 +112,7 @@ export function Studio({ token }) {
 
 // ── Propuestas del día (historias o publicaciones) ───────────────────────────
 function Propuestas({ lista, tipo, piezas, ocupado, creando, onCrear, onQuitar, onGuardar, onCambiar, titulo, sub }) {
-  const [n, setN] = useState(tipo === "historia" ? 3 : 2); const max = tipo === "historia" ? 10 : 6;
+  const [n, setN] = useState(tipo === "historia" ? 3 : tipo === "guion" ? 3 : 2); const max = tipo === "historia" ? 10 : 6;
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: CARD, border: `1px solid ${BORDE}`, borderRadius: 16, marginBottom: 14, flexWrap: "wrap" }}>
       <div style={{ flex: 1, minWidth: 240 }}><b style={{ fontSize: 14 }}>Armar {titulo}</b><p style={{ margin: "4px 0 0", fontSize: 12.5, color: GRIS, lineHeight: 1.45 }}>{sub}</p></div>
@@ -121,10 +123,12 @@ function Propuestas({ lista, tipo, piezas, ocupado, creando, onCrear, onQuitar, 
         <Btn kind="lima" onClick={() => onCrear(n)} disabled={creando} style={{ marginLeft: 6 }}>{creando ? "Armando…" : `Crear ${n}`}</Btn>
       </div>
     </div>
-    {creando && <p style={{ margin: "0 0 14px", fontSize: 13, color: GRIS }}>Eligiendo máquinas, dibujando las placas y redactando los textos. Tarda unos segundos.</p>}
+    {creando && <p style={{ margin: "0 0 14px", fontSize: 13, color: GRIS }}>{tipo === "guion" ? "Escribiendo los guiones a partir de datos reales. Tarda unos 20 segundos." : "Eligiendo máquinas, dibujando las placas y redactando los textos. Tarda unos segundos."}</p>}
     {!lista.length && !creando ? <Vacio>Todavía no armaste {titulo}. Elegí cuántas querés y tocá “Crear”.</Vacio>
-      : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
-        {lista.map((c) => <Propuesta key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco(c.tipo, piezas)} piezas={piezas} onGuardar={onGuardar} onQuitar={() => onQuitar(c)} onCambiar={(patch) => onCambiar(c._k, patch)} />)}
+      : <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${tipo === "guion" ? 380 : 300}px,1fr))`, gap: 14 }}>
+        {lista.map((c) => c.tipo === "guion"
+          ? <PropuestaGuion key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco("guion", piezas)} piezas={piezas} onGuardar={onGuardar} onQuitar={() => onQuitar(c)} onCambiar={(patch) => onCambiar(c._k, patch)} />
+          : <Propuesta key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco(c.tipo, piezas)} piezas={piezas} onGuardar={onGuardar} onQuitar={() => onQuitar(c)} onCambiar={(patch) => onCambiar(c._k, patch)} />)}
       </div>}
   </>;
 }
@@ -142,6 +146,41 @@ function Propuesta({ c, ocupado, sugerido, piezas, onGuardar, onQuitar, onCambia
           <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : "Programar"}</Btn>
           <a href={urlImagen(slides[i] || slides[0])} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "flex" }}><Btn title="Ver en grande" style={{ height: "100%" }}><Ico d={["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"]} /></Btn></a>
           <Btn kind="danger" onClick={onQuitar} title="Rechazar esta propuesta"><Ico d={["M18 6L6 18", "M6 6l12 12"]} /></Btn>
+        </div>}
+    </div>
+  </div>;
+}
+// Un guion de reel: gancho, escenas, cierre. Se usa en la propuesta y en el detalle.
+function Guion({ d, compacto }) {
+  return <div style={{ display: "grid", gap: 8, fontSize: 13, lineHeight: 1.45 }}>
+    <div style={{ padding: "10px 12px", borderRadius: 12, background: LIMA, color: "#15171A" }}><span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em" }}>GANCHO · 0-3 s</span><div style={{ fontWeight: 800, fontSize: 14.5, marginTop: 2 }}>{d.gancho}</div></div>
+    {(d.escenas || []).map((e, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "54px 1fr", gap: 10, padding: "8px 10px", borderRadius: 10, background: SUAVE }}>
+      <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: GRIS }}>{e.seg}</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 700 }}>{e.plano}</div>
+        {e.pantalla && <div style={{ marginTop: 3, fontFamily: MONO, fontSize: 11.5, padding: "2px 6px", borderRadius: 5, background: CARD, display: "inline-block" }}>{e.pantalla}</div>}
+        {!compacto && e.voz && <div style={{ marginTop: 3, color: GRIS, fontStyle: "italic" }}>“{e.voz}”</div>}
+      </div>
+    </div>)}
+    {d.cierre && <div style={{ padding: "8px 12px", borderRadius: 10, border: `1px dashed ${BORDE}` }}><span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: GRIS }}>CIERRE</span><div style={{ fontWeight: 600 }}>{d.cierre}</div></div>}
+  </div>;
+}
+function PropuestaGuion({ c, ocupado, sugerido, piezas, onGuardar, onQuitar, onCambiar }) {
+  const [prog, setProg] = useState(false); const d = c.datos || {};
+  return <div style={{ background: CARD, border: `1px solid ${BORDE}`, borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "12px 14px 0" }}>
+      {d.foto && <img src={d.foto} alt="" style={{ width: 54, height: 54, borderRadius: 10, objectFit: "contain", background: "#fff" }} />}
+      <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: "flex", gap: 6, marginBottom: 4 }}><Chip l="Reel" c="#fff" bg="#7C3AED" /><Chip l={d.duracion || "30 s"} c={INK} bg={SUAVE} /><Chip l={d.tema === "maquina" ? "Máquina real" : d.tema === "pedido" ? "Pedido real" : "Marca"} c={GRIS} bg={SUAVE} /></div><b style={{ fontSize: 14.5, lineHeight: 1.3 }}>{c.titulo.replace(/^Reel · /, "")}</b></div>
+    </div>
+    <div style={{ padding: "12px 14px 14px", display: "grid", gap: 10 }}>
+      <Guion d={d} />
+      <TA value={c.caption || ""} onChange={(e) => onCambiar({ caption: e.target.value })} style={{ minHeight: 72, fontSize: 13 }} />
+      <Inp value={c.hashtags || ""} onChange={(e) => onCambiar({ hashtags: e.target.value })} style={{ fontSize: 12, fontFamily: MONO }} />
+      {prog ? <SelectorFecha tipo="guion" piezas={piezas} inicial={sugerido} ocupado={ocupado} onConfirmar={(dd) => onGuardar(c, dd.toISOString())} onCancelar={() => setProg(false)} />
+        : <div style={{ display: "flex", gap: 8 }}>
+          <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }} title="Elegí el día para filmarlo: ese día te llega por Telegram">{ocupado ? "Guardando…" : "Agendar para filmar"}</Btn>
+          <Btn onClick={() => onGuardar(c)} disabled={ocupado} title="Guardarlo sin fecha">Guardar</Btn>
+          <Btn kind="danger" onClick={onQuitar} title="Rechazar"><Ico d={["M18 6L6 18", "M6 6l12 12"]} /></Btn>
         </div>}
     </div>
   </div>;
@@ -172,8 +211,8 @@ function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar
   const celdas = []; for (let k = 0; k < desde; k++) celdas.push(null); for (let d = 1; d <= dias; d++) celdas.push(new Date(vista.y, vista.m, d)); while (celdas.length % 7) celdas.push(null);
   const hoyK = claveDia(hoy); const mover = (n) => setVista((v) => { const d = new Date(v.y, v.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const delDia = (porDia[dia] || []).sort((a, b) => String(a.programada_at || a.publicada_at).localeCompare(String(b.programada_at || b.publicada_at)));
-  const mismoTipo = delDia.filter((p) => esHistoria(p) === (tipo === "historia"));
-  const presets = tipo === "historia" ? ["12:00", "19:30"] : ["18:30", "12:30"];
+  const mismoTipo = tipo === "guion" ? delDia.filter((p) => p.tipo === "guion") : delDia.filter((p) => p.tipo !== "guion" && esHistoria(p) === (tipo === "historia"));
+  const presets = tipo === "historia" ? ["12:00", "19:30"] : tipo === "guion" ? ["10:00", "15:00"] : ["18:30", "12:30"];
   const confirmar = () => { const [h, m] = hora.split(":").map(Number); const d = new Date(dia + "T12:00:00"); d.setHours(h || 0, m || 0, 0, 0); if (d.getTime() < Date.now()) { toast("Esa hora ya pasó", "warn"); return; } onConfirmar(d); };
   return <div style={{ display: "grid", gap: 10, padding: 10, borderRadius: 14, border: `1px solid ${LIMA}`, background: SUAVE }}>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -183,22 +222,23 @@ function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar
       {["L", "M", "M", "J", "V", "S", "D"].map((d, k) => <div key={k} style={{ textAlign: "center", fontFamily: MONO, fontSize: 10, color: GRIS }}>{d}</div>)}
       {celdas.map((d, k) => {
         if (!d) return <div key={k} />;
-        const key = claveDia(d); const l = porDia[key] || []; const nH = l.filter(esHistoria).length, nP = l.length - nH; const pasado = key < hoyK; const sel = key === dia;
+        const key = claveDia(d); const l = porDia[key] || []; const nR = l.filter((p) => p.tipo === "guion").length, nH = l.filter(esHistoria).length, nP = l.length - nH - nR; const pasado = key < hoyK; const sel = key === dia;
         return <button key={k} type="button" disabled={pasado} onClick={() => setDia(key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 0 3px", borderRadius: 8, border: `1px solid ${sel ? LIMA : key === hoyK ? INK : "transparent"}`, background: sel ? LIMA : CARD, color: sel ? "#15171A" : INK, cursor: pasado ? "default" : "pointer", opacity: pasado ? 0.35 : 1 }}>
           <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: key === hoyK ? 800 : 600 }}>{d.getDate()}</span>
           <span style={{ display: "flex", gap: 2, height: 12 }}>
             {nH > 0 && <span title={`${nH} historia(s)`} style={{ fontFamily: MONO, fontSize: 9, fontWeight: 800, padding: "0 4px", borderRadius: 4, background: sel ? "#15171A" : LIMA, color: sel ? LIMA : "#15171A" }}>{nH}</span>}
             {nP > 0 && <span title={`${nP} publicación(es)`} style={{ fontFamily: MONO, fontSize: 9, fontWeight: 800, padding: "0 4px", borderRadius: 4, background: sel ? "rgba(21,23,26,0.25)" : INK, color: sel ? "#15171A" : CARD }}>{nP}</span>}
+            {nR > 0 && <span title={`${nR} reel(s) para filmar`} style={{ fontFamily: MONO, fontSize: 9, fontWeight: 800, padding: "0 4px", borderRadius: 4, background: "#7C3AED", color: "#fff" }}>{nR}</span>}
           </span>
         </button>;
       })}
     </div>
-    <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: GRIS, fontFamily: MONO }}><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: LIMA, marginRight: 4 }} />historias</span><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: INK, marginRight: 4 }} />publicaciones y carruseles</span></div>
+    <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: GRIS, fontFamily: MONO }}><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: LIMA, marginRight: 4 }} />historias</span><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: INK, marginRight: 4 }} />publicaciones y carruseles</span><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "#7C3AED", marginRight: 4 }} />reels para filmar</span></div>
     <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 8 }}>
       <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{new Date(dia + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}{dia === hoyK ? " · hoy" : ""}</div>
       {delDia.length === 0 ? <div style={{ fontSize: 12, color: GRIS }}>Nada programado ese día.</div>
-        : <div style={{ display: "grid", gap: 3 }}>{delDia.map((p) => <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, minWidth: 0 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: esHistoria(p) ? LIMA : INK, flex: "none" }} /><span style={{ fontFamily: MONO, color: GRIS }}>{soloHora(p.programada_at || p.publicada_at)}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</span>{p.estado === "publicada" && <span style={{ width: 6, height: 6, borderRadius: 999, background: OK, flex: "none" }} />}</div>)}</div>}
-      {mismoTipo.length > 0 && <div style={{ fontSize: 11.5, color: WARN, marginTop: 4 }}>Ese día ya {mismoTipo.length === 1 ? "sale una" : `salen ${mismoTipo.length}`} {tipo === "historia" ? "historia" : "publicación"}{mismoTipo.length > 1 ? (tipo === "historia" ? "s" : "es") : ""}.</div>}
+        : <div style={{ display: "grid", gap: 3 }}>{delDia.map((p) => <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, minWidth: 0 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: p.tipo === "guion" ? "#7C3AED" : esHistoria(p) ? LIMA : INK, flex: "none" }} /><span style={{ fontFamily: MONO, color: GRIS }}>{soloHora(p.programada_at || p.publicada_at)}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</span>{p.estado === "publicada" && <span style={{ width: 6, height: 6, borderRadius: 999, background: OK, flex: "none" }} />}</div>)}</div>}
+      {mismoTipo.length > 0 && <div style={{ fontSize: 11.5, color: WARN, marginTop: 4 }}>{tipo === "guion" ? `Ese día ya hay ${mismoTipo.length} reel${mismoTipo.length > 1 ? "s" : ""} para filmar.` : `Ese día ya ${mismoTipo.length === 1 ? "sale una" : `salen ${mismoTipo.length}`} ${tipo === "historia" ? "historia" : "publicación"}${mismoTipo.length > 1 ? (tipo === "historia" ? "s" : "es") : ""}.`}</div>}
     </div>
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       {presets.map((h) => <Pill key={h} small on={hora === h} onClick={() => setHora(h)}>{h}</Pill>)}
@@ -230,7 +270,7 @@ function Calendario({ piezas, listas, ig, ocupado, programar, abrir }) {
           </button>;
         })}
       </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 14, fontSize: 12, color: GRIS, flexWrap: "wrap", alignItems: "center" }}><Leyenda c={LIMA} l="Historia" /><Leyenda c={SUAVE} l="Publicación" borde /><Leyenda c={SUAVE} l="Carrusel (doble borde)" borde doble /><span style={{ width: 1, height: 14, background: BORDE }} /><Leyenda c={OK} l="punto verde: publicada" punto /><Leyenda c={BAD} l="punto rojo: error" punto /></div>
+      <div style={{ display: "flex", gap: 14, marginTop: 14, fontSize: 12, color: GRIS, flexWrap: "wrap", alignItems: "center" }}><Leyenda c={LIMA} l="Historia" /><Leyenda c={SUAVE} l="Publicación" borde /><Leyenda c={SUAVE} l="Carrusel (doble borde)" borde doble /><Leyenda c="#7C3AED" l="Reel para filmar" /><span style={{ width: 1, height: 14, background: BORDE }} /><Leyenda c={OK} l="punto verde: publicada" punto /><Leyenda c={BAD} l="punto rojo: error" punto /></div>
     </Sec>
     <Dia key={diaSel} dia={diaSel} lista={porDia[diaSel] || []} listas={listas} ig={ig} ocupado={ocupado} programar={programar} abrir={abrir} />
   </div>;
@@ -239,10 +279,10 @@ const Leyenda = ({ c, l, borde, doble, punto }) => <span style={{ display: "inli
 // Cada pieza en el calendario: color por formato (historia amarilla, publicación gris, carrusel gris con doble borde),
 // y el estado con un punto (verde publicada, rojo error).
 const Ficha = ({ p }) => {
-  const esH = p.tipo === "historia", esC = p.tipo === "carrusel";
+  const esH = p.tipo === "historia", esC = p.tipo === "carrusel", esR = p.tipo === "guion";
   const estado = p.estado === "publicada" ? OK : p.estado === "error" ? BAD : null;
-  return <span title={`${TIPO[p.tipo]?.l || ""} · ${p.titulo}`} style={{ display: "flex", flexDirection: "column", gap: 1, padding: "4px 7px", borderRadius: 7, background: esH ? LIMA : SUAVE, color: esH ? "#15171A" : INK, border: `1px solid ${esH ? LIMA : BORDE}`, boxShadow: esC ? `2px 2px 0 ${BORDE}` : "none", minWidth: 0, opacity: p.estado === "publicada" ? 0.85 : 1 }}>
-    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>{estado && <span style={{ width: 7, height: 7, borderRadius: 999, background: estado, flex: "none" }} />}{soloHora(p.programada_at || p.publicada_at)} · {esH ? "Historia" : esC ? "Carrusel" : "Post"}</span>
+  return <span title={`${TIPO[p.tipo]?.l || ""} · ${p.titulo}`} style={{ display: "flex", flexDirection: "column", gap: 1, padding: "4px 7px", borderRadius: 7, background: esR ? "#7C3AED" : esH ? LIMA : SUAVE, color: esR ? "#fff" : esH ? "#15171A" : INK, border: `1px solid ${esR ? "#7C3AED" : esH ? LIMA : BORDE}`, boxShadow: esC ? `2px 2px 0 ${BORDE}` : "none", minWidth: 0, opacity: p.estado === "publicada" ? 0.85 : 1 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>{estado && <span style={{ width: 7, height: 7, borderRadius: 999, background: estado, flex: "none" }} />}{soloHora(p.programada_at || p.publicada_at)} · {esR ? "Reel" : esH ? "Historia" : esC ? "Carrusel" : "Post"}</span>
     <span style={{ fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo.replace(/^[^·]+·\s*/, "")}</span>
   </span>;
 };
@@ -282,17 +322,17 @@ function Cola({ piezas, abrir, ...ctx }) {
 }
 function FilaPieza({ p, onAbrir, ig, ocupado, publicar, desprogramar, descartar, celular, copiar }) {
   const e = ESTADO[p.estado] || ESTADO.aprobada; const t = TIPO[p.tipo] || TIPO.post; const imgs = p.imagenes || [];
-  const fecha = p.estado === "publicada" ? `publicada ${fmtHora(p.publicada_at)}` : p.estado === "programada" ? `sale ${fmtHora(p.programada_at)}` : `guardada ${fmtHora(p.created_at)}`;
+  const fecha = p.estado === "publicada" ? `${p.tipo === "guion" ? "enviada al celular" : "publicada"} ${fmtHora(p.publicada_at)}` : p.estado === "programada" ? `${p.tipo === "guion" ? "para filmar" : "sale"} ${fmtHora(p.programada_at)}` : `guardada ${fmtHora(p.created_at)}`;
   return <div style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", gap: 14, padding: 12, background: CARD, border: `1px solid ${p.estado === "error" ? BAD : BORDE}`, borderRadius: 16, alignItems: "center", opacity: p.estado === "descartada" ? 0.55 : 1 }}>
-    <button type="button" onClick={onAbrir} style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer" }}><img src={imgs[0]} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 10, background: SUAVE, display: "block" }} /></button>
+    <button type="button" onClick={onAbrir} style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer" }}>{p.tipo === "guion" ? <span style={{ width: 72, height: 72, borderRadius: 10, background: "#7C3AED", color: "#fff", display: "grid", placeItems: "center", fontSize: 26 }}>🎬</span> : <img src={imgs[0]} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 10, background: SUAVE, display: "block" }} />}</button>
     <div style={{ minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}><b style={{ fontSize: 14 }}>{p.titulo}</b><Chip l={t.l} c={t.c} bg={t.bg} /><Chip l={e.l} c={e.c} bg={e.bg} />{imgs.length > 1 && <span style={{ fontFamily: MONO, fontSize: 11, color: GRIS }}>{imgs.length} placas</span>}</div>
       <div style={{ fontFamily: MONO, fontSize: 11.5, color: GRIS }}>{fecha}{p.estado === "error" && p.error ? ` · ${p.error}` : ""}</div>
     </div>
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-      {p.estado !== "publicada" && p.estado !== "descartada" && <Btn small kind="lima" onClick={() => publicar(p)} disabled={ocupado === `publicar${p.id}` || !ig} title={ig ? "" : "Conectá Instagram primero"}>{ocupado === `publicar${p.id}` ? "Publicando…" : "Publicar ahora"}</Btn>}
+      {p.tipo !== "guion" && p.estado !== "publicada" && p.estado !== "descartada" && <Btn small kind="lima" onClick={() => publicar(p)} disabled={ocupado === `publicar${p.id}` || !ig} title={ig ? "" : "Conectá Instagram primero"}>{ocupado === `publicar${p.id}` ? "Publicando…" : "Publicar ahora"}</Btn>}
       {p.estado === "programada" && <Btn small onClick={() => desprogramar(p)}>Quitar fecha</Btn>}
-      {p.tipo === "historia" && p.estado !== "descartada" && <Btn small onClick={() => celular(p)} disabled={ocupado === `celular${p.id}`} title="Te la manda por Telegram con el link, para subirla con el sticker">Al celular</Btn>}
+      {(p.tipo === "historia" || p.tipo === "guion") && p.estado !== "descartada" && <Btn small onClick={() => celular(p)} disabled={ocupado === `celular${p.id}`} title={p.tipo === "guion" ? "Te manda el guion completo por Telegram" : "Te la manda por Telegram con el link, para subirla con el sticker"}>Al celular</Btn>}
       <Btn small onClick={onAbrir}>Abrir</Btn>
       {["aprobada", "error"].includes(p.estado) && <Btn small kind="danger" onClick={() => descartar(p)}>Descartar</Btn>}
     </div>
@@ -310,7 +350,7 @@ function Detalle({ p, onCerrar, ig, ocupado, piezas, publicar, programar, despro
     <aside style={{ position: "relative", width: "min(520px,100%)", height: "100%", background: CARD, borderLeft: `1px solid ${BORDE}`, overflowY: "auto", padding: 18, display: "grid", gap: 14, alignContent: "start" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}><Chip l={t.l} c={t.c} bg={t.bg} /><Chip l={e.l} c={e.c} bg={e.bg} /><span style={{ flex: 1 }} /><Btn small onClick={onCerrar}>Cerrar</Btn></div>
       <b style={{ fontSize: 16, lineHeight: 1.3 }}>{p.titulo}</b>
-      <div style={{ borderRadius: 14, overflow: "hidden", maxWidth: 300, justifySelf: "center" }}><Previa imagenes={imgs} tipo={p.tipo} i={i} setI={setI} /></div>
+      {p.tipo === "guion" ? <Guion d={p.datos || {}} /> : <div style={{ borderRadius: 14, overflow: "hidden", maxWidth: 300, justifySelf: "center" }}><Previa imagenes={imgs} tipo={p.tipo} i={i} setI={setI} /></div>}
       <div style={{ fontFamily: MONO, fontSize: 11.5, color: GRIS }}>{p.estado === "publicada" ? `Publicada ${fmtHora(p.publicada_at)}` : p.estado === "programada" ? `Sale ${fmtHora(p.programada_at)}` : `Guardada ${fmtHora(p.created_at)}`}{p.estado === "error" && p.error ? ` · ${p.error}` : ""}</div>
       <Campo label="Texto"><TA value={caption} onChange={(e) => setCaption(e.target.value)} disabled={!editable} style={{ minHeight: 120, fontSize: 13 }} /></Campo>
       <Campo label="Hashtags"><Inp value={tags} onChange={(e) => setTags(e.target.value)} disabled={!editable} style={{ fontSize: 12, fontFamily: MONO }} /></Campo>
@@ -319,13 +359,13 @@ function Detalle({ p, onCerrar, ig, ocupado, piezas, publicar, programar, despro
       {editable && (eligiendo
         ? <SelectorFecha tipo={p.tipo} piezas={piezas.filter((x) => x.id !== p.id)} inicial={p.programada_at || proximoHueco(p.tipo, piezas)} ocupado={ocupado === `programar${p.id}`} onConfirmar={async (d) => { await programar(p, d); setEligiendo(false); }} onCancelar={() => setEligiendo(false)} />
         : <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn kind="lima" onClick={() => setEligiendo(true)}>{p.estado === "programada" ? "Cambiar la fecha" : "Programar"}</Btn>
+          <Btn kind="lima" onClick={() => setEligiendo(true)}>{p.estado === "programada" ? "Cambiar la fecha" : p.tipo === "guion" ? "Agendar para filmar" : "Programar"}</Btn>
           {p.estado === "programada" && <Btn small onClick={() => desprogramar(p)}>Quitar fecha</Btn>}
-          {!ig && <span style={{ fontSize: 12, color: WARN }}>Sin Instagram conectado no sale sola.</span>}
+          {!ig && p.tipo !== "guion" && <span style={{ fontSize: 12, color: WARN }}>Sin Instagram conectado no sale sola.</span>}
         </div>)}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {editable && <Btn kind="lima" onClick={() => publicar(p)} disabled={ocupado === `publicar${p.id}` || !ig}>{ocupado === `publicar${p.id}` ? "Publicando…" : "Publicar ahora"}</Btn>}
-        {p.tipo === "historia" && <Btn onClick={() => celular(p)} disabled={ocupado === `celular${p.id}`}>Mandar al celular</Btn>}
+        {editable && p.tipo !== "guion" && <Btn kind="lima" onClick={() => publicar(p)} disabled={ocupado === `publicar${p.id}` || !ig}>{ocupado === `publicar${p.id}` ? "Publicando…" : "Publicar ahora"}</Btn>}
+        {(p.tipo === "historia" || p.tipo === "guion") && <Btn kind={p.tipo === "guion" ? "lima" : "ghost"} onClick={() => celular(p)} disabled={ocupado === `celular${p.id}`}>Mandar al celular</Btn>}
         <Btn onClick={() => copiar(`${caption}\n\n${tags}`.trim(), "Texto copiado")}>Copiar texto</Btn>
         {imgs.map((u, k) => <a key={k} href={u} download target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><Btn>Descargar{imgs.length > 1 ? ` ${k + 1}` : ""}</Btn></a>)}
         {["aprobada", "error"].includes(p.estado) && <Btn kind="danger" onClick={() => descartar(p)}>Descartar</Btn>}

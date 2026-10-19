@@ -9,7 +9,7 @@
 //   POST {accion:"celular", id}                    → la manda por Telegram con el link, para subirla a mano con sticker
 //   POST {accion:"descartar", id} · {accion:"texto", id, caption, hashtags}
 //   POST {accion:"ig_conectar", token} · {accion:"ig_desconectar"}
-import { candidatos, sbq, quien, igCfg, igGuardar, igRenovar, subirImagen, publicarPieza, mandarAlCelular } from "../../../../lib/studio-argenmaq";
+import { candidatos, guiones, sbq, quien, igCfg, igGuardar, igRenovar, subirImagen, publicarPieza, mandarAlCelular } from "../../../../lib/studio-argenmaq";
 import { igConnect } from "../../../../lib/studio";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,7 @@ export async function GET(req) {
     if (accion === "candidatos") {
       const n = (k, max) => Math.max(0, Math.min(max, parseInt(u.searchParams.get(k) || "0", 10) || 0));
       const excluir = String(u.searchParams.get("excluir") || "").split(",").filter(Boolean);
+      if (n("g", 6)) return Response.json({ guiones: await guiones({ cantidad: n("g", 6), excluir }) });
       const c = await candidatos({ historias: n("h", 10), publicaciones: n("p", 6), excluir });
       return Response.json({ historias: c.historias || [], publicaciones: c.publicaciones || [] });
     }
@@ -49,7 +50,7 @@ export async function POST(req) {
     if (b.accion === "guardar") {
       const p = b.pieza || {};
       const slides = Array.isArray(p.datos?.slides) ? p.datos.slides : [];
-      if (!slides.length) return err("La pieza no tiene imágenes");
+      if (!slides.length && p.tipo !== "guion") return err("La pieza no tiene imágenes");
       const imagenes = [];
       for (let i = 0; i < slides.length; i++) {
         const r = await fetch(`${origen}/api/argenmaq/studio/imagen?d=${codificar(slides[i])}`, { cache: "no-store" });
@@ -59,7 +60,7 @@ export async function POST(req) {
       }
       const cuando = b.programada_at ? new Date(b.programada_at) : null;
       if (cuando && Number.isNaN(cuando.getTime())) return err("Fecha inválida");
-      const tipo = ["historia", "post", "carrusel"].includes(p.tipo) ? p.tipo : "historia";
+      const tipo = ["historia", "post", "carrusel", "guion"].includes(p.tipo) ? p.tipo : "historia";
       const fila = { tipo, plantilla: String(p.plantilla || "").slice(0, 40), titulo: String(p.titulo || "").slice(0, 200), maquina_id: p.maquina_id || null, link: p.link || null, datos: p.datos || null, caption: String(p.caption || "").slice(0, 2200), hashtags: String(p.hashtags || "").slice(0, 500), imagenes, estado: cuando ? "programada" : "aprobada", programada_at: cuando ? cuando.toISOString() : null, creado_por: yo.id };
       const [creada] = await sbq(`/am_piezas`, { method: "POST", body: JSON.stringify(fila) });
       return Response.json({ ok: true, pieza: creada });
@@ -73,6 +74,7 @@ export async function POST(req) {
     if (b.accion === "desprogramar") return Response.json({ ok: true, pieza: await patch(b.id, { estado: "aprobada", programada_at: null, error: null }) });
     if (b.accion === "texto") return Response.json({ ok: true, pieza: await patch(b.id, { caption: String(b.caption || "").slice(0, 2200), hashtags: String(b.hashtags || "").slice(0, 500) }) });
     if (b.accion === "publicar") {
+      const pg = await unaPieza(b.id); if (pg?.tipo === "guion") return err("Un guion no se publica: se filma. Mandalo al celular o programalo para que te llegue ese día.");
       let cfg = await igCfg();
       if (!cfg?.ig_user_id || !cfg?.access_token) return err("Primero conectá el Instagram de ARGENMAQ.");
       cfg = await igRenovar(cfg);

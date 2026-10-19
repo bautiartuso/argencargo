@@ -188,6 +188,79 @@ const Sabias = ({ d, o }) => <div style={{ display: "flex", flexDirection: "colu
   <div style={{ display: "flex" }}><Pie o={o} texto="MAQUINARIA LLAVE EN MANO" /></div>
 </div>;
 
+
+// ── Historias con más personalidad (2) ──────────────────────────────────────
+// Kit por rubro: tres máquinas y el total puesto en el negocio.
+const Kit = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: Y, color: K, padding: "120px 72px 110px", position: "relative" }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} claro /><Etq fondo={K} color={Y}>KIT COMPLETO</Etq></div>
+  <div style={{ display: "flex", fontSize: 30, letterSpacing: 4, marginTop: 64, color: "rgba(21,23,26,0.6)" }}>PARA ARRANCAR</div>
+  <div style={{ display: "flex", fontSize: 92, fontWeight: 800, lineHeight: 0.98, letterSpacing: -4, marginTop: 10 }}>{d.rubro}</div>
+  <div style={{ display: "flex", flexDirection: "column", marginTop: 44 }}>
+    {(d.items || []).slice(0, 3).map((m, i) => <div key={i} style={{ display: "flex", alignItems: "center", background: BL, borderRadius: 26, padding: 16, marginBottom: 14 }}>
+      <div style={{ display: "flex", width: 170, height: 170, borderRadius: 18, overflow: "hidden", alignItems: "center", justifyContent: "center", background: "#F4F5F7" }}>{m.foto && <img src={m.foto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />}</div>
+      <div style={{ display: "flex", flexDirection: "column", marginLeft: 26, flex: 1 }}>
+        <div style={{ display: "flex", fontSize: 28, fontWeight: 700, lineHeight: 1.15 }}>{corta(m.nombre, 48)}</div>
+        <div style={{ display: "flex", fontSize: 30, fontWeight: 800, marginTop: 8, color: "rgba(21,23,26,0.7)" }}>{fmt(m.precio)}</div>
+      </div>
+    </div>)}
+  </div>
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 30, padding: "28px 34px", borderRadius: 26, background: K, color: BL }}>
+    <div style={{ display: "flex", flexDirection: "column" }}><div style={{ display: "flex", fontSize: 20, letterSpacing: 3, color: G }}>LAS TRES, PUESTAS EN TU NEGOCIO</div><div style={{ display: "flex", fontSize: 24, fontWeight: 600, marginTop: 6, color: G }}>en dos cuotas</div></div>
+    <div style={{ display: "flex", fontSize: 64, fontWeight: 800, letterSpacing: -2, color: Y }}>{fmt(d.total)}</div>
+  </div>
+  <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} claro texto="TOCÁ EL LINK PARA VER EL CATÁLOGO" /></div>
+</div>;
+
+// Dónde va cada dólar: cuánto es la máquina y cuánto es traerla.
+const Dolar = ({ d, o }) => {
+  const pm = Math.round((Number(d.cuota1) / Number(d.precio || 1)) * 100), pi = 100 - pm;
+  return <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "120px 72px 110px", position: "relative" }}>
+    <Grilla />
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} /><Etq>TRANSPARENCIA</Etq></div>
+    <div style={{ display: "flex", fontSize: 88, fontWeight: 800, lineHeight: 0.98, letterSpacing: -4, marginTop: 64 }}>¿Dónde va cada dólar?</div>
+    <div style={{ display: "flex", alignItems: "center", marginTop: 44 }}>
+      <div style={{ display: "flex", width: 240, height: 240, borderRadius: 28, background: BL, overflow: "hidden", alignItems: "center", justifyContent: "center", padding: 14 }}>{d.foto && <img src={d.foto} style={{ width: "100%", height: "100%", objectFit: "contain" }} />}</div>
+      <div style={{ display: "flex", flexDirection: "column", marginLeft: 30, flex: 1 }}><div style={{ display: "flex", fontSize: 32, fontWeight: 700, lineHeight: 1.15 }}>{corta(d.nombre, 60)}</div><div style={{ display: "flex", fontSize: 24, color: G, marginTop: 10 }}>precio final puesto en tu negocio</div><div style={{ display: "flex", fontSize: 56, fontWeight: 800, color: Y, letterSpacing: -2, marginTop: 4 }}>{fmt(d.precio)}</div></div>
+    </div>
+    <div style={{ display: "flex", width: "100%", height: 72, borderRadius: 20, overflow: "hidden", marginTop: 54 }}>
+      <div style={{ display: "flex", width: `${pm}%`, background: Y, alignItems: "center", justifyContent: "center", color: K, fontSize: 30, fontWeight: 800 }}>{pm}%</div>
+      <div style={{ display: "flex", width: `${pi}%`, background: "#3A3E44", alignItems: "center", justifyContent: "center", color: BL, fontSize: 30, fontWeight: 800 }}>{pi}%</div>
+    </div>
+    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 26 }}>
+      <div style={{ display: "flex", flexDirection: "column" }}><div style={{ display: "flex", alignItems: "center", fontSize: 22, letterSpacing: 3, color: Y }}><div style={{ display: "flex", width: 16, height: 16, borderRadius: 4, background: Y, marginRight: 12 }} />LA MÁQUINA</div><div style={{ display: "flex", fontSize: 44, fontWeight: 800, marginTop: 8 }}>{fmt(d.cuota1)}</div><div style={{ display: "flex", fontSize: 22, color: G, marginTop: 4 }}>lo que cobra la fábrica</div></div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}><div style={{ display: "flex", alignItems: "center", fontSize: 22, letterSpacing: 3, color: G }}><div style={{ display: "flex", width: 16, height: 16, borderRadius: 4, background: "#3A3E44", marginRight: 12 }} />TRAERLA</div><div style={{ display: "flex", fontSize: 44, fontWeight: 800, marginTop: 8 }}>{fmt(d.cuota2)}</div><div style={{ display: "flex", fontSize: 22, color: G, marginTop: 4, textAlign: "right" }}>flete, seguro, aduana y entrega</div></div>
+    </div>
+    <div style={{ display: "flex", fontSize: 30, fontWeight: 600, color: G, marginTop: 40, lineHeight: 1.3 }}>Sin números escondidos. Lo que ves es lo que pagás.</div>
+    <div style={{ display: "flex", marginTop: "auto" }}><Pie o={o} texto="TOCÁ EL LINK PARA VER LA FICHA" /></div>
+  </div>;
+};
+
+// Opinión con postura: una frase fuerte y el argumento.
+const Opinion = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: Y, color: K, padding: "120px 72px 110px", position: "relative" }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} claro /><Etq fondo={K} color={Y}>OPINIÓN</Etq></div>
+  <div style={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "center" }}>
+    <div style={{ display: "flex", fontSize: 200, fontWeight: 800, lineHeight: 0.6, letterSpacing: -10, color: K, opacity: 0.18 }}>“</div>
+    <div style={{ display: "flex", fontSize: d.titulo && d.titulo.length > 60 ? 76 : 92, fontWeight: 800, lineHeight: 1.02, letterSpacing: -4, marginTop: -10 }}>{d.titulo}</div>
+    <div style={{ display: "flex", width: 120, height: 14, borderRadius: 999, background: K, marginTop: 44 }} />
+    <div style={{ display: "flex", fontSize: 40, fontWeight: 600, lineHeight: 1.3, marginTop: 36, color: "rgba(21,23,26,0.8)" }}>{d.bajada}</div>
+  </div>
+  <div style={{ display: "flex" }}><Pie o={o} claro texto="¿COINCIDÍS? RESPONDÉ" /></div>
+</div>;
+
+// El pedido raro de la semana.
+const Raro = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "120px 72px 110px", position: "relative" }}>
+  <Grilla />
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Logo o={o} /><Etq>A PEDIDO</Etq></div>
+  <div style={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "center" }}>
+    <div style={{ display: "flex", fontSize: 30, letterSpacing: 4, color: G }}>EL PEDIDO DE LA SEMANA</div>
+    <div style={{ display: "flex", fontSize: 72, fontWeight: 800, lineHeight: 1.02, letterSpacing: -3, marginTop: 30, color: G }}>Nos pidieron</div>
+    <div style={{ display: "flex", padding: "40px 44px", borderRadius: 32, background: Y, color: K, fontSize: d.pedido && d.pedido.length > 36 ? 60 : 76, fontWeight: 800, lineHeight: 1.02, letterSpacing: -3, marginTop: 30 }}>{d.pedido}</div>
+    <div style={{ display: "flex", fontSize: 44, fontWeight: 800, lineHeight: 1.15, marginTop: 50 }}>{d.cierre || "Si existe en China, la encontramos."}</div>
+    <div style={{ display: "flex", fontSize: 30, fontWeight: 600, color: G, marginTop: 20, lineHeight: 1.3 }}>Precio final puesto en tu negocio, como todo lo demás.</div>
+  </div>
+  <div style={{ display: "flex" }}><Pie o={o} texto="¿QUÉ MÁQUINA TE FALTA? ESCRIBINOS" /></div>
+</div>;
+
 // ── Placas de carrusel (1080×1350), sin precio ──────────────────────────────
 const Portada = ({ d, o }) => <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: K, color: BL, padding: "64px 64px 56px", position: "relative" }}>
   <Grilla />
@@ -275,7 +348,7 @@ const Tapa = ({ d }) => <div style={{ display: "flex", width: "100%", height: "1
   <div style={{ display: "flex", position: "relative" }}>{ICONOS[d.icono] || ICONOS.pasos}</div>
 </div>;
 
-const PLANTILLAS = { maquina_dia: MaquinaDia, cuanto_sale: CuantoSale, en_viaje: EnViaje, llego: Llego, pedidos: Pedidos, ficha: Ficha, rubro: Rubro, destacada: Destacada, tapa: Tapa, nueva: Nueva, cual_elegis: CualElegis, sabias: Sabias, portada: Portada, specs: Specs, incluye: Incluye, rubro_portada: RubroPortada, rubro_item: RubroItem };
+const PLANTILLAS = { maquina_dia: MaquinaDia, cuanto_sale: CuantoSale, en_viaje: EnViaje, llego: Llego, pedidos: Pedidos, ficha: Ficha, rubro: Rubro, destacada: Destacada, tapa: Tapa, nueva: Nueva, cual_elegis: CualElegis, sabias: Sabias, kit: Kit, dolar: Dolar, opinion: Opinion, raro: Raro, portada: Portada, specs: Specs, incluye: Incluye, rubro_portada: RubroPortada, rubro_item: RubroItem };
 const TAMANOS = { ficha: [1080, 1350], rubro: [1080, 1350], portada: [1080, 1350], specs: [1080, 1350], incluye: [1080, 1350], rubro_portada: [1080, 1350], rubro_item: [1080, 1350], tapa: [1080, 1080] };
 
 export async function GET(req) {
