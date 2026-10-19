@@ -9877,7 +9877,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </div>:<>
         {(()=>{
           const condCli=c=>c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Monotributo":"Cons. final";
-          const oficinas=savedAddrs.filter(esOficina);const guardados=savedAddrs;
+          const oficina=savedAddrs.find(a=>a.is_default)||savedAddrs.find(a=>/loreto/i.test(a.label||""))||savedAddrs.find(a=>/loreto/i.test(a.address||""));const oficinas=oficina?[oficina]:[];const guardados=savedAddrs;
           const Chip=({on,icon,main,sub,color,title,active,onDel})=><div style={{display:"inline-flex",alignItems:"stretch",borderRadius:11,border:`1px solid ${active?color:color+"44"}`,background:active?color+"22":color+"0d",transition:"all 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background=color+"22";e.currentTarget.style.borderColor=color;}} onMouseLeave={e=>{e.currentTarget.style.background=active?color+"22":color+"0d";e.currentTarget.style.borderColor=active?color:color+"44";}}>
             <button type="button" onClick={on} title={title} style={{display:"inline-flex",alignItems:"center",gap:9,height:40,padding:"0 12px 0 9px",border:"none",background:"transparent",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
               <span style={{width:24,height:24,borderRadius:7,background:color+"26",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{icon}</span>
@@ -9900,18 +9900,19 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
               <button type="button" onClick={()=>{if(!showNewAddr)setNewAddr(p=>({...p,name:dest.dest_name||"",tax_id:dest.dest_tax_id||"",address:dest.dest_address||"",postal_code:dest.dest_postal_code||"",phone:dest.dest_phone||"",email:dest.dest_email||""}));setShowNewAddr(!showNewAddr);}} title="Guardar el destinatario actual para reutilizarlo" style={{height:40,padding:"0 13px",fontSize:12,fontWeight:700,border:"1px dashed rgba(255,255,255,0.22)",borderRadius:11,background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit",marginLeft:"auto"}}>{showNewAddr?"✕ Cerrar":"+ Guardar este destinatario"}</button>
             </Grupo>
           </div>;})()}
-        <div style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:"0 12px"}}>
-          <Inp label="Nombre o razón social" value={dest.dest_name} onChange={v=>chDest("dest_name",v)} placeholder="A nombre de quién llega"/>
-          <Inp label="CUIT" value={dest.dest_tax_id} onChange={v=>chDest("dest_tax_id",v)} placeholder="20-12345678-9"/>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr)",gap:"0 12px"}}>
-          <Inp label="Dirección de entrega" value={dest.dest_address} onChange={v=>chDest("dest_address",v)} placeholder="Calle y número, localidad, provincia"/>
-          <Inp label="Código postal" value={dest.dest_postal_code} onChange={v=>chDest("dest_postal_code",v)} placeholder="C1426"/>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,2fr)",gap:"0 12px"}}>
-          <Inp label="Teléfono" value={dest.dest_phone} onChange={v=>chDest("dest_phone",v)} placeholder="+54 9 11 ..."/>
-          <Inp label="Email" value={dest.dest_email} onChange={v=>chDest("dest_email",v)} placeholder="contacto@ejemplo.com"/>
-        </div>
+        {(()=>{
+          const F=({l,k,ph,mono,flex})=><label style={{display:"flex",flexDirection:"column",gap:5,flex:flex||1,minWidth:0}}><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>{l}</span><input value={dest[k]||""} onChange={e=>chDest(k,e.target.value)} placeholder={ph} style={{height:40,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.22)",color:"#fff",fontSize:13.5,fontWeight:dest[k]?600:400,fontFamily:mono?"'JetBrains Mono',monospace":"inherit",outline:"none",minWidth:0,width:"100%"}} onFocus={e=>{e.currentTarget.style.borderColor="rgba(140,200,245,0.55)";e.currentTarget.style.background="rgba(140,200,245,0.06)";}} onBlur={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.background="rgba(0,0,0,0.22)";}}/></label>;
+          const Panel=({icon,t,color,children})=><div style={{flex:1,minWidth:280,padding:"14px 16px 16px",borderRadius:14,border:`1px solid ${color}2e`,background:`linear-gradient(180deg,${color}0f,rgba(255,255,255,0.015))`,display:"flex",flexDirection:"column",gap:12}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color,display:"flex",alignItems:"center",gap:8}}><span style={{width:22,height:22,borderRadius:6,background:`${color}22`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{icon}</span>{t}</p>{children}</div>;
+          return <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+            <Panel icon="👤" t="Quién recibe" color="#60a5fa">
+              <div style={{display:"flex",gap:10}}><F l="Nombre o razón social" k="dest_name" ph="A nombre de quién llega" flex={2}/><F l="CUIT" k="dest_tax_id" ph="20-12345678-9" mono/></div>
+              <div style={{display:"flex",gap:10}}><F l="Teléfono" k="dest_phone" ph="+54 9 11 ..." mono/><F l="Email" k="dest_email" ph="contacto@ejemplo.com" flex={1.6}/></div>
+            </Panel>
+            <Panel icon="📍" t="Dónde se entrega" color={IC}>
+              <F l="Dirección" k="dest_address" ph="Calle y número, localidad, provincia"/>
+              <div style={{display:"flex",gap:10}}><F l="Código postal" k="dest_postal_code" ph="C1426" mono/><div style={{flex:2}}/></div>
+            </Panel>
+          </div>;})()}
         {showNewAddr&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,padding:"12px 14px",marginTop:10}}>
           <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px"}}>NUEVA DIRECCIÓN PREDETERMINADA</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
