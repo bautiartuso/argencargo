@@ -7,7 +7,7 @@ import { comprimirImagen } from "../../../lib/img";
 import { precioMaquina } from "../../../lib/catalogo-precio";
 import { VIAS, analizarVias, precioDeVia, armarCanales } from "../../../lib/canales-maquinas";
 import { calcOpBudget } from "../../../lib/calc";
-import { INK,GRIS,BORDE,SUAVE,CARD,BG,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,TA,Btn,Sec,Pill,Barra,Vacio,Desplegable,Archivo,Toggle,Solapas,n,numONull,txtONull,fmtUsd,fmtNum,codigoMaq,ChipMaq,toast,confirmDialog } from "./ui";
+import { INK,GRIS,BORDE,SUAVE,CARD,BG,LIMA,LIMA_SUAVE,OK,OK_BG,WARN,WARN_BG,BAD,BAD_BG,MONO,INP,LBL,TH,TD,GRID,DOS,Campo,Inp,TA,Btn,Sec,Pill,Barra,Vacio,Desplegable,Archivo,Toggle,Solapas,Chip,n,numONull,txtONull,fmtUsd,fmtNum,codigoMaq,ChipMaq,toast,confirmDialog } from "./ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -154,7 +154,7 @@ export function Proveedores({ses,dq,provs,prods,arbol,cats,recargar}){
 // ── Ficha de una máquina ──────────────────────────────────────────────────────────────────
 const BULTO=()=>({cantidad:"1",largo_cm:"",ancho_cm:"",alto_cm:"",peso_kg:""});
 const MEDIDAS=()=>({largo_cm:"",ancho_cm:"",alto_cm:"",peso_kg:""});
-const VACIO={medidas:MEDIDAS(),nombre_raw:"",modelo:"",specs_raw:"",descripcion_raw:"",nombre:"",descripcion:"",categoria:"",subcategoria:"",condicion:"nueva",anio:"",horas_uso:"",garantia_meses:"",fotos:[],video_url:"",exw_usd:"",moq:"1",dias_produccion:"",packing:[BULTO()],ncm_code:"",ncm_descripcion:"",die:"",te:"",iva:"",intervencion:null,proveedor_id:"",link_producto:"",notas_internas:""};
+const VACIO={medidas:MEDIDAS(),nombre_raw:"",modelo:"",specs_raw:"",descripcion_raw:"",nombre:"",descripcion:"",categoria:"",subcategoria:"",condicion:"nueva",anio:"",horas_uso:"",garantia_meses:"",fotos:[],video_url:"",videos:[],archivos:[],exw_usd:"",moq:"1",dias_produccion:"",packing:[BULTO()],ncm_code:"",ncm_descripcion:"",die:"",te:"",iva:"",intervencion:null,proveedor_id:"",link_producto:"",notas_internas:""};
 
 function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onCerrar,onProvNuevo}){
   const [p,setP]=useState(null);
@@ -174,7 +174,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     const s=(v)=>v==null?"":String(v);
     const pk=Array.isArray(row.packing)&&row.packing.length?row.packing.map(b=>({cantidad:s(b.cantidad||1),largo_cm:s(b.largo_cm),ancho_cm:s(b.ancho_cm),alto_cm:s(b.alto_cm),peso_kg:s(b.peso_kg)})):[BULTO()];
     const md=row.medidas||{};
-    setF({...VACIO,medidas:{largo_cm:s(md.largo_cm),ancho_cm:s(md.ancho_cm),alto_cm:s(md.alto_cm),peso_kg:s(md.peso_kg)},nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:[s(row.specs_raw),s(row.descripcion_raw)].filter(t=>t.trim()).join("\n\n"),descripcion_raw:"",nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
+    setF({...VACIO,medidas:{largo_cm:s(md.largo_cm),ancho_cm:s(md.ancho_cm),alto_cm:s(md.alto_cm),peso_kg:s(md.peso_kg)},nombre_raw:s(row.nombre_raw),modelo:s(row.modelo),specs_raw:[s(row.specs_raw),s(row.descripcion_raw)].filter(t=>t.trim()).join("\n\n"),descripcion_raw:"",nombre:s(row.nombre),descripcion:s(row.descripcion),categoria:s(row.categoria),subcategoria:s(row.subcategoria),condicion:row.condicion||"nueva",anio:s(row.anio),horas_uso:s(row.horas_uso),garantia_meses:s(row.garantia_meses),fotos:Array.isArray(row.fotos)?row.fotos:[],video_url:s(row.video_url),videos:Array.isArray(row.videos)&&row.videos.length?row.videos:(row.video_url?[row.video_url]:[]),archivos:Array.isArray(row.archivos)?row.archivos:[],exw_usd:s(row.exw_usd),moq:row.moq?String(row.moq):"1",dias_produccion:s(row.dias_produccion),packing:pk,ncm_code:s(row.ncm_code),ncm_descripcion:s(row.ncm_descripcion),die:s(row.die),te:s(row.te),iva:s(row.iva),intervencion:row.intervencion||null,proveedor_id:s(row.proveedor_id),link_producto:s(row.link_producto),notas_internas:s(row.notas_internas)});
   }catch(e){toast(e.message,"error");}};
   useEffect(()=>{cargarP();},[id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -205,7 +205,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     estado:estado||p.estado,
     nombre_raw:txtONull(f.nombre_raw),modelo:txtONull(f.modelo),specs_raw:txtONull(f.specs_raw),descripcion_raw:null,
     nombre:txtONull(f.nombre),descripcion:txtONull(f.descripcion),categoria:txtONull(f.categoria),subcategoria:txtONull(f.subcategoria),
-    condicion:f.condicion,anio:numONull(f.anio),horas_uso:numONull(f.horas_uso),garantia_meses:numONull(f.garantia_meses),fotos:f.fotos,video_url:txtONull(f.video_url),
+    condicion:f.condicion,anio:numONull(f.anio),horas_uso:numONull(f.horas_uso),garantia_meses:numONull(f.garantia_meses),fotos:f.fotos,videos:f.videos,video_url:f.videos[0]||null,archivos:f.archivos,
     exw_usd:numONull(f.exw_usd),moq:numONull(f.moq)||1,dias_produccion:numONull(f.dias_produccion),
     packing:f.packing.map(b=>({cantidad:n(b.cantidad),largo_cm:n(b.largo_cm),ancho_cm:n(b.ancho_cm),alto_cm:n(b.alto_cm),peso_kg:n(b.peso_kg)})),
     medidas:Object.values(f.medidas||{}).some(v=>String(v??"").trim()!=="")?{largo_cm:numONull(f.medidas.largo_cm),ancho_cm:numONull(f.medidas.ancho_cm),alto_cm:numONull(f.medidas.alto_cm),peso_kg:numONull(f.medidas.peso_kg)}:null,
@@ -219,7 +219,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     if(irCanales)setPaso("canales");
   }catch(e){toast(e.message.replace(/^.*?No se puede publicar/,"No se puede publicar"),"error",{duration:7000});}setGuardando(false);};
   const eliminar=async()=>{if(!(await confirmDialog(`¿Eliminar ${codigoMaq(p)}? Se borra la ficha y sus fotos. No se puede deshacer.`)))return;try{
-    for(const u of [...f.fotos,f.video_url].filter(Boolean))borrarArchivo(u);
+    for(const u of [...f.fotos,...f.videos,...f.archivos.map(a=>a.url)].filter(Boolean))borrarArchivo(u);
     await dq("cat_productos",{method:"DELETE",filters:`?id=eq.${id}`,prefer:"return=minimal"});await recargar();toast("Eliminada");onCerrar();
   }catch(e){toast(e.message,"error");}};
 
@@ -245,18 +245,18 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
     const r=await dq("ncm_database",{filters:`?ncm_code=eq.${c}&select=ncm_code,description,die,te,iva&limit=1`});const d=Array.isArray(r)?r[0]:null;if(!d){toast("Esa posición no está en la base","error");return;}aplicarNcm({...d,intervention:fRef.current.intervencion});
   }catch(e){toast(e.message,"error");}};
 
-  const subir=async(files)=>{const lista=Array.from(files||[]).filter(x=>x.type?.startsWith("image/")||x.type?.startsWith("video/"));if(!lista.length)return;setSubiendo(lista.length);const fotosNuevas=[];let video=null;
+  const subir=async(files)=>{const lista=Array.from(files||[]).filter(x=>x.type?.startsWith("image/")||x.type?.startsWith("video/"));if(!lista.length)return;setSubiendo(lista.length);const fotosNuevas=[];const videosNuevos=[];
     for(let i=0;i<lista.length;i++){let file=lista[i];const esVideo=file.type.startsWith("video/");try{
       if(!esVideo)file=await comprimirImagen(file,{cuadrado:1080,calidad:0.88}); // todas las fotos salen 1080×1080
       const ext=esVideo?(file.name.split(".").pop()||"mp4").toLowerCase():"jpg";
       const path=`productos/${id}/${Date.now()}-${i}.${ext}`;
       const r=await fetch(`${SB_URL}/storage/v1/object/catalogo/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`,"Content-Type":file.type||"application/octet-stream","x-upsert":"false"},body:file});
       if(!r.ok)throw new Error(`No se pudo subir (${r.status})`);
-      const url=`${SB_URL}/storage/v1/object/public/catalogo/${path}`;if(esVideo)video=url;else fotosNuevas.push(url);
+      const url=`${SB_URL}/storage/v1/object/public/catalogo/${path}`;if(esVideo)videosNuevos.push(url);else fotosNuevas.push(url);
     }catch(e){toast(e.message,"error");}setSubiendo(lista.length-i-1);}
     const cambios={};
     if(fotosNuevas.length)cambios.fotos=[...fRef.current.fotos,...fotosNuevas];
-    if(video)cambios.video_url=video;
+    if(videosNuevos.length){cambios.videos=[...fRef.current.videos,...videosNuevos];cambios.video_url=cambios.videos[0];}
     if(!Object.keys(cambios).length)return;
     setF(x=>({...x,...cambios}));
     await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:cambios}).catch(e=>toast(e.message,"error"));
@@ -264,7 +264,23 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
   const borrarArchivo=(u)=>{const path=u.split("/object/public/catalogo/")[1];if(path)fetch(`${SB_URL}/storage/v1/object/catalogo/${path}`,{method:"DELETE",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`}}).catch(()=>{});};
   const quitarFoto=async(u)=>{const fotos=f.fotos.filter(x=>x!==u);setF(x=>({...x,fotos}));borrarArchivo(u);await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:{fotos}}).catch(e=>toast(e.message,"error"));};
   const principal=async(u)=>{const fotos=[u,...f.fotos.filter(x=>x!==u)];setF(x=>({...x,fotos}));await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:{fotos}}).catch(e=>toast(e.message,"error"));};
-  const quitarVideo=async()=>{const u=f.video_url;setF(x=>({...x,video_url:""}));if(u)borrarArchivo(u);await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:{video_url:null}}).catch(e=>toast(e.message,"error"));};
+  const quitarVideo=async(u)=>{const videos=f.videos.filter(x=>x!==u);setF(x=>({...x,videos,video_url:videos[0]||""}));borrarArchivo(u);await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:{videos,video_url:videos[0]||null}}).catch(e=>toast(e.message,"error"));};
+  // Documentos: manual de uso, ficha técnica u otro. PDF, imagen o Word; van a productos/{id}/docs/.
+  const subirDoc=async(tipo,files)=>{const lista=Array.from(files||[]);if(!lista.length)return;setSubiendo(lista.length);const nuevos=[];
+    for(let i=0;i<lista.length;i++){const file=lista[i];try{
+      const ext=(file.name.split(".").pop()||"pdf").toLowerCase().replace(/[^a-z0-9]/g,"")||"pdf";
+      const path=`productos/${id}/docs/${Date.now()}-${i}.${ext}`;
+      const r=await fetch(`${SB_URL}/storage/v1/object/catalogo/${path}`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`,"Content-Type":file.type||"application/octet-stream","x-upsert":"false"},body:file});
+      if(!r.ok)throw new Error(`No se pudo subir (${r.status})`);
+      nuevos.push({tipo,nombre:file.name,url:`${SB_URL}/storage/v1/object/public/catalogo/${path}`});
+    }catch(e){toast(e.message,"error");}setSubiendo(lista.length-i-1);}
+    if(!nuevos.length)return;const archivos=[...fRef.current.archivos,...nuevos];setF(x=>({...x,archivos}));
+    await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:{archivos}}).catch(e=>toast(e.message,"error"));};
+  const quitarDoc=async(a)=>{const archivos=f.archivos.filter(x=>x!==a);setF(x=>({...x,archivos}));borrarArchivo(a.url);await dq("cat_productos",{method:"PATCH",filters:`?id=eq.${id}`,body:{archivos}}).catch(e=>toast(e.message,"error"));};
+  // Enter salta al campo siguiente (como Tab), para cargar precio, días, cantidad, medidas y packing sin tocar el mouse.
+  const enterSalta=(e)=>{if(e.key!=="Enter"||e.target.tagName!=="INPUT"||e.target.type==="file"||e.metaKey||e.ctrlKey)return;e.preventDefault();
+    const todos=Array.from(e.currentTarget.querySelectorAll("input:not([type=hidden]):not([type=file]):not([disabled]),select:not([disabled]),textarea:not([disabled])")).filter(el=>el.offsetParent!==null);
+    const i=todos.indexOf(e.target);const sig=todos[i+1];if(sig){sig.focus();if(sig.select)sig.select();}};
   const [guardandoProv,setGuardandoProv]=useState(false);
   const guardarProv=async()=>{setGuardandoProv(true);try{const row=await guardarProveedor(dq,provForm,{user:{id:p?.created_by}});if(provForm.id){await recargar();toast("Proveedor actualizado");}else{onProvNuevo(row);set("proveedor_id",row.id);toast("Proveedor creado");}setProvForm(null);}catch(e){toast(e.message,"error");}setGuardandoProv(false);};
 
@@ -276,7 +292,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
   const pv=(x)=>x==null?null:String(x).replace(".",",");
   const canalesOk=!!(p.canales&&Object.values(p.canales).some(c=>c?.mostrar));
 
-  return <div>
+  return <div onKeyDown={enterSalta}>
     <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 22px"}}>
       <Btn small onClick={onCerrar}>← Máquinas</Btn>
       <span style={{fontFamily:MONO,fontSize:13,fontWeight:600,letterSpacing:"0.08em"}}>{codigoMaq(p)}</span>
@@ -304,7 +320,7 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
       </div>
     </Sec>
 
-    <Sec titulo="Fotos y video" extra={<span style={{fontFamily:MONO,fontSize:11,color:f.fotos.length>=5?OK:GRIS}}>{f.fotos.length}/5 FOTOS{f.fotos.length>=5?" ✓":""}</span>}>
+    <Sec titulo="Fotos y videos" extra={<span style={{fontFamily:MONO,fontSize:11,color:f.fotos.length>=5?OK:GRIS}}>{f.fotos.length}/5 FOTOS{f.fotos.length>=5?" ✓":""}</span>}>
       {f.fotos.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:10,marginBottom:12}}>
         {f.fotos.map((u,i)=><div key={u} style={{position:"relative",aspectRatio:"1",borderRadius:12,overflow:"hidden",border:`2px solid ${i===0?LIMA:"transparent"}`,background:SUAVE}}>
           <img src={u} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
@@ -315,8 +331,24 @@ function Editor({id,dq,token,cats,arbol,provs,antid,ajustes,tarifas,recargar,onC
           </div>
         </div>)}
       </div>}
-      <Archivo onFiles={subir} accept="image/*,video/*" multiple label={subiendo>0?`Subiendo ${subiendo}…`:"+ Fotos o video"} hint="Arrastrá acá, pegá con Ctrl+V o elegí del equipo"/>
-      {f.video_url&&<div style={{marginTop:14,display:"flex",gap:14,alignItems:"start",flexWrap:"wrap"}}><video src={f.video_url} controls style={{width:280,maxWidth:"100%",borderRadius:12,background:"#000"}}/><Btn small kind="danger" onClick={quitarVideo}>Quitar video</Btn></div>}
+      <Archivo onFiles={subir} accept="image/*,video/*" multiple label={subiendo>0?`Subiendo ${subiendo}…`:"+ Fotos o videos"} hint="Arrastrá acá, pegá con Ctrl+V o elegí del equipo. Podés subir varios videos."/>
+      {f.videos.length>0&&<div style={{marginTop:14,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>{f.videos.map((u,i)=><div key={u} style={{position:"relative",borderRadius:12,overflow:"hidden",background:"#000"}}>
+        <video src={u} controls preload="metadata" style={{width:"100%",display:"block",aspectRatio:"16/10",objectFit:"contain"}}/>
+        <span style={{position:"absolute",top:7,left:7,fontFamily:MONO,fontSize:9,fontWeight:600,letterSpacing:"0.08em",padding:"3px 7px",borderRadius:5,background:"rgba(255,255,255,0.9)",color:"#121212"}}>VIDEO {i+1}</span>
+        <button type="button" onClick={()=>quitarVideo(u)} title="Quitar video" style={{position:"absolute",top:7,right:7,fontSize:11,fontWeight:700,padding:"4px 8px",borderRadius:6,border:"none",background:"rgba(255,255,255,0.9)",color:"#C22F2F",cursor:"pointer"}}>✕</button>
+      </div>)}</div>}
+    </Sec>
+
+    <Sec titulo="Documentos" extra={<span style={{fontFamily:MONO,fontSize:11,color:GRIS}}>MANUAL · FICHA TÉCNICA · LOS VE EL CLIENTE</span>}>
+      {f.archivos.length>0&&<div style={{display:"grid",gap:8,marginBottom:12}}>{f.archivos.map((a,i)=><div key={a.url||i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:12,background:SUAVE}}>
+        <Chip l={a.tipo==="manual"?"Manual de uso":a.tipo==="ficha"?"Ficha técnica":"Documento"} c={INK} bg={CARD}/>
+        <a href={a.url} target="_blank" rel="noreferrer" style={{flex:1,minWidth:0,fontSize:13.5,fontWeight:600,color:INK,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.nombre||a.url.split("/").pop()}</a>
+        <Btn small kind="danger" onClick={()=>quitarDoc(a)}>Quitar</Btn>
+      </div>)}</div>}
+      <div className="grid2" style={DOS}>
+        <Archivo onFiles={(fs)=>subirDoc("manual",fs)} accept="application/pdf,image/*,.doc,.docx" multiple label={subiendo>0?`Subiendo ${subiendo}…`:"+ Manual de uso"} hint="PDF, foto o Word"/>
+        <Archivo onFiles={(fs)=>subirDoc("ficha",fs)} accept="application/pdf,image/*,.doc,.docx" multiple label={subiendo>0?`Subiendo ${subiendo}…`:"+ Ficha técnica"} hint="PDF, foto o Word"/>
+      </div>
     </Sec>
 
     <Sec titulo="Precio y plazo">

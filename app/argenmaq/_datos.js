@@ -19,7 +19,12 @@ export async function categorias() {
   return { cats, arbol };
 }
 export const maquinas = (filtro = "") => get(`cat_maquinas_publicas?select=id,numero,nombre,descripcion,categoria,subcategoria,condicion,garantia_meses,fotos,video_url,dias_produccion,moq,vias,publicado_at&order=publicado_at.desc${filtro}`);
-export const maquina = async (id) => (await get(`cat_maquinas_publicas?id=eq.${encodeURIComponent(id)}&select=*&limit=1`, 60))[0] || null;
+// La ficha trae además los medios (varios videos y documentos) de la vista cat_maquinas_medios.
+export const maquina = async (id) => {
+  const [m, md] = await Promise.all([get(`cat_maquinas_publicas?id=eq.${encodeURIComponent(id)}&select=*&limit=1`, 60), get(`cat_maquinas_medios?id=eq.${encodeURIComponent(id)}&select=videos,archivos&limit=1`, 60).catch(() => [])]);
+  if (!m[0]) return null;
+  return { ...m[0], videos: Array.isArray(md?.[0]?.videos) ? md[0].videos : [], archivos: Array.isArray(md?.[0]?.archivos) ? md[0].archivos : [] };
+};
 export async function ajustes() {
   const rows = await get("cat_ajustes?select=clave,valor&clave=in.(dias_via,negocio)", 600);
   const o = {}; rows.forEach((r) => { o[r.clave] = r.valor; });
