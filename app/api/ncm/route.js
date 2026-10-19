@@ -53,9 +53,10 @@ function pickBest(results, fallbackIntervention = null) {
     if (!byCode[r.ncm_code] || r.die > byCode[r.ncm_code].die) byCode[r.ncm_code] = r;
   });
   const best = Object.values(byCode)[0];
+  const aperturas = [...new Set(results.filter((r) => r.ncm_code === best.ncm_code).map((r) => String(r.description || "").trim()).filter(Boolean))];
   return {
     ncm_code: best.ncm_code,
-    ncm_description: best.description,
+    ncm_description: aperturas.slice(0, 3).join(" · ") || best.description,
     import_duty_rate: best.die,
     statistics_rate: Math.min(best.te, 3),
     iva_rate: best.iva ?? 21,
@@ -93,6 +94,11 @@ El usuario importa productos desde China/USA para reventa en Argentina. Tu traba
    - 4202.31/.32/.39 dependen de la superficie exterior: .31 cuero, .32 plástico o textil. Bolsos de mano / de hombro de textil → 4202.22.20; de plástico → 4202.22.10.
    - Bolsas de embalaje: polietileno 3923.21, polipropileno/OPP 3923.29.90.
    - Álbumes de fotos o figuritas → 4820.50.00; stickers impresos → 4911.91.00.
+   - El ENVASE va con la mercadería (RGI 5): un "maletín de 300 fichas de poker" es un juego de poker en su maletín, NO un maletín (4202). Un "estuche con dados", "caja con naipes", "bolso con set de mate" se clasifican por lo que contienen.
+   - Juegos de casino: sets de poker, fichas de poker/casino, ruletas, dados, cubiletes → 9504.90.90 ("Juegos de casino"). Naipes SOLOS → 9504.40.00. Tapete, paño, alfombra o mat de poker/ruleta/blackjack → 9504.90.90 (accesorio del juego), NUNCA 5701-5705 (alfombras para el piso).
+   - 9504.90.10 son juegos de bolos automáticos (bowling): NO lo uses para otra cosa del 9504.
+   - Nunca devuelvas una posición que termina en ".00" cuando la subpartida tiene aperturas (ej. 9504.90.00 no existe: es 9504.90.10 o 9504.90.90). Elegí siempre la apertura de 8 dígitos real.
+   - Productos iguales con distinta variante (300 vs 500 fichas, negro vs blanco, 10" vs 12") son la MISMA posición.
 
 5. Reglas de clasificación específicas (overrides):
    - auriculares (bluetooth, TWS, inalámbricos, headphones, earbuds) → 8518.30.00 (NO 8517)
@@ -115,6 +121,27 @@ FORMATO DE SALIDA (JSON estricto, sin markdown):
     "reason": "explicación corta o null si no aplica"
   }
 }`;
+
+// La IA a veces devuelve una subpartida sin apertura (9504.90.00) o una apertura inexistente. Antes
+// se tomaba la primera fila del prefijo (9504.90.10, bowling, 0 %) sin mirar. Ahora se le muestran
+// las aperturas reales de 8 dígitos que cuelgan de ese prefijo y elige una (19/10/2026).
+async function elegirAperturaReal(description, ncmCode) {
+  try {
+    const filas = await searchDB(ncmCode);
+    if (!filas.length || filas.some((f) => f.ncm_code === ncmCode)) return null;
+    const porCodigo = {};
+    filas.forEach((f) => { (porCodigo[f.ncm_code] = porCodigo[f.ncm_code] || new Set()).add(String(f.description || "").trim()); });
+    const codigos = Object.keys(porCodigo);
+    if (codigos.length === 1) return { ncm_code: codigos[0] };
+    const lista = codigos.map((c) => `${c}: ${[...porCodigo[c]].filter(Boolean).slice(0, 6).join(" · ")}`).join("\n");
+    const text = await callClaudeText({
+      system: SYSTEM_PROMPT,
+      user: `Mercadería: "${description}".\nLa posición ${ncmCode} no existe como apertura de 8 dígitos. Las aperturas reales disponibles son:\n${lista}\nElegí la que corresponde a esta mercadería (o, si ninguna corresponde, la posición correcta de otra partida). Mismo formato JSON.`,
+      max_tokens: 400,
+    });
+    return parseClaudeResponse(text);
+  } catch { return null; }
+}
 
 async function classifyWithClaude(description, hint) {
   // hint: posición arancelaria sugerida por el cliente (muchas veces la que le pasó el proveedor,
@@ -201,6 +228,9 @@ FORMATO DE SALIDA (JSON estricto, sin markdown):`
 const OVERRIDES = [
   { keywords: ["auricular", "headphone", "earphone", "earbuds", "earbud", "tws", "headset", "auriculares"], ncm: "8518.30.00", desc: "Auriculares", die: 35, te: 3, intervention: { required: true, types: ["ENACOM"], reason: "Inalámbrico o bluetooth — homologación ENACOM" } },
   { keywords: ["parlante", "altavoz", "speaker", "bocina", "boombox"], ncm: "8518.22.00", desc: "Altavoces/Parlantes", die: 35, te: 3, intervention: { required: false, types: [], reason: null } },
+  // Sets de poker, fichas de casino y sus tapetes: todo 9504.90.90 "Juegos de casino" (19/10/2026: la IA
+  // repartía la misma cotización entre 4202 maletines, 9504.40 naipes, 9504.90.10 bowling y 5703 alfombras).
+  { keywords: ["poker", "póker", "fichas de casino", "ruleta", "blackjack", "texas hold"], ncm: "9504.90.90", desc: "Juegos de casino", die: 20, te: 3, intervention: { required: false, types: [], reason: null } },
 ];
 
 function checkOverride(description) {
@@ -364,6 +394,8 @@ export async function POST(req) {
     if (claudeResult?.ncm_code && description) {
       const corregido = await verificarConBase(description, claudeResult.ncm_code, hintCode);
       if (corregido) claudeResult = { ...claudeResult, ...corregido, intervention: corregido.intervention || claudeResult.intervention };
+      const apertura = await elegirAperturaReal(description, claudeResult.ncm_code);
+      if (apertura?.ncm_code) claudeResult = { ...claudeResult, ...apertura, intervention: apertura.intervention || claudeResult.intervention };
     }
 
     if (claudeResult?.ncm_code) {
