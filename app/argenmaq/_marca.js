@@ -27,7 +27,7 @@ export const CONTACTO = {
 // Redes del pie. Las que no tienen link todavía se ven apagadas, con "Próximamente".
 // ⚠️ COMPLETAR: LinkedIn, Facebook, TikTok y YouTube cuando estén creadas.
 export const REDES = {
-  instagram: "https://www.instagram.com/argenmac_/",
+  instagram: "https://www.instagram.com/argenmaq_/",
   linkedin: "",
   facebook: "",
   tiktok: "",

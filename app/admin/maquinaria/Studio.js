@@ -74,7 +74,7 @@ export function Studio({ token }) {
     catch (e) { toast(e.message, "error"); }
     finally { setOcupado(""); }
   };
-  const publicar = async (p) => { if (!(await confirmDialog(`¿Publicar ahora “${p.titulo}” en @${ig?.username || "argenmac_"}?`, { ok: "Publicar" }))) return; await accion("publicar", p, {}, "Publicada en Instagram"); };
+  const publicar = async (p) => { if (!(await confirmDialog(`¿Publicar ahora “${p.titulo}” en @${ig?.username || "argenmaq_"}?`, { ok: "Publicar" }))) return; await accion("publicar", p, {}, "Publicada en Instagram"); };
   const programar = (p, cuando) => accion("programar", p, { programada_at: new Date(cuando).toISOString() }, `Programada para el ${fmtHora(cuando)}`);
   const desprogramar = (p) => accion("desprogramar", p, {}, "Vuelve a la cola");
   const descartar = async (p) => { if (!(await confirmDialog(`¿Descartar “${p.titulo}”?`, { ok: "Descartar" }))) return; accion("descartar", p); };
@@ -95,9 +95,9 @@ export function Studio({ token }) {
       <Dato l="Programadas" v={programadas.length} sub={programadas[0] ? `próxima ${fmtHora(programadas.sort((a, b) => a.programada_at.localeCompare(b.programada_at))[0].programada_at)}` : "nada en agenda"} acento />
       <Dato l="En la cola sin fecha" v={listas.length} sub={hist.length + pubs.length ? `${hist.length} historias y ${pubs.length} publicaciones propuestas, sin guardar` : "armá propuestas desde Historias o Publicaciones"} />
       <Dato l="Publicadas · 30 días" v={publicadas30.length} sub={`${publicadas30.filter((p) => p.tipo === "historia").length} historias · ${publicadas30.filter((p) => p.tipo !== "historia").length} en el perfil`} />
-      <Dato l="Instagram" v={ig ? `@${ig.username || "argenmac_"}` : "Sin conectar"} sub={ig ? (errores.length ? `${errores.length} con error` : "publicación automática activa") : "las piezas se descargan y suben a mano"} color={ig ? OK : WARN} />
+      <Dato l="Instagram" v={ig ? `@${ig.username || "argenmaq_"}` : "Sin conectar"} sub={ig ? (errores.length ? `${errores.length} con error` : "publicación automática activa") : "las piezas se descargan y suben a mano"} color={ig ? OK : WARN} />
     </div>
-    <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["cola", "Cola", activas.filter((p) => p.estado !== "publicada").length], ["ig", ig ? `Instagram · @${ig.username || "argenmac_"}` : "Instagram · sin conectar"]]} />
+    <Solapas val={tab} onChange={setTab} items={[["calendario", "Calendario"], ["historias", "Historias", hist.length], ["publicaciones", "Publicaciones y carruseles", pubs.length], ["cola", "Cola", activas.filter((p) => p.estado !== "publicada").length], ["ig", ig ? `Instagram · @${ig.username || "argenmaq_"}` : "Instagram · sin conectar"]]} />
 
     {tab === "calendario" && <Calendario piezas={activas} listas={listas} {...ctx} />}
     {tab === "historias" && <Propuestas lista={hist} tipo="historia" piezas={piezas} ocupado={ocupado} creando={armando === "historia"} onCrear={(n) => crear("historia", n)} onQuitar={quitar} onGuardar={guardar} onCambiar={(k, patch) => setHist((l) => l.map((x) => x._k === k ? { ...x, ...patch } : x))} titulo="historias" sub="Duran 24 horas: llevan precio final y dos cuotas, nunca fecha de llegada. Cada historia con máquina lleva el link de la ficha para el sticker. Se alternan los formatos: máquina del día, ¿cuál elegís?, nueva en el catálogo, ¿cuánto sale?, un dato de cómo trabajamos, pedidos reales." />}
@@ -295,9 +295,9 @@ function Instagram({ ig, api, onCambio }) {
   const desconectar = async () => { if (!(await confirmDialog("¿Desconectar el Instagram de ARGENMAQ?", { ok: "Desconectar" }))) return; try { await api("POST", { accion: "ig_desconectar" }); onCambio(null); } catch (e) { toast(e.message, "error"); } };
   return <div style={{ display: "grid", gap: 14, maxWidth: 720 }}>
     <Sec titulo="Cuenta de ARGENMAQ">
-      {ig ? <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}><Chip l="Conectado" c={OK} bg={OK_BG} /><b>@{ig.username || "argenmac_"}</b><span style={{ fontSize: 12.5, color: GRIS }}>desde {fmtHora(ig.connected_at)}</span><span style={{ flex: 1 }} /><Btn small kind="danger" onClick={desconectar}>Desconectar</Btn></div>
+      {ig ? <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}><Chip l="Conectado" c={OK} bg={OK_BG} /><b>@{ig.username || "argenmaq_"}</b><span style={{ fontSize: 12.5, color: GRIS }}>desde {fmtHora(ig.connected_at)}</span><span style={{ flex: 1 }} /><Btn small kind="danger" onClick={desconectar}>Desconectar</Btn></div>
         : <div style={{ display: "grid", gap: 12 }}>
-          <p style={{ margin: 0, fontSize: 14, color: GRIS, lineHeight: 1.5 }}>Es una cuenta aparte de la de Argencargo. Pegá un token de acceso de la cuenta profesional @argenmac_ (inicio de sesión de Instagram, o un token de Facebook de la página vinculada). Hasta entonces, las piezas se descargan y se suben a mano.</p>
+          <p style={{ margin: 0, fontSize: 14, color: GRIS, lineHeight: 1.5 }}>Es una cuenta aparte de la de Argencargo. Pegá un token de acceso de la cuenta profesional @argenmaq_ (inicio de sesión de Instagram, o un token de Facebook de la página vinculada). Hasta entonces, las piezas se descargan y se suben a mano.</p>
           <Campo label="Token de acceso"><TA value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAG… o IGQ…" style={{ minHeight: 90, fontFamily: MONO, fontSize: 12 }} /></Campo>
           <div><Btn kind="lima" onClick={conectar} disabled={lo || !token.trim()}>{lo ? "Conectando…" : "Conectar"}</Btn></div>
         </div>}
