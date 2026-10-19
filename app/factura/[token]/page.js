@@ -43,11 +43,20 @@ export default async function FacturaPublica({ params }) {
 
   if (!inv || inv.status !== "emitida") {
     return <div style={{ minHeight: "100vh", background: NAVY, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui,sans-serif" }}>
-      <p style={{ opacity: 0.6 }}>{inv ? "Esta factura todavía no fue emitida." : "Factura no encontrada."}</p>
+      <p style={{ opacity: 0.6 }}>{inv ? "Este comprobante todavía no fue emitido." : "Comprobante no encontrado."}</p>
     </div>;
   }
 
   const qr = await QRCode.toDataURL(qrUrl(inv, cfg?.cuit || process.env.ARCA_CUIT || "0"), { margin: 0, width: 220 });
+  const esNC = Number(inv.tipo_cbte || 11) === 13;
+  // Factura que anula (si es nota de crédito): por anula_id o, si la columna no existe, por el número en el detalle.
+  let anula = null;
+  if (esNC) {
+    try {
+      if (inv.anula_id) { const a = await fetch(`${SB_URL}/rest/v1/invoices?id=eq.${inv.anula_id}&select=punto_venta,numero,fecha&limit=1`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` }, cache: "no-store" }).then((x) => x.json()); anula = Array.isArray(a) ? a[0] : null; }
+      if (!anula) { const m = String(inv.detalle || "").match(/(\d{5})-(\d{8})/); if (m) anula = { punto_venta: Number(m[1]), numero: Number(m[2]) }; }
+    } catch {}
+  }
   const nroCompleto = `${pad(inv.punto_venta, 5)}-${pad(inv.numero, 8)}`;
   const esHomo = inv.environment !== "produccion";
   const docLbl = inv.doc_tipo === 80 ? "CUIT" : inv.doc_tipo === 96 ? "DNI" : "Documento";
@@ -114,11 +123,12 @@ export default async function FacturaPublica({ params }) {
                   <span style={{ fontSize: 7.5, color: "#64748b", marginTop: 1 }}>COD. {pad(inv.tipo_cbte, 2)}</span>
                 </div>
                 <div style={{ textAlign: "left" }}>
-                  <p style={{ fontSize: 21, fontWeight: 900, letterSpacing: "0.01em", margin: 0 }}>FACTURA</p>
+                  <p style={{ fontSize: esNC ? 17 : 21, fontWeight: 900, letterSpacing: "0.01em", margin: 0 }}>{esNC ? "NOTA DE CRÉDITO" : "FACTURA"}</p>
                   <p style={{ fontSize: 14, fontWeight: 800, fontFamily: "ui-monospace,monospace", margin: "1px 0 0", color: "#334155" }}>{nroCompleto}</p>
                 </div>
               </div>
               <p style={{ fontSize: 12, color: "#475569", margin: 0 }}>Fecha de emisión: <b style={{ color: "#111" }}>{fmtFecha(inv.fecha)}</b></p>
+              {esNC && anula && <p style={{ fontSize: 12, color: "#475569", margin: "4px 0 0" }}>Anula Factura C <b style={{ fontFamily: "ui-monospace,monospace", color: "#111" }}>{pad(anula.punto_venta, 5)}-{pad(anula.numero, 8)}</b>{anula.fecha ? ` del ${fmtFecha(anula.fecha)}` : ""}</p>}
             </div>
           </div>
 

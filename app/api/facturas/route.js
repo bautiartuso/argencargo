@@ -1,5 +1,8 @@
 // GET  /api/facturas?operation_id=… | ?limit=…  → facturas emitidas (admin)
 // POST /api/facturas → emite una Factura C vía ARCA y la guarda (admin)
+// POST /api/facturas {action:"nota_credito", invoice_id, importe?, motivo} → Nota de Crédito C (tipo 13)
+//   asociada a esa factura, por el total (default) o parcial. Queda en invoices con tipo_cbte 13 y
+//   anula_id = la factura (si la columna no existe todavía, la referencia va en el detalle).
 //   body: { operation_id?, client_id?, doc_tipo (80 CUIT/96 DNI/99 CF), doc_nro,
 //           receptor_nombre, receptor_domicilio, receptor_cond_iva, importe (ARS),
 //           detalle, fecha? (default hoy AR) }
@@ -37,16 +40,56 @@ export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
   const opId = url.searchParams.get("operation_id");
-  const limit = Math.min(Number(url.searchParams.get("limit") || 50), 200);
+  const limit = Math.min(Number(url.searchParams.get("limit") || 300), 500);
   const filt = opId ? `operation_id=eq.${opId}&` : "";
   const r = await sb(`/invoices?${filt}select=*,operations(operation_code),clients(first_name,last_name,client_code)&order=created_at.desc&limit=${limit}`);
+  if (r.status >= 400) return Response.json({ error: JSON.stringify(r.body || "").slice(0, 200) }, { status: 500 });
   return Response.json({ facturas: Array.isArray(r.body) ? r.body : [], configured: arcaReady() });
+}
+
+const pad = (n, l) => String(n ?? 0).padStart(l, "0");
+
+async function notaCredito(body) {
+  const id = String(body.invoice_id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: "Factura inválida" }, { status: 400 });
+  const r0 = await sb(`/invoices?id=eq.${id}&select=*&limit=1`);
+  const fc = Array.isArray(r0.body) ? r0.body[0] : null;
+  if (!fc || fc.status !== "emitida" || !fc.numero) return Response.json({ error: "La factura no está emitida" }, { status: 409 });
+  if (Number(fc.tipo_cbte || 11) === 13) return Response.json({ error: "Eso ya es una nota de crédito" }, { status: 409 });
+  const total = Math.round(Number(fc.importe) * 100) / 100;
+  const importe = body.importe != null && body.importe !== "" ? Math.round(Number(body.importe) * 100) / 100 : total;
+  if (!(importe > 0) || importe > total + 0.005) return Response.json({ error: `El importe tiene que ser mayor a 0 y hasta $ ${total.toFixed(2)}` }, { status: 400 });
+  const motivo = String(body.motivo || "").trim().slice(0, 300);
+  const cfg = await arcaConfig();
+  const env = cfg?.environment === "produccion" ? "produccion" : "homologacion";
+  if (fc.environment && fc.environment !== env) return Response.json({ error: `La factura es de ${fc.environment} y ARCA está en ${env}` }, { status: 409 });
+  const fecha = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const nroFc = `${pad(fc.punto_venta, 5)}-${pad(fc.numero, 8)}`;
+  const detalle = `Nota de crédito ${importe < total ? "parcial " : ""}por Factura C ${nroFc}${motivo ? ` · ${motivo}` : ""}`.slice(0, 500);
+  const base = {
+    operation_id: fc.operation_id || null, client_id: fc.client_id || null, environment: env, punto_venta: Number(cfg?.punto_venta || 1),
+    fecha, doc_tipo: fc.doc_tipo, doc_nro: fc.doc_nro || null, receptor_nombre: fc.receptor_nombre, receptor_domicilio: fc.receptor_domicilio,
+    receptor_cond_iva: fc.receptor_cond_iva, detalle, importe, tipo_cbte: 13, items: [{ label: detalle, usd: 0, ars: importe }], tc: fc.tc || null, status: "pendiente",
+  };
+  let ins = await sb(`/invoices`, { method: "POST", body: JSON.stringify({ ...base, anula_id: fc.id }) });
+  if (ins.status >= 400 && /anula_id/.test(JSON.stringify(ins.body || ""))) ins = await sb(`/invoices`, { method: "POST", body: JSON.stringify(base) });
+  const nc = Array.isArray(ins.body) ? ins.body[0] : null;
+  if (!nc?.id) return Response.json({ error: `No se pudo registrar la nota de crédito: ${JSON.stringify(ins.body || "").slice(0, 200)}` }, { status: 500 });
+  try {
+    const r = await emitirFacturaC({ tipo: 13, docTipo: fc.doc_tipo, docNro: fc.doc_tipo === 99 ? 0 : fc.doc_nro, condIvaReceptor: fc.receptor_cond_iva, importe, fecha, asociado: { tipo: Number(fc.tipo_cbte || 11), ptoVta: fc.punto_venta, nro: fc.numero, fecha: fc.fecha } }, env);
+    await sb(`/invoices?id=eq.${nc.id}`, { method: "PATCH", body: JSON.stringify({ numero: r.numero, cae: r.cae, cae_vto: r.caeVto, status: "emitida" }) });
+    return Response.json({ ok: true, id: nc.id, numero: r.numero, cae: r.cae, public_token: nc.public_token, importe });
+  } catch (e) {
+    await sb(`/invoices?id=eq.${nc.id}`, { method: "PATCH", body: JSON.stringify({ status: "error", error_detalle: String(e.message).slice(0, 500) }) });
+    return Response.json({ error: String(e.message) }, { status: 502 });
+  }
 }
 
 export async function POST(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!arcaReady()) return Response.json({ error: "ARCA sin configurar: faltan ARCA_CUIT / ARCA_CERT / ARCA_KEY en Vercel" }, { status: 500 });
   let body = null; try { body = await req.json(); } catch {}
+  if (body?.action === "nota_credito") return notaCredito(body);
   const docTipo = Number(body?.doc_tipo);
   const importe = Math.round(Number(body?.importe) * 100) / 100;
   const condIva = Number(body?.receptor_cond_iva);
