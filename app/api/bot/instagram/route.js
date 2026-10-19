@@ -13,7 +13,7 @@
 // POST → eventos del objeto "instagram" (campos messages y comments). Se valida la firma
 //        X-Hub-Signature-256 con META_APP_SECRET: sin firma válida no se procesa nada.
 //
-// Si faltan credenciales (IG_PAGE_TOKEN/IG_USER_ID o la cuenta del Estudio) o META_APP_SECRET,
+// Si faltan credenciales (IG_PAGE_TOKEN/IG_USER_ID o la cuenta del Estudio) o META_APP_SECRET (opcional IG_APP_SECRET),
 // se contesta 200 (Meta no reintenta) sin hacer nada y se avisa al dueño por Telegram una vez.
 //
 // ── Pasos en Meta (los hace Bautista, ~20 min) ───────────────────────────────────────────
@@ -56,12 +56,18 @@ export async function GET(req) {
   return Response.json({ error: "Verificación inválida" }, { status: 403 });
 }
 
-function firmaValida(raw, header, secret) {
-  if (!secret || !header) return false;
+// Meta firma con la clave secreta de la app (META_APP_SECRET). Si el webhook se configuró desde
+// "API con inicio de sesión de Instagram", firma con el secreto de la app de Instagram (IG_APP_SECRET):
+// se aceptan las dos.
+function firmaValida(raw, header) {
+  const secretos = [process.env.META_APP_SECRET, process.env.IG_APP_SECRET].filter(Boolean);
+  if (!secretos.length || !header) return false;
   const given = String(header).replace(/^sha256=/, "");
-  const mine = crypto.createHmac("sha256", secret).update(raw).digest("hex");
-  if (given.length !== mine.length) return false;
-  try { return crypto.timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(mine, "hex")); } catch { return false; }
+  return secretos.some((secret) => {
+    const mine = crypto.createHmac("sha256", secret).update(raw).digest("hex");
+    if (given.length !== mine.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(mine, "hex")); } catch { return false; }
+  });
 }
 
 const esc = (s) => String(s || "").replace(/[<>&]/g, "");
@@ -74,7 +80,7 @@ export async function POST(req) {
   const raw = await req.text();
   const secret = process.env.META_APP_SECRET;
   if (!secret) { waitUntil(avisarFalta("falta META_APP_SECRET (no se puede validar la firma de Meta)")); return Response.json({ ok: true, skipped: "sin app secret" }); }
-  if (!firmaValida(raw, req.headers.get("x-hub-signature-256"), secret)) { console.error("[bot/instagram] firma inválida (¿META_APP_SECRET de otra app?)", { con_firma: !!req.headers.get("x-hub-signature-256"), bytes: raw.length }); return Response.json({ error: "Firma inválida" }, { status: 401 }); }
+  if (!firmaValida(raw, req.headers.get("x-hub-signature-256"))) { console.error("[bot/instagram] firma inválida (¿falta IG_APP_SECRET o META_APP_SECRET es de otra app?)", { con_firma: !!req.headers.get("x-hub-signature-256"), bytes: raw.length, cuerpo: raw.slice(0, 300) }); return Response.json({ error: "Firma inválida" }, { status: 401 }); }
   let body = null; try { body = JSON.parse(raw); } catch {}
   if (body?.object !== "instagram" || !Array.isArray(body.entry)) { console.log("[bot/instagram] evento ignorado", body?.object); return Response.json({ ok: true, ignored: true }); }
   console.log("[bot/instagram] evento recibido", JSON.stringify(body).slice(0, 600));
