@@ -47,11 +47,26 @@ export default function HistoriasPanel({ token }) {
   const aplicar = (j) => { if (Array.isArray(j.generadas)) setGeneradas(j.generadas); if (Array.isArray(j.publicadas)) setPublicadas(j.publicadas); };
   useEffect(() => { (async () => { try { aplicar(await api()); } catch (e) { toast(e.message, "error"); } })(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const subir = async (file) => {
-    if (!file || !file.type?.startsWith("image/")) { toast("Pegá o elegí una imagen", "error"); return; }
+  // Las capturas del iPhone pesan 3 a 6 MB en PNG y Vercel rechaza el pedido (límite 4,5 MB):
+  // se achican acá a JPEG de hasta 1400 px de ancho antes de mandarlas. La reseña se lee igual.
+  const achicar = (file) => new Promise((resolve) => {
+    try {
+      const img = new Image(); const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, 1400 / img.width); const w = Math.round(img.width * k), h = Math.round(img.height * k);
+        const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(img, 0, 0, w, h);
+        c.toBlob((b) => { URL.revokeObjectURL(url); resolve(b ? new File([b], "captura.jpg", { type: "image/jpeg" }) : file); }, "image/jpeg", 0.9);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    } catch { resolve(file); }
+  });
+  const subir = async (file0) => {
+    if (!file0 || !file0.type?.startsWith("image/")) { toast("Pegá o elegí una imagen", "error"); return; }
     setLeyendo(true);
     try {
-      const fd = new FormData(); fd.append("file", file, file.name || "captura.png");
+      const file = await achicar(file0);
+      const fd = new FormData(); fd.append("file", file, file.name || "captura.jpg");
       const j = await api({ method: "POST", body: fd });
       aplicar(j);
       if (!j.recortada) { setEncuadre({ url: j.url, bbox: j.bbox }); toast("No ubiqué la reseña: va la captura entera. Ajustá el encuadre.", "error"); }
