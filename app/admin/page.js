@@ -15,6 +15,7 @@ import { CcFinancieraPanel } from "../ccfinanciera/page";
 import MailPanel from "./MailPanel";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printPackageLabelsMulti, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
+import { armarDatosAdmin, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import TicketsPanel from "./components/TicketsPanel";
 import HistoriasPanel from "./components/HistoriasPanel";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
@@ -15859,131 +15860,10 @@ function AdminCalculator({token}){
     return()=>clearTimeout(t);
   },[autoCalc,bloqueado,products,pkgs,taxCond,origin,hasBrand,hasBattery,clientOverrides,tariffs,config]); // eslint-disable-line react-hooks/exhaustive-deps
   const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  // PDF de cotización (18/10/2026): el mismo que exporta el cliente desde el portal (lib/cotizacion-pdf.js).
   const printPdf=(ch,eff)=>{
-    const w=window.open("","_blank");if(!w)return;
-    const rows=products.filter(p=>toN(p.unit_price)>0).map(p=>{const up=toN(p.unit_price);const fob=up*Number(p.quantity||1);return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||"—"}</td></tr>`;}).join("");
-    const taxLabel=taxCond==="responsable_inscripto"?"Responsable Inscripto":"Monotributista";
     const bd=eff?.bd||ch.bd||{};
-    const desEff=eff?.desEff||0;
-    const ivaDesEff=eff?.ivaDesEff||0;
-    const effTotal=eff?.effTotal||ch.totalAbonar||0;
-    // Sección 1: Servicios (flete + seguro)
-    const rowsServicios=[];
-    const battExtraPdf=Number(ch.battExtra||0);
-    const fleteBasePdf=Number(ch.flete||0)-battExtraPdf;
-    // Recargo por valor: NO se discrimina, va folded dentro del Servicio Integral de importación.
-    // En blanco el surcharge es el recargo por sobrepeso y tiene fila propia — no se pliega.
-    const surchargePdf=bd.isBlanco?0:recargoDe(ch).amt;
-    const svcLabelPdf=ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(surchargePdf>0?"Servicio Integral de importación":"Flete");
-    const svcAmtPdf=fleteBasePdf+surchargePdf;
-    if(svcAmtPdf>0)rowsServicios.push(`<div class="row"><span>${svcLabelPdf}</span><span>USD ${fmt(svcAmtPdf)}</span></div>`);
-    if(battExtraPdf>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(battExtraPdf)}</span></div>`);
-    if(Number(ch.overweightSurcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por sobrepeso</span><span>USD ${fmt(ch.overweightSurcharge)}</span></div>`);
-    if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
-    // Sección 2: Aduana / impuestos
-    const rowsAduana=[];
-    if(bd.isBlanco){
-      if(bd.derechos>0)rowsAduana.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(bd.derechos)}</span></div>`);
-      if(bd.tasaE>0)rowsAduana.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(bd.tasaE)}</span></div>`);
-      if(bd.iva>0)rowsAduana.push(`<div class="row"><span>IVA de Importación</span><span>USD ${fmt(bd.iva)}</span></div>`);
-      if(bd.isMaritimo){
-        if(bd.ivaAdic>0)rowsAduana.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(bd.ivaAdic)}</span></div>`);
-        if(bd.iigg>0)rowsAduana.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(bd.iigg)}</span></div>`);
-        if(bd.iibb>0)rowsAduana.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(bd.iibb)}</span></div>`);
-      }
-      for(const [l,v] of (eff?.certLines||[]))rowsAduana.push(`<div class="row"><span>${l}</span><span>USD ${fmt(v)}</span></div>`);
-      if(bd.isAereo&&desEff>0)rowsAduana.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desEff)}</span></div>`);
-      if(bd.isAereo&&ivaDesEff>0)rowsAduana.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesEff)}</span></div>`);
-    }
-    // (Recargo por valor ya folded arriba en el Servicio Integral — no se muestra como fila aparte.)
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
-      /* @page con margin 0 hace que el navegador no tenga espacio para imprimir su header/footer
-         (fecha, URL "about:blank", título, número de página). El contenido lleva su propio padding. */
-      @page{size:A4;margin:0}
-      *,*:before,*:after{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
-      html,body{margin:0;padding:0}
-      body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:12mm 14mm 8mm}
-      h1{font-size:20px;margin:0 0 2px;color:#1A3D6E;letter-spacing:-0.01em}
-      .sub{color:#666;font-size:11px;margin-bottom:12px}
-      .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px;padding:10px 14px;background:#f4f6fa;border-radius:8px}
-      .grid div{font-size:10px;color:#555;letter-spacing:0.05em;text-transform:uppercase;font-weight:700}
-      .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700;text-transform:none;letter-spacing:normal}
-      h3{margin:12px 0 4px;font-size:12px;color:#1A3D6E;letter-spacing:0.02em}
-      table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10.5px}
-      th,td{padding:5px 9px;border-bottom:1px solid #e5e7eb;text-align:left}
-      th{background:#1A3D6E !important;color:#fff !important;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
-      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10px}
-      tr:nth-child(even) td{background:#fafbfc}
-      .section{margin-top:10px}
-      .section-title{font-size:9.5px;font-weight:700;color:#1A3D6E;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 4px;padding:0 4px}
-      .breakdown{padding:8px 12px;background:#f4f6fa;border-radius:8px;font-size:11.5px}
-      .breakdown .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}
-      .breakdown .row:last-child{border-bottom:none}
-      .breakdown .row span:last-child{font-weight:600;color:#111}
-      .totals{margin-top:12px;padding:16px 20px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:18px;align-items:end}
-      .totals .col{display:flex;flex-direction:column;gap:2px}
-      .totals .col.hero{padding-left:18px;border-left:1px solid rgba(255,255,255,0.22)}
-      .totals .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:0.08em;opacity:.85;font-weight:700}
-      .totals .big{font-size:16px;font-weight:700;letter-spacing:-0.01em;margin-top:3px}
-      .totals .col.hero .lbl{opacity:1;color:#E8D098 !important}
-      .totals .col.hero .big{font-size:22px;color:#fff}
-      .totals .hint{font-size:9px;color:rgba(255,255,255,0.55);font-weight:500;letter-spacing:0;margin-top:2px}
-      .note{margin-top:8px;padding:9px 12px;background:#FFF8E1;border-left:3px solid #E8D098;border-radius:4px;font-size:9.5px;color:#5C4A1F;line-height:1.45}
-      .note b{color:#1A3D6E}
-      .foot{margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#666;line-height:1.45}
-      .brand{margin-top:8px;text-align:center;padding:4px 0 0}
-      .brand img{max-width:260px;width:100%;height:auto;display:block;margin:0 auto}
-      .brand-fallback{display:none}
-      .brand img.failed + .brand-fallback{display:block}
-      .brand-fallback .line{width:48px;height:2px;background:#1A3D6E;margin:0 auto 10px;border-radius:2px}
-      .brand-fallback .name{font-size:18px;font-weight:800;color:#1A3D6E;letter-spacing:0.28em;margin:0}
-      .brand-fallback .tag{font-size:9.5px;color:#888;letter-spacing:0.22em;text-transform:uppercase;margin:5px 0 0;font-weight:600}
-      /* Print: evitar márgenes extra del navegador y permitir que .totals/brand fluyan con el contenido.
-         No forzamos page-break-inside:avoid en bloques grandes (Aduana marítimo tiene 6 filas y empujaba
-         todo a una 2da página vacía). Si necesita partirse, que se parta. */
-      @media print{
-        html,body{height:auto}
-        body{padding:10mm 14mm 6mm !important}
-        .totals,.brand{page-break-inside:avoid;break-inside:avoid}
-      }
-    </style></head><body>
-      <h1>Cotización Argencargo</h1>
-      <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
-      <div class="grid">
-        <div>Cliente<b>${(clientName||"—").replace(/</g,"&lt;")}</b></div>
-        <div>Servicio<b>${ch.name}</b></div>
-        <div>Origen<b>${origin}</b></div>
-        <div>${bd.isAereo?"Peso facturable":"CBM facturable"}<b>${bd.isAereo?`${fmt(Number(ch.fleteAmt||0))} kg`:`${Number(ch.fleteAmt||0).toFixed(4)} m³`}</b></div>
-      </div>
-      <h3>Productos</h3>
-      <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
-      ${rowsServicios.length?`<div class="section"><p class="section-title">Servicios — Flete y seguro</p><div class="breakdown">${rowsServicios.join("")}</div></div>`:""}
-      ${rowsAduana.length?`<div class="section"><p class="section-title">Aduana — Impuestos y gastos</p><div class="breakdown">${rowsAduana.join("")}</div></div>`:""}
-      <div class="totals">
-        <div class="col"><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div><div class="hint">mercadería en origen</div></div>
-        <div class="col"><div class="lbl">Costo de importación</div><div class="big">USD ${fmt(effTotal)}</div><div class="hint">a abonar a Argencargo</div></div>
-        <div class="col hero"><div class="lbl">Costo puesto en Argentina</div><div class="big">USD ${fmt(Number(totalFob||0)+Number(effTotal||0))}</div><div class="hint">FOB + Costo importación</div></div>
-      </div>
-      <div class="note"><b>ℹ Aclaración:</b> a Argencargo solo se abona el <b>Costo de importación</b>. El <b>Costo puesto en Argentina</b> suma lo pagado al proveedor (FOB) — refleja el costo final de la mercadería puesta en el país.</div>
-      <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
-      <div class="brand">
-        <img src="${typeof window!=="undefined"?window.location.origin:""}/logo_cotizaciones.png" alt="Argencargo" onerror="this.classList.add('failed')"/>
-        <div class="brand-fallback">
-          <div class="line"></div>
-          <p class="name">ARGENCARGO</p>
-          <p class="tag">Air &amp; Sea · Integral Freight Forwarding</p>
-        </div>
-      </div>
-      <script>
-        // Esperar a que la imagen del logo cargue (o falle) antes de abrir el print dialog,
-        // para que el logo aparezca renderizado en el PDF.
-        const img=document.querySelector('.brand img');
-        const go=()=>setTimeout(()=>window.print(),120);
-        if(img&&img.complete)go();
-        else if(img){img.addEventListener('load',go);img.addEventListener('error',go);setTimeout(go,1500);}
-        else go();
-      </script>
-    </body></html>`);w.document.close();
+    abrirCotizacionPdf(armarDatosAdmin({ch,eff:{...eff,recargoValor:bd.isBlanco?0:recargoDe(ch).amt},products,pkgs,origin,taxCond,clientName}));
   };
   const addProduct=()=>setProducts(p=>[...p,{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
   const rmProduct=(i)=>setProducts(p=>p.length>1?p.filter((_,j)=>j!==i):p);

@@ -8,6 +8,7 @@ import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
 import MaritimeCargoCards from "./components/MaritimeCargoCards";
 import { useT, LANGS } from "../../lib/i18n-portal";
+import { armarDatosPortal, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import SupportPage from "./components/SupportPage";
 import { hoyAR } from "../../lib/fecha-ar";
 
@@ -1387,111 +1388,10 @@ function RatesPage({token,client}){
 // mismo PDF que se le envía manualmente. Recibe el canal expandido + contexto.
 // NOTA: el nombre "printPortalCalcPdf" evita colisión con el printQuotePdf de
 // lib/pdf-templates.js (que es para PDF de cotizaciones cerradas con op).
-function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0,t}){
-  if(typeof window==="undefined")return;
-  const w=window.open("","_blank");if(!w)return;
-  const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const isAereo=ch.key?.includes("aereo");
-  const isBlanco=Boolean(ch.isBlanco);
-  const isMaritimo=ch.key?.includes("maritimo");
-  const fleteAmt=isAereo?(ch.pesoFact||ch.pesoBruto||0):(ch.cbm||0);
-  const fleteAmtLbl=isAereo?`${fmt(fleteAmt)} kg`:`${Number(fleteAmt||0).toFixed(4)} m³`;
-  // Productos
-  // toN: el precio puede venir con coma ("2,9") desde el input — Number() lo tiraba a NaN y la fila desaparecía.
-  const rows=(products||[]).filter(p=>toN(p.unit_price_usd||p.unit_price)>0).map(p=>{
-    const up=toN(p.unit_price_usd||p.unit_price);
-    const fob=up*(toN(p.quantity)||1);
-    return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||p.ncm_code||"—"}</td></tr>`;
-  }).join("");
-  // Aduana (solo canales A — isBlanco). Si el portal trae los items pre-agregados los uso directamente.
-  let derechos=0,tasaE=0,iva=0,ivaAdic=0,iigg=0,iibb=0,desemb=0,ivaDesemb=0;
-  if(isBlanco&&Array.isArray(ch.items)){
-    ch.items.forEach(it=>{
-      derechos+=Number(it.derechos||0);tasaE+=Number(it.tasa_e||0);iva+=Number(it.iva||0);
-      ivaAdic+=Number(it.ivaAdic||0);iigg+=Number(it.iigg||0);iibb+=Number(it.iibb||0);
-      desemb+=Number(it.desembolso||0);ivaDesemb+=Number(it.ivaDesemb||0);
-    });
-  }
-  const rowsServicios=[];
-  if((Number(ch.flete||0)+Number(ch.surcharge||0))>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?t("pq.seaService"):(Number(ch.surcharge||0)>0?t("pq.integralService"):t("pq.freight"))}</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.surcharge||0))}</span></div>`);
-  if(Number(ch.battExtra||0)>0)rowsServicios.push(`<div class="row"><span>${t("op.batterySurcharge")}</span><span>USD ${fmt(ch.battExtra)}</span></div>`);
-  if(Number(ch.overweightSurcharge||0)>0)rowsServicios.push(`<div class="row"><span>${t("op.overweight")}</span><span>USD ${fmt(ch.overweightSurcharge)}</span></div>`);
-  if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
-  if(delivCost>0)rowsServicios.push(`<div class="row"><span>${t("pq.shipCaba")}</span><span>USD ${fmt(delivCost)}</span></div>`);
-  const rowsAduana=[];
-  if(isBlanco){
-    if(derechos>0)rowsAduana.push(`<div class="row"><span>${t("pq.duties")}</span><span>USD ${fmt(derechos)}</span></div>`);
-    if(tasaE>0)rowsAduana.push(`<div class="row"><span>${t("merc.statRate")}</span><span>USD ${fmt(tasaE)}</span></div>`);
-    if(iva>0)rowsAduana.push(`<div class="row"><span>${t("pq.ivaImport")}</span><span>USD ${fmt(iva)}</span></div>`);
-    if(isMaritimo){
-      if(ivaAdic>0)rowsAduana.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(ivaAdic)}</span></div>`);
-      if(iigg>0)rowsAduana.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(iigg)}</span></div>`);
-      if(iibb>0)rowsAduana.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(iibb)}</span></div>`);
-    }
-    if(isAereo&&desemb>0)rowsAduana.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desemb)}</span></div>`);
-    if(isAereo&&ivaDesemb>0)rowsAduana.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesemb)}</span></div>`);
-  }
-  const effTotal=Number(ch.total||0)+Number(delivCost||0);
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${t("pq.quoteTitle")}</title><style>
-    @page{size:A4;margin:0}
-    *,*:before,*:after{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
-    html,body{margin:0;padding:0}
-    body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:12mm 14mm 8mm}
-    h1{font-size:20px;margin:0 0 2px;color:#1A3D6E;letter-spacing:-0.01em}
-    .sub{color:#666;font-size:11px;margin-bottom:12px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px;padding:10px 14px;background:#f4f6fa;border-radius:8px}
-    .grid div{font-size:10px;color:#555;letter-spacing:0.05em;text-transform:uppercase;font-weight:700}
-    .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700;text-transform:none;letter-spacing:normal}
-    h3{margin:12px 0 4px;font-size:12px;color:#1A3D6E;letter-spacing:0.02em}
-    table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10.5px}
-    th,td{padding:5px 9px;border-bottom:1px solid #e5e7eb;text-align:left}
-    th{background:#1A3D6E !important;color:#fff !important;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
-    td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10px}
-    tr:nth-child(even) td{background:#fafbfc}
-    .section{margin-top:10px}
-    .section-title{font-size:9.5px;font-weight:700;color:#1A3D6E;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 4px;padding:0 4px}
-    .breakdown{padding:8px 12px;background:#f4f6fa;border-radius:8px;font-size:11.5px}
-    .breakdown .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}
-    .breakdown .row:last-child{border-bottom:none}
-    .breakdown .row span:last-child{font-weight:600;color:#111}
-    .totals{margin-top:12px;padding:16px 20px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:18px;align-items:end}
-    .totals .col{display:flex;flex-direction:column;gap:2px}
-    .totals .col.hero{padding-left:18px;border-left:1px solid rgba(255,255,255,0.22)}
-    .totals .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:0.08em;opacity:.85;font-weight:700}
-    .totals .big{font-size:16px;font-weight:700;letter-spacing:-0.01em;margin-top:3px}
-    .totals .col.hero .lbl{opacity:1;color:#E8D098 !important}
-    .totals .col.hero .big{font-size:22px;color:#fff}
-    .totals .hint{font-size:9px;color:rgba(255,255,255,0.55);font-weight:500;letter-spacing:0;margin-top:2px}
-    .note{margin-top:8px;padding:9px 12px;background:#FFF8E1;border-left:3px solid #E8D098;border-radius:4px;font-size:9.5px;color:#5C4A1F;line-height:1.45}
-    .note b{color:#1A3D6E}
-    .foot{margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#666;line-height:1.45}
-    .brand{margin-top:8px;text-align:center;padding:4px 0 0}
-    .brand img{max-width:260px;width:100%;height:auto;display:block;margin:0 auto}
-    @media print{html,body{height:auto} body{padding:10mm 14mm 6mm !important} .totals,.brand{page-break-inside:avoid;break-inside:avoid}}
-  </style></head><body>
-    <h1>${t("pq.quoteTitle")}</h1>
-    <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
-    <div class="grid">
-      <div>Cliente<b>${(clientName||"—").replace(/</g,"&lt;")}</b></div>
-      <div>Servicio<b>${ch.name||"—"}</b></div>
-      <div>Origen<b>${origin||"—"}</b></div>
-      <div>${isAereo?"Peso facturable":"CBM facturable"}<b>${fleteAmtLbl}</b></div>
-    </div>
-    <h3>Productos</h3>
-    <table><thead><tr><th>${t("common.description")}</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
-    ${rowsServicios.length?`<div class="section"><p class="section-title">Servicios — Flete y seguro</p><div class="breakdown">${rowsServicios.join("")}</div></div>`:""}
-    ${rowsAduana.length?`<div class="section"><p class="section-title">Aduana — Impuestos y gastos</p><div class="breakdown">${rowsAduana.join("")}</div></div>`:""}
-    <div class="totals">
-      <div class="col"><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div><div class="hint">${t("pq.goodsAtOrigin")}</div></div>
-      <div class="col"><div class="lbl">${t("pq.importCost")}</div><div class="big">USD ${fmt(effTotal)}</div><div class="hint">a abonar a Argencargo</div></div>
-      <div class="col hero"><div class="lbl">${t("pq.landedCost")}</div><div class="big">USD ${fmt(Number(totalFob||0)+Number(effTotal||0))}</div><div class="hint">${t("pq.fobPlusImport")}</div></div>
-    </div>
-    <div class="note"><b>${t("pq.noteLabel")}</b> ${t("pq.notePart1")} <b>${t("pq.importCost")}</b>. ${t("pq.landedCost")} ${t("pq.notePart2")}</div>
-    <div class="foot">${t("pq.disclaimer")}</div>
-    <div class="brand"><img src="https://www.argencargo.com.ar/logo_cotizaciones.png" alt="Argencargo"/></div>
-    <script>window.onload=()=>setTimeout(()=>window.print(),300);</script>
-  </body></html>`);
-  w.document.close();
+// PDF de cotización (18/10/2026): el mismo que exporta Bautista desde la calculadora del admin
+// (lib/cotizacion-pdf.js). Dos hojas A4: resumen y detalle por producto con NCM e impuestos.
+function printPortalCalcPdf({ch,products,pkgs,origin,client,delivCost=0,codigo}){
+  abrirCotizacionPdf(armarDatosPortal({ch,products,pkgs,origin,client,delivCost,codigo}));
 }
 
 function CalculatorPage({token,client,preset}){
@@ -2012,7 +1912,7 @@ function CalculatorPage({token,client,preset}){
               {ch.isBlanco&&breakdown(ch,total)}
               <div style={{display:"flex",gap:10,marginTop:ch.isBlanco?14:0,flexWrap:"wrap"}}>
                 <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{flex:"1 1 240px",padding:"14px 18px",fontSize:14.5,fontWeight:800,borderRadius:10,background:"#22c55e",color:"#062012",textAlign:"center",textDecoration:"none",letterSpacing:"0.01em",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}}>{t("calc.goWithThis")}</a>
-                <button onClick={()=>printPortalCalcPdf({t,ch,products,totalFob:results.totalFob??totalFob,origin:origin||results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(255,255,255,0.32)",background:"rgba(255,255,255,0.14)",color:"#fff",cursor:"pointer"}}>📄 Exportar PDF</button>
+                <button onClick={()=>printPortalCalcPdf({ch,products,pkgs,origin:origin||results.origin,client,delivCost,codigo:savedQuoteNum})} style={{padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(255,255,255,0.32)",background:"rgba(255,255,255,0.14)",color:"#fff",cursor:"pointer"}}>📄 Exportar PDF</button>
               </div>
             </div>}
           </div>;})}
