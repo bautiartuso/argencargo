@@ -4,10 +4,11 @@
 // desarrollo o después de fallas Meta frena las entregas sin avisar (19/10/2026: los DMs se
 // veían por la API pero nunca llegaban al webhook). Este cron no depende de eso: lee la bandeja
 // de Instagram de la página y los comentarios recientes, y contesta lo nuevo con las MISMAS
-// reglas y los MISMOS marcadores que el webhook (lib/ig.js), así nunca contesta dos veces:
+// reglas y los MISMOS marcadores que el webhook (lib/ig.js), así nunca contesta dos veces (los
+// comentarios se buscan en TODAS las publicaciones, no solo en las últimas):
 //   · DM: el último mensaje del cliente en los últimos 30 min → DM con el texto ig_dm_text
 //     (una vez cada 7 días por persona).
-//   · Comentario de primer nivel de otra cuenta en las publicaciones recientes → respuesta
+//   · Comentario de primer nivel de otra cuenta en cualquier publicación (últimos 30 min) → respuesta
 //     pública ig_comment_text + DM privado (misma regla de 7 días). Dedupe por comment_id.
 // ?dry=1 devuelve qué contestaría sin mandar nada.
 
@@ -59,8 +60,10 @@ export async function GET(req) {
 
   // ── Comentarios en las publicaciones recientes ──
   try {
-    const media = await get(cfg, `${cfg.igUserId}/media`, { fields: "id,comments_count,comments.limit(25){id,timestamp,from,username}", limit: "6" });
-    for (const m of media.data || []) {
+    // Todas las publicaciones (la gente comenta también en posteos viejos: 19/10/2026 el comentario de
+    // prueba cayó en uno de mayo 2025). Una sola llamada; los comentarios vienen del más nuevo al más viejo.
+    const media = await get(cfg, `${cfg.igUserId}/media`, { fields: "id,comments_count,comments.limit(10){id,timestamp,from,username,parent_id}", limit: "100" });
+    for (const m of (media.data || []).filter((x) => Number(x.comments_count) > 0)) {
       for (const cm of m.comments?.data || []) {
         if (new Date(cm.timestamp).getTime() < desde) continue;
         const autor = cm.from?.id;
