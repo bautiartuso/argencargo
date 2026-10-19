@@ -100,8 +100,13 @@ async function procesar(entries) {
     // El webhook es de la app (Argencargo Radar), que también tiene vinculadas otras cuentas
     // (MyBox, ARGENMAQ): solo se atiende lo que llega a la cuenta de Argencargo.
     if (entry.id && String(entry.id) !== cfg.igUserId) { console.log("[bot/instagram] entrada de otra cuenta ignorada", entry.id); continue; }
-    // ── DMs (entry.messaging) ──
-    for (const ev of Array.isArray(entry.messaging) ? entry.messaging : []) {
+    // ── DMs: llegan en entry.messaging (formato Messenger) o en entry.changes con field "messages"
+    // (formato de la API con inicio de sesión de Instagram y de los eventos de prueba) ──
+    const dms = [
+      ...(Array.isArray(entry.messaging) ? entry.messaging : []),
+      ...(Array.isArray(entry.changes) ? entry.changes : []).filter((c) => c.field === "messages" && c.value).map((c) => c.value),
+    ];
+    for (const ev of dms) {
       const m = ev.message;
       if (!m || m.is_echo || m.is_deleted || ev.reaction || ev.read || ev.postback) continue;
       const from = ev.sender?.id;
