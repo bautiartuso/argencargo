@@ -9278,13 +9278,22 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   // sea monotributista, así que hay un botón por cliente (no solo el RI). Pisa todos los campos del
   // destinatario con la ficha del cliente; "Virrey Loreto" (la predeterminada guardada) va último.
   const clientesVuelo=Array.from(new Map(flightOpsData.map(o=>o.clients).filter(c=>c&&(c.cuit||c.dni||c.company_name||c.last_name)).map(c=>[c.id||c.cuit||c.client_code,c])).values());
+  // CUIT desde el DNI (persona física, prefijo 20; si el verificador da 10, 23). Es el armado estándar
+  // de ARCA; para mujeres el prefijo real es 27, así que el toast avisa que se armó solo.
+  const cuitDesdeDni=(dni)=>{const d=String(dni||"").replace(/\D/g,"");if(d.length<7||d.length>8)return "";
+    const arma=(pre)=>{const n=(pre+d.padStart(8,"0")).split("").map(Number);const m=[5,4,3,2,7,6,5,4,3,2];const r=n.reduce((a,x,i)=>a+x*m[i],0)%11;const v=r===0?0:11-r;return v===10?null:`${pre}-${d.padStart(8,"0")}-${v}`;};
+    return arma("20")||arma("23")||"";};
   const applyCliente=(c)=>{
     const addr=[c.street,c.floor_apt,c.city,c.province].map(x=>(x||"").trim()).filter(Boolean).join(", ");
-    const body={dest_name:c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),dest_tax_id:c.cuit||c.dni||"",dest_address:addr,dest_postal_code:c.postal_code||"",dest_phone:c.whatsapp||"",dest_email:c.email||"",destination_address:[c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),addr,c.postal_code].filter(Boolean).join(", ")};
+    const cuitArmado=!c.cuit&&c.dni?cuitDesdeDni(c.dni):"";
+    const body={dest_name:c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),dest_tax_id:c.cuit||cuitArmado||c.dni||"",dest_address:addr,dest_postal_code:c.postal_code||"",dest_phone:c.whatsapp||"",dest_email:c.email||"",destination_address:[c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),addr,c.postal_code].filter(Boolean).join(", ")};
     setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});
     updateFlight(body);
-    onFlash(`Destinatario: ${body.dest_name}${addr?"":" (sin dirección en la ficha)"}`);
+    onFlash(`Destinatario: ${body.dest_name}${cuitArmado?` · CUIT armado desde el DNI (${cuitArmado}); si es mujer va 27-`:""}${addr?"":" · sin dirección en la ficha"}`);
   };
+  // La predeterminada (la oficina) solo mueve la ENTREGA: cambia dirección y CP y deja nombre, CUIT,
+  // teléfono y email como están (19/10/2026: tocar "Virrey Loreto" pisaba el nombre del cliente).
+  const applyOficina=(a)=>{const body={dest_address:a.address||"",dest_postal_code:a.postal_code||"",destination_address:[dest.dest_name,a.address,a.postal_code].filter(Boolean).join(", ")};setDest(prev=>({...prev,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code}));updateFlight(body);onFlash(`Entrega en ${a.label}`);};
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
   const delAddr=async(id)=>{if(!await confirmDialog("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
   const [items,setItems]=useState(invoiceItems);const [presentando,setPresentando]=useState(false);
@@ -9852,17 +9861,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       const Linea=({l,v,mono})=><p style={{margin:"0 0 4px",fontSize:13,color:"#fff",display:"flex",gap:10}}><span style={{...FE_LBL,fontSize:9.5,minWidth:64,paddingTop:3}}>{l}</span><span style={{fontFamily:mono?"'JetBrains Mono',monospace":undefined,fontWeight:mono?600:500}}>{v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</span></p>;
       return <FeCard title="Destinatario" icon="📍" tone={cerrada?"ok":undefined}
         summary={cerrada?<FePill color="#22c55e" title="Con la factura presentada el destinatario queda fijo. Para cambiarlo, reabrí la factura.">🔒 Factura presentada · {formatDateShort(flight.invoice_presented_at)}</FePill>:null}
-        actions={cerrada?null:(()=>{
-          const btn=(key,on,txt,color,title)=><button key={key} type="button" onClick={on} title={title} style={{height:30,padding:"0 11px",fontSize:11.5,fontWeight:700,border:`1px solid ${color}55`,borderRadius:8,background:`${color}14`,color,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6}}>{txt}</button>;
-          const nombreCli=c=>c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code;
-          const condCli=c=>c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Mono":"CF";
-          const oficina=savedAddrs.find(a=>a.is_default);const otras=savedAddrs.filter(a=>!a.is_default);
-          return <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {clientesVuelo.map(c=>btn(c.id||c.cuit,()=>applyCliente(c),<><span>👤</span>{nombreCli(c)}<span style={{opacity:0.6,fontWeight:600}}>· {condCli(c)} {c.cuit||c.dni||""}</span></>,"#60a5fa",`Usar los datos de la ficha del cliente: ${nombreCli(c)} · ${c.cuit?"CUIT "+c.cuit:c.dni?"DNI "+c.dni:"sin CUIT/DNI"}${[c.street,c.city].filter(Boolean).length?" · "+[c.street,c.city].filter(Boolean).join(", "):" · sin dirección cargada"}`))}
-            {otras.map(a=>btn(a.id,()=>applyAddr(a),<><span>📌</span>{a.label}</>,"#c4b5fd",[a.name,a.address].filter(Boolean).join(" · ")))}
-            {oficina&&btn(oficina.id,()=>applyAddr(oficina),<><span>🏢</span>{oficina.label}</>,IC,`Dirección de la oficina: ${[oficina.name,oficina.address].filter(Boolean).join(" · ")}. Pisa nombre, CUIT y dirección.`)}
-            <button type="button" onClick={()=>{if(!showNewAddr)setNewAddr(p=>({...p,name:dest.dest_name||"",tax_id:dest.dest_tax_id||"",address:dest.dest_address||"",postal_code:dest.dest_postal_code||"",phone:dest.dest_phone||"",email:dest.dest_email||""}));setShowNewAddr(!showNewAddr);}} title="Guardar el destinatario actual como dirección predeterminada" style={{height:30,padding:"0 10px",fontSize:11,fontWeight:700,border:"1px dashed rgba(255,255,255,0.2)",borderRadius:8,background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontFamily:"inherit"}}>{showNewAddr?"✕":"+ Guardar"}</button>
-          </div>;})()}>
+        actions={null}>
         {cerrada?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
           <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"12px 14px"}}>
             <p style={{...FE_LBL,marginBottom:8}}>Quién recibe</p>
@@ -9877,6 +9876,27 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             <Linea l="CP" v={dest.dest_postal_code||flight.dest_postal_code} mono/>
           </div>
         </div>:<>
+        {(()=>{
+          const nombreCli=c=>c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code;
+          const condCli=c=>c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Monotributo":"Cons. final";
+          const oficina=savedAddrs.find(a=>a.is_default);const otras=savedAddrs.filter(a=>!a.is_default);
+          const Chip=({on,icon,main,sub,color,title,active})=><button type="button" onClick={on} title={title} style={{display:"inline-flex",alignItems:"center",gap:9,height:40,padding:"0 13px 0 9px",borderRadius:11,border:`1px solid ${active?color:color+"44"}`,background:active?color+"22":color+"0d",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background=color+"22";e.currentTarget.style.borderColor=color;}} onMouseLeave={e=>{e.currentTarget.style.background=active?color+"22":color+"0d";e.currentTarget.style.borderColor=active?color:color+"44";}}>
+            <span style={{width:24,height:24,borderRadius:7,background:color+"26",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{icon}</span>
+            <span style={{display:"flex",flexDirection:"column",lineHeight:1.15}}><span style={{fontSize:12.5,fontWeight:800,whiteSpace:"nowrap"}}>{main}</span>{sub&&<span style={{fontSize:10.5,fontWeight:600,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{sub}</span>}</span>
+          </button>;
+          const Grupo=({l,children})=><div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{...FE_LBL,fontSize:9.5,marginRight:2}}>{l}</span>{children}</div>;
+          const mismaDir=a=>!!a&&(dest.dest_address||"").trim()&&(dest.dest_address||"").trim()===(a.address||"").trim();
+          return <div style={{display:"flex",flexDirection:"column",gap:10,padding:"12px 14px",marginBottom:14,borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+            <Grupo l="A nombre de">
+              {clientesVuelo.map(c=><Chip key={c.id||c.cuit} on={()=>applyCliente(c)} icon="👤" main={nombreCli(c)} sub={`${condCli(c)} · ${c.cuit?c.cuit:c.dni?"DNI "+c.dni:"sin CUIT"}`} color="#60a5fa" active={(dest.dest_name||"").trim()===nombreCli(c)} title={`Ficha del cliente: nombre, CUIT, dirección, teléfono y email${c.cuit?"":c.dni?". No tiene CUIT: se arma desde el DNI":""}`}/>)}
+              {otras.map(a=><Chip key={a.id} on={()=>applyAddr(a)} icon="📌" main={a.label} sub={a.tax_id||a.name||""} color="#c4b5fd" active={(dest.dest_name||"").trim()===(a.name||"").trim()&&!!a.name} title={`Guardado: ${[a.name,a.tax_id,a.address].filter(Boolean).join(" · ")}. Carga todos los datos.`}/>)}
+              {clientesVuelo.length===0&&otras.length===0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Sin clientes en el vuelo todavía.</span>}
+            </Grupo>
+            <Grupo l="Entregar en">
+              {oficina?<Chip on={()=>applyOficina(oficina)} icon="🏢" main={oficina.label} sub={oficina.address||""} color={IC} active={mismaDir(oficina)} title="Cambia solo la dirección y el código postal. Nombre y CUIT quedan como están."/>:<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Marcá una dirección guardada como predeterminada.</span>}
+              <button type="button" onClick={()=>{if(!showNewAddr)setNewAddr(p=>({...p,name:dest.dest_name||"",tax_id:dest.dest_tax_id||"",address:dest.dest_address||"",postal_code:dest.dest_postal_code||"",phone:dest.dest_phone||"",email:dest.dest_email||""}));setShowNewAddr(!showNewAddr);}} title="Guardar el destinatario actual" style={{height:40,padding:"0 13px",fontSize:12,fontWeight:700,border:"1px dashed rgba(255,255,255,0.22)",borderRadius:11,background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit",marginLeft:"auto"}}>{showNewAddr?"✕ Cerrar":"+ Guardar este destinatario"}</button>
+            </Grupo>
+          </div>;})()}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
           <Inp label="Nombre" value={dest.dest_name} onChange={v=>chDest("dest_name",v)} placeholder="Razón social o nombre"/>
           <Inp label="CUIT / Tax ID" value={dest.dest_tax_id} onChange={v=>chDest("dest_tax_id",v)} placeholder="20-12345678-9"/>
@@ -9906,7 +9926,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           </div>
         </div>}
         {savedAddrs.length>0&&<div style={{marginTop:10}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Direcciones guardadas</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Guardados · ⭐ = oficina (predeterminada)</p>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{savedAddrs.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 8px",fontSize:11,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"rgba(255,255,255,0.6)"}}>{a.label}{a.is_default?" ⭐":""}<button onClick={()=>delAddr(a.id)} style={{marginLeft:4,fontSize:10,padding:"1px 5px",borderRadius:3,border:"none",background:"rgba(255,80,80,0.15)",color:"#ff6b6b",cursor:"pointer"}}>X</button></div>)}</div>
         </div>}
         </>}
