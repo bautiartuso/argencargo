@@ -9294,6 +9294,24 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
   const delAddr=async(id)=>{if(!await confirmDialog("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
   const [items,setItems]=useState(invoiceItems);const [presentando,setPresentando]=useState(false);
+  // Alícuotas (DIE / TE / IVA) de cada HS code de la factura, para verlas al cargar y con la factura
+  // presentada (18/10/2026). Misma búsqueda que /api/ncm: exacto → prefijo 6 → prefijo 4, mayor DIE.
+  const [alic,setAlic]=useState({});
+  const codesFactura=[...new Set(items.map(it=>String(it.hs_code||"").replace(/\D/g,"")).filter(c=>c.length>=4))].join("|");
+  useEffect(()=>{(async()=>{
+    const faltan=codesFactura.split("|").filter(c=>c&&!(c in alic));if(!faltan.length)return;
+    const nuevo={};
+    await Promise.all(faltan.map(async(c)=>{
+      const busca=async(f)=>{const r=await dq("ncm_database",{token,filters:`?${f}&select=ncm_code,die,te,iva&limit=10`});return Array.isArray(r)&&r.length?r.reduce((m,x)=>Number(x.die||0)>Number(m.die||0)?x:m,r[0]):null;};
+      let h=null;
+      try{h=await busca(`ncm_code=eq.${c}`)||await busca(`ncm_code=like.${c.slice(0,6)}*`)||await busca(`ncm_code=like.${c.slice(0,4)}*`);}catch(e){}
+      nuevo[c]=h?{die:Number(h.die||0),te:Number(h.te||0),iva:Number(h.iva??21)}:null;
+    }));
+    setAlic(p=>({...p,...nuevo}));
+  })();},[codesFactura]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alicDe=(hs)=>alic[String(hs||"").replace(/\D/g,"")];
+  const pct=(v)=>`${Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:1})}%`;
+  const AlicTxt=({hs,small})=>{const a=alicDe(hs);const c=String(hs||"").replace(/\D/g,"");if(c.length<4)return <span style={{fontSize:small?10.5:11,color:"rgba(255,255,255,0.3)"}}>—</span>;if(a===undefined)return <span style={{fontSize:small?10.5:11,color:"rgba(255,255,255,0.3)"}}>…</span>;if(!a)return <span style={{fontSize:small?10.5:11,color:"#fb923c"}}>sin alícuotas</span>;return <span style={{fontSize:small?10.5:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}><b style={{color:"#E8D098"}}>{pct(a.die)}</b> der · {pct(a.te)} TE · {pct(a.iva)} IVA</span>;};
   // Baseline de items guardados (para dirty-tracking). Lazy-init en el primer render.
   const itemKey=(x)=>`${x.description||""}|${x.quantity||0}|${x.unit_price_declared_usd||0}|${x.hs_code||""}|${x.notes||""}`;
   const origRef=useRef(null);
@@ -9903,12 +9921,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       </div>:flight.invoice_presented_at?<div>
         {items.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items.</p>:
         <div>
-          <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
-            <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unit. USD</span><span style={{textAlign:"right"}}>Subtotal</span>
+          <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1.4fr 0.7fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+            <span>Descripción</span><span>HS Code</span><span>Alícuotas</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unit. USD</span><span style={{textAlign:"right"}}>Subtotal</span>
           </div>
-          {items.map((it,i)=>{const op=opsUnique.find(o=>o.id===it.operation_id);return <div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.85)"}}>
+          {items.map((it,i)=>{const op=opsUnique.find(o=>o.id===it.operation_id);return <div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1.4fr 0.7fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.85)"}}>
             <span>{it.description}</span>
             <span style={{fontFamily:"monospace"}}>{it.hs_code||"—"}</span>
+            <span><AlicTxt hs={it.hs_code}/></span>
             <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
             <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
@@ -9933,7 +9952,10 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v)} small/>
             <Inp label="Precio unit. USD" type="number" value={it.unit_price_declared_usd} onChange={v=>chItem(i,"unit_price_declared_usd",v)} step="0.01" small/>
           </div>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"right"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,margin:"4px 0 0",flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>NCM {it.hs_code||"—"} → <AlicTxt hs={it.hs_code}/></span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          </div>
         </div>;})}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
           <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
