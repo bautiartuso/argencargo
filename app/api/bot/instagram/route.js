@@ -90,6 +90,9 @@ async function procesar(entries) {
   const propio = (id, entryId) => !id || String(id) === cfg.igUserId || (entryId && String(id) === String(entryId));
 
   for (const entry of entries) {
+    // El webhook es de la app (Argencargo Radar), que también tiene vinculadas otras cuentas
+    // (MyBox, ARGENMAQ): solo se atiende lo que llega a la cuenta de Argencargo.
+    if (entry.id && String(entry.id) !== cfg.igUserId) { console.log("[bot/instagram] entrada de otra cuenta ignorada", entry.id); continue; }
     // ── DMs (entry.messaging) ──
     for (const ev of Array.isArray(entry.messaging) ? entry.messaging : []) {
       const m = ev.message;
