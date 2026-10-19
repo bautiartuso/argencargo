@@ -4,7 +4,7 @@
 // a partir de datos reales. Se aprueban, se programan en el calendario y las publica el cron en el Instagram
 // de ARGENMAQ; o se mandan al celular por Telegram para subirlas a mano con el sticker de link.
 import { useState, useEffect, useMemo } from "react";
-import { INK, GRIS, BORDE, SUAVE, CARD, LIMA, LIMA_SUAVE, OK, OK_BG, WARN, WARN_BG, BAD, BAD_BG, MONO, Campo, Inp, TA, Btn, Sec, Pill, Chip, Barra, Vacio, Dato, Solapas, toast, confirmDialog, MESES } from "./ui";
+import { INK, GRIS, BORDE, SUAVE, CARD, LIMA, LIMA_SUAVE, OK, OK_BG, WARN, WARN_BG, BAD, BAD_BG, MONO, Campo, Inp, TA, Btn, Sec, Pill, Chip, Ico, Barra, Vacio, Dato, Solapas, toast, confirmDialog, MESES, MESES_C } from "./ui";
 
 const codificar = (obj) => { const s = unescape(encodeURIComponent(JSON.stringify(obj))); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
 const urlImagen = (slide) => `/api/argenmaq/studio/imagen?d=${codificar(slide)}`;
@@ -15,7 +15,6 @@ const alto = (tipo) => tipo === "historia" ? 1920 : 1350;
 const fmtHora = (d) => d ? new Date(d).toLocaleString("es-AR", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 const soloHora = (d) => new Date(d).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 const claveDia = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
-const aLocal = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 // Horarios sugeridos: historias al mediodía y a la tarde-noche, publicaciones a la tardecita. El primero libre.
 const HORAS = { historia: [12, 19.5], post: [18.5], carrusel: [18.5] };
 function proximoHueco(tipo, piezas) {
@@ -125,12 +124,12 @@ function Propuestas({ lista, tipo, piezas, ocupado, creando, onCrear, onQuitar, 
     {creando && <p style={{ margin: "0 0 14px", fontSize: 13, color: GRIS }}>Eligiendo máquinas, dibujando las placas y redactando los textos. Tarda unos segundos.</p>}
     {!lista.length && !creando ? <Vacio>Todavía no armaste {titulo}. Elegí cuántas querés y tocá “Crear”.</Vacio>
       : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
-        {lista.map((c) => <Propuesta key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco(c.tipo, piezas)} onGuardar={onGuardar} onQuitar={() => onQuitar(c)} onCambiar={(patch) => onCambiar(c._k, patch)} />)}
+        {lista.map((c) => <Propuesta key={c._k} c={c} ocupado={ocupado === `g${c._k}`} sugerido={proximoHueco(c.tipo, piezas)} piezas={piezas} onGuardar={onGuardar} onQuitar={() => onQuitar(c)} onCambiar={(patch) => onCambiar(c._k, patch)} />)}
       </div>}
   </>;
 }
-function Propuesta({ c, ocupado, sugerido, onGuardar, onQuitar, onCambiar }) {
-  const slides = c.datos?.slides || []; const [i, setI] = useState(0); const [prog, setProg] = useState(false); const [cuando, setCuando] = useState(aLocal(sugerido));
+function Propuesta({ c, ocupado, sugerido, piezas, onGuardar, onQuitar, onCambiar }) {
+  const slides = c.datos?.slides || []; const [i, setI] = useState(0); const [prog, setProg] = useState(false);
   const t = TIPO[c.tipo] || TIPO.post;
   return <div style={{ background: CARD, border: `1px solid ${BORDE}`, borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column" }}>
     <Previa slides={slides} tipo={c.tipo} i={i} setI={setI} etiquetas={<><Chip l={PLANT[c.plantilla] || c.plantilla} c="#15171A" bg={LIMA} /><Chip l={t.l} c={INK} bg="rgba(255,255,255,0.9)" /></>} />
@@ -138,15 +137,12 @@ function Propuesta({ c, ocupado, sugerido, onGuardar, onQuitar, onCambiar }) {
       <b style={{ fontSize: 14, lineHeight: 1.3 }}>{c.titulo}</b>
       <TA value={c.caption || ""} onChange={(e) => onCambiar({ caption: e.target.value })} style={{ minHeight: 92, fontSize: 13 }} />
       <Inp value={c.hashtags || ""} onChange={(e) => onCambiar({ hashtags: e.target.value })} style={{ fontSize: 12, fontFamily: MONO }} />
-      {prog ? <div style={{ display: "grid", gap: 8 }}>
-        <Campo label="Sale el"><Inp type="datetime-local" value={cuando} onChange={(e) => setCuando(e.target.value)} /></Campo>
-        <div style={{ display: "flex", gap: 8 }}><Btn kind="lima" onClick={() => onGuardar(c, new Date(cuando).toISOString())} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : "Confirmar"}</Btn><Btn onClick={() => setProg(false)}>Volver</Btn></div>
-      </div> : <div style={{ display: "flex", gap: 8 }}>
-        <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }}>Programar</Btn>
-        <Btn onClick={() => onGuardar(c)} disabled={ocupado}>{ocupado ? "Guardando…" : "A la cola"}</Btn>
-        <a href={urlImagen(slides[i] || slides[0])} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><Btn title="Ver grande">⤢</Btn></a>
-        <Btn onClick={onQuitar} title="Quitar esta propuesta">×</Btn>
-      </div>}
+      {prog ? <SelectorFecha tipo={c.tipo} piezas={piezas} inicial={sugerido} ocupado={ocupado} onConfirmar={(d) => onGuardar(c, d.toISOString())} onCancelar={() => setProg(false)} />
+        : <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+          <Btn kind="lima" onClick={() => setProg(true)} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : "Programar"}</Btn>
+          <a href={urlImagen(slides[i] || slides[0])} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "flex" }}><Btn title="Ver en grande" style={{ height: "100%" }}><Ico d={["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"]} /></Btn></a>
+          <Btn kind="danger" onClick={onQuitar} title="Rechazar esta propuesta"><Ico d={["M18 6L6 18", "M6 6l12 12"]} /></Btn>
+        </div>}
     </div>
   </div>;
 }
@@ -159,6 +155,56 @@ function Previa({ slides, tipo, i, setI, etiquetas, imagenes }) {
     <img src={src} alt="" onLoad={() => setLista(true)} style={{ width: "100%", aspectRatio: `1080/${alto(tipo)}`, objectFit: "cover", display: "block", opacity: lista ? 1 : 0, transition: "opacity .25s" }} loading="lazy" />
     <span style={{ position: "absolute", top: 10, left: 10, display: "flex", gap: 6 }}>{etiquetas}</span>
     {n > 1 && <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5 }}>{Array.from({ length: n }).map((_, k) => <button key={k} onClick={() => setI(k)} style={{ width: k === i ? 22 : 8, height: 8, borderRadius: 999, border: "none", background: k === i ? LIMA : "rgba(255,255,255,0.8)", cursor: "pointer", padding: 0, transition: "width .15s" }} aria-label={`Placa ${k + 1}`} />)}</div>}
+  </div>;
+}
+
+// ── Selector de fecha propio ─────────────────────────────────────────────────
+// Calendario del sistema para programar: marca hoy, muestra cuántas historias (amarillo) y cuántas
+// publicaciones/carruseles (gris) hay cada día, y al elegir un día lista lo que ya sale. Después la hora.
+const esHistoria = (p) => p.tipo === "historia";
+function SelectorFecha({ tipo, piezas, inicial, ocupado, onConfirmar, onCancelar }) {
+  const hoy = new Date(); const ini = inicial ? new Date(inicial) : hoy;
+  const [vista, setVista] = useState({ y: ini.getFullYear(), m: ini.getMonth() });
+  const [dia, setDia] = useState(claveDia(ini)); const [hora, setHora] = useState(`${String(ini.getHours()).padStart(2, "0")}:${String(ini.getMinutes()).padStart(2, "0")}`);
+  const activas = useMemo(() => piezas.filter((p) => ["programada", "publicada", "error"].includes(p.estado) && (p.programada_at || p.publicada_at)), [piezas]);
+  const porDia = useMemo(() => { const r = {}; activas.forEach((p) => { const k = claveDia(p.programada_at || p.publicada_at); (r[k] = r[k] || []).push(p); }); return r; }, [activas]);
+  const primero = new Date(vista.y, vista.m, 1); const desde = (primero.getDay() + 6) % 7; const dias = new Date(vista.y, vista.m + 1, 0).getDate();
+  const celdas = []; for (let k = 0; k < desde; k++) celdas.push(null); for (let d = 1; d <= dias; d++) celdas.push(new Date(vista.y, vista.m, d)); while (celdas.length % 7) celdas.push(null);
+  const hoyK = claveDia(hoy); const mover = (n) => setVista((v) => { const d = new Date(v.y, v.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const delDia = (porDia[dia] || []).sort((a, b) => String(a.programada_at || a.publicada_at).localeCompare(String(b.programada_at || b.publicada_at)));
+  const mismoTipo = delDia.filter((p) => esHistoria(p) === (tipo === "historia"));
+  const presets = tipo === "historia" ? ["12:00", "19:30"] : ["18:30", "12:30"];
+  const confirmar = () => { const [h, m] = hora.split(":").map(Number); const d = new Date(dia + "T12:00:00"); d.setHours(h || 0, m || 0, 0, 0); if (d.getTime() < Date.now()) { toast("Esa hora ya pasó", "warn"); return; } onConfirmar(d); };
+  return <div style={{ display: "grid", gap: 10, padding: 10, borderRadius: 14, border: `1px solid ${LIMA}`, background: SUAVE }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <Btn small onClick={() => mover(-1)}>‹</Btn><b style={{ fontSize: 13 }}>{MESES[vista.m]} {vista.y}</b><Btn small onClick={() => mover(1)}>›</Btn>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+      {["L", "M", "M", "J", "V", "S", "D"].map((d, k) => <div key={k} style={{ textAlign: "center", fontFamily: MONO, fontSize: 10, color: GRIS }}>{d}</div>)}
+      {celdas.map((d, k) => {
+        if (!d) return <div key={k} />;
+        const key = claveDia(d); const l = porDia[key] || []; const nH = l.filter(esHistoria).length, nP = l.length - nH; const pasado = key < hoyK; const sel = key === dia;
+        return <button key={k} type="button" disabled={pasado} onClick={() => setDia(key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 0 3px", borderRadius: 8, border: `1px solid ${sel ? LIMA : key === hoyK ? INK : "transparent"}`, background: sel ? LIMA : CARD, color: sel ? "#15171A" : INK, cursor: pasado ? "default" : "pointer", opacity: pasado ? 0.35 : 1 }}>
+          <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: key === hoyK ? 800 : 600 }}>{d.getDate()}</span>
+          <span style={{ display: "flex", gap: 2, height: 12 }}>
+            {nH > 0 && <span title={`${nH} historia(s)`} style={{ fontFamily: MONO, fontSize: 9, fontWeight: 800, padding: "0 4px", borderRadius: 4, background: sel ? "#15171A" : LIMA, color: sel ? LIMA : "#15171A" }}>{nH}</span>}
+            {nP > 0 && <span title={`${nP} publicación(es)`} style={{ fontFamily: MONO, fontSize: 9, fontWeight: 800, padding: "0 4px", borderRadius: 4, background: sel ? "rgba(21,23,26,0.25)" : INK, color: sel ? "#15171A" : CARD }}>{nP}</span>}
+          </span>
+        </button>;
+      })}
+    </div>
+    <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: GRIS, fontFamily: MONO }}><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: LIMA, marginRight: 4 }} />historias</span><span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: INK, marginRight: 4 }} />publicaciones y carruseles</span></div>
+    <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{new Date(dia + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}{dia === hoyK ? " · hoy" : ""}</div>
+      {delDia.length === 0 ? <div style={{ fontSize: 12, color: GRIS }}>Nada programado ese día.</div>
+        : <div style={{ display: "grid", gap: 3 }}>{delDia.map((p) => <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, minWidth: 0 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: esHistoria(p) ? LIMA : INK, flex: "none" }} /><span style={{ fontFamily: MONO, color: GRIS }}>{soloHora(p.programada_at || p.publicada_at)}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.titulo}</span>{p.estado === "publicada" && <span style={{ width: 6, height: 6, borderRadius: 999, background: OK, flex: "none" }} />}</div>)}</div>}
+      {mismoTipo.length > 0 && <div style={{ fontSize: 11.5, color: WARN, marginTop: 4 }}>Ese día ya {mismoTipo.length === 1 ? "sale una" : `salen ${mismoTipo.length}`} {tipo === "historia" ? "historia" : "publicación"}{mismoTipo.length > 1 ? (tipo === "historia" ? "s" : "es") : ""}.</div>}
+    </div>
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      {presets.map((h) => <Pill key={h} small on={hora === h} onClick={() => setHora(h)}>{h}</Pill>)}
+      <Inp type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ width: 104, padding: "6px 8px", fontSize: 12.5 }} />
+    </div>
+    <div style={{ display: "flex", gap: 8 }}><Btn kind="lima" onClick={confirmar} disabled={ocupado} style={{ flex: 1 }}>{ocupado ? "Guardando…" : `Programar · ${new Date(dia + "T12:00:00").getDate()} ${MESES_C[new Date(dia + "T12:00:00").getMonth()]} ${hora}`}</Btn><Btn onClick={onCancelar}>Volver</Btn></div>
   </div>;
 }
 
@@ -214,7 +260,7 @@ function Dia({ dia, lista, listas, ig, ocupado, programar, abrir }) {
       </button>)}</div>}
     {!pasado && <div style={{ borderTop: `1px solid ${BORDE}`, paddingTop: 14, display: "grid", gap: 10 }}>
       <b style={{ fontSize: 13 }}>Programar este día</b>
-      {listas.length === 0 ? <p style={{ margin: 0, fontSize: 12.5, color: GRIS }}>No hay piezas en la cola. Armá una desde Historias o Publicaciones y mandala “A la cola”.</p> : <>
+      {listas.length === 0 ? <p style={{ margin: 0, fontSize: 12.5, color: GRIS }}>No hay piezas sin fecha. Las que quitás del calendario quedan acá para reprogramar.</p> : <>
         <select value={sel} onChange={(e) => setSel(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: 11, border: `1px solid ${BORDE}`, background: CARD, color: INK, fontSize: 13, fontWeight: 600 }}>{listas.map((p) => <option key={p.id} value={p.id}>{TIPO[p.tipo]?.l} · {p.titulo}</option>)}</select>
         <div style={{ display: "flex", gap: 8 }}><Inp type="time" value={hora} onChange={(e) => setHora(e.target.value)} style={{ width: 130 }} /><Btn kind="lima" onClick={confirmar} disabled={!elegida || ocupado.startsWith("programar")} style={{ flex: 1 }}>Programar</Btn></div>
         {!ig && <p style={{ margin: 0, fontSize: 12, color: WARN }}>Instagram no está conectado: lo programado no va a salir solo hasta que lo conectes.</p>}
@@ -255,7 +301,7 @@ function FilaPieza({ p, onAbrir, ig, ocupado, publicar, desprogramar, descartar,
 
 // ── Detalle (panel lateral) ──────────────────────────────────────────────────
 function Detalle({ p, onCerrar, ig, ocupado, piezas, publicar, programar, desprogramar, descartar, celular, guardarTexto, copiar }) {
-  const [i, setI] = useState(0); const [caption, setCaption] = useState(p.caption || ""); const [tags, setTags] = useState(p.hashtags || ""); const [cuando, setCuando] = useState(aLocal(p.programada_at || proximoHueco(p.tipo, piezas)));
+  const [i, setI] = useState(0); const [caption, setCaption] = useState(p.caption || ""); const [tags, setTags] = useState(p.hashtags || ""); const [eligiendo, setEligiendo] = useState(false);
   useEffect(() => { setCaption(p.caption || ""); setTags(p.hashtags || ""); }, [p.id, p.caption, p.hashtags]);
   const e = ESTADO[p.estado] || ESTADO.aprobada; const t = TIPO[p.tipo] || TIPO.post; const imgs = p.imagenes || []; const editable = p.estado !== "publicada";
   const cambio = caption !== (p.caption || "") || tags !== (p.hashtags || "");
@@ -270,12 +316,13 @@ function Detalle({ p, onCerrar, ig, ocupado, piezas, publicar, programar, despro
       <Campo label="Hashtags"><Inp value={tags} onChange={(e) => setTags(e.target.value)} disabled={!editable} style={{ fontSize: 12, fontFamily: MONO }} /></Campo>
       {editable && cambio && <Btn kind="lima" small onClick={() => guardarTexto(p, caption, tags)} disabled={ocupado === `texto${p.id}`}>Guardar texto</Btn>}
       {p.link && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 12px", borderRadius: 12, background: SUAVE, fontSize: 12.5 }}><span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: MONO }}>{p.link}</span><Btn small onClick={() => copiar(p.link, "Link copiado")}>Copiar link</Btn></div>}
-      {editable && <div style={{ display: "grid", gap: 8, padding: 12, borderRadius: 14, border: `1px solid ${BORDE}` }}>
-        <b style={{ fontSize: 13 }}>{p.estado === "programada" ? "Cambiar la fecha" : "Programar"}</b>
-        <div style={{ display: "flex", gap: 8 }}><Inp type="datetime-local" value={cuando} onChange={(e) => setCuando(e.target.value)} style={{ flex: 1 }} /><Btn kind="lima" onClick={() => programar(p, cuando)} disabled={ocupado === `programar${p.id}`}>Guardar</Btn></div>
-        {p.estado === "programada" && <Btn small onClick={() => desprogramar(p)}>Quitar fecha</Btn>}
-        {!ig && <span style={{ fontSize: 12, color: WARN }}>Sin Instagram conectado no sale sola.</span>}
-      </div>}
+      {editable && (eligiendo
+        ? <SelectorFecha tipo={p.tipo} piezas={piezas.filter((x) => x.id !== p.id)} inicial={p.programada_at || proximoHueco(p.tipo, piezas)} ocupado={ocupado === `programar${p.id}`} onConfirmar={async (d) => { await programar(p, d); setEligiendo(false); }} onCancelar={() => setEligiendo(false)} />
+        : <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Btn kind="lima" onClick={() => setEligiendo(true)}>{p.estado === "programada" ? "Cambiar la fecha" : "Programar"}</Btn>
+          {p.estado === "programada" && <Btn small onClick={() => desprogramar(p)}>Quitar fecha</Btn>}
+          {!ig && <span style={{ fontSize: 12, color: WARN }}>Sin Instagram conectado no sale sola.</span>}
+        </div>)}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {editable && <Btn kind="lima" onClick={() => publicar(p)} disabled={ocupado === `publicar${p.id}` || !ig}>{ocupado === `publicar${p.id}` ? "Publicando…" : "Publicar ahora"}</Btn>}
         {p.tipo === "historia" && <Btn onClick={() => celular(p)} disabled={ocupado === `celular${p.id}`}>Mandar al celular</Btn>}
