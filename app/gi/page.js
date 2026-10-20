@@ -524,17 +524,25 @@ function CotDetalle({ ctx, id }) {
   const { token, rol, perfil, d, ir, recargar, movil } = ctx;
   const r = d.reqs.find((x) => x.id === id);
   const [prods, setProds] = useState(null);
+  const [bultos, setBultos] = useState([]);
   const [nota, setNota] = useState("");
   const [trabajando, setTrabajando] = useState(false);
+  const [fotoGrande, setFotoGrande] = useState(null);
   const e = r ? estadoCot(r, d.comms) : null;
   const q = e?.q;
   useEffect(() => { (async () => {
     if (!r) return;
-    const [qp, rp] = await Promise.all([
+    const [qp, rp, pk] = await Promise.all([
       q ? dq("gi_quote_products", { token, filters: `?quote_id=eq.${q.id}&select=*&order=display_order.asc` }) : [],
       dq("gi_quote_request_products", { token, filters: `?request_id=eq.${id}&select=*&order=display_order.asc` }),
+      q ? dq("gi_quote_packages", { token, filters: `?quote_id=eq.${q.id}&select=*&order=display_order.asc` }).catch(() => []) : [],
     ]);
-    setProds(arr(qp).length ? arr(qp) : arr(rp));
+    const lista = arr(qp).length ? arr(qp) : arr(rp);
+    setProds(lista);
+    // Bultos de la cotización; las viejas los traen por producto.
+    const pks = arr(pk);
+    setBultos(pks.length ? pks.map((k) => ({ n: Number(k.pkg_count || 0), l: k.length_cm, w: k.width_cm, h: k.height_cm, kg: k.weight_kg, prods: Array.isArray(k.product_idx) ? k.product_idx : [] }))
+      : lista.map((p, i) => Number(p.pkg_count || 0) > 0 && p.pkg_length_cm ? { n: Number(p.pkg_count), l: p.pkg_length_cm, w: p.pkg_width_cm, h: p.pkg_height_cm, kg: p.pkg_weight_kg, prods: [i] } : null).filter(Boolean));
   })(); }, [id, q?.id, token]);
   if (!r) return <div><Volver onClick={() => ir("cotizaciones")} /><Vacio>No se encontró la cotización.</Vacio></div>;
 
@@ -542,7 +550,9 @@ function CotDetalle({ ctx, id }) {
   const url = q?.public_token ? `${window.location.origin}/cotizacion/${q.public_token}` : "";
   const log = (type, extra = {}) => dq("gi_quote_communications", { method: "POST", token, body: { quote_id: q?.id || null, request_id: id, type, author_id: perfil.id, ...extra } });
   const staff = rol !== "socio";
+  const verPlata = rol !== "empleado";
   const op = q?.operation_id ? d.ops.find((o) => o.id === q.operation_id) : null;
+  const socio = d.socios?.find((s) => s.id === (r.assigned_partner_id || r.clients?.gi_partner_id));
 
   const enviarWa = async () => {
     const num = cleanWaNumber(r.clients?.whatsapp && r.clients.whatsapp !== "—" ? r.clients.whatsapp : "");
@@ -581,7 +591,6 @@ function CotDetalle({ ctx, id }) {
     await dq("gi_quote_requests", { method: "DELETE", token, filters: `?id=eq.${id}` });
     toast.success("Cotización borrada"); await recargar(); ir("cotizaciones");
   };
-  // Vuelve a dejarla vigente (mismo link): para cuando el cliente la vio y pide retomarla.
   const renovar = async () => {
     const v = await promptDialog("¿Por cuántos días más?", { defaultValue: "7" });
     const n = Number(v);
@@ -596,35 +605,77 @@ function CotDetalle({ ctx, id }) {
   const agregarNota = async () => { const t = nota.trim(); if (!t) return; await log("note", { content: t }); setNota(""); recargar(); };
   const pdf = () => printGiQuotePdf({ quote: q, products: prods || [], client: r.clients, settings: null, requestCode: r.request_code });
 
-  const respuesta = ev.find((c) => c.type === "accepted" || c.type === "rejected");
+  // ── Números ──
+  const lista = prods || [];
+  const origen = r.origin || lista[0]?.origin || "china";
+  const esUSA = origen === "usa";
+  const fob = lista.reduce((s, p) => s + Number(p.unit_cost_usd || 0) * Number(p.quantity || 0), 0);
+  const nBultos = bultos.reduce((s, k) => s + k.n, 0);
+  const cbm = bultos.reduce((s, k) => s + (Number(k.l || 0) * Number(k.w || 0) * Number(k.h || 0) * k.n) / 1e6, 0);
+  const kg = bultos.reduce((s, k) => s + Number(k.kg || 0) * k.n, 0);
+  const TIEMPO = { aereo_blanco: "7 a 10 días hábiles", maritimo_blanco: "~60 días", maritimo_negro: "~60 días" };
+  const honor = Number(q?.honorarios_pct || 0);
+  const canales = Object.entries(GI_CANALES).filter(([k]) => !esUSA || k !== "maritimo_blanco").map(([k, c]) => {
+    const total = totalCanal(q, k); const real = Number(q?.[c.key.replace("_total_", "_real_")] || 0);
+    const impo = honor > 0 ? total / (1 + honor / 100) : total;
+    return { k, ...c, total, real, impo, honorarios: total - impo, gana: real > 0 ? total - real : null };
+  }).filter((c) => c.total > 0);
+  const masBarato = canales.slice().sort((a, b) => a.total - b.total)[0];
+  const elegido = q?.selected_channel ? canales.find((c) => c.k === q.selected_channel) : null;
   const totalElegido = totalAceptado(q);
+  const baseCliente = totalElegido || masBarato?.total || 0;
+  const plan = Array.isArray(q?.payment_plan) ? q.payment_plan : (q?.payment_plan ? (() => { try { return JSON.parse(q.payment_plan); } catch { return []; } })() : []);
+  const respuesta = ev.find((c) => c.type === "accepted" || c.type === "rejected");
+  const n2 = (v) => Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const nombreProd = (i) => { const t = (lista[i]?.description || "").trim(); return t ? (t.length > 28 ? t.slice(0, 26) + "…" : t) : `Producto ${i + 1}`; };
+  const fotosDe = (p) => Array.isArray(p.photo_urls) && p.photo_urls.length ? p.photo_urls : (p.photo_url ? [p.photo_url] : []);
+
+  const Dato = ({ l, v, sub, c }) => <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.mute, whiteSpace: "nowrap" }}>{l}</p><p style={{ margin: "3px 0 0", fontSize: 15, fontWeight: 800, color: c || C.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</p>{sub && <p style={{ margin: "1px 0 0", fontSize: 11, color: C.mute, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</p>}</div>;
+  const Tag = ({ c, children }) => <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 999, color: c, background: `${c}1f`, border: `1px solid ${c}55`, whiteSpace: "nowrap" }}>{children}</span>;
+  const sec = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 16, marginBottom: 12 };
+  const tit = { margin: "0 0 10px", fontSize: 11, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.1em" };
+
   return <div>
-    <Volver onClick={() => ir("cotizaciones")} />
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: C.goldHi }}>{r.request_code}</span>
-          <Pill c={e.c}>{e.l}</Pill>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+      <Volver onClick={() => ir("cotizaciones")} />
+      {e.vistas > 0 && <span style={{ fontSize: 12, color: C.mute }}>👁 El cliente la abrió {e.vistas} {e.vistas === 1 ? "vez" : "veces"}{e.ultimaVista ? ` · última ${hace(e.ultimaVista)}` : ""}</span>}
+    </div>
+
+    {/* Cabecera */}
+    <section style={{ ...sec, padding: "18px 20px", borderColor: `${e.c}44`, background: `linear-gradient(180deg, ${e.c}10, ${C.card})` }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: C.goldHi }}>{r.request_code}</span>
+            <Pill c={e.c}>{e.l}</Pill>
+            <Tag c={C.sub}>{esUSA ? "🇺🇸 Estados Unidos" : "🇨🇳 China"}</Tag>
+          </div>
+          <p style={{ fontSize: 22, fontWeight: 800, margin: "8px 0 2px", letterSpacing: "-0.01em" }}>{nombre(r.clients)}</p>
+          <p style={{ fontSize: 12.5, color: C.mute, margin: 0 }}>
+            <span style={{ fontFamily: MONO }}>{r.clients?.client_code}</span>{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""} · Creada {fmtDate(r.created_at)}{q?.expires_at ? ` · válida hasta ${fmtDate(q.expires_at)}` : ""}{socio ? ` · Socio ${socio.email.split("@")[0]}` : ""}
+          </p>
         </div>
-        <p style={{ fontSize: 18, fontWeight: 800, margin: "6px 0 2px" }}>{nombre(r.clients)}</p>
-        <p style={{ fontSize: 12.5, color: C.mute, margin: 0 }}>Creada {fmtDate(r.created_at)}{q?.expires_at ? ` · válida hasta ${fmtDate(q.expires_at)}` : ""}{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""}</p>
+        {baseCliente > 0 && <div style={{ textAlign: "right" }}>
+          <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.mute }}>{elegido ? `Aceptó · ${elegido.nombre}` : `Desde · ${masBarato?.nombre || ""}`}</p>
+          <p style={{ margin: "2px 0 0", fontSize: 28, fontWeight: 900, color: C.goldHi, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{fmtUSD(baseCliente)}</p>
+        </div>}
       </div>
-    </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+        {e.k === "aceptada" && <Btn v="green" onClick={convertir} disabled={trabajando || q?.status === "converting"}>{trabajando ? "Creando…" : "📦 Pasar a operación"}</Btn>}
+        {op && <Btn v="gold" onClick={() => ir("operaciones", { id: op.id })}>Ver {op.operation_code} →</Btn>}
+        {!["convertida", "aceptada"].includes(e.k) && <Btn v={e.k === "por_cotizar" ? "gold" : "sec"} onClick={() => ir("cotizaciones", { wizard: id })}>{e.k === "por_cotizar" ? "Armar cotización" : "✎ Editar"}</Btn>}
+        {q && e.k === "vencida" && <Btn v="gold" onClick={renovar}>↻ Renovar validez</Btn>}
+        {url && ["borrador", "enviada"].includes(e.k) && <Btn v="wa" onClick={enviarWa}>💬 Enviar por WhatsApp</Btn>}
+        {url && <Btn onClick={copiar}>Copiar link</Btn>}
+        {url && <Btn onClick={() => window.open(url, "_blank", "noopener")}>Ver como cliente ↗</Btn>}
+        {q && lista.length > 0 && <Btn onClick={pdf}>PDF</Btn>}
+        <span style={{ flex: 1 }} />
+        {staff && ["por_cotizar", "borrador", "enviada", "vencida"].includes(e.k) && <Btn v="ghost" onClick={rechazar}>Marcar rechazada</Btn>}
+        {staff && e.k !== "convertida" && <Btn v="ghost" onClick={borrar} style={{ color: C.red }}>Borrar</Btn>}
+      </div>
+    </section>
 
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-      {e.k === "aceptada" && <Btn v="green" onClick={convertir} disabled={trabajando || q?.status === "converting"}>{trabajando ? "Creando…" : "📦 Pasar a operación"}</Btn>}
-      {op && <Btn v="gold" onClick={() => ir("operaciones", { id: op.id })}>Ver {op.operation_code} →</Btn>}
-      {!["convertida", "aceptada"].includes(e.k) && <Btn v={e.k === "por_cotizar" ? "gold" : "sec"} onClick={() => ir("cotizaciones", { wizard: id })}>{e.k === "por_cotizar" ? "Armar cotización" : "✎ Editar"}</Btn>}
-      {q && e.k === "vencida" && <Btn v="gold" onClick={renovar}>↻ Renovar validez</Btn>}
-      {url && ["borrador", "enviada"].includes(e.k) && <Btn v="wa" onClick={enviarWa}>💬 Enviar por WhatsApp</Btn>}
-      {url && <Btn onClick={copiar}>Copiar link</Btn>}
-      {url && <Btn onClick={() => window.open(url, "_blank", "noopener")}>Ver como cliente</Btn>}
-      {q && prods?.length > 0 && <Btn onClick={pdf}>PDF</Btn>}
-      {staff && ["por_cotizar", "borrador", "enviada", "vencida"].includes(e.k) && <Btn v="ghost" onClick={rechazar}>Marcar rechazada</Btn>}
-      {staff && e.k !== "convertida" && <Btn v="ghost" onClick={borrar} style={{ color: C.red }}>Borrar</Btn>}
-    </div>
-
-    {(e.k === "aceptada" || e.k === "convertida" || e.k === "rechazada") && <Caja style={{ borderColor: `${e.c}55`, background: `${e.c}0d` }}>
+    {(e.k === "aceptada" || e.k === "convertida" || e.k === "rechazada") && <section style={{ ...sec, borderColor: `${e.c}55`, background: `${e.c}0d` }}>
       <p style={{ margin: 0, fontWeight: 800, color: e.c }}>{e.k === "rechazada" ? "✕ Rechazada" : "✓ Aceptada por el cliente"}{respuesta?.meta?.manual ? " (marcada a mano)" : ""}</p>
       <p style={{ margin: "6px 0 0", fontSize: 13, color: C.sub, lineHeight: 1.6 }}>
         {respuesta?.created_at ? `${fmtDateTime(respuesta.created_at)}` : (e.cuando ? fmtDateTime(e.cuando) : "")}
@@ -632,52 +683,116 @@ function CotDetalle({ ctx, id }) {
         {e.k !== "rechazada" && q?.selected_channel ? ` · ${GI_CANALES[q.selected_channel]?.largo || q.selected_channel}` : ""}
         {e.k !== "rechazada" && q?.selected_delivery_zone ? ` · ${q.selected_delivery_zone === "oficina" ? "retira por oficina" : q.selected_delivery_zone === "interior_coordinar" ? "envío a coordinar" : `envío a ${q.selected_delivery_zone}`}` : ""}
       </p>
-      {e.k !== "rechazada" && totalElegido > 0 && <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(totalElegido)}</p>}
       {e.k === "rechazada" && e.motivo && <p style={{ margin: "8px 0 0", fontSize: 13.5 }}>Motivo: <strong>{e.motivo}</strong></p>}
-    </Caja>}
+    </section>}
 
-    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1.25fr 1fr", gap: 14, alignItems: "start" }}>
+    {/* Datos de un vistazo */}
+    {q && <section style={{ ...sec, padding: "14px 18px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: movil ? "repeat(2,minmax(0,1fr))" : `repeat(${verPlata ? 6 : 4},minmax(0,1fr))`, gap: "10px 14px" }}>
+        {verPlata && <Dato l="FOB al proveedor" v={fob > 0 ? fmtUSD(fob) : "—"} sub={lista.length ? `${lista.length} producto${lista.length !== 1 ? "s" : ""}` : null} />}
+        {!verPlata && <Dato l="Productos" v={String(lista.length)} />}
+        <Dato l="Bultos" v={nBultos ? String(nBultos) : "—"} sub={nBultos ? `${cbm.toFixed(3)} m³ · ${Math.round(kg)} kg` : "sin cargar"} c={nBultos ? C.txt : C.amber} />
+        {verPlata && <Dato l="Honorarios GI" v={`${honor || 0} %`} sub={masBarato ? `${fmtUSD(masBarato.honorarios)} en ${masBarato.nombre.toLowerCase()}` : null} />}
+        <Dato l="Anticipo proveedor" v={q.supplier_deposit_pct != null ? `${q.supplier_deposit_pct} %` : "—"} sub={fob > 0 && q.supplier_deposit_pct != null ? fmtUSD(fob * q.supplier_deposit_pct / 100) : null} />
+        <Dato l="Producción" v={(() => { const m = Math.max(0, ...lista.map((p) => Number(p.lead_time_days || 0))); return m ? `${m} días` : "—"; })()} sub="la más larga" />
+        <Dato l="Validez" v={q.expires_at ? fmtDate(q.expires_at) : "—"} sub={vencida(q) ? "vencida" : q.sent_at ? `enviada ${fmtDate(q.sent_at)}` : "sin enviar"} c={vencida(q) ? C.red : C.txt} />
+      </div>
+    </section>}
+
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "minmax(0,1.3fr) minmax(0,1fr)", gap: 14, alignItems: "start" }}>
       <div>
-        {q && <Caja title="Precios por canal">
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {Object.entries(GI_CANALES).map(([k, c]) => { const t = totalCanal(q, k); if (!t) return null; const el = q.selected_channel === k; return <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", borderRadius: 10, border: `1px solid ${el ? C.gold : C.line}`, background: el ? C.goldBg : "transparent" }}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>{c.largo}{el ? " ✓" : ""}</span><span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(t)}</span>
+        {/* Precios por canal */}
+        {q && canales.length > 0 && <section style={sec}>
+          <p style={tit}>Precio final al cliente</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "12px 14px", borderRadius: 12, border: `1px solid ${el ? C.gold : barato ? "rgba(52,211,153,0.35)" : C.line}`, background: el ? C.goldBg : barato ? "rgba(52,211,153,0.06)" : "rgba(0,0,0,0.15)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{c.largo} {el && <Tag c={C.goldHi}>Eligió esta</Tag>}{!el && barato && <Tag c={C.green}>Más económica</Tag>}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{TIEMPO[c.k]}</p>
+                </div>
+                <p style={{ margin: 0, fontSize: 21, fontWeight: 900, color: C.goldHi, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtUSD(c.total)}</p>
+              </div>
+              {verPlata && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 6, fontSize: 11.5, color: C.mute, fontVariantNumeric: "tabular-nums", flexWrap: "wrap" }}>
+                <span>importación {fmtUSD(c.impo)} + honorarios {fmtUSD(c.honorarios)}</span>
+                {c.gana != null && <span style={{ color: c.gana >= 0 ? C.green : C.red, fontWeight: 700 }}>gana {fmtUSD(c.gana)}</span>}
+              </div>}
             </div>; })}
           </div>
-        </Caja>}
-        <Caja title={`Productos${prods ? ` (${prods.length})` : ""}`}>
-          {prods === null ? <Cargando /> : prods.length === 0 ? <p style={{ color: C.mute, margin: 0 }}>Sin productos cargados.</p> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {prods.map((p, i) => <div key={p.id || i} style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              {p.photo_url ? <img src={p.photo_url} alt="" style={{ width: 44, height: 44, borderRadius: 9, objectFit: "cover", flexShrink: 0, border: `1px solid ${C.line}` }} /> : <div style={{ width: 44, height: 44, borderRadius: 9, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>📦</div>}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: 13.5 }}>{p.description || "—"}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{p.quantity ? `${p.quantity} u.` : ""}{p.ncm_code ? ` · NCM ${p.ncm_code}` : ""}{p.lead_time_days ? ` · ${p.lead_time_days} días prod.` : ""}{rol !== "empleado" && Number(p.unit_cost_usd) > 0 ? ` · costo ${fmtUSD(p.unit_cost_usd)}/u` : ""}</p>
+        </section>}
+
+        {/* Productos */}
+        <section style={sec}>
+          <p style={tit}>Productos{prods ? ` · ${lista.length}` : ""}</p>
+          {prods === null ? <Cargando /> : lista.length === 0 ? <p style={{ color: C.mute, margin: 0 }}>Sin productos cargados.</p> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {lista.map((p, i) => { const fotos = fotosDe(p); const sub = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0); return <div key={p.id || i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                {fotos.length ? fotos.slice(0, 3).map((u, k) => <button key={k} type="button" onClick={() => setFotoGrande(u)} style={{ width: k === 0 ? 56 : 28, height: 56, borderRadius: 9, overflow: "hidden", border: `1px solid ${C.line}`, background: "#000", padding: 0, cursor: "zoom-in" }}><img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></button>)
+                  : <div style={{ width: 56, height: 56, borderRadius: 9, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: C.gold }}>{i + 1}</div>}
               </div>
-              {p.supplier_ref && /^https?:/.test(p.supplier_ref) && <a href={p.supplier_ref} target="_blank" rel="noopener" style={{ fontSize: 12, color: C.blue, fontWeight: 700, textDecoration: "none" }}>Proveedor ↗</a>}
-            </div>)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{p.description || "—"}</p>
+                <p style={{ margin: "3px 0 0", fontSize: 12, color: C.sub, fontVariantNumeric: "tabular-nums" }}>
+                  <b style={{ color: C.txt }}>{p.quantity || 0} u.</b>{verPlata && Number(p.unit_cost_usd) > 0 ? ` × ${n2(p.unit_cost_usd)} = ` : ""}{verPlata && sub > 0 ? <b style={{ color: C.txt }}>USD {n2(sub)}</b> : null}{p.lead_time_days ? ` · ${p.lead_time_days} días de producción` : ""}
+                </p>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+                  {p.ncm_code ? <><span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.blue }}>{p.ncm_code}</span><span style={{ fontSize: 11.5, color: C.mute }}>DI {p.ncm_di_pct ?? 0}% · Tasa {p.ncm_estad_pct ?? 0}% · IVA {p.ncm_iva_pct ?? 21}%</span></> : <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>Sin posición arancelaria</span>}
+                  {p.supplier_ref && (/^https?:/.test(p.supplier_ref) ? <a href={p.supplier_ref} target="_blank" rel="noopener" style={{ fontSize: 12, color: C.blue, fontWeight: 700, textDecoration: "none" }}>Proveedor ↗</a> : <span style={{ fontSize: 11.5, color: C.mute }}>Proveedor: {p.supplier_ref}</span>)}
+                </div>
+              </div>
+            </div>; })}
           </div>}
-        </Caja>
-        {r.notes && <Caja title="Notas"><p style={{ margin: 0, fontSize: 13.5, color: C.sub, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{r.notes}</p></Caja>}
+        </section>
+
+        {/* Bultos */}
+        {bultos.length > 0 && <section style={sec}>
+          <p style={tit}>Bultos · {nBultos} · {cbm.toFixed(3)} m³ · {Math.round(kg)} kg</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {bultos.map((k, i) => <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.15)", border: `1px solid ${C.line}`, fontSize: 12.5 }}>
+              <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{k.n} × {k.l}×{k.w}×{k.h} cm</span>
+              <span style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{n2(Number(k.kg || 0))} kg c/u · {((Number(k.l || 0) * Number(k.w || 0) * Number(k.h || 0) * k.n) / 1e6).toFixed(3)} m³</span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.mute }}>{k.prods.length ? k.prods.map(nombreProd).join(" · ") : "todos los productos"}</span>
+            </div>)}
+          </div>
+        </section>}
+
+        {/* Plan de pagos */}
+        {q && plan.length > 0 && <section style={sec}>
+          <p style={tit}>Plan de pagos del cliente{baseCliente > 0 ? ` · sobre ${fmtUSD(baseCliente)}` : ""}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {plan.map((st, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+              <span style={{ width: 44, textAlign: "right", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: C.goldHi }}>{st.pct}%</span>
+              <span style={{ flex: 1, color: C.txt }}>{st.label}</span>
+              {baseCliente > 0 && <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(baseCliente * Number(st.pct || 0) / 100)}</span>}
+            </div>)}
+          </div>
+        </section>}
+
+        {r.notes && <section style={sec}><p style={tit}>Notas internas</p><p style={{ margin: 0, fontSize: 13.5, color: C.sub, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{r.notes}</p></section>}
       </div>
-      <Caja title="Historial">
+
+      <section style={sec}>
+        <p style={tit}>Historial</p>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <input value={nota} onChange={(x) => setNota(x.target.value)} onKeyDown={(x) => { if (x.key === "Enter") agregarNota(); }} placeholder="Agregar una nota…" style={{ ...inp, padding: "9px 11px", fontSize: 13 }} />
           <Btn small onClick={agregarNota} disabled={!nota.trim()}>Guardar</Btn>
         </div>
-        {ev.length === 0 ? <p style={{ color: C.mute, fontSize: 13, margin: 0 }}>Sin movimientos todavía.</p> : <div style={{ display: "flex", flexDirection: "column" }}>
-          {ev.map((c, i) => { const t = TIPO_EV[c.type] || { i: "·", l: c.type }; return <div key={i} style={{ display: "flex", gap: 10, padding: "9px 0", borderBottom: i < ev.length - 1 ? `1px solid ${C.line}` : "none" }}>
-            <span style={{ width: 22, textAlign: "center", flexShrink: 0 }}>{t.i}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{t.l}{c.meta?.email && ["accepted", "rejected", "link_viewed", "account_created"].includes(c.type) ? <span style={{ fontWeight: 500, color: C.mute }}> · {c.meta.email}</span> : null}</p>
-              {c.content && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub, whiteSpace: "pre-wrap" }}>{c.content}</p>}
-              {c.type === "rejected" && c.meta?.reason && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub }}>“{c.meta.reason}”</p>}
-              {c.type === "accepted" && c.meta?.total ? <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub }}>{GI_CANALES[c.meta.channel]?.nombre || c.meta.channel} · {fmtUSD(c.meta.total)}</p> : null}
+        {ev.length === 0 ? <p style={{ color: C.mute, fontSize: 13, margin: 0 }}>Sin movimientos todavía.</p> : <div style={{ position: "relative", paddingLeft: 26 }}>
+          <div style={{ position: "absolute", left: 9, top: 10, bottom: 10, width: 2, background: C.line }} />
+          {ev.map((c, i) => { const t = TIPO_EV[c.type] || { i: "·", l: c.type }; const fuerte = ["accepted", "rejected", "converted", "link_viewed"].includes(c.type); return <div key={i} style={{ position: "relative", padding: "7px 0" }}>
+            <span style={{ position: "absolute", left: -26, top: 9, width: 20, height: 20, borderRadius: "50%", background: fuerte ? C.goldBg : C.panel, border: `1px solid ${fuerte ? C.gold : C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>{t.i}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: fuerte ? 800 : 700 }}>{t.l}{c.meta?.email && ["accepted", "rejected", "link_viewed", "account_created"].includes(c.type) ? <span style={{ fontWeight: 500, color: C.mute }}> · {c.meta.email}</span> : null}</p>
+              <span style={{ fontSize: 11, color: C.mute, whiteSpace: "nowrap" }}>{fmtDateTime(c.created_at)}</span>
             </div>
-            <span style={{ fontSize: 11, color: C.mute, whiteSpace: "nowrap" }}>{fmtDateTime(c.created_at)}</span>
+            {c.content && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub, whiteSpace: "pre-wrap" }}>{c.content}</p>}
+            {c.type === "rejected" && c.meta?.reason && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub }}>“{c.meta.reason}”</p>}
+            {c.type === "accepted" && c.meta?.total ? <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub }}>{GI_CANALES[c.meta.channel]?.nombre || c.meta.channel} · {fmtUSD(c.meta.total)}</p> : null}
           </div>; })}
         </div>}
-      </Caja>
+      </section>
     </div>
+    {fotoGrande && <div onClick={() => setFotoGrande(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(5,10,20,0.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={fotoGrande} alt="" style={{ maxWidth: "92vw", maxHeight: "88vh", borderRadius: 12, objectFit: "contain" }} /></div>}
   </div>;
 }
 

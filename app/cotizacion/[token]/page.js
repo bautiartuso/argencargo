@@ -100,9 +100,19 @@ export default function CotizacionPublica({ params }) {
     (async () => {
       try {
         setLoading(true);
-        const tk = await tokenVigente();
-        const r = await fetch(`/api/cotizacion/${token}`, { headers: tk ? { Authorization: `Bearer ${tk}` } : {} });
-        const d = await r.json();
+        let tk = await tokenVigente();
+        let r = await fetch(`/api/cotizacion/${token}`, { headers: tk ? { Authorization: `Bearer ${tk}` } : {} });
+        let d = await r.json();
+        // Si hay sesión de cliente pero no es la dueña (ej. Bautista logueado con su cuenta personal),
+        // se prueba con la del admin / panel GI del mismo navegador: el staff la ve como vista previa (20/10/2026).
+        if (r.status === 403 && d.otra_cuenta) {
+          const st = tokenStaff();
+          if (st && st !== tk) {
+            const r2 = await fetch(`/api/cotizacion/${token}`, { headers: { Authorization: `Bearer ${st}` } });
+            const d2 = await r2.json();
+            if (r2.ok) { r = r2; d = d2; tk = st; }
+          }
+        }
         if (r.status === 401 && d.login) { setGate(d); setLoading(false); return; }
         if (r.status === 403 && d.otra_cuenta) { setGate(d); setLoading(false); return; }
         if (!r.ok) { setErr(d.error || "No se pudo cargar la cotización"); setLoading(false); return; }
