@@ -14374,7 +14374,7 @@ function SeguimientoPanel({token,templates,flash}){
   // mensaje armado, y cada contacto queda registrado (client_followups) con resultado y próximo paso.
   const celu=useEsCelu();
   const [rows,setRows]=useState([]);const [lo,setLo]=useState(true);const [err,setErr]=useState("");
-  const [seg,setSeg]=useState("hoy");const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [pag,setPag]=useState(0);
+  const [seg,setSeg]=useState("inactivo");const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [pag,setPag]=useState(0);
   const [abierto,setAbierto]=useState(null);const [hist,setHist]=useState({});
   const [reg,setReg]=useState(null); // {id,outcome,note,next}
   useEffect(()=>{const t=setTimeout(()=>{setBusq(search.trim().toLowerCase());setPag(0);},250);return()=>clearTimeout(t);},[search]);
@@ -14403,7 +14403,6 @@ function SeguimientoPanel({token,templates,flash}){
   const clasificar=(c)=>{
     if(c.followup_status==="no_contactar"||c.marketing_opt_out)return "no_contactar";
     if(Number(c.ops_activas)>0)return "importando";
-    if(Number(c.bultos_sin_op)>0)return "bultos";
     const dq=dias(c.ultima_quote_fecha),dop=dias(c.ultima_op_fecha);
     if(Number(c.quotes_total)>0&&dq!=null&&dq<=120&&(Number(c.ops_total)===0||new Date(c.ultima_quote_fecha)>new Date(c.ultima_op_fecha||0)))return "cotizo";
     if(Number(c.ops_total)>0)return dop>30?"inactivo":"activo";
@@ -14421,40 +14420,45 @@ function SeguimientoPanel({token,templates,flash}){
     if(c.followup_status==="no_interesado"&&dc!=null&&dc<90)return {k:"espera",t:`Dijo que no le interesa ${diasTxt(dc)}`};
     if(dc!=null&&dc<15)return {k:"espera",t:`Le escribiste ${diasTxt(dc)}${c.ultimo_outcome==="sin_respuesta"?" y no contestó":c.ultimo_outcome==="respondio"?" y te respondió":""}`};
     if(c.followup_next_at&&c.followup_next_at<=hoy)return {k:"si",t:`Quedaste en volver a escribirle el ${fechaCorta(c.followup_next_at)}`};
-    if(s==="bultos")return {k:"si",t:`${c.bultos_sin_op} bulto${Number(c.bultos_sin_op)!==1?"s":""} en depósito sin importación armada`};
-    if(s==="cotizo")return {k:"si",t:`Cotizó ${canalTxt(c.ultima_quote_canal)} ${diasTxt(dq)} (USD ${fmtUsd(c.ultima_quote_total)}) y no importó`};
-    if(s==="inactivo")return {k:"si",t:`${c.ops_total} importaci${Number(c.ops_total)===1?"ón":"ones"}, la última ${diasTxt(dop)} · facturó USD ${fmtUsd(c.facturado_usd)}`};
+    const bultos=Number(c.bultos_sin_op)>0?` · ${c.bultos_sin_op} bulto${Number(c.bultos_sin_op)!==1?"s":""} en depósito`:"";
+    if(s==="cotizo")return {k:"si",t:`Cotizó ${canalTxt(c.ultima_quote_canal)} ${diasTxt(dq)} (USD ${fmtUsd(c.ultima_quote_total)}) y no importó${bultos}`};
+    if(s==="inactivo")return {k:"si",t:`${c.ops_total} importaci${Number(c.ops_total)===1?"ón":"ones"}, la última ${diasTxt(dop)} · facturó USD ${fmtUsd(c.facturado_usd)}${bultos}`};
     if(dc!=null&&dc<45)return {k:"espera",t:`Contactado ${diasTxt(dc)}, sin novedades`};
-    return {k:"si",t:`Registrado ${diasTxt(dias(c.created_at))}, nunca cotizó`};
+    return {k:"si",t:`Registrado ${diasTxt(dias(c.created_at))}, nunca cotizó${bultos}`};
   };
   const prioridad=(c,s,sem)=>{
     if(sem.k!=="si")return -1;
     if(c.followup_next_at&&c.followup_next_at<=hoy)return 100;
-    if(s==="bultos")return 90+Number(c.bultos_sin_op);
     if(s==="cotizo")return 80-Math.min(40,(dias(c.ultima_quote_fecha)||0)/3);
     if(s==="inactivo")return 40+Math.min(30,Number(c.facturado_usd||0)/1000);
     return 10-(c.last_followup_at?5:0);
   };
 
   const enriquecidas=useMemo(()=>rows.map(c=>{const s=clasificar(c);const sem=semaforo(c,s);return {...c,seg:s,sem,prio:prioridad(c,s,sem)};}),[rows]);
-  const cuenta=(k)=>enriquecidas.filter(c=>k==="hoy"?c.sem.k==="si":c.seg===k).length;
+  // Grupos: tres de seguimiento (inactivos, cotizaron, nunca) + agendados + no contactar. Los que
+  // están importando ahora o importaron hace <30 días no van en ningún grupo (ya tienen seguimiento
+  // operativo); aparecen solo si los buscás, en rojo.
+  const enGrupo=(c,k)=>k==="agendados"?!!c.followup_next_at&&c.seg!=="no_contactar":c.seg===k;
+  const cuenta=(k)=>enriquecidas.filter(c=>enGrupo(c,k)).length;
   const SEGS=[
-    {k:"hoy",l:"Para hoy",ico:"⚡",d:"Conviene escribirles ahora, en orden de prioridad."},
-    {k:"bultos",l:"Bultos sin importación",ico:"📦",d:"Tienen mercadería en el depósito y no armaron la importación."},
-    {k:"cotizo",l:"Cotizaron y no importaron",ico:"🧮",d:"Pidieron un número en los últimos 4 meses y no arrancaron."},
-    {k:"inactivo",l:"Inactivos",ico:"🕒",d:"Ya importaron y hace más de 30 días que no vuelven."},
-    {k:"nunca",l:"Nunca cotizaron",ico:"🌱",d:"Se registraron y no hicieron nada todavía."},
-    {k:"importando",l:"Importando ahora",ico:"✈️",d:"Tienen una operación en curso: no hace falta escribirles."},
-    {k:"no_contactar",l:"No contactar",ico:"🚫",d:"Pidieron que no les escriban o se dieron de baja."},
+    {k:"inactivo",l:"Inactivos",d:"Ya importaron y hace más de 30 días que no vuelven. Primero los que más facturaron."},
+    {k:"cotizo",l:"Cotizaron y no importaron",d:"Pidieron un número en los últimos 4 meses y no arrancaron. Primero los más recientes."},
+    {k:"nunca",l:"Nunca cotizaron",d:"Se registraron y no hicieron nada todavía. Primero los últimos en registrarse."},
+    {k:"agendados",l:"Agendados",d:"Quedaste en volver a escribirles en una fecha. Los vencidos van primero."},
+    {k:"no_contactar",l:"No contactar",d:"Pidieron que no les escriban o se dieron de baja."},
   ];
+  const semOrd={si:0,espera:1,no:2};
   const lista=useMemo(()=>{
-    let l=busq?enriquecidas.filter(c=>`${c.first_name} ${c.last_name} ${c.client_code} ${c.email||""} ${c.whatsapp||""}`.toLowerCase().includes(busq)):enriquecidas.filter(c=>seg==="hoy"?c.sem.k==="si":c.seg===seg);
-    const ord={hoy:(a,b)=>b.prio-a.prio,bultos:(a,b)=>b.bultos_sin_op-a.bultos_sin_op,cotizo:(a,b)=>new Date(b.ultima_quote_fecha)-new Date(a.ultima_quote_fecha),inactivo:(a,b)=>Number(b.facturado_usd)-Number(a.facturado_usd),nunca:(a,b)=>new Date(b.created_at)-new Date(a.created_at),importando:(a,b)=>new Date(b.ultima_op_fecha)-new Date(a.ultima_op_fecha),no_contactar:(a,b)=>new Date(b.ultimo_contacto_at||0)-new Date(a.ultimo_contacto_at||0)};
-    return l.sort(busq?ord.hoy:ord[seg]);
+    let l=busq?enriquecidas.filter(c=>`${c.first_name} ${c.last_name} ${c.client_code} ${c.email||""} ${c.whatsapp||""}`.toLowerCase().includes(busq)):enriquecidas.filter(c=>enGrupo(c,seg));
+    const ord={cotizo:(a,b)=>new Date(b.ultima_quote_fecha)-new Date(a.ultima_quote_fecha),inactivo:(a,b)=>Number(b.facturado_usd)-Number(a.facturado_usd),nunca:(a,b)=>new Date(b.created_at)-new Date(a.created_at),agendados:(a,b)=>String(a.followup_next_at).localeCompare(String(b.followup_next_at)),no_contactar:(a,b)=>new Date(b.ultimo_contacto_at||0)-new Date(a.ultimo_contacto_at||0)};
+    const f=busq?(a,b)=>b.prio-a.prio:(ord[seg]||(()=>0));
+    // Dentro del grupo, primero los que conviene escribir (verde), después los que esperan, al final los rojos.
+    return l.sort((a,b)=>busq?f(a,b):(semOrd[a.sem.k]-semOrd[b.sem.k])||f(a,b));
   },[enriquecidas,seg,busq]);
   const porPag=40;const paginas=Math.max(1,Math.ceil(lista.length/porPag));const visibles=lista.slice(pag*porPag,pag*porPag+porPag);
+  const sinContactar=enriquecidas.filter(c=>["inactivo","cotizo","nunca"].includes(c.seg)&&!c.last_followup_at&&!c.ultimo_contacto_at).length;
   const esperando=enriquecidas.filter(c=>c.sem.k==="espera"&&/Le escribiste/.test(c.sem.t)).length;
-  const agendados=enriquecidas.filter(c=>c.followup_next_at&&c.followup_next_at>hoy).length;
+  const vencidos=enriquecidas.filter(c=>c.followup_next_at&&c.followup_next_at<=hoy&&c.seg!=="no_contactar").length;
 
   const interpTpl=(text,data)=>String(text||"").replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");
   const mensajeDe=(c)=>{
@@ -14500,23 +14504,23 @@ function SeguimientoPanel({token,templates,flash}){
   const btn=(txt,on,{color="rgba(255,255,255,0.75)",bg="rgba(255,255,255,0.04)",border="rgba(255,255,255,0.12)",strong}={})=><button type="button" onClick={on} style={{height:34,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:9,border:`1px solid ${border}`,background:bg,color,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",...(strong?{boxShadow:"0 6px 16px rgba(37,211,102,0.25)"}:{})}}>{txt}</button>;
 
   return <div>
-    {/* Resumen de una línea + grupos */}
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 12px"}}>
-      {lo?"Cargando clientes…":<><b style={{color:"#4ade80"}}>{cuenta("hoy")}</b> para escribir hoy · <b style={{color:"#fbbf24"}}>{esperando}</b> esperando respuesta · <b style={{color:"#c4b5fd"}}>{agendados}</b> agendados · {rows.length} clientes en total</>}
-    </p>
-    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-      {SEGS.map(o=>{const on=seg===o.k&&!busq;const n=cuenta(o.k);return <button key={o.k} type="button" onClick={()=>{setSeg(o.k);setSearch("");}} title={o.d} style={{display:"inline-flex",alignItems:"center",gap:7,height:34,padding:"0 12px 0 10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.09)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.025)",color:on?"#fff":"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700}}>
-        <span>{o.ico}</span>{o.l}<span style={{fontSize:11.5,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{n}</span>
-      </button>;})}
+    {/* Cabecera: grupos como solapas con contador, buscador a la derecha, y una línea de contexto */}
+    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:14,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:12}}>
+      <div style={{display:"flex",gap:celu?2:6,flexWrap:"wrap",marginBottom:-1}}>
+        {SEGS.map(o=>{const on=seg===o.k&&!busq;const n=cuenta(o.k);const urgente=o.k==="agendados"&&vencidos>0;return <button key={o.k} type="button" onClick={()=>{setSeg(o.k);setSearch("");}} style={{display:"inline-flex",alignItems:"center",gap:8,height:40,padding:celu?"0 10px":"0 14px",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,background:"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",fontSize:13,fontWeight:on?800:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"color 120ms"}} onMouseEnter={e=>{if(!on)e.currentTarget.style.color="rgba(255,255,255,0.85)";}} onMouseLeave={e=>{if(!on)e.currentTarget.style.color="rgba(255,255,255,0.55)";}}>
+          {o.l}<span style={{minWidth:22,height:20,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,fontVariantNumeric:"tabular-nums",background:urgente?"rgba(248,113,113,0.18)":on?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.07)",color:urgente?"#f87171":on?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{lo?"…":n}</span>
+        </button>;})}
+      </div>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar cliente…" style={{flex:celu?"1 1 100%":"0 1 260px",height:36,marginBottom:celu?10:6,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
     </div>
-    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar cliente por nombre, código, email o teléfono…" style={{flex:"1 1 260px",height:38,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
-      {!busq&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{SEGS.find(x=>x.k===seg)?.d}</span>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:14}}>
+      <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>{busq?`Buscando "${busq}" entre los ${rows.length} clientes`:SEGS.find(x=>x.k===seg)?.d}</p>
+      {!lo&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}><b style={{color:"#4ade80"}}>{sinContactar}</b> sin contactar nunca · <b style={{color:"#fbbf24"}}>{esperando}</b> esperando respuesta · <b style={{color:vencidos?"#f87171":"#c4b5fd"}}>{vencidos}</b> para hoy</p>}
     </div>
     {err&&<div style={{padding:"12px 16px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",fontSize:13}}>{err}</div>}
 
     {lo?<SkeletonTable rows={8} cols={3}/>:visibles.length===0
-      ?<EmptyState icon="users" title={busq?"Sin resultados":"Nada por acá"} description={busq?`Nada coincide con "${busq}"`:seg==="hoy"?"No queda nadie a quien convenga escribirle hoy. Mañana vuelven los agendados.":"No hay clientes en este grupo."}/>
+      ?<EmptyState icon="users" title={busq?"Sin resultados":"Nada por acá"} description={busq?`Nada coincide con "${busq}"`:seg==="agendados"?"Cuando registrás \"Más adelante\" con una fecha, el cliente aparece acá.":"No hay clientes en este grupo."}/>
       :<div style={{display:"flex",flexDirection:"column",gap:8}}>
         {visibles.map(c=>{const dc=dias(c.ultimo_contacto_at||c.last_followup_at);const open=abierto===c.id;const r=reg&&reg.id===c.id?reg:null;const col=semColor[c.sem.k];
           return <div key={c.id} style={{borderRadius:14,border:`1px solid ${open?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.08)"}`,background:"linear-gradient(180deg,rgba(13,24,45,0.9),rgba(8,16,32,0.9))"}}>
