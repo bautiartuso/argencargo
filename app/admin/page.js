@@ -13691,7 +13691,8 @@ function FinanceDashboard({token}){
   // No se limita a "ops cerradas". Suma TODOS los movimientos del período: cobros, pagos parciales,
   // costos de ops cuando se pagaron realmente, pagos a proveedor (GI), comisiones de giro y giros,
   // finance_entries (manuales y auto-generadas), anticipos a agentes.
-  const periodFilter=(ds)=>{if(!ds)return false;const p=parseLocalDate(ds);if(period==="all")return true;if(period==="day"||period==="today")return p.ds===selDay;if(period==="week")return p.ds>=selWeekMon&&p.ds<=weekEnd;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===selYear;return true;};
+  // En "Total" entra todo, incluso lo que no tiene fecha (si no, Cash disponible y Ganancia neta histórica divergían).
+  const periodFilter=(ds)=>{if(period==="all")return true;if(!ds)return false;const p=parseLocalDate(ds);if(period==="day"||period==="today")return p.ds===selDay;if(period==="week")return p.ds>=selWeekMon&&p.ds<=weekEnd;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===selYear;return true;};
   const isCobrada=(o)=>o.is_collected;
   // ═══ Libro de caja (19/10/2026): UNA sola función para Ganancia del período, Caja por mes y Cash
   // disponible. Base caja: cada peso cuenta el día que entró o salió. Así el histórico completo
