@@ -433,14 +433,18 @@ export async function POST(req) {
     // código no existe en la base se clasifica desde cero.
     if (hintCode && hintDigits.length >= 6) {
       const filas = await searchDB(hintCode);
-      const codigos = [...new Set(filas.map((f) => f.ncm_code).filter((c) => c.replace(/\D/g, "").startsWith(hintDigits.slice(0, 6))))];
+      let codigos = [...new Set(filas.map((f) => f.ncm_code).filter((c) => c.replace(/\D/g, "").startsWith(hintDigits.slice(0, 6))))];
+      // Subpartida renumerada (ej. 9405.20 → 9405.21/29 en la nomenclatura vigente): se busca por los 5 primeros dígitos.
+      let renumerada = false;
+      if (!codigos.length) { codigos = [...new Set(filas.map((f) => f.ncm_code).filter((c) => c.replace(/\D/g, "").startsWith(hintDigits.slice(0, 5))))]; renumerada = codigos.length > 0; }
       if (codigos.length) {
         let elegido = codigos.includes(hintCode) ? hintCode : codigos.length === 1 ? codigos[0] : null;
         if (!elegido && description) { const ap = await elegirAperturaReal(description, hintCode); elegido = ap?.ncm_code && codigos.includes(ap.ncm_code) ? ap.ncm_code : codigos[0]; }
         if (!elegido) elegido = codigos[0];
         const mem = description ? await memoriaAdmin(description) : null;
-        const nota = mem && mem.ncm !== elegido ? `Usamos tu posición. Argencargo suele despachar esta mercadería por ${mem.ncm}.` : "Usamos la posición que indicaste.";
-        return Response.json(withHint(await respuestaDeNcm(elegido, null, { hint_note: nota }, "cliente")));
+        const nota = mem && mem.ncm !== elegido ? `Usamos tu posición. Argencargo suele despachar esta mercadería por ${mem.ncm}.` : renumerada ? `Tu ${hintCode} hoy es ${elegido} en la nomenclatura vigente.` : "Usamos la posición que indicaste.";
+        const resp = withHint(await respuestaDeNcm(elegido, null, { hint_note: nota }, "cliente"));
+        return Response.json({ ...resp, hint_verdict: "ok" });
       }
     }
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
