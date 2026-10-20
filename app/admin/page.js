@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
@@ -7349,14 +7349,21 @@ function TariffsManager({token}){
     ?<button onClick={()=>delTariff(t.id)} style={{height:34,padding:"0 8px",borderRadius:8,border:"1px solid rgba(255,80,80,0.5)",background:"rgba(255,80,80,0.18)",color:"#ff8a8a",fontSize:11,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap"}}>¿Borrar?</button>
     :<button onClick={()=>setBorrar(t.id)} title="Borrar" style={{height:34,width:34,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.45)",fontSize:14,cursor:"pointer"}}>×</button>;
   const scope=t=>t.tax_scope==="ri"?<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#93c5fd"}}>RI</span>:t.tax_scope==="no_ri"?<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.15)",color:"#c4b5fd"}}>NO RI</span>:null;
-  const filaRango=(t,esRecargo)=>{const margen=Number(t.rate||0)-Number(t.cost||0);
+  // sinCosto: aéreo courier → el costo no se escribe acá (sale de la tarifa DHL del agente, ver tablaCostoAereo).
+  const COLS_SC="minmax(0,1.6fr) 80px 80px 96px 34px";
+  const filaRango=(t,esRecargo,sinCosto)=>{const margen=Number(t.rate||0)-Number(t.cost||0);
     if(celu)return <div key={t.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{flex:1}}>{campo(t,"label","text")}</div>{btnX(t)}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <div><p style={{...cab,margin:"0 0 4px"}}>Desde</p>{campo(t,"min_qty")}</div><div><p style={{...cab,margin:"0 0 4px"}}>Hasta</p>{campo(t,"max_qty")}</div>
-        <div><p style={{...cab,margin:"0 0 4px"}}>{esRecargo?"% recargo":"Precio"}</p>{campo(t,"rate")}</div>{!esRecargo&&<div><p style={{...cab,margin:"0 0 4px"}}>Costo</p>{campo(t,"cost")}</div>}
+        <div><p style={{...cab,margin:"0 0 4px"}}>{esRecargo?"% recargo":"Precio"}</p>{campo(t,"rate")}</div>{!esRecargo&&!sinCosto&&<div><p style={{...cab,margin:"0 0 4px"}}>Costo</p>{campo(t,"cost")}</div>}
       </div>
-      {!esRecargo&&<p style={{margin:"8px 0 0",fontSize:12.5,fontWeight:700,color:margen>0?"#4ade80":"#ff6b6b"}}>Margen {fmtM(margen)}{scope(t)}</p>}
+      {!esRecargo&&!sinCosto&&<p style={{margin:"8px 0 0",fontSize:12.5,fontWeight:700,color:margen>0?"#4ade80":"#ff6b6b"}}>Margen {fmtM(margen)}{scope(t)}</p>}
+      {sinCosto&&scope(t)&&<p style={{margin:"8px 0 0"}}>{scope(t)}</p>}
+    </div>;
+    if(sinCosto&&!esRecargo)return <div key={t.id} style={{display:"grid",gridTemplateColumns:COLS_SC,gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+      <div style={{display:"flex",alignItems:"center"}}>{campo(t,"label","text")}{scope(t)}</div>
+      {campo(t,"min_qty")}{campo(t,"max_qty")}{campo(t,"rate")}{btnX(t)}
     </div>;
     return <div key={t.id} style={{display:"grid",gridTemplateColumns:COLS,gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
       <div style={{display:"flex",alignItems:"center"}}>{campo(t,"label","text")}{scope(t)}</div>
@@ -7369,6 +7376,41 @@ function TariffsManager({token}){
     ?<div key={t.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"1fr 90px 34px",gap:8,alignItems:"center"}}>{campo(t,"label","text")}{campo(t,"rate")}{btnX(t)}</div>
     :<div key={t.id} style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 96px 96px minmax(0,1fr) 34px",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>{campo(t,"label","text")}{campo(t,"rate")}{campo(t,"cost")}{campo(t,"notes","text")}{btnX(t)}</div>;
   const encabezado=!celu&&<div style={{display:"grid",gridTemplateColumns:COLS,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={cab}>Rango</span><span style={{...cab,textAlign:"right"}}>Desde</span><span style={{...cab,textAlign:"right"}}>Hasta</span><span style={{...cab,textAlign:"right"}}>Precio</span><span style={{...cab,textAlign:"right"}}>Costo</span><span style={{...cab,textAlign:"right"}}>Margen</span><span/></div>;
+  const encabezadoSC=!celu&&<div style={{display:"grid",gridTemplateColumns:COLS_SC,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={cab}>Rango</span><span style={{...cab,textAlign:"right"}}>Desde</span><span style={{...cab,textAlign:"right"}}>Hasta</span><span style={{...cab,textAlign:"right"}}>Precio</span><span/></div>;
+  // Costo del aéreo courier: tarifa DHL del agente de China (copiada a tariffs por /api/agente/tarifas)
+  // más el costo financiero de los anticipos (calc_config.costo_financiero_pct). Nada se escribe a mano.
+  const [finPct,setFinPct]=useState(null);const [syncDhl,setSyncDhl]=useState(false);
+  useEffect(()=>{(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.costo_financiero_pct&select=value"});setFinPct(Array.isArray(r)&&r[0]?Number(r[0].value):null);})();},[token]);
+  const actualizarDhl=async()=>{setSyncDhl(true);try{const r=await fetch("/api/agente/tarifas",{method:"PUT",headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const j=await r.json().catch(()=>({}));if(!j.ok){flash(j.motivo==="sin_tarifas"?"⚠ Ningún agente tiene cargada la tarifa DHL":"No se pudo actualizar");return;}await load();setFinPct(Number(j.pct));flash(j.cambiado?`Costo actualizado con la tarifa DHL de ${j.agente}`:`Ya estaba al día con ${j.agente}`);}catch{flash("No se pudo actualizar");}finally{setSyncDhl(false);}};
+  const tablaCostoAereo=(minKg)=>{
+    const dhl=tariffs.filter(t=>t.service_key===SVC_COSTO_DHL&&tNowOk(t)).sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0));
+    const ventas=tariffs.filter(t=>t.service_key==="aereo_a_china"&&t.type==="rate"&&tNowOk(t));
+    const btnAct=<Btn small variant="ghost" disabled={syncDhl} onClick={actualizarDhl}>{syncDhl?"Actualizando…":"Actualizar desde el agente"}</Btn>;
+    if(!dhl.length)return <div style={{marginTop:18,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"12px 14px",borderRadius:12,border:"1px dashed rgba(255,255,255,0.18)"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>El costo sale de la tarifa DHL del agente y todavía no se trajo.</span>{btnAct}</div>;
+    const cortes=[...new Set([minKg,...dhl.map(t=>Number(t.min_qty||0)),...ventas.flatMap(t=>[Number(t.min_qty||0),t.max_qty!=null?Number(t.max_qty):null]).filter(x=>x!=null)])].filter(x=>x>=minKg).sort((a,b)=>a-b);
+    const filas=cortes.map((a,i)=>{const b=cortes[i+1];const c=costoAereoDhl(tariffs,a);const vs=ventas.filter(t=>a>=Number(t.min_qty||0)&&(t.max_qty==null||a<Number(t.max_qty))).sort((x,y)=>String(x.tax_scope||"").localeCompare(String(y.tax_scope||"")));return{a,b,c,vs};}).filter(f=>f.c);
+    const rango=f=>f.b==null?`+${f.a} kg`:`${f.a} a ${f.b} kg`;
+    const tag=v=>v.tax_scope==="ri"?" RI":v.tax_scope==="no_ri"?" no RI":"";
+    const precio=f=>f.vs.map(v=>fmtM(v.rate)+tag(v)).join(" · ");
+    const margen=f=>f.vs.map((v,i)=>{const m=Number(v.rate||0)-f.c.cost;return <span key={v.id} style={{color:m>0?"#4ade80":"#ff6b6b",marginLeft:i?8:0}}>{fmtM(m)}{tag(v)}</span>;});
+    const pct=finPct==null?0:finPct;const fecha=dhl[0].effective_from||dhl[0].created_at;const quien=String(dhl[0].notes||"").split(" · ")[0];
+    const COLS_C="minmax(0,1.3fr) 110px 110px minmax(0,1.3fr) minmax(0,1.3fr)";
+    return <div style={{marginTop:18}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",margin:"0 0 8px"}}>
+        <div><p style={{margin:0,fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo · tarifa DHL del agente</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{quien||"Agente"} · DHL + {String(pct).replace(".",",")}% de costo financiero{fecha?` · ${new Date(fecha).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}`:""}</p></div>
+        {btnAct}
+      </div>
+      {!celu&&<div style={{display:"grid",gridTemplateColumns:COLS_C,gap:8,padding:"0 0 6px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["Rango","DHL","Costo real","Precio","Margen"].map((h,i)=><span key={h} style={{...cab,textAlign:i?"right":"left"}}>{h}</span>)}</div>}
+      {filas.map(f=>celu
+        ?<div key={f.a} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10}}><span style={{color:"#fff",fontWeight:700}}>{rango(f)}</span><span style={{color:"rgba(255,255,255,0.7)"}}>{fmtM(f.c.rate)} → <b style={{color:"#fff"}}>{fmtM(f.c.cost)}</b></span></div>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,marginTop:4,fontSize:12.5}}><span style={{color:"rgba(255,255,255,0.6)"}}>{precio(f)}</span><span style={{fontWeight:800}}>{margen(f)}</span></div>
+        </div>
+        :<div key={f.a} style={{display:"grid",gridTemplateColumns:COLS_C,gap:8,alignItems:"center",padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",fontSize:13,fontVariantNumeric:"tabular-nums"}}>
+          <span style={{color:"#fff"}}>{rango(f)}</span><span style={{textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{fmtM(f.c.rate)}</span><span style={{textAlign:"right",color:"#fff",fontWeight:700}}>{fmtM(f.c.cost)}</span><span style={{textAlign:"right",color:"rgba(255,255,255,0.85)"}}>{precio(f)}</span><span style={{textAlign:"right",fontWeight:800}}>{margen(f)}</span>
+        </div>)}
+    </div>;};
   const sub=(titulo,boton)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"18px 0 8px"}}><p style={{margin:0,fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{titulo}</p>{boton}</div>;
   // Costo del Marítimo Integral desde USA (calc_config.costo_maritimo_b_usa; si no está, USD 2.000).
   const [costoUsa,setCostoUsa]=useState(null);
@@ -7390,10 +7432,12 @@ function TariffsManager({token}){
   const servicio=svc=>{if(svc.costoUsa)return servicioUsaMarB(svc);const filas=tariffs.filter(t=>t.service_key===svc.key&&tNowOk(t));
     const rangos=filas.filter(t=>t.type==="rate").sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0)||String(a.tax_scope||"").localeCompare(String(b.tax_scope||"")));
     const esp=filas.filter(t=>t.type==="special");const rec=filas.filter(t=>t.type==="surcharge").sort((a,b)=>Number(a.min_qty||0)-Number(b.min_qty||0));
+    const aereo=svc.key==="aereo_a_china";
     return <Card v2 key={svc.key} title={svc.nombre} sub={`Por ${svc.unit}${svc.comparte?` · ${svc.comparte}`:""}`} actions={<Btn small variant="secondary" onClick={()=>addTariff(svc.key,"rate",svc.unit==="m³"?"cbm":"kg")}>+ Rango</Btn>}>
       {rangos.length===0&&svc.key==="aereo_a_pk_bd"
         ?<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"12px 14px",borderRadius:12,border:"1px dashed rgba(255,255,255,0.18)"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>50 a 100 kg: USD 18/kg · +100 kg: USD 17/kg</span><Btn small onClick={crearPkBd}>Guardar estas tarifas</Btn></div>
-        :<>{encabezado}{rangos.map(t=>filaRango(t,false))}</>}
+        :<>{aereo?encabezadoSC:encabezado}{rangos.map(t=>filaRango(t,false,aereo))}</>}
+      {aereo&&tablaCostoAereo(origen==="usa"?25:10)}
       {(esp.length>0||svc.key==="aereo_a_china")&&<>{sub("Adicionales",<Btn small variant="ghost" onClick={()=>addTariff(svc.key,"special",svc.unit==="m³"?"cbm":"kg")}>+ Adicional</Btn>)}{esp.map(filaEspecial)}</>}
       {rec.length>0&&<>{sub("Recargo por valor",<Btn small variant="ghost" onClick={()=>addTariff(svc.key,"surcharge",svc.unit==="m³"?"cbm":"kg")}>+ Recargo</Btn>)}{rec.map(t=>filaRango(t,true))}</>}
     </Card>;};
