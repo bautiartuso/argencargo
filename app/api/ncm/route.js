@@ -354,9 +354,58 @@ async function respuestaDeNcm(ncmCode, intervencionIA, extras, source) {
   return await addAntidumping({ ncm_code: ncmCode, ncm_description: null, import_duty_rate: 35, statistics_rate: 3, iva_rate: 21, intervention, ...extras, source });
 }
 
+// ── Memoria del admin (20/10/2026) ───────────────────────────────────────────────────────────
+// Cada vez que el admin corrige a mano la posición de un producto, queda guardada como
+// "corregida por el admin". Antes de preguntarle a la IA se busca una descripción PARECIDA entre
+// esas correcciones (misma mercadería con otro tamaño/color: "Tongue licking vibrator 116*41mm"
+// vs "... 145*44mm") y se usa esa posición. Así el sistema clasifica como ya se despachó.
+const normTokens = (d) => String(d || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9ñ ]+/g, " ").split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !/^\d+(mm|cm|m|kg|g|ml|l|w|v|mah|pcs|pc|x)$/.test(w) && !PALABRAS_VACIAS.has(w));
+const PALABRAS_VACIAS = new Set(["con", "para", "the", "and", "with", "for", "size", "usb", "charging", "charge", "silicone", "abs", "color", "colores", "colors", "assorted", "tipo", "type", "set", "kit", "new", "los", "las", "del", "por", "una", "uno", "pcs"]);
+async function memoriaAdmin(description) {
+  const key = process.env.SUPABASE_SERVICE_ROLE; if (!key) return null;
+  const mine = new Set(normTokens(description)); if (mine.size === 0) return null;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/ncm_cache?corrected_by_admin=eq.true&select=description,ncm_code&limit=2000`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    const rows = await r.json(); if (!Array.isArray(rows)) return null;
+    let best = null;
+    for (const row of rows) {
+      const theirs = new Set(normTokens(row.description)); if (!theirs.size) continue;
+      let inter = 0; for (const w of mine) if (theirs.has(w)) inter++;
+      const score = inter / Math.max(mine.size, theirs.size); // Jaccard aproximado
+      const cubre = inter / Math.min(mine.size, theirs.size);  // la corta está contenida en la larga
+      const s = Math.max(score, cubre >= 0.99 && inter >= 2 ? 0.75 : 0);
+      if (s > (best?.s || 0)) best = { s, ncm: row.ncm_code, desc: row.description };
+    }
+    return best && best.s >= 0.6 ? best : null;
+  } catch { return null; }
+}
+async function esAdmin(req) {
+  const auth = req.headers.get("authorization") || ""; if (!auth.startsWith("Bearer ")) return false;
+  const key = process.env.SUPABASE_SERVICE_ROLE; if (!key) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const r = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${payload.sub}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    const p = await r.json(); return Array.isArray(p) && ["admin", "empleado"].includes(p[0]?.role);
+  } catch { return false; }
+}
+// Guarda la corrección del admin en la memoria (pisa lo que hubiera para esa descripción).
+async function aprender(description, ncm_code) {
+  const key = process.env.SUPABASE_SERVICE_ROLE; if (!key) return { error: "sin service role" };
+  const desc = String(description || "").trim(); const ncm = String(ncm_code || "").trim();
+  if (!desc || !/^\d{4}\.\d{2}\.\d{2}$/.test(ncm)) return { error: "descripción o NCM inválidos" };
+  const desc_norm = desc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
+  const r = await fetch(`${SB_URL}/rest/v1/ncm_cache?on_conflict=desc_norm`, { method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ desc_norm, description: desc, ncm_code: ncm, source: "admin", corrected_by_admin: true }) });
+  return r.ok ? { ok: true } : { error: `ncm_cache ${r.status}: ${(await r.text()).slice(0, 200)}` };
+}
+
 export async function POST(req) {
   try {
-    const { description, image, image_mime, check_ncm_only, hint } = await req.json();
+    const { description, image, image_mime, check_ncm_only, hint, action, ncm_code } = await req.json();
+    if (action === "aprender") {
+      if (!(await esAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
+      return Response.json(await aprender(description, ncm_code));
+    }
     const hintDigits = String(hint || "").replace(/\D/g, "").slice(0, 8);
     const hintCode = hintDigits.length >= 4 ? hintDigits.replace(/^(\d{4})(\d{0,2})(\d{0,2})$/, (m, a, b, c) => [a, b, c].filter(Boolean).join(".")) : null;
     // Compara la sugerencia del cliente con el resultado final (sobre los dígitos que el cliente cargó, mínimo 6).
@@ -380,6 +429,9 @@ export async function POST(req) {
 
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
     if (!image && description) {
+      // Lo que el admin ya corrigió manda sobre todo lo demás (misma mercadería, otra variante).
+      const mem = await memoriaAdmin(description);
+      if (mem) return Response.json(withHint(await respuestaDeNcm(mem.ncm, null, {}, "memoria-admin")));
       const override = checkOverride(description);
       if (override) return Response.json(withHint(await addAntidumping(override)));
       // Memoria: si esta descripción ya se clasificó, no se vuelve a llamar a la IA. Con una NCM

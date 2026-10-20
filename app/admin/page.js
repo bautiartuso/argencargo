@@ -1086,7 +1086,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // Refrescar el op desde DB para reflejar cambios externos (SQL, otros admins, etc)
     const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*`});
     if(Array.isArray(fresh)&&fresh[0]){setOp(p=>({...p,...fresh[0]}));const f=fresh[0];setDespacho({die:f.despacho_die_usd??"",est:f.despacho_estadistica_usd??"",des:f.despacho_desaduanaje_usd??"",iva:f.despacho_iva_usd??""});}
-    const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
+    const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);(Array.isArray(it)?it:[]).forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;});setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     // Saldo de cuenta corriente: se aplica SOLO en la primera op abierta del cliente, sin que el
     // admin tenga que apretar nada. Antes era manual y quedaba saldo sin imputar. "Primera op
@@ -1284,7 +1284,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     if(!isGI&&body.description&&!body.ncm_code){
       try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:body.description})});const d=await r.json();if(d?.ncm_code){body.ncm_code=d.ncm_code;if(d.import_duty_rate&&body.import_duty_rate==null)body.import_duty_rate=Number(d.import_duty_rate);if(d.statistics_rate&&body.statistics_rate==null)body.statistics_rate=Number(d.statistics_rate);if(d.iva_rate&&body.iva_rate==null)body.iva_rate=Number(d.iva_rate);}}catch(e){}
     }
-    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(!isGI&&body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(!isGI&&body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");
+    // Memoria (20/10/2026): si el admin cambió la posición a mano, el sistema la aprende para esa
+    // descripción y las parecidas (ver memoriaAdmin en /api/ncm).
+    const orig=origNcmRef.current[it.id];
+    if(!isGI&&body.ncm_code&&body.description&&orig!==undefined&&orig!==body.ncm_code){
+      fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({action:"aprender",description:body.description,ncm_code:body.ncm_code})}).then(r=>r.json()).then(j=>{if(j?.ok)toast(`Aprendido: "${body.description.slice(0,40)}…" → ${body.ncm_code}`,"success");}).catch(()=>{});
+    }
+    autoSyncBudget();await reloadItems();
   };
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
   // Clasificar TODOS los items: si no tienen NCM → IA. Si tienen NCM pero no tasas → llenar tasas con IA. Si tienen todo → saltear.
@@ -1356,7 +1363,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadItems();flash("Producto eliminado");autoSyncBudget();};
 
   const reloadPkgs=async()=>{const pk=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`});setPkgs(Array.isArray(pk)?pk:[]);};
-  const reloadItems=async()=>{const it=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setItems(Array.isArray(it)?it:[]);};
+  const origNcmRef=useRef({}); // NCM con el que se cargó cada item (para saber si el admin lo cambió a mano)
+  const reloadItems=async()=>{const it=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});const l=Array.isArray(it)?it:[];l.forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;});setItems(l);};
   const reloadEvents=async()=>{const ev=await dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`});setEvents(Array.isArray(ev)?ev:[]);};
 
   const savePkg=async(pk)=>{const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Bulto guardado");autoSyncBudget();};
