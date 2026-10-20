@@ -456,7 +456,10 @@ function NuevaCotizacion({ ctx, onClose }) {
       }
       const code = await dq("rpc/gi_next_request_code", { method: "POST", token, body: {} });
       if (typeof code !== "string" || !code.startsWith("GI-")) throw new Error("No se pudo generar el código");
-      const ins = await dq("gi_quote_requests", { method: "POST", token, body: { request_code: code, client_id: c.id, assigned_partner_id: socio || null, origin: origen, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) } });
+      const cuerpo = { request_code: code, client_id: c.id, assigned_partner_id: socio || null, origin: origen, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) };
+      let ins = await dq("gi_quote_requests", { method: "POST", token, body: cuerpo });
+      // Hasta que se corra el SQL del 20/10 la columna origin no existe: se crea igual, sin origen.
+      if (!Array.isArray(ins) && /origin/.test(String(ins?.message || ""))) { delete cuerpo.origin; ins = await dq("gi_quote_requests", { method: "POST", token, body: cuerpo }); }
       const id = arr(ins)[0]?.id;
       if (!id) throw new Error("No se pudo crear la cotización");
       toast.success(`${code} creada`);

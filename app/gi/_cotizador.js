@@ -144,7 +144,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
         const newOrder=oldIds.length+1000;
         const insertedIds=[];
         for(let i=0;i<products.length;i++){
-          const inserted=await dq("gi_quote_products",{method:"POST",token,body:productoBody(products[i],origin,newOrder+i)});
+          const inserted=await insertarProducto(productoBody(products[i],origin,newOrder+i));
           const newId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
           if(!newId)throw new Error(`Falló guardar el producto ${i+1}. Los productos viejos siguen guardados.`);
           insertedIds.push(newId);
@@ -179,13 +179,16 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
     supplier_ref:p.supplier_ref||null,
     display_order:order,
   });
+  // Hasta que se corra el SQL del 20/10 no existe photo_urls: se guarda sin esa columna (queda la primera foto).
+  const insertarProducto=async(body)=>{let r=await dq("gi_quote_products",{method:"POST",token,body});if(!Array.isArray(r)&&/photo_urls/.test(String(r?.message||""))){const {photo_urls,...resto}=body;r=await dq("gi_quote_products",{method:"POST",token,body:resto});}return r;};
   const guardarBultos=async(quoteId)=>{
+    if(!packages.length)return;
     const old=await dq("gi_quote_packages",{token,filters:`?quote_id=eq.${quoteId}&select=id`});
     const oldIds=Array.isArray(old)?old.map(x=>x.id):[];
     for(let i=0;i<packages.length;i++){
       const k=packages[i];
       const r=await dq("gi_quote_packages",{method:"POST",token,body:{quote_id:quoteId,display_order:i,pkg_count:Number(k.count)||1,length_cm:k.l?Number(k.l):null,width_cm:k.w?Number(k.w):null,height_cm:k.h?Number(k.h):null,weight_kg:k.kg?Number(k.kg):null,product_idx:(k.prods||[]).map(Number)}});
-      if(r&&!Array.isArray(r)&&r.code)throw new Error(r.message?.includes("gi_quote_packages")?"Falta correr el SQL de bultos (2026_10_20_gi_cotizador_v2)":`No se pudo guardar el bulto ${i+1}`);
+      if(r&&!Array.isArray(r)&&r.code){if(/gi_quote_packages/.test(String(r.message||"")))throw new Error("Falta correr el SQL de bultos (2026_10_20_gi_cotizador_v2.sql)");throw new Error(`No se pudo guardar el bulto ${i+1}`);}
     }
     if(oldIds.length)await dq("gi_quote_packages",{method:"DELETE",token,filters:`?id=in.(${oldIds.map(id=>`"${id}"`).join(",")})`});
   };
@@ -320,7 +323,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       }
       if(!quoteId)throw new Error("No se pudo guardar la cotización");
       if(request&&request.origin!==origin)await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{origin}});
-      for(let i=0;i<products.length;i++)await dq("gi_quote_products",{method:"POST",token,body:{...productoBody(products[i],origin,i),quantity:Number(products[i].quantity)||0,unit_cost_usd:Number(products[i].unit_cost_usd)||0}});
+      for(let i=0;i<products.length;i++)await insertarProducto({...productoBody(products[i],origin,i),quantity:Number(products[i].quantity)||0,unit_cost_usd:Number(products[i].unit_cost_usd)||0});
       await guardarBultos(quoteId);
       await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{status:"quoted"}});
       try{
