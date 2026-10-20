@@ -48,7 +48,7 @@ const quienMira = async (req, quote) => {
   const p = await sbFetch(`/profiles?id=eq.${user.id}&select=role,is_gi_partner&limit=1`);
   const prof = Array.isArray(p.body) ? p.body[0] : null;
   if (["admin", "empleado"].includes(prof?.role)) return { user, rol: "staff" };
-  if (prof?.is_gi_partner && (quote.gi_quote_requests?.assigned_partner_id === user.id || cl.gi_partner_id === user.id)) return { user, rol: "staff" };
+  if (prof?.is_gi_partner) return { user, rol: "staff" }; // socios con control total (20/10/2026)
   return { user, rol: null };
 };
 

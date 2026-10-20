@@ -175,240 +175,396 @@ export default function CotizacionPublica({ params }) {
   const products = (data.productos || []).map(p => ({ ...p, unit_cost_usd: Number(p.quantity) > 0 ? p.peso / Number(p.quantity) : 0 }));
   const clientData = quote.client || {};
   const cn = `${clientData.first_name || ""} ${clientData.last_name || ""}`.trim() || "Cliente";
+  const nombrePila = (clientData.first_name || "").trim();
   const someUSA = products.some(p => p.origin === "usa");
 
-  // Lista de canales disponibles (filtrar por origen)
   const channels = Object.entries(CHANNEL_LABELS)
     .filter(([k]) => !someUSA || k.includes("negro") || k === "maritimo_blanco")
     .map(([key, def]) => ({ key, ...def, total: Number(quote[def.costKey] || 0) }))
     .filter(c => c.total > 0)
     .sort((a, b) => a.total - b.total);
 
-  // Calcular peso facturable total (kg = bruto, cbm volumetrico) entre todos los productos para elegir tier correcto.
-  const totalKg = Number(data.carga?.kg || 0), totalCbm = Number(data.carga?.cbm || 0);
-  // Entrega: retiro por oficina, envío a domicilio con las tarifas de Argencargo (si la ficha tiene
-  // localidad conocida, esa; si no, CABA) u otra localidad a coordinar.
   const ent = data.entrega || {};
   const domicilio = ent.domicilio || (ent.caba != null ? { zona: "CABA", costo: ent.caba } : null);
   const selChannel = channels.find(c => c.key === selectedChannel);
   const channelTotal = selChannel ? selChannel.total : 0;
   const deliveryCost = domicilio && selectedDelivery === domicilio.zona ? Number(domicilio.costo || 0) : 0;
   const finalTotal = channelTotal + deliveryCost;
-
-  // Distribuir el total del canal + envío proporcional al FOB de cada producto.
-  // Si el cliente eligió envío a domicilio, el costo del envío también se prorratea.
   const landedSubtotal = (p) => (channelTotal + deliveryCost) * Number(p.peso || 0);
-  const landedUnit = (p) => {
-    const qty = Number(p.quantity || 0);
-    if (!qty) return 0;
-    return landedSubtotal(p) / qty;
-  };
-
-  // Plan de pagos
+  const landedUnit = (p) => { const qty = Number(p.quantity || 0); return qty ? landedSubtotal(p) / qty : 0; };
   const plan = (Array.isArray(quote.payment_plan) ? quote.payment_plan : (typeof quote.payment_plan === "string" ? JSON.parse(quote.payment_plan) : [])).filter(s => Number(s.pct || 0) > 0);
-
   const totalQty = products.reduce((s, p) => s + Number(p.quantity || 0), 0);
   const maxLead = products.reduce((m, p) => Math.max(m, Number(p.lead_time_days || 0)), 0);
+  const entregaTxt = selectedDelivery === "oficina" ? "Retiro por oficina" : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`;
 
-  // Si ya fue aceptada
   if (accepted || quote.status === "accepted" || quote.status === "converted") {
     return <AcceptedView quote={quote} accepted={accepted} cn={cn} settings={settings} products={products} client={clientData}/>;
   }
   if (rejected || quote.status === "rejected") return <RejectedView cn={cn} code={quote.request_code}/>;
 
-  return <div style={pageStyle(isMobile)}>
-    <p style={{ textAlign: "center", fontSize: 10.5, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: isMobile ? 14 : 24 }}>Cotización · Argencargo Gestión Integral</p>
+  const vm = {
+    quote, settings, esCliente, vencida, products, cn, nombrePila, channels, domicilio, selChannel, channelTotal, deliveryCost, finalTotal,
+    landedSubtotal, landedUnit, plan, totalQty, maxLead, entregaTxt,
+    selectedChannel, setSelectedChannel, selectedDelivery, setSelectedDelivery,
+    accepting, errAccion, openConfirm, onReject: () => setShowReject(true),
+  };
+  return <>
+    {isMobile ? <VistaCelu {...vm}/> : <VistaCompu {...vm}/>}
+    {showReject && <RechazoModal onCancel={() => setShowReject(false)} onConfirm={reject} enviando={accepting} err={errAccion}/>}
+    {showConfirm && <ConfirmarModal onCancel={() => setShowConfirm(false)} onConfirm={accept} selChannel={selChannel} finalTotal={finalTotal} entregaTxt={entregaTxt} plan={plan} isMobile={isMobile}/>}
+  </>;
+}
 
-    <div style={qdStyle()}>
-      {/* Header */}
-      <div style={{ ...qdHeadStyle(), padding: isMobile ? "16px 18px 14px" : "20px 30px 18px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-          <img src={LOGO} alt="Argencargo" style={{ height: isMobile ? 32 : 46, width: "auto" }}/>
-          <div style={{ textAlign: "right" }}>
-            <p style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.16em", color: "rgba(232,208,152,0.85)", textTransform: "uppercase", marginBottom: 3 }}>Cotización · Gestión Integral</p>
-            <p style={{ fontFamily: "'JetBrains Mono','SF Mono',monospace", fontSize: isMobile ? 14 : 17, fontWeight: 700, color: "#E8D098", letterSpacing: "0.04em", marginBottom: 1 }}>{quote.request_code || "—"}</p>
-            <p style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>{quote.expires_at ? `Válida hasta ${formatDate(quote.expires_at)}` : ""}</p>
-          </div>
+// ──────────────────────────────────────────────────────────────────────────────
+// Paleta del link (20/10/2026): fondo claro, tarjetas blancas, navy y dorado de Argencargo.
+// ──────────────────────────────────────────────────────────────────────────────
+const K = { navy: "#0A1628", navy2: "#132340", gold: "#B8956A", goldHi: "#E8D098", goldDeep: "#8b6f4a", goldBg: "#fbf6ec", bg: "#f3f4f7", card: "#ffffff", line: "#e6e9ef", lineHi: "#d2d8e2", txt: "#0f1d33", sub: "#4b5a70", mute: "#8593a8", green: "#15803d", greenBg: "#ecfdf3", red: "#b42318", redBg: "#fef2f2", blue: "#1d4ed8", blueBg: "#eff6ff" };
+const FONT = "'Inter','Helvetica Neue',Arial,sans-serif";
+const MONO = "'JetBrains Mono','SF Mono',ui-monospace,monospace";
+const GOLD_GRAD = "linear-gradient(135deg,#B8956A 0%,#E8D098 50%,#B8956A 100%)";
+const CSS_LINK = `
+@keyframes cotIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.cot-in{animation:cotIn .35s ease both}
+.cot-snap{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 16px 14px;margin:0 -16px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.cot-snap::-webkit-scrollbar{display:none}
+.cot-snap>*{scroll-snap-align:center;flex:0 0 82%}
+.cot-opt{transition:border-color .15s,box-shadow .15s,transform .15s}
+.cot-opt:active{transform:scale(.985)}
+.cot-opt:hover{border-color:#B8956A!important}
+details.cot-det>summary{list-style:none;cursor:pointer}
+details.cot-det>summary::-webkit-details-marker{display:none}
+`;
+const Radio = ({ on }) => <span style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${on ? K.gold : K.lineHi}`, flexShrink: 0, background: on ? K.gold : "#fff", boxShadow: on ? "inset 0 0 0 4px #fff" : "none", transition: "all .15s" }}/>;
+const Lbl = ({ children, c }) => <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", color: c || K.mute, textTransform: "uppercase", margin: "0 0 10px" }}>{children}</p>;
+const Card = ({ children, style = {}, pad = 20 }) => <section className="cot-in" style={{ background: K.card, border: `1px solid ${K.line}`, borderRadius: 18, padding: pad, boxShadow: "0 1px 2px rgba(10,22,40,0.04), 0 10px 30px rgba(10,22,40,0.06)", ...style }}>{children}</section>;
+const Terminos = ({ texto, compacto }) => texto ? <details className="cot-det" style={{ padding: compacto ? "12px 16px" : "14px 18px", background: K.card, border: `1px solid ${K.line}`, borderRadius: 14, fontSize: 12.5, color: K.sub }}>
+  <summary style={{ fontWeight: 800, color: K.txt, fontSize: 12.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>Términos y condiciones <span style={{ color: K.mute }}>›</span></summary>
+  <div style={{ paddingTop: 10, marginTop: 10, borderTop: `1px solid ${K.line}`, lineHeight: 1.6 }}>{String(texto).split("\n").map((l, i) => {
+    const t = l.trim();
+    if (!t) return <div key={i} style={{ height: 6 }} />;
+    if (/:$/.test(t) && !t.startsWith("-")) return <p key={i} style={{ margin: "8px 0 2px", fontWeight: 800, color: K.txt, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.replace(/:$/, "")}</p>;
+    if (t.startsWith("-")) return <p key={i} style={{ margin: "2px 0", paddingLeft: 12, position: "relative" }}><span style={{ position: "absolute", left: 0, color: K.gold }}>•</span>{t.replace(/^-\s*/, "")}</p>;
+    return <p key={i} style={{ margin: "2px 0" }}>{t}</p>;
+  })}</div>
+</details> : null;
+const fotoDe = (p) => (Array.isArray(p.photo_urls) && p.photo_urls[0]) || p.photo_url || null;
+const Foto = ({ p, size, radius = 12 }) => { const u = fotoDe(p); return u
+  ? <img src={u} alt={p.description || ""} style={{ width: size, height: size, borderRadius: radius, objectFit: "cover", flexShrink: 0, border: `1px solid ${K.line}`, background: K.bg }} onError={e => { e.currentTarget.style.visibility = "hidden"; }}/>
+  : <div style={{ width: size, height: size, borderRadius: radius, background: "linear-gradient(135deg,#f6f0e4,#eadfc7)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, flexShrink: 0, border: `1px solid ${K.line}` }}>📦</div>; };
+const Aviso = ({ vencida, esCliente, cn }) => vencida
+  ? <div style={{ padding: "14px 16px", background: K.redBg, border: "1px solid #f3c4c4", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 13.5, fontWeight: 800, color: K.red, margin: 0 }}>Esta cotización venció</p><p style={{ fontSize: 12, color: "#7a2e2e", margin: "4px 0 0", lineHeight: 1.5 }}>Los precios pueden haber cambiado. Escribinos y te mandamos una actualizada.</p></div>
+  : !esCliente ? <div style={{ padding: "12px 14px", background: K.blueBg, border: "1px solid #c9d8f5", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 12.5, fontWeight: 800, color: K.blue, margin: 0 }}>Vista previa</p><p style={{ fontSize: 11.5, color: "#334155", margin: "3px 0 0" }}>Solo {cn} puede aceptarla o rechazarla desde su cuenta.</p></div>
+  : null;
+const BotonAceptar = ({ accepting, onClick, label, style = {} }) => <button onClick={onClick} disabled={accepting} style={{ width: "100%", padding: "15px 22px", background: accepting ? "#64748b" : K.navy, color: "#fff", border: "none", borderRadius: 14, fontSize: 14.5, fontWeight: 800, cursor: accepting ? "wait" : "pointer", letterSpacing: "0.02em", fontFamily: "inherit", boxShadow: "0 10px 24px rgba(10,22,40,0.25)", ...style }}>{accepting ? "Procesando…" : label || "Aceptar y comenzar producción"}</button>;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// VISTA PARA COMPUTADORA: dos columnas, resumen fijo a la derecha.
+// ──────────────────────────────────────────────────────────────────────────────
+function VistaCompu(v) {
+  const { quote, settings, products, channels, domicilio, selChannel, finalTotal, deliveryCost, plan, maxLead } = v;
+  return <div style={{ minHeight: "100vh", background: K.bg, fontFamily: FONT, color: K.txt }}>
+    <style>{CSS_LINK}</style>
+    <header style={{ background: K.navy, color: "#fff" }}>
+      <div style={{ maxWidth: 1160, margin: "0 auto", padding: "16px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
+        <img src={LOGO} alt="Argencargo" style={{ height: 40, width: "auto" }}/>
+        <div style={{ display: "flex", alignItems: "center", gap: 22, fontSize: 12.5 }}>
+          <span style={{ color: "rgba(255,255,255,0.55)" }}>Cotización · Gestión Integral</span>
+          <span style={{ fontFamily: MONO, fontWeight: 700, color: K.goldHi, fontSize: 15 }}>{quote.request_code}</span>
+          {quote.expires_at && <span style={{ padding: "5px 11px", borderRadius: 999, background: "rgba(232,208,152,0.14)", color: K.goldHi, fontWeight: 700, fontSize: 11.5 }}>Válida hasta el {formatDate(quote.expires_at)}</span>}
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div><p style={qdLblStyle()}>Cliente</p><p style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>{cn}</p></div>
-          <div><p style={qdLblStyle()}>{totalQty} unidades · {products.length} {products.length === 1 ? "producto" : "productos"}</p></div>
+      </div>
+      <div style={{ height: 4, background: GOLD_GRAD }}/>
+    </header>
+
+    <main style={{ maxWidth: 1160, margin: "0 auto", padding: "34px 28px 60px" }}>
+      <div className="cot-in" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 24, marginBottom: 26, flexWrap: "wrap" }}>
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 800, color: K.goldDeep, textTransform: "uppercase", letterSpacing: "0.16em", margin: "0 0 8px" }}>Tu cotización</p>
+          <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, lineHeight: 1.1 }}>Hola {v.nombrePila || v.cn}, esto es lo que cuesta tu importación</h1>
+          <p style={{ fontSize: 15, color: K.sub, margin: "10px 0 0", lineHeight: 1.6, maxWidth: 620 }}>Precio final en dólares con la mercadería <strong style={{ color: K.txt }}>puesta en Buenos Aires</strong>: flete, aduana, impuestos y nuestra gestión. Elegí cómo viaja y dónde la recibís; el total se actualiza solo.</p>
         </div>
-        <div style={{ height: 5, background: "linear-gradient(90deg,#B8956A 0%,#E8D098 50%,#B8956A 100%)", position: "absolute", left: 0, right: 0, bottom: 0 }}/>
       </div>
 
-      {/* Body — 2 col en desktop, 1 col en mobile */}
-      <div style={{ padding: isMobile ? "16px 14px 22px" : "24px 30px 28px", background: "#fafaf7" }}>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.15fr 1fr", gap: isMobile ? 12 : 18, alignItems: "start" }}>
-          {/* COL IZQUIERDA: productos + servicio */}
-          <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 12 : 14, minWidth: 0 }}>
-            <div style={qdSecCardStyle()}>
-              <p style={qdSecTitleStyle()}>Productos</p>
-              <p style={{ fontSize: 11, color: "#888", margin: "-4px 0 6px", lineHeight: 1.5 }}>Precios <strong style={{ color: "#0A1628" }}>puestos en Buenos Aires</strong> (incluye flete, aduana, impuestos{deliveryCost > 0 ? ", envío a domicilio" : ""} y honorarios) según el servicio{deliveryCost > 0 ? " y entrega" : ""} seleccionado.</p>
-              {products.map((p, i) => {
-                const subLanded = landedSubtotal(p);
-                const unitLanded = landedUnit(p);
-                return <div key={p.id || i} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 8 : 12, alignItems: isMobile ? "stretch" : "center", padding: "10px 0", borderBottom: "1px solid #ebe6db", paddingTop: i === 0 ? 4 : 12 }}>
-                  <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
-                    {p.photo_url ? <img src={p.photo_url} alt={p.description || ""} style={{ width: isMobile ? 48 : 56, height: isMobile ? 48 : 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid #d4c5a0", background: "#f3eadb" }} onError={e => { e.currentTarget.style.display = "none"; }}/>
-                      : <div style={{ width: isMobile ? 48 : 56, height: isMobile ? 48 : 56, borderRadius: 8, background: "linear-gradient(135deg,#f3eadb,#e7d8b8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: "1px solid #d4c5a0" }}>📦</div>}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: isMobile ? 12.5 : 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 1, lineHeight: 1.35, wordBreak: "break-word" }}>{p.description}</p>
-                      {p.lead_time_days > 0 && <p style={{ fontSize: 10.5, color: "#B8956A", fontWeight: 600, marginTop: 3 }}>⏱ Producción {p.lead_time_days} días</p>}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0, paddingLeft: isMobile ? 60 : 0 }}>
-                    <p style={{ fontSize: 16, fontWeight: 800, color: "#0A1628", fontFeatureSettings: '"tnum"', letterSpacing: "-0.01em", lineHeight: 1.1 }}>{fmtUSD2(unitLanded)} <span style={{ fontSize: 10, fontWeight: 600, color: "#888", letterSpacing: 0 }}>/ unidad</span></p>
-                    <p style={{ fontSize: 10.5, color: "#888", fontFeatureSettings: '"tnum"', marginTop: 3 }}>{p.quantity} u. · subtotal {fmtUSD2(subLanded)}</p>
-                  </div>
-                </div>;
-              })}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 380px", gap: 22, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+          {/* Servicio */}
+          <Card>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+              <div><Lbl>1 · Cómo viaja</Lbl><h2 style={{ fontSize: 19, fontWeight: 800, margin: "-4px 0 14px", letterSpacing: "-0.01em" }}>Elegí el servicio</h2></div>
+              {maxLead > 0 && <span style={{ fontSize: 12, color: K.mute }}>Producción: hasta {maxLead} días hábiles</span>}
             </div>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(channels.length, 3)},minmax(0,1fr))`, gap: 12 }}>
+              {channels.map((c, i) => { const on = v.selectedChannel === c.key; const rec = i === 0 && channels.length > 1; return <button key={c.key} type="button" className="cot-opt" onClick={() => v.setSelectedChannel(c.key)} style={{ textAlign: "left", padding: "18px 18px 16px", borderRadius: 16, border: `2px solid ${on ? K.gold : K.line}`, background: on ? K.goldBg : "#fff", cursor: "pointer", fontFamily: "inherit", boxShadow: on ? "0 8px 24px rgba(184,149,106,0.18)" : "none", position: "relative" }}>
+                {rec && <span style={{ position: "absolute", top: -10, left: 14, fontSize: 9.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>Más conveniente</span>}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}><Radio on={on}/><span style={{ fontSize: 22 }}>{c.key.startsWith("aereo") ? "✈️" : "🚢"}</span></div>
+                <p style={{ fontSize: 15, fontWeight: 800, margin: 0, color: K.txt, lineHeight: 1.25 }}>{c.name}</p>
+                <p style={{ fontSize: 12, color: K.sub, margin: "4px 0 12px" }}>{channelTransitText(c)} de viaje</p>
+                <p style={{ fontSize: 24, fontWeight: 900, margin: 0, color: on ? K.goldDeep : K.txt, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{fmtUSD(c.total)}</p>
+                <p style={{ fontSize: 11, color: K.mute, margin: "2px 0 0" }}>{totalDaysText(c, maxLead)}</p>
+              </button>; })}
+            </div>
+          </Card>
 
-            <div style={qdSecCardStyle()}>
-              <p style={qdSecTitleStyle()}>Elegí qué servicio preferís</p>
-              <p style={{ fontSize: 11, color: "#888", margin: "-4px 0 8px", lineHeight: 1.5 }}>El precio cambia según modo de transporte. Todos incluyen flete internacional, gestión aduanera y entrega final.</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                {channels.map((c, i) => <SvcRow key={c.key} channel={c} maxLead={maxLead} selected={selectedChannel === c.key} onClick={() => setSelectedChannel(c.key)} recommended={i === 0 && channels.length > 1}/>)}
+          {/* Entrega */}
+          <Card>
+            <Lbl>2 · Dónde la recibís</Lbl>
+            <h2 style={{ fontSize: 19, fontWeight: 800, margin: "-4px 0 14px", letterSpacing: "-0.01em" }}>Entrega</h2>
+            <div style={{ display: "grid", gridTemplateColumns: domicilio ? "1fr 1fr 1fr" : "1fr 1fr", gap: 12 }}>
+              {[
+                { k: "oficina", t: "Retiro por oficina", m: `${settings?.office_address || ""} · ${settings?.office_locality || ""}`, m2: settings?.office_hours || "", p: "Sin costo" },
+                domicilio ? { k: domicilio.zona, t: `A domicilio · ${domicilio.zona}`, m: "Coordinamos día y horario", m2: "", p: `+ ${fmtUSD(domicilio.costo)}` } : null,
+                { k: "coordinar", t: domicilio ? "Otra localidad" : "Envío a domicilio", m: "Te pasamos costo y plazo", m2: "", p: "A coordinar" },
+              ].filter(Boolean).map(o => { const on = v.selectedDelivery === o.k; return <button key={o.k} type="button" className="cot-opt" onClick={() => v.setSelectedDelivery(o.k)} style={{ textAlign: "left", padding: "16px 16px 14px", borderRadius: 16, border: `2px solid ${on ? K.gold : K.line}`, background: on ? K.goldBg : "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}><Radio on={on}/><span style={{ fontSize: 14, fontWeight: 800, color: K.txt }}>{o.t}</span></div>
+                <p style={{ fontSize: 12, color: K.sub, margin: 0, lineHeight: 1.45 }}>{o.m}{o.m2 ? <><br/>{o.m2}</> : null}</p>
+                <p style={{ fontSize: 14, fontWeight: 800, color: on ? K.goldDeep : K.txt, margin: "10px 0 0" }}>{o.p}</p>
+              </button>; })}
+            </div>
+          </Card>
+
+          {/* Productos */}
+          <Card>
+            <Lbl>3 · Qué vas a recibir</Lbl>
+            <h2 style={{ fontSize: 19, fontWeight: 800, margin: "-4px 0 4px", letterSpacing: "-0.01em" }}>Productos</h2>
+            <p style={{ fontSize: 12.5, color: K.mute, margin: "0 0 10px" }}>{v.totalQty} unidades · {products.length} {products.length === 1 ? "producto" : "productos"} · precios con {selChannel?.name || "el servicio elegido"}{deliveryCost > 0 ? " y envío" : ""}</p>
+            {products.map((p, i) => <div key={p.id || i} style={{ display: "flex", gap: 16, alignItems: "center", padding: "14px 0", borderTop: `1px solid ${K.line}` }}>
+              <Foto p={p} size={72}/>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 15, fontWeight: 800, margin: 0, lineHeight: 1.35, wordBreak: "break-word" }}>{p.description}</p>
+                <p style={{ fontSize: 12.5, color: K.sub, margin: "4px 0 0" }}>{p.quantity} unidades{p.lead_time_days > 0 ? ` · producción ${p.lead_time_days} días` : ""}</p>
               </div>
-            </div>
-          </div>
-
-          {/* COL DERECHA: entrega + total + plan + tiempos */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            <div style={qdSecCardStyle()}>
-              <p style={qdSecTitleStyle()}>¿Cómo querés recibirla?</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                <DelivRow label="Retiro por oficina" meta={settings ? `${settings.office_address || ""} · ${settings.office_locality || ""} · ${settings.office_hours || ""}` : "Sin costo"} price="Incluido" selected={selectedDelivery === "oficina"} onClick={() => setSelectedDelivery("oficina")}/>
-                {domicilio && <DelivRow label={`Envío a domicilio · ${domicilio.zona}`} meta="Coordinamos día y horario" price={`+ ${fmtUSD(domicilio.costo)}`} selected={selectedDelivery === domicilio.zona} onClick={() => setSelectedDelivery(domicilio.zona)}/>}
-                <DelivRow label={domicilio ? "Envío a otra localidad" : "Envío a domicilio"} meta="Te pasamos costo y plazo según la localidad" price="A coordinar" selected={selectedDelivery === "coordinar"} onClick={() => setSelectedDelivery("coordinar")}/>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <p style={{ fontSize: 17, fontWeight: 800, margin: 0, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em" }}>{fmtUSD2(v.landedUnit(p))} <span style={{ fontSize: 11, fontWeight: 600, color: K.mute }}>c/u</span></p>
+                <p style={{ fontSize: 12, color: K.mute, margin: "3px 0 0", fontVariantNumeric: "tabular-nums" }}>subtotal {fmtUSD2(v.landedSubtotal(p))}</p>
               </div>
-            </div>
+            </div>)}
+          </Card>
 
-            <div style={qdTotalBarStyle()}>
-              <div>
-                <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase" }}>Total</p>
-                <p style={{ fontSize: 10.5, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{selChannel?.name || "—"} · {selectedDelivery === "oficina" ? "Retiro por oficina" : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}</p>
-              </div>
-              <p style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", fontFeatureSettings: '"tnum"' }}>{fmtUSD(finalTotal)}</p>
+          {/* Tiempos */}
+          <Card>
+            <Lbl>4 · Cuándo llega</Lbl>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, position: "relative" }}>
+              {[
+                ["Producción", maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto", "Arranca con el primer pago"],
+                ["Viaje y arribo", selChannel ? channelTransitText(selChannel) : "—", selChannel?.name || ""],
+                ["Entrega", selChannel ? totalDaysText(selChannel, maxLead) : "—", v.entregaTxt],
+              ].map(([t, m, m2], i) => <div key={t} style={{ padding: "0 14px 0 0", position: "relative" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <span style={{ width: 28, height: 28, borderRadius: "50%", background: K.navy, color: K.goldHi, fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
+                  {i < 2 && <span style={{ flex: 1, height: 2, background: K.line }}/>}
+                </div>
+                <p style={{ fontSize: 13.5, fontWeight: 800, margin: 0 }}>{t}</p>
+                <p style={{ fontSize: 12.5, color: K.txt, margin: "3px 0 0" }}>{m}</p>
+                <p style={{ fontSize: 11.5, color: K.mute, margin: "2px 0 0" }}>{m2}</p>
+              </div>)}
             </div>
+          </Card>
 
-            {plan.length > 0 && <div style={qdSecCardStyle()}>
-              <p style={qdSecTitleStyle()}>Plan de pagos</p>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${plan.length}, 1fr)`, gap: 6 }}>
-                {plan.map((stage, i) => <div key={i} style={{ padding: "10px 12px", background: "#fff", border: "1px solid #ebe6db", borderRadius: 9 }}>
-                  <p style={{ fontSize: 18, fontWeight: 800, color: "#B8956A", letterSpacing: "-0.02em", marginBottom: 1 }}>{stage.pct}%</p>
-                  <p style={{ fontSize: 10, color: "#777", marginBottom: 5, lineHeight: 1.3 }}>{stage.label}</p>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: "#1a1a1a", fontFeatureSettings: '"tnum"', paddingTop: 5, borderTop: "1px solid #f0eadc" }}>{fmtUSD(Math.round(finalTotal * Number(stage.pct) / 100))}</p>
+          <Terminos texto={settings?.terms_and_conditions}/>
+        </div>
+
+        {/* Resumen fijo */}
+        <aside style={{ position: "sticky", top: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <Card pad={0} style={{ overflow: "hidden" }}>
+            <div style={{ padding: "20px 22px 18px", background: K.navy, color: "#fff" }}>
+              <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(232,208,152,0.8)", margin: 0 }}>Total puesto en Buenos Aires</p>
+              <p style={{ fontSize: 38, fontWeight: 900, letterSpacing: "-0.03em", margin: "6px 0 0", color: "#fff", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{fmtUSD(finalTotal)}</p>
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: "8px 0 0" }}>{selChannel?.name || "—"} · {v.entregaTxt}</p>
+            </div>
+            <div style={{ padding: "16px 22px 20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", color: K.sub }}><span>{selChannel?.name || "Servicio"}</span><strong style={{ color: K.txt, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(v.channelTotal)}</strong></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", color: K.sub, borderBottom: `1px solid ${K.line}` }}><span>{v.entregaTxt}</span><strong style={{ color: K.txt, fontVariantNumeric: "tabular-nums" }}>{deliveryCost > 0 ? fmtUSD(deliveryCost) : v.selectedDelivery === "coordinar" ? "a coordinar" : "incluido"}</strong></div>
+              {plan.length > 0 && <div style={{ marginTop: 14 }}>
+                <Lbl>Plan de pagos</Lbl>
+                {plan.map((st, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: i ? `1px solid ${K.line}` : "none" }}>
+                  <span style={{ width: 26, height: 26, borderRadius: "50%", background: i === 0 ? GOLD_GRAD : K.bg, color: i === 0 ? K.navy : K.sub, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}><p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{st.label}</p><p style={{ fontSize: 11.5, color: K.mute, margin: "1px 0 0" }}>{st.pct}% del total</p></div>
+                  <strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums", color: i === 0 ? K.goldDeep : K.txt }}>{fmtUSD(Math.round(finalTotal * Number(st.pct) / 100))}</strong>
                 </div>)}
-              </div>
-            </div>}
-
-            <div style={qdSecCardStyle()}>
-              <p style={qdSecTitleStyle()}>Tiempos estimados</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <TimeStep n="1" name="Producción" meta={maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto"}/>
-                <TimeStep n="2" name="Envío y arribo" meta={selChannel ? channelTransitText(selChannel) : "—"}/>
-                <TimeStep n="3" name="Entrega final" meta={selChannel ? `${totalDaysText(selChannel, maxLead)} · ${selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Belgrano CABA"}` : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}` : "—"}/>
+              </div>}
+              <div style={{ marginTop: 16 }}>
+                <Aviso vencida={v.vencida} esCliente={v.esCliente} cn={v.cn}/>
+                {!v.vencida && v.esCliente && <>
+                  <BotonAceptar accepting={v.accepting} onClick={v.openConfirm}/>
+                  <button onClick={v.onReject} disabled={v.accepting} style={{ width: "100%", padding: "11px 16px", marginTop: 8, background: "transparent", color: K.mute, border: `1px solid ${K.line}`, borderRadius: 12, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>No me interesa por ahora</button>
+                  {v.errAccion && <p style={{ textAlign: "center", fontSize: 12, color: K.red, fontWeight: 600, margin: "8px 0 0" }}>{v.errAccion}</p>}
+                </>}
               </div>
             </div>
-
-            {settings?.terms_and_conditions && <details style={{ padding: "9px 12px", background: "#fff", border: "1px solid #ebe6db", borderRadius: 9, fontSize: 11, color: "#555" }}>
-              <summary style={{ cursor: "pointer", fontWeight: 700, color: "#1a1a1a", fontSize: 10.5, letterSpacing: "0.04em", textTransform: "uppercase" }}>Términos y condiciones</summary>
-              <div style={{ paddingTop: 8, marginTop: 8, borderTop: "1px solid #ebe6db", lineHeight: 1.55 }}>{String(settings.terms_and_conditions).split("\n").map((l, i) => {
-                const t = l.trim();
-                if (!t) return <div key={i} style={{ height: 6 }} />;
-                if (/:$/.test(t) && !t.startsWith("-")) return <p key={i} style={{ margin: "6px 0 2px", fontWeight: 800, color: "#0A1628", fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.06em" }}>{t.replace(/:$/, "")}</p>;
-                if (t.startsWith("-")) return <p key={i} style={{ margin: "2px 0", paddingLeft: 12, position: "relative" }}><span style={{ position: "absolute", left: 0, color: "#B8956A" }}>•</span>{t.replace(/^-\s*/, "")}</p>;
-                return <p key={i} style={{ margin: "2px 0" }}>{t}</p>;
-              })}</div>
-            </details>}
-
-            {vencida ? <div style={{ padding: "14px 16px", background: "#fff4f4", border: "1px solid #f3c4c4", borderRadius: 10, textAlign: "center" }}>
-              <p style={{ fontSize: 13, fontWeight: 800, color: "#b42318", margin: 0 }}>Esta cotización venció</p>
-              <p style={{ fontSize: 11.5, color: "#7a2e2e", margin: "4px 0 0", lineHeight: 1.5 }}>Los precios pueden haber cambiado. Escribinos y te mandamos una actualizada.</p>
-            </div> : !esCliente ? <div style={{ padding: "12px 14px", background: "#eef4ff", border: "1px solid #c9d8f5", borderRadius: 10, textAlign: "center" }}>
-              <p style={{ fontSize: 12.5, fontWeight: 800, color: "#1d4ed8", margin: 0 }}>Vista previa</p>
-              <p style={{ fontSize: 11.5, color: "#334155", margin: "3px 0 0" }}>Solo {cn} puede aceptarla o rechazarla desde su cuenta.</p>
-            </div> : <>
-              <button onClick={openConfirm} disabled={accepting || !selectedChannel} style={{ width: "100%", padding: "14px 22px", background: accepting ? "#444" : "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13.5, fontWeight: 700, cursor: accepting ? "wait" : "pointer", letterSpacing: "0.04em", fontFamily: "inherit" }}>{accepting ? "Procesando…" : "Aceptar y comenzar producción"}</button>
-              <button onClick={() => setShowReject(true)} disabled={accepting} style={{ width: "100%", padding: "10px 16px", marginTop: 8, background: "transparent", color: "#8a8a8a", border: "1px solid #e2ddd0", borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>No me interesa por ahora</button>
-              {errAccion && <p style={{ textAlign: "center", fontSize: 12, color: "#b42318", fontWeight: 600, margin: "8px 0 0" }}>{errAccion}</p>}
-            </>}
-            {showReject && <RechazoModal onCancel={() => setShowReject(false)} onConfirm={reject} enviando={accepting} err={errAccion}/>}
-
-            {showConfirm && <div onClick={() => setShowConfirm(false)} style={{ position: "fixed", inset: 0, background: "rgba(8,12,24,0.78)", backdropFilter: "blur(10px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-              <div onClick={e => e.stopPropagation()} style={{ maxWidth: 480, width: "100%", background: "linear-gradient(180deg,#fefcf6 0%,#fdf9ed 100%)", borderRadius: 16, padding: "28px 28px 22px", border: "1px solid rgba(184,149,106,0.3)", boxShadow: "0 30px 80px rgba(0,0,0,0.45)", color: "#1a1a1a", fontFamily: "inherit" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg,#B8956A,#E8D098)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>✓</div>
-                  <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-0.01em", color: "#0A1628" }}>Confirmar aceptación</h2>
-                </div>
-                <p style={{ margin: "0 0 18px", fontSize: 13.5, lineHeight: 1.55, color: "#4a4a4a" }}>Al confirmar, un asesor revisa tu pedido y te pasa las instrucciones del primer pago para arrancar la producción.</p>
-                <div style={{ padding: "12px 14px", background: "rgba(184,149,106,0.10)", border: "1px solid rgba(184,149,106,0.3)", borderRadius: 10, marginBottom: 18 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: "#8b6f4a", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>Servicio elegido</p>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: "#0A1628", margin: "4px 0 0" }}>{selChannel?.name || "—"}</p>
-                  <p style={{ fontSize: 13, fontWeight: 800, color: "#B8956A", margin: "2px 0 0" }}>{fmtUSD(finalTotal)} · {selectedDelivery === "oficina" ? "Retiro por oficina" : selectedDelivery === "coordinar" ? "Envío a coordinar" : `Envío a ${selectedDelivery}`}</p>
-                </div>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <button onClick={() => setShowConfirm(false)} style={{ flex: 1, padding: "12px 20px", background: "transparent", color: "#0A1628", border: "1.5px solid rgba(10,22,40,0.2)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
-                  <button onClick={accept} style={{ flex: 1.5, padding: "12px 20px", background: "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.04em" }}>Confirmar y aceptar</button>
-                </div>
-              </div>
-            </div>}
-          </div>
-        </div>
+          </Card>
+          <p style={{ fontSize: 12, color: K.mute, textAlign: "center", margin: 0, lineHeight: 1.6 }}>¿Dudas? <strong style={{ color: K.txt }}>{settings?.office_phone || ""}</strong> · info@argencargo.com.ar</p>
+        </aside>
       </div>
-
-      {/* Footer estilo PDF */}
-      <div style={{ background: "#0A1628", color: "#fff", padding: "14px 30px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexShrink: 0 }}>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 800, letterSpacing: "0.08em", marginBottom: 6 }}>ARGENCARGO</p>
-          {settings && <>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
-              <strong style={{ color: "#E8D098" }}>Tel:</strong> {settings.office_phone || ""} {" "}·{" "} <strong style={{ color: "#E8D098" }}>Email:</strong> info@argencargo.com.ar
-            </p>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>{settings.office_address || ""}{settings.office_locality ? ` — ${settings.office_locality}` : ""}</p>
-          </>}
-        </div>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#E8D098", letterSpacing: "0.04em" }}>argencargo.com.ar</p>
+    </main>
+    <footer style={{ background: K.navy, color: "rgba(255,255,255,0.7)", padding: "18px 28px", fontSize: 12 }}>
+      <div style={{ maxWidth: 1160, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <span><strong style={{ color: "#fff", letterSpacing: "0.08em" }}>ARGENCARGO</strong> · {settings?.office_address || ""}{settings?.office_locality ? `, ${settings.office_locality}` : ""}</span>
+        <span style={{ color: K.goldHi, fontWeight: 700 }}>argencargo.com.ar</span>
       </div>
-    </div>
+    </footer>
   </div>;
 }
 
-function SvcRow({ channel, maxLead, selected, onClick, recommended }) {
-  return <label onClick={onClick} style={{ cursor: "pointer", display: "block", borderRadius: 9, border: `1.5px solid ${selected ? "#B8956A" : "#e6e6e6"}`, background: selected ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fafaf7", boxShadow: selected ? "0 3px 10px rgba(184,149,106,0.18)" : "none", transition: "all 150ms" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px" }}>
-      <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${selected ? "#B8956A" : "#c4b59a"}`, flexShrink: 0, background: selected ? "#B8956A" : "transparent", boxShadow: selected ? "inset 0 0 0 3.5px #fff" : "none" }}/>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 12.5, fontWeight: 700, color: "#1a1a1a", marginBottom: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          {channel.name}
-          {recommended && <span style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", letterSpacing: "0.08em", textTransform: "uppercase" }}>Recomendado</span>}
-        </p>
-        <p style={{ fontSize: 10.5, color: "#777" }}>{channelTimeText(channel, maxLead)}</p>
+// ──────────────────────────────────────────────────────────────────────────────
+// VISTA PARA CELULAR: hecha para el pulgar. Pasos cortos, tarjetas deslizables y el total siempre abajo.
+// ──────────────────────────────────────────────────────────────────────────────
+function VistaCelu(v) {
+  const { quote, settings, products, channels, domicilio, selChannel, finalTotal, deliveryCost, plan, maxLead } = v;
+  const [verProductos, setVerProductos] = useState(false);
+  const puedeAceptar = !v.vencida && v.esCliente;
+  return <div style={{ minHeight: "100vh", background: K.bg, fontFamily: FONT, color: K.txt, paddingBottom: puedeAceptar ? 112 : 24 }}>
+    <style>{CSS_LINK}</style>
+    <header style={{ position: "sticky", top: 0, zIndex: 20, background: K.navy, color: "#fff" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px" }}>
+        <img src={LOGO} alt="Argencargo" style={{ height: 28, width: "auto" }}/>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontFamily: MONO, fontWeight: 700, color: K.goldHi, fontSize: 13, margin: 0 }}>{quote.request_code}</p>
+          {quote.expires_at && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", margin: "1px 0 0" }}>Válida hasta el {formatDate(quote.expires_at)}</p>}
+        </div>
       </div>
-      <p style={{ fontSize: 13.5, fontWeight: 800, color: "#B8956A", fontFeatureSettings: '"tnum"', whiteSpace: "nowrap" }}>{fmtUSD(channel.total)}</p>
+      <div style={{ height: 3, background: GOLD_GRAD }}/>
+    </header>
+
+    <div style={{ padding: "22px 16px 0" }}>
+      <p style={{ fontSize: 11, fontWeight: 800, color: K.goldDeep, textTransform: "uppercase", letterSpacing: "0.16em", margin: "0 0 6px" }}>Tu cotización</p>
+      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0, lineHeight: 1.2 }}>Hola {v.nombrePila || v.cn} 👋</h1>
+      <p style={{ fontSize: 14, color: K.sub, margin: "8px 0 0", lineHeight: 1.55 }}>Precio final con todo incluido, puesto en Buenos Aires. Elegí cómo viaja y dónde la recibís.</p>
     </div>
-  </label>;
+
+    {/* Resumen de la carga */}
+    <div style={{ padding: "16px 16px 0" }}>
+      <Card pad={16}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex" }}>{products.slice(0, 3).map((p, i) => <div key={i} style={{ marginLeft: i ? -14 : 0, border: "2px solid #fff", borderRadius: 12 }}><Foto p={p} size={48} radius={10}/></div>)}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{products.length === 1 ? products[0].description : `${products.length} productos`}</p>
+            <p style={{ fontSize: 12, color: K.mute, margin: "2px 0 0" }}>{v.totalQty} unidades{maxLead > 0 ? ` · producción ${maxLead} días` : ""}</p>
+          </div>
+          <button type="button" onClick={() => setVerProductos(x => !x)} style={{ background: K.bg, border: `1px solid ${K.line}`, color: K.txt, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 999, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>{verProductos ? "Ocultar" : "Ver detalle"}</button>
+        </div>
+        {verProductos && <div style={{ marginTop: 12, borderTop: `1px solid ${K.line}` }}>
+          {products.map((p, i) => <div key={p.id || i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${K.line}` }}>
+            <Foto p={p} size={52} radius={10}/>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 13.5, fontWeight: 700, margin: 0, lineHeight: 1.3, wordBreak: "break-word" }}>{p.description}</p>
+              <p style={{ fontSize: 12, color: K.mute, margin: "3px 0 0" }}>{p.quantity} u. · {fmtUSD2(v.landedUnit(p))} c/u</p>
+            </div>
+            <strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtUSD(v.landedSubtotal(p))}</strong>
+          </div>)}
+          <p style={{ fontSize: 11.5, color: K.mute, margin: "10px 0 0", lineHeight: 1.5 }}>Precios con {selChannel?.name || "el servicio elegido"}{deliveryCost > 0 ? " y envío" : ""}: incluyen flete, aduana, impuestos y gestión.</p>
+        </div>}
+      </Card>
+    </div>
+
+    {/* Paso 1: servicio (deslizable) */}
+    <div style={{ padding: "22px 16px 0" }}>
+      <Lbl>1 · Cómo viaja</Lbl>
+      <h2 style={{ fontSize: 18, fontWeight: 800, margin: "-4px 0 10px", letterSpacing: "-0.01em" }}>Elegí el servicio</h2>
+    </div>
+    <div style={{ padding: "0 16px" }}>
+      <div className="cot-snap">
+        {channels.map((c, i) => { const on = v.selectedChannel === c.key; const rec = i === 0 && channels.length > 1; return <button key={c.key} type="button" className="cot-opt" onClick={() => v.setSelectedChannel(c.key)} style={{ textAlign: "left", padding: "18px 16px 16px", borderRadius: 18, border: `2px solid ${on ? K.gold : K.line}`, background: on ? K.goldBg : "#fff", cursor: "pointer", fontFamily: "inherit", boxShadow: on ? "0 10px 26px rgba(184,149,106,0.22)" : "0 1px 2px rgba(10,22,40,0.04)", position: "relative", minHeight: 150 }}>
+          {rec && <span style={{ position: "absolute", top: 12, right: 12, fontSize: 9.5, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", letterSpacing: "0.08em", textTransform: "uppercase" }}>Más conveniente</span>}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><Radio on={on}/><span style={{ fontSize: 22 }}>{c.key.startsWith("aereo") ? "✈️" : "🚢"}</span></div>
+          <p style={{ fontSize: 16, fontWeight: 800, margin: 0, lineHeight: 1.25 }}>{c.name}</p>
+          <p style={{ fontSize: 12.5, color: K.sub, margin: "4px 0 12px" }}>{channelTransitText(c)} de viaje</p>
+          <p style={{ fontSize: 26, fontWeight: 900, margin: 0, color: on ? K.goldDeep : K.txt, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>{fmtUSD(c.total)}</p>
+          <p style={{ fontSize: 11.5, color: K.mute, margin: "2px 0 0" }}>{totalDaysText(c, maxLead)}</p>
+        </button>; })}
+      </div>
+      {channels.length > 1 && <p style={{ fontSize: 11, color: K.mute, margin: "-6px 0 0", textAlign: "center" }}>Deslizá para ver las {channels.length} opciones</p>}
+    </div>
+
+    {/* Paso 2: entrega */}
+    <div style={{ padding: "22px 16px 0" }}>
+      <Lbl>2 · Dónde la recibís</Lbl>
+      <h2 style={{ fontSize: 18, fontWeight: 800, margin: "-4px 0 10px", letterSpacing: "-0.01em" }}>Entrega</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {[
+          { k: "oficina", t: "Retiro por oficina", m: `${settings?.office_locality || "Belgrano, CABA"} · ${settings?.office_hours || ""}`, p: "Sin costo" },
+          domicilio ? { k: domicilio.zona, t: `A domicilio · ${domicilio.zona}`, m: "Coordinamos día y horario", p: `+ ${fmtUSD(domicilio.costo)}` } : null,
+          { k: "coordinar", t: domicilio ? "Otra localidad" : "Envío a domicilio", m: "Te pasamos costo y plazo", p: "A coordinar" },
+        ].filter(Boolean).map(o => { const on = v.selectedDelivery === o.k; return <button key={o.k} type="button" className="cot-opt" onClick={() => v.setSelectedDelivery(o.k)} style={{ display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "14px 14px", borderRadius: 16, border: `2px solid ${on ? K.gold : K.line}`, background: on ? K.goldBg : "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+          <Radio on={on}/>
+          <div style={{ flex: 1, minWidth: 0 }}><p style={{ fontSize: 14, fontWeight: 800, margin: 0 }}>{o.t}</p><p style={{ fontSize: 12, color: K.sub, margin: "2px 0 0", lineHeight: 1.4 }}>{o.m}</p></div>
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: on ? K.goldDeep : K.txt, whiteSpace: "nowrap" }}>{o.p}</span>
+        </button>; })}
+      </div>
+    </div>
+
+    {/* Paso 3: pagos */}
+    {plan.length > 0 && <div style={{ padding: "22px 16px 0" }}>
+      <Lbl>3 · Cómo se paga</Lbl>
+      <Card pad={16}>
+        {plan.map((st, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: i ? `1px solid ${K.line}` : "none" }}>
+          <span style={{ width: 30, height: 30, borderRadius: "50%", background: i === 0 ? GOLD_GRAD : K.bg, color: i === 0 ? K.navy : K.sub, fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0 }}><p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{st.label}</p><p style={{ fontSize: 11.5, color: K.mute, margin: "1px 0 0" }}>{st.pct}% del total</p></div>
+          <strong style={{ fontSize: 15, fontVariantNumeric: "tabular-nums", color: i === 0 ? K.goldDeep : K.txt }}>{fmtUSD(Math.round(finalTotal * Number(st.pct) / 100))}</strong>
+        </div>)}
+      </Card>
+    </div>}
+
+    {/* Paso 4: tiempos */}
+    <div style={{ padding: "22px 16px 0" }}>
+      <Lbl>4 · Cuándo llega</Lbl>
+      <Card pad={16}>
+        <div style={{ position: "relative", paddingLeft: 36 }}>
+          <div style={{ position: "absolute", left: 13, top: 14, bottom: 14, width: 2, background: K.line }}/>
+          {[
+            ["Producción", maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto"],
+            ["Viaje y arribo", selChannel ? `${channelTransitText(selChannel)} · ${selChannel.name}` : "—"],
+            ["Entrega", selChannel ? `${totalDaysText(selChannel, maxLead)} · ${v.entregaTxt}` : "—"],
+          ].map(([t, m], i) => <div key={t} style={{ position: "relative", padding: "6px 0" }}>
+            <span style={{ position: "absolute", left: -36, top: 6, width: 28, height: 28, borderRadius: "50%", background: K.navy, color: K.goldHi, fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+            <p style={{ fontSize: 14, fontWeight: 800, margin: 0 }}>{t}</p>
+            <p style={{ fontSize: 12.5, color: K.sub, margin: "2px 0 0", lineHeight: 1.45 }}>{m}</p>
+          </div>)}
+        </div>
+      </Card>
+    </div>
+
+    <div style={{ padding: "16px 16px 0", display: "flex", flexDirection: "column", gap: 12 }}>
+      <Terminos texto={settings?.terms_and_conditions} compacto/>
+      <Aviso vencida={v.vencida} esCliente={v.esCliente} cn={v.cn}/>
+      {puedeAceptar && <button onClick={v.onReject} disabled={v.accepting} style={{ width: "100%", padding: "12px 16px", background: "transparent", color: K.mute, border: `1px solid ${K.line}`, borderRadius: 12, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>No me interesa por ahora</button>}
+      {v.errAccion && <p style={{ textAlign: "center", fontSize: 12, color: K.red, fontWeight: 600, margin: 0 }}>{v.errAccion}</p>}
+      <p style={{ fontSize: 12, color: K.mute, textAlign: "center", margin: "4px 0 0", lineHeight: 1.6 }}>¿Dudas? <strong style={{ color: K.txt }}>{settings?.office_phone || ""}</strong><br/>info@argencargo.com.ar</p>
+    </div>
+
+    {/* Total fijo abajo */}
+    {puedeAceptar && <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 30, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "rgba(255,255,255,0.96)", backdropFilter: "blur(14px)", borderTop: `1px solid ${K.line}`, boxShadow: "0 -10px 30px rgba(10,22,40,0.08)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 10, fontWeight: 800, color: K.mute, textTransform: "uppercase", letterSpacing: "0.12em", margin: 0 }}>Total</p>
+          <p style={{ fontSize: 22, fontWeight: 900, margin: 0, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{fmtUSD(finalTotal)}</p>
+          <p style={{ fontSize: 11, color: K.mute, margin: "1px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selChannel?.name || "—"} · {v.entregaTxt}</p>
+        </div>
+        <BotonAceptar accepting={v.accepting} onClick={v.openConfirm} label="Aceptar" style={{ width: "auto", padding: "14px 24px", borderRadius: 14 }}/>
+      </div>
+    </div>}
+  </div>;
 }
 
-function DelivRow({ label, meta, price, selected, onClick }) {
-  return <label onClick={onClick} style={{ cursor: "pointer", display: "block", borderRadius: 9, border: `1.5px solid ${selected ? "#B8956A" : "#e6e6e6"}`, background: selected ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fafaf7", boxShadow: selected ? "0 3px 10px rgba(184,149,106,0.18)" : "none", transition: "all 150ms" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px" }}>
-      <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${selected ? "#B8956A" : "#c4b59a"}`, flexShrink: 0, background: selected ? "#B8956A" : "transparent", boxShadow: selected ? "inset 0 0 0 3.5px #fff" : "none" }}/>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 12.5, fontWeight: 700, color: "#1a1a1a", marginBottom: 1 }}>{label}</p>
-        <p style={{ fontSize: 10.5, color: "#777" }}>{meta}</p>
+function ConfirmarModal({ onCancel, onConfirm, selChannel, finalTotal, entregaTxt, plan, isMobile }) {
+  const primero = plan?.[0];
+  return <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(8,12,24,0.7)", backdropFilter: "blur(10px)", zIndex: 99999, display: "flex", alignItems: isMobile ? "flex-end" : "center", justifyContent: "center", padding: isMobile ? 0 : 20, fontFamily: FONT }}>
+    <div onClick={e => e.stopPropagation()} style={{ maxWidth: isMobile ? "100%" : 480, width: "100%", background: "#fff", borderRadius: isMobile ? "22px 22px 0 0" : 20, padding: isMobile ? "24px 20px calc(22px + env(safe-area-inset-bottom))" : "28px 28px 22px", boxShadow: "0 30px 80px rgba(0,0,0,0.45)", color: K.txt }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", background: GOLD_GRAD, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: K.navy }}>✓</div>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>Confirmar aceptación</h2>
       </div>
-      <p style={{ fontSize: 13.5, fontWeight: 800, color: "#B8956A", fontFeatureSettings: '"tnum"', whiteSpace: "nowrap" }}>{price}</p>
+      <p style={{ margin: "0 0 16px", fontSize: 13.5, lineHeight: 1.55, color: K.sub }}>Al confirmar, un asesor revisa tu pedido y te pasa las instrucciones del primer pago para arrancar la producción.</p>
+      <div style={{ padding: "14px 16px", background: K.goldBg, border: `1px solid #ead9b8`, borderRadius: 14, marginBottom: 16 }}>
+        <p style={{ fontSize: 10, fontWeight: 800, color: K.goldDeep, margin: 0, textTransform: "uppercase", letterSpacing: "0.1em" }}>Lo que elegiste</p>
+        <p style={{ fontSize: 15, fontWeight: 800, margin: "4px 0 0" }}>{selChannel?.name || "—"} · {entregaTxt}</p>
+        <p style={{ fontSize: 22, fontWeight: 900, color: K.txt, margin: "4px 0 0", fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{fmtUSD(finalTotal)}</p>
+        {primero && <p style={{ fontSize: 12.5, color: K.sub, margin: "6px 0 0" }}>Primer pago: <strong style={{ color: K.txt }}>{fmtUSD(Math.round(finalTotal * Number(primero.pct) / 100))}</strong> ({primero.pct}%) · {primero.label}</p>}
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onCancel} style={{ flex: 1, padding: "13px 20px", background: "transparent", color: K.txt, border: `1.5px solid ${K.lineHi}`, borderRadius: 12, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
+        <button onClick={onConfirm} style={{ flex: 1.5, padding: "13px 20px", background: K.navy, color: "#fff", border: "none", borderRadius: 12, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Confirmar y aceptar</button>
+      </div>
     </div>
-  </label>;
-}
-
-function TimeStep({ n, name, meta }) {
-  return <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px", background: "#fff", border: "1px solid #ebe6db", borderRadius: 9 }}>
-    <span style={{ width: 21, height: 21, borderRadius: "50%", background: "#0A1628", color: "#E8D098", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
-    <div><p style={{ fontSize: 11.5, fontWeight: 700, color: "#1a1a1a", marginBottom: 1 }}>{name}</p><p style={{ fontSize: 10.5, color: "#777" }}>{meta}</p></div>
   </div>;
 }
 
@@ -435,8 +591,10 @@ function AcceptedView({ quote, accepted, cn, settings, products, client }) {
     { label: "Contra entrega", pct: 50 },
   ];
   const stageAmount = (pct) => (total * (Number(pct) || 0)) / 100;
-  return <div style={pageStyle()}>
-    <div style={{ maxWidth: 640, width: "100%", padding: "36px 32px", background: "#fafaf7", color: "#1a1a1a", borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
+  return <div style={{ minHeight: "100vh", background: K.bg, padding: "24px 16px 40px", display: "flex", flexDirection: "column", alignItems: "center", fontFamily: FONT, color: K.txt }}>
+    <style>{CSS_LINK}</style>
+    <img src={LOGO} alt="Argencargo" style={{ height: 34, width: "auto", marginBottom: 18, filter: "invert(1) brightness(0.2)" }}/>
+    <div className="cot-in" style={{ maxWidth: 640, width: "100%", padding: "clamp(22px,4vw,36px)", background: "#fff", color: K.txt, borderRadius: 20, border: `1px solid ${K.line}`, boxShadow: "0 10px 30px rgba(10,22,40,0.08)", boxSizing: "border-box" }}>
       <div style={{ textAlign: "center", marginBottom: 22 }}>
         <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#22c55e,#16a34a)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 32, color: "#fff", marginBottom: 12 }}>✓</div>
         <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em", margin: "0 0 6px" }}>¡Cotización aceptada!</h1>
