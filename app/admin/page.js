@@ -17088,12 +17088,12 @@ const presuManualMaritimo=(ships,importeDe)=>{
 };
 // ── Carga LCL/FCL (20/10/2026): tablero de las operaciones marítimas de canal A ──
 // Las LCL/FCL se manejan como una operación completa (NCM, impuestos, volumen, despacho), no como
-// las cargas del Marítimo B. Acá se ven todas las que están en curso, por etapa, con lo que importa
-// de cada una: m³, FOB, posiciones, impuestos presupuestados, flete, cobro y costos reales.
+// las cargas del Marítimo B. Arriba, la tubería por etapa con cuántas hay en cada una; abajo, una
+// tarjeta por operación con el riel de avance, la fecha que importa, la carga y la plata.
 function LclFclPanel({token,onSelectOp}){
   const celu=useEsCelu();
   const [ops,setOps]=useState([]);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [eventos,setEventos]=useState([]);
-  const [lo,setLo]=useState(true);const [etapa,setEtapa]=useState("curso");const [abierta,setAbierta]=useState(null);const [q,setQ]=useState("");
+  const [lo,setLo]=useState(true);const [filtro,setFiltro]=useState("curso");const [abierta,setAbierta]=useState(null);const [q,setQ]=useState("");
   const load=async(silencioso)=>{
     if(!silencioso)setLo(true);
     const o=await dq("operations",{token,filters:"?channel=eq.maritimo_blanco&select=*,clients(client_code,first_name,last_name,tax_condition,whatsapp)&order=created_at.desc&limit=300"});
@@ -17116,141 +17116,168 @@ function LclFclPanel({token,onSelectOp}){
 
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const usd0=v=>`USD ${Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:0})}`;
-  const m3=v=>`${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³`;
-  const fd=d=>{if(!d)return "—";const s=String(d).slice(0,10);const [y,m,dd]=s.split("-");return `${dd}/${m}/${y.slice(2)}`;};
+  const n0=v=>Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:0});
+  const m3=v=>`${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} m³`;
+  const fd=d=>{if(!d)return "—";const s=String(d).slice(0,10);const [y,m,dd]=s.split("-");return `${dd}/${m}`;};
+  const fdY=d=>{if(!d)return "—";const s=String(d).slice(0,10);const [y,m,dd]=s.split("-");return `${dd}/${m}/${y.slice(2)}`;};
   const dias=d=>d?Math.floor((Date.now()-new Date(d).getTime())/86400000):null;
-  const hoy=hoyAR();
   const COND={responsable_inscripto:"RI",monotributista:"Mono",monotributo:"Mono",consumidor_final:"CF",ninguna:"CF"};
   const itemsDe=id=>items.filter(i=>i.operation_id===id);
   const pkgsDe=id=>pkgs.filter(p=>p.operation_id===id);
   const cbmDe=(o)=>{const ps=pkgsDe(o.id);const c=ps.reduce((s,p)=>s+(p.length_cm&&p.width_cm&&p.height_cm?(p.length_cm*p.width_cm*p.height_cm/1e6)*Number(p.quantity||1):0),0);return c>0?c:Number(o.cbm||0);};
   const kgDe=(o)=>pkgsDe(o.id).reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
-  const fobDe=(o)=>{const its=itemsDe(o.id);const f=its.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);return f>0?f:Number(o.declared_value_usd||o.merchandise_value_usd||0);};
+  const fobDe=(o)=>{const f=itemsDe(o.id).reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);return f>0?f:Number(o.declared_value_usd||o.merchandise_value_usd||0);};
   const ultimoEv=(id)=>eventos.find(e=>e.operation_id===id&&!(e.source==="internal"&&/^Estado actualizado/.test(e.title||"")));
   const costoReal=(o)=>Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0)+Number(o.cost_seguro||0);
-  // Etapas del tablero
-  const etapaDe=(o)=>["pendiente","en_deposito_origen","en_preparacion"].includes(o.status)?"prep":["en_transito","arribo_argentina"].includes(o.status)?"viaje":o.status==="en_aduana"?"aduana":o.status==="entregada"?"entrega":o.status==="operacion_cerrada"?"cerrada":"otra";
-  const ETAPAS=[
-    {k:"curso",l:"En curso",d:"Todas las que todavía no cerraron, de la más avanzada a la más nueva."},
-    {k:"prep",l:"Preparación",d:"Con el proveedor o armando documentación: NCM, FOB y bultos."},
-    {k:"viaje",l:"En el agua",d:"Embarcadas, hasta que arriban a Buenos Aires."},
-    {k:"aduana",l:"En aduana",d:"Despacho en curso: comparar impuestos presupuestados contra el despacho real."},
-    {k:"entrega",l:"Para entregar",d:"Despachadas, listas para retirar o enviar."},
-    {k:"cerrada",l:"Cerradas",d:"Las últimas 30 cerradas, para ver margen y comparar."},
-  ];
-  const ordenEtapa={aduana:0,entrega:1,viaje:2,prep:3,otra:4,cerrada:5};
-  const enEtapa=(o,k)=>k==="curso"?!["operacion_cerrada","cancelada"].includes(o.status):etapaDe(o)===k;
-  const cuenta=k=>ops.filter(o=>enEtapa(o,k)).length;
-  const qn=q.trim().toLowerCase();
-  const lista=ops.filter(o=>qn?`${o.operation_code} ${o.clients?.client_code||""} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.description||""}`.toLowerCase().includes(qn):enEtapa(o,etapa))
-    .sort((a,b)=>(ordenEtapa[etapaDe(a)]-ordenEtapa[etapaDe(b)])||String(b.created_at).localeCompare(String(a.created_at)))
-    .slice(0,etapa==="cerrada"&&!qn?30:500);
-  const enCurso=ops.filter(o=>enEtapa(o,"curso"));
-  const totM3=enCurso.reduce((s,o)=>s+cbmDe(o),0),totPres=enCurso.reduce((s,o)=>s+Number(o.budget_total||0),0),totImp=enCurso.reduce((s,o)=>s+Number(o.budget_taxes||0),0);
 
-  const pill=(txt,color,extra={})=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"2px 7px",borderRadius:999,color,background:`${color}1f`,border:`1px solid ${color}55`,whiteSpace:"nowrap",...extra}}>{txt}</span>;
-  const dato=(l,v,extra={})=><div style={{minWidth:0}}><p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{l}</p><p style={{margin:"2px 0 0",fontSize:13,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums",lineHeight:1.35,...extra}}>{v}</p></div>;
-  const btn=(txt,on,{color="rgba(255,255,255,0.75)",bg="rgba(255,255,255,0.04)",border="rgba(255,255,255,0.12)"}={})=><button type="button" onClick={on} style={{height:32,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:9,border:`1px solid ${border}`,background:bg,color,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
-  const alerta=(o)=>{const its=itemsDe(o.id);const sinNcm=its.filter(i=>!i.ncm_code).length;const l=[];
-    if(its.length===0)l.push(["Sin productos cargados","#f87171"]);
-    else if(sinNcm>0)l.push([`${sinNcm} sin NCM`,"#fbbf24"]);
-    if(!o.docs_confirmed_at&&etapaDe(o)==="prep")l.push(["Documentación sin confirmar","#fbbf24"]);
-    if(cbmDe(o)===0)l.push(["Sin medidas","#fbbf24"]);
-    if(etapaDe(o)!=="cerrada"&&Number(o.budget_total||0)===0)l.push(["Sin presupuesto","#f87171"]);
+  // Riel de avance: 5 pasos. Cada op está en uno; los anteriores quedan "hechos".
+  const PASOS=[{k:"prep",l:"Preparación"},{k:"agua",l:"En el agua"},{k:"arribo",l:"Arribo"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"Entrega"}];
+  const pasoDe=(o)=>o.status==="operacion_cerrada"?5:o.status==="entregada"?4:o.status==="en_aduana"?3:o.status==="arribo_argentina"?2:o.status==="en_transito"?1:0;
+  const fechaPaso=(o,i)=>[o.docs_confirmed_at||o.created_at,o.dispatched_at,o.arrived_in_argentina_at,o.cleared_customs_at,o.delivery_completed_at||o.closed_at][i];
+  const activa=o=>!["operacion_cerrada","cancelada"].includes(o.status);
+  const COLS_PASO={0:"#a78bfa",1:"#60a5fa",2:"#818cf8",3:"#fb923c",4:"#22c55e",5:"#10b981"};
+  const enFiltro=(o,k)=>k==="curso"?activa(o):k==="cerrada"?o.status==="operacion_cerrada":activa(o)&&pasoDe(o)===Number(k);
+  const qn=q.trim().toLowerCase();
+  const lista=ops.filter(o=>qn?`${o.operation_code} ${o.clients?.client_code||""} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.description||""}`.toLowerCase().includes(qn):enFiltro(o,filtro))
+    .sort((a,b)=>{if(filtro==="cerrada")return String(b.closed_at||"").localeCompare(String(a.closed_at||""));const pa=pasoDe(a),pb=pasoDe(b);if(pa!==pb)return pb-pa;return String(a.eta||"9999").localeCompare(String(b.eta||"9999"));})
+    .slice(0,filtro==="cerrada"&&!qn?30:500);
+  const enCurso=ops.filter(activa);
+  const porPaso=(i)=>enCurso.filter(o=>pasoDe(o)===i);
+  const alertas=(o)=>{const its=itemsDe(o.id);const sinNcm=its.filter(i=>!i.ncm_code).length;const l=[];
     if(o.lost_in_customs_at)l.push(["Retenida en aduana","#f87171"]);
+    if(its.length===0)l.push(["Sin productos","#f87171"]);else if(sinNcm>0)l.push([`${sinNcm} sin NCM`,"#fbbf24"]);
+    if(pasoDe(o)===0&&!o.docs_confirmed_at)l.push(["Docs sin confirmar","#fbbf24"]);
+    if(cbmDe(o)===0)l.push(["Sin medidas","#fbbf24"]);
+    if(activa(o)&&Number(o.budget_total||0)===0)l.push(["Sin presupuesto","#f87171"]);
+    if(pasoDe(o)>=4&&!o.is_collected)l.push(["Falta cobrar","#fbbf24"]);
     return l;};
 
-  return <div>
-    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:14,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:12}}>
-      <div style={{display:"flex",gap:celu?2:6,flexWrap:"wrap",marginBottom:-1}}>
-        {ETAPAS.map(e=>{const on=etapa===e.k&&!qn;const n=cuenta(e.k);return <button key={e.k} type="button" onClick={()=>{setEtapa(e.k);setQ("");}} style={{display:"inline-flex",alignItems:"center",gap:8,height:40,padding:celu?"0 10px":"0 14px",border:"none",borderBottom:`2px solid ${on?GOLD:"transparent"}`,background:"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",fontSize:13,fontWeight:on?800:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-          {e.l}<span style={{minWidth:22,height:20,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,fontVariantNumeric:"tabular-nums",background:on?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.07)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{lo?"…":n}</span>
-        </button>;})}
+  const pill=(txt,color,extra={})=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"2px 8px",borderRadius:999,color,background:`${color}1f`,border:`1px solid ${color}55`,whiteSpace:"nowrap",...extra}}>{txt}</span>;
+  const btn=(txt,on,{color="rgba(255,255,255,0.75)",bg="rgba(255,255,255,0.04)",border="rgba(255,255,255,0.12)",h=34}={})=><button type="button" onClick={on} style={{height:h,padding:"0 13px",fontSize:12.5,fontWeight:700,borderRadius:9,border:`1px solid ${border}`,background:bg,color,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+
+  // Riel de avance de una op
+  const Riel=({o})=>{const p=pasoDe(o);const col=COLS_PASO[p];return <div style={{display:"flex",alignItems:"flex-start",gap:0,minWidth:0}}>
+    {PASOS.map((s,i)=>{const hecho=i<p||p===5;const actual=i===p;const f=fechaPaso(o,i);return <div key={s.k} style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",alignItems:i===0?"flex-start":i===PASOS.length-1?"flex-end":"center",position:"relative"}}>
+      <div style={{display:"flex",alignItems:"center",width:"100%"}}>
+        {i>0&&<div style={{flex:1,height:2,background:hecho||actual?col:"rgba(255,255,255,0.1)",opacity:hecho||actual?0.9:1}}/>}
+        <div style={{width:actual?14:10,height:actual?14:10,borderRadius:"50%",background:hecho?col:actual?col:"rgba(255,255,255,0.12)",boxShadow:actual?`0 0 0 4px ${col}33`:"none",flexShrink:0}}/>
+        {i<PASOS.length-1&&<div style={{flex:1,height:2,background:hecho?col:"rgba(255,255,255,0.1)"}}/>}
       </div>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:celu?"1 1 100%":"0 1 260px",height:36,marginBottom:celu?10:6,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+      {(!celu||actual)&&<p style={{margin:"5px 0 0",fontSize:10.5,fontWeight:actual?800:600,color:actual?"#fff":hecho?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap"}}>{s.l}{(hecho||actual)&&f?<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}> {fd(f)}</span>:null}</p>}
+    </div>;})}
+  </div>;};
+
+  const Tarjeta=({o})=>{
+    const its=itemsDe(o.id);const ps=pkgsDe(o.id);const cbm=cbmDe(o);const fob=fobDe(o);const c=o.clients||{};const open=abierta===o.id;
+    const flete=Number(o.budget_flete||0),imp=Number(o.budget_taxes||0),tot=Number(o.budget_total||0);const xm3=cbm>0&&flete>0?flete/Math.max(cbm,1):0;
+    const det=o.budget_tax_detail||{};const real=costoReal(o);const gan=tot-real;const p=pasoDe(o);const col=COLS_PASO[p];
+    const etaDias=o.eta?Math.ceil((new Date(o.eta+"T12:00:00").getTime()-Date.now())/86400000):null;
+    const ncms=[...new Set(its.map(i=>i.ncm_code).filter(Boolean))];const al=alertas(o);const ev=ultimoEv(o.id);
+    const cobro=o.is_collected?["Cobrada","#4ade80"]:Number(o.total_anticipos||0)>0?[`Anticipo ${usd0(o.total_anticipos)}`,"#8CC8F5"]:["A cobrar","rgba(255,255,255,0.6)"];
+    const Dato=({l,v,sub,color})=><div style={{minWidth:0,overflow:"hidden"}}><p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.38)",whiteSpace:"nowrap"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:celu?13.5:15,fontWeight:800,color:color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",letterSpacing:"-0.01em",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p>{sub&&<p style={{margin:"1px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</p>}</div>;
+    return <div style={{borderRadius:16,border:`1px solid ${open?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,background:"linear-gradient(180deg,rgba(14,26,48,0.95),rgba(8,16,32,0.95))",boxShadow:"0 10px 30px rgba(0,0,0,0.25)",overflow:"hidden"}}>
+      <div style={{height:3,background:`linear-gradient(90deg,${col},${col}22)`}}/>
+      <div style={{padding:celu?"12px 14px":"14px 18px",display:"flex",flexDirection:"column",gap:12}}>
+        {/* Cabecera: quién y qué · ETA grande · abrir */}
+        <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 320px",minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:15,fontWeight:800,color:GOLD_LIGHT,letterSpacing:"0.02em"}}>{o.operation_code}</span>
+              <span style={{fontSize:15,fontWeight:800,color:"#fff"}}>{`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—"}</span>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{c.client_code}</span>
+              {COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.55)")}
+              {o.lost_in_customs_at&&pill("Retenida","#f87171")}
+            </div>
+            <p style={{margin:"4px 0 0",fontSize:13,color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"Sin descripción"}{its.length?<span style={{color:"rgba(255,255,255,0.4)"}}> · {its.length} producto{its.length!==1?"s":""} · {ncms.length} NCM</span>:null}</p>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginLeft:"auto"}}>
+            {activa(o)&&<div style={{textAlign:"right"}}>
+              <p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.38)"}}>{p>=3?"Arribó":"ETA"}</p>
+              <p style={{margin:"2px 0 0",fontSize:18,fontWeight:800,color:(p>=3?o.arrived_in_argentina_at||o.eta:o.eta)?"#fff":"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{p>=3?(o.arrived_in_argentina_at?fdY(o.arrived_in_argentina_at):o.eta?fdY(o.eta):"sin fecha"):o.eta?fdY(o.eta):"sin ETA"}</p>
+              {etaDias!=null&&p<3&&<p style={{margin:"2px 0 0",fontSize:11.5,fontWeight:700,color:etaDias<0?"#f87171":"#8CC8F5"}}>{etaDias<0?`hace ${-etaDias} días`:etaDias===0?"hoy":`en ${etaDias} días`}</p>}
+            </div>}
+            {btn("Abrir →",()=>onSelectOp(o),{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:38})}
+          </div>
+        </div>
+        {/* Riel de avance */}
+        <Riel o={o}/>
+        {/* Carga y plata */}
+        <div style={{display:"grid",gridTemplateColumns:celu?"repeat(3,minmax(0,1fr))":"repeat(6,minmax(0,1fr))",gap:"10px 10px",padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+          <Dato l="Carga" v={cbm>0?m3(cbm):"—"} sub={ps.length?`${ps.length} bulto${ps.length!==1?"s":""}${kgDe(o)>0?` · ${n0(kgDe(o))} kg`:""}`:"sin bultos"} color={cbm>0?"#fff":"#fbbf24"}/>
+          <Dato l="FOB" v={fob>0?usd0(fob):"—"} sub={fob>0&&cbm>0?`${usd0(fob/Math.max(cbm,0.01))}/m³`:null}/>
+          <Dato l="Impuestos" v={imp>0?usd0(imp):"—"} sub={fob>0&&imp>0?`${Math.round(imp/fob*100)} % del FOB`:null}/>
+          <Dato l="Flete" v={flete>0?usd0(flete):"—"} sub={xm3>0?`${usd0(xm3)}/m³`:null}/>
+          <Dato l="Presupuesto" v={tot>0?usd0(tot):"—"} sub={!esEmpleado()&&real>0?<span style={{color:gan>=0?"#4ade80":"#f87171",fontWeight:800}}>{gan>=0?"+":""}{usd0(gan)} ganancia</span>:null} color={GOLD_LIGHT}/>
+          <Dato l="Cobro" v={cobro[0]} color={cobro[1]} sub={o.collection_date?`el ${fdY(o.collection_date)}`:null}/>
+        </div>
+        {/* Alertas y último movimiento */}
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          {al.map(([t,c2],i)=><span key={i} style={{fontSize:11.5,fontWeight:700,color:c2,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:c2,display:"inline-block"}}/>{t}</span>)}
+          {al.length===0&&activa(o)&&<span style={{fontSize:11.5,fontWeight:700,color:"#4ade80",display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>Todo en orden</span>}
+          {ev&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>· {ev.title}{ev.occurred_at?` (${fd(ev.occurred_at)})`:""}</span>}
+          <button type="button" onClick={()=>setAbierta(open?null:o.id)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{open?"Ocultar detalle ▲":"Productos, despacho y costos ▼"}</button>
+        </div>
+      </div>
+      {open&&<div style={{padding:"0 18px 16px",display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,3fr) minmax(0,2fr)",gap:10}}>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",minWidth:0,overflowX:"auto"}}>
+          <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Productos y posiciones</p>
+          {its.length===0?<p style={{margin:0,fontSize:12.5,color:"#f87171"}}>Sin productos cargados.</p>
+          :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+            <thead><tr style={{color:"rgba(255,255,255,0.4)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>{["Producto","NCM","Cant.","FOB","DIE","TE","IVA","Impuestos"].map((h,i)=><th key={h} style={{textAlign:i===0?"left":"right",padding:"4px 6px",fontWeight:800,borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{h}</th>)}</tr></thead>
+            <tbody>{its.map((i,ix)=>{const d=(det.items||[])[ix]||{};const impI=Number(d.derechos||0)+Number(d.tasaE||0)+Number(d.iva||0)+Number(d.ivaAdic||0)+Number(d.iigg||0)+Number(d.iibb||0);const fobI=Number(i.unit_price_usd||0)*Number(i.quantity||1);
+              return <tr key={i.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <td style={{padding:"7px 6px",color:"#fff",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.description||"—"}</td>
+                <td style={{padding:"7px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:i.ncm_code?"#8CC8F5":"#fbbf24",fontWeight:700}}>{i.ncm_code||"falta"}</td>
+                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{i.quantity}</td>
+                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd0(fobI)}</td>
+                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.import_duty_rate??"—"}%</td>
+                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.statistics_rate??"—"}%</td>
+                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.iva_rate??21}%</td>
+                <td style={{padding:"7px 6px",textAlign:"right",color:"#fff",fontWeight:700}}>{impI>0?usd0(impI):"—"}</td>
+              </tr>;})}</tbody>
+          </table>}
+          {imp>0&&<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>{[["Derechos",det.derechos],["Tasa est.",det.tasaE],["IVA",det.iva],["IVA adic.",det.ivaAdic],["IIGG",det.iigg],["IIBB",det.iibb]].map(([l,v])=><span key={l}>{l} <b style={{color:"rgba(255,255,255,0.85)"}}>{usd0(v)}</b></span>)}</div>}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+            <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Despacho</p>
+            {(()=>{const rd=Number(o.despacho_die_usd||0)+Number(o.despacho_iva_usd||0)+Number(o.despacho_estadistica_usd||0);const dif=rd>0?rd-imp:null;return <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)",lineHeight:1.7}}>
+              Presupuestado <b>{usd0(imp)}</b>{rd>0?<> · Real <b>{usd0(rd)}</b> <span style={{color:dif>0?"#f87171":"#4ade80",fontWeight:800}}>({dif>0?"+":""}{usd0(dif)})</span></>:<span style={{color:"rgba(255,255,255,0.4)"}}> · real sin cargar</span>}<br/>
+              {rd>0&&<>DIE {usd0(o.despacho_die_usd)} · TE {usd0(o.despacho_estadistica_usd)} · IVA {usd0(o.despacho_iva_usd)} · Desaduanaje {usd0(o.despacho_desaduanaje_usd)}<br/></>}
+              {o.cleared_customs_at?<>Liberada el {fdY(o.cleared_customs_at)}</>:o.arrived_in_argentina_at?<>Arribó el {fdY(o.arrived_in_argentina_at)}</>:o.dispatched_at?<>Embarcó el {fdY(o.dispatched_at)}</>:<>Creada el {fdY(o.created_at)}</>}
+            </p>;})()}
+          </div>
+          {!esEmpleado()&&<div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+            <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Costos reales</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:"6px 10px",fontSize:12,color:"rgba(255,255,255,0.75)"}}>
+              {[["Flete",o.cost_flete],["Impuestos",o.cost_impuestos_reales],["Gasto doc.",o.cost_gasto_documental],["Flete local",o.cost_flete_local],["Seguro",o.cost_seguro],["Otros",o.cost_otros]].map(([l,v])=><span key={l}><span style={{color:"rgba(255,255,255,0.4)"}}>{l}</span><br/><b style={{color:"#fff"}}>{usd0(v)}</b></span>)}
+            </div>
+            <p style={{margin:"10px 0 0",fontSize:13,fontWeight:800,color:gan>=0?"#4ade80":"#f87171"}}>{real>0?<>Ganancia {gan>=0?"+":""}{usd(gan)}{tot>0&&<span style={{color:"rgba(255,255,255,0.45)",fontWeight:600}}> · {Math.round(gan/tot*100)} %</span>}</>:<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>Sin costos cargados todavía</span>}</p>
+          </div>}
+        </div>
+      </div>}
+    </div>;
+  };
+
+  const FILTROS=[{k:"curso",l:"En curso"},...PASOS.map((s,i)=>({k:String(i),l:s.l})),{k:"cerrada",l:"Cerradas"}];
+  return <div>
+    {/* Tubería: cuántas hay en cada etapa (clickeable) */}
+    <div style={celu?{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:12,WebkitOverflowScrolling:"touch"}:{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:14}}>
+      {PASOS.map((s,i)=>{const l=porPaso(i);const on=filtro===String(i);const vol=l.reduce((a,o)=>a+cbmDe(o),0);return <button key={s.k} type="button" onClick={()=>{setFiltro(on?"curso":String(i));setQ("");}} style={{textAlign:"left",padding:celu?"8px 12px":"11px 14px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?COLS_PASO[i]:"rgba(255,255,255,0.08)"}`,background:on?`${COLS_PASO[i]}14`:"rgba(255,255,255,0.025)",transition:"all 120ms",flex:celu?"0 0 auto":undefined}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:COLS_PASO[i],display:"inline-block"}}/><span style={{fontSize:11.5,fontWeight:800,color:on?"#fff":"rgba(255,255,255,0.65)",letterSpacing:"0.02em",whiteSpace:"nowrap"}}>{s.l}</span>{celu&&<span style={{fontSize:15,fontWeight:800,color:l.length?"#fff":"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",marginLeft:4}}>{lo?"…":l.length}</span>}</div>
+        {!celu&&<div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:4}}><span style={{fontSize:22,fontWeight:800,color:l.length?"#fff":"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{lo?"…":l.length}</span>{l.length>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{m3(vol)}</span>}</div>}
+      </button>;})}
     </div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>{qn?`Buscando "${qn}"`:ETAPAS.find(e=>e.k===etapa)?.d}</p>
-      {!lo&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}><b style={{color:"#fff"}}>{enCurso.length}</b> en curso · <b style={{color:"#fff"}}>{m3(totM3)}</b> · presupuestado <b style={{color:GOLD_LIGHT}}>{usd0(totPres)}</b> · impuestos <b style={{color:"#fff"}}>{usd0(totImp)}</b></p>}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {[FILTROS[0],FILTROS[FILTROS.length-1]].map(f=>{const on=filtro===f.k&&!qn;return <button key={f.k} type="button" onClick={()=>{setFiltro(f.k);setQ("");}} style={{height:32,padding:"0 12px",borderRadius:9,border:`1px solid ${on?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.12)":"transparent",color:on?"#fff":"rgba(255,255,255,0.6)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{f.l}{f.k==="curso"?` · ${enCurso.length}`:""}</button>;})}
+        {filtro!=="curso"&&filtro!=="cerrada"&&!qn&&<span style={{alignSelf:"center",fontSize:12,color:"rgba(255,255,255,0.5)"}}>Mostrando solo <b style={{color:"#fff"}}>{PASOS[Number(filtro)]?.l}</b></span>}
+      </div>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:celu?"1 1 100%":"0 1 280px",height:34,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
     </div>
 
     {lo?<SkeletonTable rows={6} cols={4}/>:lista.length===0?<EmptyState icon="ship" title={qn?"Sin resultados":"Nada por acá"} description={qn?`Nada coincide con "${qn}"`:"No hay operaciones LCL/FCL en esta etapa."}/>
-    :<div style={{display:"flex",flexDirection:"column",gap:8}}>
-      {lista.map(o=>{const st=SM[o.status]||{l:o.status,c:"#999"};const its=itemsDe(o.id);const ps=pkgsDe(o.id);const cbm=cbmDe(o);const fob=fobDe(o);const open=abierta===o.id;const c=o.clients||{};const al=alerta(o);const ev=ultimoEv(o.id);
-        const flete=Number(o.budget_flete||0),imp=Number(o.budget_taxes||0),tot=Number(o.budget_total||0);const xm3=cbm>0?flete/Math.max(cbm,1):0;
-        const det=o.budget_tax_detail||{};const real=costoReal(o);const gan=tot-real;
-        const etaDias=o.eta?Math.ceil((new Date(o.eta+"T12:00:00").getTime()-Date.now())/86400000):null;
-        const ncms=[...new Set(its.map(i=>i.ncm_code).filter(Boolean))];
-        return <div key={o.id} style={{borderRadius:14,border:`1px solid ${open?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.08)"}`,background:"linear-gradient(180deg,rgba(13,24,45,0.9),rgba(8,16,32,0.9))"}}>
-          <div style={{padding:celu?"12px 12px":"12px 16px",display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>
-              {pill(st.l,st.c)}
-              <span style={{fontSize:13.5,fontWeight:700,color:"#fff"}}>{c.client_code||"—"} <span style={{fontWeight:500,color:"rgba(255,255,255,0.65)"}}>{`${c.first_name||""} ${c.last_name||""}`.trim()}</span></span>
-              {COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.5)")}
-              <span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:"1 1 160px"}}>{o.description||"Sin descripción"}</span>
-              <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
-                {btn(open?"Cerrar ▲":"Detalle ▼",()=>setAbierta(open?null:o.id))}
-                {btn("Abrir op →",()=>onSelectOp(o),{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent"})}
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:celu?"repeat(2,minmax(0,1fr))":"repeat(auto-fit,minmax(150px,1fr))",gap:"8px 14px"}}>
-              {dato("ETA",o.eta?<>{fd(o.eta)}{etaDias!=null&&etapaDe(o)!=="cerrada"&&<span style={{color:etaDias<0?"#f87171":"rgba(255,255,255,0.45)",fontWeight:600}}> · {etaDias<0?`hace ${-etaDias} d`:etaDias===0?"hoy":`en ${etaDias} d`}</span>}</>:"—")}
-              {dato("Volumen",cbm>0?<>{m3(cbm)}<span style={{color:"rgba(255,255,255,0.45)",fontWeight:600}}> · {ps.length} bulto{ps.length!==1?"s":""}{kgDe(o)>0?` · ${Math.round(kgDe(o))} kg`:""}</span></>:"—",{color:cbm>0?"#fff":"#fbbf24"})}
-              {dato("FOB",fob>0?usd0(fob):"—")}
-              {dato("Posiciones",its.length?<>{ncms.length} NCM<span style={{color:"rgba(255,255,255,0.45)",fontWeight:600}}> · {its.length} prod.</span></>:"—")}
-              {dato("Impuestos",imp>0?usd0(imp):"—",{color:imp>0?"#fff":"rgba(255,255,255,0.4)"})}
-              {dato("Flete",flete>0?<>{usd0(flete)}{xm3>0&&<span style={{color:"rgba(255,255,255,0.45)",fontWeight:600}}> · {usd0(xm3)}/m³</span>}</>:"—")}
-              {dato("Presupuesto",tot>0?usd(tot):"—",{color:GOLD_LIGHT})}
-              {dato("Cobro",o.is_collected?"Cobrada":Number(o.total_anticipos||0)>0?`Anticipo ${usd0(o.total_anticipos)}`:"Pendiente",{color:o.is_collected?"#4ade80":"rgba(255,255,255,0.7)"})}
-              {!esEmpleado()&&etapaDe(o)!=="prep"&&dato("Costo real / ganancia",real>0?<>{usd0(real)}<span style={{color:gan>=0?"#4ade80":"#f87171",fontWeight:800}}> · {gan>=0?"+":""}{usd0(gan)}</span></>:"sin costos")}
-            </div>
-            {(al.length>0||ev)&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-              {al.map(([t,c2],i)=><span key={i} style={{fontSize:11.5,fontWeight:700,color:c2}}>● {t}</span>)}
-              {ev&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Último: {ev.title}{ev.occurred_at?` · ${fd(ev.occurred_at)}`:""}</span>}
-              {o.updated_at&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.35)",marginLeft:"auto"}}>En esta etapa hace {dias(o.updated_at)} d</span>}
-            </div>}
-          </div>
-          {open&&<div style={{padding:"0 16px 14px",display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,2fr) minmax(0,1fr)",gap:10}}>
-            <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",minWidth:0,overflowX:"auto"}}>
-              <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>Mercadería y posiciones</p>
-              {its.length===0?<p style={{margin:0,fontSize:12.5,color:"#f87171"}}>Sin productos cargados.</p>
-              :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{color:"rgba(255,255,255,0.4)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>{["Producto","NCM","Cant.","FOB","DIE","TE","IVA","Impuestos"].map((h,i)=><th key={h} style={{textAlign:i===0?"left":"right",padding:"4px 6px",fontWeight:800,borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{h}</th>)}</tr></thead>
-                <tbody>{its.map((i,ix)=>{const d=(det.items||[])[ix]||{};const impI=Number(d.derechos||0)+Number(d.tasaE||0)+Number(d.iva||0)+Number(d.ivaAdic||0)+Number(d.iigg||0)+Number(d.iibb||0);const fobI=Number(i.unit_price_usd||0)*Number(i.quantity||1);
-                  return <tr key={i.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                    <td style={{padding:"6px 6px",color:"#fff",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.description||"—"}</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:i.ncm_code?"#8CC8F5":"#fbbf24"}}>{i.ncm_code||"falta"}</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{i.quantity}</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd0(fobI)}</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.import_duty_rate??"—"}%</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.statistics_rate??"—"}%</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.iva_rate??21}%</td>
-                    <td style={{padding:"6px 6px",textAlign:"right",color:"#fff",fontWeight:700}}>{impI>0?usd0(impI):"—"}</td>
-                  </tr>;})}</tbody>
-              </table>}
-              {imp>0&&<p style={{margin:"8px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>Derechos {usd0(det.derechos)} · Tasa est. {usd0(det.tasaE)} · IVA {usd0(det.iva)} · IVA adic. {usd0(det.ivaAdic)} · IIGG {usd0(det.iigg)} · IIBB {usd0(det.iibb)}</p>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
-                <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>Despacho</p>
-                <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)",lineHeight:1.65}}>
-                  Presupuestado: impuestos {usd(imp)}<br/>
-                  {Number(o.despacho_die_usd||0)+Number(o.despacho_iva_usd||0)+Number(o.despacho_estadistica_usd||0)>0?<>Despacho real: DIE {usd0(o.despacho_die_usd)} · TE {usd0(o.despacho_estadistica_usd)} · IVA {usd0(o.despacho_iva_usd)} · desaduanaje {usd0(o.despacho_desaduanaje_usd)}<br/></>:<span style={{color:"rgba(255,255,255,0.45)"}}>Despacho real: sin cargar<br/></span>}
-                  {o.cleared_customs_at?<>Liberada el {fd(o.cleared_customs_at)}</>:o.arrived_in_argentina_at?<>Arribó el {fd(o.arrived_in_argentina_at)}</>:o.dispatched_at?<>Embarcó el {fd(o.dispatched_at)}</>:<>Creada el {fd(o.created_at)}</>}
-                </p>
-              </div>
-              {!esEmpleado()&&<div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
-                <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>Costos reales</p>
-                <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)",lineHeight:1.65}}>
-                  Flete {usd0(o.cost_flete)} · Impuestos {usd0(o.cost_impuestos_reales)} · Gasto doc. {usd0(o.cost_gasto_documental)}<br/>Flete local {usd0(o.cost_flete_local)} · Seguro {usd0(o.cost_seguro)} · Otros {usd0(o.cost_otros)}<br/>
-                  <b style={{color:gan>=0?"#4ade80":"#f87171"}}>Ganancia {gan>=0?"+":""}{usd(gan)}</b>{tot>0&&<span style={{color:"rgba(255,255,255,0.45)"}}> · {Math.round(gan/tot*100)} % del presupuesto</span>}
-                </p>
-              </div>}
-            </div>
-          </div>}
-        </div>;})}
-    </div>}
+    :<div style={{display:"flex",flexDirection:"column",gap:12}}>{lista.map(o=><Tarjeta key={o.id} o={o}/>)}</div>}
   </div>;
 }
 
