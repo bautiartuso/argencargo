@@ -17909,7 +17909,10 @@ function MaritimePanel({token,allClients=[]}){
         {whSel&&<button onClick={()=>copiarLinkDep(whSel)} title={`Copiar el link de la planilla de ${whSel.name}`} style={btnMini("#60a5fa",{padding:"7px 11px",fontSize:12})}>🔗 Link</button>}
         {whSel&&<button onClick={()=>setMenuMt(menuMt==="pdf"?null:"pdf")} title="PDF del depósito" style={{...btnGhost,padding:"7px 10px",fontSize:12}}>📄 ▾</button>}
         <button onClick={()=>setMenuMt(menuMt==="dep"?null:"dep")} title="Depósitos: editar, crear, eliminar" style={{...btnGhost,padding:"7px 10px",fontSize:12}}>⚙ ▾</button>
-        {menuMt&&<div onClick={()=>setMenuMt(null)} style={{position:"fixed",inset:0,zIndex:40}}/>}
+        {/* Fondo para cerrar los menús de la cabecera. El menú "Contenedor" de la barra de selección
+            tiene el suyo propio: este, al estar fuera de la barra (z 30), le quedaba encima y no se
+            podía tocar "Subir a …" (20/10/2026). */}
+        {menuMt&&menuMt!=="cont"&&<div onClick={()=>setMenuMt(null)} style={{position:"fixed",inset:0,zIndex:40}}/>}
         {menuMt==="pdf"&&whSel&&<div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:41,minWidth:230,background:"#0F1A2D",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,padding:6,boxShadow:"0 18px 50px rgba(0,0,0,0.55)"}}>
           {[[true,"es","Con valores · Español"],[true,"zh","Con valores · 中文"],[false,"es","Sin valores · Español"],[false,"zh","Sin valores · 中文"]].map(([v,l,txt])=><button key={txt} onClick={()=>{setMenuMt(null);downloadPdf(whSel.name,whSel.origin||"china",l,v);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",fontSize:12.5,border:"none",borderRadius:8,background:"transparent",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>{txt}</button>)}
         </div>}
