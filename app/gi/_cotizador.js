@@ -144,7 +144,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
         const newOrder=oldIds.length+1000;
         const insertedIds=[];
         for(let i=0;i<products.length;i++){
-          const inserted=await insertarProducto(productoBody(products[i],origin,newOrder+i));
+          const inserted=await insertarProducto({quote_id:quoteId,...productoBody(products[i],origin,newOrder+i)});
           const newId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
           if(!newId)throw new Error(`Falló guardar el producto ${i+1}. Los productos viejos siguen guardados.`);
           insertedIds.push(newId);
@@ -323,7 +323,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       }
       if(!quoteId)throw new Error("No se pudo guardar la cotización");
       if(request&&request.origin!==origin)await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{origin}});
-      for(let i=0;i<products.length;i++)await insertarProducto({...productoBody(products[i],origin,i),quantity:Number(products[i].quantity)||0,unit_cost_usd:Number(products[i].unit_cost_usd)||0});
+      for(let i=0;i<products.length;i++){const ri=await insertarProducto({quote_id:quoteId,...productoBody(products[i],origin,i),quantity:Number(products[i].quantity)||0,unit_cost_usd:Number(products[i].unit_cost_usd)||0});const rid=Array.isArray(ri)?ri[0]?.id:ri?.id;if(!rid)throw new Error(`Falló guardar el producto ${i+1}`);}
       await guardarBultos(quoteId);
       await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{status:"quoted"}});
       try{
