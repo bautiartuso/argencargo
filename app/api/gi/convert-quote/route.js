@@ -39,7 +39,7 @@ export async function POST(req) {
   const quote = qRes.body[0];
   const req0 = quote.gi_quote_requests || {};
   const partnerId = req0.assigned_partner_id || req0.clients?.gi_partner_id || null;
-  if (!esStaff && partnerId !== user.id) return Response.json({ error: "Sin permiso" }, { status: 403 });
+  // Socios GI (20/10/2026): control total del panel, pueden convertir cualquier cotización.
   if (quote.status === "converted" && quote.operation_id) {
     return Response.json({ error: "Ya está convertida en operación", operation_id: quote.operation_id }, { status: 409 });
   }

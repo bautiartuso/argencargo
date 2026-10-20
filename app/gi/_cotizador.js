@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, tablaDesaduanaje } from "../../lib/calc";
 import { alertDialog, toast } from "../../lib/ui";
-import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT } from "./_base";
+import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT, P, Papel, DatoP, PillP, inpP, BtnP } from "./_base";
 
 export const CHANNEL_DEFS=[
   {key:"aereo_blanco",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
@@ -281,6 +281,16 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   // Desde USA no hay LCL/FCL propio: aéreo (con NCM) y marítimo integral.
   const someUSA=origin==="usa";
   const visibleChannels=someUSA?channelResults.filter(c=>c.key!=="maritimo_blanco"):channelResults;
+  // Plan de pagos siempre cubierto (20/10/2026): el 1.º pago tiene que cubrir el anticipo al
+  // proveedor y 1.º + 2.º todo el FOB, tomando el canal donde el FOB pesa más (el más barato).
+  // Si cambian FOB, anticipo o precios y el plan queda corto, se acomoda solo.
+  const minimos=minimosPlan(totalFob,supplierDepositPct,visibleChannels.filter(c=>!c.error&&c.total>0).map(c=>c.total));
+  useEffect(()=>{
+    if(!cargado)return;
+    const {min1,min12}=minimos;
+    if(!(min12>0)||min12>=100)return;
+    setPaymentPlan(pl=>planCubierto(pl,min1,min12));
+  },[minimos.min1,minimos.min12,cargado]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validateStep1=()=>{
     if(products.length===0)return "Agregá al menos un producto";
@@ -354,7 +364,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
     totalFob={totalFob} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct}
     paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct}
     desglose={(i)=>desgloseItem({products,packages,origin,productIdx:i,visibleChannels,tariffs,config,client,totalFob})}
-    verGanancia={verGanancia} faltante={faltante} masBarato={masBarato} saving={saving} onGenerar={generar} yaEnviada={!!draftQuoteId&&lastSentStatus!=="draft"}/>;
+    minimos={minimos} verGanancia={verGanancia} faltante={faltante} masBarato={masBarato} saving={saving} onGenerar={generar} yaEnviada={!!draftQuoteId&&lastSentStatus!=="draft"}/>;
 }
 
 // Desglose impositivo de un producto por canal A, igual que lib/calc.js. El flete certificado se
@@ -426,8 +436,26 @@ function desgloseItem({products,packages,origin,productIdx,visibleChannels,tarif
     return out;
   }
 
+// Mínimos del plan de pagos: % del total que cubre el anticipo al proveedor (1.º pago) y todo el FOB
+// (1.º + 2.º). Se toma el canal donde el FOB pesa más sobre el total (el más barato): así el plan
+// sirve elija lo que elija el cliente.
+export function minimosPlan(totalFob,supplierDepositPct,totales){
+  const supDep=Math.max(0,Math.min(100,Number(supplierDepositPct||0)))/100;
+  const validos=(totales||[]).filter(t=>t>0);
+  const ratio=validos.length&&totalFob>0?Math.max(...validos.map(t=>totalFob/t*100)):0;
+  return {min1:Math.ceil(ratio*supDep),min12:Math.ceil(ratio),ratio};
+}
+export function planCubierto(pl,min1,min12){
+  const base=Array.isArray(pl)&&pl.length>=3?pl:[{pct:30,label:"Inicio de producción"},{pct:20,label:"Producción terminada"},{pct:50,label:"Contra entrega"}];
+  const s1=Number(base[0]?.pct||0),s12=s1+Number(base[1]?.pct||0);
+  if(s1>=min1&&s12>=min12)return pl;
+  const p1=Math.max(s1,min1);const p2=Math.max(Number(base[1]?.pct||0),min12-p1);
+  const nx=base.map((x,i)=>i===0?{...x,pct:p1}:i===1?{...x,pct:p2}:i===2?{...x,pct:Math.max(0,100-p1-p2)}:{...x,pct:0});
+  return nx;
+}
+
 // ────────────────────────────────────────────
-// PANTALLA DEL COTIZADOR (20/10/2026): origen arriba, productos y bultos a la izquierda, resumen a la derecha.
+// PANTALLA DEL COTIZADOR (20/10/2026): se edita a la izquierda; a la derecha solo información.
 // ────────────────────────────────────────────
 const n2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const soloNum=(v,dec)=>dec?v.replace(/[^0-9.]/g,""):v.replace(/[^0-9]/g,"");
@@ -442,20 +470,22 @@ function CotizadorPantalla(p){
   return <div style={{paddingBottom:movil?90:0}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
       <Volver onClick={p.onBack}/>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:estado[1]}}><span style={{width:7,height:7,borderRadius:"50%",background:estado[1],display:"inline-block"}}/>{estado[0]}</span>
-        <Btn v="gold" small onClick={p.onSave} disabled={p.savingDraft}>Guardar</Btn>
+        <Btn small onClick={p.onSave} disabled={p.savingDraft}>Guardar</Btn>
+        {!movil&&<Btn v="gold" small onClick={p.onGenerar} disabled={p.saving} title={p.faltante||""}>{p.saving?"Generando…":p.yaEnviada?"Actualizar link del cliente":"Generar link para el cliente"}</Btn>}
       </div>
     </div>
     <h1 style={{margin:"0 0 14px",fontSize:22,fontWeight:800,color:C.txt,letterSpacing:"-0.01em"}}>Cotización <span style={{fontFamily:MONO,color:C.goldHi}}>{p.request.request_code}</span> — {p.cn}</h1>
-    <div style={{display:"grid",gridTemplateColumns:movil?"1fr":"minmax(0,1fr) 380px",gap:16,alignItems:"start"}}>
-      <div>
+    <div style={{display:"grid",gridTemplateColumns:movil?"1fr":"minmax(0,1fr) 360px",gap:16,alignItems:"start"}}>
+      <div style={{minWidth:0}}>
         <OrigenCard origin={p.origin} setOrigin={p.setOrigin}/>
         {p.products.map((x,i)=><ProductoCard key={i} i={i} p={x} total={p.products.length} origin={p.origin} onUpdate={p.onUpdate} onRemove={p.onRemove} onClassify={p.onClassify} token={p.token} desglose={p.desglose}/>)}
-        <button onClick={p.onAdd} style={{width:"100%",padding:"14px",borderRadius:14,border:`1.5px dashed ${C.lineHi}`,background:"transparent",color:C.sub,fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>+ Agregar producto</button>
+        <button onClick={p.onAdd} style={{width:"100%",padding:"14px",borderRadius:14,border:`1.5px dashed rgba(255,255,255,0.3)`,background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>+ Agregar producto</button>
         <BultosCard packages={p.packages} setPackages={p.setPackages} products={p.products}/>
+        <CondicionesCard {...p}/>
       </div>
-      <div style={{position:movil?"static":"sticky",top:20}}>
+      <div className="gi-scroll" style={{position:movil?"static":"sticky",top:16,maxHeight:movil?"none":"calc(100vh - 32px)",overflowY:movil?"visible":"auto"}}>
         <Resumen {...p} movil={movil} totalBultos={totalBultos} cbm={cbm} kg={kg}/>
       </div>
     </div>
@@ -469,98 +499,96 @@ function CotizadorPantalla(p){
   </div>;
 }
 
+const LBL={fontSize:10.5,fontWeight:800,color:P.mute,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};
+const BOX={...inpP,padding:"9px 11px",fontSize:13.5};
+const TIT={margin:"0 0 10px",fontSize:11,fontWeight:800,color:P.mute,textTransform:"uppercase",letterSpacing:"0.1em"};
+
 function OrigenCard({origin,setOrigin}){
   const ops=[["china","🇨🇳","China","Aéreo, marítimo LCL/FCL e integral"],["usa","🇺🇸","Estados Unidos","Aéreo (con NCM) y marítimo integral"]];
-  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:14,marginBottom:12}}>
-    <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.1em"}}>Origen de la cotización</p>
+  return <Papel pad={14}>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      {ops.map(([k,ico,l,d])=>{const on=origin===k;return <button key={k} type="button" onClick={()=>setOrigin(k)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:`2px solid ${on?C.gold:C.line}`,background:on?C.goldBg:"rgba(0,0,0,0.15)",transition:"all 120ms"}}>
-        <span style={{fontSize:30,lineHeight:1}}>{ico}</span>
-        <span style={{minWidth:0}}><span style={{display:"block",fontSize:15,fontWeight:800,color:on?C.goldHi:C.txt}}>{l}</span><span style={{display:"block",fontSize:11.5,color:C.mute,marginTop:2}}>{d}</span></span>
-        {on&&<span style={{marginLeft:"auto",fontSize:18,color:C.goldHi}}>✓</span>}
+      {ops.map(([k,ico,l,d])=>{const on=origin===k;return <button key={k} type="button" onClick={()=>setOrigin(k)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:`2px solid ${on?P.gold:P.line}`,background:on?P.goldBg:P.soft,transition:"all 120ms"}}>
+        <span style={{fontSize:28,lineHeight:1}}>{ico}</span>
+        <span style={{minWidth:0}}><span style={{display:"block",fontSize:15,fontWeight:800,color:on?P.goldHi:P.txt}}>{l}</span><span style={{display:"block",fontSize:11.5,color:P.mute,marginTop:2}}>{d}</span></span>
+        {on&&<span style={{marginLeft:"auto",fontSize:18,color:P.goldHi}}>✓</span>}
       </button>;})}
     </div>
-  </section>;
+  </Papel>;
 }
 
 function ProductoCard({i,p,total,origin,onUpdate,onRemove,onClassify,token,desglose}){
   const [verImp,setVerImp]=useState(false);
   const [editNcm,setEditNcm]=useState(false);
-  const [foto,setFoto]=useState(null); // null | "nueva" | índice de foto a reemplazar/quitar
+  const [foto,setFoto]=useState(null);
   const u=(k)=>(v)=>onUpdate(i,k,v);
   const sub=Number(p.unit_cost_usd||0)*Number(p.quantity||0);
   const bd=verImp?desglose(i):{};
   const blancos=Object.entries(bd).filter(([,v])=>!v.notBlanco);
-  const lbl={fontSize:10.5,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};
-  const box={...inp,padding:"9px 11px",fontSize:13.5};
   const fotos=p.photo_urls||[];
-  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
+  return <Papel pad={16}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-      <span style={{fontSize:11,fontWeight:800,color:C.gold,letterSpacing:"0.08em"}}>PRODUCTO {i+1}</span>
-      {sub>0&&<span style={{fontSize:12,fontWeight:800,color:C.sub,fontVariantNumeric:"tabular-nums"}}>· FOB {fmtUSD(sub)}</span>}
-      {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{marginLeft:"auto",width:28,height:28,borderRadius:8,border:`1px solid ${C.line}`,background:"transparent",color:C.mute,cursor:"pointer"}}>✕</button>}
+      <span style={{fontSize:11,fontWeight:800,color:P.goldHi,letterSpacing:"0.08em"}}>PRODUCTO {i+1}</span>
+      {sub>0&&<span style={{fontSize:12,fontWeight:800,color:P.sub,fontVariantNumeric:"tabular-nums"}}>· FOB {fmtUSD(sub)}</span>}
+      {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{marginLeft:"auto",width:28,height:28,borderRadius:8,border:`1px solid ${P.line}`,background:"#fff",color:P.mute,cursor:"pointer"}}>✕</button>}
     </div>
     <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,width:fotos.length?Math.min(fotos.length+1,3)*60:84,flexShrink:0}}>
-        {fotos.map((url,k)=><button key={k} type="button" onClick={()=>setFoto(k)} title="Cambiar o quitar" style={{width:54,height:54,borderRadius:10,border:`1px solid ${C.line}`,background:"#000",cursor:"pointer",overflow:"hidden",padding:0}}><img src={url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></button>)}
-        <button type="button" onClick={()=>setFoto("nueva")} style={{width:fotos.length?54:84,height:fotos.length?54:84,borderRadius:10,border:`1.5px dashed ${C.lineHi}`,background:"rgba(0,0,0,0.2)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}><span style={{fontSize:fotos.length?18:11,color:C.mute,fontWeight:700,lineHeight:1.3,textAlign:"center"}}>{fotos.length?"+":<>📷<br/>Fotos</>}</span></button>
+        {fotos.map((url,k)=><button key={k} type="button" onClick={()=>setFoto(k)} title="Cambiar o quitar" style={{width:54,height:54,borderRadius:10,border:`1px solid ${P.line}`,background:P.soft,cursor:"pointer",overflow:"hidden",padding:0}}><img src={url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></button>)}
+        <button type="button" onClick={()=>setFoto("nueva")} style={{width:fotos.length?54:84,height:fotos.length?54:84,borderRadius:10,border:`1.5px dashed ${P.lineHi}`,background:P.soft,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}><span style={{fontSize:fotos.length?18:11,color:P.mute,fontWeight:700,lineHeight:1.3,textAlign:"center"}}>{fotos.length?"+":<>📷<br/>Fotos</>}</span></button>
       </div>
       <div style={{flex:1,minWidth:0}}>
-        <input data-nav="1" onKeyDown={navEnter} value={p.description} onChange={e=>u("description")(e.target.value)} placeholder="Qué es (ej: perfil de aluminio anodizado 6 m)" style={{...box,fontSize:15,fontWeight:700}}/>
+        <input data-nav="1" onKeyDown={navEnter} value={p.description} onChange={e=>u("description")(e.target.value)} placeholder="Qué es (ej: perfil de aluminio anodizado 6 m)" style={{...BOX,fontSize:15,fontWeight:700}}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginTop:10}}>
-          <label><span style={lbl}>Cantidad</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={p.quantity} onChange={e=>u("quantity")(soloNum(e.target.value))} style={box}/></label>
-          <label><span style={lbl}>Costo unit. USD</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={p.unit_cost_usd} onChange={e=>u("unit_cost_usd")(soloNum(e.target.value,true))} style={box}/></label>
-          <label><span style={lbl}>Producción (días)</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={p.lead_time_days} onChange={e=>u("lead_time_days")(soloNum(e.target.value))} style={box}/></label>
+          <label><span style={LBL}>Cantidad</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={p.quantity} onChange={e=>u("quantity")(soloNum(e.target.value))} style={BOX}/></label>
+          <label><span style={LBL}>Costo unit. USD</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={p.unit_cost_usd} onChange={e=>u("unit_cost_usd")(soloNum(e.target.value,true))} style={BOX}/></label>
+          <label><span style={LBL}>Producción (días)</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={p.lead_time_days} onChange={e=>u("lead_time_days")(soloNum(e.target.value))} style={BOX}/></label>
         </div>
-        <label style={{display:"block",marginTop:10}}><span style={lbl}>Proveedor (link, nombre o WeChat)</span><input data-nav="1" onKeyDown={navEnter} value={p.supplier_ref||""} onChange={e=>u("supplier_ref")(e.target.value)} placeholder="https://…alibaba.com/…" style={box}/></label>
+        <label style={{display:"block",marginTop:10}}><span style={LBL}>Proveedor (link, nombre o WeChat)</span><input data-nav="1" onKeyDown={navEnter} value={p.supplier_ref||""} onChange={e=>u("supplier_ref")(e.target.value)} placeholder="https://…alibaba.com/…" style={BOX}/></label>
       </div>
     </div>
 
-    {/* Posición arancelaria: siempre (desde USA el aéreo también la necesita). Editable a mano y con sugerencia. */}
-    <div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)"}}>
+    <div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:P.blueBg,border:"1px solid #bfdbfe"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:180}}>
           {p.ncm_code?<>
-            <p style={{margin:0,fontSize:13,fontWeight:700}}><span style={{fontFamily:MONO,color:C.blue}}>{p.ncm_code}</span>{p.ncm_description?<span style={{color:C.sub,fontWeight:500}}> · {p.ncm_description}</span>:null}</p>
-            <p style={{margin:"4px 0 0",fontSize:12,color:C.sub}}>DI {p.import_duty_rate||0}% · Tasa {p.statistics_rate||0}% · IVA {p.iva_rate||0}%</p>
-          </>:<p style={{margin:0,fontSize:12.5,color:p.ncm_error?C.amber:C.sub}}>{p.ncm_error?"No se pudo clasificar: cargá la posición y los aranceles a mano.":"Sin posición arancelaria todavía."}</p>}
+            <p style={{margin:0,fontSize:13,fontWeight:700,color:P.txt}}><span style={{fontFamily:MONO,color:P.blue}}>{p.ncm_code}</span>{p.ncm_description?<span style={{color:P.sub,fontWeight:500}}> · {p.ncm_description}</span>:null}</p>
+            <p style={{margin:"4px 0 0",fontSize:12,color:P.sub}}>DI {p.import_duty_rate||0}% · Tasa {p.statistics_rate||0}% · IVA {p.iva_rate||0}%</p>
+          </>:<p style={{margin:0,fontSize:12.5,color:p.ncm_error?P.amber:P.sub}}>{p.ncm_error?"No se pudo clasificar: cargá la posición y los aranceles a mano.":"Sin posición arancelaria todavía."}</p>}
         </div>
-        <Btn small onClick={()=>onClassify(i)} disabled={(!p.description?.trim()&&!fotos.length)||p.ncm_loading}>{p.ncm_loading?"Clasificando…":p.ncm_code?"Reclasificar":"Clasificar con IA"}</Btn>
-        <Btn small v="ghost" onClick={()=>setEditNcm(v=>!v)}>{editNcm?"Listo":"Editar"}</Btn>
+        <BtnP small onClick={()=>onClassify(i)} disabled={(!p.description?.trim()&&!fotos.length)||p.ncm_loading}>{p.ncm_loading?"Clasificando…":p.ncm_code?"Reclasificar":"Clasificar con IA"}</BtnP>
+        <BtnP small v="ghost" onClick={()=>setEditNcm(v=>!v)}>{editNcm?"Listo":"Editar"}</BtnP>
       </div>
       {(editNcm||p.ncm_error)&&<>
         <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",gap:8,marginTop:10}}>
-          <label><span style={lbl}>NCM</span><input value={p.ncm_code} onChange={e=>u("ncm_code")(e.target.value)} placeholder="0000.00.00" style={{...box,fontFamily:MONO}}/></label>
-          <label><span style={lbl}>DI %</span><input inputMode="decimal" value={p.import_duty_rate} onChange={e=>u("import_duty_rate")(soloNum(e.target.value,true))} style={box}/></label>
-          <label><span style={lbl}>Tasa %</span><input inputMode="decimal" value={p.statistics_rate} onChange={e=>u("statistics_rate")(soloNum(e.target.value,true))} style={box}/></label>
-          <label><span style={lbl}>IVA %</span><input inputMode="decimal" value={p.iva_rate} onChange={e=>u("iva_rate")(soloNum(e.target.value,true))} style={box}/></label>
+          <label><span style={LBL}>NCM</span><input value={p.ncm_code} onChange={e=>u("ncm_code")(e.target.value)} placeholder="0000.00.00" style={{...BOX,fontFamily:MONO}}/></label>
+          <label><span style={LBL}>DI %</span><input inputMode="decimal" value={p.import_duty_rate} onChange={e=>u("import_duty_rate")(soloNum(e.target.value,true))} style={BOX}/></label>
+          <label><span style={LBL}>Tasa %</span><input inputMode="decimal" value={p.statistics_rate} onChange={e=>u("statistics_rate")(soloNum(e.target.value,true))} style={BOX}/></label>
+          <label><span style={LBL}>IVA %</span><input inputMode="decimal" value={p.iva_rate} onChange={e=>u("iva_rate")(soloNum(e.target.value,true))} style={BOX}/></label>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"flex-end",marginTop:8,flexWrap:"wrap"}}>
-          <label style={{flex:"1 1 200px"}}><span style={lbl}>Sugerir posición (la IA completa las alícuotas)</span><input value={p.ncm_hint||""} onChange={e=>u("ncm_hint")(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&p.ncm_hint)onClassify(i,p.ncm_hint);}} placeholder="Ej: 7604.21 o 760421" style={{...box,fontFamily:MONO}}/></label>
-          <Btn small onClick={()=>onClassify(i,p.ncm_hint)} disabled={!p.ncm_hint||p.ncm_loading}>Usar esta posición</Btn>
+          <label style={{flex:"1 1 200px"}}><span style={LBL}>Sugerir posición (la IA completa las alícuotas)</span><input value={p.ncm_hint||""} onChange={e=>u("ncm_hint")(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&p.ncm_hint)onClassify(i,p.ncm_hint);}} placeholder="Ej: 7604.21 o 760421" style={{...BOX,fontFamily:MONO}}/></label>
+          <BtnP small onClick={()=>onClassify(i,p.ncm_hint)} disabled={!p.ncm_hint||p.ncm_loading}>Usar esta posición</BtnP>
         </div>
       </>}
     </div>
 
     {sub>0&&<div style={{marginTop:12}}>
-      <button type="button" onClick={()=>setVerImp(v=>!v)} style={{background:"none",border:"none",color:C.blue,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",padding:0}}>{verImp?"Ocultar impuestos":"Ver impuestos de este producto"}</button>
+      <button type="button" onClick={()=>setVerImp(v=>!v)} style={{background:"none",border:"none",color:P.blue,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",padding:0}}>{verImp?"Ocultar impuestos":"Ver impuestos de este producto"}</button>
       {verImp&&blancos.length>0&&<div style={{display:"grid",gridTemplateColumns:`repeat(${blancos.length},minmax(0,1fr))`,gap:8,marginTop:8}}>
-        {blancos.map(([k,v])=><div key={k} style={{padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.2)",fontSize:12,fontVariantNumeric:"tabular-nums"}}>
-          <p style={{margin:"0 0 6px",fontWeight:800,color:C.blue,fontSize:11.5}}>{k==="aereo_blanco"?"Aéreo":"Marítimo LCL/FCL"}</p>
-          {[["CIF",v.cif],["Derechos",v.die],["Tasa",v.te],["IVA",v.iva],["Desaduanaje",v.desemb],["IVA adic.",v.ivaAdic],["Ganancias",v.iigg],["IIBB",v.iibb]].filter(([,x])=>x>0).map(([l,x])=><div key={l} style={{display:"flex",justifyContent:"space-between",color:C.sub}}><span>{l}</span><span>{n2(x)}</span></div>)}
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.line}`,fontWeight:800}}><span>Impuestos</span><span>USD {n2(v.total)}</span></div>
+        {blancos.map(([k,v])=><div key={k} style={{padding:"10px 12px",borderRadius:10,background:P.soft,border:`1px solid ${P.line}`,fontSize:12,fontVariantNumeric:"tabular-nums"}}>
+          <p style={{margin:"0 0 6px",fontWeight:800,color:P.blue,fontSize:11.5}}>{k==="aereo_blanco"?"Aéreo":"Marítimo LCL/FCL"}</p>
+          {[["CIF",v.cif],["Derechos",v.die],["Tasa",v.te],["IVA",v.iva],["Desaduanaje",v.desemb],["IVA adic.",v.ivaAdic],["Ganancias",v.iigg],["IIBB",v.iibb]].filter(([,x])=>x>0).map(([l,x])=><div key={l} style={{display:"flex",justifyContent:"space-between",color:P.sub}}><span>{l}</span><span>{n2(x)}</span></div>)}
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${P.line}`,fontWeight:800,color:P.txt}}><span>Impuestos</span><span>USD {n2(v.total)}</span></div>
         </div>)}
       </div>}
-      {verImp&&blancos.length===0&&<p style={{margin:"6px 0 0",fontSize:12,color:C.mute}}>Los impuestos se ven una vez cargados los bultos.</p>}
+      {verImp&&blancos.length===0&&<p style={{margin:"6px 0 0",fontSize:12,color:P.mute}}>Los impuestos se ven una vez cargados los bultos.</p>}
     </div>}
     {foto!==null&&<PhotoUploadModal token={token} multiple onCancel={()=>setFoto(null)} onUploaded={urls=>{const nuevas=Array.isArray(urls)?urls:[urls];u("photo_urls")(foto==="nueva"?[...fotos,...nuevas]:fotos.map((x,k)=>k===foto?nuevas[0]:x).concat(nuevas.slice(1)));setFoto(null);}} onQuitar={foto!=="nueva"?()=>{u("photo_urls")(fotos.filter((_,k)=>k!==foto));setFoto(null);}:null}/>}
-  </section>;
+  </Papel>;
 }
 
 // Bultos de la cotización: cuántas cajas, medidas, peso y qué productos van adentro.
 function BultosCard({packages,setPackages,products}){
-  const lbl={fontSize:9.5,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};
-  const box={...inp,padding:"9px 11px",fontSize:13.5};
   const up=(i,k,v)=>setPackages(ks=>ks.map((x,j)=>j===i?{...x,[k]:v}:x));
   const add=()=>setPackages(ks=>[...ks,{count:"1",l:"",w:"",h:"",kg:"",prods:products.length===1?[0]:[]}]);
   const del=(i)=>setPackages(ks=>ks.filter((_,j)=>j!==i));
@@ -568,114 +596,122 @@ function BultosCard({packages,setPackages,products}){
   const nombre=(idx)=>{const d=(products[idx]?.description||"").trim();return d?(d.length>26?d.slice(0,24)+"…":d):`Producto ${idx+1}`;};
   let cbm=0,kg=0,volAer=0,n=0;packages.forEach(k=>{const c=Number(k.count||0),L=Number(k.l||0),W=Number(k.w||0),H=Number(k.h||0),g=Number(k.kg||0);n+=c;cbm+=(L*W*H*c)/1e6;kg+=g*c;volAer+=(L*W*H*c)/5000;});
   const sinBulto=products.map((_,i)=>i).filter(i=>!packages.some(k=>(k.prods.length?k.prods:products.map((_,j)=>j)).includes(i)));
-  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
-    <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:10,flexWrap:"wrap"}}>
-      <span style={{fontSize:11,fontWeight:800,color:C.gold,letterSpacing:"0.08em"}}>BULTOS</span>
-      <span style={{fontSize:12,color:C.sub}}>Cómo viaja la mercadería: cada caja, sus medidas y qué productos lleva.</span>
+  return <Papel pad={16}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+      <span style={{fontSize:11,fontWeight:800,color:P.goldHi,letterSpacing:"0.08em"}}>BULTOS</span>
+      {n>0&&<span style={{fontSize:12,color:P.sub,fontVariantNumeric:"tabular-nums"}}>{n} bulto{n!==1?"s":""} · {cbm.toFixed(3)} m³ · {n2(kg)} kg · aéreo factura <b style={{color:P.green}}>{n2(Math.max(kg,volAer))} kg</b></span>}
     </div>
-    {packages.length===0&&<p style={{margin:"0 0 10px",fontSize:12.5,color:C.amber}}>Todavía no cargaste ningún bulto.</p>}
-    {packages.map((k,i)=><div key={i} style={{padding:"12px 12px 10px",borderRadius:12,border:`1px solid ${C.line}`,background:"rgba(0,0,0,0.15)",marginBottom:8}}>
+    {packages.length===0&&<p style={{margin:"0 0 10px",fontSize:12.5,color:P.amber}}>Todavía no cargaste ningún bulto.</p>}
+    {packages.map((k,i)=><div key={i} style={{padding:"12px 12px 10px",borderRadius:12,border:`1px solid ${P.line}`,background:P.soft,marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-        <span style={{fontSize:11,fontWeight:800,color:C.sub,letterSpacing:"0.06em"}}>BULTO {i+1}</span>
-        <button type="button" onClick={()=>del(i)} aria-label="Quitar bulto" style={{marginLeft:"auto",width:26,height:26,borderRadius:7,border:`1px solid ${C.line}`,background:"transparent",color:C.mute,cursor:"pointer"}}>✕</button>
+        <span style={{fontSize:11,fontWeight:800,color:P.sub,letterSpacing:"0.06em"}}>BULTO {i+1}</span>
+        <button type="button" onClick={()=>del(i)} aria-label="Quitar bulto" style={{marginLeft:"auto",width:26,height:26,borderRadius:7,border:`1px solid ${P.line}`,background:"#fff",color:P.mute,cursor:"pointer"}}>✕</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"0.8fr 1fr 1fr 1fr 1fr",gap:8}}>
-        <label><span style={lbl}>Cant.</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={k.count} onChange={e=>up(i,"count",soloNum(e.target.value))} style={box}/></label>
-        <label><span style={lbl}>Largo cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.l} onChange={e=>up(i,"l",soloNum(e.target.value,true))} style={box}/></label>
-        <label><span style={lbl}>Ancho cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.w} onChange={e=>up(i,"w",soloNum(e.target.value,true))} style={box}/></label>
-        <label><span style={lbl}>Alto cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.h} onChange={e=>up(i,"h",soloNum(e.target.value,true))} style={box}/></label>
-        <label><span style={lbl}>Kg c/u</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.kg} onChange={e=>up(i,"kg",soloNum(e.target.value,true))} style={box}/></label>
+        <label><span style={LBL}>Cant.</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={k.count} onChange={e=>up(i,"count",soloNum(e.target.value))} style={BOX}/></label>
+        <label><span style={LBL}>Largo cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.l} onChange={e=>up(i,"l",soloNum(e.target.value,true))} style={BOX}/></label>
+        <label><span style={LBL}>Ancho cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.w} onChange={e=>up(i,"w",soloNum(e.target.value,true))} style={BOX}/></label>
+        <label><span style={LBL}>Alto cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.h} onChange={e=>up(i,"h",soloNum(e.target.value,true))} style={BOX}/></label>
+        <label><span style={LBL}>Kg c/u</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.kg} onChange={e=>up(i,"kg",soloNum(e.target.value,true))} style={BOX}/></label>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8}}>
-        <span style={{...lbl,marginBottom:0,marginRight:4}}>Lleva</span>
-        {products.map((_,idx)=>{const on=k.prods.includes(idx);return <button key={idx} type="button" onClick={()=>toggleProd(i,idx)} style={{padding:"5px 10px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?C.gold:C.line}`,background:on?C.goldBg:"transparent",color:on?C.goldHi:C.sub}}>{on?"✓ ":""}{nombre(idx)}</button>;})}
-        {k.prods.length===0&&products.length>1&&<span style={{fontSize:11.5,color:C.amber}}>Marcá qué productos van en este bulto</span>}
+        <span style={{...LBL,marginBottom:0,marginRight:4}}>Lleva</span>
+        {products.map((_,idx)=>{const on=k.prods.includes(idx);return <button key={idx} type="button" onClick={()=>toggleProd(i,idx)} style={{padding:"5px 10px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?P.gold:P.lineHi}`,background:on?P.goldBg:"#fff",color:on?P.goldHi:P.sub}}>{on?"✓ ":""}{nombre(idx)}</button>;})}
+        {k.prods.length===0&&products.length>1&&<span style={{fontSize:11.5,color:P.amber}}>Marcá qué productos van en este bulto</span>}
       </div>
     </div>)}
-    <button type="button" onClick={add} style={{width:"100%",padding:"11px",borderRadius:12,border:`1.5px dashed ${C.lineHi}`,background:"transparent",color:C.sub,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar bulto</button>
-    {n>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"4px 14px",marginTop:10,fontSize:12,color:C.sub,fontVariantNumeric:"tabular-nums"}}>
-      <span><strong style={{color:C.txt}}>{n}</strong> bulto{n!==1?"s":""}</span>
-      <span><strong style={{color:C.txt}}>{cbm.toFixed(3)}</strong> m³</span>
-      <span><strong style={{color:C.txt}}>{n2(kg)}</strong> kg reales</span>
-      <span>aéreo factura <strong style={{color:C.green}}>{n2(Math.max(kg,volAer))}</strong> kg</span>
-      {sinBulto.length>0&&<span style={{color:C.amber}}>Sin bulto: {sinBulto.map(i=>nombre(i)).join(", ")}</span>}
-    </div>}
-  </section>;
+    <button type="button" onClick={add} style={{width:"100%",padding:"11px",borderRadius:12,border:`1.5px dashed ${P.lineHi}`,background:"#fff",color:P.sub,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar bulto</button>
+    {sinBulto.length>0&&<p style={{margin:"8px 0 0",fontSize:12,color:P.amber}}>Sin bulto: {sinBulto.map(i=>nombre(i)).join(", ")}</p>}
+  </Papel>;
 }
 
+// Condiciones comerciales (se editan acá, a la izquierda): honorarios, anticipo al proveedor y plan de pagos.
+function CondicionesCard(p){
+  const {paymentPlan,setPaymentPlan,supplierDepositPct,setSupplierDepositPct,honorariosPct,setHonorariosPct,minimos}=p;
+  const {min1,min12}=minimos||{min1:0,min12:0};
+  const s1=Number(paymentPlan?.[0]?.pct||0),s12=s1+Number(paymentPlan?.[1]?.pct||0);
+  const suma=paymentPlan.reduce((s,x)=>s+Number(x.pct||0),0);
+  const acomodar=()=>{if(min12>0&&min12<100)setPaymentPlan(pl=>planCubierto(pl,min1,min12));};
+  const cubre1=s1>=min1,cubre12=s12>=min12;
+  const pres=[5,10,15,20,25];
+  return <Papel pad={16}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+      <div>
+        <p style={TIT}>Honorarios GI</p>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {pres.map(v=><button key={v} type="button" onClick={()=>setHonorariosPct(String(v))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(honorariosPct)===v?P.gold:P.lineHi}`,background:Number(honorariosPct)===v?P.goldBg:"#fff",color:Number(honorariosPct)===v?P.goldHi:P.sub}}>{v}%</button>)}
+          <input inputMode="decimal" value={honorariosPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setHonorariosPct(v);}} style={{...BOX,width:64,textAlign:"center",fontWeight:800,color:P.goldHi}}/>
+          <span style={{fontWeight:800,color:P.sub}}>%</span>
+        </div>
+      </div>
+      <div>
+        <p style={TIT}>Anticipo al proveedor</p>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {[30,50,100].map(v=><button key={v} type="button" onClick={()=>setSupplierDepositPct(String(v))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(supplierDepositPct)===v?P.gold:P.lineHi}`,background:Number(supplierDepositPct)===v?P.goldBg:"#fff",color:Number(supplierDepositPct)===v?P.goldHi:P.sub}}>{v}%</button>)}
+          <input inputMode="numeric" value={supplierDepositPct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");if(v===""||Number(v)<=100)setSupplierDepositPct(v);}} style={{...BOX,width:64,textAlign:"center",fontWeight:800}}/>
+          <span style={{fontWeight:800,color:P.sub}}>%</span>
+        </div>
+      </div>
+    </div>
+    <p style={TIT}>Plan de pagos del cliente</p>
+    {paymentPlan.map((st,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+      <input inputMode="numeric" value={st.pct} onChange={e=>{const nv=Number(e.target.value.replace(/[^0-9]/g,""))||0;setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,pct:Math.min(100,nv)}:x));}} onBlur={acomodar} style={{...BOX,width:60,textAlign:"center",fontWeight:800,borderColor:(i===0&&!cubre1)||(i===1&&!cubre12)?"#fca5a5":P.lineHi}}/>
+      <span style={{fontWeight:800,color:P.sub}}>%</span>
+      <input value={st.label} onChange={e=>setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,label:e.target.value}:x))} style={{...BOX,fontSize:13}}/>
+    </div>)}
+    <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",marginTop:6,fontSize:12}}>
+      <span style={{color:suma===100?P.mute:P.amber}}>Suma {suma}%{suma!==100?" · tiene que dar 100%":""}</span>
+      {min12>0&&<span style={{color:cubre1&&cubre12?P.green:P.red}}>{cubre1&&cubre12?"✓ Nunca quedamos en descubierto":`Mínimo ${min1}% al inicio y ${min12}% antes de embarcar`}</span>}
+    </div>
+  </Papel>;
+}
+
+// Columna derecha: solo información (nada se edita acá).
 function Resumen(p){
   const canales=p.visibleChannels;
   const validos=canales.filter(c=>!c.error&&c.total>0);
   const menor=validos.length?Math.min(...validos.map(c=>c.total)):0;
-  const sec={background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12};
-  const tit={margin:"0 0 10px",fontSize:11,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.1em"};
+  const base=p.masBarato?.total||0;
+  const {min1,min12}=p.minimos||{min1:0,min12:0};
+  const supDep=Math.max(0,Math.min(100,Number(p.supplierDepositPct||0)))/100;
   return <div>
-    <section style={sec}>
-      <p style={tit}>Carga</p>
+    <Papel pad={16}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-        <Dato label="FOB" val={usd0(p.totalFob)}/>
-        <Dato label="Bultos" val={String(p.totalBultos||0)} sub={`${p.cbm.toFixed(2)} m³`}/>
-        <Dato label="Peso" val={`${Math.round(p.kg)} kg`}/>
+        <DatoP label="FOB" val={usd0(p.totalFob)}/>
+        <DatoP label="Bultos" val={String(p.totalBultos||0)} sub={`${p.cbm.toFixed(3)} m³`}/>
+        <DatoP label="Peso" val={`${Math.round(p.kg)} kg`}/>
       </div>
-    </section>
-    <section style={sec}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-        <p style={{...tit,margin:0}}>Honorarios GI</p>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <input inputMode="decimal" value={p.honorariosPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))p.setHonorariosPct(v);}} style={{...inp,width:64,padding:"7px 8px",textAlign:"center",fontSize:16,fontWeight:800,color:C.goldHi}}/>
-          <span style={{fontWeight:800,color:C.goldHi}}>%</span>
-        </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${P.line}`}}>
+        <DatoP label="Origen" val={p.someUSA?"🇺🇸 USA":"🇨🇳 China"}/>
+        <DatoP label="Honorarios" val={`${p.honorariosPct||0} %`}/>
+        <DatoP label="Anticipo prov." val={`${p.supplierDepositPct||0} %`} sub={p.totalFob>0?usd0(p.totalFob*supDep):null}/>
       </div>
-      <div style={{display:"flex",gap:6}}>{[5,10,15,20,25].map(v=><button key={v} type="button" onClick={()=>p.setHonorariosPct(String(v))} style={{flex:1,padding:"6px 0",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(p.honorariosPct)===v?C.gold:C.line}`,background:Number(p.honorariosPct)===v?C.goldBg:"transparent",color:Number(p.honorariosPct)===v?C.goldHi:C.sub}}>{v}%</button>)}</div>
-    </section>
-    <section style={sec}>
-      <p style={tit}>Precio final al cliente{p.someUSA?" · origen USA":""}</p>
-      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:C.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=><div key={c.key} style={{padding:"11px 12px",borderRadius:12,border:`1px solid ${c.total===menor&&!c.error?"rgba(52,211,153,0.35)":C.line}`,background:c.total===menor&&!c.error?"rgba(52,211,153,0.06)":"rgba(0,0,0,0.15)",marginBottom:8}}>
+    </Papel>
+    <Papel title={`Precio final al cliente${p.someUSA?" · origen USA":""}`} pad={16}>
+      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:P.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=>{const barato=c.total===menor&&!c.error;return <div key={c.key} style={{padding:"11px 13px",borderRadius:12,border:`1.5px solid ${barato?"#86efac":P.line}`,background:barato?P.greenBg:P.soft,marginBottom:8}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
-          <div style={{minWidth:0}}><p style={{margin:0,fontWeight:800,fontSize:13.5}}>{c.name}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:C.mute}}>{c.time}</p></div>
-          <p style={{margin:0,fontSize:19,fontWeight:900,color:c.error?C.red:C.goldHi,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{c.error?"sin tarifa":usd0(c.total)}</p>
+          <div style={{minWidth:0}}><p style={{margin:0,fontWeight:800,fontSize:13.5,color:P.txt}}>{c.name}{barato&&<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,color:P.green,textTransform:"uppercase",letterSpacing:"0.06em"}}>más económica</span>}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:P.mute}}>{c.time}</p></div>
+          <p style={{margin:0,fontSize:19,fontWeight:900,color:c.error?P.red:P.txt,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{c.error?"sin tarifa":usd0(c.total)}</p>
         </div>
-        {!c.error&&<div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,fontSize:11.5,color:C.mute,fontVariantNumeric:"tabular-nums",flexWrap:"wrap"}}>
+        {!c.error&&<div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,fontSize:11.5,color:P.sub,fontVariantNumeric:"tabular-nums",flexWrap:"wrap"}}>
           <span>impo {usd0(c.impoOnly)} + honorarios {usd0(c.honorariosUsd)}</span>
-          {p.verGanancia&&<span style={{color:C.green,fontWeight:700}}>gana {usd0(c.gainTotal)}</span>}
+          {p.verGanancia&&<span style={{color:P.green,fontWeight:800}}>gana {usd0(c.gainTotal)}</span>}
         </div>}
+      </div>;})}
+    </Papel>
+    {base>0&&<Papel title={`Plan de pagos · sobre ${usd0(base)}`} pad={16}>
+      {p.paymentPlan.map((st,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:i?`1px solid ${P.line}`:"none",fontSize:13}}>
+        <span style={{width:44,textAlign:"right",fontWeight:800,fontVariantNumeric:"tabular-nums",color:P.goldHi}}>{st.pct}%</span>
+        <span style={{flex:1,color:P.txt}}>{st.label}</span>
+        <span style={{fontWeight:800,fontVariantNumeric:"tabular-nums",color:P.txt}}>{usd0(base*Number(st.pct||0)/100)}</span>
       </div>)}
-    </section>
-    <PlanPagos {...p} validos={validos}/>
-    {!p.movil&&<>
-      {p.faltante&&<p style={{margin:"0 0 10px",fontSize:12.5,color:C.amber}}>{p.faltante}</p>}
-      <Btn v="gold" full onClick={p.onGenerar} disabled={p.saving} style={{padding:"13px 16px",fontSize:14}}>{p.saving?"Generando…":p.yaEnviada?"Actualizar link de la cotización":"Generar link para el cliente"}</Btn>
-    </>}
+      {min12>0&&<div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${P.line}`,fontSize:12,lineHeight:1.6,color:P.sub}}>
+        <p style={{margin:0}}>Anticipo al proveedor {usd0(p.totalFob*supDep)} → mínimo <b style={{color:P.txt}}>{min1}%</b> al inicio</p>
+        <p style={{margin:0}}>FOB completo {usd0(p.totalFob)} → mínimo <b style={{color:P.txt}}>{min12}%</b> antes de embarcar</p>
+      </div>}
+    </Papel>}
+    {p.faltante&&<Papel pad={14} style={{background:P.amberBg,borderColor:"#fcd34d"}}><p style={{margin:0,fontSize:12.5,color:P.amber,fontWeight:700}}>{p.faltante}</p></Papel>}
   </div>;
-}
-
-function PlanPagos({paymentPlan,setPaymentPlan,supplierDepositPct,setSupplierDepositPct,totalFob,validos}){
-  const supDep=Math.max(0,Math.min(100,Number(supplierDepositPct||0)))/100;
-  const ratio=validos.length?Math.max(...validos.map(c=>totalFob/c.total*100)):0;
-  const min1=Math.ceil(ratio*supDep),min12=Math.ceil(ratio);
-  const s1=Number(paymentPlan?.[0]?.pct||0),s12=s1+Number(paymentPlan?.[1]?.pct||0);
-  const suma=paymentPlan.reduce((s,x)=>s+Number(x.pct||0),0);
-  const ajustar=()=>{if(min12<=0||min12>=100)return;setPaymentPlan(pl=>{const b=pl.length>=3?pl:[{pct:30,label:"Inicio de producción"},{pct:20,label:"Producción terminada"},{pct:50,label:"Contra entrega"}];const nx=[...b];nx[0]={...nx[0],pct:min1};nx[1]={...nx[1],pct:Math.max(0,min12-min1)};nx[2]={...nx[2],pct:100-min1-Math.max(0,min12-min1)};for(let i=3;i<nx.length;i++)nx[i]={...nx[i],pct:0};return nx;});};
-  const cubre1=s1>=min1,cubre12=s12>=min12;
-  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
-    <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.1em"}}>Plan de pagos del cliente</p>
-    {paymentPlan.map((st,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-      <input inputMode="numeric" value={st.pct} onChange={e=>{const nv=Number(e.target.value.replace(/[^0-9]/g,""))||0;setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,pct:Math.min(100,nv)}:x));}} style={{...inp,width:56,padding:"7px 6px",textAlign:"center",fontWeight:800,borderColor:(i===0&&!cubre1)||(i===1&&!cubre12)?"rgba(248,113,113,0.5)":C.lineHi}}/>
-      <span style={{fontWeight:800,color:C.sub}}>%</span>
-      <input value={st.label} onChange={e=>setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,label:e.target.value}:x))} style={{...inp,padding:"7px 10px",fontSize:13}}/>
-    </div>)}
-    <p style={{margin:"6px 0 0",fontSize:12,color:suma===100?C.mute:C.amber}}>Suma {suma}%{suma!==100?" · tiene que dar 100%":""}</p>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${C.line}`}}>
-      <span style={{fontSize:12.5,color:C.sub,flex:1}}>Anticipo al proveedor</span>
-      <input inputMode="numeric" value={supplierDepositPct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");if(v===""||Number(v)<=100)setSupplierDepositPct(v);}} style={{...inp,width:56,padding:"6px",textAlign:"center",fontWeight:800}}/>
-      <span style={{fontWeight:800,color:C.sub}}>%</span>
-    </div>
-    {validos.length>0&&<div style={{marginTop:10,fontSize:12,lineHeight:1.6}}>
-      <p style={{margin:0,color:cubre1?C.green:C.red}}>{cubre1?"✓":"✕"} El 1.º pago cubre el anticipo al proveedor ({fmtUSD(totalFob*supDep)}) · mínimo {min1}%</p>
-      <p style={{margin:0,color:cubre12?C.green:C.red}}>{cubre12?"✓":"✕"} 1.º + 2.º cubren todo el FOB · mínimo {min12}%</p>
-      {(!cubre1||!cubre12)&&min12<100&&<button type="button" onClick={ajustar} style={{marginTop:6,background:"none",border:"none",color:C.blue,fontWeight:800,cursor:"pointer",fontFamily:"inherit",padding:0,fontSize:12.5}}>Ajustar al mínimo seguro</button>}
-    </div>}
-  </section>;
 }
 
 function CotizacionLista({generatedQuote,client,request,onBack}){

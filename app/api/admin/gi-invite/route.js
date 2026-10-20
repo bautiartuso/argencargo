@@ -38,9 +38,11 @@ export async function POST(req) {
   const callerId = caller?.id || null;
   if (!callerId) return Response.json({ error: "Token inválido" }, { status: 401 });
 
-  const callerProfile = await sbFetch(`/rest/v1/profiles?id=eq.${callerId}&select=role`);
-  if (!Array.isArray(callerProfile.body) || callerProfile.body[0]?.role !== "admin") {
-    return Response.json({ error: "Solo admin puede invitar socios GI" }, { status: 403 });
+  const callerProfile = await sbFetch(`/rest/v1/profiles?id=eq.${callerId}&select=role,is_gi_partner`);
+  const cp = Array.isArray(callerProfile.body) ? callerProfile.body[0] : null;
+  // Admin o socio GI (desde el 20/10/2026 los socios tienen control total del panel).
+  if (!cp || (cp.role !== "admin" && !cp.is_gi_partner)) {
+    return Response.json({ error: "Solo el admin o un socio GI pueden invitar socios" }, { status: 403 });
   }
 
   let body = null; try { body = await req.json(); } catch {}

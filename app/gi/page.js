@@ -3,16 +3,19 @@
 // los empleados y los socios GI. Cotizaciones → operaciones → cobros/costos → liquidación del socio.
 //   admin    → todo
 //   empleado → todo menos costos, ganancia y comisiones
-//   socio    → sus clientes/cotizaciones/operaciones y su comisión (lo limita la base por RLS)
+//   socio    → desde el 20/10/2026 control total: lo mismo que el admin (cotizaciones, operaciones,
+//              plata, socios y configuración). Lo único que se le esconde es lo que se le esconde al
+//              empleado: nada. SQL: 2026_10_20_gi_socios_control_total.sql
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { ToastStack, DialogHost, toast, confirmDialog, promptDialog } from "../../lib/ui";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
-import { GI_CANALES, GI_ESTADOS, GI_FLUJO, resumenGI, totalAceptado, canalMasBarato, totalCanal, costosProveedor } from "../../lib/gi";
+import { GI_CANALES, GI_ESTADOS, GI_FLUJO, resumenGI, totalAceptado, canalMasBarato, totalCanal, costosProveedor, socioDeOp } from "../../lib/gi";
 import {
   C, BG, LOGO, MONO, GOLD_GRADIENT, dq, dqTodos, arr, ok, ac, ensureFresh, sesionInicial, saveSession, clearSession, usarSesionPropia,
   fmtDate, fmtDateShort, fmtDateTime, fmtUSD, usd0, hace, hoyISO, nombre, buildQuoteWaMessage, cleanWaNumber, useMovil,
   Btn, Pill, Caja, Titulo, Chips, Vacio, Cargando, Modal, Campo, inp, Opciones, Dato, Fila, Codigo, Volver,
+  P, Papel, DatoP, PillP, inpP, BtnP,
 } from "./_base";
 import { CotizadorWizard } from "./_cotizador";
 
@@ -140,7 +143,8 @@ const ICON = {
   cotizaciones: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M8 13h8", "M8 17h5"],
   operaciones: ["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", "M3.3 7L12 12l8.7-5", "M12 22V12"],
   clientes: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 7a4 4 0 1 0 0 .01", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
-  socios: ["M12 1v22", "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
+  socios: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 7a4 4 0 1 0 0 .01", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
+  finanzas: ["M12 1v22", "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
   contactos: ["M3 7h18l-2 12H5L3 7z", "M8 7V5a4 4 0 0 1 8 0v2"],
   config: ["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-2.82-1.17l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.17 14H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.17-2.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10 3.17V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.83 10H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"],
   mas: ["M5 12h.01", "M12 12h.01", "M19 12h.01"],
@@ -162,13 +166,16 @@ function Shell({ sesion, perfil, onLogout }) {
     else if (u.get("cot")) ir("cotizaciones", { id: u.get("cot") });
     if (u.get("op") || u.get("cot")) window.history.replaceState({}, "", "/gi");
   }, [ir]);
-  const ctx = { token, rol, perfil, d, recargar, ir, movil };
+  // pleno: control total (admin y socios). El empleado no ve plata ni toca socios/configuración.
+  const pleno = rol !== "empleado";
+  const ctx = { token, rol, pleno, perfil, d, recargar, ir, movil };
 
   const pendientes = d ? d.reqs.filter((r) => ["por_cotizar", "aceptada"].includes(estadoCot(r, d.comms).k)).length : 0;
   const SECCIONES = [
     { s: "Gestión", items: [{ k: "inicio", l: "Inicio" }, { k: "cotizaciones", l: "Cotizaciones", badge: pendientes }, { k: "operaciones", l: "Operaciones" }] },
-    { s: "Equipo", items: [rol === "admin" ? { k: "socios", l: "Socios" } : rol === "socio" ? { k: "socios", l: "Mis comisiones" } : null, { k: "contactos", l: "Contactos" }].filter(Boolean) },
-    rol === "admin" ? { s: "Ajustes", items: [{ k: "config", l: "Configuración" }] } : null,
+    pleno ? { s: "Números", items: [{ k: "finanzas", l: "Finanzas" }] } : null,
+    { s: "Equipo", items: [pleno ? { k: "socios", l: "Socios" } : null, { k: "contactos", l: "Contactos" }].filter(Boolean) },
+    pleno ? { s: "Ajustes", items: [{ k: "config", l: "Configuración" }] } : null,
   ].filter(Boolean);
   const NAV = SECCIONES.flatMap((x) => x.items);
 
@@ -176,9 +183,10 @@ function Shell({ sesion, perfil, onLogout }) {
   if (!d) cuerpo = <Cargando />;
   else if (nav.p === "cotizaciones") cuerpo = nav.wizard ? <CotizadorWizard token={token} rol={rol} requestId={nav.wizard} profileId={perfil.id} onBack={() => { recargar(); ir("cotizaciones", { id: nav.wizard }); }} /> : nav.id ? <CotDetalle ctx={ctx} id={nav.id} /> : <Cotizaciones ctx={ctx} />;
   else if (nav.p === "operaciones") cuerpo = nav.id ? <OpDetalle ctx={ctx} id={nav.id} /> : <Operaciones ctx={ctx} />;
-  else if (nav.p === "socios" && rol !== "empleado") cuerpo = <Socios ctx={ctx} />;
+  else if (nav.p === "finanzas" && pleno) cuerpo = <Finanzas ctx={ctx} />;
+  else if (nav.p === "socios" && pleno) cuerpo = <Socios ctx={ctx} />;
   else if (nav.p === "contactos") cuerpo = <Contactos ctx={ctx} />;
-  else if (nav.p === "config" && rol === "admin") cuerpo = <Configuracion ctx={ctx} />;
+  else if (nav.p === "config" && pleno) cuerpo = <Configuracion ctx={ctx} />;
   else cuerpo = <Inicio ctx={ctx} />;
 
   const rolTxt = rol === "admin" ? "Admin" : rol === "empleado" ? "Empleado" : "Socio GI";
@@ -237,7 +245,7 @@ function Shell({ sesion, perfil, onLogout }) {
 // INICIO: lo que hay que hacer hoy, en listas planas
 // ────────────────────────────────────────────
 function Inicio({ ctx }) {
-  const { d, rol, ir, movil } = ctx;
+  const { d, rol, pleno, ir, movil } = ctx;
   const cots = d.reqs.map((r) => ({ r, e: estadoCot(r, d.comms) }));
   const ahora = Date.now();
   const aceptadas = cots.filter((x) => x.e.k === "aceptada");
@@ -267,13 +275,13 @@ function Inicio({ ctx }) {
   const tareas = [
     { t: "Aceptadas · pasar a operación", c: C.green, items: aceptadas.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <Pill c={C.green}>Aceptada</Pill>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
     { t: "Para cobrar · listas para entregar", c: C.green, items: paraCobrar.map(({ o, saldo }) => ({ k: o.id, code: o.operation_code, n: nombre(o.clients), der: <strong style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>{usd0(saldo)}</strong>, go: () => ir("operaciones", { id: o.id }) })) },
-    rol === "admin" ? { t: "Para cerrar · entregadas y cobradas", c: C.goldHi, items: paraCerrar.map((o) => ({ k: o.id, code: o.operation_code, n: nombre(o.clients), der: <Pill c={C.goldHi}>Cerrar</Pill>, go: () => ir("operaciones", { id: o.id }) })) } : null,
+    pleno ? { t: "Para cerrar · entregadas y cobradas", c: C.goldHi, items: paraCerrar.map((o) => ({ k: o.id, code: o.operation_code, n: nombre(o.clients), der: <Pill c={C.goldHi}>Cerrar</Pill>, go: () => ir("operaciones", { id: o.id }) })) } : null,
     { t: "Pedidos sin cotizar", c: C.amber, items: porCotizar.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <span style={{ fontSize: 12, color: C.mute }}>{hace(x.r.created_at)}</span>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
     { t: "La vieron y no respondieron", c: C.blue, items: vistasSinResp.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <span style={{ fontSize: 12, color: C.mute }}>vista {hace(x.e.ultimaVista)}</span>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
     { t: "Enviadas hace más de 2 días sin abrir", c: C.sub, items: sinAbrir.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: null, go: () => ir("cotizaciones", { id: x.r.id }) })) },
     { t: "Vencen en menos de 2 días", c: C.red, items: porVencer.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: <span style={{ fontSize: 12, color: C.red }}>{fmtDateShort(x.e.q.expires_at)}</span>, go: () => ir("cotizaciones", { id: x.r.id }) })) },
     { t: "Borradores sin enviar", c: C.violet, items: borradores.map((x) => ({ k: x.r.id, code: x.r.request_code, n: nombre(x.r.clients), der: null, go: () => ir("cotizaciones", { id: x.r.id }) })) },
-    rol === "admin" ? { t: "Pagos a proveedor pendientes", c: C.amber, items: pagosPend.map((p) => ({ k: p.id, code: p.operations?.operation_code || "—", n: p.notes || "Pago a proveedor", der: <strong style={{ color: C.amber, fontVariantNumeric: "tabular-nums" }}>{Number(p.amount_usd || 0) > 0 ? usd0(p.amount_usd) : `ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}`}</strong>, go: () => ir("operaciones", { id: p.operation_id }) })) } : null,
+    pleno ? { t: "Pagos a proveedor pendientes", c: C.amber, items: pagosPend.map((p) => ({ k: p.id, code: p.operations?.operation_code || "—", n: p.notes || "Pago a proveedor", der: <strong style={{ color: C.amber, fontVariantNumeric: "tabular-nums" }}>{Number(p.amount_usd || 0) > 0 ? usd0(p.amount_usd) : `ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}`}</strong>, go: () => ir("operaciones", { id: p.operation_id }) })) } : null,
   ].filter((g) => g && g.items.length);
 
   // Actividad reciente: lo que hizo el cliente con las cotizaciones.
@@ -412,13 +420,13 @@ function Cotizaciones({ ctx }) {
 // ────────────────────────────────────────────
 function NuevaCotizacion({ ctx, onClose }) {
   const { token, rol, perfil, d, ir, recargar } = ctx;
-  const staff = rol !== "socio";
+  const staff = true; // socios con control total (20/10/2026): eligen socio y cliente como el admin
   const [clientes, setClientes] = useState(null);
   const [modo, setModo] = useState("existente");
   const [busca, setBusca] = useState("");
   const [cli, setCli] = useState(null);
   const [nuevo, setNuevo] = useState({ first_name: "", last_name: "", whatsapp: "" });
-  const [socio, setSocio] = useState(staff ? "" : perfil.id);
+  const [socio, setSocio] = useState(rol === "socio" ? perfil.id : "");
   const [origen, setOrigen] = useState("china");
   const [dias, setDias] = useState("7");
   const [notas, setNotas] = useState("");
@@ -426,7 +434,7 @@ function NuevaCotizacion({ ctx, onClose }) {
   useEffect(() => { (async () => { setClientes(await dqTodos("clients", { token, filters: "?select=id,first_name,last_name,client_code,whatsapp,gi_partner_id&order=first_name.asc" })); })(); }, [token]);
   const s = busca.trim().toLowerCase();
   const encontrados = (clientes || []).filter((c) => s.length >= 2 && `${c.first_name || ""} ${c.last_name || ""} ${c.client_code || ""} ${c.whatsapp || ""}`.toLowerCase().includes(s)).slice(0, 8);
-  const elegir = (c) => { setCli(c); setBusca(""); if (staff) setSocio(c.gi_partner_id || ""); };
+  const elegir = (c) => { setCli(c); setBusca(""); setSocio(c.gi_partner_id || (rol === "socio" ? perfil.id : "")); };
 
   const crearCliente = async () => {
     const first = nuevo.first_name.trim(), last = nuevo.last_name.trim() || "—";
@@ -451,10 +459,6 @@ function NuevaCotizacion({ ctx, onClose }) {
       if (!c?.id) throw new Error("No se pudo crear el cliente");
       if (modo === "existente" && staff && (socio || null) !== (cli.gi_partner_id || null)) {
         await dq("clients", { method: "PATCH", token, filters: `?id=eq.${c.id}`, body: { gi_partner_id: socio || null } });
-      }
-      // Socio (20/10/2026): ve toda la clientela; si el cliente no tenía socio, queda suyo.
-      if (modo === "existente" && !staff && !cli.gi_partner_id) {
-        await dq("rpc/gi_tomar_cliente", { method: "POST", token, body: { p_client: c.id } });
       }
       const code = await dq("rpc/gi_next_request_code", { method: "POST", token, body: {} });
       if (typeof code !== "string" || !code.startsWith("GI-")) throw new Error("No se pudo generar el código");
@@ -521,7 +525,7 @@ const TIPO_EV = {
 };
 
 function CotDetalle({ ctx, id }) {
-  const { token, rol, perfil, d, ir, recargar, movil } = ctx;
+  const { token, rol, pleno, perfil, d, ir, recargar, movil } = ctx;
   const r = d.reqs.find((x) => x.id === id);
   const [prods, setProds] = useState(null);
   const [bultos, setBultos] = useState([]);
@@ -539,7 +543,6 @@ function CotDetalle({ ctx, id }) {
     ]);
     const lista = arr(qp).length ? arr(qp) : arr(rp);
     setProds(lista);
-    // Bultos de la cotización; las viejas los traen por producto.
     const pks = arr(pk);
     setBultos(pks.length ? pks.map((k) => ({ n: Number(k.pkg_count || 0), l: k.length_cm, w: k.width_cm, h: k.height_cm, kg: k.weight_kg, prods: Array.isArray(k.product_idx) ? k.product_idx : [] }))
       : lista.map((p, i) => Number(p.pkg_count || 0) > 0 && p.pkg_length_cm ? { n: Number(p.pkg_count), l: p.pkg_length_cm, w: p.pkg_width_cm, h: p.pkg_height_cm, kg: p.pkg_weight_kg, prods: [i] } : null).filter(Boolean));
@@ -549,7 +552,6 @@ function CotDetalle({ ctx, id }) {
   const ev = d.comms.filter((c) => (q && c.quote_id === q.id) || (!c.quote_id && c.request_id === id));
   const url = q?.public_token ? `${window.location.origin}/cotizacion/${q.public_token}` : "";
   const log = (type, extra = {}) => dq("gi_quote_communications", { method: "POST", token, body: { quote_id: q?.id || null, request_id: id, type, author_id: perfil.id, ...extra } });
-  const staff = rol !== "socio";
   const verPlata = rol !== "empleado";
   const op = q?.operation_id ? d.ops.find((o) => o.id === q.operation_id) : null;
   const socio = d.socios?.find((s) => s.id === (r.assigned_partner_id || r.clients?.gi_partner_id));
@@ -580,7 +582,7 @@ function CotDetalle({ ctx, id }) {
     if (motivo === null || motivo === undefined) return;
     if (q) {
       const res = await dq("gi_quotes", { method: "PATCH", token, filters: `?id=eq.${q.id}`, body: { status: "rejected", rejected_at: new Date().toISOString(), reject_reason: motivo || null } });
-      if (!ok(res)) { toast.error("No se pudo marcar (¿falta correr el SQL del 13/10?)"); return; }
+      if (!ok(res)) { toast.error("No se pudo marcar"); return; }
     }
     await dq("gi_quote_requests", { method: "PATCH", token, filters: `?id=eq.${id}`, body: { status: "rejected" } });
     await log("rejected", { meta: { reason: motivo || null, manual: true, email: perfil.email } });
@@ -588,7 +590,8 @@ function CotDetalle({ ctx, id }) {
   };
   const borrar = async () => {
     if (!await confirmDialog(`¿Borrar ${r.request_code}? No se puede deshacer.`, { danger: true })) return;
-    await dq("gi_quote_requests", { method: "DELETE", token, filters: `?id=eq.${id}` });
+    const res = await dq("gi_quote_requests", { method: "DELETE", token, filters: `?id=eq.${id}` });
+    if (res && res.code) { toast.error("No se pudo borrar"); return; }
     toast.success("Cotización borrada"); await recargar(); ir("cotizaciones");
   };
   const renovar = async () => {
@@ -629,11 +632,9 @@ function CotDetalle({ ctx, id }) {
   const n2 = (v) => Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const nombreProd = (i) => { const t = (lista[i]?.description || "").trim(); return t ? (t.length > 28 ? t.slice(0, 26) + "…" : t) : `Producto ${i + 1}`; };
   const fotosDe = (p) => Array.isArray(p.photo_urls) && p.photo_urls.length ? p.photo_urls : (p.photo_url ? [p.photo_url] : []);
-
-  const Dato = ({ l, v, sub, c }) => <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.mute, whiteSpace: "nowrap" }}>{l}</p><p style={{ margin: "3px 0 0", fontSize: 15, fontWeight: 800, color: c || C.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</p>{sub && <p style={{ margin: "1px 0 0", fontSize: 11, color: C.mute, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</p>}</div>;
-  const Tag = ({ c, children }) => <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 999, color: c, background: `${c}1f`, border: `1px solid ${c}55`, whiteSpace: "nowrap" }}>{children}</span>;
-  const sec = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 16, marginBottom: 12 };
-  const tit = { margin: "0 0 10px", fontSize: 11, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.1em" };
+  const produccion = Math.max(0, ...lista.map((p) => Number(p.lead_time_days || 0)));
+  // Colores de estado sobre papel.
+  const EC = { por_cotizar: P.amber, borrador: P.violet, enviada: P.blue, aceptada: P.green, convertida: P.green, rechazada: P.red, vencida: P.mute }[e.k] || P.sub;
 
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -641,156 +642,156 @@ function CotDetalle({ ctx, id }) {
       {e.vistas > 0 && <span style={{ fontSize: 12, color: C.mute }}>👁 El cliente la abrió {e.vistas} {e.vistas === 1 ? "vez" : "veces"}{e.ultimaVista ? ` · última ${hace(e.ultimaVista)}` : ""}</span>}
     </div>
 
-    {/* Cabecera */}
-    <section style={{ ...sec, padding: "18px 20px", borderColor: `${e.c}44`, background: `linear-gradient(180deg, ${e.c}10, ${C.card})` }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 320px", minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: C.goldHi }}>{r.request_code}</span>
-            <Pill c={e.c}>{e.l}</Pill>
-            <Tag c={C.sub}>{esUSA ? "🇺🇸 Estados Unidos" : "🇨🇳 China"}</Tag>
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "minmax(0,1fr) 340px", gap: 14, alignItems: "start" }}>
+      <div style={{ minWidth: 0 }}>
+        {/* Cabecera */}
+        <Papel acento={EC} pad={movil ? 16 : 22}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 300px", minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: P.goldHi }}>{r.request_code}</span>
+                <PillP c={EC}>{e.l}</PillP>
+                <PillP c={P.sub}>{esUSA ? "🇺🇸 Estados Unidos" : "🇨🇳 China"}</PillP>
+              </div>
+              <p style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 2px", letterSpacing: "-0.01em", color: P.txt }}>{nombre(r.clients)}</p>
+              <p style={{ fontSize: 12.5, color: P.mute, margin: 0 }}>
+                <span style={{ fontFamily: MONO }}>{r.clients?.client_code}</span>{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""}{socio ? ` · Socio ${socio.email.split("@")[0]}` : " · Argencargo"}
+              </p>
+            </div>
+            {baseCliente > 0 && <div style={{ textAlign: "right", padding: "10px 14px", borderRadius: 12, background: P.goldBg }}>
+              <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: P.goldHi }}>{elegido ? `Aceptó · ${elegido.nombre}` : `Desde · ${masBarato?.nombre || ""}`}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 28, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{fmtUSD(baseCliente)}</p>
+            </div>}
           </div>
-          <p style={{ fontSize: 22, fontWeight: 800, margin: "8px 0 2px", letterSpacing: "-0.01em" }}>{nombre(r.clients)}</p>
-          <p style={{ fontSize: 12.5, color: C.mute, margin: 0 }}>
-            <span style={{ fontFamily: MONO }}>{r.clients?.client_code}</span>{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""} · Creada {fmtDate(r.created_at)}{q?.expires_at ? ` · válida hasta ${fmtDate(q.expires_at)}` : ""}{socio ? ` · Socio ${socio.email.split("@")[0]}` : ""}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+            {e.k === "aceptada" && <BtnP v="green" onClick={convertir} disabled={trabajando || q?.status === "converting"}>{trabajando ? "Creando…" : "📦 Pasar a operación"}</BtnP>}
+            {op && <BtnP v="gold" onClick={() => ir("operaciones", { id: op.id })}>Ver {op.operation_code} →</BtnP>}
+            {e.k !== "convertida" && <BtnP v={e.k === "por_cotizar" ? "gold" : "sec"} onClick={() => ir("cotizaciones", { wizard: id })}>{e.k === "por_cotizar" ? "Armar cotización" : "✎ Editar"}</BtnP>}
+            {q && e.k === "vencida" && <BtnP v="gold" onClick={renovar}>↻ Renovar validez</BtnP>}
+            {url && ["borrador", "enviada"].includes(e.k) && <BtnP v="wa" onClick={enviarWa}>💬 Enviar por WhatsApp</BtnP>}
+            {url && <BtnP onClick={copiar}>Copiar link</BtnP>}
+            {url && <BtnP onClick={() => window.open(url, "_blank", "noopener")}>Ver como cliente ↗</BtnP>}
+            {q && lista.length > 0 && <BtnP onClick={pdf}>PDF</BtnP>}
+            <span style={{ flex: 1 }} />
+            {pleno && ["por_cotizar", "borrador", "enviada", "vencida"].includes(e.k) && <BtnP v="ghost" onClick={rechazar}>Marcar rechazada</BtnP>}
+            {pleno && e.k !== "convertida" && <BtnP v="ghost" onClick={borrar} style={{ color: P.red }}>Borrar</BtnP>}
+          </div>
+        </Papel>
+
+        {(e.k === "aceptada" || e.k === "convertida" || e.k === "rechazada") && <Papel style={{ background: e.k === "rechazada" ? P.redBg : P.greenBg, borderColor: `${EC}55` }} pad={14}>
+          <p style={{ margin: 0, fontWeight: 800, color: EC }}>{e.k === "rechazada" ? "✕ Rechazada" : "✓ Aceptada por el cliente"}{respuesta?.meta?.manual ? " (marcada a mano)" : ""}</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: P.sub, lineHeight: 1.6 }}>
+            {respuesta?.created_at ? `${fmtDateTime(respuesta.created_at)}` : (e.cuando ? fmtDateTime(e.cuando) : "")}
+            {respuesta?.meta?.email ? ` · ${respuesta.meta.email}` : ""}
+            {e.k !== "rechazada" && q?.selected_channel ? ` · ${GI_CANALES[q.selected_channel]?.largo || q.selected_channel}` : ""}
+            {e.k !== "rechazada" && q?.selected_delivery_zone ? ` · ${q.selected_delivery_zone === "oficina" ? "retira por oficina" : q.selected_delivery_zone === "interior_coordinar" ? "envío a coordinar" : `envío a ${q.selected_delivery_zone}`}` : ""}
           </p>
-        </div>
-        {baseCliente > 0 && <div style={{ textAlign: "right" }}>
-          <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.mute }}>{elegido ? `Aceptó · ${elegido.nombre}` : `Desde · ${masBarato?.nombre || ""}`}</p>
-          <p style={{ margin: "2px 0 0", fontSize: 28, fontWeight: 900, color: C.goldHi, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{fmtUSD(baseCliente)}</p>
-        </div>}
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-        {e.k === "aceptada" && <Btn v="green" onClick={convertir} disabled={trabajando || q?.status === "converting"}>{trabajando ? "Creando…" : "📦 Pasar a operación"}</Btn>}
-        {op && <Btn v="gold" onClick={() => ir("operaciones", { id: op.id })}>Ver {op.operation_code} →</Btn>}
-        {!["convertida", "aceptada"].includes(e.k) && <Btn v={e.k === "por_cotizar" ? "gold" : "sec"} onClick={() => ir("cotizaciones", { wizard: id })}>{e.k === "por_cotizar" ? "Armar cotización" : "✎ Editar"}</Btn>}
-        {q && e.k === "vencida" && <Btn v="gold" onClick={renovar}>↻ Renovar validez</Btn>}
-        {url && ["borrador", "enviada"].includes(e.k) && <Btn v="wa" onClick={enviarWa}>💬 Enviar por WhatsApp</Btn>}
-        {url && <Btn onClick={copiar}>Copiar link</Btn>}
-        {url && <Btn onClick={() => window.open(url, "_blank", "noopener")}>Ver como cliente ↗</Btn>}
-        {q && lista.length > 0 && <Btn onClick={pdf}>PDF</Btn>}
-        <span style={{ flex: 1 }} />
-        {staff && ["por_cotizar", "borrador", "enviada", "vencida"].includes(e.k) && <Btn v="ghost" onClick={rechazar}>Marcar rechazada</Btn>}
-        {staff && e.k !== "convertida" && <Btn v="ghost" onClick={borrar} style={{ color: C.red }}>Borrar</Btn>}
-      </div>
-    </section>
+          {e.k === "rechazada" && e.motivo && <p style={{ margin: "6px 0 0", fontSize: 13.5, color: P.txt }}>Motivo: <strong>{e.motivo}</strong></p>}
+        </Papel>}
 
-    {(e.k === "aceptada" || e.k === "convertida" || e.k === "rechazada") && <section style={{ ...sec, borderColor: `${e.c}55`, background: `${e.c}0d` }}>
-      <p style={{ margin: 0, fontWeight: 800, color: e.c }}>{e.k === "rechazada" ? "✕ Rechazada" : "✓ Aceptada por el cliente"}{respuesta?.meta?.manual ? " (marcada a mano)" : ""}</p>
-      <p style={{ margin: "6px 0 0", fontSize: 13, color: C.sub, lineHeight: 1.6 }}>
-        {respuesta?.created_at ? `${fmtDateTime(respuesta.created_at)}` : (e.cuando ? fmtDateTime(e.cuando) : "")}
-        {respuesta?.meta?.email ? ` · ${respuesta.meta.email}` : ""}
-        {e.k !== "rechazada" && q?.selected_channel ? ` · ${GI_CANALES[q.selected_channel]?.largo || q.selected_channel}` : ""}
-        {e.k !== "rechazada" && q?.selected_delivery_zone ? ` · ${q.selected_delivery_zone === "oficina" ? "retira por oficina" : q.selected_delivery_zone === "interior_coordinar" ? "envío a coordinar" : `envío a ${q.selected_delivery_zone}`}` : ""}
-      </p>
-      {e.k === "rechazada" && e.motivo && <p style={{ margin: "8px 0 0", fontSize: 13.5 }}>Motivo: <strong>{e.motivo}</strong></p>}
-    </section>}
-
-    {/* Datos de un vistazo */}
-    {q && <section style={{ ...sec, padding: "14px 18px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: movil ? "repeat(2,minmax(0,1fr))" : `repeat(${verPlata ? 6 : 4},minmax(0,1fr))`, gap: "10px 14px" }}>
-        {verPlata && <Dato l="FOB al proveedor" v={fob > 0 ? fmtUSD(fob) : "—"} sub={lista.length ? `${lista.length} producto${lista.length !== 1 ? "s" : ""}` : null} />}
-        {!verPlata && <Dato l="Productos" v={String(lista.length)} />}
-        <Dato l="Bultos" v={nBultos ? String(nBultos) : "—"} sub={nBultos ? `${cbm.toFixed(3)} m³ · ${Math.round(kg)} kg` : "sin cargar"} c={nBultos ? C.txt : C.amber} />
-        {verPlata && <Dato l="Honorarios GI" v={`${honor || 0} %`} sub={masBarato ? `${fmtUSD(masBarato.honorarios)} en ${masBarato.nombre.toLowerCase()}` : null} />}
-        <Dato l="Anticipo proveedor" v={q.supplier_deposit_pct != null ? `${q.supplier_deposit_pct} %` : "—"} sub={fob > 0 && q.supplier_deposit_pct != null ? fmtUSD(fob * q.supplier_deposit_pct / 100) : null} />
-        <Dato l="Producción" v={(() => { const m = Math.max(0, ...lista.map((p) => Number(p.lead_time_days || 0))); return m ? `${m} días` : "—"; })()} sub="la más larga" />
-        <Dato l="Validez" v={q.expires_at ? fmtDate(q.expires_at) : "—"} sub={vencida(q) ? "vencida" : q.sent_at ? `enviada ${fmtDate(q.sent_at)}` : "sin enviar"} c={vencida(q) ? C.red : C.txt} />
-      </div>
-    </section>}
-
-    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "minmax(0,1.3fr) minmax(0,1fr)", gap: 14, alignItems: "start" }}>
-      <div>
         {/* Precios por canal */}
-        {q && canales.length > 0 && <section style={sec}>
-          <p style={tit}>Precio final al cliente</p>
+        {q && canales.length > 0 && <Papel title="Precio final al cliente">
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "12px 14px", borderRadius: 12, border: `1px solid ${el ? C.gold : barato ? "rgba(52,211,153,0.35)" : C.line}`, background: el ? C.goldBg : barato ? "rgba(52,211,153,0.06)" : "rgba(0,0,0,0.15)" }}>
+            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "13px 16px", borderRadius: 14, border: `1.5px solid ${el ? P.gold : barato ? "#86efac" : P.line}`, background: el ? P.goldBg : barato ? P.greenBg : P.soft }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{c.largo} {el && <Tag c={C.goldHi}>Eligió esta</Tag>}{!el && barato && <Tag c={C.green}>Más económica</Tag>}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{TIEMPO[c.k]}</p>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: P.txt }}>{c.largo} {el && <PillP c={P.goldHi}>Eligió esta</PillP>}{!el && barato && <PillP c={P.green}>Más económica</PillP>}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{TIEMPO[c.k]}</p>
                 </div>
-                <p style={{ margin: 0, fontSize: 21, fontWeight: 900, color: C.goldHi, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtUSD(c.total)}</p>
+                <p style={{ margin: 0, fontSize: 22, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtUSD(c.total)}</p>
               </div>
-              {verPlata && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 6, fontSize: 11.5, color: C.mute, fontVariantNumeric: "tabular-nums", flexWrap: "wrap" }}>
+              {verPlata && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 6, fontSize: 12, color: P.sub, fontVariantNumeric: "tabular-nums", flexWrap: "wrap" }}>
                 <span>importación {fmtUSD(c.impo)} + honorarios {fmtUSD(c.honorarios)}</span>
-                {c.gana != null && <span style={{ color: c.gana >= 0 ? C.green : C.red, fontWeight: 700 }}>gana {fmtUSD(c.gana)}</span>}
+                {c.gana != null && <span style={{ color: c.gana >= 0 ? P.green : P.red, fontWeight: 800 }}>gana {fmtUSD(c.gana)}</span>}
               </div>}
             </div>; })}
           </div>
-        </section>}
+        </Papel>}
 
         {/* Productos */}
-        <section style={sec}>
-          <p style={tit}>Productos{prods ? ` · ${lista.length}` : ""}</p>
-          {prods === null ? <Cargando /> : lista.length === 0 ? <p style={{ color: C.mute, margin: 0 }}>Sin productos cargados.</p> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {lista.map((p, i) => { const fotos = fotosDe(p); const sub = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0); return <div key={p.id || i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+        <Papel title={`Productos${prods ? ` · ${lista.length}` : ""}`}>
+          {prods === null ? <Cargando /> : lista.length === 0 ? <p style={{ color: P.mute, margin: 0 }}>Sin productos cargados.</p> : <div style={{ display: "flex", flexDirection: "column" }}>
+            {lista.map((p, i) => { const fotos = fotosDe(p); const sub = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0); return <div key={p.id || i} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "12px 0", borderTop: i ? `1px solid ${P.line}` : "none" }}>
               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                {fotos.length ? fotos.slice(0, 3).map((u, k) => <button key={k} type="button" onClick={() => setFotoGrande(u)} style={{ width: k === 0 ? 56 : 28, height: 56, borderRadius: 9, overflow: "hidden", border: `1px solid ${C.line}`, background: "#000", padding: 0, cursor: "zoom-in" }}><img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></button>)
-                  : <div style={{ width: 56, height: 56, borderRadius: 9, background: C.goldBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: C.gold }}>{i + 1}</div>}
+                {fotos.length ? fotos.slice(0, 3).map((u, k) => <button key={k} type="button" onClick={() => setFotoGrande(u)} style={{ width: k === 0 ? 64 : 30, height: 64, borderRadius: 10, overflow: "hidden", border: `1px solid ${P.line}`, background: P.soft, padding: 0, cursor: "zoom-in" }}><img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></button>)
+                  : <div style={{ width: 64, height: 64, borderRadius: 10, background: P.goldBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: P.goldHi }}>{i + 1}</div>}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{p.description || "—"}</p>
-                <p style={{ margin: "3px 0 0", fontSize: 12, color: C.sub, fontVariantNumeric: "tabular-nums" }}>
-                  <b style={{ color: C.txt }}>{p.quantity || 0} u.</b>{verPlata && Number(p.unit_cost_usd) > 0 ? ` × ${n2(p.unit_cost_usd)} = ` : ""}{verPlata && sub > 0 ? <b style={{ color: C.txt }}>USD {n2(sub)}</b> : null}{p.lead_time_days ? ` · ${p.lead_time_days} días de producción` : ""}
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: P.txt }}>{p.description || "—"}</p>
+                <p style={{ margin: "3px 0 0", fontSize: 12.5, color: P.sub, fontVariantNumeric: "tabular-nums" }}>
+                  <b style={{ color: P.txt }}>{p.quantity || 0} u.</b>{verPlata && Number(p.unit_cost_usd) > 0 ? ` × ${n2(p.unit_cost_usd)} = ` : ""}{verPlata && sub > 0 ? <b style={{ color: P.txt }}>USD {n2(sub)}</b> : null}{p.lead_time_days ? ` · ${p.lead_time_days} días de producción` : ""}
                 </p>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
-                  {p.ncm_code ? <><span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.blue }}>{p.ncm_code}</span><span style={{ fontSize: 11.5, color: C.mute }}>DI {p.ncm_di_pct ?? 0}% · Tasa {p.ncm_estad_pct ?? 0}% · IVA {p.ncm_iva_pct ?? 21}%</span></> : <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 700 }}>Sin posición arancelaria</span>}
-                  {p.supplier_ref && (/^https?:/.test(p.supplier_ref) ? <a href={p.supplier_ref} target="_blank" rel="noopener" style={{ fontSize: 12, color: C.blue, fontWeight: 700, textDecoration: "none" }}>Proveedor ↗</a> : <span style={{ fontSize: 11.5, color: C.mute }}>Proveedor: {p.supplier_ref}</span>)}
+                  {p.ncm_code ? <><span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: P.blue, background: P.blueBg, padding: "2px 7px", borderRadius: 6 }}>{p.ncm_code}</span><span style={{ fontSize: 11.5, color: P.mute }}>DI {p.ncm_di_pct ?? 0}% · Tasa {p.ncm_estad_pct ?? 0}% · IVA {p.ncm_iva_pct ?? 21}%</span></> : <span style={{ fontSize: 11.5, color: P.amber, fontWeight: 700 }}>Sin posición arancelaria</span>}
+                  {p.supplier_ref && (/^https?:/.test(p.supplier_ref) ? <a href={p.supplier_ref} target="_blank" rel="noopener" style={{ fontSize: 12, color: P.blue, fontWeight: 700, textDecoration: "none" }}>Proveedor ↗</a> : <span style={{ fontSize: 11.5, color: P.mute }}>Proveedor: {p.supplier_ref}</span>)}
                 </div>
               </div>
             </div>; })}
           </div>}
-        </section>
+        </Papel>
 
         {/* Bultos */}
-        {bultos.length > 0 && <section style={sec}>
-          <p style={tit}>Bultos · {nBultos} · {cbm.toFixed(3)} m³ · {Math.round(kg)} kg</p>
+        {bultos.length > 0 && <Papel title={`Bultos · ${nBultos} · ${cbm.toFixed(3)} m³ · ${Math.round(kg)} kg`}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {bultos.map((k, i) => <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.15)", border: `1px solid ${C.line}`, fontSize: 12.5 }}>
+            {bultos.map((k, i) => <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "9px 12px", borderRadius: 10, background: P.soft, border: `1px solid ${P.line}`, fontSize: 12.5, color: P.txt }}>
               <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{k.n} × {k.l}×{k.w}×{k.h} cm</span>
-              <span style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{n2(Number(k.kg || 0))} kg c/u · {((Number(k.l || 0) * Number(k.w || 0) * Number(k.h || 0) * k.n) / 1e6).toFixed(3)} m³</span>
-              <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.mute }}>{k.prods.length ? k.prods.map(nombreProd).join(" · ") : "todos los productos"}</span>
+              <span style={{ color: P.sub, fontVariantNumeric: "tabular-nums" }}>{n2(Number(k.kg || 0))} kg c/u · {((Number(k.l || 0) * Number(k.w || 0) * Number(k.h || 0) * k.n) / 1e6).toFixed(3)} m³</span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: P.mute }}>{k.prods.length ? k.prods.map(nombreProd).join(" · ") : "todos los productos"}</span>
             </div>)}
           </div>
-        </section>}
+        </Papel>}
 
         {/* Plan de pagos */}
-        {q && plan.length > 0 && <section style={sec}>
-          <p style={tit}>Plan de pagos del cliente{baseCliente > 0 ? ` · sobre ${fmtUSD(baseCliente)}` : ""}</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {plan.map((st, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
-              <span style={{ width: 44, textAlign: "right", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: C.goldHi }}>{st.pct}%</span>
-              <span style={{ flex: 1, color: C.txt }}>{st.label}</span>
-              {baseCliente > 0 && <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(baseCliente * Number(st.pct || 0) / 100)}</span>}
+        {q && plan.length > 0 && <Papel title={`Plan de pagos del cliente${baseCliente > 0 ? ` · sobre ${fmtUSD(baseCliente)}` : ""}`}>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(plan.length, movil ? 2 : 4)},minmax(0,1fr))`, gap: 8 }}>
+            {plan.map((st, i) => <div key={i} style={{ padding: "12px 14px", borderRadius: 12, background: P.soft, border: `1px solid ${P.line}` }}>
+              <p style={{ margin: 0, fontSize: 20, fontWeight: 900, color: P.goldHi, fontVariantNumeric: "tabular-nums" }}>{st.pct}%</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: P.sub }}>{st.label}</p>
+              {baseCliente > 0 && <p style={{ margin: "6px 0 0", fontSize: 14, fontWeight: 800, color: P.txt, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(baseCliente * Number(st.pct || 0) / 100)}</p>}
             </div>)}
           </div>
-        </section>}
+        </Papel>}
 
-        {r.notes && <section style={sec}><p style={tit}>Notas internas</p><p style={{ margin: 0, fontSize: 13.5, color: C.sub, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{r.notes}</p></section>}
+        {r.notes && <Papel title="Notas internas"><p style={{ margin: 0, fontSize: 13.5, color: P.sub, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{r.notes}</p></Papel>}
       </div>
 
-      <section style={sec}>
-        <p style={tit}>Historial</p>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <input value={nota} onChange={(x) => setNota(x.target.value)} onKeyDown={(x) => { if (x.key === "Enter") agregarNota(); }} placeholder="Agregar una nota…" style={{ ...inp, padding: "9px 11px", fontSize: 13 }} />
-          <Btn small onClick={agregarNota} disabled={!nota.trim()}>Guardar</Btn>
-        </div>
-        {ev.length === 0 ? <p style={{ color: C.mute, fontSize: 13, margin: 0 }}>Sin movimientos todavía.</p> : <div style={{ position: "relative", paddingLeft: 26 }}>
-          <div style={{ position: "absolute", left: 9, top: 10, bottom: 10, width: 2, background: C.line }} />
-          {ev.map((c, i) => { const t = TIPO_EV[c.type] || { i: "·", l: c.type }; const fuerte = ["accepted", "rejected", "converted", "link_viewed"].includes(c.type); return <div key={i} style={{ position: "relative", padding: "7px 0" }}>
-            <span style={{ position: "absolute", left: -26, top: 9, width: 20, height: 20, borderRadius: "50%", background: fuerte ? C.goldBg : C.panel, border: `1px solid ${fuerte ? C.gold : C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>{t.i}</span>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: fuerte ? 800 : 700 }}>{t.l}{c.meta?.email && ["accepted", "rejected", "link_viewed", "account_created"].includes(c.type) ? <span style={{ fontWeight: 500, color: C.mute }}> · {c.meta.email}</span> : null}</p>
-              <span style={{ fontSize: 11, color: C.mute, whiteSpace: "nowrap" }}>{fmtDateTime(c.created_at)}</span>
-            </div>
-            {c.content && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub, whiteSpace: "pre-wrap" }}>{c.content}</p>}
-            {c.type === "rejected" && c.meta?.reason && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub }}>“{c.meta.reason}”</p>}
-            {c.type === "accepted" && c.meta?.total ? <p style={{ margin: "3px 0 0", fontSize: 12.5, color: C.sub }}>{GI_CANALES[c.meta.channel]?.nombre || c.meta.channel} · {fmtUSD(c.meta.total)}</p> : null}
-          </div>; })}
-        </div>}
-      </section>
+      {/* Columna derecha: solo información */}
+      <div style={{ position: movil ? "static" : "sticky", top: 16, maxHeight: movil ? "none" : "calc(100vh - 32px)", overflowY: movil ? "visible" : "auto", paddingRight: movil ? 0 : 2 }} className="gi-scroll">
+        <Papel title="Datos">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
+            {verPlata ? <DatoP label="FOB al proveedor" val={fob > 0 ? fmtUSD(fob) : "—"} sub={lista.length ? `${lista.length} producto${lista.length !== 1 ? "s" : ""}` : null} /> : <DatoP label="Productos" val={String(lista.length)} />}
+            <DatoP label="Bultos" val={nBultos ? String(nBultos) : "—"} sub={nBultos ? `${cbm.toFixed(3)} m³ · ${Math.round(kg)} kg` : "sin cargar"} c={nBultos ? P.txt : P.amber} />
+            {verPlata && q && <DatoP label="Honorarios GI" val={`${honor || 0} %`} sub={masBarato ? `${fmtUSD(masBarato.honorarios)} en ${masBarato.nombre.toLowerCase()}` : null} />}
+            {q && <DatoP label="Anticipo proveedor" val={q.supplier_deposit_pct != null ? `${q.supplier_deposit_pct} %` : "—"} sub={fob > 0 && q.supplier_deposit_pct != null ? fmtUSD(fob * q.supplier_deposit_pct / 100) : null} />}
+            <DatoP label="Producción" val={produccion ? `${produccion} días` : "—"} sub="la más larga" />
+            <DatoP label="Validez" val={q?.expires_at ? fmtDate(q.expires_at) : r.expires_at ? fmtDate(r.expires_at) : "—"} c={q && vencida(q) ? P.red : P.txt} sub={q ? (vencida(q) ? "vencida" : q.sent_at ? `enviada ${fmtDate(q.sent_at)}` : "sin enviar") : null} />
+            <DatoP label="Creada" val={fmtDate(r.created_at)} />
+            <DatoP label="Socio" val={socio ? socio.email.split("@")[0] : "Argencargo"} />
+            {q?.delivery_zone && <DatoP label="Zona de entrega" val={q.delivery_zone} />}
+            {e.vistas > 0 && <DatoP label="Vistas del cliente" val={String(e.vistas)} sub={e.ultimaVista ? `última ${hace(e.ultimaVista)}` : null} />}
+          </div>
+        </Papel>
+
+        <Papel title="Historial">
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <input value={nota} onChange={(x) => setNota(x.target.value)} onKeyDown={(x) => { if (x.key === "Enter") agregarNota(); }} placeholder="Agregar una nota…" style={{ ...inpP, padding: "9px 11px", fontSize: 13 }} />
+            <BtnP small onClick={agregarNota} disabled={!nota.trim()}>Guardar</BtnP>
+          </div>
+          {ev.length === 0 ? <p style={{ color: P.mute, fontSize: 13, margin: 0 }}>Sin movimientos todavía.</p> : <div style={{ position: "relative", paddingLeft: 26 }}>
+            <div style={{ position: "absolute", left: 9, top: 10, bottom: 10, width: 2, background: P.line }} />
+            {ev.map((c, i) => { const t = TIPO_EV[c.type] || { i: "·", l: c.type }; const fuerte = ["accepted", "rejected", "converted", "link_viewed"].includes(c.type); return <div key={i} style={{ position: "relative", padding: "7px 0" }}>
+              <span style={{ position: "absolute", left: -26, top: 9, width: 20, height: 20, borderRadius: "50%", background: fuerte ? P.goldBg : P.soft, border: `1px solid ${fuerte ? P.gold : P.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>{t.i}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: fuerte ? 800 : 700, color: P.txt }}>{t.l}{c.meta?.email && ["accepted", "rejected", "link_viewed", "account_created"].includes(c.type) ? <span style={{ fontWeight: 500, color: P.mute }}> · {c.meta.email}</span> : null}</p>
+                <span style={{ fontSize: 11, color: P.mute, whiteSpace: "nowrap" }}>{fmtDateTime(c.created_at)}</span>
+              </div>
+              {c.content && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: P.sub, whiteSpace: "pre-wrap" }}>{c.content}</p>}
+              {c.type === "rejected" && c.meta?.reason && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: P.sub }}>“{c.meta.reason}”</p>}
+              {c.type === "accepted" && c.meta?.total ? <p style={{ margin: "3px 0 0", fontSize: 12.5, color: P.sub }}>{GI_CANALES[c.meta.channel]?.nombre || c.meta.channel} · {fmtUSD(c.meta.total)}</p> : null}
+            </div>; })}
+          </div>}
+        </Papel>
+      </div>
     </div>
     {fotoGrande && <div onClick={() => setFotoGrande(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(5,10,20,0.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={fotoGrande} alt="" style={{ maxWidth: "92vw", maxHeight: "88vh", borderRadius: 12, objectFit: "contain" }} /></div>}
   </div>;
@@ -828,7 +829,7 @@ function Operaciones({ ctx }) {
       <Codigo>{o.operation_code}</Codigo>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(o.clients)}</span>
       <span style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{usd0(res.venta)}</span>
-      {verPlata && <span style={{ fontSize: 12.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: (rol === "socio" ? res.comision : res.real) >= 0 ? C.green : C.red }}>{rol === "socio" ? "comisión " : ""}{usd0(rol === "socio" ? res.comision : res.real)}</span>}
+      {verPlata && <span style={{ fontSize: 12.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: res.real >= 0 ? C.green : C.red }}>{usd0(res.real)}</span>}
       <Pill c={(GI_ESTADOS[o.status] || {}).c}>{(GI_ESTADOS[o.status] || {}).l}</Pill>
     </Fila>} />
   </div>;
@@ -842,7 +843,7 @@ const METODOS_COBRO = [
 ];
 
 function OpDetalle({ ctx, id }) {
-  const { token, rol, d, ir, recargar, movil } = ctx;
+  const { token, rol, pleno, d, ir, recargar, movil } = ctx;
   const [op, setOp] = useState(null);
   const [cobros, setCobros] = useState([]);
   const [pagos, setPagos] = useState([]);
@@ -852,8 +853,7 @@ function OpDetalle({ ctx, id }) {
   const [tarjetas, setTarjetas] = useState([]);
   const [modal, setModal] = useState(null);
   const verPlata = rol !== "empleado";
-  const admin = rol === "admin";
-  const staff = rol !== "socio";
+  const admin = pleno; // socios con control total (20/10/2026)
 
   const cargar = useCallback(async () => {
     const [o, cp, sp, it, pk, ea, tj] = await Promise.all([
@@ -883,7 +883,7 @@ function OpDetalle({ ctx, id }) {
     setOp((p) => ({ ...p, ...body })); if (msg) toast.success(msg); recargar(); return true;
   };
   const cambiarEtapa = async (k) => {
-    if (k === op.status || !staff) return;
+    if (k === op.status) return;
     if (k === "operacion_cerrada") return cerrar();
     await patchOp({ status: k }, `Etapa: ${GI_ESTADOS[k].l}`);
   };
@@ -896,6 +896,10 @@ function OpDetalle({ ctx, id }) {
     if (earning?.paid_to_partner) { toast.error("La comisión ya se le pagó al socio"); return; }
     if (!await confirmDialog(`¿Reabrir ${op.operation_code}?`)) return;
     if (await patchOp({ status: "entregada", closed_at: null }, "Operación reabierta")) cargar();
+  };
+  const cancelar = async () => {
+    if (!await confirmDialog(`¿Cancelar ${op.operation_code}? Queda en el historial como cancelada.`, { danger: true })) return;
+    if (await patchOp({ status: "cancelada" }, "Operación cancelada")) cargar();
   };
   const borrarCobro = async (c) => {
     if (!await confirmDialog(`¿Borrar el cobro de ${fmtUSD(c.amount_usd)}?`, { danger: true })) return;
@@ -914,102 +918,145 @@ function OpDetalle({ ctx, id }) {
     await dq("operation_supplier_payments", { method: "PATCH", token, filters: `?id=eq.${p.id}`, body: { is_paid: !p.is_paid, paid_at: !p.is_paid ? new Date().toISOString() : null } });
     refrescar();
   };
-  // cost_producto_usd = pagos al proveedor en USD (lo usan los listados viejos del admin).
   const sincronizarCostoProducto = async (lista) => {
     const t = lista.reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
     await dq("operations", { method: "PATCH", token, filters: `?id=eq.${op.id}`, body: { cost_producto_usd: Math.round(t * 100) / 100 } });
+  };
+  const editarVenta = async () => {
+    const v = await promptDialog("Venta total al cliente (USD)", { defaultValue: String(Number(op.budget_total || 0)) });
+    if (v === null || v === undefined) return;
+    const n = Number(String(v).replace(",", "."));
+    if (!(n >= 0)) { toast.error("Monto inválido"); return; }
+    await patchOp({ budget_total: Math.round(n * 100) / 100 }, "Venta actualizada");
   };
 
   const kg = bultos.reduce((s, b) => s + Number(b.gross_weight_kg || 0) * Number(b.quantity || 1), 0);
   const cbm = bultos.reduce((s, b) => s + (Number(b.length_cm || 0) * Number(b.width_cm || 0) * Number(b.height_cm || 0)) / 1e6 * Number(b.quantity || 1), 0);
   const etapas = GI_FLUJO;
   const idx = etapas.indexOf(op.status);
+  const gan = cerrada ? res.real : res.ganancia;
+  const EC = { pendiente: P.mute, en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: P.amber, entregada: P.green, operacion_cerrada: P.green, cancelada: P.red }[op.status] || P.sub;
+  const fila = { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${P.line}` };
+  const xBtn = (fn) => <button onClick={fn} aria-label="Borrar" style={{ border: "none", background: "transparent", color: P.mute, cursor: "pointer", fontSize: 15 }}>✕</button>;
 
   return <div>
     <Volver onClick={() => ir("operaciones")} />
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "minmax(0,1fr) 320px", gap: 14, alignItems: "start" }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: MONO, fontSize: 20, fontWeight: 800, color: C.goldHi }}>{op.operation_code}</span>
-          <Pill c={st.c}>{st.l}</Pill>
-        </div>
-        <p style={{ fontSize: 18, fontWeight: 800, margin: "6px 0 2px" }}>{nombre(op.clients)}</p>
-        <p style={{ fontSize: 12.5, color: C.mute, margin: 0 }}>{GI_CANALES[op.channel]?.largo || op.channel}{op.origin ? ` · ${op.origin}` : ""} · {socio ? `Socio: ${socio.email.split("@")[0]}` : "De Argencargo"}</p>
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {staff && <Btn v="gold" onClick={() => setModal("cobro")}>+ Cobro</Btn>}
-        {admin && <Btn onClick={() => setModal("costo")}>+ Costo</Btn>}
-        {admin && !cerrada && op.status !== "cancelada" && <Btn v={res.saldo > 0.5 ? "sec" : "green"} onClick={cerrar}>{res.saldo > 0.5 ? `Falta cobrar ${usd0(res.saldo)}` : "Cerrar operación"}</Btn>}
-        {admin && cerrada && <Btn v="ghost" onClick={reabrir}>Reabrir</Btn>}
-      </div>
-    </div>
-
-    {/* Etapa: se toca para cambiar */}
-    <Caja title="Etapa" right={staff && !cerrada ? <div style={{ width: 170 }}><DatePicker small value={op.eta ? String(op.eta).slice(0, 10) : ""} onChange={(v) => patchOp({ eta: v || null }, "ETA guardada")} placeholder="ETA" /></div> : op.eta ? <span style={{ fontSize: 12.5, color: C.sub }}>ETA {fmtDate(op.eta)}</span> : null}>
-      <div className="gi-scroll" style={{ display: "flex", gap: 6, overflowX: "auto" }}>
-        {etapas.map((k, i) => { const on = k === op.status; const hecho = idx >= 0 && i < idx; const e2 = GI_ESTADOS[k]; return <button key={k} onClick={() => cambiarEtapa(k)} disabled={!staff || (k === "operacion_cerrada" && !admin)} style={{ flexShrink: 0, padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: on ? 800 : 600, fontFamily: "inherit", cursor: staff ? "pointer" : "default", border: `1.5px solid ${on ? e2.c : hecho ? `${e2.c}55` : C.line}`, background: on ? `${e2.c}22` : "transparent", color: on ? e2.c : hecho ? C.sub : C.mute }}>{hecho ? "✓ " : ""}{e2.l}</button>; })}
-      </div>
-    </Caja>
-
-    {/* Plata */}
-    <Caja title="Plata">
-      <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : `repeat(${verPlata ? (admin ? 6 : 5) : 3},1fr)`, gap: 14 }}>
-        <Dato label="Venta" val={fmtUSD(res.venta)} />
-        <Dato label="Cobrado" val={fmtUSD(res.cobrado)} c={C.green} />
-        <Dato label="Saldo" val={fmtUSD(res.saldo)} c={res.saldo > 0.5 ? C.amber : C.sub} />
-        {verPlata && <Dato label="Costos" val={fmtUSD(res.costos)} c={C.red} sub={res.estimado ? "con pesos estimados" : null} />}
-        {verPlata && <Dato label={cerrada ? "Ganancia" : "Ganancia proy."} val={fmtUSD(cerrada ? res.real : res.ganancia)} c={(cerrada ? res.real : res.ganancia) >= 0 ? C.green : C.red} />}
-        {verPlata && <Dato label={socio ? `Comisión ${res.pct}%` : "Comisión"} val={socio ? fmtUSD(earning ? earning.commission_usd : res.comision) : "—"} c={C.goldHi} sub={earning ? (earning.paid_to_partner ? `pagada ${fmtDateShort(earning.paid_at)}` : earning.is_estimated ? "estimada" : "a pagar") : null} />}
-      </div>
-      {admin && socio && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: C.sub }}>Queda para Argencargo: <strong style={{ color: C.txt }}>{fmtUSD(earning ? Number(earning.net_profit_usd) - Number(earning.commission_usd) : res.margenAC)}</strong></p>}
-    </Caja>
-
-    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1fr 1fr", gap: 14, alignItems: "start" }}>
-      <Caja title={`Cobros del cliente (${cobros.length})`}>
-        {cobros.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin cobros todavía.</p> : cobros.map((c) => <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>{fmtDateShort(c.payment_date)} · {c.payment_method === "cripto" ? "USDT" : (c.payment_method || "—").replace(/_/g, " ")}{c.currency === "ARS" && c.amount_ars ? ` · ARS ${Number(c.amount_ars).toLocaleString("es-AR")} a ${c.exchange_rate}` : ""}</p>
-            {c.notes && <p style={{ margin: "2px 0 0", fontSize: 12, color: C.mute }}>{c.notes}</p>}
-          </div>
-          <span style={{ fontWeight: 800, color: C.green, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(c.amount_usd)}</span>
-          {admin && <button onClick={() => borrarCobro(c)} aria-label="Borrar" style={{ border: "none", background: "transparent", color: C.mute, cursor: "pointer", fontSize: 15 }}>✕</button>}
-        </div>)}
-      </Caja>
-
-      {verPlata && <Caja title={`Costos (${pagos.length + (res.costosFijos > 0 ? 1 : 0)})`}>
-        {pagos.length === 0 && res.costosFijos === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin costos cargados.</p> : <>
-          {pagos.map((p) => { const ref = p.type === "refund"; const pendiente = Number(p.amount_usd || 0) === 0 && Number(p.amount_ars || 0) > 0; return <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>{ref ? "↩ Reembolso" : p.notes || "Pago a proveedor"}</p>
-              <p style={{ margin: "2px 0 0", fontSize: 12, color: C.mute }}>{fmtDateShort(p.payment_date)} · {(p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
+        <Papel acento={EC} pad={movil ? 16 : 22}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: P.goldHi }}>{op.operation_code}</span>
+                <PillP c={EC}>{st.l}</PillP>
+              </div>
+              <p style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 2px", color: P.txt, letterSpacing: "-0.01em" }}>{nombre(op.clients)}</p>
+              <p style={{ fontSize: 12.5, color: P.mute, margin: 0 }}>{GI_CANALES[op.channel]?.largo || op.channel}{op.origin ? ` · ${op.origin}` : ""} · {socio ? `Socio ${socio.email.split("@")[0]}` : "De Argencargo"}</p>
             </div>
-            {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 9px", borderRadius: 999, border: `1px solid ${p.is_paid ? "rgba(52,211,153,0.4)" : "rgba(251,191,36,0.4)"}`, background: "transparent", color: p.is_paid ? C.green : C.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <Pill c={p.is_paid ? C.green : C.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</Pill>}
-            <span style={{ fontWeight: 800, color: ref ? C.green : C.red, fontVariantNumeric: "tabular-nums", minWidth: 86, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
-            {admin && <button onClick={() => borrarPago(p)} aria-label="Borrar" style={{ border: "none", background: "transparent", color: C.mute, cursor: "pointer", fontSize: 15 }}>✕</button>}
-          </div>; })}
-          {res.costosFijos > 0 && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ flex: 1 }}><p style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>Flete, impuestos y despacho</p><p style={{ margin: "2px 0 0", fontSize: 12, color: C.mute }}>Del vuelo / contenedor</p></div>
-            <span style={{ fontWeight: 800, color: C.red, fontVariantNumeric: "tabular-nums" }}>−{usd0(res.costosFijos)}</span>
-          </div>}
-          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontWeight: 800 }}><span style={{ color: C.sub }}>Total</span><span style={{ color: C.red, fontVariantNumeric: "tabular-nums" }}>−{fmtUSD(res.costos)}</span></div>
-        </>}
-      </Caja>}
+            <div style={{ textAlign: "right", padding: "10px 14px", borderRadius: 12, background: res.saldo > 0.5 ? P.amberBg : P.greenBg }}>
+              <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: res.saldo > 0.5 ? P.amber : P.green }}>{res.saldo > 0.5 ? "Falta cobrar" : "Cobrada"}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 26, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{res.saldo > 0.5 ? fmtUSD(res.saldo) : fmtUSD(res.cobrado)}</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+            <BtnP v="gold" onClick={() => setModal("cobro")}>+ Cobro</BtnP>
+            {admin && <BtnP onClick={() => setModal("costo")}>+ Costo</BtnP>}
+            {admin && <BtnP onClick={editarVenta}>✎ Venta</BtnP>}
+            <span style={{ flex: 1 }} />
+            {admin && !cerrada && op.status !== "cancelada" && <BtnP v={res.saldo > 0.5 ? "sec" : "green"} onClick={cerrar}>{res.saldo > 0.5 ? `Falta cobrar ${usd0(res.saldo)}` : "Cerrar operación"}</BtnP>}
+            {admin && cerrada && <BtnP v="ghost" onClick={reabrir}>Reabrir</BtnP>}
+            {admin && !cerrada && op.status !== "cancelada" && <BtnP v="ghost" onClick={cancelar} style={{ color: P.red }}>Cancelar</BtnP>}
+          </div>
+        </Papel>
 
-      <Caja title={`Productos (${items.length})`}>
-        {items.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin productos.</p> : items.map((it) => <div key={it.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.line}` }}>
-          <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>{it.description}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: C.mute }}>{it.quantity} u.{it.ncm_code ? ` · NCM ${it.ncm_code}` : ""}</p></div>
-          <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{usd0(Number(it.unit_price_usd || 0) * Number(it.quantity || 0))}</span>
-        </div>)}
-      </Caja>
+        <Papel title="Etapa" right={!cerrada ? <div style={{ width: 170 }}><DatePicker small value={op.eta ? String(op.eta).slice(0, 10) : ""} onChange={(v) => patchOp({ eta: v || null }, "ETA guardada")} placeholder="ETA" /></div> : op.eta ? <span style={{ fontSize: 12.5, color: P.sub }}>ETA {fmtDate(op.eta)}</span> : null}>
+          <div className="gi-scroll" style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+            {etapas.map((k, i) => { const on = k === op.status; const hecho = idx >= 0 && i < idx; const e2 = GI_ESTADOS[k]; const col = { pendiente: P.mute, en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: P.amber, entregada: P.green, operacion_cerrada: P.green }[k] || P.sub; return <button key={k} onClick={() => cambiarEtapa(k)} disabled={k === "operacion_cerrada" && !admin} style={{ flexShrink: 0, padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: on ? 800 : 600, fontFamily: "inherit", cursor: "pointer", border: `1.5px solid ${on ? col : hecho ? `${col}66` : P.line}`, background: on ? `${col}18` : hecho ? P.soft : "#fff", color: on ? col : hecho ? P.sub : P.mute }}>{hecho ? "✓ " : ""}{e2.l}</button>; })}
+          </div>
+        </Papel>
 
-      <Caja title={`Bultos (${bultos.reduce((s, b) => s + Number(b.quantity || 1), 0)})`} right={bultos.length ? <span style={{ fontSize: 12.5, color: C.sub }}>{kg.toFixed(1)} kg · {cbm.toFixed(3)} m³</span> : null}>
-        {bultos.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin bultos cargados.</p> : bultos.map((b) => <div key={b.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.line}`, fontSize: 13 }}>
-          <span>#{b.package_number}{Number(b.quantity) > 1 ? ` ×${b.quantity}` : ""} · {b.length_cm && b.width_cm && b.height_cm ? `${b.length_cm}×${b.width_cm}×${b.height_cm} cm` : "sin medidas"}</span>
-          <span style={{ color: C.sub }}>{Number(b.gross_weight_kg || 0) > 0 ? `${Number(b.gross_weight_kg).toFixed(1)} kg` : "—"}</span>
-        </div>)}
-      </Caja>
+        <Papel title="Plata">
+          <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : `repeat(${verPlata ? 6 : 3},1fr)`, gap: 14 }}>
+            <DatoP label="Venta" val={fmtUSD(res.venta)} />
+            <DatoP label="Cobrado" val={fmtUSD(res.cobrado)} c={P.green} />
+            <DatoP label="Saldo" val={fmtUSD(res.saldo)} c={res.saldo > 0.5 ? P.amber : P.mute} />
+            {verPlata && <DatoP label="Costos" val={fmtUSD(res.costos)} c={P.red} sub={res.estimado ? "con pesos estimados" : null} />}
+            {verPlata && <DatoP label={cerrada ? "Ganancia" : "Ganancia proy."} val={fmtUSD(gan)} c={gan >= 0 ? P.green : P.red} />}
+            {verPlata && <DatoP label={socio ? `Comisión ${res.pct}%` : "Comisión"} val={socio ? fmtUSD(earning ? earning.commission_usd : res.comision) : "—"} c={P.goldHi} sub={earning ? (earning.paid_to_partner ? `pagada ${fmtDateShort(earning.paid_at)}` : earning.is_estimated ? "estimada" : "a pagar") : null} />}
+          </div>
+          {verPlata && socio && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: P.sub }}>Queda para Argencargo: <strong style={{ color: P.txt }}>{fmtUSD(earning ? Number(earning.net_profit_usd) - Number(earning.commission_usd) : res.margenAC)}</strong></p>}
+        </Papel>
 
-      {admin && <SocioOp op={op} socios={d.socios} onGuardar={patchOp} pctActual={res.pct} />}
+        <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1fr 1fr", gap: 12, alignItems: "start" }}>
+          <Papel title={`Cobros del cliente · ${cobros.length}`}>
+            {cobros.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin cobros todavía.</p> : cobros.map((c) => <div key={c.id} style={fila}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{fmtDateShort(c.payment_date)} · {c.payment_method === "cripto" ? "USDT" : (c.payment_method || "—").replace(/_/g, " ")}{c.currency === "ARS" && c.amount_ars ? ` · ARS ${Number(c.amount_ars).toLocaleString("es-AR")} a ${c.exchange_rate}` : ""}</p>
+                {c.notes && <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{c.notes}</p>}
+              </div>
+              <span style={{ fontWeight: 800, color: P.green, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(c.amount_usd)}</span>
+              {admin && xBtn(() => borrarCobro(c))}
+            </div>)}
+          </Papel>
+
+          {verPlata && <Papel title={`Costos · ${pagos.length + (res.costosFijos > 0 ? 1 : 0)}`}>
+            {pagos.length === 0 && res.costosFijos === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin costos cargados.</p> : <>
+              {pagos.map((p) => { const ref = p.type === "refund"; const pendiente = Number(p.amount_usd || 0) === 0 && Number(p.amount_ars || 0) > 0; return <div key={p.id} style={fila}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{ref ? "↩ Reembolso" : p.notes || "Pago a proveedor"}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{fmtDateShort(p.payment_date)} · {(p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
+                </div>
+                {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 9px", borderRadius: 999, border: `1px solid ${p.is_paid ? "#86efac" : "#fcd34d"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
+                <span style={{ fontWeight: 800, color: ref ? P.green : P.red, fontVariantNumeric: "tabular-nums", minWidth: 86, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
+                {admin && xBtn(() => borrarPago(p))}
+              </div>; })}
+              {res.costosFijos > 0 && <div style={fila}>
+                <div style={{ flex: 1 }}><p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>Flete, impuestos y despacho</p><p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>Del vuelo / contenedor</p></div>
+                <span style={{ fontWeight: 800, color: P.red, fontVariantNumeric: "tabular-nums" }}>−{usd0(res.costosFijos)}</span>
+              </div>}
+              <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontWeight: 800 }}><span style={{ color: P.sub }}>Total</span><span style={{ color: P.red, fontVariantNumeric: "tabular-nums" }}>−{fmtUSD(res.costos)}</span></div>
+            </>}
+          </Papel>}
+
+          <Papel title={`Productos · ${items.length}`}>
+            {items.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin productos.</p> : items.map((it) => <div key={it.id} style={{ ...fila, justifyContent: "space-between" }}>
+              <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{it.description}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{it.quantity} u.{it.ncm_code ? ` · NCM ${it.ncm_code}` : ""}</p></div>
+              <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: P.txt }}>{usd0(Number(it.unit_price_usd || 0) * Number(it.quantity || 0))}</span>
+            </div>)}
+          </Papel>
+
+          <Papel title={`Bultos · ${bultos.reduce((s, b) => s + Number(b.quantity || 1), 0)}`} right={bultos.length ? <span style={{ fontSize: 12.5, color: P.sub }}>{kg.toFixed(1)} kg · {cbm.toFixed(3)} m³</span> : null}>
+            {bultos.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin bultos cargados.</p> : bultos.map((b) => <div key={b.id} style={{ ...fila, justifyContent: "space-between", fontSize: 13, color: P.txt }}>
+              <span>#{b.package_number}{Number(b.quantity) > 1 ? ` ×${b.quantity}` : ""} · {b.length_cm && b.width_cm && b.height_cm ? `${b.length_cm}×${b.width_cm}×${b.height_cm} cm` : "sin medidas"}</span>
+              <span style={{ color: P.sub }}>{Number(b.gross_weight_kg || 0) > 0 ? `${Number(b.gross_weight_kg).toFixed(1)} kg` : "—"}</span>
+            </div>)}
+          </Papel>
+
+          {admin && <SocioOp op={op} socios={d.socios} onGuardar={patchOp} pctActual={res.pct} />}
+        </div>
+      </div>
+
+      {/* Columna derecha: solo información */}
+      <div style={{ position: movil ? "static" : "sticky", top: 16, maxHeight: movil ? "none" : "calc(100vh - 32px)", overflowY: movil ? "visible" : "auto" }} className="gi-scroll">
+        <Papel title="Datos">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
+            <DatoP label="Cliente" val={nombre(op.clients)} sub={op.clients?.client_code} />
+            <DatoP label="WhatsApp" val={op.clients?.whatsapp && op.clients.whatsapp !== "—" ? op.clients.whatsapp : "—"} />
+            <DatoP label="Canal" val={GI_CANALES[op.channel]?.nombre || op.channel} />
+            <DatoP label="Origen" val={op.origin || "—"} />
+            <DatoP label="Socio" val={socio ? socio.email.split("@")[0] : "Argencargo"} sub={socio ? `${res.pct}% de comisión` : null} />
+            <DatoP label="ETA" val={op.eta ? fmtDate(op.eta) : "—"} />
+            <DatoP label="Creada" val={fmtDate(op.created_at)} />
+            {op.closed_at && <DatoP label="Cerrada" val={fmtDate(op.closed_at)} />}
+            <DatoP label="Carga" val={bultos.length ? `${kg.toFixed(1)} kg` : "—"} sub={bultos.length ? `${cbm.toFixed(3)} m³` : null} />
+            <DatoP label="Productos" val={String(items.length)} />
+          </div>
+          {op.description && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: P.sub, lineHeight: 1.5 }}>{op.description}</p>}
+        </Papel>
+        {verPlata && <Papel title="Resumen">
+          {[["Venta", res.venta, P.txt], ["Cobrado", res.cobrado, P.green], ["Costos", -res.costos, P.red], [cerrada ? "Ganancia" : "Ganancia proy.", gan, gan >= 0 ? P.green : P.red], socio ? [`Comisión ${res.pct}%`, earning ? Number(earning.commission_usd) : res.comision, P.goldHi] : null, socio ? ["Para Argencargo", earning ? Number(earning.net_profit_usd) - Number(earning.commission_usd) : res.margenAC, P.txt] : null].filter(Boolean).map(([l, v, c]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: `1px solid ${P.line}`, fontSize: 13 }}><span style={{ color: P.sub }}>{l}</span><strong style={{ color: c, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(v)}</strong></div>)}
+        </Papel>}
+      </div>
     </div>
 
     {modal === "cobro" && <CobroModal op={op} saldo={res.saldo} token={token} cobrado={res.cobrado} onClose={() => setModal(null)} onListo={() => { setModal(null); refrescar(); }} />}
@@ -1024,11 +1071,14 @@ function SocioOp({ op, socios, onGuardar, pctActual }) {
   useEffect(() => { setSel(actual); setPct(op.gi_commission_pct != null ? String(op.gi_commission_pct) : ""); }, [op.id, op.gi_partner_id, op.gi_admin_owned, op.gi_commission_pct]);
   const cambio = sel !== actual || pct !== (op.gi_commission_pct != null ? String(op.gi_commission_pct) : "");
   const guardar = () => onGuardar({ gi_admin_owned: !sel, gi_partner_id: sel || null, gi_commission_pct: sel && pct !== "" ? Number(pct) : null }, "Socio actualizado");
-  return <Caja title="Socio y comisión">
-    <Opciones value={sel} onChange={setSel} items={[{ k: "", l: "Argencargo" }, ...socios.map((s) => ({ k: s.id, l: s.email.split("@")[0] }))]} />
-    {sel && <Campo label={`% de esta op (vacío = ${pctActual}% de la ficha/socio)`} style={{ marginTop: 12 }}><input inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value.replace(",", "."))} style={inp} /></Campo>}
-    {cambio && <Btn v="gold" small onClick={guardar} style={{ marginTop: 10 }}>Guardar</Btn>}
-  </Caja>;
+  const items = [{ k: "", l: "Argencargo" }, ...socios.map((s) => ({ k: s.id, l: s.email.split("@")[0] }))];
+  return <Papel title="Socio y comisión">
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(120px,1fr))`, gap: 6 }}>
+      {items.map((it) => { const on = sel === it.k; return <button key={it.k} type="button" onClick={() => setSel(it.k)} style={{ padding: "9px 10px", borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${on ? P.gold : P.line}`, background: on ? P.goldBg : "#fff", color: on ? P.goldHi : P.sub }}>{it.l}</button>; })}
+    </div>
+    {sel && <label style={{ display: "block", marginTop: 12 }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: P.mute, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>% de esta op (vacío = {pctActual}% de la ficha/socio)</span><input inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value.replace(",", "."))} style={inpP} /></label>}
+    {cambio && <BtnP v="gold" small onClick={guardar} style={{ marginTop: 10 }}>Guardar</BtnP>}
+  </Papel>;
 }
 
 function CobroModal({ op, saldo, cobrado, token, onClose, onListo }) {
@@ -1135,8 +1185,130 @@ function ClienteSocioModal({ c, d, token, onClose, onListo }) {
   </Modal>;
 }
 
+
+// Marca como pagadas las comisiones de un socio y registra el gasto en el libro de Argencargo.
+async function liquidarComisiones({ socio, lista, token, opDe }) {
+  const est = lista.filter((e) => e.is_estimated);
+  if (est.length) { toast.error(`${est.length} liquidación${est.length > 1 ? "es tienen" : " tiene"} costos en pesos sin dolarizar`); return false; }
+  const total = lista.reduce((a, e) => a + Number(e.commission_usd || 0), 0);
+  if (!await confirmDialog(`¿Marcar como pagadas ${lista.length} comisión${lista.length > 1 ? "es" : ""} de ${socio.email.split("@")[0]} por ${fmtUSD(total)}?`)) return false;
+  const ahora = new Date().toISOString(), hoy = hoyISO();
+  for (const e of lista) {
+    const com = Number(e.commission_usd || 0);
+    await dq("gi_partner_earnings", { method: "PATCH", token, filters: `?id=eq.${e.id}`, body: { paid_to_partner: true, paid_at: ahora, paid_amount_usd: com } });
+    if (com !== 0) {
+      const code = opDe(e.operation_id)?.operation_code || "—";
+      await dq("finance_entries", { method: "POST", token, body: { date: hoy, type: com >= 0 ? "gasto" : "ingreso", category: "comisiones_socio", description: com >= 0 ? `Comisión socio GI · ${code}` : `Recupero pérdida socio GI · ${code}`, detail: `${Number(e.commission_pct || 0)}% sobre USD ${Number(e.net_profit_usd || 0).toFixed(2)} · Pagada ${hoy}`, amount: Math.abs(com), currency: "USD", is_paid: true, payment_method: "transferencia", auto_generated: true, operation_id: e.operation_id } });
+    }
+  }
+  toast.success("Comisiones liquidadas");
+  return true;
+}
+
 // ────────────────────────────────────────────
-// SOCIOS (admin) / MIS COMISIONES (socio)
+// FINANZAS: todos los números de las operaciones de GI, en listas planas (20/10/2026)
+// ────────────────────────────────────────────
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const mesDe = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const mesLabel = (ym) => { const [y, m] = ym.split("-"); return `${MESES_CORTOS[Number(m) - 1]} ${y.slice(2)}`; };
+
+function Finanzas({ ctx }) {
+  const { token, d, ir, movil, recargar } = ctx;
+  const [periodo, setPeriodo] = useState("12m");
+  const [quien, setQuien] = useState("todos");
+  const [pagando, setPagando] = useState(null);
+  const ahora = new Date();
+  const desde = periodo === "mes" ? new Date(ahora.getFullYear(), ahora.getMonth(), 1) : periodo === "3m" ? new Date(ahora.getFullYear(), ahora.getMonth() - 2, 1) : periodo === "12m" ? new Date(ahora.getFullYear(), ahora.getMonth() - 11, 1) : periodo === "anio" ? new Date(ahora.getFullYear(), 0, 1) : null;
+  const pagosPor = {}; d.pagos.forEach((p) => { (pagosPor[p.operation_id] = pagosPor[p.operation_id] || []).push(p); });
+  const cobrosPor = {}; d.cobros.forEach((c) => { (cobrosPor[c.operation_id] = cobrosPor[c.operation_id] || []).push(c); });
+  const socioNombre = (id) => (d.socios.find((x) => x.id === id)?.email || "").split("@")[0] || "—";
+  const filas = d.ops.filter((o) => o.status !== "cancelada").map((o) => {
+    const socioId = socioDeOp(o, o.clients);
+    const res = resumenGI({ op: o, cobros: cobrosPor[o.id] || [], pagosProveedor: pagosPor[o.id] || [], fx: d.fx, socio: d.socios.find((x) => x.id === socioId) });
+    const e = d.earnings.find((x) => x.operation_id === o.id);
+    const cerrada = o.status === "operacion_cerrada";
+    const ganancia = cerrada ? (e ? Number(e.net_profit_usd) : res.real) : res.ganancia;
+    const comision = cerrada && e ? Number(e.commission_usd) : res.comision;
+    const fecha = cerrada && o.closed_at ? o.closed_at : o.created_at;
+    return { o, res, e, cerrada, ganancia, comision, socioId, fecha, mes: mesDe(fecha) };
+  }).filter((f) => (!desde || new Date(f.fecha) >= desde) && (quien === "todos" || (quien === "ac" ? !f.socioId : f.socioId === quien)));
+  const sum = (arr, fn) => arr.reduce((a, x) => a + (Number(fn(x)) || 0), 0);
+  const tot = {
+    venta: sum(filas, (f) => f.res.venta), cobrado: sum(filas, (f) => f.res.cobrado), saldo: sum(filas, (f) => f.res.saldo),
+    costos: sum(filas, (f) => f.res.costos), ganancia: sum(filas, (f) => f.ganancia), comision: sum(filas, (f) => f.comision),
+  };
+  const porMes = {}; filas.forEach((f) => { const m = porMes[f.mes] || (porMes[f.mes] = { mes: f.mes, n: 0, venta: 0, cobrado: 0, costos: 0, ganancia: 0, comision: 0 }); m.n++; m.venta += f.res.venta; m.cobrado += f.res.cobrado; m.costos += f.res.costos; m.ganancia += f.ganancia; m.comision += f.comision; });
+  const meses = Object.values(porMes).sort((a, b) => b.mes.localeCompare(a.mes));
+  const aLiquidar = d.socios.map((s) => ({ s, lista: d.earnings.filter((e) => e.partner_id === s.id && !e.paid_to_partner) })).filter((x) => x.lista.length);
+  const pagosPend = d.pagos.filter((p) => !p.is_paid && p.type !== "refund");
+  const conSaldo = filas.filter((f) => !f.cerrada && f.res.saldo > 0.5).sort((a, b) => b.res.saldo - a.res.saldo);
+  const opDe = (id) => d.ops.find((o) => o.id === id);
+  const col = (v, c) => <span style={{ fontVariantNumeric: "tabular-nums", color: c || C.txt, textAlign: "right", whiteSpace: "nowrap" }}>{usd0(v)}</span>;
+  const gc = (v) => (v >= 0 ? C.green : C.red);
+  const th = { fontSize: 10, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "right", whiteSpace: "nowrap", padding: "0 0 8px" };
+  const tabla = (cols, rows, render, key) => <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+    <thead><tr>{cols.map((c, i) => <th key={c} style={{ ...th, textAlign: i === 0 ? "left" : "right", paddingLeft: i ? 12 : 0 }}>{c}</th>)}</tr></thead>
+    <tbody>{rows.map((r) => <tr key={key(r)} onClick={r.o ? () => ir("operaciones", { id: r.o.id }) : undefined} style={{ borderTop: `1px solid ${C.line}`, cursor: r.o ? "pointer" : "default" }}>{render(r).map((cell, i) => <td key={i} style={{ padding: "9px 0 9px 12px", paddingLeft: i ? 12 : 0, textAlign: i === 0 ? "left" : "right", whiteSpace: "nowrap" }}>{cell}</td>)}</tr>)}</tbody>
+  </table></div>;
+  const Linea = ({ l, v, c }) => <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em" }}>{l}</p><p style={{ margin: "3px 0 0", fontSize: 18, fontWeight: 800, color: c || C.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{usd0(v)}</p></div>;
+
+  return <div>
+    <Titulo eyebrow="Números" right={null}>Finanzas</Titulo>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+      <Chips value={periodo} onChange={setPeriodo} items={[{ k: "mes", l: "Este mes" }, { k: "3m", l: "3 meses" }, { k: "12m", l: "12 meses" }, { k: "anio", l: "Este año" }, { k: "todo", l: "Todo" }]} />
+      <Chips value={quien} onChange={setQuien} items={[{ k: "todos", l: "Todos" }, { k: "ac", l: "Argencargo" }, ...d.socios.map((s) => ({ k: s.id, l: socioNombre(s.id) }))]} />
+    </div>
+    <Caja>
+      <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : "repeat(7,minmax(0,1fr))", gap: 14 }}>
+        <Linea l="Venta" v={tot.venta} />
+        <Linea l="Cobrado" v={tot.cobrado} c={C.green} />
+        <Linea l="Por cobrar" v={tot.saldo} c={tot.saldo > 0.5 ? C.amber : C.sub} />
+        <Linea l="Costos" v={tot.costos} c={C.red} />
+        <Linea l="Ganancia" v={tot.ganancia} c={gc(tot.ganancia)} />
+        <Linea l="Comisiones" v={tot.comision} c={C.goldHi} />
+        <Linea l="Para Argencargo" v={tot.ganancia - tot.comision} c={gc(tot.ganancia - tot.comision)} />
+      </div>
+      <p style={{ margin: "10px 0 0", fontSize: 12, color: C.mute }}>{filas.length} operación{filas.length !== 1 ? "es" : ""} · {filas.filter((f) => f.cerrada).length} cerrada{filas.filter((f) => f.cerrada).length !== 1 ? "s" : ""} · las abiertas van con ganancia proyectada</p>
+    </Caja>
+
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1fr 1fr", gap: 14, alignItems: "start" }}>
+      <Caja title="Comisiones a liquidar">
+        {aLiquidar.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Nada pendiente.</p> : aLiquidar.map(({ s, lista }) => { const t = lista.reduce((a, e) => a + Number(e.commission_usd || 0), 0); const est = lista.some((e) => e.is_estimated); return <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${C.line}` }}>
+          <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 13.5 }}>{socioNombre(s.id)}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: C.mute }}>{lista.length} operación{lista.length !== 1 ? "es" : ""}{est ? " · hay costos en pesos sin dolarizar" : ""}</p></div>
+          <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", color: t >= 0 ? C.goldHi : C.red }}>{fmtUSD(t)}</span>
+          <Btn small v="gold" disabled={pagando === s.id} onClick={async () => { setPagando(s.id); const okk = await liquidarComisiones({ socio: s, lista, token, opDe }); setPagando(null); if (okk) recargar(); }}>{pagando === s.id ? "…" : "Liquidar"}</Btn>
+        </div>; })}
+      </Caja>
+      <Caja title={`Por cobrar · ${usd0(conSaldo.reduce((a, f) => a + f.res.saldo, 0))}`}>
+        {conSaldo.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Todo cobrado.</p> : conSaldo.slice(0, 12).map((f) => <div key={f.o.id} onClick={() => ir("operaciones", { id: f.o.id })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: `1px solid ${C.line}`, cursor: "pointer", fontSize: 13 }}>
+          <Codigo>{f.o.operation_code}</Codigo>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(f.o.clients)}</span>
+          <span style={{ fontSize: 11.5, color: (GI_ESTADOS[f.o.status] || {}).c }}>{(GI_ESTADOS[f.o.status] || {}).l}</span>
+          <strong style={{ color: C.amber, fontVariantNumeric: "tabular-nums" }}>{usd0(f.res.saldo)}</strong>
+        </div>)}
+      </Caja>
+      <Caja title={`Pagos a proveedor pendientes · ${pagosPend.length}`}>
+        {pagosPend.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Nada pendiente.</p> : pagosPend.map((p) => <div key={p.id} onClick={() => ir("operaciones", { id: p.operation_id })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: `1px solid ${C.line}`, cursor: "pointer", fontSize: 13 }}>
+          <Codigo>{p.operations?.operation_code || "—"}</Codigo>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.notes || "Pago a proveedor"}</span>
+          <span style={{ fontSize: 11.5, color: C.mute }}>{fmtDateShort(p.payment_date)}</span>
+          <strong style={{ color: C.amber, fontVariantNumeric: "tabular-nums" }}>{Number(p.amount_usd || 0) > 0 ? usd0(p.amount_usd) : `ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}`}</strong>
+        </div>)}
+      </Caja>
+      <Caja title="Por mes">
+        {meses.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin operaciones en el período.</p> : tabla(["Mes", "Ops", "Venta", "Costos", "Ganancia", "Comisiones"], meses, (m) => [<strong key="m">{mesLabel(m.mes)}</strong>, m.n, col(m.venta), col(m.costos, C.red), col(m.ganancia, gc(m.ganancia)), col(m.comision, C.goldHi)], (m) => m.mes)}
+      </Caja>
+    </div>
+
+    <Caja title={`Operaciones · ${filas.length}`}>
+      {filas.length === 0 ? <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>Sin operaciones en el período.</p> : tabla(movil ? ["Op", "Venta", "Ganancia", "Comisión"] : ["Op", "Cliente", "Socio", "Estado", "Venta", "Cobrado", "Costos", "Ganancia", "Comisión"], filas.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))), (f) => movil
+        ? [<span key="c"><Codigo>{f.o.operation_code}</Codigo><br /><span style={{ fontSize: 12, color: C.sub }}>{nombre(f.o.clients)}</span></span>, col(f.res.venta), col(f.ganancia, gc(f.ganancia)), col(f.comision, C.goldHi)]
+        : [<Codigo key="c">{f.o.operation_code}</Codigo>, <span key="n" style={{ display: "inline-block", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "middle" }}>{nombre(f.o.clients)}</span>, <span key="s" style={{ color: C.sub }}>{f.socioId ? socioNombre(f.socioId) : "Argencargo"}</span>, <span key="e" style={{ fontSize: 11.5, color: (GI_ESTADOS[f.o.status] || {}).c }}>{(GI_ESTADOS[f.o.status] || {}).l}</span>, col(f.res.venta), col(f.res.cobrado, C.green), col(f.res.costos, C.red), <span key="g">{col(f.ganancia, gc(f.ganancia))}{!f.cerrada && <span style={{ fontSize: 10, color: C.mute }}> proy.</span>}</span>, <span key="k">{col(f.comision, C.goldHi)}{f.socioId ? <span style={{ fontSize: 10, color: C.mute }}> {f.e ? Number(f.e.commission_pct) : f.res.pct}%</span> : null}</span>], (f) => f.o.id)}
+    </Caja>
+  </div>;
+}
+// ────────────────────────────────────────────
+// SOCIOS
 // ────────────────────────────────────────────
 function Socios({ ctx }) {
   const { token, rol, perfil, d, recargar } = ctx;
@@ -1145,25 +1317,9 @@ function Socios({ ctx }) {
   const [asignar, setAsignar] = useState(null);
   const [editCli, setEditCli] = useState(null);
   const opDe = (id) => d.ops.find((o) => o.id === id);
-  const socios = rol === "admin" ? d.socios : [{ id: perfil.id, email: perfil.email, gi_partner_pct: perfil.gi_partner_pct }];
+  const socios = d.socios;
 
-  const liquidar = async (s, lista) => {
-    const est = lista.filter((e) => e.is_estimated);
-    if (est.length) { toast.error(`${est.length} liquidación${est.length > 1 ? "es tienen" : " tiene"} costos en pesos sin dolarizar`); return; }
-    const total = lista.reduce((a, e) => a + Number(e.commission_usd || 0), 0);
-    if (!await confirmDialog(`¿Marcar como pagadas ${lista.length} comisión${lista.length > 1 ? "es" : ""} de ${s.email.split("@")[0]} por ${fmtUSD(total)}?`)) return;
-    setPagando(s.id);
-    const ahora = new Date().toISOString(), hoy = hoyISO();
-    for (const e of lista) {
-      const com = Number(e.commission_usd || 0);
-      await dq("gi_partner_earnings", { method: "PATCH", token, filters: `?id=eq.${e.id}`, body: { paid_to_partner: true, paid_at: ahora, paid_amount_usd: com } });
-      if (com !== 0) {
-        const code = opDe(e.operation_id)?.operation_code || "—";
-        await dq("finance_entries", { method: "POST", token, body: { date: hoy, type: com >= 0 ? "gasto" : "ingreso", category: "comisiones_socio", description: com >= 0 ? `Comisión socio GI · ${code}` : `Recupero pérdida socio GI · ${code}`, detail: `${Number(e.commission_pct || 0)}% sobre USD ${Number(e.net_profit_usd || 0).toFixed(2)} · Pagada ${hoy}`, amount: Math.abs(com), currency: "USD", is_paid: true, payment_method: "transferencia", auto_generated: true, operation_id: e.operation_id } });
-      }
-    }
-    toast.success("Comisiones liquidadas"); setPagando(null); recargar();
-  };
+  const liquidar = async (s, lista) => { setPagando(s.id); await liquidarComisiones({ socio: s, lista, token, opDe }); setPagando(null); recargar(); };
   const cambiarPct = async (s) => {
     const v = await promptDialog(`% general de ${s.email.split("@")[0]} (se usa cuando el cliente no tiene uno propio)`, { defaultValue: String(s.gi_partner_pct ?? "") });
     if (v === null || v === undefined) return;
@@ -1177,7 +1333,7 @@ function Socios({ ctx }) {
   };
 
   return <div>
-    <Titulo eyebrow="Equipo" sub={rol === "admin" ? "Cada socio con sus clientes, el % que cobra y las comisiones de las operaciones cerradas para liquidar." : "Tus clientes, el % que cobrás con cada uno y las comisiones de las operaciones cerradas."} right={rol === "admin" ? <Btn v="gold" onClick={() => setInvitar(true)}>+ Socio</Btn> : null}>{rol === "admin" ? "Socios" : "Mis comisiones"}</Titulo>
+    <Titulo eyebrow="Equipo" sub="Cada socio con sus clientes, el % que cobra y las comisiones de las operaciones cerradas para liquidar." right={<Btn v="gold" onClick={() => setInvitar(true)}>+ Socio</Btn>}>Socios</Titulo>
     {socios.length === 0 && <Vacio>Todavía no hay socios.</Vacio>}
     {socios.map((s) => {
       const ea = d.earnings.filter((e) => e.partner_id === s.id);
@@ -1187,20 +1343,20 @@ function Socios({ ctx }) {
       const susClientes = d.clientesSocio.filter((c) => c.gi_partner_id === s.id);
       const nClientes = susClientes.length;
       const enCurso = d.ops.filter((o) => !o.gi_admin_owned && (o.gi_partner_id || o.clients?.gi_partner_id) === s.id && !["operacion_cerrada", "cancelada"].includes(o.status));
-      return <Caja key={s.id} title={<span style={{ color: C.txt, textTransform: "none", letterSpacing: 0, fontSize: 15 }}>{s.email}</span>} right={rol === "admin" ? <div style={{ display: "flex", gap: 6 }}><Btn small onClick={() => cambiarPct(s)}>{Number(s.gi_partner_pct || 0)}% general</Btn><Btn small v="ghost" onClick={() => quitar(s)}>Quitar acceso</Btn></div> : null}>
+      return <Caja key={s.id} title={<span style={{ color: C.txt, textTransform: "none", letterSpacing: 0, fontSize: 15 }}>{s.email}</span>} right={<div style={{ display: "flex", gap: 6 }}><Btn small onClick={() => cambiarPct(s)}>{Number(s.gi_partner_pct || 0)}% general</Btn>{s.id !== perfil.id && <Btn small v="ghost" onClick={() => quitar(s)}>Quitar acceso</Btn>}</div>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 14, marginBottom: 14 }}>
           <Dato label="A cobrar" val={fmtUSD(totalAPagar)} c={totalAPagar >= 0 ? C.goldHi : C.red} sub={`${aPagar.length} op.`} />
           <Dato label="Ya cobrado" val={fmtUSD(pagado)} />
           <Dato label="En curso" val={String(enCurso.length)} sub="operaciones" />
           <Dato label="Clientes" val={String(nClientes)} />
         </div>
-        {rol === "admin" && aPagar.length > 0 && <Btn v="gold" small onClick={() => liquidar(s, aPagar)} disabled={pagando === s.id} style={{ marginBottom: 12 }}>{pagando === s.id ? "Liquidando…" : `Liquidar ${fmtUSD(totalAPagar)}`}</Btn>}
+        {aPagar.length > 0 && <Btn v="gold" small onClick={() => liquidar(s, aPagar)} disabled={pagando === s.id} style={{ marginBottom: 12 }}>{pagando === s.id ? "Liquidando…" : `Liquidar ${fmtUSD(totalAPagar)}`}</Btn>}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 8px" }}>
           <p style={{ margin: 0, fontSize: 11.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em" }}>Clientes</p>
-          {rol === "admin" && <Btn small v="ghost" onClick={() => setAsignar(s)}>+ Asignar cliente</Btn>}
+          <Btn small v="ghost" onClick={() => setAsignar(s)}>+ Asignar cliente</Btn>
         </div>
         {susClientes.length === 0 ? <p style={{ margin: "0 0 14px", color: C.mute, fontSize: 13 }}>Sin clientes asignados.</p> : <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
-          {susClientes.map((c) => <button key={c.id} onClick={rol === "admin" ? () => setEditCli(c) : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, border: `1px solid ${C.line}`, background: C.card, color: C.txt, fontSize: 12.5, fontWeight: 600, cursor: rol === "admin" ? "pointer" : "default", fontFamily: "inherit" }}>
+          {susClientes.map((c) => <button key={c.id} onClick={() => setEditCli(c)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, border: `1px solid ${C.line}`, background: C.card, color: C.txt, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
             {nombre(c)}<span style={{ fontWeight: 800, color: C.goldHi }}>{c.gi_commission_pct != null ? c.gi_commission_pct : Number(s.gi_partner_pct || 0)}%</span>
           </button>)}
         </div>}
@@ -1338,7 +1494,7 @@ function Contactos({ ctx }) {
         </div>)}
       </div>
     </div>)}
-    {edit && <ContactoModal cfg={cfg} item={edit} token={token} puedeBorrar={rol === "admin"} onBorrar={borrar} onClose={() => setEdit(null)} onListo={() => { setEdit(null); cargar(); }} />}
+    {edit && <ContactoModal cfg={cfg} item={edit} token={token} puedeBorrar={rol !== "empleado"} onBorrar={borrar} onClose={() => setEdit(null)} onListo={() => { setEdit(null); cargar(); }} />}
   </div>;
 }
 
