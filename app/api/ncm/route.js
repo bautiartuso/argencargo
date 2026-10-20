@@ -427,6 +427,22 @@ export async function POST(req) {
 
     if (!description && !image) return Response.json({ error: "Description or image required" }, { status: 400 });
 
+    // La posición que indica el cliente MANDA (20/10/2026): casi siempre tiene razón y la IA la
+    // rechazaba. Si existe en la nomenclatura se usa tal cual; con 6 dígitos (HS del proveedor) y
+    // una sola apertura, se completa; con varias aperturas elige la IA entre esas. Solo si el
+    // código no existe en la base se clasifica desde cero.
+    if (hintCode && hintDigits.length >= 6) {
+      const filas = await searchDB(hintCode);
+      const codigos = [...new Set(filas.map((f) => f.ncm_code).filter((c) => c.replace(/\D/g, "").startsWith(hintDigits.slice(0, 6))))];
+      if (codigos.length) {
+        let elegido = codigos.includes(hintCode) ? hintCode : codigos.length === 1 ? codigos[0] : null;
+        if (!elegido && description) { const ap = await elegirAperturaReal(description, hintCode); elegido = ap?.ncm_code && codigos.includes(ap.ncm_code) ? ap.ncm_code : codigos[0]; }
+        if (!elegido) elegido = codigos[0];
+        const mem = description ? await memoriaAdmin(description) : null;
+        const nota = mem && mem.ncm !== elegido ? `Usamos tu posición. Argencargo suele despachar esta mercadería por ${mem.ncm}.` : "Usamos la posición que indicaste.";
+        return Response.json(withHint(await respuestaDeNcm(elegido, null, { hint_note: nota }, "cliente")));
+      }
+    }
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
     if (!image && description) {
       // Lo que el admin ya corrigió manda sobre todo lo demás (misma mercadería, otra variante).
