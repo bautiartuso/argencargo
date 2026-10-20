@@ -449,6 +449,10 @@ function NuevaCotizacion({ ctx, onClose }) {
       if (modo === "existente" && staff && (socio || null) !== (cli.gi_partner_id || null)) {
         await dq("clients", { method: "PATCH", token, filters: `?id=eq.${c.id}`, body: { gi_partner_id: socio || null } });
       }
+      // Socio (20/10/2026): ve toda la clientela; si el cliente no tenía socio, queda suyo.
+      if (modo === "existente" && !staff && !cli.gi_partner_id) {
+        await dq("rpc/gi_tomar_cliente", { method: "POST", token, body: { p_client: c.id } });
+      }
       const code = await dq("rpc/gi_next_request_code", { method: "POST", token, body: {} });
       if (typeof code !== "string" || !code.startsWith("GI-")) throw new Error("No se pudo generar el código");
       const ins = await dq("gi_quote_requests", { method: "POST", token, body: { request_code: code, client_id: c.id, assigned_partner_id: socio || null, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) } });
