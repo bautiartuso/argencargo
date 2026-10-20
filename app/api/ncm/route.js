@@ -231,13 +231,17 @@ const OVERRIDES = [
   // Sets de poker, fichas de casino y sus tapetes: todo 9504.90.90 "Juegos de casino" (19/10/2026: la IA
   // repartía la misma cotización entre 4202 maletines, 9504.40 naipes, 9504.90.10 bowling y 5703 alfombras).
   { keywords: ["poker", "póker", "fichas de casino", "ruleta", "blackjack", "texas hold"], ncm: "9504.90.90", desc: "Juegos de casino", die: 20, te: 3, intervention: { required: false, types: [], reason: null } },
+  // Masajeadores y juguetes sexuales con motor: siempre 9019.10.00 "Aparatos de masaje" (DIE 12,6 %, TE 0,
+  // IVA 10,5 %), como se despacharon siempre (AC-0084/0125/0204/0318…). La IA los mandaba a 8543.70.99
+  // "aparatos eléctricos con función propia" con IVA 21 % (AC-0298, 20/10/2026). Sin ANMAT: no son producto médico.
+  { keywords: ["vibrador", "vibrator", "masajeador", "massager", "massage gun", "sex toy", "sextoy", "juguete sexual", "dildo", "love egg", "anal plug", "plug anal", "butt plug", "succionador", "sucking toy", "bomba peneana", "penis pump", "penis sleeve", "masturbador", "masturbator", "clitoral", "clitoris", "g-spot", "rabbit vibrat"], ncm: "9019.10.00", desc: "Aparatos de masaje", die: 12.6, te: 0, iva: 10.5, intervention: { required: false, types: [], reason: null } },
 ];
 
 function checkOverride(description) {
   const lower = description.toLowerCase();
   for (const ov of OVERRIDES) {
     if (ov.keywords.some(k => lower.includes(k))) {
-      return { ncm_code: ov.ncm, ncm_description: ov.desc, import_duty_rate: ov.die, statistics_rate: ov.te, iva_rate: 21, intervention: ov.intervention, source: "override" };
+      return { ncm_code: ov.ncm, ncm_description: ov.desc, import_duty_rate: ov.die, statistics_rate: ov.te, iva_rate: ov.iva ?? 21, intervention: ov.intervention, source: "override" };
     }
   }
   return null;
