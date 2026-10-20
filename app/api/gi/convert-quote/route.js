@@ -32,7 +32,7 @@ export async function POST(req) {
   let body = null; try { body = await req.json(); } catch {}
   if (!body?.quote_id || !/^[0-9a-f-]{36}$/i.test(String(body.quote_id))) return Response.json({ error: "quote_id requerido" }, { status: 400 });
 
-  const qRes = await sbFetch(`/gi_quotes?id=eq.${body.quote_id}&select=*,gi_quote_requests(client_id,assigned_partner_id,clients(gi_partner_id,gi_commission_pct)),gi_quote_products(*)`);
+  const qRes = await sbFetch(`/gi_quotes?id=eq.${body.quote_id}&select=*,gi_quote_requests(client_id,assigned_partner_id,origin,clients(gi_partner_id,gi_commission_pct)),gi_quote_products(*),gi_quote_packages(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
@@ -80,7 +80,7 @@ export async function POST(req) {
   const codeRes = await sbFetch(`/rpc/next_operation_code`, { method: "POST", body: JSON.stringify({}) });
   const opCode = (typeof codeRes.body === "string") ? codeRes.body : (codeRes.body?.[0] || `AC-${Date.now()}`);
 
-  const someUSA = (quote.gi_quote_products || []).some(p => p.origin === "usa");
+  const someUSA = req0.origin === "usa" || (quote.gi_quote_products || []).some(p => p.origin === "usa");
   // Costo total al proveedor = SUM(unit_cost × qty) de los productos cotizados.
   // Este queda guardado en operations.cost_producto_usd para tracking de ganancia neta.
   const supplierTotal = (quote.gi_quote_products || []).reduce((s, p) =>
@@ -140,22 +140,17 @@ export async function POST(req) {
 
   // operation_packages desde los bultos anotados en la cotización (pkg_* de cada producto).
   // Sin esto, la op nace sin bultos y la tarjeta "Bultos" del panel GI queda vacía.
+  // Desde el 20/10/2026 los bultos son de la cotización (gi_quote_packages); las viejas los tienen por producto.
+  const bultos = (quote.gi_quote_packages || []).length
+    ? quote.gi_quote_packages.slice().sort((a, b) => (a.display_order || 0) - (b.display_order || 0)).map((k) => ({ cnt: Number(k.pkg_count || 0), l: k.length_cm, w: k.width_cm, h: k.height_cm, kg: k.weight_kg }))
+    : (quote.gi_quote_products || []).map((p) => ({ cnt: Number(p.pkg_count || 0), l: p.pkg_length_cm, w: p.pkg_width_cm, h: p.pkg_height_cm, kg: p.pkg_weight_kg }));
   let pkgNum = 0;
-  for (const p of (quote.gi_quote_products || [])) {
-    const cnt = Number(p.pkg_count || 0);
-    if (cnt <= 0) continue;
+  for (const k of bultos) {
+    if (k.cnt <= 0) continue;
     pkgNum++;
     await sbFetch(`/operation_packages`, {
       method: "POST",
-      body: JSON.stringify({
-        operation_id: opId,
-        package_number: pkgNum,
-        quantity: cnt,
-        length_cm: p.pkg_length_cm ?? null,
-        width_cm: p.pkg_width_cm ?? null,
-        height_cm: p.pkg_height_cm ?? null,
-        gross_weight_kg: p.pkg_weight_kg ?? null,
-      }),
+      body: JSON.stringify({ operation_id: opId, package_number: pkgNum, quantity: k.cnt, length_cm: k.l ?? null, width_cm: k.w ?? null, height_cm: k.h ?? null, gross_weight_kg: k.kg ?? null }),
     });
   }
 

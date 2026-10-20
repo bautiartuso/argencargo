@@ -114,6 +114,12 @@ export async function GET(req) {
       const filas = await j(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}`);
       for (const f of filas) { const p = storagePath(f[col]); if (p) referencias.add(p); }
     }
+    // Fotos múltiples de los productos de las cotizaciones GI (gi_quote_products.photo_urls, 20/10/2026).
+    {
+      const r = await sb(`/rest/v1/gi_quote_products?photo_urls=not.is.null&select=photo_urls`);
+      if (!r.ok) throw new Error("no se pudieron leer las fotos de cotizaciones GI: no se borra nada");
+      for (const f of await r.json()) for (const u of (f.photo_urls || [])) { const p = storagePath(u); if (p) referencias.add(p); }
+    }
     // Fotos de las cargas marítimas (listas en maritime_shipments.fotos y fotos_mercaderia, desde el
     // 28/09/2026). No estaban acá y el cron las borraba como huérfanas a los 2 días (detectado el
     // 05/10/2026: se perdieron las fotos de Luna). Paginado de a 1000.

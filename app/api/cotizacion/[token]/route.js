@@ -32,7 +32,7 @@ const CHANNEL_KEYS = {
 };
 
 const cargarCotizacion = async (token) => {
-  const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,clients(id,auth_user_id,first_name,last_name,email,city,province,gi_partner_id)),gi_quote_products(*)`);
+  const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,clients(id,auth_user_id,first_name,last_name,email,city,province,gi_partner_id)),gi_quote_products(*),gi_quote_packages(*)`);
   return Array.isArray(q.body) && q.body[0] ? q.body[0] : null;
 };
 
@@ -52,8 +52,12 @@ const quienMira = async (req, quote) => {
   return { user, rol: null };
 };
 
-const cargaDe = (prods) => {
+const cargaDe = (prods, pkgs) => {
   let kg = 0, cbm = 0;
+  if (Array.isArray(pkgs) && pkgs.length) {
+    for (const k of pkgs) { const n = Number(k.pkg_count || 0); kg += Number(k.weight_kg || 0) * n; cbm += (Number(k.length_cm || 0) * Number(k.width_cm || 0) * Number(k.height_cm || 0)) / 1e6 * n; }
+    return { kg, cbm };
+  }
   for (const p of prods) {
     const n = Number(p.pkg_count || 0);
     kg += Number(p.pkg_weight_kg || 0) * n;
@@ -136,11 +140,11 @@ export async function GET(req, { params }) {
 
   const prods = (quote.gi_quote_products || []).slice().sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   const fobTotal = prods.reduce((s, p) => s + Number(p.unit_cost_usd || 0) * Number(p.quantity || 0), 0);
-  const { kg, cbm } = cargaDe(prods);
+  const { kg, cbm } = cargaDe(prods, quote.gi_quote_packages);
   const productos = prods.map((p) => {
     const fob = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
     return {
-      id: p.id, description: p.description, quantity: p.quantity, photo_url: p.photo_url,
+      id: p.id, description: p.description, quantity: p.quantity, photo_url: p.photo_url, photo_urls: Array.isArray(p.photo_urls) && p.photo_urls.length ? p.photo_urls : (p.photo_url ? [p.photo_url] : []),
       lead_time_days: p.lead_time_days, origin: p.origin, display_order: p.display_order,
       peso: fobTotal > 0 ? fob / fobTotal : 1 / Math.max(prods.length, 1),
     };
@@ -199,7 +203,7 @@ export async function POST(req, { params }) {
 
   let deliveryCost = 0;
   if (!["oficina", "coordinar", "interior_coordinar"].includes(zone)) {
-    const ent = await opcionesEntrega(quote.gi_quote_requests?.clients, cargaDe(quote.gi_quote_products || []).kg);
+    const ent = await opcionesEntrega(quote.gi_quote_requests?.clients, cargaDe(quote.gi_quote_products || [], quote.gi_quote_packages).kg);
     if (zone === "CABA") deliveryCost = ent.caba;
     else if (ent.domicilio && zone === ent.domicilio.zona) deliveryCost = ent.domicilio.costo;
     else return Response.json({ error: "Zona de entrega inválida" }, { status: 400 });

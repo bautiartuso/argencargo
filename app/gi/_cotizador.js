@@ -1,7 +1,7 @@
 "use client";
-// Cotizador de Gestión Integral. Rediseñado el 13/10/2026: una sola pantalla con productos y resumen;
-// la lógica de cálculo y guardado es la misma de antes.
-import { useState, useEffect } from "react";
+// Cotizador de Gestión Integral. Rediseñado el 13/10/2026 (una pantalla) y el 20/10/2026: origen a nivel
+// cotización, bultos propios con asignación de productos, varias fotos, Enter entre campos, autoguardado.
+import { useState, useEffect, useRef } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, tablaDesaduanaje } from "../../lib/calc";
 import { alertDialog, toast } from "../../lib/ui";
 import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT } from "./_base";
@@ -22,6 +22,11 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   const [tariffs,setTariffs]=useState([]);
   const [config,setConfig]=useState({});
   const [products,setProducts]=useState([]);
+  // Bultos de la cotización (20/10/2026): cada uno sabe qué productos lleva (índices en `prods`).
+  // Antes el embalaje iba pegado a cada producto; así no se podía poner dos productos en una caja.
+  const [packages,setPackages]=useState([]);
+  // Origen de la cotización (China / USA): uno solo para todos los productos.
+  const [origin,setOrigin]=useState("china");
   const [paymentPlan,setPaymentPlan]=useState([
     {pct:30,label:"Inicio de producción"},
     {pct:20,label:"Producción terminada"},
@@ -31,26 +36,26 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   const [supplierDepositPct,setSupplierDepositPct]=useState("30");
   const [honorariosPct,setHonorariosPct]=useState("10");
   // Zona del cliente: limita las opciones de envío que ve en /cotizacion/[token].
-  // "" = sin definir; "Interior" = a coordinar; cualquier otro valor = filtra a esa zona puntual.
   const [deliveryZone,setDeliveryZone]=useState("");
   const [lo,setLo]=useState(true);
+  const [cargado,setCargado]=useState(false);
   const [generatedQuote,setGeneratedQuote]=useState(null);
   const [saving,setSaving]=useState(false);
   const [savingDraft,setSavingDraft]=useState(false);
   const [draftQuoteId,setDraftQuoteId]=useState(null);
   const [lastSavedAt,setLastSavedAt]=useState(null);
+  const [dirty,setDirty]=useState(false);
   const [msg,setMsg]=useState("");
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3500);};
 
-  const emptyProductFrom=(p,i)=>({
+  const emptyProductFrom=(p)=>({
     _id:p?.id,
     description:p?.description||"",
     notes:p?.notes||"",
-    origin:p?.origin||"china",
     quantity:p?.quantity!=null?String(p.quantity):"",
     unit_cost_usd:p?.unit_cost_usd!=null?String(p.unit_cost_usd):"",
     lead_time_days:p?.lead_time_days!=null?String(p.lead_time_days):"",
-    photo_url:p?.photo_url||"",
+    photo_urls:Array.isArray(p?.photo_urls)&&p.photo_urls.length?p.photo_urls.filter(Boolean):(p?.photo_url?[p.photo_url]:[]),
     ncm_code:p?.ncm_code||"",
     ncm_description:p?.ncm_description||"",
     import_duty_rate:p?.ncm_di_pct!=null?String(p.ncm_di_pct):"",
@@ -58,13 +63,20 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
     iva_rate:p?.ncm_iva_pct!=null?String(p.ncm_iva_pct):"",
     ncm_loading:false,
     ncm_error:false,
-    pkg_count:p?.pkg_count!=null?String(p.pkg_count):"1",
-    pkg_length_cm:p?.pkg_length_cm!=null?String(p.pkg_length_cm):"",
-    pkg_width_cm:p?.pkg_width_cm!=null?String(p.pkg_width_cm):"",
-    pkg_height_cm:p?.pkg_height_cm!=null?String(p.pkg_height_cm):"",
-    pkg_weight_kg:p?.pkg_weight_kg!=null?String(p.pkg_weight_kg):"",
+    ncm_hint:"",
     supplier_ref:p?.supplier_ref||"",
   });
+  const emptyPackage=(k)=>({
+    _id:k?.id,
+    count:k?.pkg_count!=null?String(k.pkg_count):"1",
+    l:k?.length_cm!=null?String(k.length_cm):"",
+    w:k?.width_cm!=null?String(k.width_cm):"",
+    h:k?.height_cm!=null?String(k.height_cm):"",
+    kg:k?.weight_kg!=null?String(k.weight_kg):"",
+    prods:Array.isArray(k?.product_idx)?k.product_idx.map(Number):[],
+  });
+  // Cotizaciones viejas: el embalaje venía en cada producto. Se convierte a bultos (uno por producto).
+  const paquetesLegacy=(prods)=>prods.map((p,i)=>Number(p.pkg_count||0)>0&&p.pkg_length_cm?{_id:undefined,count:String(p.pkg_count),l:String(p.pkg_length_cm),w:String(p.pkg_width_cm||""),h:String(p.pkg_height_cm||""),kg:String(p.pkg_weight_kg||""),prods:[i]}:null).filter(Boolean);
 
   // Cargar todo: si hay un quote draft existente para este request, usarlo (con sus productos parciales).
   // Sino, usar los productos crudos del request (lo que pidió el admin) como base.
@@ -74,17 +86,12 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
       dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
       dq("calc_config",{token,filters:"?select=*"}),
-      // Cargar la cotización más reciente para este request. Incluye 'accepted' (el cliente aceptó, todavía se puede modificar
-       // antes de convertir a op). 'converted' queda excluida — una vez creada la op, la quote es solo histórica.
       dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=in.(draft,sent,accepted)&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
-    if(Array.isArray(reqRes)&&reqRes[0]){
-      const r=reqRes[0];
-      setRequest(r);
-      setClient(r.clients);
-    }
-    // Si hay draft, usarlo
+    const r=Array.isArray(reqRes)&&reqRes[0]?reqRes[0]:null;
+    if(r){setRequest(r);setClient(r.clients);}
     const draft=Array.isArray(draftRes)&&draftRes[0]?draftRes[0]:null;
+    let origen=r?.origin||"";
     if(draft){
       setDraftQuoteId(draft.id);
       setLastSentStatus(draft.status);
@@ -93,126 +100,120 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       if(draft.supplier_deposit_pct!=null)setSupplierDepositPct(String(draft.supplier_deposit_pct));
       if(draft.delivery_zone!=null)setDeliveryZone(draft.delivery_zone);
       const draftProds=(draft.gi_quote_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
-      if(draftProds.length>0){
-        setProducts(draftProds.map(emptyProductFrom));
-      } else if(Array.isArray(reqRes)&&reqRes[0]){
-        const rawProds=(reqRes[0].gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
-        setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));
-      }
+      if(!origen&&draftProds[0]?.origin)origen=draftProds[0].origin;
+      if(draftProds.length>0)setProducts(draftProds.map(emptyProductFrom));
+      else if(r){const rawProds=(r.gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));}
+      const pk=await dq("gi_quote_packages",{token,filters:`?quote_id=eq.${draft.id}&select=*&order=display_order.asc`});
+      const pks=Array.isArray(pk)?pk:[];
+      setPackages(pks.length?pks.map(emptyPackage):paquetesLegacy(draftProds));
       setLastSavedAt(draft.updated_at||draft.created_at);
-    } else if(Array.isArray(reqRes)&&reqRes[0]){
-      const rawProds=(reqRes[0].gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
-      if(rawProds.length>0){
-        setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));
-      } else {
-        // Cotización directa sin productos pre-cargados — arrancamos con uno vacío
-        setProducts([emptyProductFrom({})]);
-      }
+    } else if(r){
+      const rawProds=(r.gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+      setProducts(rawProds.length>0?rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})):[emptyProductFrom({})]);
+      setPackages([]);
     }
+    setOrigin(origen==="usa"?"usa":"china");
     setTariffs(Array.isArray(tar)?tar:[]);
-    const cfgObj={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{cfgObj[r.key]=Number(r.value);});setConfig(cfgObj);
+    const cfgObj={};(Array.isArray(cfg)?cfg:[]).forEach(x=>{cfgObj[x.key]=Number(x.value);});setConfig(cfgObj);
     setLo(false);
+    setTimeout(()=>setCargado(true),0);
   })();},[requestId,token]);
 
-  // Persiste el state actual como draft (UPSERT del gi_quote + reemplaza productos).
+  // Persiste el state actual como draft (UPSERT del gi_quote + reemplaza productos y bultos).
+  const pendienteRef=useRef(false);
   const saveDraft=async({silent=false}={})=>{
-    if(savingDraft||lo)return;
+    if(lo)return;
+    if(savingDraft){pendienteRef.current=true;return;}
     setSavingDraft(true);
     try{
       let quoteId=draftQuoteId;
+      const cab={payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null};
       if(!quoteId){
-        // Crear quote en draft
-        const inserted=await dq("gi_quotes",{method:"POST",token,body:{
-          request_id:requestId,
-          payment_plan:paymentPlan,
-          honorarios_pct:honorariosPct?Number(honorariosPct):null,
-          supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,
-          delivery_zone:deliveryZone||null,
-          status:"draft",
-        }});
+        const inserted=await dq("gi_quotes",{method:"POST",token,body:{request_id:requestId,...cab,status:"draft"}});
         quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
-        if(!quoteId)throw new Error("No se pudo crear el draft");
+        if(!quoteId)throw new Error("No se pudo crear el borrador");
         setDraftQuoteId(quoteId);
       } else {
-        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null}});
+        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:cab});
       }
-      // Si no hay productos en el state, no tocamos los existentes (evitamos perder data por error de UI).
-      if(products.length===0){
-        setLastSavedAt(new Date().toISOString());
-        if(!silent)flash("✓ Borrador guardado (sin productos)");
-        return;
-      }
-      // Estrategia segura: INSERT primero los nuevos, recién DESPUÉS borrar los viejos.
-      // Si el INSERT falla, los viejos siguen vivos. Display_order alto reservado para nuevos.
-      const oldRows=await dq("gi_quote_products",{token,filters:`?quote_id=eq.${quoteId}&select=id`});
-      const oldIds=Array.isArray(oldRows)?oldRows.map(r=>r.id):[];
-      const newOrder=oldIds.length+1000; // garantiza que los nuevos queden ordenados después de los viejos temporalmente
-      const insertedIds=[];
-      for(let i=0;i<products.length;i++){
-        const p=products[i];
-        const inserted=await dq("gi_quote_products",{method:"POST",token,body:{
-          quote_id:quoteId,
-          description:p.description||null,
-          origin:p.origin||"china",
-          quantity:p.quantity?Number(p.quantity):null,
-          unit_cost_usd:p.unit_cost_usd?Number(p.unit_cost_usd):null,
-          ncm_code:p.ncm_code||null,
-          ncm_description:p.ncm_description||null,
-          ncm_di_pct:p.import_duty_rate?Number(p.import_duty_rate):null,
-          ncm_iva_pct:p.iva_rate?Number(p.iva_rate):null,
-          ncm_estad_pct:p.statistics_rate?Number(p.statistics_rate):null,
-          lead_time_days:p.lead_time_days?Number(p.lead_time_days):null,
-          photo_url:p.photo_url||null,
-          pkg_count:p.pkg_count?Number(p.pkg_count):null,
-          pkg_length_cm:p.pkg_length_cm?Number(p.pkg_length_cm):null,
-          pkg_width_cm:p.pkg_width_cm?Number(p.pkg_width_cm):null,
-          pkg_height_cm:p.pkg_height_cm?Number(p.pkg_height_cm):null,
-          pkg_weight_kg:p.pkg_weight_kg?Number(p.pkg_weight_kg):null,
-          supplier_ref:p.supplier_ref||null,
-          display_order:newOrder+i,
-        }});
-        const newId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
-        if(!newId){
-          // Algo falló — dejamos los nuevos creados (si los hubo) y los viejos. Mostramos error claro.
-          throw new Error(`Falló insertar producto ${i+1}. Revisá la consola. Los productos viejos siguen guardados.`);
+      if(request&&request.origin!==origin){await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{origin}});setRequest(r=>r?{...r,origin}:r);}
+      if(products.length>0){
+        // Estrategia segura: INSERT primero los nuevos, recién DESPUÉS borrar los viejos.
+        const oldRows=await dq("gi_quote_products",{token,filters:`?quote_id=eq.${quoteId}&select=id`});
+        const oldIds=Array.isArray(oldRows)?oldRows.map(x=>x.id):[];
+        const newOrder=oldIds.length+1000;
+        const insertedIds=[];
+        for(let i=0;i<products.length;i++){
+          const inserted=await dq("gi_quote_products",{method:"POST",token,body:productoBody(products[i],origin,newOrder+i)});
+          const newId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+          if(!newId)throw new Error(`Falló guardar el producto ${i+1}. Los productos viejos siguen guardados.`);
+          insertedIds.push(newId);
         }
-        insertedIds.push(newId);
+        if(oldIds.length>0)await dq("gi_quote_products",{method:"DELETE",token,filters:`?id=in.(${oldIds.map(id=>`"${id}"`).join(",")})`});
+        for(let i=0;i<insertedIds.length;i++)await dq("gi_quote_products",{method:"PATCH",token,filters:`?id=eq.${insertedIds[i]}`,body:{display_order:i}});
       }
-      // Ahora sí, borrar los viejos
-      if(oldIds.length>0){
-        const inFilter=oldIds.map(id=>`"${id}"`).join(",");
-        await dq("gi_quote_products",{method:"DELETE",token,filters:`?id=in.(${inFilter})`});
-      }
-      // Reordenar los nuevos a 0..N-1
-      for(let i=0;i<insertedIds.length;i++){
-        await dq("gi_quote_products",{method:"PATCH",token,filters:`?id=eq.${insertedIds[i]}`,body:{display_order:i}});
-      }
-      setLastSavedAt(new Date().toISOString());
-      if(!silent)flash(`✓ Borrador guardado (${products.length} productos)`);
+      await guardarBultos(quoteId);
+      setLastSavedAt(new Date().toISOString());setDirty(false);
+      if(!silent)flash(`✓ Guardado (${products.length} producto${products.length!==1?"s":""} · ${packages.length} bulto${packages.length!==1?"s":""})`);
     } catch(e){
-      alertDialog("Error al guardar borrador: "+e.message);
+      if(!silent)alertDialog("Error al guardar: "+e.message);else console.error("autosave",e);
     } finally {
       setSavingDraft(false);
+      if(pendienteRef.current){pendienteRef.current=false;setTimeout(()=>saveRef.current({silent:true}),50);}
     }
   };
+  const saveRef=useRef(saveDraft);saveRef.current=saveDraft;
+  const productoBody=(p,orig,order)=>({
+    description:p.description||null,
+    origin:orig||"china",
+    quantity:p.quantity?Number(p.quantity):null,
+    unit_cost_usd:p.unit_cost_usd?Number(p.unit_cost_usd):null,
+    ncm_code:p.ncm_code||null,
+    ncm_description:p.ncm_description||null,
+    ncm_di_pct:p.import_duty_rate!==""&&p.import_duty_rate!=null?Number(p.import_duty_rate):null,
+    ncm_iva_pct:p.iva_rate!==""&&p.iva_rate!=null?Number(p.iva_rate):null,
+    ncm_estad_pct:p.statistics_rate!==""&&p.statistics_rate!=null?Number(p.statistics_rate):null,
+    lead_time_days:p.lead_time_days?Number(p.lead_time_days):null,
+    photo_url:p.photo_urls?.[0]||null,
+    photo_urls:p.photo_urls?.length?p.photo_urls:null,
+    supplier_ref:p.supplier_ref||null,
+    display_order:order,
+  });
+  const guardarBultos=async(quoteId)=>{
+    const old=await dq("gi_quote_packages",{token,filters:`?quote_id=eq.${quoteId}&select=id`});
+    const oldIds=Array.isArray(old)?old.map(x=>x.id):[];
+    for(let i=0;i<packages.length;i++){
+      const k=packages[i];
+      const r=await dq("gi_quote_packages",{method:"POST",token,body:{quote_id:quoteId,display_order:i,pkg_count:Number(k.count)||1,length_cm:k.l?Number(k.l):null,width_cm:k.w?Number(k.w):null,height_cm:k.h?Number(k.h):null,weight_kg:k.kg?Number(k.kg):null,product_idx:(k.prods||[]).map(Number)}});
+      if(r&&!Array.isArray(r)&&r.code)throw new Error(r.message?.includes("gi_quote_packages")?"Falta correr el SQL de bultos (2026_10_20_gi_cotizador_v2)":`No se pudo guardar el bulto ${i+1}`);
+    }
+    if(oldIds.length)await dq("gi_quote_packages",{method:"DELETE",token,filters:`?id=in.(${oldIds.map(id=>`"${id}"`).join(",")})`});
+  };
+
+  // Autoguardado: cada cambio se guarda solo 1,5 s después de la última tecla.
+  useEffect(()=>{
+    if(!cargado)return;
+    setDirty(true);
+    const t=setTimeout(()=>{saveRef.current({silent:true});},1500);
+    return()=>clearTimeout(t);
+  },[products,packages,paymentPlan,honorariosPct,supplierDepositPct,origin,deliveryZone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateProduct=(i,field,value)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[field]:value}:x));
-  const addProduct=()=>setProducts(p=>[...p,{description:"",notes:"",origin:"china",quantity:"",unit_cost_usd:"",lead_time_days:"",photo_url:"",ncm_code:"",ncm_description:"",import_duty_rate:"",statistics_rate:"",iva_rate:"",ncm_loading:false,ncm_error:false,pkg_count:"1",pkg_length_cm:"",pkg_width_cm:"",pkg_height_cm:"",pkg_weight_kg:"",supplier_ref:""}]);
-  const removeProduct=(i)=>setProducts(p=>p.length>1?p.filter((_,j)=>j!==i):p);
+  const addProduct=()=>setProducts(p=>[...p,emptyProductFrom({})]);
+  const removeProduct=(i)=>{if(products.length<=1)return;setProducts(p=>p.filter((_,j)=>j!==i));setPackages(ks=>ks.map(k=>({...k,prods:k.prods.filter(x=>x!==i).map(x=>x>i?x-1:x)})));};
 
-  const classifyNcm=async(i)=>{
+  const classifyNcm=async(i,hint)=>{
     const p=products[i];
-    if(!p.description?.trim()&&!p.photo_url)return;
+    if(!p.description?.trim()&&!p.photo_urls?.length&&!hint)return;
     updateProduct(i,"ncm_loading",true);updateProduct(i,"ncm_error",false);
     try{
-      // Si hay foto, convertirla a base64 + comprimirla si es muy grande, y mandar el mime explícito.
       let body={description:p.description||""};
-      if(p.photo_url){
+      if(hint)body.hint=hint;
+      const foto=p.photo_urls?.[0];
+      if(foto&&!hint){
         try{
-          const imgR=await fetch(p.photo_url);
+          const imgR=await fetch(foto);
           const blob=await imgR.blob();
-          // Comprimir / re-encodear a JPEG si la imagen es >1MB o tiene formato no soportado (heic, webp viejo, etc).
-          // Claude acepta PNG/JPEG/GIF/WEBP, pero JPEG max 1600px da el mejor balance tamaño/precisión.
           const needsRecode=blob.size>1024*1024||!/^image\/(png|jpe?g|gif|webp)$/.test(blob.type);
           let finalBlob=blob;let finalMime=blob.type||"image/jpeg";
           if(needsRecode){
@@ -227,8 +228,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
             }
           }
           const b64=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result.split(",")[1]);fr.onerror=reject;fr.readAsDataURL(finalBlob);});
-          body.image=b64;
-          body.image_mime=finalMime;
+          body.image=b64;body.image_mime=finalMime;
         } catch(e){console.warn("No pude leer foto para NCM",e);}
       }
       const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -236,13 +236,16 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       if(d.fallback||d.error){
         setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
       } else {
-        setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:false,ncm_code:d.ncm_code||"",ncm_description:d.ncm_description||"",import_duty_rate:d.import_duty_rate!=null?String(d.import_duty_rate):"",statistics_rate:d.statistics_rate!=null?String(d.statistics_rate):"",iva_rate:d.iva_rate!=null?String(d.iva_rate):""}:x));
+        setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:false,ncm_hint:"",ncm_code:d.ncm_code||"",ncm_description:d.ncm_description||"",import_duty_rate:d.import_duty_rate!=null?String(d.import_duty_rate):"",statistics_rate:d.statistics_rate!=null?String(d.statistics_rate):"",iva_rate:d.iva_rate!=null?String(d.iva_rate):""}:x));
+        if(d.hint_note)toast.info(d.hint_note);
       }
     } catch(e){
       setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
     }
   };
 
+  // Bultos en el formato de lib/calc.js
+  const pkgsCalc=()=>packages.filter(k=>Number(k.count)>0&&Number(k.l)>0).map(k=>({quantity:Number(k.count||1),gross_weight_kg:Number(k.kg||0),length_cm:Number(k.l||0),width_cm:Number(k.w||0),height_cm:Number(k.h||0)}));
   // Cálculo por canal: corre calcOpBudget para cada canal disponible
   const computeChannel=(channelKey)=>{
     const items=products.map(p=>({
@@ -253,32 +256,9 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       iva_rate:p.iva_rate?Number(p.iva_rate):21,
       ncm_code:p.ncm_code||null,
     }));
-    // Convertir packing por producto a array global (multiplicando cada uno por su pkg_count y quantity)
-    const pkgs=products.flatMap(p=>{
-      if(!p.pkg_count||!p.pkg_length_cm)return [];
-      return [{
-        quantity:Number(p.pkg_count||1),
-        gross_weight_kg:Number(p.pkg_weight_kg||0),
-        length_cm:Number(p.pkg_length_cm||0),
-        width_cm:Number(p.pkg_width_cm||0),
-        height_cm:Number(p.pkg_height_cm||0),
-      }];
-    });
-    const op={
-      channel:channelKey,
-      origin:products.some(p=>p.origin==="usa")?"USA":"China",
-      has_battery:false,
-      has_phones:false,
-      shipping_to_door:false,
-      shipping_cost:0,
-      merchandise_value_usd:items.reduce((s,it)=>s+it.unit_price_usd*it.quantity,0),
-    };
-    try{
-      return calcOpBudget(op,items,pkgs,tariffs,config,[],client);
-    } catch(e){
-      console.error(`[calc ${channelKey}]`,e);
-      return null;
-    }
+    const op={channel:channelKey,origin:origin==="usa"?"USA":"China",has_battery:false,has_phones:false,shipping_to_door:false,shipping_cost:0,merchandise_value_usd:items.reduce((s,it)=>s+it.unit_price_usd*it.quantity,0)};
+    try{return calcOpBudget(op,items,pkgsCalc(),tariffs,config,[],client);}
+    catch(e){console.error(`[calc ${channelKey}]`,e);return null;}
   };
 
   const totalFob=products.reduce((s,p)=>s+Number(p.unit_cost_usd||0)*Number(p.quantity||0),0);
@@ -286,15 +266,6 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   const channelResults=CHANNEL_DEFS.map(ch=>{
     const r=computeChannel(ch.key);
     if(!r)return {...ch,impoOnly:0,total:0,real:0,honorariosUsd:0,gainLogistica:0,gainHonorarios:0,gainTotal:0,error:true};
-    // impoOnly = precio al cliente si SOLO hace la impo con nosotros (sin GI).
-    //            Ya incluye nuestra ganancia logística (spread vs. costo real).
-    // total    = precio al cliente con Gestión Integral = impoOnly × (1 + honorarios%).
-    // real     = costo real para Argencargo (lo que efectivamente pagamos):
-    //              totalFob (al proveedor) + realCost (flete cost + impuestos + seguro + ship pass-through).
-    //              Margen logístico = (flete - fleteCost) + surcharge (canal B).
-    // gainLogistica = impoOnly − real (ganancia ya capturada en la impo regular)
-    // gainHonorarios = total − impoOnly (markup adicional por la gestión integral)
-    // gainTotal = gainLogistica + gainHonorarios = ganancia neta de la empresa por canal.
     const impoOnly=r.totalAbonar+totalFob;
     const total=impoOnly*honorariosFactor;
     const real=totalFob+(r.realCost||0);
@@ -304,15 +275,9 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
     const gainTotal=gainLogistica+gainHonorarios;
     return {...ch,impoOnly,total,real,honorariosUsd,gainLogistica,gainHonorarios,gainTotal,calc:r};
   });
-
-  // Filtrar canales por origen
-  const someUSA=products.some(p=>p.origin==="usa");
-  const visibleChannels=someUSA
-    ?channelResults.filter(c=>c.key.includes("negro")||c.key==="maritimo_blanco")
-    :channelResults;
-
-  // (profitFor eliminado: la "estimación de ganancia / comisión socio" ya no se muestra en el wizard;
-  //  los honorarios al cliente se calculan directo en channelResults y la comisión socio se resuelve aparte)
+  // Desde USA no hay LCL/FCL propio: aéreo (con NCM) y marítimo integral.
+  const someUSA=origin==="usa";
+  const visibleChannels=someUSA?channelResults.filter(c=>c.key!=="maritimo_blanco"):channelResults;
 
   const validateStep1=()=>{
     if(products.length===0)return "Agregá al menos un producto";
@@ -321,14 +286,13 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       if(!p.description?.trim())return `Producto ${i+1}: falta descripción`;
       if(!p.quantity||Number(p.quantity)<=0)return `Producto ${i+1}: falta cantidad`;
       if(!p.unit_cost_usd||Number(p.unit_cost_usd)<=0)return `Producto ${i+1}: falta costo unitario`;
-      if(!p.pkg_length_cm||!p.pkg_width_cm||!p.pkg_height_cm||!p.pkg_weight_kg)return `Producto ${i+1}: faltan datos de embalaje`;
     }
+    if(packages.length===0)return "Cargá al menos un bulto";
+    for(let i=0;i<packages.length;i++){const k=packages[i];if(!(Number(k.count)>0)||!k.l||!k.w||!k.h||!k.kg)return `Bulto ${i+1}: faltan medidas o peso`;}
+    const cubiertos=new Set();packages.forEach(k=>{(k.prods.length?k.prods:products.map((_,i)=>i)).forEach(i=>cubiertos.add(i));});
+    const sin=products.findIndex((_,i)=>!cubiertos.has(i));
+    if(sin>=0)return `Producto ${sin+1}: decí en qué bulto viaja`;
     return null;
-  };
-
-  const goStep=(n)=>{
-    if(n>1){const e=validateStep1();if(e){alertDialog(e);return;}}
-    setStep(n);
   };
 
   const generateLink=async()=>{
@@ -340,27 +304,14 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
         else if(c.key==="maritimo_blanco"){acc.cost_maritimo_int_total_usd=Math.round(c.total*100)/100;acc.cost_maritimo_int_real_usd=Math.round(c.real*100)/100;}
         return acc;
       },{});
-      // Validez: la que se eligió al crear la cotización (si sigue vigente); si no, 7 días.
       const reqExp=request?.expires_at?String(request.expires_at).slice(0,10):null;
       const expDate=reqExp&&new Date(reqExp)>new Date()?reqExp:new Date(Date.now()+7*86400000).toISOString().slice(0,10);
-      const body={
-        request_id:requestId,
-        honorarios_pct:honorariosPct?Number(honorariosPct):0,
-        supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,
-        delivery_zone:deliveryZone||null,
-        payment_plan:paymentPlan,
-        ...ch,
-        status:"sent",
-        sent_at:new Date().toISOString(),
-        expires_at:expDate,
-      };
+      const body={request_id:requestId,honorarios_pct:honorariosPct?Number(honorariosPct):0,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null,payment_plan:paymentPlan,...ch,status:"sent",sent_at:new Date().toISOString(),expires_at:expDate};
       let quoteId, publicToken;
       if(draftQuoteId){
-        // Update existing draft quote → finalizar
         const updated=await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${draftQuoteId}`,body});
         quoteId=draftQuoteId;
         publicToken=Array.isArray(updated)?updated[0]?.public_token:updated?.public_token;
-        // Borrar productos viejos del draft, vamos a reinsertarlos con todos los datos completos
         await dq("gi_quote_products",{method:"DELETE",token,filters:`?quote_id=eq.${quoteId}`});
       } else {
         const inserted=await dq("gi_quotes",{method:"POST",token,body});
@@ -368,42 +319,12 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
         publicToken=Array.isArray(inserted)?inserted[0]?.public_token:inserted?.public_token;
       }
       if(!quoteId)throw new Error("No se pudo guardar la cotización");
-      // Insert productos finales
-      for(let i=0;i<products.length;i++){
-        const p=products[i];
-        await dq("gi_quote_products",{method:"POST",token,body:{
-          quote_id:quoteId,
-          description:p.description,
-          origin:p.origin,
-          quantity:Number(p.quantity)||0,
-          unit_cost_usd:Number(p.unit_cost_usd)||0,
-          ncm_code:p.ncm_code||null,
-          ncm_description:p.ncm_description||null,
-          ncm_di_pct:p.import_duty_rate?Number(p.import_duty_rate):null,
-          ncm_iva_pct:p.iva_rate?Number(p.iva_rate):null,
-          ncm_estad_pct:p.statistics_rate?Number(p.statistics_rate):null,
-          lead_time_days:p.lead_time_days?Number(p.lead_time_days):null,
-          photo_url:p.photo_url||null,
-          pkg_count:Number(p.pkg_count)||1,
-          pkg_length_cm:Number(p.pkg_length_cm)||null,
-          pkg_width_cm:Number(p.pkg_width_cm)||null,
-          pkg_height_cm:Number(p.pkg_height_cm)||null,
-          pkg_weight_kg:Number(p.pkg_weight_kg)||null,
-          supplier_ref:p.supplier_ref||null,
-          display_order:i,
-        }});
-      }
-      // Update request status
+      if(request&&request.origin!==origin)await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{origin}});
+      for(let i=0;i<products.length;i++)await dq("gi_quote_products",{method:"POST",token,body:{...productoBody(products[i],origin,i),quantity:Number(products[i].quantity)||0,unit_cost_usd:Number(products[i].unit_cost_usd)||0}});
+      await guardarBultos(quoteId);
       await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{status:"quoted"}});
-      // Log evento (link generado o regenerado)
       try{
-        await dq("gi_quote_communications",{method:"POST",token,body:{
-          quote_id:quoteId,
-          request_id:requestId,
-          type:draftQuoteId?"link_regenerated":"link_generated",
-          author_id:profileId||null,
-          meta:{public_token:publicToken,honorarios_pct:Number(honorariosPct||0)},
-        }});
+        await dq("gi_quote_communications",{method:"POST",token,body:{quote_id:quoteId,request_id:requestId,type:draftQuoteId?"link_regenerated":"link_generated",author_id:profileId||null,meta:{public_token:publicToken,honorarios_pct:Number(honorariosPct||0)}}});
       }catch(e){console.warn("comm log failed",e);}
       setGeneratedQuote({id:quoteId,public_token:publicToken});
       setStep(3);
@@ -423,38 +344,52 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   const masBarato=visibleChannels.filter(c=>!c.error&&c.total>0).sort((a,b)=>a.total-b.total)[0];
   const generar=()=>{if(faltante){alertDialog(faltante);return;}generateLink();};
   return <CotizadorPantalla
-    request={request} cn={cn} lastSavedAt={lastSavedAt} savingDraft={savingDraft} onSave={()=>saveDraft({})} onBack={async()=>{await saveDraft({silent:true});onBack();}}
+    request={request} cn={cn} lastSavedAt={lastSavedAt} savingDraft={savingDraft} dirty={dirty} onSave={()=>saveDraft({})} onBack={async()=>{await saveDraft({silent:true});onBack();}}
+    origin={origin} setOrigin={setOrigin}
     products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} token={token}
+    packages={packages} setPackages={setPackages}
     totalFob={totalFob} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct}
     paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct}
-    desglose={(i)=>desgloseItem({products,productIdx:i,visibleChannels,tariffs,config,client,totalFob})}
+    desglose={(i)=>desgloseItem({products,packages,origin,productIdx:i,visibleChannels,tariffs,config,client,totalFob})}
     verGanancia={verGanancia} faltante={faltante} masBarato={masBarato} saving={saving} onGenerar={generar} yaEnviada={!!draftQuoteId&&lastSentStatus!=="draft"}/>;
 }
 
-// Desglose impositivo de un producto por canal A (prorrateado por FOB), igual que lib/calc.js.
-function desgloseItem({products,productIdx,visibleChannels,tariffs,config,client,totalFob}){
+// Desglose impositivo de un producto por canal A, igual que lib/calc.js. El flete certificado se
+// reparte según los bultos en que viaja cada producto (si un bulto lleva varios, por FOB entre ellos).
+function desgloseItem({products,packages,origin,productIdx,visibleChannels,tariffs,config,client,totalFob}){
     const out={};
     if(!visibleChannels||!tariffs)return out;
     const p=products[productIdx];
     const itemFob=Number(p.unit_cost_usd||0)*Number(p.quantity||0);
     if(itemFob<=0)return out;
     const pct=totalFob>0?itemFob/totalFob:1;
-    // Sumar pkgs globales (igual que computeChannel)
+    const fobDe=(i)=>Number(products[i]?.unit_cost_usd||0)*Number(products[i]?.quantity||0);
     let pf=0,totCBM=0,totGW=0;
-    products.forEach(x=>{
-      if(!x.pkg_count||!x.pkg_length_cm)return;
-      const q=Number(x.pkg_count||1),gw=Number(x.pkg_weight_kg||0),l=Number(x.pkg_length_cm||0),w=Number(x.pkg_width_cm||0),h=Number(x.pkg_height_cm||0);
+    packages.forEach(k=>{
+      if(!(Number(k.count)>0)||!k.l)return;
+      const q=Number(k.count||1),gw=Number(k.kg||0),l=Number(k.l||0),w=Number(k.w||0),h=Number(k.h||0);
       pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);
       totGW+=gw*q;
       totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;
     });
-    // Antidumping calzado: solo afecta la base imponible (die/te/iva/desemb) — el fob real
-    // devuelto en el breakdown no cambia.
+    // Parte del flete que le toca a este producto según sus bultos.
+    const shareDe=(isAereo)=>{
+      let tot=0,mio=0;
+      packages.forEach(k=>{
+        const q=Number(k.count||0),gw=Number(k.kg||0),l=Number(k.l||0),w=Number(k.w||0),h=Number(k.h||0);
+        const amt=isAereo?Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0):(l&&w&&h?((l*w*h)/1e6)*q:0);
+        if(amt<=0)return;
+        const idxs=k.prods.length?k.prods:products.map((_,i)=>i);
+        const sumF=idxs.reduce((s,i)=>s+fobDe(i),0);
+        const peso=idxs.includes(productIdx)?(sumF>0?fobDe(productIdx)/sumF:1/idxs.length):0;
+        tot+=amt;mio+=amt*peso;
+      });
+      return tot>0?mio/tot:pct;
+    };
     const floorInputs=products.map(x=>({unit_price:Number(x.unit_cost_usd||0),quantity:Number(x.quantity||0),ncm_code:x.ncm_code}));
     const floored=applyAntidumpingFloor(floorInputs,config);
     const totalFobAllTax=floored.reduce((s,f)=>s+f.unit_price*f.quantity,0);
     const itemFobTax=floored[productIdx].unit_price*Number(p.quantity||0);
-    const totalFobAll=products.reduce((s,x)=>s+Number(x.unit_cost_usd||0)*Number(x.quantity||0),0);
     const isRI=client?.tax_condition==="responsable_inscripto";
     visibleChannels.forEach(ch=>{
       const isBlanco=ch.key?.includes("blanco");
@@ -465,7 +400,7 @@ function desgloseItem({products,productIdx,visibleChannels,tariffs,config,client
       const certFlAmt=isAereo?(isRI?totGW*certRate:pf*certRate):totCBM*certRate;
       const segTotal=(totalFobAllTax+certFlAmt)*0.01;
       const cifTotal=totalFobAllTax+certFlAmt+segTotal;
-      const iCert=certFlAmt*pct;
+      const iCert=certFlAmt*shareDe(isAereo);
       const iSeg=(itemFobTax+iCert)*0.01;
       const iCif=itemFobTax+iCert+iSeg;
       const dr=p.import_duty_rate===""||p.import_duty_rate==null?0:Number(p.import_duty_rate)/100;
@@ -489,28 +424,33 @@ function desgloseItem({products,productIdx,visibleChannels,tariffs,config,client
   }
 
 // ────────────────────────────────────────────
-// PANTALLA DEL COTIZADOR (13/10/2026): productos a la izquierda, resumen fijo a la derecha.
+// PANTALLA DEL COTIZADOR (20/10/2026): origen arriba, productos y bultos a la izquierda, resumen a la derecha.
 // ────────────────────────────────────────────
 const n2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const soloNum=(v,dec)=>dec?v.replace(/[^0-9.]/g,""):v.replace(/[^0-9]/g,"");
+// Enter pasa al siguiente campo marcado con data-nav (en el orden en que están en pantalla).
+const navEnter=(e)=>{if(e.key!=="Enter")return;e.preventDefault();const all=[...document.querySelectorAll('input[data-nav="1"]')];const i=all.indexOf(e.currentTarget);const nx=all[i+1];if(nx){nx.focus();try{nx.select();}catch{}}};
 
 function CotizadorPantalla(p){
   const movil=useMovil(980);
-  const totalBultos=p.products.reduce((s,x)=>s+Number(x.pkg_count||0),0);
-  let cbm=0,kg=0;p.products.forEach(x=>{const c=Number(x.pkg_count||0);cbm+=(Number(x.pkg_length_cm||0)*Number(x.pkg_width_cm||0)*Number(x.pkg_height_cm||0)*c)/1e6;kg+=Number(x.pkg_weight_kg||0)*c;});
+  const totalBultos=p.packages.reduce((s,k)=>s+Number(k.count||0),0);
+  let cbm=0,kg=0;p.packages.forEach(k=>{const c=Number(k.count||0);cbm+=(Number(k.l||0)*Number(k.w||0)*Number(k.h||0)*c)/1e6;kg+=Number(k.kg||0)*c;});
+  const estado=p.savingDraft?["Guardando…",C.mute]:p.dirty?["Cambios sin guardar",C.amber]:p.lastSavedAt?[`Guardado ${hace(p.lastSavedAt)}`,C.green]:["Sin guardar",C.mute];
   return <div style={{paddingBottom:movil?90:0}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
       <Volver onClick={p.onBack}/>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:12,color:C.mute}}>{p.savingDraft?"Guardando…":p.lastSavedAt?`Guardado ${hace(p.lastSavedAt)}`:"Sin guardar"}</span>
-        <Btn small onClick={p.onSave} disabled={p.savingDraft}>Guardar borrador</Btn>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:estado[1]}}><span style={{width:7,height:7,borderRadius:"50%",background:estado[1],display:"inline-block"}}/>{estado[0]}</span>
+        <Btn v="gold" small onClick={p.onSave} disabled={p.savingDraft}>Guardar</Btn>
       </div>
     </div>
-    <Titulo eyebrow={`Cotización ${p.request.request_code}`} sub="Cargá los productos con su embalaje. A la derecha ves el precio final por canal, ajustás los honorarios y el plan de pagos, y generás el link para el cliente.">{p.cn}</Titulo>
+    <Titulo eyebrow={`Cotización ${p.request.request_code}`} sub="Elegí el origen, cargá los productos y los bultos en que viajan. A la derecha ves el precio por canal, ajustás los honorarios y el plan de pagos, y generás el link. Se guarda solo.">{p.cn}</Titulo>
     <div style={{display:"grid",gridTemplateColumns:movil?"1fr":"minmax(0,1fr) 380px",gap:16,alignItems:"start"}}>
       <div>
-        {p.products.map((x,i)=><ProductoCard key={i} i={i} p={x} total={p.products.length} onUpdate={p.onUpdate} onRemove={p.onRemove} onClassify={p.onClassify} token={p.token} desglose={p.desglose}/>)}
-        <button onClick={p.onAdd} style={{width:"100%",padding:"14px",borderRadius:14,border:`1.5px dashed ${C.lineHi}`,background:"transparent",color:C.sub,fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar producto</button>
+        <OrigenCard origin={p.origin} setOrigin={p.setOrigin}/>
+        {p.products.map((x,i)=><ProductoCard key={i} i={i} p={x} total={p.products.length} origin={p.origin} onUpdate={p.onUpdate} onRemove={p.onRemove} onClassify={p.onClassify} token={p.token} desglose={p.desglose}/>)}
+        <button onClick={p.onAdd} style={{width:"100%",padding:"14px",borderRadius:14,border:`1.5px dashed ${C.lineHi}`,background:"transparent",color:C.sub,fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>+ Agregar producto</button>
+        <BultosCard packages={p.packages} setPackages={p.setPackages} products={p.products}/>
       </div>
       <div style={{position:movil?"static":"sticky",top:20}}>
         <Resumen {...p} movil={movil} totalBultos={totalBultos} cbm={cbm} kg={kg}/>
@@ -526,78 +466,80 @@ function CotizadorPantalla(p){
   </div>;
 }
 
-function ProductoCard({i,p,total,onUpdate,onRemove,onClassify,token,desglose}){
+function OrigenCard({origin,setOrigin}){
+  const ops=[["china","🇨🇳","China","Aéreo, marítimo LCL/FCL e integral"],["usa","🇺🇸","Estados Unidos","Aéreo (con NCM) y marítimo integral"]];
+  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:14,marginBottom:12}}>
+    <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.1em"}}>Origen de la cotización</p>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      {ops.map(([k,ico,l,d])=>{const on=origin===k;return <button key={k} type="button" onClick={()=>setOrigin(k)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:`2px solid ${on?C.gold:C.line}`,background:on?C.goldBg:"rgba(0,0,0,0.15)",transition:"all 120ms"}}>
+        <span style={{fontSize:30,lineHeight:1}}>{ico}</span>
+        <span style={{minWidth:0}}><span style={{display:"block",fontSize:15,fontWeight:800,color:on?C.goldHi:C.txt}}>{l}</span><span style={{display:"block",fontSize:11.5,color:C.mute,marginTop:2}}>{d}</span></span>
+        {on&&<span style={{marginLeft:"auto",fontSize:18,color:C.goldHi}}>✓</span>}
+      </button>;})}
+    </div>
+  </section>;
+}
+
+function ProductoCard({i,p,total,origin,onUpdate,onRemove,onClassify,token,desglose}){
   const [verImp,setVerImp]=useState(false);
   const [editNcm,setEditNcm]=useState(false);
-  const [foto,setFoto]=useState(false);
+  const [foto,setFoto]=useState(null); // null | "nueva" | índice de foto a reemplazar/quitar
   const u=(k)=>(v)=>onUpdate(i,k,v);
-  const cnt=Number(p.pkg_count||0),L=Number(p.pkg_length_cm||0),W=Number(p.pkg_width_cm||0),H=Number(p.pkg_height_cm||0),kg=Number(p.pkg_weight_kg||0);
-  const embOk=cnt&&L&&W&&H&&kg;
-  const cbm=(L*W*H*cnt)/1e6,real=kg*cnt,volAer=(L*W*H*cnt)/5000;
   const sub=Number(p.unit_cost_usd||0)*Number(p.quantity||0);
   const bd=verImp?desglose(i):{};
   const blancos=Object.entries(bd).filter(([,v])=>!v.notBlanco);
   const lbl={fontSize:10.5,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};
   const box={...inp,padding:"9px 11px",fontSize:13.5};
+  const fotos=p.photo_urls||[];
   return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+      <span style={{fontSize:11,fontWeight:800,color:C.gold,letterSpacing:"0.08em"}}>PRODUCTO {i+1}</span>
+      {sub>0&&<span style={{fontSize:12,fontWeight:800,color:C.sub,fontVariantNumeric:"tabular-nums"}}>· FOB {fmtUSD(sub)}</span>}
+      {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{marginLeft:"auto",width:28,height:28,borderRadius:8,border:`1px solid ${C.line}`,background:"transparent",color:C.mute,cursor:"pointer"}}>✕</button>}
+    </div>
     <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
-      <button type="button" onClick={()=>setFoto(true)} style={{width:84,height:84,flexShrink:0,borderRadius:12,border:p.photo_url?`1px solid ${C.line}`:`1.5px dashed ${C.lineHi}`,background:p.photo_url?"#000":"rgba(0,0,0,0.2)",cursor:"pointer",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
-        {p.photo_url?<img src={p.photo_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:11,color:C.mute,fontWeight:700,lineHeight:1.3,textAlign:"center"}}>📷<br/>Foto</span>}
-      </button>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,width:fotos.length?Math.min(fotos.length+1,3)*60:84,flexShrink:0}}>
+        {fotos.map((url,k)=><button key={k} type="button" onClick={()=>setFoto(k)} title="Cambiar o quitar" style={{width:54,height:54,borderRadius:10,border:`1px solid ${C.line}`,background:"#000",cursor:"pointer",overflow:"hidden",padding:0}}><img src={url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></button>)}
+        <button type="button" onClick={()=>setFoto("nueva")} style={{width:fotos.length?54:84,height:fotos.length?54:84,borderRadius:10,border:`1.5px dashed ${C.lineHi}`,background:"rgba(0,0,0,0.2)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}><span style={{fontSize:fotos.length?18:11,color:C.mute,fontWeight:700,lineHeight:1.3,textAlign:"center"}}>{fotos.length?"+":<>📷<br/>Fotos</>}</span></button>
+      </div>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-          <span style={{fontSize:11,fontWeight:800,color:C.gold,letterSpacing:"0.08em"}}>PRODUCTO {i+1}</span>
-          <div style={{marginLeft:"auto",display:"inline-flex",padding:3,background:"rgba(0,0,0,0.25)",borderRadius:9,border:`1px solid ${C.line}`}}>
-            {[["china","China"],["usa","USA"]].map(([k,l])=><button key={k} type="button" onClick={()=>u("origin")(k)} style={{padding:"4px 10px",borderRadius:7,border:"none",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:p.origin===k?C.goldBg:"transparent",color:p.origin===k?C.goldHi:C.mute}}>{l}</button>)}
-          </div>
-          {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.line}`,background:"transparent",color:C.mute,cursor:"pointer"}}>✕</button>}
+        <input data-nav="1" onKeyDown={navEnter} value={p.description} onChange={e=>u("description")(e.target.value)} placeholder="Qué es (ej: perfil de aluminio anodizado 6 m)" style={{...box,fontSize:15,fontWeight:700}}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginTop:10}}>
+          <label><span style={lbl}>Cantidad</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={p.quantity} onChange={e=>u("quantity")(soloNum(e.target.value))} style={box}/></label>
+          <label><span style={lbl}>Costo unit. USD</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={p.unit_cost_usd} onChange={e=>u("unit_cost_usd")(soloNum(e.target.value,true))} style={box}/></label>
+          <label><span style={lbl}>Producción (días)</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={p.lead_time_days} onChange={e=>u("lead_time_days")(soloNum(e.target.value))} style={box}/></label>
         </div>
-        <input value={p.description} onChange={e=>u("description")(e.target.value)} placeholder="Qué es (ej: perfil de aluminio anodizado 6 m)" style={{...box,fontSize:15,fontWeight:700}}/>
+        <label style={{display:"block",marginTop:10}}><span style={lbl}>Proveedor (link, nombre o WeChat)</span><input data-nav="1" onKeyDown={navEnter} value={p.supplier_ref||""} onChange={e=>u("supplier_ref")(e.target.value)} placeholder="https://…alibaba.com/…" style={box}/></label>
       </div>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginTop:12}}>
-      <label><span style={lbl}>Cantidad</span><input inputMode="numeric" value={p.quantity} onChange={e=>u("quantity")(soloNum(e.target.value))} style={box}/></label>
-      <label><span style={lbl}>Costo unit. USD</span><input inputMode="decimal" value={p.unit_cost_usd} onChange={e=>u("unit_cost_usd")(soloNum(e.target.value,true))} style={box}/></label>
-      <label><span style={lbl}>Producción (días)</span><input inputMode="numeric" value={p.lead_time_days} onChange={e=>u("lead_time_days")(soloNum(e.target.value))} style={box}/></label>
-      <div><span style={lbl}>Subtotal FOB</span><p style={{margin:0,padding:"9px 0",fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{sub>0?fmtUSD(sub):"—"}</p></div>
-    </div>
-    <label style={{display:"block",marginTop:10}}><span style={lbl}>Proveedor (link, nombre o WeChat)</span><input value={p.supplier_ref||""} onChange={e=>u("supplier_ref")(e.target.value)} placeholder="https://…alibaba.com/…" style={box}/></label>
-
-    {p.origin==="china"&&<div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)"}}>
+    {/* Posición arancelaria: siempre (desde USA el aéreo también la necesita). Editable a mano y con sugerencia. */}
+    <div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:180}}>
           {p.ncm_code?<>
             <p style={{margin:0,fontSize:13,fontWeight:700}}><span style={{fontFamily:MONO,color:C.blue}}>{p.ncm_code}</span>{p.ncm_description?<span style={{color:C.sub,fontWeight:500}}> · {p.ncm_description}</span>:null}</p>
             <p style={{margin:"4px 0 0",fontSize:12,color:C.sub}}>DI {p.import_duty_rate||0}% · Tasa {p.statistics_rate||0}% · IVA {p.iva_rate||0}%</p>
-          </>:<p style={{margin:0,fontSize:12.5,color:p.ncm_error?C.amber:C.sub}}>{p.ncm_error?"No se pudo clasificar: cargá los aranceles a mano.":"Sin posición arancelaria todavía."}</p>}
+          </>:<p style={{margin:0,fontSize:12.5,color:p.ncm_error?C.amber:C.sub}}>{p.ncm_error?"No se pudo clasificar: cargá la posición y los aranceles a mano.":"Sin posición arancelaria todavía."}</p>}
         </div>
-        <Btn small onClick={()=>onClassify(i)} disabled={(!p.description?.trim()&&!p.photo_url)||p.ncm_loading}>{p.ncm_loading?"Clasificando…":p.ncm_code?"Reclasificar":"Clasificar con IA"}</Btn>
+        <Btn small onClick={()=>onClassify(i)} disabled={(!p.description?.trim()&&!fotos.length)||p.ncm_loading}>{p.ncm_loading?"Clasificando…":p.ncm_code?"Reclasificar":"Clasificar con IA"}</Btn>
         <Btn small v="ghost" onClick={()=>setEditNcm(v=>!v)}>{editNcm?"Listo":"Editar"}</Btn>
       </div>
-      {(editNcm||p.ncm_error)&&<div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",gap:8,marginTop:10}}>
-        <label><span style={lbl}>NCM</span><input value={p.ncm_code} onChange={e=>u("ncm_code")(e.target.value)} style={box}/></label>
-        <label><span style={lbl}>DI %</span><input inputMode="decimal" value={p.import_duty_rate} onChange={e=>u("import_duty_rate")(soloNum(e.target.value,true))} style={box}/></label>
-        <label><span style={lbl}>Tasa %</span><input inputMode="decimal" value={p.statistics_rate} onChange={e=>u("statistics_rate")(soloNum(e.target.value,true))} style={box}/></label>
-        <label><span style={lbl}>IVA %</span><input inputMode="decimal" value={p.iva_rate} onChange={e=>u("iva_rate")(soloNum(e.target.value,true))} style={box}/></label>
-      </div>}
-    </div>}
-
-    <p style={{...lbl,margin:"14px 0 6px"}}>Embalaje</p>
-    <div style={{display:"grid",gridTemplateColumns:"0.8fr 1fr 1fr 1fr 1fr",gap:8}}>
-      <label><span style={{...lbl,fontSize:9.5}}>Bultos</span><input inputMode="numeric" value={p.pkg_count} onChange={e=>u("pkg_count")(soloNum(e.target.value))} style={box}/></label>
-      <label><span style={{...lbl,fontSize:9.5}}>Largo cm</span><input inputMode="decimal" value={p.pkg_length_cm} onChange={e=>u("pkg_length_cm")(soloNum(e.target.value,true))} style={box}/></label>
-      <label><span style={{...lbl,fontSize:9.5}}>Ancho cm</span><input inputMode="decimal" value={p.pkg_width_cm} onChange={e=>u("pkg_width_cm")(soloNum(e.target.value,true))} style={box}/></label>
-      <label><span style={{...lbl,fontSize:9.5}}>Alto cm</span><input inputMode="decimal" value={p.pkg_height_cm} onChange={e=>u("pkg_height_cm")(soloNum(e.target.value,true))} style={box}/></label>
-      <label><span style={{...lbl,fontSize:9.5}}>Kg c/u</span><input inputMode="decimal" value={p.pkg_weight_kg} onChange={e=>u("pkg_weight_kg")(soloNum(e.target.value,true))} style={box}/></label>
+      {(editNcm||p.ncm_error)&&<>
+        <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr",gap:8,marginTop:10}}>
+          <label><span style={lbl}>NCM</span><input value={p.ncm_code} onChange={e=>u("ncm_code")(e.target.value)} placeholder="0000.00.00" style={{...box,fontFamily:MONO}}/></label>
+          <label><span style={lbl}>DI %</span><input inputMode="decimal" value={p.import_duty_rate} onChange={e=>u("import_duty_rate")(soloNum(e.target.value,true))} style={box}/></label>
+          <label><span style={lbl}>Tasa %</span><input inputMode="decimal" value={p.statistics_rate} onChange={e=>u("statistics_rate")(soloNum(e.target.value,true))} style={box}/></label>
+          <label><span style={lbl}>IVA %</span><input inputMode="decimal" value={p.iva_rate} onChange={e=>u("iva_rate")(soloNum(e.target.value,true))} style={box}/></label>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"flex-end",marginTop:8,flexWrap:"wrap"}}>
+          <label style={{flex:"1 1 200px"}}><span style={lbl}>Sugerir posición (la IA completa las alícuotas)</span><input value={p.ncm_hint||""} onChange={e=>u("ncm_hint")(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&p.ncm_hint)onClassify(i,p.ncm_hint);}} placeholder="Ej: 7604.21 o 760421" style={{...box,fontFamily:MONO}}/></label>
+          <Btn small onClick={()=>onClassify(i,p.ncm_hint)} disabled={!p.ncm_hint||p.ncm_loading}>Usar esta posición</Btn>
+        </div>
+      </>}
     </div>
-    {embOk?<div style={{display:"flex",flexWrap:"wrap",gap:"4px 14px",marginTop:8,fontSize:12,color:C.sub,fontVariantNumeric:"tabular-nums"}}>
-      <span><strong style={{color:C.txt}}>{cbm.toFixed(3)}</strong> m³</span>
-      <span><strong style={{color:C.txt}}>{n2(real)}</strong> kg reales</span>
-      <span>aéreo factura <strong style={{color:C.green}}>{n2(Math.max(real,volAer))}</strong> kg</span>
-    </div>:<p style={{margin:"8px 0 0",fontSize:12,color:C.amber}}>Faltan datos del embalaje.</p>}
 
-    {p.origin==="china"&&sub>0&&<div style={{marginTop:12}}>
+    {sub>0&&<div style={{marginTop:12}}>
       <button type="button" onClick={()=>setVerImp(v=>!v)} style={{background:"none",border:"none",color:C.blue,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",padding:0}}>{verImp?"Ocultar impuestos":"Ver impuestos de este producto"}</button>
       {verImp&&blancos.length>0&&<div style={{display:"grid",gridTemplateColumns:`repeat(${blancos.length},minmax(0,1fr))`,gap:8,marginTop:8}}>
         {blancos.map(([k,v])=><div key={k} style={{padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.2)",fontSize:12,fontVariantNumeric:"tabular-nums"}}>
@@ -606,8 +548,55 @@ function ProductoCard({i,p,total,onUpdate,onRemove,onClassify,token,desglose}){
           <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.line}`,fontWeight:800}}><span>Impuestos</span><span>USD {n2(v.total)}</span></div>
         </div>)}
       </div>}
+      {verImp&&blancos.length===0&&<p style={{margin:"6px 0 0",fontSize:12,color:C.mute}}>Los impuestos se ven una vez cargados los bultos.</p>}
     </div>}
-    {foto&&<PhotoUploadModal token={token} onCancel={()=>setFoto(false)} onUploaded={url=>{u("photo_url")(url);setFoto(false);}} onQuitar={p.photo_url?()=>{u("photo_url")("");setFoto(false);}:null}/>}
+    {foto!==null&&<PhotoUploadModal token={token} multiple onCancel={()=>setFoto(null)} onUploaded={urls=>{const nuevas=Array.isArray(urls)?urls:[urls];u("photo_urls")(foto==="nueva"?[...fotos,...nuevas]:fotos.map((x,k)=>k===foto?nuevas[0]:x).concat(nuevas.slice(1)));setFoto(null);}} onQuitar={foto!=="nueva"?()=>{u("photo_urls")(fotos.filter((_,k)=>k!==foto));setFoto(null);}:null}/>}
+  </section>;
+}
+
+// Bultos de la cotización: cuántas cajas, medidas, peso y qué productos van adentro.
+function BultosCard({packages,setPackages,products}){
+  const lbl={fontSize:9.5,fontWeight:800,color:C.mute,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};
+  const box={...inp,padding:"9px 11px",fontSize:13.5};
+  const up=(i,k,v)=>setPackages(ks=>ks.map((x,j)=>j===i?{...x,[k]:v}:x));
+  const add=()=>setPackages(ks=>[...ks,{count:"1",l:"",w:"",h:"",kg:"",prods:products.length===1?[0]:[]}]);
+  const del=(i)=>setPackages(ks=>ks.filter((_,j)=>j!==i));
+  const toggleProd=(i,idx)=>setPackages(ks=>ks.map((x,j)=>j===i?{...x,prods:x.prods.includes(idx)?x.prods.filter(y=>y!==idx):[...x.prods,idx].sort((a,b)=>a-b)}:x));
+  const nombre=(idx)=>{const d=(products[idx]?.description||"").trim();return d?(d.length>26?d.slice(0,24)+"…":d):`Producto ${idx+1}`;};
+  let cbm=0,kg=0,volAer=0,n=0;packages.forEach(k=>{const c=Number(k.count||0),L=Number(k.l||0),W=Number(k.w||0),H=Number(k.h||0),g=Number(k.kg||0);n+=c;cbm+=(L*W*H*c)/1e6;kg+=g*c;volAer+=(L*W*H*c)/5000;});
+  const sinBulto=products.map((_,i)=>i).filter(i=>!packages.some(k=>(k.prods.length?k.prods:products.map((_,j)=>j)).includes(i)));
+  return <section style={{background:C.card,border:`1px solid ${C.line}`,borderRadius:16,padding:16,marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+      <span style={{fontSize:11,fontWeight:800,color:C.gold,letterSpacing:"0.08em"}}>BULTOS</span>
+      <span style={{fontSize:12,color:C.sub}}>Cómo viaja la mercadería: cada caja, sus medidas y qué productos lleva.</span>
+    </div>
+    {packages.length===0&&<p style={{margin:"0 0 10px",fontSize:12.5,color:C.amber}}>Todavía no cargaste ningún bulto.</p>}
+    {packages.map((k,i)=><div key={i} style={{padding:"12px 12px 10px",borderRadius:12,border:`1px solid ${C.line}`,background:"rgba(0,0,0,0.15)",marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <span style={{fontSize:11,fontWeight:800,color:C.sub,letterSpacing:"0.06em"}}>BULTO {i+1}</span>
+        <button type="button" onClick={()=>del(i)} aria-label="Quitar bulto" style={{marginLeft:"auto",width:26,height:26,borderRadius:7,border:`1px solid ${C.line}`,background:"transparent",color:C.mute,cursor:"pointer"}}>✕</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"0.8fr 1fr 1fr 1fr 1fr",gap:8}}>
+        <label><span style={lbl}>Cant.</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={k.count} onChange={e=>up(i,"count",soloNum(e.target.value))} style={box}/></label>
+        <label><span style={lbl}>Largo cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.l} onChange={e=>up(i,"l",soloNum(e.target.value,true))} style={box}/></label>
+        <label><span style={lbl}>Ancho cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.w} onChange={e=>up(i,"w",soloNum(e.target.value,true))} style={box}/></label>
+        <label><span style={lbl}>Alto cm</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.h} onChange={e=>up(i,"h",soloNum(e.target.value,true))} style={box}/></label>
+        <label><span style={lbl}>Kg c/u</span><input data-nav="1" onKeyDown={navEnter} inputMode="decimal" value={k.kg} onChange={e=>up(i,"kg",soloNum(e.target.value,true))} style={box}/></label>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8}}>
+        <span style={{...lbl,marginBottom:0,marginRight:4}}>Lleva</span>
+        {products.map((_,idx)=>{const on=k.prods.includes(idx);return <button key={idx} type="button" onClick={()=>toggleProd(i,idx)} style={{padding:"5px 10px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?C.gold:C.line}`,background:on?C.goldBg:"transparent",color:on?C.goldHi:C.sub}}>{on?"✓ ":""}{nombre(idx)}</button>;})}
+        {k.prods.length===0&&products.length>1&&<span style={{fontSize:11.5,color:C.amber}}>Marcá qué productos van en este bulto</span>}
+      </div>
+    </div>)}
+    <button type="button" onClick={add} style={{width:"100%",padding:"11px",borderRadius:12,border:`1.5px dashed ${C.lineHi}`,background:"transparent",color:C.sub,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar bulto</button>
+    {n>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"4px 14px",marginTop:10,fontSize:12,color:C.sub,fontVariantNumeric:"tabular-nums"}}>
+      <span><strong style={{color:C.txt}}>{n}</strong> bulto{n!==1?"s":""}</span>
+      <span><strong style={{color:C.txt}}>{cbm.toFixed(3)}</strong> m³</span>
+      <span><strong style={{color:C.txt}}>{n2(kg)}</strong> kg reales</span>
+      <span>aéreo factura <strong style={{color:C.green}}>{n2(Math.max(kg,volAer))}</strong> kg</span>
+      {sinBulto.length>0&&<span style={{color:C.amber}}>Sin bulto: {sinBulto.map(i=>nombre(i)).join(", ")}</span>}
+    </div>}
   </section>;
 }
 
@@ -726,11 +715,11 @@ export function PhotoUpload({value,onChange,token}){
         <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontWeight:600,margin:0,textAlign:"center"}}>Subir foto del producto</p>
       </button>
     }
-    {open&&<PhotoUploadModal token={token} onCancel={()=>setOpen(false)} onUploaded={url=>{onChange(url);setOpen(false);}}/>}
+    {open&&<PhotoUploadModal token={token} onCancel={()=>setOpen(false)} onUploaded={url=>{onChange(Array.isArray(url)?url[0]:url);setOpen(false);}}/>}
   </div>;
 }
 
-function PhotoUploadModal({token,onCancel,onUploaded,onQuitar}){
+function PhotoUploadModal({token,onCancel,onUploaded,onQuitar,multiple=false}){
   const [drag,setDrag]=useState(false);
   const [uploading,setUploading]=useState(false);
   const [preview,setPreview]=useState(null);
@@ -745,19 +734,22 @@ function PhotoUploadModal({token,onCancel,onUploaded,onQuitar}){
     document.addEventListener("paste",handler);
     return()=>document.removeEventListener("paste",handler);
   },[]);
-  const handleFile=async(file)=>{
-    if(!file||!file.type?.startsWith("image/")){alertDialog("Solo imágenes (JPG/PNG/WebP)");return;}
-    if(file.size>10*1024*1024){alertDialog("Máximo 10 MB");return;}
-    // Preview inmediato
-    const reader=new FileReader();reader.onload=e=>setPreview(e.target.result);reader.readAsDataURL(file);
+  // Varias imágenes a la vez (20/10/2026): se suben una por una y se devuelven todas juntas.
+  const handleFiles=async(lista)=>{
+    const files=Array.from(lista||[]).filter(Boolean).slice(0,multiple?10:1);
+    if(!files.length)return;
+    for(const f of files){if(!f.type?.startsWith("image/")){alertDialog("Solo imágenes (JPG/PNG/WebP)");return;}if(f.size>10*1024*1024){alertDialog("Máximo 10 MB por imagen");return;}}
+    const reader=new FileReader();reader.onload=e=>setPreview(e.target.result);reader.readAsDataURL(files[0]);
     setUploading(true);
     try{
-      const url=await uploadProductPhoto(file,token);
-      if(url)onUploaded(url);
+      const urls=[];
+      for(const f of files){const url=await uploadProductPhoto(f,token);if(url)urls.push(url);}
+      if(urls.length)onUploaded(multiple?urls:urls[0]);
       else{alertDialog("No se pudo subir la imagen");setUploading(false);setPreview(null);}
     } catch(e){alertDialog("Error: "+e.message);setUploading(false);setPreview(null);}
   };
-  const onDrop=(e)=>{e.preventDefault();e.stopPropagation();setDrag(false);const f=e.dataTransfer?.files?.[0];if(f)handleFile(f);};
+  const handleFile=(f)=>handleFiles(f?[f]:[]);
+  const onDrop=(e)=>{e.preventDefault();e.stopPropagation();setDrag(false);handleFiles(e.dataTransfer?.files);};
   const onDragOver=(e)=>{e.preventDefault();e.stopPropagation();if(!drag)setDrag(true);};
   const onDragEnter=(e)=>{e.preventDefault();e.stopPropagation();setDrag(true);};
   const onDragLeave=(e)=>{e.preventDefault();e.stopPropagation();if(e.target===e.currentTarget)setDrag(false);};
@@ -766,8 +758,8 @@ function PhotoUploadModal({token,onCancel,onUploaded,onQuitar}){
     <div onClick={e=>e.stopPropagation()} onDrop={onDrop} onDragOver={onDragOver} onDragEnter={onDragEnter} onDragLeave={onDragLeave} style={{maxWidth:560,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:`2px solid ${drag?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,borderRadius:16,padding:"24px",boxShadow:"0 32px 80px rgba(0,0,0,0.65)",transition:"border-color 150ms"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,paddingBottom:14,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
         <div>
-          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 3px"}}>Subir foto del producto</h3>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>Arrastrá una imagen, pegala con Cmd+V, o elegí un archivo</p>
+          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 3px"}}>{multiple?"Subir fotos del producto":"Subir foto del producto"}</h3>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>{multiple?"Arrastrá una o varias imágenes, pegá con Cmd+V, o elegí archivos":"Arrastrá una imagen, pegala con Cmd+V, o elegí un archivo"}</p>
         </div>
         <button onClick={()=>!uploading&&onCancel()} disabled={uploading} style={{fontSize:22,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:uploading?"not-allowed":"pointer",padding:"0 4px"}}>✕</button>
       </div>
@@ -784,7 +776,7 @@ function PhotoUploadModal({token,onCancel,onUploaded,onQuitar}){
             <div style={{display:"flex",gap:10,marginTop:6}}>
               <label style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",fontFamily:"inherit"}}>
                 📁 Elegir archivo
-                <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value="";}} style={{display:"none"}}/>
+                <input type="file" accept="image/*" multiple={multiple} onChange={e=>{handleFiles(e.target.files);e.target.value="";}} style={{display:"none"}}/>
               </label>
               <span style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)"}}>⌘V Pegar</span>
               {onQuitar&&<button type="button" onClick={onQuitar} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(248,113,113,0.4)",background:"transparent",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>Quitar foto</button>}

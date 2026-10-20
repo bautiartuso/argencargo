@@ -417,6 +417,7 @@ function NuevaCotizacion({ ctx, onClose }) {
   const [cli, setCli] = useState(null);
   const [nuevo, setNuevo] = useState({ first_name: "", last_name: "", whatsapp: "" });
   const [socio, setSocio] = useState(staff ? "" : perfil.id);
+  const [origen, setOrigen] = useState("china");
   const [dias, setDias] = useState("7");
   const [notas, setNotas] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -455,7 +456,7 @@ function NuevaCotizacion({ ctx, onClose }) {
       }
       const code = await dq("rpc/gi_next_request_code", { method: "POST", token, body: {} });
       if (typeof code !== "string" || !code.startsWith("GI-")) throw new Error("No se pudo generar el código");
-      const ins = await dq("gi_quote_requests", { method: "POST", token, body: { request_code: code, client_id: c.id, assigned_partner_id: socio || null, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) } });
+      const ins = await dq("gi_quote_requests", { method: "POST", token, body: { request_code: code, client_id: c.id, assigned_partner_id: socio || null, origin: origen, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) } });
       const id = arr(ins)[0]?.id;
       if (!id) throw new Error("No se pudo crear la cotización");
       toast.success(`${code} creada`);
@@ -491,6 +492,9 @@ function NuevaCotizacion({ ctx, onClose }) {
     {staff && <Campo label="Socio">
       <Opciones value={socio} onChange={setSocio} items={[{ k: "", l: "Argencargo" }, ...d.socios.map((p) => ({ k: p.id, l: p.email.split("@")[0] }))]} />
     </Campo>}
+    <Campo label="Origen de la mercadería">
+      <Opciones value={origen} onChange={setOrigen} cols={2} items={[{ k: "china", l: "🇨🇳 China" }, { k: "usa", l: "🇺🇸 Estados Unidos" }]} />
+    </Campo>
     <Campo label="Válida por">
       <Opciones value={dias} onChange={setDias} cols={4} items={[{ k: "7", l: "7 días" }, { k: "15", l: "15 días" }, { k: "30", l: "30 días" }, { k: "60", l: "60 días" }]} />
     </Campo>
