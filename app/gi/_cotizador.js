@@ -447,7 +447,7 @@ function CotizadorPantalla(p){
         <Btn v="gold" small onClick={p.onSave} disabled={p.savingDraft}>Guardar</Btn>
       </div>
     </div>
-    <Titulo eyebrow={`Cotización ${p.request.request_code}`} sub="Elegí el origen, cargá los productos y los bultos en que viajan. A la derecha ves el precio por canal, ajustás los honorarios y el plan de pagos, y generás el link. Se guarda solo.">{p.cn}</Titulo>
+    <h1 style={{margin:"0 0 14px",fontSize:22,fontWeight:800,color:C.txt,letterSpacing:"-0.01em"}}>Cotización <span style={{fontFamily:MONO,color:C.goldHi}}>{p.request.request_code}</span> — {p.cn}</h1>
     <div style={{display:"grid",gridTemplateColumns:movil?"1fr":"minmax(0,1fr) 380px",gap:16,alignItems:"start"}}>
       <div>
         <OrigenCard origin={p.origin} setOrigin={p.setOrigin}/>
