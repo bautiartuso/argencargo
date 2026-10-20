@@ -262,6 +262,50 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
     </div>
   </div>;
 }
+// ═══ RECLAMO DE BULTO (20/10/2026) ═══
+// El cliente tiene un bulto que no le figura en el depósito: carga el tracking y lo reclama. El
+// reclamo les llega a todos los agentes de China; el que lo tenga lo registra. No se puede rechazar.
+function ReclamoBulto({token,client}){
+  const {t}=useT();
+  const [open,setOpen]=useState(false);const [trk,setTrk]=useState("");const [nota,setNota]=useState("");const [busy,setBusy]=useState(false);
+  const [lista,setLista]=useState(null);
+  const HAIR="1px solid rgba(255,255,255,0.13)";
+  const cargar=async()=>{try{const r=await fetch(`/api/portal/reclamar-bulto${client?.id?`?client_id=${client.id}`:""}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const d=await r.json();setLista(Array.isArray(d?.reclamos)?d.reclamos:[]);}catch{setLista([]);}};
+  useEffect(()=>{cargar();},[token,client?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendientes=(lista||[]).filter(x=>x.status==="pendiente");
+  useEffect(()=>{if(pendientes.length)setOpen(true);},[pendientes.length]);
+  const reclamar=async()=>{
+    if(busy)return;const x=trk.trim();if(x.replace(/[^A-Za-z0-9]/g,"").length<6){toast(t("dep.claimErrTrk"),"error");return;}
+    setBusy(true);
+    try{const r=await fetch("/api/portal/reclamar-bulto",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({tracking:x,note:nota.trim(),client_id:client?.id})});const d=await r.json().catch(()=>null);
+      if(!r.ok||!d?.ok){toast(d?.error==="ya_reclamado"?t("dep.claimErrDup"):d?.error==="ya_registrado"?t("dep.claimErrReg"):t("dep.claimErr"),"error");setBusy(false);return;}
+      toast(t("dep.claimSent"),"success");setTrk("");setNota("");await cargar();
+    }catch{toast(t("dep.claimErr"),"error");}
+    setBusy(false);};
+  const fd=d=>{const x=new Date(d);return `${String(x.getDate()).padStart(2,"0")}/${String(x.getMonth()+1).padStart(2,"0")}`;};
+  const inp={flex:"1 1 220px",height:44,padding:"0 14px",fontSize:14,border:HAIR,borderRadius:11,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  return <div style={{marginTop:14,borderRadius:16,border:open?"1px solid rgba(232,208,152,0.35)":HAIR,background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",overflow:"hidden"}}>
+    <button type="button" onClick={()=>setOpen(v=>!v)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"14px 18px",border:"none",background:"transparent",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+      <span style={{fontSize:20}}>🔎</span>
+      <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:14,fontWeight:800}}>{t("dep.claimTitle")}{pendientes.length?<span style={{marginLeft:8,fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>{pendientes.length}</span>:null}</span><span style={{display:"block",fontSize:12.5,color:"rgba(255,255,255,0.55)",marginTop:2}}>{t("dep.claimDesc")}</span></span>
+      <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{open?"▲":"▼"}</span>
+    </button>
+    {open&&<div style={{padding:"0 18px 16px"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <input value={trk} onChange={e=>setTrk(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")reclamar();}} placeholder={t("dep.claimTracking")} style={{...inp,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.03em"}}/>
+        <input value={nota} onChange={e=>setNota(e.target.value)} placeholder={t("dep.claimNote")} style={inp}/>
+        <button type="button" onClick={reclamar} disabled={busy} style={{flex:"0 0 auto",height:44,padding:"0 20px",fontSize:13,fontWeight:900,letterSpacing:"0.05em",textTransform:"uppercase",borderRadius:11,border:"1px solid rgba(232,208,152,0.6)",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0A1628",cursor:busy?"wait":"pointer",fontFamily:"inherit",opacity:busy?0.7:1}}>{busy?"…":t("dep.claimBtn")}</button>
+      </div>
+      {lista&&lista.length>0&&<div style={{marginTop:12,display:"flex",flexDirection:"column",gap:6}}>
+        {lista.map((c,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"9px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:HAIR}}>
+          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:"#fff",wordBreak:"break-all",flex:"1 1 200px"}}>{c.tracking}</span>
+          <span style={{fontSize:12,fontWeight:800,color:c.status==="recibido"?"#4ade80":c.status==="cancelado"?"rgba(255,255,255,0.4)":"#fbbf24",whiteSpace:"nowrap"}}>{c.status==="recibido"?`✓ ${t("dep.claimDone")} · ${fd(c.resolved_at||c.created_at)}`:c.status==="cancelado"?t("dep.claimCancelled"):`${t("dep.claimWaiting")} · ${fd(c.created_at)}`}</span>
+        </div>)}
+      </div>}
+    </div>}
+  </div>;
+}
+
 // ═══ DEPÓSITO (13/09/2026) ═══
 // Los bultos llegan al depósito sin operación. El cliente ve lo que le llegó, elige cuáles
 // viajan juntos y crea la importación; puede armar varias. El agente no interviene.
@@ -3093,6 +3137,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="deposito"&&<>
       <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>
       <DepositoView pkgs={depPkgs} token={token} client={client} onCreated={op=>{setOps(p=>[op,...p]);setDepPkgs([]);setPage("imports");setSelOp(op);loadOps();}}/>
+      <ReclamoBulto token={token} client={client}/>
     </>}
     {page==="profile"&&<ProfilePage client={client} token={token}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}

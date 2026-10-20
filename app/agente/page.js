@@ -1361,7 +1361,6 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           <p style={{margin:0,fontSize:15,fontWeight:800,fontFamily:"monospace",color:"var(--tx)",wordBreak:"break-all"}}>{c.tracking}</p>
           <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(var(--ink),0.6)"}}><span style={{fontFamily:"monospace",fontWeight:800,color:"var(--gold)"}}>{c.clients?.client_code||"—"}</span>{c.clients?.first_name?` · ${c.clients.first_name}`:""} · <span style={{color:dias>=3?"var(--red)":"inherit",fontWeight:dias>=3?800:400}}>{dias<1?(t.claim_today||"hoy"):`${dias} ${t.claim_days||"días"}`}</span>{c.note?<span style={{display:"block",marginTop:2,color:"rgba(var(--ink),0.75)"}}>{c.note}</span>:null}</p>
         </div>
-        <button onClick={()=>reclamoNoEncontrado(c)} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"}}>{t.claim_not_found||"No lo encuentro"}</button>
         <button onClick={()=>{setClaimReg(c);setShowForm(true);window.scrollTo({top:0,behavior:"smooth"});}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",boxShadow:GOLD_GLOW}}>✓ {t.claim_arrived||"Llegó"}</button>
       </div>;})}
     </div>}
@@ -2539,7 +2538,9 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
   // Reclamo que corresponde a este paquete: el elegido con "Llegó" o uno cuyo tracking coincide.
   const reclamo=claim||(tracking.trim()?claims.find(c=>trkCoincide(c.tracking,tracking)):null)||null;
   useEffect(()=>{if(reclamo&&(clientId===""||clientId==="unregistered"))setClientId(reclamo.client_id);},[reclamo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const cerrarReclamo=async()=>{if(!reclamo||reclamo.client_id!==clientId)return;try{await dq("deposit_claims",{method:"PATCH",token,filters:`?id=eq.${reclamo.id}&status=eq.pendiente`,body:{status:"recibido",resolved_at:new Date().toISOString(),resolved_by:agentId}});}catch(e){console.error("reclamo",e);}};
+  // Cierra el reclamo y los de los otros agentes por el mismo bulto (20/10/2026: cada reclamo del
+  // cliente se manda a todos los agentes de China; el que lo registra lo resuelve para todos).
+  const cerrarReclamo=async()=>{if(!reclamo||reclamo.client_id!==clientId)return;try{await dq("deposit_claims",{method:"PATCH",token,filters:`?client_id=eq.${reclamo.client_id}&tracking_norm=eq.${encodeURIComponent(reclamo.tracking_norm||"")}&status=eq.pendiente`,body:{status:"recibido",resolved_at:new Date().toISOString(),resolved_by:agentId}});}catch(e){console.error("reclamo",e);}};
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
 
