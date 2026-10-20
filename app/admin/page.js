@@ -10643,7 +10643,8 @@ function ReclamosDeposito({token,signups=[],onCount}){
       setTrk("");setNota("");setCliId("");await cargar();
     }finally{setGuardando(false);}
   };
-  const cambiar=async(c,body)=>{await dq("deposit_claims",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});cargar();};
+  // Un reclamo del portal es una fila por agente: cancelar / volver a pedir actúa sobre todas las del mismo bulto.
+  const cambiar=async(c,body)=>{await dq("deposit_claims",{method:"PATCH",token,filters:`?client_id=eq.${c.client_id}&tracking_norm=eq.${encodeURIComponent(c.tracking_norm||"")}&status=eq.${c.status}`,body});cargar();};
   const filtrados=(busca.trim()?clientes.filter(c=>{const q=busca.toLowerCase();return c.client_code?.toLowerCase().includes(q)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q);}):clientes).slice(0,40);
   const inp={width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"};
   const lbl={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6};
@@ -10651,10 +10652,10 @@ function ReclamosDeposito({token,signups=[],onCount}){
   const grupo=(titulo,color,items,acciones)=>items.length>0&&<div style={{marginTop:18}}>
     <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.07em"}}>{titulo} · {items.length}</p>
     <div style={{borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.025)",overflow:"hidden"}}>
-      {items.map((c,i)=>{const dd=donde[c.id];const n=Math.floor((Date.now()-new Date(c.created_at).getTime())/864e5);return <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"11px 14px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
+      {(()=>{const vistos=new Set();return items.filter(c=>{const k=`${c.client_id}|${c.tracking_norm}`;if(vistos.has(k))return false;vistos.add(k);return true;});})().map((c,i)=>{const dd=donde[c.id];const n=Math.floor((Date.now()-new Date(c.created_at).getTime())/864e5);const hermanos=items.filter(x=>x.client_id===c.client_id&&x.tracking_norm===c.tracking_norm);const agentesTxt=[...new Set(hermanos.map(x=>nombreAgente(x.agent_id)).filter(Boolean))].join(" · ");return <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"11px 14px",borderTop:i?"1px solid rgba(255,255,255,0.06)":"none"}}>
         <div style={{flex:"1 1 280px",minWidth:0}}>
           <p style={{margin:0,fontSize:14,fontWeight:800,fontFamily:"monospace",color:"#fff",wordBreak:"break-all"}}>{c.tracking}</p>
-          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.clients?.client_code||"—"}</b> {[c.clients?.first_name,c.clients?.last_name].filter(Boolean).join(" ")}{c.agent_id?` · → ${nombreAgente(c.agent_id)}`:""} · <span style={{color:c.status==="pendiente"&&n>=3?"#f87171":"inherit",fontWeight:c.status==="pendiente"&&n>=3?800:400}}>{dias(c.created_at)}</span>{c.note?` · ${c.note}`:""}</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}><b style={{fontFamily:"monospace",color:"#E8C99B"}}>{c.clients?.client_code||"—"}</b> {[c.clients?.first_name,c.clients?.last_name].filter(Boolean).join(" ")}{agentesTxt?` · → ${agentesTxt}`:""} · <span style={{color:c.status==="pendiente"&&n>=3?"#f87171":"inherit",fontWeight:c.status==="pendiente"&&n>=3?800:400}}>{dias(c.created_at)}</span>{c.note?` · ${c.note}`:""}</p>
           {dd&&<p style={{margin:"4px 0 0",fontSize:12,fontWeight:800,color:dd.c}}>{dd.t}</p>}
         </div>
         {acciones(c)}
