@@ -13710,7 +13710,12 @@ function FinanceDashboard({token}){
       const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
       const tope=Number(o.budget_total||0)+Number(o.debt_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
-      const cashIn=extraCharge>0.01?cash:((tope>0?Math.min(cash,tope):cash)+Math.min(sobranteDe[o.id]||0,Math.max(0,cash-tope)));
+      // Crédito de CC aplicado: en los cobros nuevos collected_amount ya es el efectivo neto; en los
+      // viejos se guardaba el presupuesto entero aunque parte se pagara con crédito. Si lo cobrado
+      // cubre todo el presupuesto y hubo crédito, ese crédito no fue efectivo: se resta.
+      const credito=Number(o.credit_applied_usd||0);
+      const efectivo=credito>0&&cash>=tope-0.01?Math.max(0,cash-credito):cash;
+      const cashIn=extraCharge>0.01?efectivo:((tope>0?Math.min(efectivo,tope):efectivo)+Math.min(sobranteDe[o.id]||0,Math.max(0,cash-tope)));
       if(cashIn>0)ing+=cashIn;
     });
     ing+=clientPmts.filter(p=>filtro(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
