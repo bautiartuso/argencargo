@@ -17545,8 +17545,12 @@ function MaritimePanel({token,allClients=[]}){
     const ids=[...selectedShipments];
     if(ids.length===0)return;
     const body=containerId?{container_id:containerId,status:"en_camino_ar"}:{container_id:null,status:"en_deposito"};
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body});
-    flash(containerId?`🚢 ${ids.length} carga${ids.length>1?"s":""} asignada${ids.length>1?"s":""} al contenedor (→ en tránsito)`:`Carga${ids.length>1?"s":""} quitada${ids.length>1?"s":""} del contenedor (→ en depósito)`);
+    // Antes el resultado no se miraba: si la base rechazaba el cambio, igual decía "asignadas" (20/10/2026,
+    // Salida Octubre). Ahora se chequea y se avisa qué pasó.
+    const r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body,prefer:"return=representation"});
+    if(!Array.isArray(r)){toast(`No se pudo ${containerId?"subir al contenedor":"quitar del contenedor"}: ${r?.message||r?.code||"error de la base"}`,"error");return;}
+    if(r.length<ids.length)toast(`Solo ${r.length} de ${ids.length} cambiaron (las otras no se pudieron actualizar)`,"warn");
+    flash(containerId?`🚢 ${r.length} carga${r.length>1?"s":""} asignada${r.length>1?"s":""} al contenedor (→ en tránsito)`:`Carga${r.length>1?"s":""} quitada${r.length>1?"s":""} del contenedor (→ en depósito)`);
     setSelectedShipments(new Set());load();
   };
 

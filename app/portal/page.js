@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { PROVINCIAS } from "../../lib/provincias";
-import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje, esPkBd, svcAereoDe, SVC_PK_BD, TARIFA_PK_BD } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje, esPkBd, svcAereoDe, SVC_PK_BD, TARIFA_PK_BD , TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
 import MaritimeCargoCards from "./components/MaritimeCargoCards";
@@ -1736,7 +1736,7 @@ function CalculatorPage({token,client,preset}){
   const saveChainRef=useRef(Promise.resolve());
   // Desglose línea por línea de cada vía (se guarda en channel_alternatives.detail: lo lee Mis cotizaciones y el link público).
   const detailOf=(ch)=>{const its=ch.items||[];const sm=f=>its.reduce((a,it)=>a+Number(f(it)||0),0);const d=[];
-    if(ch.isBlanco){d.push(["Flete internacional",Number(ch.flete||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);d.push(["Seguro (1%)",Number(ch.seguro||0)]);d.push(["Derechos de importación",sm(it=>it.derechos)]);d.push(["Tasa estadística",sm(it=>it.tasa_e)]);d.push(["IVA",sm(it=>it.iva)]);if(ch.isMar)d.push(["IVA adicional + IIGG + IIBB",sm(it=>(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0))]);else{d.push(["Gasto documental",sm(it=>it.desembolso)]);if(sm(it=>it.ivaDesemb)>0)d.push(["IVA sobre gasto documental",sm(it=>it.ivaDesemb)]);}}
+    if(ch.isBlanco){d.push(["Flete internacional",Number(ch.flete||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);d.push(["Seguro (1%)",Number(ch.seguro||0)]);d.push(["Derechos de importación",sm(it=>it.derechos)]);d.push(["Tasa estadística",sm(it=>it.tasa_e)]);d.push(["IVA",sm(it=>it.iva)]);if(ch.isMar){d.push([`IVA adicional (${Math.round(TASA_IVA_ADICIONAL*100)}%)`,sm(it=>it.ivaAdic||0)]);d.push([`Ganancias · IIGG (${Math.round(TASA_IIGG*100)}%)`,sm(it=>it.iigg||0)]);d.push([`Ingresos brutos · IIBB (${Math.round(TASA_IIBB*100)}%)`,sm(it=>it.iibb||0)]);}else{d.push(["Gasto documental",sm(it=>it.desembolso)]);if(sm(it=>it.ivaDesemb)>0)d.push(["IVA sobre gasto documental",sm(it=>it.ivaDesemb)]);}}
     else{d.push([ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);}
     return d.map(([l,v])=>[l,Math.round(v*100)/100]);};
   const buildQuoteBody=(channels,chosen)=>{
@@ -1922,7 +1922,7 @@ function CalculatorPage({token,client,preset}){
         {line(its.length===1?`Derechos de importación (${its[0].drPct}%)`:"Derechos de importación",sum(its,it=>it.derechos))}
         {line(its.length===1?`${t("merc.statRate")} (${its[0].tePct}%)`:t("merc.statRate"),sum(its,it=>it.tasa_e))}
         {line(its.length===1?`IVA (${its[0].ivaPct}%)`:"IVA",sum(its,it=>it.iva))}
-        {ch.isMar?line("IVA adicional + IIGG + IIBB",sum(its,it=>(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0))):<>{line("Gasto documental",sum(its,it=>it.desembolso))}{sum(its,it=>it.ivaDesemb)>0&&line("IVA sobre gasto documental",sum(its,it=>it.ivaDesemb))}</>}
+        {ch.isMar?<>{line(`IVA adicional (${Math.round(TASA_IVA_ADICIONAL*100)}%)`,sum(its,it=>it.ivaAdic||0))}{line(`Ganancias · IIGG (${Math.round(TASA_IIGG*100)}%)`,sum(its,it=>it.iigg||0))}{line(`Ingresos brutos · IIBB (${Math.round(TASA_IIBB*100)}%)`,sum(its,it=>it.iibb||0))}</>:<>{line("Gasto documental",sum(its,it=>it.desembolso))}{sum(its,it=>it.ivaDesemb)>0&&line("IVA sobre gasto documental",sum(its,it=>it.ivaDesemb))}</>}
         {delivCost>0&&line(t("op.homeDelivery"),delivCost)}
       </>:<>
         {line(ch.key==="maritimo_a_china"?t("quotes.seaService"):t("op.integralService"),Number(ch.flete||0)+Number(ch.surcharge||0))}
