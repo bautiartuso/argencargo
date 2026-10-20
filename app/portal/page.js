@@ -447,8 +447,10 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
   const [stage,setStage]=useState("idle"); // idle | rendering | extracting | review | error
   const [error,setError]=useState("");
   const [items,setItems]=useState([]);
+  const [prog,setProg]=useState({i:0,n:0}); // archivo en curso / total (varias facturas a la vez)
+  const [docs,setDocs]=useState(0); // facturas ya leídas (para "agregar otra")
   const [selected,setSelected]=useState({});
-  const fileRef=useRef(null);
+  const fileRef=useRef(null);const moreRef=useRef(null);
   const [pasteHint,setPasteHint]=useState(false);
 
   // Soporte para pegar archivo desde portapapeles (Cmd/Ctrl+V) cuando la zona de drop está visible.
@@ -464,7 +466,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
             e.preventDefault();
             setPasteHint(true);
             setTimeout(()=>setPasteHint(false),900);
-            handleFile(f);
+            handleFiles([f]);
             return;
           }
         }
@@ -494,13 +496,33 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
     reader.onerror=reject;reader.readAsDataURL(file);
   });
 
-  const handleFile=async(file)=>{
-    if(!file)return;
-    const name=file.name.toLowerCase();
-    const isPdf=name.endsWith(".pdf")||file.type==="application/pdf";
-    const isImage=file.type.startsWith("image/")||/\.(jpe?g|png|webp|heic|heif)$/i.test(name);
-    if(!isPdf&&!isImage){setError(t("pdf.uploadOne"));return;}
+  // Varias facturas de una (20/10/2026): se leen una por una y los productos se juntan en una sola
+  // lista para revisar. Con append=true se suman a los que ya estaban (botón "agregar otra factura").
+  const handleFiles=async(lista,{append=false}={})=>{
+    const files=Array.from(lista||[]).filter(Boolean);
+    if(!files.length)return;
+    const esValido=(file)=>{const name=file.name.toLowerCase();return name.endsWith(".pdf")||file.type==="application/pdf"||file.type.startsWith("image/")||/\.(jpe?g|png|webp|heic|heif)$/i.test(name);};
+    if(!files.every(esValido)){setError(t("pdf.uploadOne"));return;}
     setError("");setStage("rendering");
+    const acumulados=append?[...items]:[];
+    for(let k=0;k<files.length;k++){
+      setProg({i:k+1,n:files.length});
+      const its=await leerArchivo(files[k]);
+      if(its===null)return; // ya se mostró el error
+      acumulados.push(...its);
+    }
+    if(acumulados.length===0){setError(L.no_items);setStage("error");return;}
+    setItems(acumulados);
+    const sel={};acumulados.forEach((_,i)=>sel[i]=true);
+    setSelected(sel);
+    setDocs(d=>(append?d:0)+files.length);
+    setStage("review");
+  };
+  // Lee un PDF o imagen y devuelve sus productos; null si falló (deja el error puesto).
+  const leerArchivo=async(file)=>{
+    const name=file.name.toLowerCase();
+    const isImage=file.type.startsWith("image/")||/\.(jpe?g|png|webp|heic|heif)$/i.test(name);
+    setStage("rendering");
     try{
       let images=[];
       if(isImage){
@@ -525,14 +547,9 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
       setStage("extracting");
       const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
       const j=await r.json();
-      if(!j.ok){setError(j.error||t("pdf.readError"));setStage("error");return;}
-      const its=Array.isArray(j.items)?j.items:[];
-      if(its.length===0){setError(L.no_items);setStage("error");return;}
-      setItems(its);
-      const sel={};its.forEach((_,i)=>sel[i]=true);
-      setSelected(sel);
-      setStage("review");
-    }catch(e){console.error(e);setError(e.message||t("pdf.procError"));setStage("error");}
+      if(!j.ok){setError(j.error||t("pdf.readError"));setStage("error");return null;}
+      return Array.isArray(j.items)?j.items:[];
+    }catch(e){console.error(e);setError(e.message||t("pdf.procError"));setStage("error");return null;}
   };
 
   const updateItem=(i,f,v)=>setItems(p=>p.map((it,j)=>j===i?{...it,[f]:v}:it));
@@ -547,7 +564,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
     return <div style={{padding:"40px 20px",textAlign:"center"}}>
       <div style={{fontSize:36,marginBottom:12}}>📄</div>
       <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>{L.processing}</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{stage==="rendering"?L.rendering:L.extracting}...</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{stage==="rendering"?L.rendering:L.extracting}...{prog.n>1?` · ${t("pdf.fileOf").replace("{i}",prog.i).replace("{n}",prog.n)}`:""}</p>
       <div style={{width:120,height:3,background:"rgba(255,255,255,0.08)",borderRadius:2,margin:"16px auto 0",overflow:"hidden"}}>
         <div style={{width:"40%",height:"100%",background:GOLD_GRADIENT,borderRadius:2,animation:"pdfBar 1.2s ease-in-out infinite"}}/>
       </div>
@@ -581,20 +598,27 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
           </div>}
         </div>)}
       </div>
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-        <button onClick={onCancel} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>{L.cancel}</button>
-        <button onClick={confirm} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>✓ {L.confirm}</button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <input ref={moreRef} type="file" multiple accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp,.heic" onChange={e=>{handleFiles(e.target.files,{append:true});e.target.value="";}} style={{display:"none"}}/>
+          <button onClick={()=>moreRef.current?.click()} style={{padding:"9px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px dashed rgba(184,149,106,0.5)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer"}}>+ {t("pdf.addAnother")}</button>
+          {docs>1&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{t("pdf.docsRead").replace("{n}",docs)}</span>}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onCancel} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>{L.cancel}</button>
+          <button onClick={confirm} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>✓ {L.confirm}</button>
+        </div>
       </div>
     </div>;
   }
 
   // idle / error
   return <div>
-    <input ref={fileRef} type="file" accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp,.heic" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
-    <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFile(e.dataTransfer.files?.[0]);}} style={{border:`2px dashed ${pasteHint?GOLD:"rgba(184,149,106,0.3)"}`,background:pasteHint?"rgba(184,149,106,0.15)":"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
+    <input ref={fileRef} type="file" multiple accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp,.heic" onChange={e=>{handleFiles(e.target.files);e.target.value="";}} style={{display:"none"}}/>
+    <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFiles(e.dataTransfer.files);}} style={{border:`2px dashed ${pasteHint?GOLD:"rgba(184,149,106,0.3)"}`,background:pasteHint?"rgba(184,149,106,0.15)":"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
       <div style={{fontSize:42,marginBottom:8}}>{pasteHint?"📥":"📄"}</div>
       <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{pasteHint?t("pdf.pasted"):L.drop_or_pick}</p>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>{t("pdf.hint")}  <strong style={{color:GOLD_LIGHT}}>pegar (Cmd/Ctrl+V)</strong> directamente</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>{t("pdf.hint")}  <strong style={{color:GOLD_LIGHT}}>pegar (Cmd/Ctrl+V)</strong> directamente · {t("pdf.multi")}</p>
     </div>
     {error&&<p style={{fontSize:12,color:"#ff6b6b",margin:"10px 0 0",textAlign:"center"}}>{error}</p>}
     {onCancel&&<div style={{display:"flex",justifyContent:"center",marginTop:10}}>

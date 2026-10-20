@@ -55,8 +55,15 @@ export async function POST(req) {
   const pk = await svc(`/rest/v1/operation_packages?operation_id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ operation_id: null }) });
   if (!pk.ok) return Response.json({ error: "no_se_soltaron_bultos", detail: pk.data }, { status: 500 });
   const n = Array.isArray(pk.data) ? pk.data.length : 0;
-  // 2) La operación se borra con la misma función que usa el admin (limpia sus referencias).
-  const del = await svc(`/rest/v1/rpc/eliminar_operacion`, { method: "POST", body: JSON.stringify({ p_op: opId }) });
-  if (!del.ok) return Response.json({ error: "no_se_borro", detail: del.data, bultos_sueltos: n }, { status: 500 });
+  // 2) La operación se borra. La RPC eliminar_operacion exige rol admin y el service role no lo es
+  //    ("Solo el equipo puede eliminar operaciones"): soltaba los bultos y dejaba la op viva
+  //    (AC-0298, 20/10/2026). Como acá la op está vacía por definición (sin mercadería, sin vuelo,
+  //    sin presupuesto), alcanza con limpiar sus rastros y borrar la fila.
+  for (const t of ["tracking_events", "operation_items", "op_feedback", "deposit_claims", "repack_requests"]) {
+    await svc(`/rest/v1/${t}?operation_id=eq.${opId}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+  }
+  await svc(`/rest/v1/quotes?operation_id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: null }) });
+  const del = await svc(`/rest/v1/operations?id=eq.${opId}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+  if (!del.ok || !Array.isArray(del.data) || del.data.length === 0) return Response.json({ error: "no_se_borro", detail: del.data, bultos_sueltos: n }, { status: 500 });
   return Response.json({ ok: true, code: op.operation_code, bultos: n });
 }
