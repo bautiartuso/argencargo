@@ -13699,9 +13699,12 @@ function FinanceDashboard({token}){
     if(opPmts.length>0)return; // se cuentan en clientPmts loop
     const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
     const cash=isArs&&rate>0?raw/rate:raw;
-    const collectedUsd=cash;const overpay=Math.max(0,collectedUsd-Number(o.budget_total||0));
+    // Mismo criterio que calcGan (canal / clientes): el ingreso de la op se topea a lo que la op tenía
+    // para cobrar (presupuesto + deuda anterior aplicada). Antes sumaba el sobrante dos veces
+    // (cash + overpay): una transferencia que cubría dos ops inflaba Ingresos (19/10/2026, AC-0099).
+    const tope=Number(o.budget_total||0)+Number(o.debt_applied_usd||0);
     const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
-    const cashIn=extraCharge>0.01?collectedUsd:(collectedUsd+overpay-creditApp);
+    const cashIn=extraCharge>0.01?cash:((tope>0?Math.min(cash,tope):cash)-creditApp);
     if(cashIn>0)totalIng+=cashIn;
   });
   totalIng+=clientPmts.filter(p=>periodFilter(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
@@ -13775,8 +13778,8 @@ function FinanceDashboard({token}){
     ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&inThisMonth(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
       const opPmts=clientPmts.filter(p=>p.operation_id===o.id);if(opPmts.length>0)return;
       const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const cash=isArs&&rate>0?raw/rate:raw;
-      const overpay=Math.max(0,cash-Number(o.budget_total||0));const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
-      const cashIn=extraCharge>0.01?cash:(cash+overpay-creditApp);if(cashIn>0)mIng+=cashIn;
+      const tope=Number(o.budget_total||0)+Number(o.debt_applied_usd||0);const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
+      const cashIn=extraCharge>0.01?cash:((tope>0?Math.min(cash,tope):cash)-creditApp);if(cashIn>0)mIng+=cashIn;
     });
     mIng+=clientPmts.filter(p=>inThisMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
     mIng+=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inThisMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
