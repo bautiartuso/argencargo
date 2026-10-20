@@ -7164,7 +7164,14 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     if(taxChanged)syncClientOps(true);
     setSaving(false);
   };
-  const deleteClient=async()=>{if(!await confirmDialog(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
+  const deleteClient=async()=>{
+    if(!await confirmDialog(`¿Eliminar a ${cl.first_name} ${cl.last_name} (${cl.client_code}) de la base? Se borran también sus cotizaciones, cuenta corriente, puntos y acceso al portal. No se puede deshacer.`,{confirmText:"Eliminar cliente"}))return;
+    try{
+      const r=await fetch("/api/admin/clientes",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"eliminar",client_id:cl.id})}).then(x=>x.json());
+      if(r.error){alertDialog(r.error,{title:"No se eliminó"});return;}
+      toast(`${r.client_code} eliminado`,"success");onDelete();
+    }catch(e){alertDialog(e.message,{title:"No se eliminó"});}
+  };
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"cc",l:`Cuenta corriente${Number(cl.account_balance_usd||0)!==0?" ·":""}`},{k:"tariffs",l:"Tarifas"}];
   return <div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,gap:12,flexWrap:"wrap"}}>
@@ -14362,121 +14369,211 @@ function EmailLogPanel({token}){
 }
 
 function SeguimientoPanel({token,templates,flash}){
-  const [seg,setSeg]=useState("inactivo");
-  const dias=30; // "inactivo" = mas de 30 dias sin operar (pedido 31/07: antes era 90)
-  const [filas,setFilas]=useState([]);const [total,setTotal]=useState(0);
-  const [conteos,setConteos]=useState({inactivo:0,sin_ops:0});
-  const [lo,setLo]=useState(true);const [err,setErr]=useState("");
-  const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [pag,setPag]=useState(0);
-
-  useEffect(()=>{const t=setTimeout(()=>{setBusq(search.trim());setPag(0);},300);return()=>clearTimeout(t);},[search]);
+  // Seguimiento v2 (19/10/2026): una sola consulta (seguimiento_clientes_v2) trae el contexto de
+  // cada cliente; acá se decide a quién conviene escribirle hoy y por qué, se abre WhatsApp con el
+  // mensaje armado, y cada contacto queda registrado (client_followups) con resultado y próximo paso.
+  const celu=useEsCelu();
+  const [rows,setRows]=useState([]);const [lo,setLo]=useState(true);const [err,setErr]=useState("");
+  const [seg,setSeg]=useState("hoy");const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [pag,setPag]=useState(0);
+  const [abierto,setAbierto]=useState(null);const [hist,setHist]=useState({});
+  const [reg,setReg]=useState(null); // {id,outcome,note,next}
+  useEffect(()=>{const t=setTimeout(()=>{setBusq(search.trim().toLowerCase());setPag(0);},250);return()=>clearTimeout(t);},[search]);
   useEffect(()=>{setPag(0);},[seg]);
 
-  const filtroBusq=useMemo(()=>{
-    const palabras=busq.replace(/[(),*:"'\\]/g," ").split(/\s+/).filter(Boolean).slice(0,4);
-    if(!palabras.length)return "";
-    const cond=w=>{const e=encodeURIComponent(w);return `or(first_name.ilike.*${e}*,last_name.ilike.*${e}*,client_code.ilike.*${e}*,email.ilike.*${e}*)`;};
-    return `&and=(${palabras.map(cond).join(",")})`;
-  },[busq]);
-
-  // Al contactar a alguien desaparece de la lista por 15 dias; pasado ese plazo vuelve, al
-  // final (los nunca contactados van primero, despues los contactados mas viejos).
-  const corte15=new Date(Date.now()-15*86400000).toISOString();
-  const sinContactoReciente=`&or=(last_followup_at.is.null,last_followup_at.lt.${encodeURIComponent(corte15)})`;
-  // Inactivos: los que mas facturaron primero. Sin ops: los que mas tiempo llevan registrados sin operar.
-  const orden=seg==="sin_ops"?"last_followup_at.asc.nullsfirst,dias_inactivo.desc":"last_followup_at.asc.nullsfirst,facturado_usd.desc";
   const cargar=async()=>{
-    setLo(true);setErr("");
-    const desde=pag*SEG_POR_PAGINA;
-    const [pagina,cIna,cSin]=await Promise.all([
-      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&order=${orden}&segmento=eq.${seg}${sinContactoReciente}${filtroBusq}`,desde,hasta:desde+SEG_POR_PAGINA-1}),
-      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.inactivo${sinContactoReciente}`,desde:0,hasta:0}),
-      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.sin_ops${sinContactoReciente}`,desde:0,hasta:0}),
-    ]);
-    if(pagina.error)setErr("No pudimos cargar el seguimiento. Probá de nuevo.");
-    setFilas(pagina.rows);setTotal(pagina.total);
-    setConteos({inactivo:cIna.total,sin_ops:cSin.total});
-    setLo(false);
+    setLo(true);setErr("");let todo=[];let desde=0;
+    while(true){
+      const r=await dqPage("rpc/seguimiento_clientes_v2",{token,filters:"?select=*",desde,hasta:desde+999});
+      if(r.error){setErr("No pudimos cargar el seguimiento. Si es la primera vez, falta correr el SQL 2026_10_19_seguimiento_v2.");break;}
+      todo=todo.concat(r.rows);if(r.rows.length<1000)break;desde+=1000;
+    }
+    setRows(todo);setLo(false);
   };
-  useEffect(()=>{cargar();},[token,seg,pag,filtroBusq]);
+  useEffect(()=>{cargar();},[token]);
 
-  const mensajeDe=(c)=>{
-    const tpl=templates.find(t=>t.key===(c.segmento==="sin_ops"?"wa_seguimiento_sin_ops":"wa_seguimiento_inactivo"));
-    const data={firstName:c.first_name||"",clientCode:c.client_code||"",opCode:c.ultima_op_code||""};
-    const cuerpo=tpl?.body||"Hola {{firstName}}!";
-    return String(cuerpo).replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");
+  const hoy=hoyAR();
+  const dias=(iso)=>iso?Math.floor((Date.now()-new Date(iso).getTime())/86400000):null;
+  const diasTxt=(d)=>d==null?"":d<=0?"hoy":d===1?"ayer":d<30?`hace ${d} días`:d<60?"hace un mes":d<365?`hace ${Math.round(d/30)} meses`:`hace ${Math.round(d/365*10)/10} años`;
+  const fechaCorta=(iso)=>{if(!iso)return "";const s=String(iso).slice(0,10);const [y,m,d]=s.split("-");return `${d}/${m}`;};
+  const fmtUsd=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0});
+  const waNum=(c)=>(c.whatsapp||"").replace(/[^0-9]/g,"");
+  const canalTxt=(c)=>/mar/i.test(String(c||""))?"por marítimo":/a[ée]r|courier/i.test(String(c||""))?"por aéreo":"";
+
+  // A qué grupo pertenece cada cliente (uno solo, el más urgente primero).
+  const clasificar=(c)=>{
+    if(c.followup_status==="no_contactar"||c.marketing_opt_out)return "no_contactar";
+    if(Number(c.ops_activas)>0)return "importando";
+    if(Number(c.bultos_sin_op)>0)return "bultos";
+    const dq=dias(c.ultima_quote_fecha),dop=dias(c.ultima_op_fecha);
+    if(Number(c.quotes_total)>0&&dq!=null&&dq<=120&&(Number(c.ops_total)===0||new Date(c.ultima_quote_fecha)>new Date(c.ultima_op_fecha||0)))return "cotizo";
+    if(Number(c.ops_total)>0)return dop>30?"inactivo":"activo";
+    return "nunca";
   };
-  const marcarContactado=async(c,cuando)=>{
-    await dq("clients",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{last_followup_at:cuando}});
-    setFilas(p=>p.map(x=>x.id===c.id?{...x,last_followup_at:cuando}:x));
+  // ¿Conviene escribirle hoy? si · espera · no, con el motivo en una frase.
+  const semaforo=(c,s)=>{
+    const dc=dias(c.last_followup_at&&c.ultimo_contacto_at?(c.last_followup_at>c.ultimo_contacto_at?c.last_followup_at:c.ultimo_contacto_at):(c.last_followup_at||c.ultimo_contacto_at));
+    const dq=dias(c.ultima_quote_fecha),dop=dias(c.ultima_op_fecha);
+    if(s==="no_contactar")return {k:"no",t:c.marketing_opt_out?"Se dio de baja de los mensajes":"Pidió que no le escriban"};
+    if(s==="importando")return {k:"no",t:`Está importando ahora (${c.ultima_op_code})`};
+    if(s==="activo")return {k:"no",t:`Importó ${diasTxt(dop)} · dejalo tranquilo`};
+    if(!waNum(c))return {k:"no",t:"Sin WhatsApp cargado"};
+    if(c.followup_next_at&&c.followup_next_at>hoy)return {k:"espera",t:`Agendado para el ${fechaCorta(c.followup_next_at)}`};
+    if(c.followup_status==="no_interesado"&&dc!=null&&dc<90)return {k:"espera",t:`Dijo que no le interesa ${diasTxt(dc)}`};
+    if(dc!=null&&dc<15)return {k:"espera",t:`Le escribiste ${diasTxt(dc)}${c.ultimo_outcome==="sin_respuesta"?" y no contestó":c.ultimo_outcome==="respondio"?" y te respondió":""}`};
+    if(c.followup_next_at&&c.followup_next_at<=hoy)return {k:"si",t:`Quedaste en volver a escribirle el ${fechaCorta(c.followup_next_at)}`};
+    if(s==="bultos")return {k:"si",t:`${c.bultos_sin_op} bulto${Number(c.bultos_sin_op)!==1?"s":""} en depósito sin importación armada`};
+    if(s==="cotizo")return {k:"si",t:`Cotizó ${canalTxt(c.ultima_quote_canal)} ${diasTxt(dq)} (USD ${fmtUsd(c.ultima_quote_total)}) y no importó`};
+    if(s==="inactivo")return {k:"si",t:`${c.ops_total} importaci${Number(c.ops_total)===1?"ón":"ones"}, la última ${diasTxt(dop)} · facturó USD ${fmtUsd(c.facturado_usd)}`};
+    if(dc!=null&&dc<45)return {k:"espera",t:`Contactado ${diasTxt(dc)}, sin novedades`};
+    return {k:"si",t:`Registrado ${diasTxt(dias(c.created_at))}, nunca cotizó`};
+  };
+  const prioridad=(c,s,sem)=>{
+    if(sem.k!=="si")return -1;
+    if(c.followup_next_at&&c.followup_next_at<=hoy)return 100;
+    if(s==="bultos")return 90+Number(c.bultos_sin_op);
+    if(s==="cotizo")return 80-Math.min(40,(dias(c.ultima_quote_fecha)||0)/3);
+    if(s==="inactivo")return 40+Math.min(30,Number(c.facturado_usd||0)/1000);
+    return 10-(c.last_followup_at?5:0);
+  };
+
+  const enriquecidas=useMemo(()=>rows.map(c=>{const s=clasificar(c);const sem=semaforo(c,s);return {...c,seg:s,sem,prio:prioridad(c,s,sem)};}),[rows]);
+  const cuenta=(k)=>enriquecidas.filter(c=>k==="hoy"?c.sem.k==="si":c.seg===k).length;
+  const SEGS=[
+    {k:"hoy",l:"Para hoy",ico:"⚡",d:"Conviene escribirles ahora, en orden de prioridad."},
+    {k:"bultos",l:"Bultos sin importación",ico:"📦",d:"Tienen mercadería en el depósito y no armaron la importación."},
+    {k:"cotizo",l:"Cotizaron y no importaron",ico:"🧮",d:"Pidieron un número en los últimos 4 meses y no arrancaron."},
+    {k:"inactivo",l:"Inactivos",ico:"🕒",d:"Ya importaron y hace más de 30 días que no vuelven."},
+    {k:"nunca",l:"Nunca cotizaron",ico:"🌱",d:"Se registraron y no hicieron nada todavía."},
+    {k:"importando",l:"Importando ahora",ico:"✈️",d:"Tienen una operación en curso: no hace falta escribirles."},
+    {k:"no_contactar",l:"No contactar",ico:"🚫",d:"Pidieron que no les escriban o se dieron de baja."},
+  ];
+  const lista=useMemo(()=>{
+    let l=busq?enriquecidas.filter(c=>`${c.first_name} ${c.last_name} ${c.client_code} ${c.email||""} ${c.whatsapp||""}`.toLowerCase().includes(busq)):enriquecidas.filter(c=>seg==="hoy"?c.sem.k==="si":c.seg===seg);
+    const ord={hoy:(a,b)=>b.prio-a.prio,bultos:(a,b)=>b.bultos_sin_op-a.bultos_sin_op,cotizo:(a,b)=>new Date(b.ultima_quote_fecha)-new Date(a.ultima_quote_fecha),inactivo:(a,b)=>Number(b.facturado_usd)-Number(a.facturado_usd),nunca:(a,b)=>new Date(b.created_at)-new Date(a.created_at),importando:(a,b)=>new Date(b.ultima_op_fecha)-new Date(a.ultima_op_fecha),no_contactar:(a,b)=>new Date(b.ultimo_contacto_at||0)-new Date(a.ultimo_contacto_at||0)};
+    return l.sort(busq?ord.hoy:ord[seg]);
+  },[enriquecidas,seg,busq]);
+  const porPag=40;const paginas=Math.max(1,Math.ceil(lista.length/porPag));const visibles=lista.slice(pag*porPag,pag*porPag+porPag);
+  const esperando=enriquecidas.filter(c=>c.sem.k==="espera"&&/Le escribiste/.test(c.sem.t)).length;
+  const agendados=enriquecidas.filter(c=>c.followup_next_at&&c.followup_next_at>hoy).length;
+
+  const interpTpl=(text,data)=>String(text||"").replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");
+  const mensajeDe=(c)=>{
+    const key=c.seg==="cotizo"?"wa_seguimiento_cotizo":c.seg==="bultos"?"wa_seguimiento_bultos":c.seg==="inactivo"||Number(c.ops_total)>0?"wa_seguimiento_inactivo":"wa_seguimiento_sin_ops";
+    const tpl=templates.find(t=>t.key===key);
+    const n=Number(c.bultos_sin_op||0);
+    const data={firstName:c.first_name||"",clientCode:c.client_code||"",opCode:c.ultima_op_code||"",quoteNum:c.ultima_quote_num||"",quoteCanal:canalTxt(c.ultima_quote_canal),quoteTotal:fmtUsd(c.ultima_quote_total),quoteDias:diasTxt(dias(c.ultima_quote_fecha)).replace(/^hace /,""),bultos:`${n} bulto${n!==1?"s":""}`};
+    return interpTpl(tpl?.body||"Hola {{firstName}}!",data).replace(/  +/g," ");
+  };
+
+  const ESTADO={enviado:"contactado",sin_respuesta:"contactado",respondio:"respondio",va_a_importar:"va_a_importar",mas_adelante:"mas_adelante",no_interesado:"no_interesado",no_contactar:"no_contactar"};
+  const registrar=async(c,outcome,{note="",next=null,channel="nota"}={})=>{
+    const now=new Date().toISOString();
+    const r=await dq("client_followups",{method:"POST",token,body:{client_id:c.id,channel,outcome,note:note||null,next_at:next||null}});
+    if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return false;}
+    const patch={followup_status:ESTADO[outcome]||c.followup_status||"sin_contacto",followup_next_at:next||null};
+    if(channel!=="nota")patch.last_followup_at=now;
+    await dq("clients",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:patch});
+    setRows(p=>p.map(x=>x.id===c.id?{...x,...patch,contactos:Number(x.contactos||0)+1,ultimo_contacto_at:now,ultimo_outcome:outcome,ultimo_note:note||x.ultimo_note}:x));
+    setHist(h=>h[c.id]?{...h,[c.id]:[{id:"tmp"+now,created_at:now,channel,outcome,note,next_at:next},...h[c.id]]}:h);
+    return true;
   };
   const abrirWA=async(c)=>{
-    const num=(c.whatsapp||"").replace(/[^0-9]/g,"");
-    if(!num){alertDialog("Este cliente no tiene WhatsApp cargado.");return;}
+    const num=waNum(c);if(!num){alertDialog("Este cliente no tiene WhatsApp cargado.");return;}
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(mensajeDe(c))}`,"_blank");
-    await marcarContactado(c,new Date().toISOString());
-    // Contactado -> sale de la lista. Vuelve solo en 15 dias, al final.
-    setFilas(p=>p.filter(x=>x.id!==c.id));
-    setConteos(p=>({...p,[c.segmento==="sin_ops"?"sin_ops":"inactivo"]:Math.max(0,p[c.segmento==="sin_ops"?"sin_ops":"inactivo"]-1)}));
-    flash(`WhatsApp abierto · ${c.client_code} (vuelve a la lista en 15 días)`);
+    await registrar(c,"enviado",{channel:"whatsapp"});
+    flash(`WhatsApp abierto · ${c.client_code}. Cuando te conteste, registralo acá.`);
+  };
+  const cargarHist=async(c)=>{if(hist[c.id])return;const r=await dq("client_followups",{token,filters:`?client_id=eq.${c.id}&select=*&order=created_at.desc&limit=30`});setHist(h=>({...h,[c.id]:Array.isArray(r)?r:[]}));};
+  const toggle=(c)=>{const n=abierto===c.id?null:c.id;setAbierto(n);if(n)cargarHist(c);};
+  const guardarReg=async(c)=>{
+    if(!reg||reg.id!==c.id||!reg.outcome){toast("Elegí qué pasó","warn");return;}
+    if(reg.outcome==="mas_adelante"&&!reg.next){toast("Poné la fecha para volver a escribirle","warn");return;}
+    const ok=await registrar(c,reg.outcome,{note:reg.note,next:reg.next||null,channel:reg.outcome==="respondio"||reg.outcome==="sin_respuesta"?"whatsapp":"nota"});
+    if(ok){setReg(null);toast("Registrado","success");}
   };
 
-  const paginas=Math.max(1,Math.ceil(total/SEG_POR_PAGINA));
-  const fmtUsd=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const hace=(iso)=>{if(!iso)return null;const d=Math.floor((Date.now()-new Date(iso).getTime())/86400000);return d<=0?"hoy":d===1?"ayer":`hace ${d} días`;};
-  const SEGS=[{k:"inactivo",l:"Inactivos",ico:"🕒",d:"Ya importaron con nosotros pero hace rato que no vuelven."},
-              {k:"sin_ops",l:"Sin operaciones",ico:"🌱",d:"Se registraron pero nunca llegaron a hacer la primera importación."}];
-  const actual=SEGS.find(x=>x.k===seg);
+  const OUTCOMES=[["respondio","Respondió","#4ade80"],["sin_respuesta","Sin respuesta","#fbbf24"],["va_a_importar","Va a importar","#8CC8F5"],["mas_adelante","Más adelante","#c4b5fd"],["no_interesado","No le interesa","rgba(255,255,255,0.6)"],["no_contactar","No contactar","#f87171"]];
+  const OUT_LBL=Object.fromEntries(OUTCOMES.map(([k,l])=>[k,l]));OUT_LBL.enviado="Mensaje enviado";OUT_LBL.nota="Nota";
+  const COND={responsable_inscripto:"RI",monotributo:"Mono",consumidor_final:"CF"};
+  const semColor={si:"#4ade80",espera:"#fbbf24",no:"#f87171"};
+  const pill=(txt,color,extra={})=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"2px 7px",borderRadius:999,color,background:`${color}1f`,border:`1px solid ${color}55`,whiteSpace:"nowrap",...extra}}>{txt}</span>;
+  const btn=(txt,on,{color="rgba(255,255,255,0.75)",bg="rgba(255,255,255,0.04)",border="rgba(255,255,255,0.12)",strong}={})=><button type="button" onClick={on} style={{height:34,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:9,border:`1px solid ${border}`,background:bg,color,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",...(strong?{boxShadow:"0 6px 16px rgba(37,211,102,0.25)"}:{})}}>{txt}</button>;
 
   return <div>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
-      {SEGS.map(o=><button key={o.k} onClick={()=>setSeg(o.k)} style={{flex:"1 1 240px",textAlign:"left",padding:"13px 16px",borderRadius:12,cursor:"pointer",border:`1.5px solid ${seg===o.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.07)"}`,background:seg===o.k?"rgba(184,149,106,0.09)":"rgba(255,255,255,0.025)"}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:14}}>{o.ico}</span>
-          <span style={{fontSize:13.5,fontWeight:700,color:seg===o.k?"#fff":"rgba(255,255,255,0.7)"}}>{o.l}</span>
-          <span style={{fontSize:18,fontWeight:800,color:seg===o.k?IC:"rgba(255,255,255,0.4)",marginLeft:"auto",fontVariantNumeric:"tabular-nums"}}>{conteos[o.k]}</span>
-        </div>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"5px 0 0",lineHeight:1.45}}>{o.d}</p>
-      </button>)}
-    </div>
-
-    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{flex:"1 1 240px",padding:"9px 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
-    </div>
-
-    <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>
-      El mensaje sale de la plantilla <b style={{color:"rgba(255,255,255,0.6)"}}>{seg==="sin_ops"?"WhatsApp — Seguimiento a cliente que nunca operó":"WhatsApp — Seguimiento a cliente inactivo"}</b>, editable en la solapa Operativa. Al abrir WhatsApp se marca el contacto solo.
+    {/* Resumen de una línea + grupos */}
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 12px"}}>
+      {lo?"Cargando clientes…":<><b style={{color:"#4ade80"}}>{cuenta("hoy")}</b> para escribir hoy · <b style={{color:"#fbbf24"}}>{esperando}</b> esperando respuesta · <b style={{color:"#c4b5fd"}}>{agendados}</b> agendados · {rows.length} clientes en total</>}
     </p>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+      {SEGS.map(o=>{const on=seg===o.k&&!busq;const n=cuenta(o.k);return <button key={o.k} type="button" onClick={()=>{setSeg(o.k);setSearch("");}} title={o.d} style={{display:"inline-flex",alignItems:"center",gap:7,height:34,padding:"0 12px 0 10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.09)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.025)",color:on?"#fff":"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700}}>
+        <span>{o.ico}</span>{o.l}<span style={{fontSize:11.5,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{n}</span>
+      </button>;})}
+    </div>
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar cliente por nombre, código, email o teléfono…" style={{flex:"1 1 260px",height:38,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+      {!busq&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{SEGS.find(x=>x.k===seg)?.d}</span>}
+    </div>
     {err&&<div style={{padding:"12px 16px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",fontSize:13}}>{err}</div>}
 
-    {lo?<SkeletonTable rows={8} cols={4}/>:filas.length===0
-      ?<EmptyState icon="users" title={busq?"Sin resultados":"Nada para seguir"} description={busq?`Nada coincide con "${busq}"`:`No hay clientes ${actual?.l.toLowerCase()} por ahora.`}/>
-      :<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-        {filas.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",flexWrap:"wrap"}}>
-          <div style={{flex:"1 1 260px",minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
-              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,fontWeight:700,color:IC,padding:"2px 7px",background:"rgba(184,149,106,0.1)",borderRadius:4}}>{c.client_code}</span>
-              <span style={{fontSize:13.5,color:"#fff",fontWeight:500}}>{c.first_name} {c.last_name}</span>
-              {c.last_followup_at&&<span title={`Último seguimiento: ${new Date(c.last_followup_at).toLocaleString("es-AR")}`} style={{fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.13)",color:"#60a5fa"}}>✓ contactado {hace(c.last_followup_at)}</span>}
+    {lo?<SkeletonTable rows={8} cols={3}/>:visibles.length===0
+      ?<EmptyState icon="users" title={busq?"Sin resultados":"Nada por acá"} description={busq?`Nada coincide con "${busq}"`:seg==="hoy"?"No queda nadie a quien convenga escribirle hoy. Mañana vuelven los agendados.":"No hay clientes en este grupo."}/>
+      :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {visibles.map(c=>{const dc=dias(c.ultimo_contacto_at||c.last_followup_at);const open=abierto===c.id;const r=reg&&reg.id===c.id?reg:null;const col=semColor[c.sem.k];
+          return <div key={c.id} style={{borderRadius:14,border:`1px solid ${open?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.08)"}`,background:"linear-gradient(180deg,rgba(13,24,45,0.9),rgba(8,16,32,0.9))"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:celu?"12px 12px":"12px 16px",flexWrap:"wrap"}}>
+              <span title={c.sem.k==="si"?"Conviene escribirle":c.sem.k==="espera"?"Mejor esperar":"No escribirle"} style={{width:10,height:10,borderRadius:"50%",background:col,boxShadow:`0 0 0 4px ${col}22`,flexShrink:0}}/>
+              <div style={{flex:"1 1 240px",minWidth:0,cursor:"pointer"}} onClick={()=>toggle(c)}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:14,fontWeight:800,color:"#fff"}}>{c.first_name} {c.last_name}</span>
+                  <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,fontWeight:700,color:GOLD_LIGHT}}>{c.client_code}</span>
+                  {COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.5)")}
+                  {Number(c.facturado_usd)>0&&pill(`USD ${fmtUsd(c.facturado_usd)} · ${c.ops_total} op${Number(c.ops_total)!==1?"s":""}`,"#8CC8F5")}
+                </div>
+                <p style={{margin:"4px 0 0",fontSize:12.5,color:c.sem.k==="si"?"#fff":"rgba(255,255,255,0.65)",lineHeight:1.4}}>{c.sem.t}</p>
+                {(c.ultimo_contacto_at||c.last_followup_at)&&<p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.42)",lineHeight:1.4}}>Último contacto {diasTxt(dc)}{c.ultimo_outcome?` · ${OUT_LBL[c.ultimo_outcome]||c.ultimo_outcome}`:""}{c.ultimo_note?` · “${String(c.ultimo_note).slice(0,80)}”`:""}{c.followup_next_at?` · próximo ${fechaCorta(c.followup_next_at)}`:""}</p>}
+              </div>
+              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginLeft:celu?22:0}}>
+                {btn("Mensaje",()=>alertDialog(mensajeDe(c),{title:`Mensaje para ${c.first_name}`}))}
+                {btn(r?"✕":"Registrar",()=>setReg(r?null:{id:c.id,outcome:"",note:"",next:""}),{color:r?"rgba(255,255,255,0.6)":GOLD_LIGHT,border:r?"rgba(255,255,255,0.12)":"rgba(184,149,106,0.45)",bg:r?"transparent":"rgba(184,149,106,0.1)"})}
+                {c.seg!=="no_contactar"&&btn("WhatsApp",()=>abrirWA(c),{color:"#fff",bg:"linear-gradient(135deg,#25D366,#128C7E)",border:"transparent",strong:c.sem.k==="si"})}
+                {btn(open?"▲":"▼",()=>toggle(c),{color:"rgba(255,255,255,0.45)"})}
+              </div>
             </div>
-            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.42)",margin:"4px 0 0"}}>
-              {c.segmento==="sin_ops"
-                ?<>Registrado hace {c.dias_inactivo} días · {c.email||"sin email"}</>
-                :<>{c.ops_total} {c.ops_total===1?"operación":"operaciones"} · última {c.ultima_op_code} hace {c.dias_inactivo} días · facturó USD {fmtUsd(c.facturado_usd)}</>}
-            </p>
-          </div>
-          <div style={{display:"flex",gap:7,alignItems:"center"}}>
-            <button onClick={()=>alertDialog(mensajeDe(c),{title:`Mensaje para ${c.first_name}`})} style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Ver mensaje</button>
-            {c.last_followup_at&&<button onClick={()=>marcarContactado(c,null)} title="Sacar la marca de contactado" style={{padding:"7px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.35)",cursor:"pointer"}}>↺</button>}
-            <button onClick={()=>abrirWA(c)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>WhatsApp</button>
-          </div>
-        </div>)}
+            {r&&<div style={{padding:"0 16px 14px",marginLeft:celu?0:22}}>
+              <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{OUTCOMES.map(([k,l,color])=><button key={k} type="button" onClick={()=>setReg(p=>({...p,outcome:k}))} style={{height:32,padding:"0 12px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${r.outcome===k?color:"rgba(255,255,255,0.12)"}`,background:r.outcome===k?`${color}22`:"transparent",color:r.outcome===k?color:"rgba(255,255,255,0.7)"}}>{l}</button>)}</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-start"}}>
+                  <input value={r.note} onChange={e=>setReg(p=>({...p,note:e.target.value}))} placeholder="Nota (qué te dijo, qué quedó pendiente)…" style={{flex:"1 1 240px",height:36,padding:"0 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,background:"rgba(0,0,0,0.22)",color:"#fff",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  <div style={{flex:"0 0 170px"}}><DatePicker value={r.next||""} onChange={v=>setReg(p=>({...p,next:v}))} placeholder="Volver a escribir el…" small/></div>
+                  {btn("Guardar",()=>guardarReg(c),{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent"})}
+                </div>
+              </div>
+            </div>}
+            {open&&<div style={{padding:"0 16px 14px",marginLeft:celu?0:22,display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:10}}>
+              <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+                <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>Quién es</p>
+                <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)",lineHeight:1.6}}>
+                  {c.whatsapp||"sin WhatsApp"} · {c.email||"sin email"}<br/>
+                  Registrado {diasTxt(dias(c.created_at))}{c.tax_condition?` · ${COND[c.tax_condition]||c.tax_condition}`:""}<br/>
+                  {Number(c.ops_total)>0?<>{c.ops_total} importaci{Number(c.ops_total)===1?"ón":"ones"} · última {c.ultima_op_code} {diasTxt(dias(c.ultima_op_fecha))} · facturó USD {fmtUsd(c.facturado_usd)}</>:"Nunca importó"}<br/>
+                  {Number(c.quotes_total)>0?<>{c.quotes_total} cotizaci{Number(c.quotes_total)===1?"ón":"ones"} · última {c.ultima_quote_num} {diasTxt(dias(c.ultima_quote_fecha))} {canalTxt(c.ultima_quote_canal)} por USD {fmtUsd(c.ultima_quote_total)}</>:"Nunca cotizó"}
+                  {Number(c.bultos_sin_op)>0&&<><br/><b style={{color:"#fbbf24"}}>{c.bultos_sin_op} bulto{Number(c.bultos_sin_op)!==1?"s":""} en depósito sin importación</b></>}
+                </p>
+              </div>
+              <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+                <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>Contactos{hist[c.id]?` · ${hist[c.id].length}`:""}</p>
+                {!hist[c.id]?<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>
+                :hist[c.id].length===0?<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>{c.last_followup_at?`Contactado ${diasTxt(dias(c.last_followup_at))} (antes del historial).`:"Nunca se lo contactó."}</p>
+                :<div style={{display:"flex",flexDirection:"column",gap:6}}>{hist[c.id].slice(0,8).map(h=><div key={h.id} style={{fontSize:12,color:"rgba(255,255,255,0.75)",lineHeight:1.45}}><span style={{color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{new Date(h.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"})}</span> · {h.channel==="whatsapp"?"WhatsApp":h.channel==="email"?"Email":h.channel==="llamada"?"Llamada":"Nota"} · <b>{OUT_LBL[h.outcome]||h.outcome||""}</b>{h.note?` · ${h.note}`:""}{h.next_at?` · volver el ${fechaCorta(h.next_at)}`:""}</div>)}</div>}
+              </div>
+            </div>}
+          </div>;})}
       </div>}
 
     {paginas>1&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginTop:18}}>
-      <button onClick={()=>setPag(p=>Math.max(0,p-1))} disabled={pag===0} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.09)",background:"rgba(255,255,255,0.04)",color:pag>0?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)",cursor:pag>0?"pointer":"default"}}>← Anterior</button>
-      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>Página {pag+1} de {paginas}</span>
-      <button onClick={()=>setPag(p=>Math.min(paginas-1,p+1))} disabled={pag>=paginas-1} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.09)",background:"rgba(255,255,255,0.04)",color:pag<paginas-1?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)",cursor:pag<paginas-1?"pointer":"default"}}>Siguiente →</button>
+      {btn("← Anterior",()=>setPag(p=>Math.max(0,p-1)),{color:pag>0?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)"})}
+      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>Página {pag+1} de {paginas} · {lista.length} clientes</span>
+      {btn("Siguiente →",()=>setPag(p=>Math.min(paginas-1,p+1)),{color:pag<paginas-1?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)"})}
     </div>}
   </div>;
 }
@@ -14669,19 +14766,18 @@ function ComunicacionesPanel({token}){
   };
 
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:10}}>
-      
+    {tab==="operativa"&&<div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:10}}>
       <button onClick={testEmail} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📧 Probar email</button>
-    </div>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>{tab==="seguimiento"?"A quién le conviene escribirle hoy para que vuelva a operar.":"Notificaciones manuales (WhatsApp), plantillas y feedback de clientes."}</p>
+    </div>}
+    {tab!=="seguimiento"&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>Notificaciones manuales (WhatsApp), plantillas y feedback de clientes.</p>}
     <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:10,border:"1px solid rgba(255,255,255,0.07)",marginBottom:20,width:"fit-content",maxWidth:"100%",flexWrap:"wrap"}}>
-      {[{k:"seguimiento",l:"Seguimiento de clientes"},{k:"operativa",l:"Operativa y plantillas"},{k:"enviados",l:"Correos enviados"}].map(o=>
+      {[{k:"seguimiento",l:"Clientes"},{k:"operativa",l:"Operativa y plantillas"},{k:"enviados",l:"Correos enviados"}].map(o=>
         <button key={o.k} onClick={()=>setTab(o.k)} style={{padding:"7px 15px",fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:tab===o.k?GOLD_GRADIENT:"transparent",color:tab===o.k?"#0A1628":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
 
-    <AvisoTarifasCard token={token}/>
     {tab==="enviados"?<EmailLogPanel token={token}/>:tab==="seguimiento"?<SeguimientoPanel token={token} templates={templates} flash={flash}/>:<>
+    <AvisoTarifasCard token={token}/>
 
     {/* WAs pendientes */}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:20}}>
@@ -16747,7 +16843,7 @@ function AdminDashboard({session,onLogout}){
       {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
       {key:"mail",label:"Email",p:["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
-      {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
+      {key:"comms",label:"Seguimiento",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
       {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
     ]},
     {section:"Marketing",items:[
