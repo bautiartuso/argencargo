@@ -30,29 +30,29 @@ export const C = {
   violet: "#a78bfa",
 };
 export const GOLD = "#B8956A", GOLD_LIGHT = "#E8D098", GOLD_DEEP = "#A68456";
-// Paleta "papel" (20/10/2026): tarjetas blancas con texto navy sobre el fondo oscuro del panel.
-// Pedido de Bautista: la cotización, el cotizador y la operación estaban muy oscuros; con blancos
-// se leen mejor. El shell (barra lateral, listados) sigue navy.
+// "P" (20/10/2026): se probó con tarjetas blancas y Bautista las rechazó ("ilegible"). Queda la misma
+// paleta oscura del panel; los componentes Papel/DatoP/PillP/BtnP/inpP se mantienen porque la
+// estructura nueva (columna derecha solo informativa, condiciones a la izquierda) sí gustó.
 export const P = {
-  card: "#ffffff",
-  soft: "#f4f6fa",
-  line: "#e4e9f1",
-  lineHi: "#c9d2e0",
-  txt: "#0f1d33",
-  sub: "#4b5a70",
-  mute: "#8593a8",
-  gold: "#A68456",
-  goldHi: "#8a6c3c",
-  goldBg: "#f7f1e6",
-  green: "#15803d",
-  greenBg: "#ecfdf3",
-  red: "#dc2626",
-  redBg: "#fef2f2",
-  amber: "#b45309",
-  amberBg: "#fffbeb",
-  blue: "#1d4ed8",
-  blueBg: "#eff6ff",
-  violet: "#6d28d9",
+  card: "rgba(255,255,255,0.035)",
+  soft: "rgba(0,0,0,0.18)",
+  line: "rgba(255,255,255,0.08)",
+  lineHi: "rgba(255,255,255,0.14)",
+  txt: "#eef2f8",
+  sub: "rgba(238,242,248,0.62)",
+  mute: "rgba(238,242,248,0.4)",
+  gold: "#C9A46A",
+  goldHi: "#E8D098",
+  goldBg: "rgba(201,164,106,0.12)",
+  green: "#34d399",
+  greenBg: "rgba(52,211,153,0.08)",
+  red: "#f87171",
+  redBg: "rgba(248,113,113,0.1)",
+  amber: "#fbbf24",
+  amberBg: "rgba(251,191,36,0.1)",
+  blue: "#60a5fa",
+  blueBg: "rgba(96,165,250,0.08)",
+  violet: "#a78bfa",
 };
 export const GOLD_GRADIENT = "linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
 export const MONO = "'JetBrains Mono','SF Mono',ui-monospace,monospace";
@@ -281,7 +281,7 @@ export function Volver({ onClick }) {
 
 // ── Piezas "papel" (tarjetas blancas) ──
 export function Papel({ title, right, children, pad = 18, style = {}, acento }) {
-  return <section style={{ background: P.card, border: `1px solid ${P.line}`, borderTop: acento ? `3px solid ${acento}` : undefined, borderRadius: 16, padding: pad, marginBottom: 12, color: P.txt, boxShadow: "0 1px 2px rgba(10,22,40,0.06), 0 8px 24px rgba(10,22,40,0.10)", ...style }}>
+  return <section style={{ background: P.card, border: `1px solid ${P.line}`, borderTop: acento ? `2px solid ${acento}` : undefined, borderRadius: 16, padding: pad, marginBottom: 12, color: P.txt, ...style }}>
     {(title || right) && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
       {title && <h3 style={{ fontSize: 11, fontWeight: 800, color: P.mute, textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>{title}</h3>}
       {right}
@@ -299,15 +299,15 @@ export function DatoP({ label, val, c, sub, grande }) {
 export function PillP({ c = P.sub, bg, children }) {
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: c, background: bg || `${c}14`, border: `1px solid ${c}40`, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>{children}</span>;
 }
-export const inpP = { width: "100%", padding: "10px 12px", fontSize: 14, boxSizing: "border-box", border: `1px solid ${P.lineHi}`, borderRadius: 10, background: "#fff", color: P.txt, outline: "none", fontFamily: "inherit" };
+export const inpP = { width: "100%", padding: "10px 12px", fontSize: 14, boxSizing: "border-box", border: `1px solid ${P.lineHi}`, borderRadius: 10, background: "rgba(0,0,0,0.25)", color: P.txt, outline: "none", fontFamily: "inherit" };
 export function BtnP({ children, onClick, v = "sec", disabled, small, full, style = {}, title, type = "button" }) {
   const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: small ? "7px 12px" : "10px 16px", fontSize: small ? 12 : 13, fontWeight: 700, borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", border: "1px solid transparent", whiteSpace: "nowrap", opacity: disabled ? 0.5 : 1, width: full ? "100%" : undefined };
   const vs = {
     gold: { background: GOLD_GRADIENT, color: "#0A1628" },
-    sec: { background: "#fff", color: P.txt, borderColor: P.lineHi },
+    sec: { background: "rgba(255,255,255,0.05)", color: P.txt, borderColor: P.line },
     ghost: { background: "transparent", color: P.sub, borderColor: "transparent" },
     green: { background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff" },
-    red: { background: P.redBg, color: P.red, borderColor: "#fecaca" },
+    red: { background: P.redBg, color: P.red, borderColor: "rgba(248,113,113,0.3)" },
     wa: { background: "linear-gradient(135deg,#25D366,#128C7E)", color: "#fff" },
   };
   return <button type={type} title={title} onClick={disabled ? undefined : onClick} disabled={disabled} style={{ ...base, ...vs[v], ...style }}>{children}</button>;

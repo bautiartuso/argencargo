@@ -529,7 +529,7 @@ function ProductoCard({i,p,total,origin,onUpdate,onRemove,onClassify,token,desgl
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
       <span style={{fontSize:11,fontWeight:800,color:P.goldHi,letterSpacing:"0.08em"}}>PRODUCTO {i+1}</span>
       {sub>0&&<span style={{fontSize:12,fontWeight:800,color:P.sub,fontVariantNumeric:"tabular-nums"}}>· FOB {fmtUSD(sub)}</span>}
-      {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{marginLeft:"auto",width:28,height:28,borderRadius:8,border:`1px solid ${P.line}`,background:"#fff",color:P.mute,cursor:"pointer"}}>✕</button>}
+      {total>1&&<button type="button" onClick={()=>onRemove(i)} aria-label="Quitar producto" style={{marginLeft:"auto",width:28,height:28,borderRadius:8,border:`1px solid ${P.line}`,background:"rgba(255,255,255,0.03)",color:P.mute,cursor:"pointer"}}>✕</button>}
     </div>
     <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,width:fotos.length?Math.min(fotos.length+1,3)*60:84,flexShrink:0}}>
@@ -547,7 +547,7 @@ function ProductoCard({i,p,total,origin,onUpdate,onRemove,onClassify,token,desgl
       </div>
     </div>
 
-    <div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:P.blueBg,border:"1px solid #bfdbfe"}}>
+    <div style={{marginTop:12,padding:"11px 12px",borderRadius:12,background:P.blueBg,border:"1px solid rgba(96,165,250,0.2)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:180}}>
           {p.ncm_code?<>
@@ -605,7 +605,7 @@ function BultosCard({packages,setPackages,products}){
     {packages.map((k,i)=><div key={i} style={{padding:"12px 12px 10px",borderRadius:12,border:`1px solid ${P.line}`,background:P.soft,marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
         <span style={{fontSize:11,fontWeight:800,color:P.sub,letterSpacing:"0.06em"}}>BULTO {i+1}</span>
-        <button type="button" onClick={()=>del(i)} aria-label="Quitar bulto" style={{marginLeft:"auto",width:26,height:26,borderRadius:7,border:`1px solid ${P.line}`,background:"#fff",color:P.mute,cursor:"pointer"}}>✕</button>
+        <button type="button" onClick={()=>del(i)} aria-label="Quitar bulto" style={{marginLeft:"auto",width:26,height:26,borderRadius:7,border:`1px solid ${P.line}`,background:"rgba(255,255,255,0.03)",color:P.mute,cursor:"pointer"}}>✕</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"0.8fr 1fr 1fr 1fr 1fr",gap:8}}>
         <label><span style={LBL}>Cant.</span><input data-nav="1" onKeyDown={navEnter} inputMode="numeric" value={k.count} onChange={e=>up(i,"count",soloNum(e.target.value))} style={BOX}/></label>
@@ -616,11 +616,11 @@ function BultosCard({packages,setPackages,products}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8}}>
         <span style={{...LBL,marginBottom:0,marginRight:4}}>Lleva</span>
-        {products.map((_,idx)=>{const on=k.prods.includes(idx);return <button key={idx} type="button" onClick={()=>toggleProd(i,idx)} style={{padding:"5px 10px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?P.gold:P.lineHi}`,background:on?P.goldBg:"#fff",color:on?P.goldHi:P.sub}}>{on?"✓ ":""}{nombre(idx)}</button>;})}
+        {products.map((_,idx)=>{const on=k.prods.includes(idx);return <button key={idx} type="button" onClick={()=>toggleProd(i,idx)} style={{padding:"5px 10px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?P.gold:P.lineHi}`,background:on?P.goldBg:"rgba(255,255,255,0.04)",color:on?P.goldHi:P.sub}}>{on?"✓ ":""}{nombre(idx)}</button>;})}
         {k.prods.length===0&&products.length>1&&<span style={{fontSize:11.5,color:P.amber}}>Marcá qué productos van en este bulto</span>}
       </div>
     </div>)}
-    <button type="button" onClick={add} style={{width:"100%",padding:"11px",borderRadius:12,border:`1.5px dashed ${P.lineHi}`,background:"#fff",color:P.sub,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar bulto</button>
+    <button type="button" onClick={add} style={{width:"100%",padding:"11px",borderRadius:12,border:`1.5px dashed ${P.lineHi}`,background:"rgba(255,255,255,0.03)",color:P.sub,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar bulto</button>
     {sinBulto.length>0&&<p style={{margin:"8px 0 0",fontSize:12,color:P.amber}}>Sin bulto: {sinBulto.map(i=>nombre(i)).join(", ")}</p>}
   </Papel>;
 }
@@ -639,7 +639,7 @@ function CondicionesCard(p){
       <div>
         <p style={TIT}>Honorarios GI</p>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {pres.map(v=><button key={v} type="button" onClick={()=>setHonorariosPct(String(v))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(honorariosPct)===v?P.gold:P.lineHi}`,background:Number(honorariosPct)===v?P.goldBg:"#fff",color:Number(honorariosPct)===v?P.goldHi:P.sub}}>{v}%</button>)}
+          {pres.map(v=><button key={v} type="button" onClick={()=>setHonorariosPct(String(v))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(honorariosPct)===v?P.gold:P.lineHi}`,background:Number(honorariosPct)===v?P.goldBg:"rgba(255,255,255,0.04)",color:Number(honorariosPct)===v?P.goldHi:P.sub}}>{v}%</button>)}
           <input inputMode="decimal" value={honorariosPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setHonorariosPct(v);}} style={{...BOX,width:64,textAlign:"center",fontWeight:800,color:P.goldHi}}/>
           <span style={{fontWeight:800,color:P.sub}}>%</span>
         </div>
@@ -647,7 +647,7 @@ function CondicionesCard(p){
       <div>
         <p style={TIT}>Anticipo al proveedor</p>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {[30,50,100].map(v=><button key={v} type="button" onClick={()=>setSupplierDepositPct(String(v))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(supplierDepositPct)===v?P.gold:P.lineHi}`,background:Number(supplierDepositPct)===v?P.goldBg:"#fff",color:Number(supplierDepositPct)===v?P.goldHi:P.sub}}>{v}%</button>)}
+          {[30,50,100].map(v=><button key={v} type="button" onClick={()=>setSupplierDepositPct(String(v))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${Number(supplierDepositPct)===v?P.gold:P.lineHi}`,background:Number(supplierDepositPct)===v?P.goldBg:"rgba(255,255,255,0.04)",color:Number(supplierDepositPct)===v?P.goldHi:P.sub}}>{v}%</button>)}
           <input inputMode="numeric" value={supplierDepositPct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");if(v===""||Number(v)<=100)setSupplierDepositPct(v);}} style={{...BOX,width:64,textAlign:"center",fontWeight:800}}/>
           <span style={{fontWeight:800,color:P.sub}}>%</span>
         </div>
@@ -655,7 +655,7 @@ function CondicionesCard(p){
     </div>
     <p style={TIT}>Plan de pagos del cliente</p>
     {paymentPlan.map((st,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-      <input inputMode="numeric" value={st.pct} onChange={e=>{const nv=Number(e.target.value.replace(/[^0-9]/g,""))||0;setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,pct:Math.min(100,nv)}:x));}} onBlur={acomodar} style={{...BOX,width:60,textAlign:"center",fontWeight:800,borderColor:(i===0&&!cubre1)||(i===1&&!cubre12)?"#fca5a5":P.lineHi}}/>
+      <input inputMode="numeric" value={st.pct} onChange={e=>{const nv=Number(e.target.value.replace(/[^0-9]/g,""))||0;setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,pct:Math.min(100,nv)}:x));}} onBlur={acomodar} style={{...BOX,width:60,textAlign:"center",fontWeight:800,borderColor:(i===0&&!cubre1)||(i===1&&!cubre12)?"rgba(248,113,113,0.5)":P.lineHi}}/>
       <span style={{fontWeight:800,color:P.sub}}>%</span>
       <input value={st.label} onChange={e=>setPaymentPlan(pl=>pl.map((x,j)=>j===i?{...x,label:e.target.value}:x))} style={{...BOX,fontSize:13}}/>
     </div>)}
@@ -688,7 +688,7 @@ function Resumen(p){
       </div>
     </Papel>
     <Papel title={`Precio final al cliente${p.someUSA?" · origen USA":""}`} pad={16}>
-      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:P.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=>{const barato=c.total===menor&&!c.error;return <div key={c.key} style={{padding:"11px 13px",borderRadius:12,border:`1.5px solid ${barato?"#86efac":P.line}`,background:barato?P.greenBg:P.soft,marginBottom:8}}>
+      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:P.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=>{const barato=c.total===menor&&!c.error;return <div key={c.key} style={{padding:"11px 13px",borderRadius:12,border:`1.5px solid ${barato?"rgba(52,211,153,0.35)":P.line}`,background:barato?P.greenBg:P.soft,marginBottom:8}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
           <div style={{minWidth:0}}><p style={{margin:0,fontWeight:800,fontSize:13.5,color:P.txt}}>{c.name}{barato&&<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,color:P.green,textTransform:"uppercase",letterSpacing:"0.06em"}}>más económica</span>}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:P.mute}}>{c.time}</p></div>
           <p style={{margin:0,fontSize:19,fontWeight:900,color:c.error?P.red:P.txt,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{c.error?"sin tarifa":usd0(c.total)}</p>
@@ -710,7 +710,7 @@ function Resumen(p){
         <p style={{margin:0}}>FOB completo {usd0(p.totalFob)} → mínimo <b style={{color:P.txt}}>{min12}%</b> antes de embarcar</p>
       </div>}
     </Papel>}
-    {p.faltante&&<Papel pad={14} style={{background:P.amberBg,borderColor:"#fcd34d"}}><p style={{margin:0,fontSize:12.5,color:P.amber,fontWeight:700}}>{p.faltante}</p></Papel>}
+    {p.faltante&&<Papel pad={14} style={{background:P.amberBg,borderColor:"rgba(251,191,36,0.4)"}}><p style={{margin:0,fontSize:12.5,color:P.amber,fontWeight:700}}>{p.faltante}</p></Papel>}
   </div>;
 }
 

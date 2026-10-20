@@ -692,7 +692,7 @@ function CotDetalle({ ctx, id }) {
         {/* Precios por canal */}
         {q && canales.length > 0 && <Papel title="Precio final al cliente">
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "13px 16px", borderRadius: 14, border: `1.5px solid ${el ? P.gold : barato ? "#86efac" : P.line}`, background: el ? P.goldBg : barato ? P.greenBg : P.soft }}>
+            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "13px 16px", borderRadius: 14, border: `1.5px solid ${el ? P.gold : barato ? "rgba(52,211,153,0.35)" : P.line}`, background: el ? P.goldBg : barato ? P.greenBg : P.soft }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: P.txt }}>{c.largo} {el && <PillP c={P.goldHi}>Eligió esta</PillP>}{!el && barato && <PillP c={P.green}>Más económica</PillP>}</p>
@@ -971,7 +971,7 @@ function OpDetalle({ ctx, id }) {
 
         <Papel title="Etapa" right={!cerrada ? <div style={{ width: 170 }}><DatePicker small value={op.eta ? String(op.eta).slice(0, 10) : ""} onChange={(v) => patchOp({ eta: v || null }, "ETA guardada")} placeholder="ETA" /></div> : op.eta ? <span style={{ fontSize: 12.5, color: P.sub }}>ETA {fmtDate(op.eta)}</span> : null}>
           <div className="gi-scroll" style={{ display: "flex", gap: 6, overflowX: "auto" }}>
-            {etapas.map((k, i) => { const on = k === op.status; const hecho = idx >= 0 && i < idx; const e2 = GI_ESTADOS[k]; const col = { pendiente: P.mute, en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: P.amber, entregada: P.green, operacion_cerrada: P.green }[k] || P.sub; return <button key={k} onClick={() => cambiarEtapa(k)} disabled={k === "operacion_cerrada" && !admin} style={{ flexShrink: 0, padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: on ? 800 : 600, fontFamily: "inherit", cursor: "pointer", border: `1.5px solid ${on ? col : hecho ? `${col}66` : P.line}`, background: on ? `${col}18` : hecho ? P.soft : "#fff", color: on ? col : hecho ? P.sub : P.mute }}>{hecho ? "✓ " : ""}{e2.l}</button>; })}
+            {etapas.map((k, i) => { const on = k === op.status; const hecho = idx >= 0 && i < idx; const e2 = GI_ESTADOS[k]; const col = { pendiente: P.mute, en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: P.amber, entregada: P.green, operacion_cerrada: P.green }[k] || P.sub; return <button key={k} onClick={() => cambiarEtapa(k)} disabled={k === "operacion_cerrada" && !admin} style={{ flexShrink: 0, padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: on ? 800 : 600, fontFamily: "inherit", cursor: "pointer", border: `1.5px solid ${on ? col : hecho ? `${col}66` : P.line}`, background: on ? `${col}18` : hecho ? P.soft : "transparent", color: on ? col : hecho ? P.sub : P.mute }}>{hecho ? "✓ " : ""}{e2.l}</button>; })}
           </div>
         </Papel>
 
@@ -1006,7 +1006,7 @@ function OpDetalle({ ctx, id }) {
                   <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{ref ? "↩ Reembolso" : p.notes || "Pago a proveedor"}</p>
                   <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{fmtDateShort(p.payment_date)} · {(p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
                 </div>
-                {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 9px", borderRadius: 999, border: `1px solid ${p.is_paid ? "#86efac" : "#fcd34d"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
+                {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 9px", borderRadius: 999, border: `1px solid ${p.is_paid ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.4)"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
                 <span style={{ fontWeight: 800, color: ref ? P.green : P.red, fontVariantNumeric: "tabular-nums", minWidth: 86, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
                 {admin && xBtn(() => borrarPago(p))}
               </div>; })}
@@ -1074,7 +1074,7 @@ function SocioOp({ op, socios, onGuardar, pctActual }) {
   const items = [{ k: "", l: "Argencargo" }, ...socios.map((s) => ({ k: s.id, l: s.email.split("@")[0] }))];
   return <Papel title="Socio y comisión">
     <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(120px,1fr))`, gap: 6 }}>
-      {items.map((it) => { const on = sel === it.k; return <button key={it.k} type="button" onClick={() => setSel(it.k)} style={{ padding: "9px 10px", borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${on ? P.gold : P.line}`, background: on ? P.goldBg : "#fff", color: on ? P.goldHi : P.sub }}>{it.l}</button>; })}
+      {items.map((it) => { const on = sel === it.k; return <button key={it.k} type="button" onClick={() => setSel(it.k)} style={{ padding: "9px 10px", borderRadius: 10, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${on ? P.gold : P.line}`, background: on ? P.goldBg : "rgba(255,255,255,0.04)", color: on ? P.goldHi : P.sub }}>{it.l}</button>; })}
     </div>
     {sel && <label style={{ display: "block", marginTop: 12 }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: P.mute, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>% de esta op (vacío = {pctActual}% de la ficha/socio)</span><input inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value.replace(",", "."))} style={inpP} /></label>}
     {cambio && <BtnP v="gold" small onClick={guardar} style={{ marginTop: 10 }}>Guardar</BtnP>}
