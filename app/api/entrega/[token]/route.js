@@ -68,7 +68,7 @@ const HERMANA_SEL = "id,operation_code,description,budget_total,credit_applied_u
 // el link las ofrece para coordinar todo en una sola visita.
 async function loadHermanas(op) {
   if (!op.client_id) return [];
-  const r = await sbFetch(`/operations?client_id=eq.${op.client_id}&id=neq.${op.id}&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}&order=created_at.asc`);
+  const r = await sbFetch(`/operations?client_id=eq.${op.client_id}&id=neq.${op.id}&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito,operacion_cerrada,cancelada)&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}&order=created_at.asc`);
   const list = Array.isArray(r.body) ? r.body : [];
   if (list.length === 0) return [];
   const [pk, pagos] = await Promise.all([
@@ -101,7 +101,7 @@ async function loadOpData(token) {
 async function kgDeOps(ids) {
   const v = (ids || []).filter(Boolean);
   if (!v.length) return 0;
-  const r = await sbFetch(`/operation_packages?operation_id=in.(${v.join(",")})&select=gross_weight_kg,quantity`);
+  const r = await sbFetch(`/operation_packages?operation_id=in.(${v.join(",")})&select=gross_weight_kg,quantity,length_cm,width_cm,height_cm`);
   return kgDeBultos(Array.isArray(r.body) ? r.body : []);
 }
 
@@ -143,7 +143,7 @@ export async function GET(req, { params }) {
     const extra = String(qs.get("extra") || "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
     let extraOk = [];
     if (extra.length) {
-      const r = await sbFetch(`/operations?id=in.(${extra.join(",")})&client_id=eq.${op.client_id}&select=id`);
+      const r = await sbFetch(`/operations?id=in.(${extra.join(",")})&client_id=eq.${op.client_id}&status=not.in.(operacion_cerrada,cancelada)&select=id`);
       extraOk = (Array.isArray(r.body) ? r.body : []).map((x) => x.id);
     }
     const kg = await kgDeOps([op.id, ...extraOk]);
@@ -203,9 +203,9 @@ export async function GET(req, { params }) {
 
   const client = op.clients || {};
   const match = matchLocality(client.city, client.province, localities);
-  // El envío se cotiza con el peso de esta op más el de las hermanas que se pueden coordinar juntas.
-  const kgEnvio = kgDeBultos(pkgs) + await kgDeOps((hermanas || []).map((h) => h.id));
-  const price = match ? computeDeliveryCostUsd(match, cfg, kgEnvio) : null;
+  // El envío se cotiza con el peso de ESTA op. Si el cliente tilda hermanas para coordinarlas juntas,
+  // el link vuelve a cotizar con ?cotizar=1&extra=… (21/10/2026: antes sumaba todas las hermanas de entrada).
+  const price = match ? computeDeliveryCostUsd(match, cfg, kgDeBultos(pkgs)) : null;
 
   // Tarifa preferencial: la op la tiene cuando el flete que se le cobra no sale de la tarifa de
   // lista — sea por descuento manual, por tarifa custom del cliente, por volumen o por lo que sea.
@@ -472,7 +472,7 @@ export async function POST(req, { params }) {
   if (Array.isArray(body.extra_ops) && body.extra_ops.length > 0) {
     const ids = body.extra_ops.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x)).slice(0, 20);
     if (ids.length > 0) {
-      const exRes = await sbFetch(`/operations?id=in.(${ids.join(",")})&client_id=eq.${op.client_id}&delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}`);
+      const exRes = await sbFetch(`/operations?id=in.(${ids.join(",")})&client_id=eq.${op.client_id}&delivery_completed_at=is.null&status=not.in.(operacion_cerrada,cancelada)&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}`);
       extraOps = Array.isArray(exRes.body) ? exRes.body : [];
     }
   }

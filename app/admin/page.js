@@ -6790,7 +6790,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
     const [cfgR,locR,pkR]=await Promise.all([
       dq("calc_config",{token,filters:`?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`}),
       dq("delivery_localities",{token,filters:"?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc"}),
-      dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=gross_weight_kg,quantity`}),
+      dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=gross_weight_kg,quantity,length_cm,width_cm,height_cm`}),
     ]);
     const cfg={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{cfg[r.key]=Number(r.value);});
     const match=matchLocality(opClient?.city,opClient?.province,Array.isArray(locR)?locR:[]);

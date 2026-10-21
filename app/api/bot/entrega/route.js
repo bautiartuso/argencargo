@@ -36,7 +36,7 @@ async function envioDomicilio(client, opIds = []) {
     const [cfgRes, locRes, pkRes] = await Promise.all([
       sb(`/calc_config?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`),
       sb(`/delivery_localities?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc`),
-      ids.length ? sb(`/operation_packages?operation_id=in.(${ids.join(",")})&select=gross_weight_kg,quantity`) : Promise.resolve({ body: [] }),
+      ids.length ? sb(`/operation_packages?operation_id=in.(${ids.join(",")})&select=gross_weight_kg,quantity,length_cm,width_cm,height_cm`) : Promise.resolve({ body: [] }),
     ]);
     const kg = kgDeBultos(Array.isArray(pkRes.body) ? pkRes.body : []);
     const cfg = {}; (Array.isArray(cfgRes.body) ? cfgRes.body : []).forEach((r) => { cfg[r.key] = Number(r.value); });
@@ -185,7 +185,7 @@ export async function GET(req) {
     });
     if (clients.length === 0) return Response.json({ cliente: null, operaciones: [] });
     const ids = clients.map((c) => c.id).join(",");
-    const opsRes = await sb(`/operations?client_id=in.(${ids})&or=(and(delivery_completed_at.is.null,or(status.eq.entregada,delivery_ready_at.not.is.null)),and(delivery_completed_at.not.is.null,is_collected.eq.false))&select=${OP_SEL}&order=created_at.desc`);
+    const opsRes = await sb(`/operations?client_id=in.(${ids})&status=not.in.(operacion_cerrada,cancelada)&or=(and(delivery_completed_at.is.null,or(status.eq.entregada,delivery_ready_at.not.is.null)),and(delivery_completed_at.not.is.null,is_collected.eq.false))&select=${OP_SEL}&order=created_at.desc`);
     const ops = Array.isArray(opsRes.body) ? opsRes.body : [];
     const [views, envio] = await Promise.all([
       Promise.all(ops.map(opView)),
