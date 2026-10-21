@@ -6243,7 +6243,10 @@ function EntregasPanel({token,onOpenOp,vista}){
     // claro (21/10/2026): fondo blanco con degradado del tono arriba, como el logo de Vía Cargo sobre blanco.
     const cT=claro?"#0A1628":"#fff",cH=claro?"rgba(10,22,40,0.55)":"rgba(255,255,255,0.45)";
     return <div style={{marginBottom:16,borderRadius:18,border:`1px solid ${tc?tc+(claro?"80":"45"):"rgba(255,255,255,0.07)"}`,background:claro?`linear-gradient(180deg,${tc}33 0%,#ffffff 110px)`:tc?`linear-gradient(180deg,${tc}14,rgba(255,255,255,0.02) 90px)`:"rgba(255,255,255,0.028)",padding:celu?"14px 10px 10px":"16px 18px 14px",boxShadow:claro?"0 10px 30px rgba(0,0,0,0.25)":"none"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+      {claro&&!txt?<div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:44,marginBottom:14}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:10}}>{icono}{n!==undefined&&<span style={{minWidth:24,height:24,padding:"0 8px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12.5,fontWeight:800,background:tc,color:"#fff"}}>{n}</span>}</span>
+        {accion&&<span style={{position:"absolute",right:0,top:"50%",transform:"translateY(-50%)"}}>{accion}</span>}
+      </div>:<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         {icono?<span style={{height:38,padding:"0 6px",borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:tc?`${tc}22`:"rgba(255,255,255,0.06)",border:`1px solid ${tc?tc+"40":"rgba(255,255,255,0.08)"}`}}>{icono}</span>
         :ico&&<span style={{width:38,height:38,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:18,background:tc?`${tc}22`:"rgba(255,255,255,0.06)",border:`1px solid ${tc?tc+"40":"rgba(255,255,255,0.08)"}`}}>{ico}</span>}
         <div style={{minWidth:0,flex:1}}>
@@ -6251,7 +6254,7 @@ function EntregasPanel({token,onOpenOp,vista}){
           {hint&&<p style={{fontSize:12,color:cH,margin:"3px 0 0"}}>{hint}</p>}
         </div>
         {accion}
-      </div>
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:8}}>{children}</div>
     </div>;
   };
@@ -6330,8 +6333,13 @@ function EntregasPanel({token,onOpenOp,vista}){
     const badge=metodoBadgeDe(o);
     const dias=diasDe(o,contexto==="acobrar"||contexto==="hecha");
     const vcVivo=esCarrier&&contexto==="porentregar";
-    const icono=contexto==="hecha"?"✅":vcVivo?<ViaCargoLogo alto={24}/>:esCarrier?"📮":esEnvio&&contexto!=="acobrar"?"🚚":"📦";
-    const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+    const badgeC=(c)=>!vcVivo?c:c==="#4ade80"?"#15803d":c==="#60a5fa"?"#1d4ed8":c==="#c084fc"?"#7e22ce":"rgba(10,22,40,0.6)";
+    const icono=contexto==="hecha"?"✅":vcVivo?<ViaCargoLogo alto={24} style={{boxShadow:"none",border:"1px solid rgba(30,158,62,0.3)"}}/>:esCarrier?"📮":esEnvio&&contexto!=="acobrar"?"🚚":"📦";
+    // Vía Cargo (21/10/2026): filas claras (blanco, verde, un toque de rojo) dentro del bloque blanco.
+    const K=vcVivo?{txt:"#0A1628",sub:"rgba(10,22,40,0.6)",mute:"rgba(10,22,40,0.45)",code:"#8a6c3c",green:"#15803d",amber:"#b45309",red:"#b42318",badgeBg:"#f4f6fa",badgeBd:"rgba(10,22,40,0.12)",btnBg:"#f4f6fa",btnBd:"rgba(10,22,40,0.15)",btnTx:"#0A1628"}
+      :{txt:"#fff",sub:"rgba(255,255,255,0.45)",mute:"rgba(255,255,255,0.35)",code:"#E8C99B",green:"#22c55e",amber:"#fbbf24",red:"#f87171",badgeBg:"rgba(255,255,255,0.05)",badgeBd:"rgba(255,255,255,0.1)",btnBg:"rgba(255,255,255,0.04)",btnBd:"rgba(255,255,255,0.12)",btnTx:"rgba(255,255,255,0.75)"};
+    const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${K.btnBd}`,background:K.btnBg,color:K.btnTx,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+    const btnClaro=(l,fn,verde)=><button onClick={fn} style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:9,border:`1px solid ${verde?VC_VERDE:K.btnBd}`,background:verde?VC_VERDE:K.btnBg,color:verde?"#fff":K.btnTx,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
     const conRecibo=contexto==="porentregar"||contexto==="acobrar"||contexto==="hecha";
     // Ya entregada (hecha o con saldo): el envío a domicilio ya pasó, sin el azul ni el camioncito.
     const envioVivo=esEnvio&&contexto!=="hecha"&&contexto!=="acobrar";
@@ -6339,10 +6347,10 @@ function EntregasPanel({token,onOpenOp,vista}){
     const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_VERDE:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
     if(celu){
       const montoTxt=contexto==="hecha"?"✓ Cobrada":pagada?"✓ Pagado":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo);
-      const montoColor=contexto==="hecha"||pagada?"#22c55e":contexto==="acobrar"?"#f87171":"#fbbf24";
+      const montoColor=contexto==="hecha"||pagada?K.green:contexto==="acobrar"?K.red:K.amber;
       const sub=contexto==="aviso"?`lista hace ${dias} d`:contexto==="esperando"?`avisada hace ${dias} d`:contexto==="acobrar"?`entregada hace ${dias} d`:contexto==="hecha"&&o.delivery_completed_at?`entregada el ${new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:null;
       const subAlerta=(contexto==="aviso"&&dias>3)||(contexto==="esperando"&&dias>2)||(contexto==="acobrar"&&dias>3);
-      const mb=(l,fn,prim)=><button key={l} type="button" onClick={fn} style={{flex:prim?1.3:1,minWidth:0,height:42,borderRadius:11,border:prim?`1px solid ${GOLD_DEEP}`:"1px solid rgba(255,255,255,0.14)",background:prim?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:prim?"#0A1628":"rgba(255,255,255,0.88)",fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"0 8px"}}>{l}</button>;
+      const mb=(l,fn,prim)=><button key={l} type="button" onClick={fn} style={{flex:prim?1.3:1,minWidth:0,height:42,borderRadius:11,border:prim?`1px solid ${vcVivo?VC_VERDE:GOLD_DEEP}`:`1px solid ${vcVivo?K.btnBd:"rgba(255,255,255,0.14)"}`,background:prim?(vcVivo?VC_VERDE:GOLD_GRADIENT):(vcVivo?K.btnBg:"rgba(255,255,255,0.05)"),color:prim?(vcVivo?"#fff":"#0A1628"):(vcVivo?K.btnTx:"rgba(255,255,255,0.88)"),fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"0 8px"}}>{l}</button>;
       const acciones=contexto==="aviso"?[mb("📨 Avisar",()=>enviarAviso(o),true),mb("💬 WA",()=>waAviso(o)),mb("📋 Link",()=>copyLink(o))]
         :contexto==="esperando"?[mb("🔁 Recordar",()=>waAviso(o),true),mb("Coordinar",()=>setCoordinarModal(o)),mb("📋",()=>copyLink(o))]
         :contexto==="porentregar"?[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",()=>setCoordinarModal(o)),mb("✓ Entregar",()=>setCobroModal({op:o}),true)]
@@ -6350,51 +6358,51 @@ function EntregasPanel({token,onOpenOp,vista}){
         :[];
       const tel=dc.telefono||o.clients?.whatsapp;
       const chip=(t,c)=><span style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:6,background:`${c}22`,color:c,whiteSpace:"nowrap"}}>{t}</span>;
-      const chips=[diaBadge(o),envioVivo&&chip(`🚚 Envío${o.delivery_zone?` · ${o.delivery_zone}`:""}`,"#60a5fa"),vcVivo&&chip(`Vía Cargo · ${o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}`,VC_VERDE)].filter(Boolean);
-      return <div style={{padding:"13px 14px",borderRadius:14,background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#0E1B30":"rgba(255,255,255,0.03)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":vcVivo?"rgba(30,158,62,0.6)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
+      const chips=[diaBadge(o),envioVivo&&chip(`🚚 Envío${o.delivery_zone?` · ${o.delivery_zone}`:""}`,"#60a5fa"),vcVivo&&chip(`Vía Cargo · ${o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}`,K.green)].filter(Boolean);
+      return <div style={{padding:"13px 14px",borderRadius:14,background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#fff":"rgba(255,255,255,0.03)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":vcVivo?"rgba(30,158,62,0.45)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
         <div onClick={()=>onOpenOp(o)} style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
           <div style={{flex:1,minWidth:0}}>
             {enCliente
-              ?<p style={{fontSize:15,fontWeight:800,color:"#E8C99B",fontFamily:"monospace",margin:0}}>{o.operation_code}</p>
-              :<p style={{fontSize:15.5,fontWeight:700,color:"#fff",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nombre}</p>}
-            <p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>
-              {!enCliente&&<><span style={{fontFamily:"monospace",color:"#E8C99B",fontWeight:700}}>{o.operation_code}</span> · </>}
-              {bultos||"?"} bulto{bultos!==1?"s":""}{sub&&<> · <span style={{color:subAlerta?(contexto==="acobrar"?"#f87171":"#fbbf24"):"inherit",fontWeight:subAlerta?700:400}}>{sub}</span></>}
+              ?<p style={{fontSize:15,fontWeight:800,color:K.code,fontFamily:"monospace",margin:0}}>{o.operation_code}</p>
+              :<p style={{fontSize:15.5,fontWeight:700,color:K.txt,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nombre}</p>}
+            <p style={{fontSize:12.5,color:K.sub,margin:"3px 0 0"}}>
+              {!enCliente&&<><span style={{fontFamily:"monospace",color:K.code,fontWeight:700}}>{o.operation_code}</span> · </>}
+              {bultos||"?"} bulto{bultos!==1?"s":""}{sub&&<> · <span style={{color:subAlerta?(contexto==="acobrar"?K.red:K.amber):"inherit",fontWeight:subAlerta?700:400}}>{sub}</span></>}
             </p>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <p style={{fontSize:15,fontWeight:800,color:montoColor,margin:0,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{montoTxt}</p>
-            {badge&&<p style={{fontSize:11.5,fontWeight:700,color:badge.c,margin:"3px 0 0",whiteSpace:"nowrap"}}>{badge.l}</p>}
+            {badge&&<p style={{fontSize:11.5,fontWeight:700,color:badgeC(badge.c),margin:"3px 0 0",whiteSpace:"nowrap"}}>{badge.l}</p>}
           </div>
         </div>
         {chips.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>{chips}</div>}
         {contexto==="esperando"&&estadoAviso(o,{marginTop:8,fontSize:12})}
         {envioVivo&&o.delivery_address&&<p style={{fontSize:12.5,color:"rgba(147,197,253,0.95)",margin:"8px 0 0",lineHeight:1.4}}>📍 {o.delivery_address}</p>}
-        {(envioVivo||(esCarrier&&contexto==="porentregar"))&&tel&&<a href={`tel:${String(tel).replace(/[^0-9+]/g,"")}`} style={{display:"inline-block",fontSize:12.5,color:"#93c5fd",marginTop:5,textDecoration:"none",fontWeight:600}}>📞 {tel}</a>}
-        {!sinMontos&&o.cash_arrival_amount&&contexto==="porentregar"&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>💵 Llega con {o.cash_arrival_currency||"USD"} {Number(o.cash_arrival_amount).toLocaleString("es-AR")}</p>}
+        {(envioVivo||(esCarrier&&contexto==="porentregar"))&&tel&&<a href={`tel:${String(tel).replace(/[^0-9+]/g,"")}`} style={{display:"inline-block",fontSize:12.5,color:vcVivo?K.txt:"#93c5fd",marginTop:5,textDecoration:"none",fontWeight:600}}>📞 {tel}</a>}
+        {!sinMontos&&o.cash_arrival_amount&&contexto==="porentregar"&&<p style={{fontSize:12,color:K.sub,margin:"6px 0 0"}}>💵 Llega con {o.cash_arrival_currency||"USD"} {Number(o.cash_arrival_amount).toLocaleString("es-AR")}</p>}
         {!sinMontos&&envioVivo&&costoEnvio>0&&!pagada&&<p style={{fontSize:11.5,color:"rgba(147,197,253,0.8)",margin:"4px 0 0"}}>Incluye envío {usd(costoEnvio)}</p>}
         {acciones.length>0&&<div style={{display:"flex",gap:7,marginTop:12}}>{acciones}</div>}
       </div>;
     }
-    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#0E1B30":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":vcVivo?"rgba(30,158,62,0.6)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_VERDE:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
+    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#fff":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":vcVivo?"rgba(30,158,62,0.45)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_VERDE:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
       {vcVivo?<div style={{flexShrink:0,display:"flex",alignItems:"center"}}>{icono}</div>:<div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:envioVivo?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>}
       <div style={{flex:"1 1 210px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
-        <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{enCliente?<span style={{fontFamily:"monospace",color:"#E8C99B"}}>{o.operation_code}</span>:<>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span></>}{diaBadge(o)}{envioVivo&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
-          {!enCliente&&<><span style={{fontFamily:"monospace",color:"#E8C99B",fontWeight:700}}>{o.operation_code}</span> · </>}{bultos||"?"} bulto{bultos!==1?"s":""}
+        <p style={{fontSize:13.5,fontWeight:700,color:K.txt,margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{enCliente?<span style={{fontFamily:"monospace",color:K.code}}>{o.operation_code}</span>:<>{nombre} <span style={{fontSize:10.5,color:K.mute,fontFamily:"monospace"}}>{o.clients?.client_code}</span></>}{diaBadge(o)}{envioVivo&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
+        <p style={{fontSize:11,color:K.sub,margin:"2px 0 0"}}>
+          {!enCliente&&<><span style={{fontFamily:"monospace",color:K.code,fontWeight:700}}>{o.operation_code}</span> · </>}{bultos||"?"} bulto{bultos!==1?"s":""}
           {contexto==="aviso"&&<span> · lista hace <b style={{color:dias>3?"#fbbf24":"inherit"}}>{dias} d</b></span>}
           {contexto==="esperando"&&<span> · avisada hace <b style={{color:dias>2?"#fbbf24":"inherit"}}>{dias} d</b> sin respuesta</span>}
           {contexto==="esperando"&&estadoAviso(o,{marginTop:3})}
           {contexto==="acobrar"&&<span> · entregada hace <b style={{color:dias>3?"#f87171":"inherit"}}>{dias} d</b></span>}
           {contexto==="hecha"&&o.delivery_completed_at&&<span> · entregada el {new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
           {envioVivo&&o.delivery_address&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"rgba(147,197,253,0.9)",marginTop:2}}>📍 {o.delivery_address}{dc.telefono?` · 📞 ${dc.telefono}`:""}</span>}
-          {vcVivo&&<span style={{display:"block",color:"rgba(255,255,255,0.6)"}}><b style={{color:"#4ade80"}}>Vía Cargo</b> · {o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}{dc.nombre?` · recibe ${dc.nombre} ${dc.apellido||""}`:""}</span>}
+          {vcVivo&&<span style={{display:"block",color:K.sub}}><b style={{color:K.green}}>Vía Cargo</b> · {o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}{dc.nombre?` · recibe ${dc.nombre} ${dc.apellido||""}`:""}</span>}
         </p>
       </div>
       <div style={{textAlign:"right",flexShrink:0}}>
-        {badge&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.05)",color:badge.c,border:"1px solid rgba(255,255,255,0.1)",whiteSpace:"nowrap"}}>{badge.l}</span>}
-        {!sinMontos&&o.cash_arrival_amount&&contexto==="porentregar"&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.45)",marginTop:3}}>llega con {o.cash_arrival_currency||"USD"} {Number(o.cash_arrival_amount).toLocaleString("es-AR")}</span>}
-        <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:contexto==="hecha"?"#22c55e":pagada?"#22c55e":contexto==="acobrar"?"#f87171":"#fbbf24"}}>
+        {badge&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:6,background:K.badgeBg,color:badgeC(badge.c),border:`1px solid ${K.badgeBd}`,whiteSpace:"nowrap"}}>{badge.l}</span>}
+        {!sinMontos&&o.cash_arrival_amount&&contexto==="porentregar"&&<span style={{display:"block",fontSize:9.5,color:K.sub,marginTop:3}}>llega con {o.cash_arrival_currency||"USD"} {Number(o.cash_arrival_amount).toLocaleString("es-AR")}</span>}
+        <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:contexto==="hecha"?K.green:pagada?K.green:contexto==="acobrar"?K.red:K.amber}}>
           {contexto==="hecha"?"✓ COBRADA":pagada?"✓ PAGADO":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo)}
         </span>
         {!sinMontos&&envioVivo&&costoEnvio>0&&!pagada&&<span style={{display:"block",fontSize:9.5,color:"rgba(147,197,253,0.8)",marginTop:2}}>incl. envío {usd(costoEnvio)}</span>}
@@ -6414,11 +6422,15 @@ function EntregasPanel({token,onOpenOp,vista}){
           <Btn small variant="secondary" onClick={()=>setCoordinarModal(o)}>📞 Coordinar a mano</Btn>
           <Btn small variant="secondary" onClick={()=>copyLink(o)}>📋</Btn>
         </>}
-        {contexto==="porentregar"&&<>
+        {contexto==="porentregar"&&(vcVivo?<>
+          {btnClaro("WA",()=>waSimple(o))}
+          {btnClaro("🖊",()=>setCoordinarModal(o))}
+          {btnClaro("✓ Entregar",()=>setCobroModal({op:o}),true)}
+        </>:<>
           <Btn small variant="secondary" onClick={()=>waSimple(o)}>WA</Btn>
           <Btn small variant="secondary" onClick={()=>setCoordinarModal(o)}>🖊</Btn>
           <Btn small onClick={()=>setCobroModal({op:o})}>✓ Entregar</Btn>
-        </>}
+        </>)}
         {contexto==="acobrar"&&<>
           <Btn small variant="secondary" onClick={()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)}>WA</Btn>
           <Btn small variant="secondary" title="Cerrar la operación y pasar el saldo a la cuenta corriente" onClick={()=>cerrarACC([o])}>→ Cuenta corriente</Btn>
@@ -6594,7 +6606,7 @@ function EntregasPanel({token,onOpenOp,vista}){
           // Vía Cargo (21/10/2026): primero lo pagado (se despacha), aparte lo que todavía debe (no se despacha).
           const vcPagadas=carriers.filter(o=>saldoFor(o)<=0.005),vcDeben=carriers.filter(o=>saldoFor(o)>0.005);
           const subT=(txt,c,n,hint)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:800,color:c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span><span style={{fontSize:11,fontWeight:800,padding:"1px 7px",borderRadius:999,background:`${c}1f`,color:c}}>{n}</span>{hint&&<span style={{fontSize:11.5,color:"rgba(10,22,40,0.55)"}}>{hint}</span>}</div>;
-          return <Bloque titulo="Vía Cargo · para despachar" n={carriers.length} tone="viacargo" claro icono={<ViaCargoLogo alto={26} style={{boxShadow:"0 1px 4px rgba(0,0,0,0.18)",border:"1px solid rgba(30,158,62,0.25)"}}/>} hint={vcDeben.length?`${vcPagadas.length} para despachar · ${vcDeben.length} esperando el pago`:"Todas pagadas: se despachan"}
+          return <Bloque titulo="" n={carriers.length} tone="viacargo" claro icono={<ViaCargoLogo alto={40} style={{boxShadow:"0 2px 8px rgba(0,0,0,0.12)",border:"1px solid rgba(30,158,62,0.3)"}}/>}
             accion={!celu&&vcPagadas.length>0&&<button onClick={()=>imprimirEtiquetas("carrier_domicilio",vcPagadas)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:`1px solid ${VC_VERDE}66`,background:"#fff",color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🖨 Etiquetas ({vcPagadas.length})</button>}>
             {vcPagadas.length>0&&<>{subT("✓ Pagadas · despachar","#15803d",vcPagadas.length)}{renderConGrupos(vcPagadas,"porentregar")}</>}
             {vcDeben.length>0&&<>{subT("⏳ Pendientes de pago · no despachar","#b45309",vcDeben.length,`deben ${usd(vcDeben.reduce((a,o)=>a+saldoFor(o),0))} en total`)}{renderConGrupos(vcDeben,"porentregar")}</>}
