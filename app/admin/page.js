@@ -6242,7 +6242,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     const ico=icono||(m?m[1]:null);const txt=m?m[2]:titulo;
     // claro (21/10/2026): fondo blanco con degradado del tono arriba, como el logo de Vía Cargo sobre blanco.
     const cT=claro?"#0A1628":"#fff",cH=claro?"rgba(10,22,40,0.55)":"rgba(255,255,255,0.45)";
-    return <div style={{marginBottom:16,borderRadius:18,border:`1px solid ${tc?tc+(claro?"80":"45"):"rgba(255,255,255,0.07)"}`,background:claro?`linear-gradient(180deg,${tc}33 0%,#ffffff 110px)`:tc?`linear-gradient(180deg,${tc}14,rgba(255,255,255,0.02) 90px)`:"rgba(255,255,255,0.028)",padding:celu?"14px 10px 10px":"16px 18px 14px",boxShadow:claro?"0 10px 30px rgba(0,0,0,0.25)":"none"}}>
+    return <div style={{marginBottom:16,borderRadius:18,border:`1px solid ${tc?tc+(claro?"80":"45"):"rgba(255,255,255,0.07)"}`,background:claro?"linear-gradient(180deg,#DDF2E3 0%,#ffffff 120px)":tc?`linear-gradient(180deg,${tc}14,rgba(255,255,255,0.02) 90px)`:"rgba(255,255,255,0.028)",padding:celu?"14px 10px 10px":"16px 18px 14px",boxShadow:claro?"0 10px 30px rgba(0,0,0,0.25)":"none"}}>
       {claro&&!txt?<div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:44,marginBottom:14}}>
         <span style={{display:"inline-flex",alignItems:"center",gap:10}}>{icono}{n!==undefined&&<span style={{minWidth:24,height:24,padding:"0 8px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12.5,fontWeight:800,background:tc,color:"#fff"}}>{n}</span>}</span>
         {accion&&<span style={{position:"absolute",right:0,top:"50%",transform:"translateY(-50%)"}}>{accion}</span>}
@@ -6336,15 +6336,15 @@ function EntregasPanel({token,onOpenOp,vista}){
     const badgeC=(c)=>!vcVivo?c:c==="#4ade80"?"#15803d":c==="#60a5fa"?"#1d4ed8":c==="#c084fc"?"#7e22ce":"rgba(10,22,40,0.6)";
     const icono=contexto==="hecha"?"✅":vcVivo?<ViaCargoLogo alto={24} style={{boxShadow:"none",border:"1px solid rgba(30,158,62,0.3)"}}/>:esCarrier?"📮":esEnvio&&contexto!=="acobrar"?"🚚":"📦";
     // Vía Cargo (21/10/2026): filas claras (blanco, verde, un toque de rojo) dentro del bloque blanco.
-    const K=vcVivo?{txt:"#0A1628",sub:"rgba(10,22,40,0.6)",mute:"rgba(10,22,40,0.45)",code:"#8a6c3c",green:"#15803d",amber:"#b45309",red:"#b42318",badgeBg:"#f4f6fa",badgeBd:"rgba(10,22,40,0.12)",btnBg:"#f4f6fa",btnBd:"rgba(10,22,40,0.15)",btnTx:"#0A1628"}
+    const K=vcVivo?{txt:"#0A1628",sub:"#2f3f5c",mute:"#4b5b78",code:"#0A1628",green:"#15803d",amber:VC_ROJO,red:VC_ROJO,badgeBg:"#EAF2FF",badgeBd:"#B9D0F5",btnBg:"#fff",btnBd:"#0A1628",btnTx:"#0A1628"}
       :{txt:"#fff",sub:"rgba(255,255,255,0.45)",mute:"rgba(255,255,255,0.35)",code:"#E8C99B",green:"#22c55e",amber:"#fbbf24",red:"#f87171",badgeBg:"rgba(255,255,255,0.05)",badgeBd:"rgba(255,255,255,0.1)",btnBg:"rgba(255,255,255,0.04)",btnBd:"rgba(255,255,255,0.12)",btnTx:"rgba(255,255,255,0.75)"};
-    const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${K.btnBd}`,background:K.btnBg,color:K.btnTx,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
-    const btnClaro=(l,fn,verde)=><button onClick={fn} style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:9,border:`1px solid ${verde?VC_VERDE:K.btnBd}`,background:verde?VC_VERDE:K.btnBg,color:verde?"#fff":K.btnTx,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+    const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`${vcVivo?1.5:1}px solid ${K.btnBd}`,background:K.btnBg,color:K.btnTx,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+    const btnClaro=(l,fn,verde)=><button onClick={fn} style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:9,border:`1.5px solid ${verde?VC_VERDE:K.btnBd}`,background:verde?VC_VERDE:K.btnBg,color:verde?"#fff":K.btnTx,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
     const conRecibo=contexto==="porentregar"||contexto==="acobrar"||contexto==="hecha";
     // Ya entregada (hecha o con saldo): el envío a domicilio ya pasó, sin el azul ni el camioncito.
     const envioVivo=esEnvio&&contexto!=="hecha"&&contexto!=="acobrar";
     const costoEnvio=Number(o.delivery_cost_usd||0);
-    const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_VERDE:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
+    const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?(pagada?VC_VERDE:VC_ROJO):contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
     if(celu){
       const montoTxt=contexto==="hecha"?"✓ Cobrada":pagada?"✓ Pagado":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo);
       const montoColor=contexto==="hecha"||pagada?K.green:contexto==="acobrar"?K.red:K.amber;
@@ -6359,7 +6359,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       const tel=dc.telefono||o.clients?.whatsapp;
       const chip=(t,c)=><span style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:6,background:`${c}22`,color:c,whiteSpace:"nowrap"}}>{t}</span>;
       const chips=[diaBadge(o),envioVivo&&chip(`🚚 Envío${o.delivery_zone?` · ${o.delivery_zone}`:""}`,"#60a5fa"),vcVivo&&chip(`Vía Cargo · ${o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}`,K.green)].filter(Boolean);
-      return <div style={{padding:"13px 14px",borderRadius:14,background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#fff":"rgba(255,255,255,0.03)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":vcVivo?"rgba(30,158,62,0.45)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
+      return <div style={{padding:"13px 14px",borderRadius:14,background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#fff":"rgba(255,255,255,0.03)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":vcVivo?acento+"80":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
         <div onClick={()=>onOpenOp(o)} style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
           <div style={{flex:1,minWidth:0}}>
             {enCliente
@@ -6384,8 +6384,8 @@ function EntregasPanel({token,onOpenOp,vista}){
         {acciones.length>0&&<div style={{display:"flex",gap:7,marginTop:12}}>{acciones}</div>}
       </div>;
     }
-    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#fff":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":vcVivo?"rgba(30,158,62,0.45)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_VERDE:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
-      {vcVivo?<div style={{flexShrink:0,display:"flex",alignItems:"center"}}>{icono}</div>:<div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:envioVivo?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>}
+    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"#fff":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":vcVivo?acento+"80":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${acento}`}}>
+      {vcVivo?null:<div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:envioVivo?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>}
       <div style={{flex:"1 1 210px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
         <p style={{fontSize:13.5,fontWeight:700,color:K.txt,margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{enCliente?<span style={{fontFamily:"monospace",color:K.code}}>{o.operation_code}</span>:<>{nombre} <span style={{fontSize:10.5,color:K.mute,fontFamily:"monospace"}}>{o.clients?.client_code}</span></>}{diaBadge(o)}{envioVivo&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
         <p style={{fontSize:11,color:K.sub,margin:"2px 0 0"}}>
@@ -6605,12 +6605,12 @@ function EntregasPanel({token,onOpenOp,vista}){
         {carriers.length>0&&(()=>{
           // Vía Cargo (21/10/2026): primero lo pagado (se despacha), aparte lo que todavía debe (no se despacha).
           const vcPagadas=carriers.filter(o=>saldoFor(o)<=0.005),vcDeben=carriers.filter(o=>saldoFor(o)>0.005);
-          const subT=(txt,c,n,hint)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:800,color:c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span><span style={{fontSize:11,fontWeight:800,padding:"1px 7px",borderRadius:999,background:`${c}1f`,color:c}}>{n}</span>{hint&&<span style={{fontSize:11.5,color:"rgba(10,22,40,0.55)"}}>{hint}</span>}</div>;
+          const subT=(txt,c,n,hint)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:800,color:c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span><span style={{fontSize:11,fontWeight:800,padding:"1px 7px",borderRadius:999,background:`${c}1f`,color:c}}>{n}</span>{hint&&<span style={{fontSize:11.5,fontWeight:600,color:"#2f3f5c"}}>{hint}</span>}</div>;
           return <Bloque titulo="" n={carriers.length} tone="viacargo" claro icono={<ViaCargoLogo alto={40} style={{boxShadow:"0 2px 8px rgba(0,0,0,0.12)",border:"1px solid rgba(30,158,62,0.3)"}}/>}
-            accion={!celu&&vcPagadas.length>0&&<button onClick={()=>imprimirEtiquetas("carrier_domicilio",vcPagadas)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:`1px solid ${VC_VERDE}66`,background:"#fff",color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🖨 Etiquetas ({vcPagadas.length})</button>}>
+            accion={!celu&&vcPagadas.length>0&&<button onClick={()=>imprimirEtiquetas("carrier_domicilio",vcPagadas)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:"1.5px solid #0A1628",background:"#fff",color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🖨 Etiquetas ({vcPagadas.length})</button>}>
             {vcPagadas.length>0&&<>{subT("✓ Pagadas · despachar","#15803d",vcPagadas.length)}{renderConGrupos(vcPagadas,"porentregar")}</>}
-            {vcDeben.length>0&&<>{subT("⏳ Pendientes de pago · no despachar","#b45309",vcDeben.length,`deben ${usd(vcDeben.reduce((a,o)=>a+saldoFor(o),0))} en total`)}{renderConGrupos(vcDeben,"porentregar")}</>}
-            {vcPagadas.length===0&&<p style={{color:"rgba(10,22,40,0.5)",fontSize:12.5,margin:"4px 0 0"}}>Nada para despachar hasta que paguen.</p>}
+            {vcDeben.length>0&&<>{subT("⏳ Pendientes de pago · no despachar",VC_ROJO,vcDeben.length,`deben ${usd(vcDeben.reduce((a,o)=>a+saldoFor(o),0))} en total`)}{renderConGrupos(vcDeben,"porentregar")}</>}
+            {vcPagadas.length===0&&<p style={{color:"#2f3f5c",fontSize:12.5,fontWeight:600,margin:"4px 0 0"}}>Nada para despachar hasta que paguen.</p>}
           </Bloque>;})()}
 
         <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"22px 0 18px"}}/>
