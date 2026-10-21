@@ -200,7 +200,7 @@ function CostoPorProducto({ alt }) {
       <div className={`${cls} head`}>
         <span>Producto</span><span>Cant.</span><span>Mercadería</span>
         {conImp && <span>Impuestos</span>}
-        <span>Flete y gastos</span><span>Puesto en Arg.</span>
+        <span>{conImp ? "Flete y gastos" : "Flete & Aduana"}</span><span>Puesto en Arg.</span>
       </div>
       {filas.map((r, i) => (
         <div className={cls} key={i}>
@@ -210,7 +210,7 @@ function CostoPorProducto({ alt }) {
           <span><i className="k">Cantidad</i>{r.qty}</span>
           <span><i className="k">Mercadería c/u</i>{fmt(r.fobUnit)}</span>
           {conImp && <span><i className="k">Impuestos c/u</i>{fmt(r.taxUnit)}</span>}
-          <span><i className="k">Flete y gastos c/u</i>{fmt(r.svcUnit)}</span>
+          <span><i className="k">{conImp ? "Flete y gastos" : "Flete & Aduana"} c/u</i>{fmt(r.svcUnit)}</span>
           <span><i className="k">Puesto en Argentina c/u</i>{fmt(r.totalUnit)}</span>
         </div>
       ))}
