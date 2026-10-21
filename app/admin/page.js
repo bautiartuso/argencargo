@@ -17426,120 +17426,129 @@ function LclFclPanel({token,onSelectOp,onNew}){
     </div>;})}
   </div>;};
 
-  const Tarjeta=({o})=>{
-    const its=itemsDe(o.id);const ps=pkgsDe(o.id);const cbm=cbmDe(o);const fob=fobDe(o);const c=o.clients||{};const open=abierta===o.id;
-    const flete=Number(o.budget_flete||0),imp=Number(o.budget_taxes||0),tot=Number(o.budget_total||0);const xm3=cbm>0&&flete>0?flete/Math.max(cbm,1):0;
-    const det=o.budget_tax_detail||{};const real=costoReal(o);const gan=tot-real;const p=pasoDe(o);const col=COLS_PASO[p];
-    const etaDias=o.eta?Math.ceil((new Date(o.eta+"T12:00:00").getTime()-Date.now())/86400000):null;
-    const ncms=[...new Set(its.map(i=>i.ncm_code).filter(Boolean))];const al=alertas(o);const ev=ultimoEv(o.id);
-    const cobro=o.is_collected?["Cobrada","#4ade80"]:Number(o.total_anticipos||0)>0?[`Anticipo ${usd0(o.total_anticipos)}`,"#8CC8F5"]:["A cobrar","rgba(255,255,255,0.6)"];
-    const Dato=({l,v,sub,color})=><div style={{minWidth:0,overflow:"hidden"}}><p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.38)",whiteSpace:"nowrap"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:celu?13.5:15,fontWeight:800,color:color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",letterSpacing:"-0.01em",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p>{sub&&<p style={{margin:"1px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</p>}</div>;
-    return <div style={{borderRadius:16,border:`1px solid ${open?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,background:"linear-gradient(180deg,rgba(14,26,48,0.95),rgba(8,16,32,0.95))",boxShadow:"0 10px 30px rgba(0,0,0,0.25)",overflow:"hidden"}}>
-      <div style={{height:3,background:`linear-gradient(90deg,${col},${col}22)`}}/>
-      <div style={{padding:celu?"12px 14px":"14px 18px",display:"flex",flexDirection:"column",gap:12}}>
-        {/* Cabecera: quién y qué · ETA grande · abrir */}
-        <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-          <div style={{flex:"1 1 320px",minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:15,fontWeight:800,color:GOLD_LIGHT,letterSpacing:"0.02em"}}>{o.operation_code}</span>
-              <span style={{fontSize:15,fontWeight:800,color:"#fff"}}>{`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—"}</span>
-              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{c.client_code}</span>
-              {COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.55)")}
-              {o.lost_in_customs_at&&pill("Retenida","#f87171")}
-            </div>
-            <p style={{margin:"4px 0 0",fontSize:13,color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"Sin descripción"}{its.length?<span style={{color:"rgba(255,255,255,0.4)"}}> · {its.length} producto{its.length!==1?"s":""} · {ncms.length} NCM</span>:null}</p>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginLeft:"auto"}}>
-            {activa(o)&&<div style={{textAlign:"right"}}>
-              <p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.38)"}}>{p>=3?"Arribó":"ETA"}</p>
-              <p style={{margin:"2px 0 0",fontSize:18,fontWeight:800,color:(p>=3?o.arrived_in_argentina_at||o.eta:o.eta)?"#fff":"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>{p>=3?(o.arrived_in_argentina_at?fdY(o.arrived_in_argentina_at):o.eta?fdY(o.eta):"sin fecha"):o.eta?fdY(o.eta):"sin ETA"}</p>
-              {etaDias!=null&&p<3&&<p style={{margin:"2px 0 0",fontSize:11.5,fontWeight:700,color:etaDias<0?"#f87171":"#8CC8F5"}}>{etaDias<0?`hace ${-etaDias} días`:etaDias===0?"hoy":`en ${etaDias} días`}</p>}
-            </div>}
-            {btn("Abrir →",()=>onSelectOp(o),{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:38})}
-          </div>
-        </div>
-        {/* Riel de avance */}
-        <Riel o={o}/>
-        {/* Carga y plata */}
-        <div style={{display:"grid",gridTemplateColumns:celu?"repeat(3,minmax(0,1fr))":"repeat(6,minmax(0,1fr))",gap:"10px 10px",padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
-          <Dato l="Carga" v={cbm>0?m3(cbm):"—"} sub={ps.length?`${ps.length} bulto${ps.length!==1?"s":""}${kgDe(o)>0?` · ${n0(kgDe(o))} kg`:""}`:"sin bultos"} color={cbm>0?"#fff":"#fbbf24"}/>
-          <Dato l="FOB" v={fob>0?usd0(fob):"—"} sub={fob>0&&cbm>0?`${usd0(fob/Math.max(cbm,0.01))}/m³`:null}/>
-          <Dato l="Impuestos" v={imp>0?usd0(imp):"—"} sub={fob>0&&imp>0?`${Math.round(imp/fob*100)} % del FOB`:null}/>
-          <Dato l="Flete" v={flete>0?usd0(flete):"—"} sub={xm3>0?`${usd0(xm3)}/m³`:null}/>
-          <Dato l="Presupuesto" v={tot>0?usd0(tot):"—"} sub={!esEmpleado()&&real>0?<span style={{color:gan>=0?"#4ade80":"#f87171",fontWeight:800}}>{gan>=0?"+":""}{usd0(gan)} ganancia</span>:null} color={GOLD_LIGHT}/>
-          <Dato l="Cobro" v={cobro[0]} color={cobro[1]} sub={o.collection_date?`el ${fdY(o.collection_date)}`:null}/>
-        </div>
-        {/* Alertas y último movimiento */}
-        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          {al.map(([t,c2],i)=><span key={i} style={{fontSize:11.5,fontWeight:700,color:c2,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:c2,display:"inline-block"}}/>{t}</span>)}
-          {al.length===0&&activa(o)&&<span style={{fontSize:11.5,fontWeight:700,color:"#4ade80",display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>Todo en orden</span>}
-          {ev&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>· {ev.title}{ev.occurred_at?` (${fd(ev.occurred_at)})`:""}</span>}
-          <button type="button" onClick={()=>setAbierta(open?null:o.id)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{open?"Ocultar detalle ▲":"Productos, despacho y costos ▼"}</button>
-        </div>
+  // Guardar la ETA desde la fila (sin abrir la op).
+  const guardarEta=async(o,v)=>{const eta=v||null;setOps(p=>p.map(x=>x.id===o.id?{...x,eta}:x));await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{eta}});};
+
+  // Detalle desplegable: productos, despacho y costos reales.
+  const Detalle=({o})=>{
+    const its=itemsDe(o.id);const imp=Number(o.budget_taxes||0),tot=Number(o.budget_total||0);const det=o.budget_tax_detail||{};const real=costoReal(o);const gan=tot-real;
+    return <div style={{padding:celu?"0 12px 12px":"0 16px 14px",display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,3fr) minmax(0,2fr)",gap:10}}>
+      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",minWidth:0,overflowX:"auto"}}>
+        <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Productos y posiciones</p>
+        {its.length===0?<p style={{margin:0,fontSize:12.5,color:"#f87171"}}>Sin productos cargados.</p>
+        :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+          <thead><tr style={{color:"rgba(255,255,255,0.4)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>{["Producto","NCM","Cant.","FOB","DIE","TE","IVA","Impuestos"].map((h,i)=><th key={h} style={{textAlign:i===0?"left":"right",padding:"4px 6px",fontWeight:800,borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{h}</th>)}</tr></thead>
+          <tbody>{its.map((i,ix)=>{const d=(det.items||[])[ix]||{};const impI=Number(d.derechos||0)+Number(d.tasaE||0)+Number(d.iva||0)+Number(d.ivaAdic||0)+Number(d.iigg||0)+Number(d.iibb||0);const fobI=Number(i.unit_price_usd||0)*Number(i.quantity||1);
+            return <tr key={i.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"7px 6px",color:"#fff",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.description||"—"}</td>
+              <td style={{padding:"7px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:i.ncm_code?"#8CC8F5":"#fbbf24",fontWeight:700}}>{i.ncm_code||"falta"}</td>
+              <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{i.quantity}</td>
+              <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd0(fobI)}</td>
+              <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.import_duty_rate??"—"}%</td>
+              <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.statistics_rate??"—"}%</td>
+              <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.iva_rate??21}%</td>
+              <td style={{padding:"7px 6px",textAlign:"right",color:"#fff",fontWeight:700}}>{impI>0?usd0(impI):"—"}</td>
+            </tr>;})}</tbody>
+        </table>}
+        {imp>0&&<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>{[["Derechos",det.derechos],["Tasa est.",det.tasaE],["IVA",det.iva],["IVA adic.",det.ivaAdic],["IIGG",det.iigg],["IIBB",det.iibb]].map(([l,v])=><span key={l}>{l} <b style={{color:"rgba(255,255,255,0.85)"}}>{usd0(v)}</b></span>)}</div>}
       </div>
-      {open&&<div style={{padding:"0 18px 16px",display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,3fr) minmax(0,2fr)",gap:10}}>
-        <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",minWidth:0,overflowX:"auto"}}>
-          <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Productos y posiciones</p>
-          {its.length===0?<p style={{margin:0,fontSize:12.5,color:"#f87171"}}>Sin productos cargados.</p>
-          :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
-            <thead><tr style={{color:"rgba(255,255,255,0.4)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>{["Producto","NCM","Cant.","FOB","DIE","TE","IVA","Impuestos"].map((h,i)=><th key={h} style={{textAlign:i===0?"left":"right",padding:"4px 6px",fontWeight:800,borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{h}</th>)}</tr></thead>
-            <tbody>{its.map((i,ix)=>{const d=(det.items||[])[ix]||{};const impI=Number(d.derechos||0)+Number(d.tasaE||0)+Number(d.iva||0)+Number(d.ivaAdic||0)+Number(d.iigg||0)+Number(d.iibb||0);const fobI=Number(i.unit_price_usd||0)*Number(i.quantity||1);
-              return <tr key={i.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                <td style={{padding:"7px 6px",color:"#fff",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.description||"—"}</td>
-                <td style={{padding:"7px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:i.ncm_code?"#8CC8F5":"#fbbf24",fontWeight:700}}>{i.ncm_code||"falta"}</td>
-                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{i.quantity}</td>
-                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.75)"}}>{usd0(fobI)}</td>
-                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.import_duty_rate??"—"}%</td>
-                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.statistics_rate??"—"}%</td>
-                <td style={{padding:"7px 6px",textAlign:"right",color:"rgba(255,255,255,0.6)"}}>{i.iva_rate??21}%</td>
-                <td style={{padding:"7px 6px",textAlign:"right",color:"#fff",fontWeight:700}}>{impI>0?usd0(impI):"—"}</td>
-              </tr>;})}</tbody>
-          </table>}
-          {imp>0&&<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>{[["Derechos",det.derechos],["Tasa est.",det.tasaE],["IVA",det.iva],["IVA adic.",det.ivaAdic],["IIGG",det.iigg],["IIBB",det.iibb]].map(([l,v])=><span key={l}>{l} <b style={{color:"rgba(255,255,255,0.85)"}}>{usd0(v)}</b></span>)}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+          <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Despacho</p>
+          {(()=>{const rd=Number(o.despacho_die_usd||0)+Number(o.despacho_iva_usd||0)+Number(o.despacho_estadistica_usd||0);const dif=rd>0?rd-imp:null;return <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)",lineHeight:1.7}}>
+            Presupuestado <b>{usd0(imp)}</b>{rd>0?<> · Real <b>{usd0(rd)}</b> <span style={{color:dif>0?"#f87171":"#4ade80",fontWeight:800}}>({dif>0?"+":""}{usd0(dif)})</span></>:<span style={{color:"rgba(255,255,255,0.4)"}}> · real sin cargar</span>}<br/>
+            {rd>0&&<>DIE {usd0(o.despacho_die_usd)} · TE {usd0(o.despacho_estadistica_usd)} · IVA {usd0(o.despacho_iva_usd)} · Desaduanaje {usd0(o.despacho_desaduanaje_usd)}<br/></>}
+            {o.cleared_customs_at?<>Liberada el {fdY(o.cleared_customs_at)}</>:o.arrived_in_argentina_at?<>Arribó el {fdY(o.arrived_in_argentina_at)}</>:o.dispatched_at?<>Embarcó el {fdY(o.dispatched_at)}</>:<>Creada el {fdY(o.created_at)}</>}
+          </p>;})()}
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
-            <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Despacho</p>
-            {(()=>{const rd=Number(o.despacho_die_usd||0)+Number(o.despacho_iva_usd||0)+Number(o.despacho_estadistica_usd||0);const dif=rd>0?rd-imp:null;return <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)",lineHeight:1.7}}>
-              Presupuestado <b>{usd0(imp)}</b>{rd>0?<> · Real <b>{usd0(rd)}</b> <span style={{color:dif>0?"#f87171":"#4ade80",fontWeight:800}}>({dif>0?"+":""}{usd0(dif)})</span></>:<span style={{color:"rgba(255,255,255,0.4)"}}> · real sin cargar</span>}<br/>
-              {rd>0&&<>DIE {usd0(o.despacho_die_usd)} · TE {usd0(o.despacho_estadistica_usd)} · IVA {usd0(o.despacho_iva_usd)} · Desaduanaje {usd0(o.despacho_desaduanaje_usd)}<br/></>}
-              {o.cleared_customs_at?<>Liberada el {fdY(o.cleared_customs_at)}</>:o.arrived_in_argentina_at?<>Arribó el {fdY(o.arrived_in_argentina_at)}</>:o.dispatched_at?<>Embarcó el {fdY(o.dispatched_at)}</>:<>Creada el {fdY(o.created_at)}</>}
-            </p>;})()}
+        {!esEmpleado()&&<div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
+          <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Costos reales</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:"6px 10px",fontSize:12,color:"rgba(255,255,255,0.75)"}}>
+            {[["Flete",o.cost_flete],["Impuestos",o.cost_impuestos_reales],["Gasto doc.",o.cost_gasto_documental],["Flete local",o.cost_flete_local],["Seguro",o.cost_seguro],["Otros",o.cost_otros]].map(([l,v])=><span key={l}><span style={{color:"rgba(255,255,255,0.4)"}}>{l}</span><br/><b style={{color:"#fff"}}>{usd0(v)}</b></span>)}
           </div>
-          {!esEmpleado()&&<div style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"}}>
-            <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Costos reales</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:"6px 10px",fontSize:12,color:"rgba(255,255,255,0.75)"}}>
-              {[["Flete",o.cost_flete],["Impuestos",o.cost_impuestos_reales],["Gasto doc.",o.cost_gasto_documental],["Flete local",o.cost_flete_local],["Seguro",o.cost_seguro],["Otros",o.cost_otros]].map(([l,v])=><span key={l}><span style={{color:"rgba(255,255,255,0.4)"}}>{l}</span><br/><b style={{color:"#fff"}}>{usd0(v)}</b></span>)}
-            </div>
-            <p style={{margin:"10px 0 0",fontSize:13,fontWeight:800,color:gan>=0?"#4ade80":"#f87171"}}>{real>0?<>Ganancia {gan>=0?"+":""}{usd(gan)}{tot>0&&<span style={{color:"rgba(255,255,255,0.45)",fontWeight:600}}> · {Math.round(gan/tot*100)} %</span>}</>:<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>Sin costos cargados todavía</span>}</p>
-          </div>}
-        </div>
-      </div>}
+          <p style={{margin:"10px 0 0",fontSize:13,fontWeight:800,color:gan>=0?"#4ade80":"#f87171"}}>{real>0?<>Ganancia {gan>=0?"+":""}{usd(gan)}{tot>0&&<span style={{color:"rgba(255,255,255,0.45)",fontWeight:600}}> · {Math.round(gan/tot*100)} %</span>}</>:<span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>Sin costos cargados todavía</span>}</p>
+        </div>}
+      </div>
     </div>;
   };
 
-  const FILTROS=[{k:"curso",l:"En curso"},...PASOS.map((s,i)=>({k:String(i),l:s.l})),{k:"cerrada",l:"Cerradas"}];
-  return <div>
-    {/* Tubería: cuántas hay en cada etapa (clickeable) */}
-    <div style={celu?{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:12,WebkitOverflowScrolling:"touch"}:{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:8,marginBottom:14}}>
-      {PASOS.map((s,i)=>{const l=porPaso(i);const on=filtro===String(i);const vol=l.reduce((a,o)=>a+cbmDe(o),0);return <button key={s.k} type="button" onClick={()=>{setFiltro(on?"curso":String(i));setQ("");}} style={{textAlign:"left",padding:celu?"8px 12px":"11px 14px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?COLS_PASO[i]:"rgba(255,255,255,0.08)"}`,background:on?`${COLS_PASO[i]}14`:"rgba(255,255,255,0.025)",transition:"all 120ms",flex:celu?"0 0 auto":undefined}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{width:8,height:8,borderRadius:"50%",background:COLS_PASO[i],display:"inline-block"}}/><span style={{fontSize:11.5,fontWeight:800,color:on?"#fff":"rgba(255,255,255,0.65)",letterSpacing:"0.02em",whiteSpace:"nowrap"}}>{s.l}</span>{celu&&<span style={{fontSize:15,fontWeight:800,color:l.length?"#fff":"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",marginLeft:4}}>{lo?"…":l.length}</span>}</div>
-        {!celu&&<div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:4}}><span style={{fontSize:22,fontWeight:800,color:l.length?"#fff":"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{lo?"…":l.length}</span>{l.length>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{m3(vol)}</span>}</div>}
-      </button>;})}
-    </div>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-        {[FILTROS[0],FILTROS[FILTROS.length-1]].map(f=>{const on=filtro===f.k&&!qn;return <button key={f.k} type="button" onClick={()=>{setFiltro(f.k);setQ("");}} style={{height:32,padding:"0 12px",borderRadius:9,border:`1px solid ${on?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.12)":"transparent",color:on?"#fff":"rgba(255,255,255,0.6)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{f.l}{f.k==="curso"?` · ${enCurso.length}`:""}</button>;})}
-        {filtro!=="curso"&&filtro!=="cerrada"&&!qn&&<span style={{alignSelf:"center",fontSize:12,color:"rgba(255,255,255,0.5)"}}>Mostrando solo <b style={{color:"#fff"}}>{PASOS[Number(filtro)]?.l}</b></span>}
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center",flex:celu?"1 1 100%":"0 1 auto"}}>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:"1 1 200px",maxWidth:280,height:34,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
-        {onNew&&btn(celu?"+ Nueva":"+ Nueva operación",onNew,{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:36})}
-      </div>
-    </div>
+  // Secciones por etapa, de la más urgente a la menos: lo que está en aduana se resuelve hoy,
+  // lo que está en el agua se mira por ETA, lo que está en preparación espera documentación.
+  const SECCIONES=[
+    {k:3,l:"En aduana",c:"#fb923c",ord:(a,b)=>String(a.arrived_in_argentina_at||"").localeCompare(String(b.arrived_in_argentina_at||""))},
+    {k:2,l:"Arribadas · sin despachar",c:"#818cf8",ord:(a,b)=>String(a.arrived_in_argentina_at||"").localeCompare(String(b.arrived_in_argentina_at||""))},
+    {k:1,l:"En el agua",c:"#60a5fa",ord:(a,b)=>String(a.eta||"9999").localeCompare(String(b.eta||"9999"))},
+    {k:0,l:"Preparación",c:"#a78bfa",ord:(a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||""))},
+    {k:4,l:"Entregadas · por cerrar",c:"#22c55e",ord:(a,b)=>String(b.delivery_completed_at||"").localeCompare(String(a.delivery_completed_at||""))},
+  ];
+  const Tx=({children,color="#fff",size=13,w=700,mono,style={}})=><span style={{fontSize:size,fontWeight:w,color,fontFamily:mono?"'JetBrains Mono',monospace":undefined,fontVariantNumeric:"tabular-nums",...style}}>{children}</span>;
+  const Sub=({children,color="rgba(255,255,255,0.45)"})=><span style={{display:"block",fontSize:11,color,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{children}</span>;
 
-    {lo?<SkeletonTable rows={6} cols={4}/>:lista.length===0?<EmptyState icon="ship" title={qn?"Sin resultados":"Nada por acá"} description={qn?`Nada coincide con "${qn}"`:"No hay operaciones LCL/FCL en esta etapa."} cta={!qn&&onNew?"+ Nueva operación":undefined} ctaOnClick={onNew}/>
-    :<div style={{display:"flex",flexDirection:"column",gap:12}}>{lista.map(o=><Tarjeta key={o.id} o={o}/>)}</div>}
+  const FechaClave=({o,sec})=>{
+    const p=pasoDe(o);
+    if(sec.k===3||sec.k===2){const d=dias(o.arrived_in_argentina_at);const tarde=sec.k===3&&d!=null&&d>7;return <div><Tx>{o.arrived_in_argentina_at?`Arribó ${fdY(o.arrived_in_argentina_at)}`:o.eta?`ETA ${fdY(o.eta)}`:"Arribó —"}</Tx><Sub color={tarde?"#f87171":undefined}>{d!=null?`${d} d ${sec.k===3?"en aduana":"en puerto"}`:"sin fecha de arribo"}</Sub></div>;}
+    if(sec.k===1||sec.k===0){const etaDias=o.eta?Math.ceil((new Date(o.eta+"T12:00:00").getTime()-Date.now())/86400000):null;
+      return <div onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><Tx size={10.5} w={800} color="rgba(255,255,255,0.4)" style={{letterSpacing:"0.08em"}}>ETA</Tx><div style={{width:118}}><DatePicker small value={o.eta?String(o.eta).slice(0,10):""} onChange={v=>guardarEta(o,v)} placeholder="sin ETA"/></div></div>
+        <Sub color={etaDias!=null&&etaDias<0?"#f87171":"#8CC8F5"}>{etaDias==null?(sec.k===1?"falta la ETA":`creada ${fd(o.created_at)}`):etaDias<0?`atrasada ${-etaDias} d`:etaDias===0?"llega hoy":`llega en ${etaDias} d`}{o.dispatched_at?` · embarcó ${fd(o.dispatched_at)}`:""}</Sub>
+      </div>;}
+    return <div><Tx>Entregada {o.delivery_completed_at?fdY(o.delivery_completed_at):"—"}</Tx><Sub>{o.is_collected?"cobrada, cerrar":"falta cobrar"}</Sub></div>;
+  };
+
+  const Fila=({o,sec})=>{
+    const its=itemsDe(o.id);const ps=pkgsDe(o.id);const cbm=cbmDe(o);const c=o.clients||{};const open=abierta===o.id;
+    const tot=Number(o.budget_total||0);const real=costoReal(o);const gan=tot-real;
+    const ncms=[...new Set(its.map(i=>i.ncm_code).filter(Boolean))];const al=alertas(o);
+    const cobro=o.is_collected?["Cobrada","#4ade80"]:Number(o.total_anticipos||0)>0?[`Anticipo ${usd0(o.total_anticipos)}`,"#8CC8F5"]:["A cobrar","rgba(255,255,255,0.5)"];
+    const abrir=btn("Abrir →",()=>onSelectOp(o),{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:32});
+    const quien=<div style={{minWidth:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><Tx mono color={GOLD_LIGHT} size={13} w={800}>{o.operation_code}</Tx><Tx size={13.5} w={800}>{`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—"}</Tx>{COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.55)")}{o.lost_in_customs_at&&pill("Retenida","#f87171")}</div>
+      <Sub>{o.description||"Sin descripción"}{its.length?` · ${its.length} prod. · ${ncms.length} NCM`:""}</Sub>
+    </div>;
+    const carga=<div><Tx color={cbm>0?"#fff":"#fbbf24"}>{cbm>0?m3(cbm):"sin medidas"}</Tx><Sub>{ps.length?`${ps.length} bulto${ps.length!==1?"s":""}${kgDe(o)>0?` · ${n0(kgDe(o))} kg`:""}`:"sin bultos"}</Sub></div>;
+    const plata=<div><Tx color={tot>0?GOLD_LIGHT:"#f87171"}>{tot>0?usd0(tot):"sin presupuesto"}</Tx><Sub color={cobro[1]}>{cobro[0]}{!esEmpleado()&&real>0?<span style={{color:gan>=0?"#4ade80":"#f87171"}}> · {gan>=0?"+":""}{usd0(gan)}</span>:null}</Sub></div>;
+    const alertasUI=al.length>0&&<div style={{display:"flex",gap:12,flexWrap:"wrap",padding:celu?"0 12px 10px":"0 16px 10px"}}>{al.map(([t,c2],i)=><span key={i} style={{fontSize:11.5,fontWeight:700,color:c2,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:c2,display:"inline-block"}}/>{t}</span>)}</div>;
+    const toggle=<button type="button" onClick={e=>{e.stopPropagation();setAbierta(open?null:o.id);}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:"0 4px",whiteSpace:"nowrap"}}>{open?"Detalle ▲":"Detalle ▼"}</button>;
+    return <div style={{borderRadius:14,border:`1px solid ${open?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,background:"rgba(255,255,255,0.025)",borderLeft:`3px solid ${sec.c}`,overflow:"hidden"}}>
+      {celu?<div style={{padding:"12px 12px 10px",display:"flex",flexDirection:"column",gap:10}}>
+        {quien}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><FechaClave o={o} sec={sec}/>{carga}</div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>{plata}<span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>{toggle}{abrir}</span></div>
+      </div>
+      :<div style={{display:"grid",gridTemplateColumns:"minmax(0,2.4fr) minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.3fr) auto",gap:16,alignItems:"center",padding:"12px 16px"}}>
+        {quien}<FechaClave o={o} sec={sec}/>{carga}{plata}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>{toggle}{abrir}</div>
+      </div>}
+      {alertasUI}
+      {open&&<Detalle o={o}/>}
+    </div>;
+  };
+
+  const Seccion=({sec,lista})=>{const vol=lista.reduce((a,o)=>a+cbmDe(o),0);return <div style={{marginBottom:18}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 2px 8px"}}>
+      <span style={{width:9,height:9,borderRadius:"50%",background:sec.c,boxShadow:`0 0 0 3px ${sec.c}33`,flexShrink:0}}/>
+      <span style={{fontSize:13,fontWeight:800,color:lista.length?"#fff":"rgba(255,255,255,0.4)",letterSpacing:"0.01em"}}>{sec.l}</span>
+      <span style={{minWidth:22,height:22,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:lista.length?sec.c:"rgba(255,255,255,0.08)",color:lista.length?"#0A1628":"rgba(255,255,255,0.4)"}}>{lista.length}</span>
+      {vol>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{m3(vol)}</span>}
+      {sec.k===1&&lista.length>1&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>· por ETA</span>}
+    </div>
+    {lista.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8}}>{lista.map(o=><Fila key={o.id} o={o} sec={sec}/>)}</div>}
+  </div>;};
+
+  const cerradas=ops.filter(o=>o.status==="operacion_cerrada").sort((a,b)=>String(b.closed_at||"").localeCompare(String(a.closed_at||""))).slice(0,30);
+  const buscadas=qn?ops.filter(o=>`${o.operation_code} ${o.clients?.client_code||""} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.description||""}`.toLowerCase().includes(qn)):null;
+  const secDe=(o)=>SECCIONES.find(s=>s.k===pasoDe(o))||SECCIONES[3];
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:18}}>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:celu?"1 1 100%":"0 1 300px",height:36,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+      <button type="button" onClick={()=>setFiltro(filtro==="cerrada"?"curso":"cerrada")} style={{height:36,padding:"0 12px",borderRadius:10,border:`1px solid ${filtro==="cerrada"?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:filtro==="cerrada"?"rgba(184,149,106,0.12)":"transparent",color:filtro==="cerrada"?"#fff":"rgba(255,255,255,0.6)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cerradas{cerradas.length?` · ${cerradas.length}`:""}</button>
+      <span style={{marginLeft:"auto"}}>{onNew&&btn(celu?"+ Nueva":"+ Nueva operación",onNew,{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:36})}</span>
+    </div>
+    {lo?<SkeletonTable rows={6} cols={4}/>
+    :buscadas?(buscadas.length===0?<EmptyState icon="ship" title="Sin resultados" description={`Nada coincide con "${qn}"`}/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>{buscadas.map(o=><Fila key={o.id} o={o} sec={o.status==="operacion_cerrada"?{k:5,l:"Cerrada",c:"#10b981"}:secDe(o)}/>)}</div>)
+    :filtro==="cerrada"?(cerradas.length===0?<EmptyState icon="ship" title="Sin cerradas" description="Todavía no hay operaciones LCL/FCL cerradas."/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>{cerradas.map(o=><Fila key={o.id} o={o} sec={{k:5,l:"Cerrada",c:"#10b981"}}/>)}</div>)
+    :enCurso.length===0?<EmptyState icon="ship" title="Nada en curso" description="No hay operaciones LCL/FCL abiertas." cta={onNew?"+ Nueva operación":undefined} ctaOnClick={onNew}/>
+    :SECCIONES.map(sec=><Seccion key={sec.k} sec={sec} lista={enCurso.filter(o=>pasoDe(o)===sec.k).sort(sec.ord)}/>)}
   </div>;
 }
 
