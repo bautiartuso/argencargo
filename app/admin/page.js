@@ -684,8 +684,8 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
   </div>;
 }
 
-function NewOperation({token,clients,onBack,onCreated}){
-  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",service_type:"courier"});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
+function NewOperation({token,clients,onBack,onCreated,initial}){
+  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",service_type:"courier",...(initial||{})});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
   const create=async()=>{if(!form.client_id){setErr("Seleccioná un cliente");return;}setLo(true);setErr("");
     const code=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
@@ -16968,7 +16968,7 @@ function AdminDashboard({session,onLogout}){
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"agents",label:"Aéreos",p:["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
-      {key:"lclfcl",label:"Carga LCL/FCL",p:["M3 7h18v10H3z","M7 7v10","M12 7v10","M17 7v10","M1 19h22"]},
+      {key:"lclfcl",label:"Marítimo LCL/FCL",p:["M3 7h18v10H3z","M7 7v10","M12 7v10","M17 7v10","M1 19h22"]},
       {key:"agp",label:"Gestión de pagos",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
@@ -17100,7 +17100,7 @@ function AdminDashboard({session,onLogout}){
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)} onOpenEntrega={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
-      {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
+      {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} initial={typeof newOp==="object"?newOp:null} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
@@ -17114,7 +17114,7 @@ function AdminDashboard({session,onLogout}){
       {page==="blog"&&<BlogPanel token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&(mtMuelleOn()?<MaritimePanel2 token={token} allClients={allClients}/>:<MaritimePanel token={token} allClients={allClients}/>)}
-      {page==="lclfcl"&&<LclFclPanel token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
+      {page==="lclfcl"&&<LclFclPanel token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onNew={()=>{setPage("operations");setSelOp(null);setSelClient(null);setNewOp({channel:"maritimo_blanco",origin:"China"});}}/>}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
@@ -17284,7 +17284,7 @@ const presuManualMaritimo=(ships,importeDe)=>{
 // Las LCL/FCL se manejan como una operación completa (NCM, impuestos, volumen, despacho), no como
 // las cargas del Marítimo B. Arriba, la tubería por etapa con cuántas hay en cada una; abajo, una
 // tarjeta por operación con el riel de avance, la fecha que importa, la carga y la plata.
-function LclFclPanel({token,onSelectOp}){
+function LclFclPanel({token,onSelectOp,onNew}){
   const celu=useEsCelu();
   const [ops,setOps]=useState([]);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [eventos,setEventos]=useState([]);
   const [lo,setLo]=useState(true);const [filtro,setFiltro]=useState("curso");const [abierta,setAbierta]=useState(null);const [q,setQ]=useState("");
@@ -17467,10 +17467,13 @@ function LclFclPanel({token,onSelectOp}){
         {[FILTROS[0],FILTROS[FILTROS.length-1]].map(f=>{const on=filtro===f.k&&!qn;return <button key={f.k} type="button" onClick={()=>{setFiltro(f.k);setQ("");}} style={{height:32,padding:"0 12px",borderRadius:9,border:`1px solid ${on?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.12)":"transparent",color:on?"#fff":"rgba(255,255,255,0.6)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{f.l}{f.k==="curso"?` · ${enCurso.length}`:""}</button>;})}
         {filtro!=="curso"&&filtro!=="cerrada"&&!qn&&<span style={{alignSelf:"center",fontSize:12,color:"rgba(255,255,255,0.5)"}}>Mostrando solo <b style={{color:"#fff"}}>{PASOS[Number(filtro)]?.l}</b></span>}
       </div>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:celu?"1 1 100%":"0 1 280px",height:34,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+      <div style={{display:"flex",gap:8,alignItems:"center",flex:celu?"1 1 100%":"0 1 auto"}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:"1 1 200px",maxWidth:280,height:34,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+        {onNew&&btn(celu?"+ Nueva":"+ Nueva operación",onNew,{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:36})}
+      </div>
     </div>
 
-    {lo?<SkeletonTable rows={6} cols={4}/>:lista.length===0?<EmptyState icon="ship" title={qn?"Sin resultados":"Nada por acá"} description={qn?`Nada coincide con "${qn}"`:"No hay operaciones LCL/FCL en esta etapa."}/>
+    {lo?<SkeletonTable rows={6} cols={4}/>:lista.length===0?<EmptyState icon="ship" title={qn?"Sin resultados":"Nada por acá"} description={qn?`Nada coincide con "${qn}"`:"No hay operaciones LCL/FCL en esta etapa."} cta={!qn&&onNew?"+ Nueva operación":undefined} ctaOnClick={onNew}/>
     :<div style={{display:"flex",flexDirection:"column",gap:12}}>{lista.map(o=><Tarjeta key={o.id} o={o}/>)}</div>}
   </div>;
 }
