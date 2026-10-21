@@ -17141,6 +17141,50 @@ async function subirFotoMaritima(token,file){
   }catch(e){console.error("foto maritima",e);return null;}
 }
 
+// Factura de una carga marítima (21/10/2026): se lee con pdf.js + /api/parse-invoice-pdf (el mismo
+// lector de facturas del portal) para llenar la mercadería sin tipear, y el PDF se guarda en el
+// bucket package-photos (maritimo-facturas/) → maritime_shipments.factura_url.
+let _pdfjsAdmin=null;
+function cargarPdfJsAdmin(){
+  if(_pdfjsAdmin)return _pdfjsAdmin;
+  _pdfjsAdmin=new Promise((resolve,reject)=>{
+    if(typeof window==="undefined")return reject(new Error("ssr"));
+    if(window.pdfjsLib)return resolve(window.pdfjsLib);
+    const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    sc.onload=()=>{if(!window.pdfjsLib)return reject(new Error("pdfjs"));window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";resolve(window.pdfjsLib);};
+    sc.onerror=()=>reject(new Error("No se pudo cargar el lector de PDF"));document.head.appendChild(sc);
+  });
+  return _pdfjsAdmin;
+}
+async function leerFacturaPdf(file){
+  const esImg=file.type?.startsWith("image/")||/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name||"");
+  let images=[];
+  if(esImg){
+    const f=await comprimirImagen(file,{maxLado:2000});
+    images=[await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(f);})];
+  } else {
+    const pdfjs=await cargarPdfJsAdmin();
+    const pdf=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
+    for(let i=1;i<=Math.min(pdf.numPages,10);i++){const page=await pdf.getPage(i);const vp=page.getViewport({scale:2});const c=document.createElement("canvas");c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;images.push(c.toDataURL("image/jpeg",0.85));}
+  }
+  const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
+  const j=await r.json().catch(()=>({}));
+  if(!j.ok)throw new Error(j.error||"No se pudo leer la factura");
+  return Array.isArray(j.items)?j.items:[];
+}
+async function subirFacturaMaritima(token,file){
+  try{
+    const tipo=file.type||"application/pdf";
+    const ext=tipo.includes("pdf")?"pdf":tipo.includes("png")?"png":"jpg";
+    const path=`maritimo-facturas/${Date.now()}_${Math.random().toString(36).slice(2,9)}.${ext}`;
+    const subir=(tk)=>fetch(`${SB_URL}/storage/v1/object/package-photos/${path}`,{method:"POST",headers:{Authorization:`Bearer ${tk}`,apikey:SB_KEY,"Content-Type":tipo},body:file});
+    let r=await subir(await ensureFreshToken(token));
+    if(r.status===401||r.status===403){const nt=await refreshToken();if(nt)r=await subir(nt);}
+    if(!r.ok){console.error("factura maritima",await r.text());return null;}
+    return `${SB_URL}/storage/v1/object/public/package-photos/${path}`;
+  }catch(e){console.error("factura maritima",e);return null;}
+}
+
 // "A cobrar" cargado a mano en Marítimos → presupuesto de la op (02/10/2026). Antes la op se creaba
 // con la tarifa (o se recalculaba sola al abrirla) y se perdía el precio pactado a mano: a Clara Font
 // (AC-0251) y a Maximiliano Míguez se les cobró la tarifa de lista. Si alguna carga tiene a cobrar
@@ -18112,7 +18156,7 @@ function MaritimePanel({token,allClients=[]}){
           {sh.notes&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"12px 0 0",padding:"7px 10px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,whiteSpace:"pre-wrap"}}>{sh.notes}</p>}
         </div>
         <div>
-          <p className="mt-v-det-t">Mercadería</p>
+          <p className="mt-v-det-t" style={{display:"flex",justifyContent:"space-between",gap:8}}><span>Mercadería</span>{sh.factura_url&&<a href={sh.factura_url} target="_blank" rel="noopener" style={{color:"#93c5fd",textTransform:"none",letterSpacing:0,fontWeight:800,textDecoration:"none"}}>📄 Factura</a>}</p>
           {shItems.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin detalle cargado</p>:compacta?<div>{shItems.map(it=><div key={it.id} style={{padding:"7px 0",borderBottom:`1px solid ${MT_BORDE}`,fontSize:12.5}}><div style={{color:"rgba(255,255,255,0.85)"}}>{it.description}</div><div style={{display:"flex",justifyContent:"space-between",marginTop:2}}><span style={{color:"rgba(255,255,255,0.5)"}}>{it.quantity} × {usd(it.unit_price_usd)}</span><span style={{color:GOLD_LIGHT,fontWeight:700}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</span></div></div>)}</div>:<table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><tbody>{shItems.map(it=><tr key={it.id} style={{borderBottom:`1px solid ${MT_BORDE}`}}><td style={{padding:"4px 0",color:"rgba(255,255,255,0.8)"}}>{it.description}</td><td style={{padding:"4px 0",color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} × {usd(it.unit_price_usd)}</td><td style={{padding:"4px 0 4px 8px",textAlign:"right",color:GOLD_LIGHT,fontWeight:700,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
           {verPlata&&(()=>{const esManual=sh.revenue_manual!=null;return <div style={{marginTop:12,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",padding:"9px 11px",background:"rgba(0,0,0,0.2)",border:`1px solid ${MT_BORDE}`,borderRadius:10}}>
             <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>Costo
@@ -20510,6 +20554,22 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const [tipo,setTipo]=useState(editing?.mercaderia_tipo||"");
   const [fotos,setFotos]=useState(Array.isArray(editing?.fotos)?editing.fotos:[]);
   const [fotosM,setFotosM]=useState(Array.isArray(editing?.fotos_mercaderia)?editing.fotos_mercaderia:[]);
+  // Factura del proveedor: llena la mercadería sola y queda guardada (21/10/2026).
+  const [facturaUrl,setFacturaUrl]=useState(editing?.factura_url||"");
+  const [leyendoFactura,setLeyendoFactura]=useState(false);
+  const facturaInputRef=useRef(null);
+  const cargarFactura=async(file)=>{
+    if(!file)return;
+    setLeyendoFactura(true);setErr("");
+    try{
+      const [items,url]=await Promise.all([leerFacturaPdf(file),subirFacturaMaritima(token,file)]);
+      if(!items.length){setErr("No encontré productos en esa factura. Cargalos a mano o probá con otra.");}
+      else setIts(items.map(it=>({description:String(it.description||"").trim(),quantity:Number(it.quantity)||1,unit_price_usd:it.unit_price_usd!=null?Number(it.unit_price_usd):""})));
+      if(url)setFacturaUrl(url);
+      if(items.length)toast(`📄 ${items.length} producto${items.length!==1?"s":""} leído${items.length!==1?"s":""} de la factura`,"success");
+    }catch(e){setErr(e.message||"No se pudo leer la factura");}
+    setLeyendoFactura(false);
+  };
   const [zonaFoto,setZonaFoto]=useState("bulto"); // dónde cae una foto pegada con ⌘V
   const [subiendo,setSubiendo]=useState(false);
   const subirFotos=async(files,kind)=>{const l=[...(files||[])].filter(esFotoArchivo);if(!l.length){toast("Ese archivo no es una foto","error");return;}setSubiendo(true);const urls=[];for(const x of l){const u=await subirFotoMaritima(token,x);if(u)urls.push(u);}setSubiendo(false);if(!urls.length){toast("No se pudo subir la foto","error");return;}(kind==="merc"?setFotosM:setFotos)(p=>[...p,...urls]);toast(kind==="merc"?"Foto de la mercadería agregada":"Foto del bulto agregada","success");};
@@ -20595,6 +20655,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       mercaderia_tipo:tipo||null,
       fotos,
       fotos_mercaderia:fotosM,
+      factura_url:facturaUrl||null,
       updated_at:new Date().toISOString(),
     };
     // Si cambia el tipo, la confirmación que había hecho el depósito ya no vale.
@@ -20623,14 +20684,16 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     try{
       let shId=editId;
       if(isEdit){
-        const r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editId}`,body});
+        let r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editId}`,body});
+        if(fallo(r)&&/factura_url/.test(String(r?.message||""))){const {factura_url,...sinF}=body;r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editId}`,body:sinF});}
         if(fallo(r)){setErr("No se pudo guardar el pedido: "+motivo(r));setSaving(false);return;}
         // DELETE+POST de bultos/items no es atómico: si el POST de abajo falla el form queda abierto
         // con el error para reintentar y no perder lo medido.
         await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${editId}`});
         await dq("maritime_items",{method:"DELETE",token,filters:`?shipment_id=eq.${editId}`});
       } else {
-        const r=await dq("maritime_shipments",{method:"POST",token,body});
+        let r=await dq("maritime_shipments",{method:"POST",token,body});
+        if(fallo(r)&&/factura_url/.test(String(r?.message||""))){const {factura_url,...sinF}=body;r=await dq("maritime_shipments",{method:"POST",token,body:sinF});}
         if(fallo(r)){setErr("No se pudo crear el pedido: "+motivo(r));setSaving(false);return;}
         shId=r[0].id;setCreatedId(shId);mtMarcarVisto(shId);
       }
@@ -20737,7 +20800,16 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
 
     {/* Mercadería */}
     <div style={SECC}>
-      {secT(np(),"Mercadería","Descripción, cantidad y precio unitario",<button type="button" onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={btnMas}>+ Producto</button>)}
+      {secT(np(),"Mercadería","Cargá la factura del proveedor y se completa sola, o a mano",<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" disabled={leyendoFactura} onClick={()=>facturaInputRef.current?.click()} style={{...btnMas,background:"rgba(96,165,250,0.12)",color:"#93c5fd",borderColor:"rgba(96,165,250,0.4)",opacity:leyendoFactura?0.6:1}}>{leyendoFactura?"⏳ Leyendo factura…":"📄 Cargar factura"}</button>
+        <button type="button" onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={btnMas}>+ Producto</button>
+      </div>)}
+      <input ref={facturaInputRef} type="file" accept="application/pdf,image/*" onChange={e=>{const f=e.target.files?.[0];e.target.value="";cargarFactura(f);}} style={{display:"none"}}/>
+      {facturaUrl&&<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12,padding:"8px 12px",borderRadius:10,background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)"}}>
+        <a href={facturaUrl} target="_blank" rel="noopener" style={{fontSize:12.5,fontWeight:800,color:"#93c5fd",textDecoration:"none"}}>📄 Ver factura</a>
+        <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>queda guardada con el pedido</span>
+        <button type="button" onClick={()=>setFacturaUrl("")} title="Quitar la factura" style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14}}>✕</button>
+      </div>}
       {its.map((it,i)=><div key={i} className="mt-mf-it">
         <div className="mt-mf-desc"><Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/></div>
         <Inp label={i===0?"Cantidad":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>

@@ -124,10 +124,12 @@ export async function GET(req) {
     // 28/09/2026). No estaban acá y el cron las borraba como huérfanas a los 2 días (detectado el
     // 05/10/2026: se perdieron las fotos de Luna). Paginado de a 1000.
     for (let desde = 0; ; desde += 1000) {
-      const r = await sb(`/rest/v1/maritime_shipments?select=fotos,fotos_mercaderia&order=id.asc`, { headers: { "Range-Unit": "items", Range: `${desde}-${desde + 999}` } });
+      // factura_url (21/10/2026): el PDF de la factura del proveedor vive en el mismo bucket.
+      let r = await sb(`/rest/v1/maritime_shipments?select=fotos,fotos_mercaderia,factura_url&order=id.asc`, { headers: { "Range-Unit": "items", Range: `${desde}-${desde + 999}` } });
+      if (!r.ok) r = await sb(`/rest/v1/maritime_shipments?select=fotos,fotos_mercaderia&order=id.asc`, { headers: { "Range-Unit": "items", Range: `${desde}-${desde + 999}` } });
       if (!r.ok) throw new Error("no se pudieron leer las fotos marítimas: no se borra nada");
       const filas = await r.json();
-      for (const f of filas) for (const u of [...(f.fotos || []), ...(f.fotos_mercaderia || [])]) { const p = storagePath(u); if (p) referencias.add(p); }
+      for (const f of filas) for (const u of [...(f.fotos || []), ...(f.fotos_mercaderia || []), ...(f.factura_url ? [f.factura_url] : [])]) { const p = storagePath(u); if (p) referencias.add(p); }
       if (filas.length < 1000) break;
     }
     // Los que estamos por borrar en A/B ya no cuentan como referencia viva

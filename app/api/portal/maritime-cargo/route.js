@@ -32,6 +32,15 @@ const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;
 const esTrackingReal = (t) => !!t && !/^SEA[A-Z]*$/i.test(String(t).trim());
 
+// Tarifa marítimo integral: no depende del cliente, se recuerda 5 minutos en la función (21/10/2026).
+let _mb = null;
+const tarifasMb = async () => {
+  if (_mb && Date.now() - _mb.t < 5 * 60e3) return _mb.v;
+  const v = await svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`);
+  if (Array.isArray(v) && v.length) _mb = { t: Date.now(), v };
+  return v;
+};
+
 const SHIP_SEL = [
   "id,product_description,tracking_number,status,container_id,revenue_manual,created_at,received_at,fotos,fotos_mercaderia,origin",
   "maritime_packages(bulto_number,quantity,length_cm,width_cm,height_cm,cbm)",
@@ -59,7 +68,7 @@ export async function GET(req) {
     svc(`/rest/v1/clients?auth_user_id=eq.${user.id}&select=id&limit=1`),
     svc(`/rest/v1/profiles?id=eq.${user.id}&select=role&limit=1`),
     idOk(reqClientId) ? shipsDe(reqClientId) : Promise.resolve(null),
-    svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`),
+    tarifasMb(),
     idOk(reqClientId) ? svc(`/rest/v1/client_tariff_overrides?client_id=eq.${reqClientId}&select=tariff_id,custom_rate`) : Promise.resolve(null),
   ]);
   const ownClientId = Array.isArray(cl) && cl[0]?.id;

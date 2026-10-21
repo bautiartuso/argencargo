@@ -7,11 +7,19 @@ import { useT } from "../../../lib/i18n-portal";
 // de verdes ni rojos. Cerrada: foto, mercadería, contenedor (solo Luna 1), arribo, bultos y el
 // total al pie. "Ver detalle" desglosa cada pedido con sus fotos, tracking y medidas.
 // En depósito nunca se dice "depósito": la carga "ya fue cargada y ya salió de China".
-export default function MaritimeCargoCards({cargo}){
+export default function MaritimeCargoCards({cargo,cargando=false}){
   const {t,lang}=useT();
   const [abiertas,setAbiertas]=useState(()=>new Set());
   const [foto,setFoto]=useState(null); // {fotos:[{u,k}],i}
   const [copiado,setCopiado]=useState(null);
+  // Mientras la API responde (sin caché todavía), un esqueleto del mismo tamaño: la tarjeta aparece
+  // "ya puesta" en vez de saltar un segundo después (21/10/2026).
+  if((!cargo||cargo.length===0)&&cargando)return <div style={{marginBottom:16,borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",background:"linear-gradient(160deg,rgba(255,255,255,0.045),rgba(255,255,255,0.012))",padding:"18px 20px"}}>
+    <style>{`@keyframes mcSk{0%{opacity:.45}50%{opacity:.9}100%{opacity:.45}}.mc-sk{background:rgba(255,255,255,0.08);border-radius:10px;animation:mcSk 1.3s ease-in-out infinite}`}</style>
+    <div style={{display:"flex",gap:16,alignItems:"center"}}><div className="mc-sk" style={{width:76,height:76,borderRadius:16}}/><div style={{flex:1}}><div className="mc-sk" style={{width:160,height:12,marginBottom:10}}/><div className="mc-sk" style={{width:"70%",height:18}}/></div></div>
+    <div className="mc-sk" style={{height:92,marginTop:16,borderRadius:14}}/>
+    <div className="mc-sk" style={{height:64,marginTop:12,borderRadius:14}}/>
+  </div>;
   if(!cargo||cargo.length===0)return null;
   const ORO="#E8D098";const TX="#fff";const SUB="rgba(255,255,255,0.62)";const LINEA="rgba(255,255,255,0.1)";
   const loc=lang==="zh"?"zh-CN":lang==="en"?"en-US":lang==="ru"?"ru-RU":"es-AR";
@@ -37,24 +45,35 @@ export default function MaritimeCargoCards({cargo}){
     const st=(i,cur)=>i<cur?"done":i===cur?"current":"todo";
     let cur=dep?(cargando||usa?1:2):(llegada?3:2);
     const faltan=dEta==null?null:dEta<=0?t("mar2.arrivingNow"):dEta===1?t("mar2.daysLeft1"):t("mar2.daysLeft",{dias:dEta});
+    const totalDias=zarpo&&eta?Math.max(1,Math.round((new Date(eta+"T12:00:00")-new Date(zarpo+"T12:00:00"))/DIA)):null;
+    const diaX=totalDias&&zarpo?Math.max(1,Math.min(totalDias,Math.round((hoy-new Date(zarpo+"T12:00:00"))/DIA)+1)):null;
+    // Solo fechas reales: nada de "se actualiza en estos días" en la ruta (pedido 21/10/2026).
     const pasos=[
-      {l:t("mar2.stReceived"),s:recibida?fDc(recibida):null},
-      {l:dep&&usa?t("mar2.stConsolidating"):dep&&cargando?t("mar2.stLoading"):t("mar2.stLoaded"),s:zarpo?t("mar2.sailedOn",{fecha:fDc(zarpo)}):(dep?null:null)},
+      {l:t("mar2.stReceived"),s:null},
+      {l:dep&&usa?t("mar2.stConsolidating"):dep&&cargando?t("mar2.stLoading"):t("mar2.stLoaded"),s:zarpo?t("mar2.sailedOn",{fecha:fDc(zarpo)}):null},
       {l:t("mar2.stSea"),s:!dep?(pct!=null?`${t("mar2.tripPct",{pct:Math.round(pct*100)})}${faltan?` · ${faltan}`:""}`:faltan):null},
-      {l:t("mar2.stPort"),s:eta?fDc(eta):t("mar2.etaSoon")},
-      {l:t("mar2.stDeliver"),s:entrega?fDc(entrega):t("mar2.afterArrival")},
+      {l:t("mar2.stPort"),s:eta?fDc(eta):null},
+      {l:t("mar2.stDeliver"),s:entrega?fDc(entrega):null},
     ].map((x,i)=>({...x,st:st(i,cur)}));
-    return {pasos,pct,cur};
+    const siguiente=dep?t("mar2.nextLoading"):llegada?t("mar2.nextPort"):eta?t("mar2.nextSea",{fecha:fD(eta)}):null;
+    const navegacion=!dep&&!llegada&&diaX&&totalDias?t("mar2.dayOf",{x:diaX,y:totalDias}):null;
+    return {pasos,pct,cur,siguiente,navegacion,recibida};
   };
   const Ruta=({r})=>{
     const n=r.pasos.length;
+    // Avance de cada tramo (i → i+1): lleno si ya se pasó, parcial en el tramo actual.
+    const tramo=(i)=>i<r.cur?1:i===r.cur?(r.pct!=null?r.pct:0.5):0;
+    const Seg=({v,lado})=><span className="mc-tramo" style={{visibility:lado==="l"&&v==null?"hidden":"visible"}}><span style={{display:"block",height:"100%",width:`${Math.round((v||0)*100)}%`,"--h":`${Math.round((v||0)*100)}%`,background:ORO,borderRadius:999,marginLeft:lado==="l"?"auto":0,transition:"width .4s"}}/></span>;
     return <div className="mc-ruta">
       {r.pasos.map((p,i)=>{const done=p.st==="done",cur=p.st==="current";
-        const fill=i<r.cur?1:i===r.cur?(r.pct!=null?r.pct:(cur?0.5:0)):0;
+        // Mitad izquierda = segunda mitad del tramo anterior; mitad derecha = primera mitad del tramo propio.
+        const izq=i===0?null:Math.max(0,Math.min(1,(tramo(i-1)-0.5)*2));
+        const der=i===n-1?null:Math.max(0,Math.min(1,tramo(i)*2));
         return <div key={i} className="mc-paso" style={{opacity:p.st==="todo"?0.55:1}}>
           <div className="mc-paso-linea">
+            {i===0?<span className="mc-tramo" style={{visibility:"hidden"}}/>:<span className="mc-tramo"><span style={{display:"block",height:"100%",width:`${Math.round(izq*100)}%`,"--h":`${Math.round(izq*100)}%`,background:ORO,borderRadius:999,transition:"width .4s"}}/></span>}
             <span className="mc-nodo" style={{background:done?ORO:cur?"rgba(232,208,152,0.18)":"rgba(255,255,255,0.08)",border:`2px solid ${done||cur?ORO:"rgba(255,255,255,0.25)"}`,color:done?"#0A1628":ORO,boxShadow:cur?"0 0 0 5px rgba(232,208,152,0.14)":"none"}}>{done?<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7"/></svg>:cur?<span style={{width:8,height:8,borderRadius:999,background:ORO,display:"block"}}/>:null}</span>
-            {i<n-1&&<span className="mc-tramo"><span style={{display:"block",height:"100%",width:`${Math.round(fill*100)}%`,"--h":`${Math.round(fill*100)}%`,background:ORO,borderRadius:999,transition:"width .4s"}}/></span>}
+            {i===n-1?<span className="mc-tramo" style={{visibility:"hidden"}}/>:<span className="mc-tramo"><span style={{display:"block",height:"100%",width:`${Math.round(der*100)}%`,"--h":`${Math.round(der*100)}%`,background:ORO,borderRadius:999,transition:"width .4s"}}/></span>}
           </div>
           <p className="mc-paso-l" style={{color:cur?ORO:TX,fontWeight:cur?800:700}}>{p.l}</p>
           {p.s&&<p className="mc-paso-s" style={{color:cur?TX:SUB}}>{p.s}</p>}
@@ -64,7 +83,7 @@ export default function MaritimeCargoCards({cargo}){
   const lbl={margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:SUB};
   const celda=(l,v,extra)=><div className="mc-celda" style={extra}><p style={lbl}>{l}</p><div style={{marginTop:5,fontSize:15,fontWeight:800,color:TX,fontVariantNumeric:"tabular-nums"}}>{v}</div></div>;
   return <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
-    <style>{`.mc-card{transition:box-shadow .2s ease,border-color .2s ease}.mc-card:hover{border-color:rgba(232,208,152,0.35)!important;box-shadow:0 20px 44px rgba(0,0,0,0.38)}.mc-strip{display:flex;flex-wrap:wrap}.mc-celda{flex:1 1 150px;padding:12px 16px;border-left:1px solid ${LINEA}}.mc-celda:first-child{border-left:none}.mc-det{display:grid;grid-template-columns:220px minmax(0,1fr);gap:22px}.mc-fila{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid ${LINEA}}.mc-fila:first-child{border-top:none}.mc-ruta{display:flex;margin:0 20px 14px;padding:16px 16px 12px;border-radius:14px;border:1px solid ${LINEA};background:rgba(0,0,0,0.16)}.mc-paso{flex:1 1 0;min-width:0;padding-right:6px}.mc-paso-linea{display:flex;align-items:center;gap:6px;margin-bottom:9px}.mc-nodo{width:26px;height:26px;flex-shrink:0;border-radius:999px;display:flex;align-items:center;justify-content:center}.mc-tramo{flex:1;height:3px;border-radius:999px;background:rgba(255,255,255,0.1);overflow:hidden}.mc-paso-l{margin:0;font-size:12.5px;line-height:1.25}.mc-paso-s{margin:3px 0 0;font-size:11.5px;line-height:1.3}@media(max-width:700px){.mc-ruta{flex-direction:column;gap:0;padding:14px 16px}.mc-paso{display:grid;grid-template-columns:26px minmax(0,1fr);column-gap:12px;padding:0}.mc-paso-linea{flex-direction:column;align-items:center;gap:4px;margin:0;grid-row:1/span 2;align-self:stretch}.mc-tramo{width:3px;height:auto;flex:1;min-height:18px}.mc-tramo>span{width:100%!important;height:var(--h,0%)}.mc-paso-l{padding-top:4px}.mc-paso-s{padding-bottom:12px}.mc-galeria{max-width:280px}.mc-celda{flex:1 1 45%;border-left:none;border-top:1px solid ${LINEA}}.mc-det{grid-template-columns:1fr}.mc-fila{grid-template-columns:1fr;gap:4px}.mc-pie{flex-direction:column;align-items:stretch!important}.mc-pie-total{text-align:left!important}}`}</style>
+    <style>{`.mc-card{transition:box-shadow .2s ease,border-color .2s ease}.mc-card:hover{border-color:rgba(232,208,152,0.35)!important;box-shadow:0 20px 44px rgba(0,0,0,0.38)}.mc-strip{display:flex;flex-wrap:wrap}.mc-celda{flex:1 1 150px;padding:12px 16px;border-left:1px solid ${LINEA}}.mc-celda:first-child{border-left:none}.mc-det{display:grid;grid-template-columns:220px minmax(0,1fr);gap:22px}.mc-fila{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid ${LINEA}}.mc-fila:first-child{border-top:none}.mc-ruta{display:flex;margin:0 20px 14px;padding:16px 10px 12px;border-radius:14px;border:1px solid ${LINEA};background:rgba(0,0,0,0.16)}.mc-paso{flex:1 1 0;min-width:0;text-align:center}.mc-paso-linea{display:flex;align-items:center;margin-bottom:9px}.mc-nodo{width:26px;height:26px;flex-shrink:0;border-radius:999px;display:flex;align-items:center;justify-content:center;margin:0 4px}.mc-tramo{flex:1;height:3px;border-radius:999px;background:rgba(255,255,255,0.1);overflow:hidden}.mc-paso-l{margin:0 6px;font-size:12.5px;line-height:1.25}.mc-paso-s{margin:3px 6px 0;font-size:11.5px;line-height:1.3}@media(max-width:700px){.mc-ruta{flex-direction:column;gap:0;padding:14px 16px}.mc-paso{display:grid;grid-template-columns:26px minmax(0,1fr);column-gap:12px;padding:0;text-align:left}.mc-paso-linea{flex-direction:column;align-items:center;gap:0;margin:0;grid-row:1/span 2;align-self:stretch}.mc-nodo{margin:0}.mc-tramo{width:3px;height:auto;flex:1;min-height:9px}.mc-tramo>span{width:100%!important;height:var(--h,0%);margin-left:0!important}.mc-paso-l{padding-top:4px;margin:0}.mc-paso-s{padding-bottom:12px;margin:3px 0 0}.mc-galeria{max-width:280px}.mc-celda{flex:1 1 45%;border-left:none;border-top:1px solid ${LINEA}}.mc-det{grid-template-columns:1fr}.mc-fila{grid-template-columns:1fr;gap:4px}.mc-pie{flex-direction:column;align-items:stretch!important}.mc-pie-total{text-align:left!important}}`}</style>
     {cargo.map(g=>{
       const abierta=abiertas.has(g.id);
       const toggle=()=>setAbiertas(p=>{const n=new Set(p);n.has(g.id)?n.delete(g.id):n.add(g.id);return n;});
@@ -97,14 +116,18 @@ export default function MaritimeCargoCards({cargo}){
           <span style={{width:36,height:36,flexShrink:0,borderRadius:999,border:"1px solid rgba(255,255,255,0.22)",display:"flex",alignItems:"center",justifyContent:"center",color:TX,transform:abierta?"rotate(180deg)":"none",transition:"transform .2s"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
         </div>
 
-        {/* Mensaje de la carga ya embarcada */}
-        {msg&&<div style={{margin:"0 20px 14px",padding:"13px 16px",borderRadius:14,background:"rgba(232,208,152,0.07)",border:"1px solid rgba(232,208,152,0.28)"}}>
-          <p style={{margin:0,fontSize:14,fontWeight:800,color:TX}}>{msg[0]}</p>
-          {msg[1]&&<p style={{margin:"4px 0 0",fontSize:13,color:SUB,lineHeight:1.5}}>{msg[1]}</p>}
-        </div>}
+        {/* Resumen: pedidos, productos, unidades, fotos */}
+        {(()=>{const prods=cargas.flatMap(c=>c.productos||[]);const unidades=prods.reduce((a,p)=>a+(Number(p.q)||0),0);const nombres=new Set(prods.map(p=>String(p.d||"").trim().toLowerCase()).filter(Boolean));const chips=[cargas.length===1?t("mar2.order1"):t("mar2.ordersN",{n:cargas.length}),nombres.size?t("mar2.productsN",{n:nombres.size}):null,unidades?t("mar2.unitsN",{n:unidades.toLocaleString(loc)}):null,todas.length?t("mar2.photosN",{n:todas.length}):null].filter(Boolean);
+          return <div style={{display:"flex",gap:6,flexWrap:"wrap",margin:"-6px 20px 14px"}}>{chips.map(c=><span key={c} style={{fontSize:11.5,fontWeight:700,padding:"4px 10px",borderRadius:999,background:"rgba(255,255,255,0.06)",border:`1px solid ${LINEA}`,color:"rgba(255,255,255,0.8)"}}>{c}</span>)}</div>;})()}
 
         {/* Ruta del viaje */}
-        <Ruta r={rutaDe(g,dep,usa,cargando,cargas)}/>
+        {(()=>{const r=rutaDe(g,dep,usa,cargando,cargas);return <>
+          <Ruta r={r}/>
+          <div style={{margin:"0 20px 14px",padding:"13px 16px",borderRadius:14,background:"rgba(232,208,152,0.07)",border:"1px solid rgba(232,208,152,0.28)"}}>
+            <p style={{margin:0,fontSize:14,fontWeight:800,color:TX}}>{msg?msg[0]:r.navegacion||t("mar2.stageSea")}</p>
+            {r.siguiente&&<p style={{margin:"4px 0 0",fontSize:13,color:SUB,lineHeight:1.5}}><span style={{color:ORO,fontWeight:800}}>{t("mar2.nextStep")}:</span> {r.siguiente}</p>}
+          </div>
+        </>;})()}
 
         {/* Datos del viaje */}
         <div className="mc-strip" style={{margin:"0 20px",borderRadius:14,border:`1px solid ${LINEA}`,background:"rgba(0,0,0,0.16)",overflow:"hidden"}}>
@@ -137,7 +160,15 @@ export default function MaritimeCargoCards({cargo}){
             </div>
             <div style={{minWidth:0}}>
               {(cargas.length>1||c.llego)&&<p style={{...lbl,color:ORO,marginBottom:6}}>{cargas.length>1?`${t("mar2.order")} ${ci+1}`:""}{cargas.length>1&&c.llego?" · ":""}{c.llego?<span style={{color:SUB}}>{t("mar2.receivedOn",{fecha:fD(c.llego)})}</span>:null}</p>}
-              <div className="mc-fila"><p style={lbl}>{t("mar2.goods")}</p><div style={{fontSize:14.5,fontWeight:700,color:TX}}>{(c.productos||[]).length>1?c.productos.map((p,i)=><div key={i}>{p.d}{p.q?<span style={{color:SUB,fontWeight:600}}> × {p.q}</span>:null}</div>):(c.descripcion||t("mar2.seaCargo"))}</div></div>
+              <div className="mc-fila"><p style={lbl}>{t("mar2.goods")}</p><div style={{fontSize:14.5,fontWeight:700,color:TX}}>{(()=>{
+                // Mismo producto en varias líneas → una sola con la suma (pedido 21/10/2026).
+                const m=new Map();(c.productos||[]).forEach(p=>{const k=String(p.d||"").trim();if(!k)return;const e=m.get(k.toLowerCase())||{d:k,q:0};e.q+=Number(p.q)||0;m.set(k.toLowerCase(),e);});
+                const lista=[...m.values()];const unidades=lista.reduce((a,p)=>a+p.q,0);
+                if(lista.length<=1)return <div>{lista[0]?.d||c.descripcion||t("mar2.seaCargo")}{lista[0]?.q?<span style={{color:SUB,fontWeight:600}}> × {lista[0].q}</span>:null}</div>;
+                return <>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:"6px 14px"}}>{lista.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderBottom:`1px solid ${LINEA}`,fontSize:13.5}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.d}</span><span style={{color:ORO,fontWeight:800,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>× {p.q}</span></div>)}</div>
+                  <p style={{margin:"8px 0 0",fontSize:12,color:SUB,fontWeight:600}}>{t("mar2.summary",{p:lista.length,u:unidades.toLocaleString(loc)})}</p>
+                </>;})()}</div></div>
               {c.tracking&&<div className="mc-fila"><p style={lbl}>{t("mar2.tracking")}</p><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                 <span style={{fontSize:14.5,fontWeight:700,color:TX,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.03em",wordBreak:"break-all"}}>{c.tracking}</span>
                 <button onClick={()=>copiar(c.tracking)} style={{padding:"4px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(232,208,152,0.4)",background:"transparent",color:ORO,cursor:"pointer",fontFamily:"inherit"}}>{copiado===c.tracking?`✓ ${t("mar2.copied")}`:t("mar2.copy")}</button>

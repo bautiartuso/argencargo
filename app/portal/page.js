@@ -378,7 +378,7 @@ function DepositoView({pkgs,token,client,onCreated}){
   </div>;
 }
 
-function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},ccOps=new Set(),mCargo=[]}){
+function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},ccOps=new Set(),mCargo=[],mCargoLoading=false}){
   const {t}=useT();
   // Orden: más cerca de la entrega primero. ETA asc como desempate (antes = más urgente).
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
@@ -443,8 +443,8 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const secTitle=(l,n,muted)=><div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,margin:"6px 0 12px"}}><h2 style={{fontSize:14,fontWeight:800,color:muted?"rgba(255,255,255,0.7)":"#fff",margin:0,letterSpacing:"0.14em",textTransform:"uppercase"}}>{l}</h2><span style={{fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,color:muted?"rgba(255,255,255,0.55)":SKY,background:muted?"rgba(255,255,255,0.06)":"rgba(140,200,245,0.14)"}}>{n}</span></div>;
   return <div>
     {secTitle(t("ol.inProgress"),act.length+mCargo.length)}
-    <MaritimeCargoCards cargo={mCargo}/>
-    {act.length>0?<>{head}{act.map(renderRow)}</>:mCargo.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"1.6rem 0",fontSize:13}}>{t("ol.emptyActive")}</p>}
+    <MaritimeCargoCards cargo={mCargo} cargando={mCargoLoading}/>
+    {act.length>0?<>{head}{act.map(renderRow)}</>:mCargo.length===0&&!mCargoLoading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"1.6rem 0",fontSize:13}}>{t("ol.emptyActive")}</p>}
     {past.length>0&&<div style={{marginTop:30}}>{secTitle(t("ol.finished"),past.length,true)}{head}{past.map(renderRow)}</div>}
     {ops.length===0&&mCargo.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"2rem 0",fontSize:13}}>{t("ol.emptyActiveDesc")}</p>}
   </div>;
@@ -3095,7 +3095,7 @@ function ReferralsPage({token,client}){
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const {t}=useT();
-  const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ccOps,setCcOps]=useState(()=>new Set());const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);
+  const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ccOps,setCcOps]=useState(()=>new Set());const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);const [mCargoLoading,setMCargoLoading]=useState(false);
   const loadOps=async()=>{setLo(true);
     // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
     // pero en admin preview mode el token es de admin (ve TODO) y necesitamos filtrar acá.
@@ -3106,9 +3106,9 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     // así que la última respuesta queda guardada en el navegador y se muestra al instante; cuando
     // llega la nueva, se reemplaza. Si nunca se cargó, se espera hasta 1,5 s para que no "salte".
     const mKey=`ac_mcargo_${cId}`;let mCache=null;try{mCache=JSON.parse(localStorage.getItem(mKey)||"null");}catch{}
-    if(Array.isArray(mCache))setMCargo(mCache);
+    if(Array.isArray(mCache))setMCargo(mCache);else setMCargoLoading(true);
     const mCargoP=ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.ok?r.json():null).then(d=>Array.isArray(d?.cargo)?d.cargo:null).catch(()=>null);
-    mCargoP.then(c=>{if(!c)return;setMCargo(c);try{localStorage.setItem(mKey,JSON.stringify(c));}catch{}});
+    mCargoP.then(c=>{setMCargoLoading(false);if(!c)return;setMCargo(c);try{localStorage.setItem(mKey,JSON.stringify(c));}catch{}});
     dq("operation_packages",{token,filters:`?client_id=eq.${cId}&operation_id=is.null&select=*&order=created_at.asc`}).then(d=>setDepPkgs(Array.isArray(d)?d:[])).catch(()=>setDepPkgs([]));
     const [r,it,pm,cp,tv,ccm]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
@@ -3120,7 +3120,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     ]);
     // Importaciones cerradas a cuenta corriente (11/10/2026): en la lista dicen "A cuenta corriente".
     setCcOps(new Set((Array.isArray(ccm)?ccm:[]).filter(x=>/cuenta corriente/i.test(x.description||"")).map(x=>x.operation_id)));
-    if(!Array.isArray(mCache))await Promise.race([mCargoP,new Promise(res=>setTimeout(res,1500))]);
+    // 21/10/2026: la lista ya no espera a las cargas marítimas; mientras llegan se muestra un esqueleto en su lugar.
     const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(p.client_paid)return;pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
@@ -3132,7 +3132,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
     <NuevasTarifas t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/>
-    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} ccOps={ccOps} mCargo={mCargo}/>}</>}
+    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} ccOps={ccOps} mCargo={mCargo} mCargoLoading={mCargoLoading}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>{setSelOp(null);loadOps();}}/>}
     {page==="deposito"&&<>
       <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>
