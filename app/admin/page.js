@@ -687,12 +687,14 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
 function NewOperation({token,clients,onBack,onCreated,initial}){
   const celu=useEsCelu();
   const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",service_type:"courier",...(initial||{})});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
-  const [q,setQ]=useState("");
+  const [q,setQ]=useState("");const [recientes,setRecientes]=useState([]);
+  // Clientes con operaciones recientes: los que más probablemente vuelvan a importar.
+  useEffect(()=>{dq("operations",{token,filters:"?select=client_id&order=created_at.desc&limit=40"}).then(r=>{const ids=[];(Array.isArray(r)?r:[]).forEach(o=>{if(o.client_id&&!ids.includes(o.client_id))ids.push(o.client_id);});setRecientes(ids.slice(0,8));});},[token]);
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
   const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const qn=norm(q.trim());
   const cliente=clients.find(c=>c.id===form.client_id)||null;
-  const lista=(qn?clients.filter(c=>norm(`${c.client_code} ${c.first_name} ${c.last_name} ${c.whatsapp||""}`).includes(qn)):[...clients].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||""))).slice(0,8)).slice(0,qn?12:8);
+  const lista=(qn?clients.filter(c=>norm(`${c.client_code} ${c.first_name} ${c.last_name} ${c.whatsapp||""}`).includes(qn)):recientes.map(id=>clients.find(c=>c.id===id)).filter(Boolean)).slice(0,qn?12:8);
   const CANALES={aereo_blanco:{n:"Aéreo Courier Comercial",i:"7-10 días hábiles",e:"✈️"},maritimo_blanco:{n:"Marítimo LCL/FCL",i:"60-70 días · desde 0,5 m³",e:"🚢"},maritimo_negro:{n:"Marítimo Integral AC",i:"60-70 días · todo incluido",e:"🚢"}};
   const canalesDe=(o)=>esPkBd(o)?["aereo_blanco"]:o==="USA"?["aereo_blanco","maritimo_negro"]:CHANNELS;
   const setOrigen=(o)=>{setForm(p=>({...p,origin:o,channel:canalesDe(o).includes(p.channel)?p.channel:"aereo_blanco"}));};
@@ -728,9 +730,9 @@ function NewOperation({token,clients,onBack,onCreated,initial}){
         </div>
         :<>
           <input autoFocus value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&lista.length>0){ch("client_id")(lista[0].id);setQ("");}}} placeholder="Nombre, código o WhatsApp…" style={{width:"100%",height:42,padding:"0 14px",fontSize:14,boxSizing:"border-box",border:`1px solid ${q?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:11,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
-          <p style={{margin:"10px 0 4px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}>{qn?`${lista.length} resultado${lista.length!==1?"s":""}`:"Últimos clientes"}</p>
+          <p style={{margin:"10px 0 4px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}>{qn?`${lista.length} resultado${lista.length!==1?"s":""}`:"Clientes recientes"}</p>
           <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:celu?300:420,overflowY:"auto"}}>
-            {lista.length===0?<p style={{margin:0,padding:"14px 12px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ningún cliente coincide.</p>:lista.map(c=>filaCliente(c,false))}
+            {lista.length===0?<p style={{margin:0,padding:"14px 12px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>{qn?"Ningún cliente coincide.":"Escribí para buscar."}</p>:lista.map(c=>filaCliente(c,false))}
           </div>
         </>}
       </div>
