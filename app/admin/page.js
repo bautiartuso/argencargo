@@ -4717,18 +4717,27 @@ function BotPanel({token}){
     finally{setSending(false);}
   };
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/bot${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
-  const loadList=async()=>{try{const b=await api("");setConvs(b.conversations||[]);}catch(e){console.error(e);}finally{setLo(false);}};
+  // Lo último que se vio queda en el navegador (21/10/2026): la lista y el chat aparecen al instante
+  // y se reemplazan cuando llega lo nuevo.
+  const lsGet=(k)=>{try{return JSON.parse(localStorage.getItem(k)||"null");}catch{return null;}};
+  const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
+  const loadList=async()=>{try{const b=await api("");setConvs(b.conversations||[]);lsSet("ac_bot_convs",b.conversations||[]);}catch(e){console.error(e);}finally{setLo(false);}};
+  const [verTodo,setVerTodo]=useState(false);
+  const [cargandoHilo,setCargandoHilo]=useState(false);
   // Chat abierto (11/10/2026, consumo de Supabase): cada 10 s con la pestaña a la vista se piden solo
   // los mensajes nuevos (?since=); una vez por minuto se recarga entero para los ✓✓ de entregado/leído.
   const threadRef=useRef(null);useEffect(()=>{threadRef.current=thread;},[thread]);
-  const loadThread=async(phone,incremental)=>{try{
+  const loadThread=async(phone,incremental,todo=false)=>{try{
     const prev=threadRef.current;const ult=incremental&&prev?.phone===phone&&prev.messages?.length?prev.messages[prev.messages.length-1].created_at:null;
-    const b=await api(`?phone=${phone}${ult?`&since=${encodeURIComponent(ult)}`:""}`);
-    if(b.incremental&&prev?.phone===phone){const ids=new Set((prev.messages||[]).map(m=>m.id));setThread({...prev,...b,facturas_pendientes:prev.facturas_pendientes,messages:[...(prev.messages||[]),...(b.messages||[]).filter(m=>!ids.has(m.id))]});}
-    else setThread(b);
-    setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){if(!incremental)toast(e.message,"error");}};
-  useEffect(()=>{loadList();const id=setInterval(()=>{if(!document.hidden)loadList();},30000);return()=>clearInterval(id);},[token]);
-  useEffect(()=>{if(sel===IG){loadIg();return;}if(!sel)return;loadThread(sel);let n=0;const id=setInterval(()=>{if(document.hidden)return;n++;loadThread(sel,n%6!==0);},10000);return()=>clearInterval(id);},[sel]);
+    if(!incremental&&prev?.phone!==phone){const c=lsGet(`ac_bot_t_${phone}`);if(c)setThread(c);else setCargandoHilo(true);}
+    const b=await api(`?phone=${phone}${ult?`&since=${encodeURIComponent(ult)}`:""}${todo?"&all=1":""}`);
+    if(b.incremental&&prev?.phone===phone){const ids=new Set((prev.messages||[]).map(m=>m.id));setThread({...prev,...b,facturas_pendientes:prev.facturas_pendientes,has_older:prev.has_older,messages:[...(prev.messages||[]),...(b.messages||[]).filter(m=>!ids.has(m.id))]});}
+    else{if(todo)b.has_older=false;setThread(b);if(!todo)lsSet(`ac_bot_t_${phone}`,{...b,messages:(b.messages||[]).slice(-80)});}
+    setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){if(!incremental)toast(e.message,"error");}finally{setCargandoHilo(false);}};
+  useEffect(()=>{const c=lsGet("ac_bot_convs");if(Array.isArray(c)&&c.length){setConvs(c);setLo(false);}loadList();const id=setInterval(()=>{if(!document.hidden)loadList();},30000);return()=>clearInterval(id);},[token]);
+  useEffect(()=>{setVerTodo(false);if(sel===IG){loadIg();return;}if(!sel)return;loadThread(sel);let n=0;const id=setInterval(()=>{if(document.hidden)return;n++;loadThread(sel,n%6!==0||verTodoRef.current);},10000);return()=>clearInterval(id);},[sel]);
+  const verTodoRef=useRef(false);useEffect(()=>{verTodoRef.current=verTodo;},[verTodo]);
+  const verAnteriores=async()=>{setVerTodo(true);await loadThread(sel,false,true);};
   useEffect(()=>{endRef.current?.scrollIntoView({block:"end"});},[thread?.messages?.length]);
   const send=async()=>{
     const t=txt.trim();if(!t||!sel)return;
@@ -4747,47 +4756,78 @@ function BotPanel({token}){
   const fmtHora=(d)=>{if(!d)return"";const x=new Date(d);const hoy=new Date();const mismo=x.toDateString()===hoy.toDateString();return mismo?x.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}):x.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" "+x.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});};
   const fmtTel=(p)=>{const d=String(p||"");return d.startsWith("549")?`+54 9 ${d.slice(3,5)} ${d.slice(5,9)}-${d.slice(9)}`:`+${d}`;};
   const ventanaTxt=(t)=>{if(!t?.last_user_at)return"Sin mensajes del cliente";const fin=new Date(new Date(t.last_user_at).getTime()+24*3600*1000);return t.window_open?`Ventana abierta hasta ${fmtHora(fin)}`:"Ventana de 24 h cerrada · solo plantillas";};
-  const filtered=convs.filter(c=>{if(!q)return true;const s=q.toLowerCase();return c.phone.includes(s)||(c.client?.nombre||"").toLowerCase().includes(s)||(c.client?.codigo||"").toLowerCase().includes(s);});
+  const [filtro,setFiltro]=useState("todas"); // todas | sinleer | mias
+  const filtered=convs.filter(c=>{
+    if(filtro==="sinleer"&&!c.unread)return false;
+    if(filtro==="mias"&&!c.human_mode)return false;
+    if(!q)return true;const s=q.toLowerCase();return c.phone.includes(s)||(c.client?.nombre||"").toLowerCase().includes(s)||(c.client?.codigo||"").toLowerCase().includes(s);});
   const unreadN=convs.filter(c=>c.unread).length;
+  const miasN=convs.filter(c=>c.human_mode).length;
   const showList=!isMobile||!sel;
   const showThread=!isMobile||!!sel;
-  const roleStyle=(r)=>r==="user"?{align:"flex-start",bg:"rgba(255,255,255,0.07)",bd:"rgba(255,255,255,0.1)",tag:null}
-    :r==="human"?{align:"flex-end",bg:"rgba(251,191,36,0.14)",bd:"rgba(251,191,36,0.35)",tag:"Vos"}
-    :r==="system"?{align:"center",bg:"transparent",bd:"transparent",tag:null}
-    :{align:"flex-end",bg:"rgba(96,165,250,0.14)",bd:"rgba(96,165,250,0.3)",tag:"Argy"};
+  const iniciales=(c)=>{const n=(c?.nombre||"").trim();if(!n)return "☎";const p=n.split(/\s+/);return (p[0][0]+(p[1]?.[0]||"")).toUpperCase();};
+  const colorDe=(phone)=>{const cs=["#60a5fa","#a78bfa","#f472b6","#34d399","#fbbf24","#fb923c","#22d3ee"];let h=0;for(const ch of String(phone))h=(h*31+ch.charCodeAt(0))>>>0;return cs[h%cs.length];};
+  const diaLabel=(d)=>{const x=new Date(d),hoy=new Date();const ayer=new Date();ayer.setDate(hoy.getDate()-1);if(x.toDateString()===hoy.toDateString())return "Hoy";if(x.toDateString()===ayer.toDateString())return "Ayer";return x.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"short"});};
+  const hora=(d)=>d?new Date(d).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}):"";
+  const ventanaFin=(t)=>t?.last_user_at?new Date(new Date(t.last_user_at).getTime()+24*3600*1000):null;
+  const Avatar=({c,phone,size=40,ring})=><div style={{width:size,height:size,flexShrink:0,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.36,fontWeight:800,color:"#0A1628",background:`linear-gradient(135deg,${colorDe(phone)},${colorDe(phone)}99)`,boxShadow:ring?`0 0 0 2px #0A1628,0 0 0 4px ${ring}`:"none"}}>{iniciales(c)}</div>;
+  const Pill=({c,bg,children,title})=><span title={title} style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,background:bg||`${c}1f`,color:c,whiteSpace:"nowrap",letterSpacing:"0.02em"}}>{children}</span>;
+  const estadoTicks=(m)=>m.role==="user"?null:m.failed_at?<span title={m.error||"No entregado"} style={{color:"#f87171",fontWeight:800}}>⚠</span>:m.read_at?<span title={`Leído ${hora(m.read_at)}`} style={{color:"#53bdeb",fontWeight:800}}>✓✓</span>:m.delivered_at?<span title={`Entregado ${hora(m.delivered_at)}`} style={{color:"rgba(255,255,255,0.55)",fontWeight:800}}>✓✓</span>:m.wamid?<span title="Enviado" style={{color:"rgba(255,255,255,0.45)"}}>✓</span>:null;
+  const msgs=thread?.messages||[];
+  const fin=ventanaFin(thread);
+  const PANEL={background:"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,overflow:"hidden",display:"flex",flexDirection:"column"};
   return <div style={{display:"flex",gap:14,height:"calc(100vh - 120px)",minHeight:480}}>
-    {showList&&<div style={{width:isMobile?"100%":320,flexShrink:0,display:"flex",flexDirection:"column",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
-      <div style={{padding:"12px 12px 8px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-          <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>Conversaciones {unreadN>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{unreadN}</span>}</span>
-          <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{convs.length}</span>
+    <style>{`.bt-conv{transition:background .12s}.bt-conv:hover{background:rgba(255,255,255,0.05)!important}.bt-scroll::-webkit-scrollbar{width:6px}.bt-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:6px}@keyframes btSk{0%{opacity:.4}50%{opacity:.9}100%{opacity:.4}}.bt-sk{background:rgba(255,255,255,0.08);border-radius:10px;animation:btSk 1.2s ease-in-out infinite}`}</style>
+    {showList&&<div style={{...PANEL,width:isMobile?"100%":340,flexShrink:0}}>
+      <div style={{padding:"14px 14px 10px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+          <span style={{width:34,height:34,borderRadius:11,background:"linear-gradient(135deg,#25D366,#128C7E)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg></span>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:14.5,fontWeight:800,color:"#fff"}}>WhatsApp</p>
+            <p style={{margin:"1px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{convs.length} conversaciones{unreadN?` · ${unreadN} sin leer`:""}{miasN?` · ${miasN} en tus manos`:""}</p>
+          </div>
+          {unreadN>0&&<span style={{fontSize:11,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"#ef4444",color:"#fff"}}>{unreadN}</span>}
         </div>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente o número" style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:12.5,outline:"none"}}/>
-        <button onClick={()=>setSel(IG)} style={{marginTop:8,width:"100%",display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:9,cursor:"pointer",border:`1px solid ${sel===IG?"rgba(225,48,108,0.5)":"rgba(255,255,255,0.1)"}`,background:sel===IG?"rgba(225,48,108,0.12)":"rgba(255,255,255,0.03)",color:"#fff",fontSize:12.5,fontWeight:700,textAlign:"left"}}>
-          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#e1306c" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#e1306c" stroke="none"/></svg>
-          <span style={{flex:1}}>Instagram → WhatsApp</span>
-          <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:600}}>textos</span>
-        </button>
+        <div style={{position:"relative",marginBottom:8}}>
+          <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.35)",fontSize:13}}>⌕</span>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente, código o número" style={{width:"100%",boxSizing:"border-box",padding:"9px 10px 9px 30px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:12.5,outline:"none",fontFamily:"inherit"}}/>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {[["todas","Todas",convs.length],["sinleer","Sin leer",unreadN],["mias","Tomadas",miasN]].map(([k,l,n])=>{const on=filtro===k;return <button key={k} onClick={()=>setFiltro(k)} style={{flex:1,padding:"6px 8px",borderRadius:999,fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.6)"}}>{l}{n?<span style={{marginLeft:5,opacity:0.7}}>{n}</span>:null}</button>;})}
+        </div>
       </div>
-      <div style={{flex:1,overflowY:"auto"}}>
-        {lo&&<p style={{padding:14,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
-        {!lo&&filtered.length===0&&<p style={{padding:14,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no escribió nadie.</p>}
-        {filtered.map(c=><div key={c.phone} onClick={()=>setSel(c.phone)} style={{padding:"10px 12px",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.05)",background:sel===c.phone?"rgba(96,165,250,0.1)":"transparent"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <span style={{fontSize:13,fontWeight:c.unread?800:600,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.unread&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:"#ef4444",marginRight:6,verticalAlign:"middle"}}/>}{c.client?.nombre||fmtTel(c.phone)}</span>
-            <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",flexShrink:0}}>{fmtHora(c.last_at)}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:2}}>
-            <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.last?(c.last.role==="user"?"":c.last.role==="human"?"Vos: ":"Argy: ")+(c.last.content||""):"—"}</span>
-            <span style={{fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:6,flexShrink:0,background:c.human_mode?"rgba(251,191,36,0.15)":"rgba(96,165,250,0.12)",color:c.human_mode?"#fbbf24":"#60a5fa",border:`1px solid ${c.human_mode?"rgba(251,191,36,0.35)":"rgba(96,165,250,0.3)"}`}}>{c.human_mode?"VOS":"ARGY"}</span>
-          </div>
-          {c.client?.codigo&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{c.client.codigo} · {fmtTel(c.phone)}</span>}
-        </div>)}
+      <div className="bt-scroll" style={{flex:1,overflowY:"auto",padding:"6px 8px"}}>
+        <button onClick={()=>setSel(IG)} className="bt-conv" style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:12,cursor:"pointer",border:"none",background:sel===IG?"rgba(225,48,108,0.12)":"transparent",color:"#fff",fontFamily:"inherit",textAlign:"left",marginBottom:4}}>
+          <span style={{width:40,height:40,borderRadius:"50%",flexShrink:0,background:"linear-gradient(135deg,#f58529,#dd2a7b 50%,#8134af)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#fff" stroke="none"/></svg></span>
+          <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700}}>Instagram → WhatsApp</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>Textos con los que deriva al WhatsApp</span></span>
+        </button>
+        {lo&&convs.length===0&&[0,1,2,3,4].map(i=><div key={i} style={{display:"flex",gap:10,padding:"10px",alignItems:"center"}}><div className="bt-sk" style={{width:40,height:40,borderRadius:"50%"}}/><div style={{flex:1}}><div className="bt-sk" style={{height:12,width:"60%",marginBottom:7}}/><div className="bt-sk" style={{height:10,width:"85%"}}/></div></div>)}
+        {!lo&&filtered.length===0&&<p style={{padding:14,fontSize:12.5,color:"rgba(255,255,255,0.4)",textAlign:"center"}}>{q||filtro!=="todas"?"Nada con ese filtro.":"Todavía no escribió nadie."}</p>}
+        {filtered.map(c=>{const on=sel===c.phone;const prev=c.last?(c.last.role==="user"?"":c.last.role==="human"?"Vos: ":"Argy: ")+(c.last.media_type?(c.last.media_type==="image"?"📷 Foto":"📎 Archivo"):(c.last.content||"")):"";
+          return <div key={c.phone} onClick={()=>setSel(c.phone)} className="bt-conv" style={{display:"flex",gap:10,alignItems:"center",padding:"9px 10px",borderRadius:12,cursor:"pointer",background:on?"rgba(184,149,106,0.14)":"transparent",border:`1px solid ${on?"rgba(184,149,106,0.35)":"transparent"}`,marginBottom:2}}>
+            <Avatar c={c.client} phone={c.phone} ring={c.unread?"#ef4444":c.human_mode?"#fbbf24":null}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                <span style={{fontSize:13.5,fontWeight:c.unread?800:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.client?.nombre||fmtTel(c.phone)}</span>
+                <span style={{fontSize:10.5,color:c.unread?"#4ade80":"rgba(255,255,255,0.4)",flexShrink:0,fontWeight:c.unread?800:500}}>{fmtHora(c.last_at)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:2}}>
+                <span style={{fontSize:11.5,color:c.unread?"rgba(255,255,255,0.85)":"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:c.unread?600:400}}>{prev}</span>
+                {c.human_mode?<Pill c="#fbbf24">Vos</Pill>:c.unread?<span style={{width:18,height:18,borderRadius:999,background:"#25D366",color:"#0A1628",fontSize:10,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>!</span>:null}
+              </div>
+              {c.client?.codigo&&<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"monospace",marginTop:1}}>{c.client.codigo}</span>}
+            </div>
+          </div>;})}
       </div>
     </div>}
-    {showThread&&<div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
-      {!sel&&<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.35)",fontSize:13}}>Elegí una conversación</div>}
-      {sel===IG&&<div style={{flex:1,overflowY:"auto",padding:isMobile?"14px":"18px 22px"}}>
+
+    {showThread&&<div style={{...PANEL,flex:1,minWidth:0}}>
+      {!sel&&<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,color:"rgba(255,255,255,0.4)",fontSize:13}}>
+        <span style={{width:64,height:64,borderRadius:20,background:"rgba(37,211,102,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>💬</span>
+        <p style={{margin:0,fontWeight:700,color:"rgba(255,255,255,0.7)"}}>Elegí una conversación</p>
+        <p style={{margin:0,fontSize:12}}>{unreadN?`${unreadN} con mensajes sin leer`:"Todo al día"}</p>
+      </div>}
+      {sel===IG&&<div className="bt-scroll" style={{flex:1,overflowY:"auto",padding:isMobile?"14px":"18px 22px"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
           {isMobile&&<button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",padding:0}}>‹</button>}
           <div style={{flex:1,minWidth:0}}>
@@ -4799,62 +4839,74 @@ function BotPanel({token}){
         {ig&&<>
           <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
             {[
-              {ok:ig.configured,t:ig.configured?`Cuenta conectada${ig.username?` · @${ig.username}`:""} (${ig.source==="env"?"variables de Vercel":"la del Estudio"})`:"Sin cuenta: faltan IG_PAGE_TOKEN e IG_USER_ID en Vercel"},
+              {ok:ig.configured,t:ig.configured?`Cuenta conectada${ig.username?` · @${ig.username}`:""} (${ig.source==="env"?"variables de Vercel":"la del Estudio"})`:"Sin cuenta: faltan IG_PAGE_TOKEN / IG_USER_ID"},
               {ok:ig.app_secret,t:ig.app_secret?"Firma de Meta validada":"Falta META_APP_SECRET en Vercel"},
               {ok:ig.verify_token,t:ig.verify_token?"Webhook verificable":"Falta IG_VERIFY_TOKEN en Vercel"},
-            ].map((x,i)=><span key={i} style={{fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:7,background:x.ok?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",color:x.ok?"#4ade80":"#f87171",border:`1px solid ${x.ok?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`}}>{x.ok?"✓":"✕"} {x.t}</span>)}
+            ].map((x,i)=><span key={i} style={{fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:7,background:x.ok?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",color:x.ok?"#4ade80":"#f87171"}}>{x.ok?"✓":"✕"} {x.t}</span>)}
           </div>
           <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Mensaje privado (DM y privado por comentario)</p>
-          <textarea value={ig.dm_text||""} onChange={e=>setIg(p=>({...p,dm_text:e.target.value}))} rows={4} maxLength={900} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",lineHeight:1.45}}/>
-          <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Se manda una sola vez por persona; si vuelve a escribir, recién se le repite pasados 7 días. Tiene que incluir el link del WhatsApp.</p>
+          <textarea value={ig.dm_text||""} onChange={e=>setIg(p=>({...p,dm_text:e.target.value}))} rows={4} maxLength={900} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+          <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Se manda una sola vez por persona; si vuelve a escribir, recién se le repite pasados 7 días. Tiene que incluir el link de WhatsApp.</p>
           <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Respuesta pública debajo del comentario</p>
-          <textarea value={ig.comment_text||""} onChange={e=>setIg(p=>({...p,comment_text:e.target.value}))} rows={2} maxLength={300} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",lineHeight:1.45}}/>
+          <textarea value={ig.comment_text||""} onChange={e=>setIg(p=>({...p,comment_text:e.target.value}))} rows={2} maxLength={300} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
           <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Solo en comentarios de primer nivel de otras cuentas; el autor además recibe el mensaje privado de arriba.</p>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <Btn onClick={saveIg} disabled={igSaving}>{igSaving?"Guardando…":"Guardar textos"}</Btn>
-            <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{Number(ig.stats?.dms||0)+Number(ig.stats?.comentarios||0)>0?`${ig.stats?.dms||0} privados · ${ig.stats?.comentarios||0} respuestas públicas${ig.stats?.last_at?` · última ${fmtHora(ig.stats.last_at)}`:""}`:"Todavía no derivó a nadie."}</span>
+            <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{Number(ig.stats?.dms||0)+Number(ig.stats?.comentarios||0)>0?`${ig.stats?.dms||0} privados · ${ig.stats?.comentarios||0} respuestas a comentarios`:"Todavía no derivó a nadie"}</span>
           </div>
         </>}
       </div>}
       {sel&&sel!==IG&&<>
-        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          {isMobile&&<button onClick={()=>{setSel(null);setThread(null);}} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",padding:0}}>‹</button>}
+        {/* Cabecera del chat */}
+        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:"rgba(0,0,0,0.12)"}}>
+          {isMobile&&<button onClick={()=>{setSel(null);setThread(null);}} style={{background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer",padding:0}}>‹</button>}
+          <Avatar c={thread?.client} phone={sel} size={38}/>
           <div style={{flex:1,minWidth:0}}>
-            <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{thread?.client?.nombre||fmtTel(sel)} {thread?.client?.codigo&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"monospace",marginLeft:6}}>{thread.client.codigo}</span>}</p>
-            <p style={{margin:"2px 0 0",fontSize:11,color:thread?.window_open?"#4ade80":"rgba(255,255,255,0.45)"}}>{fmtTel(sel)} · {ventanaTxt(thread)}</p>
+            <p style={{margin:0,fontSize:14.5,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{thread?.client?.nombre||fmtTel(sel)}{thread?.client?.codigo&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"monospace",fontWeight:600}}>{thread.client.codigo}</span>}{thread?.human_mode?<Pill c="#fbbf24">✋ En tus manos</Pill>:<Pill c="#60a5fa">🤖 Argy responde</Pill>}</p>
+            <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <a href={`https://wa.me/${sel}`} target="_blank" rel="noreferrer" style={{color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>{fmtTel(sel)} ↗</a>
+              <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:999,background:thread?.window_open?"#4ade80":"rgba(255,255,255,0.25)",boxShadow:thread?.window_open?"0 0 0 3px rgba(74,222,128,0.18)":"none"}}/>{!thread?.last_user_at?"Sin mensajes del cliente":thread?.window_open?`Ventana abierta hasta ${fmtHora(fin)}`:"Ventana cerrada · sale por plantilla"}</span>
+            </p>
           </div>
-          <Btn small variant={thread?.human_mode?"primary":"secondary"} onClick={toggleHuman}>{thread?.human_mode?"↩ Devolver a Argy":"✋ Tomar la conversación"}</Btn>
+          <Btn small variant={thread?.human_mode?"primary":"secondary"} onClick={toggleHuman}>{thread?.human_mode?"↩ Devolver a Argy":"✋ Tomar"}</Btn>
         </div>
-        <div style={{flex:1,overflowY:"auto",padding:"14px 14px 6px",display:"flex",flexDirection:"column",gap:8}}>
-          {(thread?.messages||[]).map(m=>{const st=roleStyle(m.role);
-            if(m.role==="system")return <div key={m.id} style={{alignSelf:"center",fontSize:10.5,color:"rgba(255,255,255,0.4)",padding:"2px 8px"}}>— {m.content} · {fmtHora(m.created_at)} —</div>;
-            return <div key={m.id} style={{alignSelf:st.align,maxWidth:"78%",background:st.bg,border:`1px solid ${st.bd}`,borderRadius:12,padding:"8px 11px"}}>
-              {st.tag&&<span style={{display:"block",fontSize:9.5,fontWeight:800,letterSpacing:"0.06em",color:m.role==="human"?"#fbbf24":"#60a5fa",marginBottom:3}}>{st.tag}</span>}
+
+        {/* Mensajes */}
+        <div className="bt-scroll" style={{flex:1,overflowY:"auto",padding:"14px 16px 8px",display:"flex",flexDirection:"column",gap:6,background:"radial-gradient(900px 400px at 50% 0%,rgba(37,211,102,0.04),transparent 60%)"}}>
+          {cargandoHilo&&msgs.length===0&&[0,1,2].map(i=><div key={i} className="bt-sk" style={{alignSelf:i%2?"flex-end":"flex-start",width:"48%",height:46,borderRadius:14}}/>)}
+          {thread?.has_older&&!verTodo&&<button onClick={verAnteriores} style={{alignSelf:"center",margin:"0 0 8px",padding:"6px 14px",borderRadius:999,fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.7)"}}>↑ Ver mensajes anteriores a esta semana</button>}
+          {!cargandoHilo&&msgs.length===0&&<p style={{alignSelf:"center",fontSize:12.5,color:"rgba(255,255,255,0.4)",marginTop:20}}>Sin mensajes esta semana.</p>}
+          {msgs.map((m,i)=>{
+            const prevM=msgs[i-1];const nuevoDia=!prevM||new Date(prevM.created_at).toDateString()!==new Date(m.created_at).toDateString();
+            const sep=nuevoDia&&<div style={{alignSelf:"center",margin:"8px 0 4px",fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",padding:"3px 10px",borderRadius:999,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.08)"}}>{diaLabel(m.created_at)}</div>;
+            if(m.role==="system")return <Fragment key={m.id}>{sep}<div style={{alignSelf:"center",fontSize:10.5,color:"rgba(255,255,255,0.4)",padding:"2px 8px",textAlign:"center"}}>{m.content} · {hora(m.created_at)}</div></Fragment>;
+            const mio=m.role!=="user";const vos=m.role==="human";
+            const seguido=prevM&&prevM.role===m.role&&!nuevoDia&&(new Date(m.created_at)-new Date(prevM.created_at))<3*60000;
+            return <Fragment key={m.id}>{sep}<div style={{alignSelf:mio?"flex-end":"flex-start",maxWidth:"74%",marginTop:seguido?0:4,padding:"8px 11px 6px",borderRadius:16,borderTopRightRadius:mio&&seguido?6:16,borderTopLeftRadius:!mio&&seguido?6:16,background:vos?"linear-gradient(135deg,rgba(184,149,106,0.28),rgba(184,149,106,0.14))":mio?"rgba(37,211,102,0.14)":"rgba(255,255,255,0.08)",border:`1px solid ${vos?"rgba(232,208,152,0.35)":mio?"rgba(37,211,102,0.28)":"rgba(255,255,255,0.1)"}`}}>
+              {mio&&!seguido&&<span style={{display:"block",fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",color:vos?"#E8D098":"#4ade80",marginBottom:3}}>{vos?"VOS":"ARGY"}</span>}
               {m.media_url&&(m.media_type==="image"
-                ?<a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt="adjunto" style={{maxWidth:"100%",maxHeight:260,borderRadius:8,display:"block",marginBottom:6}}/></a>
-                :<a href={m.media_url} target="_blank" rel="noreferrer" style={{display:"block",fontSize:12,color:"#60a5fa",marginBottom:6}}>📄 Abrir documento</a>)}
-              <span style={{fontSize:13,color:"#fff",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</span>
-              <span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)",marginTop:4,textAlign:"right"}}>{fmtHora(m.created_at)}{m.role!=="user"&&(m.failed_at
-                ?<span title={m.error||"No entregado"} style={{marginLeft:6,color:"#f87171",fontWeight:800}}>⚠ no entregado</span>
-                :m.read_at?<span title={`Leído ${fmtHora(m.read_at)}`} style={{marginLeft:6,color:"#53bdeb",fontWeight:800}}>✓✓</span>
-                :m.delivered_at?<span title={`Entregado ${fmtHora(m.delivered_at)}`} style={{marginLeft:6,color:"rgba(255,255,255,0.55)",fontWeight:800}}>✓✓</span>
-                :m.wamid?<span title="Enviado" style={{marginLeft:6,color:"rgba(255,255,255,0.45)"}}>✓</span>:null)}</span>
-            </div>;})}
+                ?<a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt="adjunto" style={{maxWidth:"100%",maxHeight:260,borderRadius:10,display:"block",marginBottom:6}}/></a>
+                :<a href={m.media_url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12.5,color:"#fff",marginBottom:6,padding:"7px 10px",borderRadius:9,background:"rgba(0,0,0,0.25)",textDecoration:"none"}}>📄 Abrir documento</a>)}
+              {m.content&&<span style={{fontSize:13.5,color:"#fff",whiteSpace:"pre-wrap",wordBreak:"break-word",lineHeight:1.45}}>{m.content}</span>}
+              <span style={{display:"flex",justifyContent:"flex-end",gap:5,fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:3}}>{hora(m.created_at)}{estadoTicks(m)}</span>
+            </div></Fragment>;})}
           <div ref={endRef}/>
         </div>
-        <div style={{padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-          {!thread?.human_mode&&<p style={{margin:"0 0 6px",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Argy está respondiendo. Si escribís vos, el mensaje sale igual por el número del bot (Argy sigue activo salvo que tomes la conversación).</p>}
+
+        {/* Redactar */}
+        <div style={{padding:"10px 12px 12px",borderTop:"1px solid rgba(255,255,255,0.07)",background:"rgba(0,0,0,0.12)"}}>
           {Array.isArray(thread?.facturas_pendientes)&&thread.facturas_pendientes.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-            {thread.facturas_pendientes.map(f=><button key={f.id} onClick={()=>sendFactura(f)} disabled={sending} title="Factura emitida y todavía no enviada por WhatsApp" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 11px",borderRadius:9,border:"1px solid rgba(232,201,155,0.4)",background:"rgba(232,201,155,0.1)",color:"#E8C99B",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-              📄 Factura C {f.numero}{f.op?` · ${f.op}`:""} · $ {Number(f.importe).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:6,background:"#E8C99B",color:"#0A1628"}}>Enviar por el bot</span>
+            {thread.facturas_pendientes.map(f=><button key={f.id} onClick={()=>sendFactura(f)} disabled={sending} title="Factura emitida y todavía no enviada por WhatsApp" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 11px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>
+              📄 Factura C {f.numero}{f.op?` · ${f.op}`:""} · $ {Number(f.importe).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{fontSize:11,fontWeight:800,color:"#fff"}}>Enviar →</span>
             </button>)}
           </div>}
           <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
             <input ref={fileRef} type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style={{display:"none"}} onChange={e=>sendFile(e.target.files?.[0])}/>
-            <button onClick={()=>fileRef.current?.click()} disabled={sending} title="Adjuntar archivo (PDF, imagen, Word, Excel)" style={{width:40,height:40,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#fff",fontSize:20,cursor:"pointer",flexShrink:0}}>+</button>
-            <textarea value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder={thread?.window_open?"Escribí como Argencargo…":"Ventana cerrada: el cliente tiene que escribir primero"} rows={2} style={{flex:1,resize:"none",padding:"9px 11px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
-            <Btn onClick={send} disabled={sending||!txt.trim()}>{sending?"…":"Enviar"}</Btn>
+            <button onClick={()=>fileRef.current?.click()} disabled={sending} title="Adjuntar archivo (PDF, imagen, Word, Excel)" style={{width:42,height:42,borderRadius:12,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontSize:17,flexShrink:0}}>📎</button>
+            <textarea value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder={thread?.human_mode?"Escribí al cliente…":"Escribí como Argencargo (sale por el número del bot)…"} rows={1} style={{flex:1,minHeight:42,maxHeight:140,padding:"11px 14px",borderRadius:14,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.3)",color:"#fff",fontSize:13.5,resize:"none",outline:"none",fontFamily:"inherit",lineHeight:1.4,boxSizing:"border-box"}}/>
+            <button onClick={send} disabled={sending||!txt.trim()} title="Enviar (Enter)" style={{width:42,height:42,borderRadius:12,border:"none",background:txt.trim()&&!sending?"linear-gradient(135deg,#25D366,#128C7E)":"rgba(255,255,255,0.08)",color:"#fff",cursor:txt.trim()&&!sending?"pointer":"default",fontSize:16,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sending?"…":<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>}</button>
           </div>
+          {!thread?.human_mode&&<p style={{margin:"6px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Argy sigue respondiendo. Lo que escribas sale igual por el número del bot; si querés que Argy se calle, tocá <b style={{color:"rgba(255,255,255,0.65)"}}>Tomar</b>.</p>}
         </div>
       </>}
     </div>}

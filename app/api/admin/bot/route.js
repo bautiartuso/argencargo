@@ -81,13 +81,23 @@ async function sb(path, opts = {}) {
   return { status: r.status, body: b };
 }
 
+// El rol del usuario se recuerda 10 minutos por token (21/10/2026): la solapa Bot pide la lista
+// cada 30 s y el chat cada 10 s, y cada pedido pagaba una consulta a profiles de más.
+const _roles = new Map();
 async function isAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
+  const tok = auth.slice(7);
+  const hit = _roles.get(tok);
+  if (hit && Date.now() - hit.t < 10 * 60e3) return hit.ok;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = JSON.parse(Buffer.from(tok.split(".")[1], "base64").toString());
+    if (payload.exp && payload.exp * 1000 < Date.now()) return false;
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
-    return Array.isArray(p.body) && ["admin","empleado"].includes(p.body[0]?.role);
+    const ok = Array.isArray(p.body) && ["admin","empleado"].includes(p.body[0]?.role);
+    _roles.set(tok, { t: Date.now(), ok });
+    if (_roles.size > 200) _roles.delete(_roles.keys().next().value);
+    return ok;
   } catch { return false; }
 }
 
@@ -128,12 +138,19 @@ export async function GET(req) {
 
   if (phone) {
     const since = url.searchParams.get("since") || "";
-    const [conv, msgs] = await Promise.all([
+    // Última semana nada más (21/10/2026): los mensajes viejos no sirven en el panel y la conversación
+    // entera tardaba. Con ?all=1 se trae todo (botón "Ver mensajes anteriores").
+    const todo = url.searchParams.get("all") === "1";
+    const desde = new Date(Date.now() - 7 * 86400e3).toISOString();
+    const filtroFecha = since ? `&created_at=gt.${encodeURIComponent(since)}` : (todo ? "" : `&created_at=gte.${encodeURIComponent(desde)}`);
+    const [conv, msgs, older] = await Promise.all([
       sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone }) }),
       // Con ?since= solo los mensajes nuevos (11/10/2026): el chat abierto se actualiza cada pocos
       // segundos y antes bajaba la conversación entera cada vez (egress de Supabase).
-      sb(`/bot_messages?phone=eq.${phone}${since ? `&created_at=gt.${encodeURIComponent(since)}` : ""}&select=id,role,content,media_url,media_type,wamid,delivered_at,read_at,failed_at,error,created_at&order=created_at.asc&limit=500`),
+      sb(`/bot_messages?phone=eq.${phone}${filtroFecha}&select=id,role,content,media_url,media_type,wamid,delivered_at,read_at,failed_at,error,created_at&order=created_at.asc&limit=500`),
+      (!since && !todo) ? sb(`/bot_messages?phone=eq.${phone}&created_at=lt.${encodeURIComponent(desde)}&select=id&limit=1`) : Promise.resolve({ body: [] }),
     ]);
+    const hayAnteriores = Array.isArray(older.body) && older.body.length > 0;
     const row = Array.isArray(conv.body) && conv.body[0] ? conv.body[0] : { phone, human_mode: false, last_user_at: null };
     // Marcar visto sin bloquear la respuesta.
     sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString() }) }).catch(() => {});
@@ -144,7 +161,7 @@ export async function GET(req) {
       const f = await sb(`/invoices?client_id=eq.${c.client.id}&status=eq.emitida&wa_sent_at=is.null&select=id,punto_venta,numero,importe,fecha,operations(operation_code)&order=created_at.desc&limit=5`);
       facturas = (Array.isArray(f.body) ? f.body : []).map((x) => ({ id: x.id, numero: fmtNum(x.punto_venta, x.numero), importe: Number(x.importe || 0), fecha: x.fecha, op: x.operations?.operation_code || null }));
     }
-    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [], ...(since ? { incremental: true } : { facturas_pendientes: facturas }) });
+    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [], has_older: hayAnteriores, ...(since ? { incremental: true } : { facturas_pendientes: facturas }) });
   }
 
   const r = await sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({}) });
