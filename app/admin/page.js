@@ -5787,7 +5787,7 @@ function CoordinarModal({op,token,onClose,onSaved,onEntregada}){
       <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}><strong style={{fontFamily:"monospace",color:"#E8C99B"}}>{op.operation_code}</strong> · {nombre} — para cuando el cliente arregló por WhatsApp y no usó el link.</p>
       <label style={lbl}>Forma de entrega</label>
       <div style={{display:"flex",gap:6,marginBottom:12}}>
-        {[["oficina","📦 Retiro"],["propio","🚚 Envío"],["carrier","📮 Transportista"]].map(([k,l])=><button key={k} type="button" onClick={()=>{setEntrega(k);setFranja("");}} style={segBtn(entrega===k)}>{l}</button>)}
+        {[["oficina","📦 Retiro"],["propio","🚚 Envío"],["carrier","📮 Vía Cargo"]].map(([k,l])=><button key={k} type="button" onClick={()=>{setEntrega(k);setFranja("");}} style={segBtn(entrega===k)}>{l}</button>)}
       </div>
       {entrega==="propio"&&<div style={{marginBottom:12}}><label style={lbl}>Dirección de entrega</label><input value={direccion} onChange={e=>setDireccion(e.target.value)} placeholder="Calle, piso, localidad" style={inp}/></div>}
       {entrega!=="carrier"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 10px"}}>
@@ -6017,7 +6017,7 @@ function EntregasPanel({token,onOpenOp,vista}){
           <div class="pag-foot">ARGENCARGO</div>
         </div>`).join("");
       }).join("");
-      const html=`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas de despacho · Transportista</title><style>
+      const html=`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas de despacho · Vía Cargo</title><style>
         @page{size:100mm 150mm;margin:0}
         *{box-sizing:border-box;margin:0}
         body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#000;margin:0}
@@ -6083,7 +6083,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         ${bloqueCobro}
       </div>`;
     }).join("");
-    const titulo=esCarrier?`Etiquetas de despacho · Transportista · ${aDomicilio?"a domicilio":"a sucursal"}`:"Hoja de ruta · Flete privado";
+    const titulo=esCarrier?`Etiquetas de despacho · Vía Cargo · ${aDomicilio?"a domicilio":"a sucursal"}`:"Hoja de ruta · Flete privado";
     const hoy=new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>${titulo}</title><style>
       @page{size:A4;margin:0}
@@ -6165,7 +6165,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     const lista=Array.isArray(pk)?pk:[];
     const rutaDe=(o)=>{const c=o.clients||{};const loc=[c.city,c.province].filter(Boolean).join(", ");
       const destino=o.delivery_choice==="oficina"?"Belgrano, CABA":o.delivery_choice==="propio"?(o.delivery_address||loc||"Domicilio del cliente"):loc||"Argentina";
-      const modalidad=o.delivery_choice==="propio"?"Envío a domicilio":o.delivery_choice==="carrier"?`Transportista${o.carrier_mode?` · ${o.carrier_mode}`:""}`:o.delivery_choice==="oficina"?"Retiro por oficina":"A coordinar";
+      const modalidad=o.delivery_choice==="propio"?"Envío a domicilio":o.delivery_choice==="carrier"?`Vía Cargo${o.carrier_mode?` · ${o.carrier_mode}`:""}`:o.delivery_choice==="oficina"?"Retiro por oficina":"A coordinar";
       return {origen:o.origin==="USA"?"Estados Unidos":esPkBd(o.origin)?o.origin:"China",destino,modalidad,mercaderia:o.description||""};};
     const docs=ops.map(o=>({op:o,client:o.clients||{},packages:lista.filter(p=>p.operation_id===o.id),entrega:rutaDe(o)}));
     const r=printPackageLabelsMulti(docs);
@@ -6176,17 +6176,18 @@ function EntregasPanel({token,onOpenOp,vista}){
   // Tandas pendientes: todas las coordinadas (cualquier día) que todavía no se imprimieron.
   // Etiquetas, remitos y recibos: todas las que están para entregar (coordinadas o no), salvo las RI
   // que el courier deja directo en el domicilio.
-  const pendImpresion=(campo)=>rows.filter(o=>!o.delivery_completed_at&&!esRiDir(o)&&!o[campo]);
+  // Vía Cargo no lleva remito ni recibo (21/10/2026): solo cuentan sus etiquetas.
+  const pendImpresion=(campo)=>rows.filter(o=>!o.delivery_completed_at&&!esRiDir(o)&&!o[campo]&&!(o.delivery_choice==="carrier"&&campo!=="labels_printed_at"));
   // Remitos y recibos: todas las entregas salvo las que van por transportista (Via Cargo / Andreani).
   const sinCarrier=(ops)=>ops.filter(o=>o.delivery_choice!=="carrier");
 
   // ===== PANEL ENTREGAS v3: pipeline de cards =====
   // Bloques de la agenda (04/10/2026): encabezado con ícono en color, título grande y contador del tono.
-  const TONOS_BLOQUE={warn:"#fbbf24",danger:"#f87171",wait:"#60a5fa"};
-  const Bloque=({titulo,n,hint,children,accion,tone})=>{
+  const TONOS_BLOQUE={warn:"#fbbf24",danger:"#f87171",wait:"#60a5fa",viacargo:VC_ROJO};
+  const Bloque=({titulo,n,hint,children,accion,tone,icono})=>{
     const tc=TONOS_BLOQUE[tone];
     const m=String(titulo).match(/^(\p{Extended_Pictographic}\uFE0F?)\s+(.*)$/u);
-    const ico=m?m[1]:null;const txt=m?m[2]:titulo;
+    const ico=icono||(m?m[1]:null);const txt=m?m[2]:titulo;
     return <div style={{marginBottom:16,borderRadius:18,border:`1px solid ${tc?tc+"45":"rgba(255,255,255,0.07)"}`,background:tc?`linear-gradient(180deg,${tc}14,rgba(255,255,255,0.02) 90px)`:"rgba(255,255,255,0.028)",padding:celu?"14px 10px 10px":"16px 18px 14px"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         {ico&&<span style={{width:38,height:38,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:18,background:tc?`${tc}22`:"rgba(255,255,255,0.06)",border:`1px solid ${tc?tc+"40":"rgba(255,255,255,0.08)"}`}}>{ico}</span>}
@@ -6273,13 +6274,14 @@ function EntregasPanel({token,onOpenOp,vista}){
     const bultos=bultosByOp[o.id]||0;
     const badge=metodoBadgeDe(o);
     const dias=diasDe(o,contexto==="acobrar"||contexto==="hecha");
-    const icono=contexto==="hecha"?"✅":esCarrier?"📮":esEnvio&&contexto!=="acobrar"?"🚚":"📦";
+    const vcVivo=esCarrier&&contexto==="porentregar";
+    const icono=contexto==="hecha"?"✅":vcVivo?<ViaCargoLogo alto={16} style={{padding:"0 5px"}}/>:esCarrier?"📮":esEnvio&&contexto!=="acobrar"?"🚚":"📦";
     const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
     const conRecibo=contexto==="porentregar"||contexto==="acobrar"||contexto==="hecha";
     // Ya entregada (hecha o con saldo): el envío a domicilio ya pasó, sin el azul ni el camioncito.
     const envioVivo=esEnvio&&contexto!=="hecha"&&contexto!=="acobrar";
     const costoEnvio=Number(o.delivery_cost_usd||0);
-    const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
+    const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_ROJO:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
     if(celu){
       const montoTxt=contexto==="hecha"?"✓ Cobrada":pagada?"✓ Pagado":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo);
       const montoColor=contexto==="hecha"||pagada?"#22c55e":contexto==="acobrar"?"#f87171":"#fbbf24";
@@ -6293,8 +6295,8 @@ function EntregasPanel({token,onOpenOp,vista}){
         :[];
       const tel=dc.telefono||o.clients?.whatsapp;
       const chip=(t,c)=><span style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:6,background:`${c}22`,color:c,whiteSpace:"nowrap"}}>{t}</span>;
-      const chips=[diaBadge(o),envioVivo&&chip(`🚚 Envío${o.delivery_zone?` · ${o.delivery_zone}`:""}`,"#60a5fa"),esCarrier&&contexto==="porentregar"&&chip(`📮 ${o.carrier_mode==="domicilio"?"Transportista a domicilio":"Transportista a sucursal"}`,"#c084fc")].filter(Boolean);
-      return <div style={{padding:"13px 14px",borderRadius:14,background:envioVivo?"rgba(96,165,250,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
+      const chips=[diaBadge(o),envioVivo&&chip(`🚚 Envío${o.delivery_zone?` · ${o.delivery_zone}`:""}`,"#60a5fa"),vcVivo&&chip(`Vía Cargo · ${o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}`,VC_ROJO)].filter(Boolean);
+      return <div style={{padding:"13px 14px",borderRadius:14,background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"rgba(228,0,43,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":vcVivo?"rgba(228,0,43,0.3)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
         <div onClick={()=>onOpenOp(o)} style={{display:"flex",gap:10,alignItems:"flex-start",cursor:"pointer"}}>
           <div style={{flex:1,minWidth:0}}>
             {enCliente
@@ -6319,8 +6321,8 @@ function EntregasPanel({token,onOpenOp,vista}){
         {acciones.length>0&&<div style={{display:"flex",gap:7,marginTop:12}}>{acciones}</div>}
       </div>;
     }
-    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
-      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:envioVivo?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
+    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envioVivo?"rgba(96,165,250,0.07)":vcVivo?"rgba(228,0,43,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.35)":vcVivo?"rgba(228,0,43,0.32)":contexto==="acobrar"?"rgba(248,113,113,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?VC_ROJO:contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)"}`}}>
+      <div style={{width:vcVivo?"auto":36,minWidth:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,padding:vcVivo?"0 4px":0,background:envioVivo?"rgba(96,165,250,0.12)":vcVivo?"rgba(228,0,43,0.14)":"rgba(184,149,106,0.12)",border:`1px solid ${envioVivo?"rgba(96,165,250,0.3)":vcVivo?"rgba(228,0,43,0.4)":"rgba(184,149,106,0.3)"}`}}>{icono}</div>
       <div style={{flex:"1 1 210px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
         <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{enCliente?<span style={{fontFamily:"monospace",color:"#E8C99B"}}>{o.operation_code}</span>:<>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span></>}{diaBadge(o)}{envioVivo&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
@@ -6331,7 +6333,7 @@ function EntregasPanel({token,onOpenOp,vista}){
           {contexto==="acobrar"&&<span> · entregada hace <b style={{color:dias>3?"#f87171":"inherit"}}>{dias} d</b></span>}
           {contexto==="hecha"&&o.delivery_completed_at&&<span> · entregada el {new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
           {envioVivo&&o.delivery_address&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"rgba(147,197,253,0.9)",marginTop:2}}>📍 {o.delivery_address}{dc.telefono?` · 📞 ${dc.telefono}`:""}</span>}
-          {esCarrier&&contexto==="porentregar"&&<span style={{display:"block"}}>📮 {o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}{dc.nombre?` · recibe ${dc.nombre} ${dc.apellido||""}`:""}</span>}
+          {vcVivo&&<span style={{display:"block",color:"rgba(255,255,255,0.6)"}}><b style={{color:"#ff6b81"}}>Vía Cargo</b> · {o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}{dc.nombre?` · recibe ${dc.nombre} ${dc.apellido||""}`:""}</span>}
         </p>
       </div>
       <div style={{textAlign:"right",flexShrink:0}}>
@@ -6345,8 +6347,8 @@ function EntregasPanel({token,onOpenOp,vista}){
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
         {/* Entregadas con saldo: ya no se imprime nada, solo cobrar. */}
         {contexto!=="acobrar"&&printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
-        {contexto!=="acobrar"&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
-        {contexto!=="acobrar"&&conRecibo&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
+        {contexto!=="acobrar"&&!esCarrier&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
+        {contexto!=="acobrar"&&conRecibo&&!esCarrier&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
         {contexto==="aviso"&&<>
           <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
@@ -6533,10 +6535,16 @@ function EntregasPanel({token,onOpenOp,vista}){
         {sinFecha.length>0&&<Bloque titulo="🗓 Coordinadas sin día elegido" n={sinFecha.length}>
           {renderConGrupos(sinFecha,"porentregar")}
         </Bloque>}
-        {carriers.length>0&&<Bloque titulo="📮 Transportista · para despachar" n={carriers.length}
-          accion={!celu&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas("carrier_domicilio",carriers)}>🖨 Etiquetas</Btn>}>
-          {renderConGrupos(carriers,"porentregar")}
-        </Bloque>}
+        {carriers.length>0&&(()=>{
+          // Vía Cargo (21/10/2026): primero lo pagado (se despacha), aparte lo que todavía debe (no se despacha).
+          const vcPagadas=carriers.filter(o=>saldoFor(o)<=0.005),vcDeben=carriers.filter(o=>saldoFor(o)>0.005);
+          const subT=(txt,c,n,hint)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:800,color:c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span><span style={{fontSize:11,fontWeight:800,padding:"1px 7px",borderRadius:999,background:`${c}22`,color:c}}>{n}</span>{hint&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{hint}</span>}</div>;
+          return <Bloque titulo="Vía Cargo · para despachar" n={carriers.length} tone="viacargo" icono={<ViaCargoLogo alto={22}/>} hint={vcDeben.length?`${vcPagadas.length} para despachar · ${vcDeben.length} esperando el pago`:"Todas pagadas: se despachan"}
+            accion={!celu&&vcPagadas.length>0&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas("carrier_domicilio",vcPagadas)}>🖨 Etiquetas ({vcPagadas.length})</Btn>}>
+            {vcPagadas.length>0&&<>{subT("✓ Pagadas · despachar","#22c55e",vcPagadas.length)}{renderConGrupos(vcPagadas,"porentregar")}</>}
+            {vcDeben.length>0&&<>{subT("⏳ Pendientes de pago · no despachar","#fbbf24",vcDeben.length,`deben ${usd(vcDeben.reduce((a,o)=>a+saldoFor(o),0))} en total`)}{renderConGrupos(vcDeben,"porentregar")}</>}
+            {vcPagadas.length===0&&<p style={{color:"rgba(255,255,255,0.4)",fontSize:12.5,margin:"4px 0 0"}}>Nada para despachar hasta que paguen.</p>}
+          </Bloque>;})()}
 
         <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"22px 0 18px"}}/>
         {sinAviso.length>0&&<Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="La carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
@@ -6774,7 +6782,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
       <div style={panel}>
         <p style={rotulo}>Cómo se entrega</p>
         <div style={{display:"flex",gap:6,flexWrap:celu?"nowrap":"wrap"}}>
-          {[["oficina",celu?"Retiro":"Retira por oficina"],["propio",celu?"Envío":"Envío a domicilio"],["carrier",celu?"Transporte":"Transportista"]].map(([k,l])=><button key={k} type="button" disabled={guardando} onClick={()=>cambiarEntrega(k)} style={seg(op.delivery_choice===k)}>{l}</button>)}
+          {[["oficina",celu?"Retiro":"Retira por oficina"],["propio",celu?"Envío":"Envío a domicilio"],["carrier","Vía Cargo"]].map(([k,l])=><button key={k} type="button" disabled={guardando} onClick={()=>cambiarEntrega(k)} style={seg(op.delivery_choice===k)}>{l}</button>)}
         </div>
         {!op.delivery_choice&&<p style={sub}>El cliente todavía no eligió. Podés elegirlo vos.</p>}
         {op.delivery_choice==="propio"&&<div style={{marginTop:12}}>
@@ -17069,6 +17077,15 @@ const mtEsCamino=(s)=>!s.operation_id&&!s.container_id&&!esPlaceholder(s)&&s.sta
 
 // Día de llegada al depósito marcado por Argencargo: sugerencias de la última semana u otra fecha
 // con el calendario del sistema. El depósito después lo confirma desde su planilla.
+// Envíos por transportista = Vía Cargo (21/10/2026). Logo tipográfico con los colores de la marca
+// (rojo y azul sobre blanco): no hay imagen oficial en el repo.
+const VC_ROJO="#E4002B",VC_AZUL="#1D3F8E";
+function ViaCargoLogo({alto=22,style={}}){
+  return <span className="ac-noinv" title="Vía Cargo" style={{display:"inline-flex",alignItems:"center",height:alto,padding:`0 ${Math.round(alto*0.38)}px`,borderRadius:Math.round(alto*0.28),background:"#fff",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:900,fontStyle:"italic",letterSpacing:"-0.03em",fontSize:Math.round(alto*0.56),lineHeight:1,whiteSpace:"nowrap",boxShadow:"0 1px 3px rgba(0,0,0,0.35)",...style}}>
+    <span style={{color:VC_ROJO}}>Vía</span><span style={{color:VC_AZUL}}>Cargo</span>
+  </span>;
+}
+
 function ModalLlegadaAdmin({sh,cliente,onCancel,onOk}){
   const iso=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const hoy=iso(new Date());
