@@ -17063,7 +17063,9 @@ const MT_VISTOS_KEY="mt_camino_vistos";
 const mtLeerVistos=()=>{try{const v=localStorage.getItem(MT_VISTOS_KEY);return v?new Set(JSON.parse(v)):null;}catch{return null;}};
 const mtGuardarVistos=(set)=>{try{localStorage.setItem(MT_VISTOS_KEY,JSON.stringify([...set]));window.dispatchEvent(new Event("mt_vistos"));}catch{}};
 const mtMarcarVisto=(id)=>{if(!id)return;const v=mtLeerVistos()||new Set();v.add(id);mtGuardarVistos(v);};
-const mtEsCamino=(s)=>!s.operation_id&&!s.container_id&&!esPlaceholder(s)&&(s.status==="proveedor"||(s.status==="en_deposito"&&s.llegada_marcada_por==="admin"));
+// 21/10/2026: lo que Bautista marca como llegado pasa directo a En depósito (antes esperaba la
+// confirmación del depósito). El depósito igual lo ve como pendiente en su planilla y puede confirmar el tipo.
+const mtEsCamino=(s)=>!s.operation_id&&!s.container_id&&!esPlaceholder(s)&&s.status==="proveedor";
 
 // Día de llegada al depósito marcado por Argencargo: sugerencias de la última semana u otra fecha
 // con el calendario del sistema. El depósito después lo confirma desde su planilla.
@@ -17075,9 +17077,16 @@ function ModalLlegadaAdmin({sh,cliente,onCancel,onOk}){
   const [fecha,setFecha]=useState(inicial);
   const [guardando,setGuardando]=useState(false);
   const [err,setErr]=useState("");
+  // Fotos del bulto que mandó el depósito: archivo, cámara del celu, ⌘V o arrastrar.
+  const [files,setFiles]=useState([]);const [drag,setDrag]=useState(false);
+  const inputRef=useRef(null);
+  const previews=useMemo(()=>files.map(f=>({f,u:URL.createObjectURL(f)})),[files]);
+  useEffect(()=>()=>{previews.forEach(p=>URL.revokeObjectURL(p.u));},[previews]);
+  const agregar=(lista)=>{const ok=[...(lista||[])].filter(esFotoArchivo);if(!ok.length){setErr("Ese archivo no es una foto");return;}setErr("");setFiles(p=>[...p,...ok]);};
+  useEffect(()=>{const onPaste=(e)=>{const fs=[...(e.clipboardData?.files||[])].filter(f=>f.type?.startsWith("image/"));if(fs.length){e.preventDefault();e.stopPropagation();agregar(fs);}};window.addEventListener("paste",onPaste,true);return()=>window.removeEventListener("paste",onPaste,true);},[]);
   const nombre=(v,i)=>i===0?"Hoy":i===1?"Ayer":new Date(v+"T12:00:00").toLocaleDateString("es-AR",{weekday:"short"});
   const ddmm=(v)=>{const p=v.split("-");return `${p[2]}/${p[1]}`;};
-  const ok=async()=>{if(!fecha){setErr("Elegí el día");return;}if(fecha>hoy){setErr("No puede ser un día futuro");return;}setGuardando(true);await onOk(fecha);setGuardando(false);};
+  const ok=async()=>{if(!fecha){setErr("Elegí el día");return;}if(fecha>hoy){setErr("No puede ser un día futuro");return;}setGuardando(true);const r=await onOk(fecha,files);setGuardando(false);if(r===false)setErr("No se pudo guardar");};
   return <div onClick={onCancel} style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(5px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:470,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.35)",borderRadius:16,padding:"20px 22px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
       <p style={{margin:0,fontSize:11.5,fontWeight:800,color:IC,letterSpacing:".08em",textTransform:"uppercase"}}>Llegó al depósito</p>
@@ -17091,11 +17100,23 @@ function ModalLlegadaAdmin({sh,cliente,onCancel,onOk}){
         </button>;})}
       </div>
       <Inp label="Otro día" type="date" value={fecha} onChange={v=>{setFecha(v||"");setErr("");}}/>
-      <p style={{margin:"-4px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Queda en Esperando confirmación hasta que el depósito lo confirme desde su planilla.</p>
+      <p style={{margin:"6px 0 8px",fontSize:13,fontWeight:800,color:"#fff"}}>Foto del bulto en el depósito</p>
+      <div onClick={()=>inputRef.current?.click()} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);agregar(e.dataTransfer?.files);}} style={{padding:previews.length?"10px":"16px 12px",borderRadius:12,border:`1.5px dashed ${drag?IC:"rgba(184,149,106,0.45)"}`,background:drag?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",justifyContent:previews.length?"flex-start":"center"}}>
+        {previews.map((p,i)=><div key={p.u} style={{position:"relative"}}>
+          <div style={{width:70,height:70,borderRadius:9,backgroundImage:`url(${p.u})`,backgroundSize:"cover",backgroundPosition:"center",border:`1px solid ${i===0?IC:"rgba(255,255,255,0.15)"}`}}/>
+          {i===0&&<span style={{position:"absolute",left:4,bottom:4,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:999,background:IC,color:"#0A1628"}}>Principal</span>}
+          <button type="button" onClick={e=>{e.stopPropagation();setFiles(fs=>fs.filter((_,j)=>j!==i));}} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",lineHeight:"20px",padding:0}}>✕</button>
+        </div>)}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:IC,fontSize:12,fontWeight:700,minWidth:previews.length?70:0,textAlign:"center"}}>
+          <span style={{fontSize:22}}>📷</span>{previews.length?"Otra":"Tocá para subir · sacá una foto · pegá con ⌘V · arrastrá"}
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" multiple onChange={e=>{agregar(e.target.files);e.target.value="";}} style={{display:"none"}}/>
+      <p style={{margin:"8px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>La foto del depósito queda como principal; las que ya tenía la carga pasan atrás. La carga pasa a En depósito.</p>
       {err&&<p style={{margin:"10px 0 0",fontSize:12.5,color:"#f87171",fontWeight:700}}>✕ {err}</p>}
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
         <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
-        <Btn onClick={ok} disabled={guardando}>{guardando?"Guardando…":`✓ Llegó el ${fecha?ddmm(fecha):"—"}`}</Btn>
+        <Btn onClick={ok} disabled={guardando}>{guardando?(files.length?"Subiendo fotos…":"Guardando…"):`✓ Llegó el ${fecha?ddmm(fecha):"—"}${files.length?` · ${files.length} foto${files.length!==1?"s":""}`:""}`}</Btn>
       </div>
     </div>
   </div>;
@@ -17828,9 +17849,18 @@ function MaritimePanel({token,allClients=[]}){
     document.addEventListener("visibilitychange",onVis);window.addEventListener("focus",onVis);
     return()=>{clearInterval(iv);document.removeEventListener("visibilitychange",onVis);window.removeEventListener("focus",onVis);};
   },[token]);
-  const marcarLlegada=async(sh,fecha)=>{
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{status:"en_deposito",received_at:fecha,shipped_to_ar_at:null,llegada_marcada_por:"admin",llegada_marcada_at:new Date().toISOString(),updated_at:new Date().toISOString()}});
-    setLlegadaMt(null);flash(`Llegada marcada el ${dd(fecha)} · falta que el depósito la confirme`);load(true);
+  // Llegó al depósito (21/10/2026): sube las fotos del bulto que mandó el depósito, las pone como
+  // principales (las viejas quedan atrás) y la carga pasa directo a En depósito.
+  const marcarLlegada=async(sh,fecha,files=[])=>{
+    const urls=[];
+    for(const f of files){const u=await subirFotoMaritima(token,f);if(u)urls.push(u);}
+    if(files.length&&!urls.length){toast("No se pudo subir la foto. Probá de nuevo.","error");return false;}
+    const viejas=(sh.fotos||[]).filter(u=>!urls.includes(u));
+    const body={status:"en_deposito",received_at:fecha,shipped_to_ar_at:null,llegada_marcada_por:"admin",llegada_marcada_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+    if(urls.length)body.fotos=[...urls,...viejas];
+    const r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body});
+    if(r&&!Array.isArray(r)&&r.code){toast("No se pudo marcar la llegada","error");return false;}
+    setLlegadaMt(null);flash(`📦 En depósito · llegó el ${dd(fecha)}${urls.length?` · ${urls.length} foto${urls.length!==1?"s":""} del bulto`:""}`);load(true);return true;
   };
   useEffect(()=>{
     const act=whs.filter(w=>!w.archived);if(!act.length)return;
@@ -17856,7 +17886,6 @@ function MaritimePanel({token,allClients=[]}){
     if(s.container_id&&activosIds.has(s.container_id))return "contenedores";
     if(esPlaceholder(s))return "esperando";
     if(s.status==="proveedor")return "camino";
-    if(s.status==="en_deposito"&&s.llegada_marcada_por==="admin")return "camino"; // marcaste que llegó: falta el depósito
     return "deposito";
   };
   const depActivos=whs.filter(w=>!w.archived).sort((x,y)=>(Number(x.sort_order)||99)-(Number(y.sort_order)||99));
@@ -18020,7 +18049,7 @@ function MaritimePanel({token,allClients=[]}){
               <button onClick={()=>advanceShipment(sh,"proveedor")} title="Deshacer: todavía no llegó" style={btnGhost}>↶</button>
             </>
             :<>
-              <button onClick={()=>setLlegadaMt(sh)} title="Marcar que llegó y elegir el día (el depósito lo confirma)" style={btnMini("#22c55e")}>✓ Llegó</button>
+              <button onClick={()=>setLlegadaMt(sh)} title="Llegó al depósito: elegí el día y subí la foto del bulto" style={btnMini("#22c55e")}>✓ Llegó</button>
               <button onClick={()=>volverAEsperando(sh)} title="Vuelve a Esperando proveedor" style={btnGhost}>↶</button>
             </>)}
           {etapa==="deposito"&&<button onClick={()=>advanceShipment(sh,"proveedor")} title="Volver a En camino al depósito" style={btnGhost}>↶ En camino</button>}
@@ -18118,7 +18147,7 @@ function MaritimePanel({token,allClients=[]}){
 
   const TABS=[
     {k:"esperando",ic:"⏳",l:"Esperando proveedor",c:"#a78bfa",lista:etapas.esperando,h:"Pedidos sin tracking. El depósito todavía no los ve."},
-    {k:"camino",ic:"🕓",l:"Esperando confirmación",c:"#93c5fd",lista:etapas.camino,h:"Con tracking, esperando que el depósito confirme que llegó. Si vos marcás que llegó, queda acá hasta que el depósito lo confirme."},
+    {k:"camino",ic:"🕓",l:"Esperando confirmación",c:"#93c5fd",lista:etapas.camino,h:"Con tracking, esperando que llegue al depósito. Cuando llega, tocá ✓ Llegó y subí la foto del bulto: pasa a En depósito."},
     {k:"deposito",ic:"📦",l:"En depósito",c:"#4ade80",lista:etapas.deposito,h:"Ya llegaron. Tildalas para subirlas a un contenedor o crear la operación."},
     {k:"contenedores",ic:"🚢",l:"Contenedores",c:IC,lista:etapas.contenedores,h:"Contenedores en viaje a Buenos Aires."},
     {k:"historial",ic:"⚓",l:"Historial",c:"rgba(255,255,255,0.6)",lista:null,h:"Contenedores arribados."},
@@ -18402,7 +18431,7 @@ function MaritimePanel({token,allClients=[]}){
       </>);
     })()}
 
-    {llegadaMt&&<ModalLlegadaAdmin sh={llegadaMt} cliente={cliMap[llegadaMt.client_id]} onCancel={()=>setLlegadaMt(null)} onOk={(f)=>marcarLlegada(llegadaMt,f)}/>}
+    {llegadaMt&&<ModalLlegadaAdmin sh={llegadaMt} cliente={cliMap[llegadaMt.client_id]} onCancel={()=>setLlegadaMt(null)} onOk={(f,files)=>marcarLlegada(llegadaMt,f,files)}/>}
 
     {/* Foto en grande */}
     {fotoGrande&&<div onClick={()=>setFotoGrande(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(5,10,20,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
