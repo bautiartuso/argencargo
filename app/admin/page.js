@@ -183,7 +183,7 @@ function Sel({label,value,onChange,options,ph}){
   useEffect(()=>{if(!abierto)return;const cerrar=(e)=>{if(e&&e.type==="scroll"&&listaRef.current&&(e.target===listaRef.current||listaRef.current.contains(e.target)))return;setAbierto(false);};window.addEventListener("scroll",cerrar,true);window.addEventListener("resize",cerrar);return()=>{window.removeEventListener("scroll",cerrar,true);window.removeEventListener("resize",cerrar);};},[abierto]);
   return <div style={{marginBottom:12}}>
     {label&&<label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>}
-    <button ref={ref} type="button" onClick={()=>abierto?setAbierto(false):abrir()} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:`1px solid ${abierto?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.04)",color:actual&&String(actual.value)!==""?"#fff":"rgba(255,255,255,0.45)",outline:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",boxShadow:abierto?"0 0 0 3px rgba(184,149,106,0.18)":"none",transition:"border-color 160ms, box-shadow 160ms"}}>
+    <button ref={ref} type="button" data-campo="" onClick={()=>abierto?setAbierto(false):abrir()} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:`1px solid ${abierto?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.04)",color:actual&&String(actual.value)!==""?"#fff":"rgba(255,255,255,0.45)",outline:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",boxShadow:abierto?"0 0 0 3px rgba(184,149,106,0.18)":"none",transition:"border-color 160ms, box-shadow 160ms"}}>
       <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{actual?actual.label:(ph||"Elegir…")}</span>
       <svg width="12" height="12" viewBox="0 0 12 12" style={{flexShrink:0,transform:abierto?"rotate(180deg)":"none",transition:"transform 160ms",opacity:0.6}}><path d="M2.5 4.5 6 8l3.5-3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </button>
@@ -18516,7 +18516,7 @@ function MaritimePanel({token,allClients=[]}){
 
     {/* Form nuevo / editar */}
     {showNew&&<div onClick={()=>{setShowNew(false);setEditingId(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:celu?"10px 6px":"40px 20px",overflowY:"auto"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:celu?"14px 12px":"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:1180,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:celu?"14px 12px":"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
         <MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):(whSel?{warehouse_id:whSel.id,warehouse:whSel.name}:null)} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} warehouses={whs} shipments={shipments} containers={containers} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>
       </div>
     </div>}
@@ -20966,163 +20966,179 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const puedeCont=isEdit&&!awaiting&&editing?.status!=="proveedor";
   let paso=0;const np=()=>++paso;
 
+  // ── Vista (21/10/2026): dos columnas en compu (pedido a la izquierda, bultos y fotos a la derecha),
+  // cliente con buscador y pie fijo con el resumen. La lógica de guardado no cambió.
+  const qCli=cliQ.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const cliRes=qCli?allClients.filter(c=>`${c.client_code||""} ${c.first_name||""} ${c.last_name||""} ${c.whatsapp||""}`.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").includes(qCli)).slice(0,8):[];
+  const elegirCli=(c)=>{setClientId(c.id);setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());setCliQ("");};
+  const valorTot=its.reduce((a,it)=>a+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);
+  const bultosTot=pkgs.reduce((a,p)=>a+((p.length_cm||p.width_cm||p.height_cm||Number(p.quantity)>1)?Math.max(1,Number(p.quantity)||1):0),0);
+  const sinMedidas=pkgs.filter(p=>(p.length_cm||p.width_cm||p.height_cm||Number(p.quantity)>1)&&!(p.length_cm&&p.width_cm&&p.height_cm)).reduce((a,p)=>a+Math.max(1,Number(p.quantity)||1),0);
+  const costoDep=(()=>{if(!verCostos||awaiting||!(cbmTotal>0)||!selectedWh)return null;const k=tarifaTipo(selectedWh,tipo);let tot=cbmTotal*k;const d=Number(selectedWh.descuento_pct)||0;if(tipo&&d>0&&cbmTotal>(Number(selectedWh.descuento_min_cbm)||0))tot*=1-d/100;return tot;})();
+  const usd2=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const CARD={padding:"16px 18px",background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.09)",borderRadius:16};
+  const tit=(t,sub,der)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12}}>
+    <div><p style={{margin:0,fontSize:14.5,fontWeight:800,color:"#fff"}}>{t}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{sub}</p>}</div>{der}
+  </div>;
+  const inS={width:"100%",height:40,padding:"0 12px",fontSize:13.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(0,0,0,0.22)",color:"#fff",outline:"none",fontFamily:"inherit"};
+  const colH=(t,al)=><span style={{fontSize:10.5,fontWeight:800,letterSpacing:".07em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",textAlign:al||"left"}}>{t}</span>;
+  const numIn=(v,on,ph)=><input type="text" inputMode="decimal" value={v} onChange={e=>{const x=e.target.value.replace(",",".");if(x===""||/^\d*\.?\d*$/.test(x))on(x);}} placeholder={ph||""} style={{...inS,textAlign:"center",fontVariantNumeric:"tabular-nums"}}/>;
+  const quitar=(on)=><button type="button" onClick={on} title="Quitar" style={{width:34,height:40,borderRadius:10,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.06)",color:"#f87171",cursor:"pointer",fontSize:13}}>✕</button>;
+  const ancho=celuF?"1fr":"minmax(0,1.12fr) minmax(0,1fr)";
+
   return <div>
-    <style>{`.mt-mf-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.mt-mf-it{display:grid;grid-template-columns:2.5fr 0.8fr 1fr auto;gap:8px;margin-bottom:6px;align-items:end}.mt-mf-pk{display:grid;grid-template-columns:0.7fr 1fr 1fr 1fr 0.9fr auto;gap:8px;margin-bottom:6px;align-items:end}@media(max-width:767px){.mt-mf-2col{grid-template-columns:1fr}.mt-mf-it{grid-template-columns:1fr 1fr auto}.mt-mf-desc{grid-column:1/-1}.mt-mf-pk{grid-template-columns:1fr 1fr 1fr}}`}</style>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:6}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:14}}>
       <div>
         <p style={{margin:0,fontSize:11.5,fontWeight:800,color:IC,letterSpacing:".08em",textTransform:"uppercase"}}>Marítimos</p>
-        <h3 style={{fontSize:21,fontWeight:900,color:"#fff",margin:"2px 0 0"}}>{isEdit?`Editar pedido ${editing?.shipment_code||""}`:"Nuevo pedido marítimo"}</h3>
+        <h3 style={{fontSize:22,fontWeight:900,color:"#fff",margin:"2px 0 0"}}>{isEdit?`Editar pedido ${editing?.shipment_code||""}`:"Nuevo pedido marítimo"}</h3>
       </div>
-      <button type="button" onClick={onCancel} aria-label="Cerrar" style={{width:34,height:34,borderRadius:999,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:16,cursor:"pointer"}}>✕</button>
+      <button type="button" onClick={onCancel} aria-label="Cerrar" style={{width:36,height:36,borderRadius:999,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",fontSize:15,cursor:"pointer"}}>✕</button>
     </div>
 
-    {/* Depósito: lista propia del sistema, con rótulo y tarifa */}
-    <div style={SECC}>
-      {secT(np(),"Depósito",selectedWh?.rotulo?`Rótulo: ${selectedWh.rotulo}`:"Dónde entrega el proveedor")}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8}}>
-        {whOrden.map(w=>{const on=w.id===warehouseId;const tb=tarifaTipo(w,"blanca"),tn=tarifaTipo(w,"negra");return <button key={w.id} type="button" onClick={()=>elegirWh(w.id)} style={{textAlign:"left",padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.1)",background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.03)",color:"#fff"}}>
-          <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13.5,fontWeight:800}}>{w.origin==="usa"?"🇺🇸":"🇨🇳"} {w.name}{on&&<span style={{marginLeft:"auto",color:IC}}>✓</span>}</span>
-          {verCostos&&(tb||tn)>0&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.55)",marginTop:4}}>{tb!==tn?`Negra ${fmtT(tn)} · Blanca ${fmtT(tb)}`:`${fmtT(tn)}`} por m³{Number(w.descuento_pct)>0?` · ${Number(w.descuento_pct)}% +${Number(w.descuento_min_cbm)||0} m³`:""}</span>}
-        </button>;})}
-      </div>
+    {/* Depósito: fichas en una fila */}
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+      {whOrden.map(w=>{const on=w.id===warehouseId;const tb=tarifaTipo(w,"blanca"),tn=tarifaTipo(w,"negra");return <button key={w.id} type="button" onClick={()=>elegirWh(w.id)} style={{flex:"1 1 180px",textAlign:"left",padding:"10px 14px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.1)",background:on?"linear-gradient(135deg,rgba(184,149,106,0.2),rgba(184,149,106,0.06))":"rgba(255,255,255,0.03)",color:"#fff",boxShadow:on?"0 6px 18px rgba(184,149,106,0.15)":"none"}}>
+        <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13.5,fontWeight:800}}>{w.origin==="usa"?"🇺🇸":"🇨🇳"} <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{w.name}</span>{on&&<span style={{marginLeft:"auto",color:IC}}>✓</span>}</span>
+        {verCostos&&(tb||tn)>0&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3}}>{tb!==tn?`Negra ${fmtT(tn)} · Blanca ${fmtT(tb)}`:fmtT(tn)} /m³</span>}
+      </button>;})}
     </div>
 
-    <div style={SECC}>
-      {secT(np(),"Cliente",null)}
-    <div className="mt-mf-2col">
-      <div style={{marginBottom:12,position:"relative"}}>
-        <label style={LBL}>Cliente</label>
-        <button type="button" onClick={()=>{setCliOpen(o=>!o);setCliQ("");}} style={{width:"100%",padding:"9px 12px",fontSize:13,textAlign:"left",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:cliSel?"#fff":"rgba(255,255,255,0.4)",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cliSel?`${cliSel.client_code||""} - ${cliSel.first_name||""} ${cliSel.last_name||""}`.trim():"Cliente..."}</span>
-          <span style={{color:"rgba(255,255,255,0.4)",flexShrink:0}}>▾</span>
-        </button>
-        {cliOpen&&<div style={{position:"absolute",zIndex:60,top:"100%",left:0,right:0,marginTop:4,background:"#0F1A2D",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.6)",overflow:"hidden"}}>
-          <div style={{padding:8}}>
-            <input autoFocus value={cliQ} onChange={e=>setCliQ(e.target.value)} placeholder="Buscar..." style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(163,230,53,0.5)",borderRadius:9,background:"rgba(0,0,0,0.3)",color:"#fff",outline:"none"}}/>
+    <div style={{display:"grid",gridTemplateColumns:ancho,gap:14,alignItems:"start"}}>
+      {/* ── Izquierda: quién, seguimiento y mercadería ── */}
+      <div style={{display:"flex",flexDirection:"column",gap:14,minWidth:0}}>
+        <div style={CARD}>
+          {tit("Cliente",selectedWh?.rotulo?`Rótulo del depósito: ${selectedWh.rotulo}`:null)}
+          {cliSel
+            ?<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,background:"rgba(184,149,106,0.1)",border:`1px solid ${GOLD}66`}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13.5,fontWeight:800,color:GOLD_LIGHT}}>{cliSel.client_code}</span>
+              <span style={{flex:1,minWidth:0,fontSize:14.5,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cliSel.first_name} {cliSel.last_name}</span>
+              <button type="button" onClick={()=>{setClientId("");setCliQ("");}} style={{height:32,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cambiar</button>
+            </div>
+            :<>
+              <input value={cliQ} onChange={e=>setCliQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&cliRes.length>0){e.preventDefault();elegirCli(cliRes[0]);}}} placeholder="Buscar cliente por nombre, código o WhatsApp…" style={{...inS,height:42,border:`1px solid ${cliQ?GOLD:"rgba(255,255,255,0.12)"}`}}/>
+              {cliRes.length>0&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:2,maxHeight:240,overflowY:"auto"}}>
+                {cliRes.map(c=><button key={c.id} type="button" onClick={()=>elegirCli(c)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,border:"none",background:"transparent",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                  <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,fontWeight:800,color:GOLD_LIGHT,minWidth:58}}>{c.client_code}</span><span style={{fontSize:13.5,fontWeight:600}}>{c.first_name} {c.last_name}</span>
+                </button>)}
+              </div>}
+              {cliQ.trim()&&cliRes.length===0&&<p style={{margin:"8px 2px 0",fontSize:12,color:"rgba(255,255,255,0.45)"}}>Ningún cliente coincide.</p>}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10}}>
+                <span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>📦 Sin identificar:</span>
+                <input value={clientName} onChange={e=>setClientName(e.target.value)} placeholder="nombre en el bulto (opcional)" style={{...inS,height:36,fontSize:13}}/>
+              </div>
+            </>}
+        </div>
+
+        {puedeAwaiting&&<button type="button" onClick={()=>{const v=!awaiting;setAwaiting(v);if(v){setReceivedAt("");setContainerId("");}}} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"11px 14px",borderRadius:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:`1px solid ${awaiting?"rgba(167,139,250,0.7)":"rgba(255,255,255,0.1)"}`,background:awaiting?"rgba(167,139,250,0.12)":"rgba(255,255,255,0.025)",color:"#fff"}}>
+          <span style={{fontSize:18}}>⏳</span>
+          <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:800}}>El proveedor todavía no despachó</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.55)",marginTop:1}}>{awaiting?"Queda en Esperando proveedor. El tracking lo sumás cuando despache.":"Prendelo si todavía no hay tracking."}</span></span>
+          <span style={{width:44,height:26,borderRadius:999,background:awaiting?"#a78bfa":"rgba(255,255,255,0.15)",position:"relative",flexShrink:0,transition:"background .15s"}}><span style={{position:"absolute",top:3,left:awaiting?21:3,width:20,height:20,borderRadius:999,background:"#fff",transition:"left .15s"}}/></span>
+        </button>}
+
+        {!awaiting&&<div style={CARD}>
+          {tit("Seguimiento y tipo","El depósito lo identifica por el tracking y confirma el tipo al recibirlo")}
+          <div style={{display:"grid",gridTemplateColumns:celuF?"1fr":"minmax(0,1.2fr) minmax(0,1fr)",gap:10,alignItems:"start"}}>
+            <div>
+              <input value={trackingNumber} onChange={e=>setTrackingNumber(e.target.value)} placeholder="Código de seguimiento (SF… / KY… / YT…)" style={{...inS,height:44,fontFamily:"'JetBrains Mono',monospace",letterSpacing:".02em"}}/>
+              {!trackingNumber.trim()&&<p style={{fontSize:11,color:"#fbbf24",margin:"6px 2px 0"}}>Sin tracking el depósito no puede identificar la carga.</p>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=tipo===k;const tar=tarifaTipo(selectedWh,k);return <button key={k} type="button" onClick={()=>setTipo(on?"":k)} style={{height:44,padding:"0 12px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:k==="negra"?(on?"#05080f":"rgba(0,0,0,0.3)"):(on?"#f8fafc":"rgba(255,255,255,0.06)"),color:k==="blanca"&&on?"#0A1628":"#fff",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                <span style={{fontSize:13,fontWeight:800}}>{l}</span>
+                {verCostos&&tar>0&&<span style={{fontSize:10.5,opacity:0.65}}>{fmtT(tar)} /m³</span>}
+              </button>;})}
+            </div>
           </div>
-          <div style={{maxHeight:260,overflowY:"auto"}}>
-            <div onClick={()=>{setClientId("");setCliOpen(false);}} style={{padding:"9px 14px",fontSize:13,fontWeight:700,color:"#60a5fa",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>📦 Sin identificar</div>
-            {cliFiltrados.map(c=><div key={c.id} onClick={()=>{setClientId(c.id);setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());setCliOpen(false);}} style={{padding:"9px 14px",fontSize:13,color:"rgba(255,255,255,0.85)",cursor:"pointer",background:c.id===clientId?"rgba(184,149,106,0.12)":"transparent"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=c.id===clientId?"rgba(184,149,106,0.12)":"transparent";}}><span style={{fontFamily:"monospace",fontWeight:700,color:GOLD_LIGHT}}>{c.client_code||"—"}</span> - {c.first_name} {c.last_name}</div>)}
-            {cliFiltrados.length===0&&<p style={{padding:"12px 14px",fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic",margin:0}}>Sin resultados para "{cliQ}"</p>}
+          {editing?.tipo_confirmado_at&&<p style={{fontSize:11,color:editing?.tipo_corregido?"#fb923c":"#4ade80",margin:"8px 0 0"}}>{editing?.tipo_corregido?"✎ El depósito lo corrigió":"✓ El depósito lo confirmó"}{(editing?.mercaderia_tipo||"")!==tipo?" · si lo cambiás vuelve a quedar sin confirmar":""}</p>}
+        </div>}
+
+        <div style={CARD}>
+          {tit("Mercadería","Cargá la factura y se completa sola, o a mano",<div style={{display:"flex",gap:8}}>
+            <button type="button" disabled={leyendoFactura} onClick={()=>facturaInputRef.current?.click()} style={{...btnMas,background:"rgba(96,165,250,0.12)",color:"#93c5fd",borderColor:"rgba(96,165,250,0.4)",opacity:leyendoFactura?0.6:1}}>{leyendoFactura?"⏳ Leyendo…":"📄 Factura"}</button>
+            <button type="button" onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={btnMas}>+ Producto</button>
+          </div>)}
+          <input ref={facturaInputRef} type="file" accept="application/pdf,image/*" onChange={e=>{const f=e.target.files?.[0];e.target.value="";cargarFactura(f);}} style={{display:"none"}}/>
+          {facturaUrl&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"7px 12px",borderRadius:10,background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)"}}>
+            <a href={facturaUrl} target="_blank" rel="noopener" style={{fontSize:12.5,fontWeight:800,color:"#93c5fd",textDecoration:"none"}}>📄 Ver factura</a>
+            <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>guardada con el pedido</span>
+            <button type="button" onClick={()=>setFacturaUrl("")} title="Quitar la factura" style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14}}>✕</button>
+          </div>}
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,2.6fr) 70px 100px 34px",gap:8,marginBottom:6}}>{colH("Producto")}{colH("Cant.","center")}{colH("USD c/u","center")}<span/></div>
+          {its.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"minmax(0,2.6fr) 70px 100px 34px",gap:8,marginBottom:6}}>
+            <input value={it.description} onChange={e=>{const v=e.target.value;setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x));}} placeholder="Descripción" style={inS}/>
+            {numIn(it.quantity,v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x)),"1")}
+            {numIn(it.unit_price_usd,v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x)),"0,00")}
+            {quitar(()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):[{description:"",quantity:1,unit_price_usd:""}]))}
+          </div>)}
+          {valorTot>0&&<p style={{margin:"8px 0 0",textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>Valor de la mercadería <b style={{color:"#4ade80",fontSize:14.5}}>{usd2(valorTot)}</b></p>}
+        </div>
+      </div>
+
+      {/* ── Derecha: bultos, fotos y contenedor ── */}
+      <div style={{display:"flex",flexDirection:"column",gap:14,minWidth:0}}>
+        <div style={CARD}>
+          {tit(awaiting?"Bultos (si ya los tenés)":"Bultos","Medidas en cm",<button type="button" onClick={()=>setPkgs(p=>[...p,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={btnMas}>+ Bulto</button>)}
+          <div style={{display:"grid",gridTemplateColumns:"54px repeat(3,minmax(0,1fr)) 66px 34px",gap:6,marginBottom:6}}>{colH("Cant.","center")}{colH("Largo","center")}{colH("Ancho","center")}{colH("Alto","center")}{colH("m³","center")}<span/></div>
+          {pkgs.map((p,i)=>{const c=cbmLive(p);const falta=(p.length_cm||p.width_cm||p.height_cm||Number(p.quantity)>1)&&!(p.length_cm&&p.width_cm&&p.height_cm);return <div key={i} style={{display:"grid",gridTemplateColumns:"54px repeat(3,minmax(0,1fr)) 66px 34px",gap:6,marginBottom:6}}>
+            {numIn(p.quantity,v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x)),"1")}
+            {numIn(p.length_cm,v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x)))}
+            {numIn(p.width_cm,v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x)))}
+            {numIn(p.height_cm,v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x)))}
+            <div style={{height:40,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12.5,fontWeight:800,background:"rgba(0,0,0,0.25)",border:`1px solid ${falta?"rgba(251,191,36,0.45)":"rgba(255,255,255,0.08)"}`,color:c>0?GOLD_LIGHT:falta?"#fbbf24":"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>{c>0?c.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3}):falta?"medidas":"—"}</div>
+            {quitar(()=>setPkgs(arr=>arr.length>1?arr.filter((_,j)=>j!==i):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]))}
+          </div>;})}
+          {sinMedidas>0&&<p style={{margin:"6px 2px 0",fontSize:11.5,color:"#fbbf24"}}>{sinMedidas} bulto{sinMedidas!==1?"s":""} sin medidas completas: no se guarda{sinMedidas!==1?"n":""} hasta que tengan largo, ancho y alto.</p>}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:16,flexWrap:"wrap",marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>
+            <span>Bultos <b style={{color:"#fff",fontSize:14}}>{bultosTot}</b></span>
+            <span>Volumen <b style={{color:cbmTotal>0?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontSize:14}}>{cbmTotal.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³</b></span>
+            {costoDep!=null&&<span>Costo depósito <b style={{color:"#fff",fontSize:14}}>{usd2(costoDep)}</b>{!tipo&&usaTipo?" (general)":""}</span>}
+          </div>
+        </div>
+
+        {!awaiting&&<div style={CARD}>
+          {tit("Fotos",celuF?"Sacalas o elegilas de la galería. Ninguna es obligatoria.":"Tocá una zona y pegá con ⌘V, o subilas")}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[["bulto","📦 Bulto",fotos,setFotos],["merc","🧾 Mercadería",fotosM,setFotosM]].map(([kind,t,lst,setLst])=>{const act=zonaFoto===kind;return <div key={kind} onClick={()=>setZonaFoto(kind)} style={{padding:"10px 12px",borderRadius:12,cursor:"pointer",border:`1.5px ${act?"solid":"dashed"} ${act?"rgba(184,149,106,0.75)":"rgba(255,255,255,0.14)"}`,background:act?"rgba(184,149,106,0.07)":"transparent",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{width:96,flexShrink:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:"#fff"}}>{t}</span>{!celuF&&<span style={{fontSize:10.5,fontWeight:700,color:act?IC:"rgba(255,255,255,0.4)"}}>{act?"⌘V pega acá":"tocá para pegar"}</span>}</span>
+              {lst.map(u=><div key={u} style={{position:"relative"}}>
+                <div style={{width:64,height:64,borderRadius:10,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",border:"1px solid rgba(255,255,255,0.1)"}}/>
+                <button type="button" onClick={e=>{e.stopPropagation();setLst(p=>p.filter(x=>x!==u));}} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:20,height:20,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:10,cursor:"pointer",padding:0,lineHeight:"20px"}}>✕</button>
+              </div>)}
+              <label onClick={e=>{e.stopPropagation();setZonaFoto(kind);}} style={{width:64,height:64,borderRadius:10,border:"1.5px dashed rgba(184,149,106,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:IC,fontSize:10.5,fontWeight:700,cursor:"pointer"}}>
+                <span style={{fontSize:17}}>{subiendo&&act?"⏳":"＋"}</span>{subiendo&&act?"Subiendo":"Subir"}
+                <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{subirFotos(e.target.files,kind);e.target.value="";}}/>
+              </label>
+            </div>;})}
           </div>
         </div>}
-      </div>
-      <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
-    </div>
 
-    </div>
-
-    {/* Esperando al proveedor: interruptor grande. Prendido = solo mercadería y bultos. */}
-    {puedeAwaiting&&<button type="button" onClick={()=>{const v=!awaiting;setAwaiting(v);if(v){setReceivedAt("");setContainerId("");}}} style={{display:"flex",alignItems:"center",gap:14,width:"100%",marginTop:12,padding:"15px 18px",borderRadius:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:`1.5px solid ${awaiting?"rgba(167,139,250,0.75)":"rgba(255,255,255,0.1)"}`,background:awaiting?"linear-gradient(135deg,rgba(167,139,250,0.18),rgba(167,139,250,0.06))":"rgba(255,255,255,0.03)",color:"#fff"}}>
-      <span style={{width:42,height:42,borderRadius:12,background:awaiting?"rgba(167,139,250,0.25)":"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,flexShrink:0}}>⏳</span>
-      <span style={{flex:1,minWidth:0}}>
-        <span style={{display:"block",fontSize:14.5,fontWeight:800}}>El proveedor todavía no despachó</span>
-        <span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.6)",marginTop:2}}>{awaiting?"Queda en Esperando proveedor. Cargá solo la mercadería y, si ya los tenés, los bultos. El tracking lo sumás cuando despache.":"Prendelo si todavía no hay tracking. El depósito no ve el pedido hasta que cargues el tracking."}</span>
-      </span>
-      <span style={{width:48,height:28,borderRadius:999,background:awaiting?"#a78bfa":"rgba(255,255,255,0.15)",position:"relative",flexShrink:0,transition:"background .15s"}}><span style={{position:"absolute",top:3,left:awaiting?23:3,width:22,height:22,borderRadius:999,background:"#fff",transition:"left .15s"}}/></span>
-    </button>}
-
-    {/* Seguimiento + tipo (no aplica mientras espera al proveedor) */}
-    {!awaiting&&<div style={SECC}>
-      {secT(np(),"Seguimiento y tipo","El depósito lo ve con este tracking y confirma el tipo al recibirlo")}
-      <div className="mt-mf-2col" style={{alignItems:"start"}}>
-        <div>
-          <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY... / YT..."/>
-          {!trackingNumber.trim()&&<p style={{fontSize:11,color:"#fbbf24",margin:"-6px 0 6px"}}>Sin tracking el depósito no puede identificar la carga.</p>}
-        </div>
-        <div>
-          <label style={LBL}>Tipo de mercadería (opcional)</label>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=tipo===k;const tar=tarifaTipo(selectedWh,k);return <button key={k} type="button" onClick={()=>setTipo(on?"":k)} style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:k==="negra"?(on?"#05080f":"rgba(0,0,0,0.3)"):(on?"#f8fafc":"rgba(255,255,255,0.05)"),color:k==="negra"?"#fff":(on?"#0A1628":"rgba(255,255,255,0.85)")}}>
-              <span style={{display:"block",fontSize:13.5,fontWeight:800}}>{l}</span>
-              {verCostos&&tar>0&&<span style={{display:"block",fontSize:11,opacity:0.7,marginTop:2}}>{fmtT(tar)} por m³</span>}
-            </button>;})}
-          </div>
-          {editing?.tipo_confirmado_at&&<p style={{fontSize:10.5,color:editing?.tipo_corregido?"#fb923c":"#4ade80",margin:"6px 0 0"}}>{editing?.tipo_corregido?"✎ El depósito lo corrigió":"✓ El depósito lo confirmó"}{(editing?.mercaderia_tipo||"")!==tipo?" · si lo cambiás vuelve a quedar sin confirmar":""}</p>}
-        </div>
-      </div>
-    </div>}
-
-    {/* Mercadería */}
-    <div style={SECC}>
-      {secT(np(),"Mercadería","Cargá la factura del proveedor y se completa sola, o a mano",<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button type="button" disabled={leyendoFactura} onClick={()=>facturaInputRef.current?.click()} style={{...btnMas,background:"rgba(96,165,250,0.12)",color:"#93c5fd",borderColor:"rgba(96,165,250,0.4)",opacity:leyendoFactura?0.6:1}}>{leyendoFactura?"⏳ Leyendo factura…":"📄 Cargar factura"}</button>
-        <button type="button" onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={btnMas}>+ Producto</button>
-      </div>)}
-      <input ref={facturaInputRef} type="file" accept="application/pdf,image/*" onChange={e=>{const f=e.target.files?.[0];e.target.value="";cargarFactura(f);}} style={{display:"none"}}/>
-      {facturaUrl&&<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12,padding:"8px 12px",borderRadius:10,background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)"}}>
-        <a href={facturaUrl} target="_blank" rel="noopener" style={{fontSize:12.5,fontWeight:800,color:"#93c5fd",textDecoration:"none"}}>📄 Ver factura</a>
-        <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>queda guardada con el pedido</span>
-        <button type="button" onClick={()=>setFacturaUrl("")} title="Quitar la factura" style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14}}>✕</button>
-      </div>}
-      {its.map((it,i)=><div key={i} className="mt-mf-it">
-        <div className="mt-mf-desc"><Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/></div>
-        <Inp label={i===0?"Cantidad":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
-        <Inp label={i===0?"USD por unidad":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>
-        <button type="button" onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>✕</button>
-      </div>)}
-      {(()=>{const tot=its.reduce((a,it)=>a+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);return tot>0&&<p style={{margin:"4px 0 0",textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>Valor total <b style={{color:"#4ade80",fontSize:14}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></p>;})()}
-    </div>
-
-    {/* Bultos */}
-    <div style={SECC}>
-      {secT(np(),awaiting?"Bultos (si ya los tenés)":"Bultos","Cantidad y medidas en cm",<button type="button" onClick={()=>setPkgs(p=>[...p,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={btnMas}>+ Bulto</button>)}
-      {pkgs.map((p,i)=>{const c=cbmLive(p);return <div key={i} className="mt-mf-pk">
-        <Inp label={i===0?"Cantidad":""} type="number" value={p.quantity} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} placeholder="1" small/>
-        <Inp label={i===0?"Largo":""} type="number" value={p.length_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x))} small/>
-        <Inp label={i===0?"Ancho":""} type="number" value={p.width_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x))} small/>
-        <Inp label={i===0?"Alto":""} type="number" value={p.height_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x))} small/>
-        <div style={{marginBottom:12}}>
-          {i===0&&<label style={LBL}>m³</label>}
-          <div style={{padding:"8px 10px",fontSize:13,fontWeight:700,borderRadius:10,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",color:c>0?GOLD_LIGHT:"rgba(255,255,255,0.3)",textAlign:"center",fontFeatureSettings:'"tnum"'}}>{c>0?c.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3}):"—"}</div>
-        </div>
-        <button type="button" onClick={()=>setPkgs(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>✕</button>
-      </div>;})}
-      <div style={{display:"flex",justifyContent:"flex-end",gap:18,marginTop:4,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>
-        <span>Bultos <b style={{color:"#fff",fontSize:14}}>{pkgs.reduce((a,p)=>a+(p.length_cm&&p.width_cm&&p.height_cm?Math.max(1,Number(p.quantity)||1):0),0)}</b></span>
-        <span>Total <b style={{color:cbmTotal>0?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontSize:14}}>{cbmTotal.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³</b></span>
-        {verCostos&&!awaiting&&cbmTotal>0&&selectedWh&&(()=>{const k=tarifaTipo(selectedWh,tipo);let tot=cbmTotal*k;const d=Number(selectedWh.descuento_pct)||0;if(tipo&&d>0&&cbmTotal>(Number(selectedWh.descuento_min_cbm)||0))tot*=1-d/100;return <span>Costo depósito <b style={{color:"#fff",fontSize:14}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b>{!tipo&&usaTipo?" (tarifa general)":""}</span>;})()}
-      </div>
-    </div>
-
-    {/* Fotos: del bulto y de la mercadería. Se suben o se pegan con ⌘V en la zona elegida. */}
-    {!awaiting&&<div style={SECC}>
-      {secT(np(),"Fotos",celuF?"Sacalas o elegilas de la galería. Ninguna es obligatoria.":"Tocá una zona y pegá con ⌘V, o subilas. Ninguna es obligatoria.")}
-      <div className="mt-mf-2col" style={{gap:12}}>
-        {[["bulto","📦 Foto del bulto",fotos,setFotos],["merc","🧾 Foto de la mercadería",fotosM,setFotosM]].map(([kind,tit,lst,setLst])=>{const act=zonaFoto===kind;return <div key={kind} onClick={()=>setZonaFoto(kind)} style={{padding:"12px",borderRadius:12,cursor:"pointer",border:`1.5px ${act?"solid":"dashed"} ${act?"rgba(184,149,106,0.75)":"rgba(255,255,255,0.14)"}`,background:act?"rgba(184,149,106,0.07)":"transparent"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
-            <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{tit}</span>
-            {!celuF&&<span style={{fontSize:11,fontWeight:700,color:act?IC:"rgba(255,255,255,0.4)"}}>{act?"⌘V pega acá":"tocá para pegar acá"}</span>}
-          </div>
+        {puedeCont&&selectedWh&&(()=>{const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");return <div style={CARD}>
+          {tit("Contenedor","Asignarla la pasa a en viaje; sacarla la devuelve al depósito")}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {lst.map(u=><div key={u} style={{position:"relative"}}>
-              <div style={{width:84,height:84,borderRadius:10,backgroundImage:`url(${u})`,backgroundSize:"cover",backgroundPosition:"center",border:"1px solid rgba(255,255,255,0.1)"}}/>
-              <button type="button" onClick={e=>{e.stopPropagation();setLst(p=>p.filter(x=>x!==u));}} title="Quitar" style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:11,cursor:"pointer",padding:0,lineHeight:"22px"}}>✕</button>
-            </div>)}
-            <label onClick={e=>{e.stopPropagation();setZonaFoto(kind);}} style={{width:84,height:84,borderRadius:10,border:"1.5px dashed rgba(184,149,106,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:IC,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-              <span style={{fontSize:19}}>{subiendo&&act?"⏳":"＋"}</span>{subiendo&&act?"Subiendo":"Subir"}
-              <input type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>{subirFotos(e.target.files,kind);e.target.value="";}}/>
-            </label>
+            {[{id:"",code:"Sin contenedor"},...whConts].map(c=>{const on=(containerId||"")===c.id;return <button key={c.id||"none"} type="button" onClick={()=>setContainerId(c.id)} style={{padding:"8px 14px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:12.5,fontWeight:700,border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:on?"rgba(184,149,106,0.12)":"transparent",color:on?"#fff":"rgba(255,255,255,0.65)"}}>{c.code}</button>;})}
           </div>
-        </div>;})}
+        </div>;})()}
       </div>
-    </div>}
+    </div>
 
-    {/* Contenedor: solo al editar una carga que ya está en el depósito */}
-    {puedeCont&&selectedWh&&(()=>{const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");return <div style={SECC}>
-      {secT(np(),"Contenedor","Asignarla la pasa a en viaje; sacarla la devuelve al depósito")}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {[{id:"",code:"Sin contenedor"},...whConts].map(c=>{const on=(containerId||"")===c.id;return <button key={c.id||"none"} type="button" onClick={()=>setContainerId(c.id)} style={{padding:"8px 14px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",fontSize:12.5,fontWeight:700,border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:on?"rgba(184,149,106,0.12)":"transparent",color:on?"#fff":"rgba(255,255,255,0.7)"}}>{c.id?"🚢 ":""}{c.code}{c.shipping_line?` · ${c.shipping_line}`:""}</button>;})}
+    {/* Pie fijo: resumen + acciones */}
+    <div style={{position:"sticky",bottom:0,margin:celuF?"14px -12px -14px":"16px -24px -22px",padding:celuF?"12px":"14px 24px",background:"linear-gradient(180deg,rgba(15,31,58,0.92),#0F1F3A 40%)",backdropFilter:"blur(8px)",borderTop:"1px solid rgba(255,255,255,0.1)",borderRadius:"0 0 14px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",zIndex:5}}>
+      <div style={{flex:"1 1 260px",minWidth:0,fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.5}}>
+        <b style={{color:"#fff"}}>{cliSel?`${cliSel.first_name||""} ${cliSel.last_name||""}`.trim():clientName.trim()||"Sin cliente"}</b>
+        {selectedWh&&<> · {selectedWh.name}</>}
+        {its.filter(x=>x.description?.trim()).length>0&&<> · {its.filter(x=>x.description?.trim()).length} producto{its.filter(x=>x.description?.trim()).length!==1?"s":""}</>}
+        {bultosTot>0&&<> · {bultosTot} bulto{bultosTot!==1?"s":""}</>}
+        {cbmTotal>0&&<> · <b style={{color:GOLD_LIGHT}}>{cbmTotal.toLocaleString("es-AR",{minimumFractionDigits:3,maximumFractionDigits:3})} m³</b></>}
+        {err&&<span style={{display:"block",color:"#f87171",fontWeight:700}}>✕ {err}</span>}
       </div>
-    </div>;})()}
-
-    {err&&<p style={{fontSize:12.5,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,padding:"9px 12px",margin:"14px 0 0"}}>✕ {err}</p>}
-    <div style={{display:"flex",gap:10,marginTop:16,justifyContent:"flex-end"}}>
-      <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
-      <Btn onClick={save} disabled={saving||subiendo}>{saving?"Guardando...":(isEdit?"Guardar cambios":awaiting?"Crear · esperando proveedor":"Crear pedido")}</Btn>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onCancel} style={{height:44,padding:"0 18px",borderRadius:12,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.8)",fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+        <button type="button" onClick={save} disabled={saving||subiendo} style={{height:44,padding:"0 22px",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",fontSize:14,fontWeight:800,cursor:saving||subiendo?"default":"pointer",fontFamily:"inherit",opacity:saving||subiendo?0.6:1,boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>{saving?"Guardando…":isEdit?"Guardar cambios":awaiting?"Crear · esperando proveedor":"Crear pedido"}</button>
+      </div>
     </div>
   </div>;
 }
+
 
 function WarehouseForm({token,editing,onSave,onCancel,archiveBlocked=false}){
   const isEdit=!!editing?.id;
