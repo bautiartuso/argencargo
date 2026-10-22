@@ -17566,6 +17566,16 @@ function MaritimePanel({token,allClients=[]}){
     if(!Array.isArray(r)||r.length===0){toast(/port_arrived_at/.test(String(r?.message||""))?"Falta correr el SQL 2026_10_21_contenedor_puerto en Supabase":`No se pudo guardar: ${r?.message||"error de la base"}`,"error");return false;}
     toast(fecha?`${c.code} en aduana desde el ${formatDateShort(fecha)}`:`${c.code} vuelve a en viaje`,"success");load();return true;
   };
+  // Mail "tu carga llegó a Buenos Aires" a cada cliente del contenedor (no repite a quien ya lo recibió).
+  const avisarPuerto=async(c)=>{
+    try{
+      const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({trigger:"contenedor_puerto",container_id:c.id})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok){toast(`No se pudieron mandar los mails: ${d?.error||r.status}`,"error");return;}
+      const partes=[d.enviados?`${d.enviados} mail${d.enviados>1?"s":""} enviado${d.enviados>1?"s":""}`:null,d.ya_avisados?`${d.ya_avisados} ya avisado${d.ya_avisados>1?"s":""}`:null,d.sin_email?`${d.sin_email} sin email`:null,d.errores?`${d.errores} con error`:null].filter(Boolean);
+      toast(partes.length?`Aviso de llegada: ${partes.join(" · ")}`:"No hay clientes para avisar en este contenedor",d.errores?"warn":"success");
+    }catch(e){toast("No se pudieron mandar los mails (sin conexión)","error");}
+  };
   const [packages,setPackages]=useState([]);
   const [items,setItems]=useState([]);
   const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});
@@ -18390,10 +18400,14 @@ function MaritimePanel({token,allClients=[]}){
       </div>
       <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Día que llegó</div>
       <DatePicker value={puertoModal.fecha} onChange={v=>setPuertoModal(m=>({...m,fecha:v||hoyAR()}))}/>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 18px"}}>El cliente ve "En aduana" en su portal. Cuando te lo entreguen, tocás "Me lo entregaron" y se crean las operaciones.</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 14px"}}>El cliente ve "En aduana" en su portal. Cuando te lo entreguen, tocás "Me lo entregaron" y se crean las operaciones.</p>
+      {(()=>{const nCli=new Set(shipments.filter(x=>x.container_id===puertoModal.c.id&&!x.operation_id&&x.client_id).map(x=>x.client_id)).size;return nCli>0&&<button type="button" onClick={()=>setPuertoModal(m=>({...m,avisar:!m.avisar}))} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",marginBottom:16,borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",background:puertoModal.avisar?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${puertoModal.avisar?"rgba(96,165,250,0.45)":"rgba(255,255,255,0.1)"}`,color:"#fff"}}>
+        <span style={{width:18,height:18,borderRadius:5,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,background:puertoModal.avisar?"#60a5fa":"transparent",border:`1.5px solid ${puertoModal.avisar?"#60a5fa":"rgba(255,255,255,0.3)"}`,color:"#0A1628",flexShrink:0}}>{puertoModal.avisar?"✓":""}</span>
+        <span style={{fontSize:13,fontWeight:700}}>Avisar por mail a {nCli} cliente{nCli>1?"s":""} que llegó</span>
+      </button>;})()}
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <button onClick={()=>setPuertoModal(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={async()=>{const m=puertoModal;if(await guardarPuerto(m.c,m.fecha))setPuertoModal(null);}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#fb923c",color:"#2a1203",fontWeight:800,cursor:"pointer"}}>Marcar en aduana</button>
+        <button onClick={async()=>{const m=puertoModal;if(await guardarPuerto(m.c,m.fecha)){setPuertoModal(null);if(m.avisar)avisarPuerto(m.c);}}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#fb923c",color:"#2a1203",fontWeight:800,cursor:"pointer"}}>Marcar en aduana</button>
       </div>
     </div>
   </div>,document.body);
@@ -18613,7 +18627,10 @@ function MaritimePanel({token,allClients=[]}){
               <div className="mt-cont-btns" onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>
                 {c.port_arrived_at
                   ?<button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Te entregaron el contenedor: crea las operaciones, manda los mails de retiro y abre los costos" style={btnMini("#22c55e",{padding:"7px 12px",fontSize:12,opacity:creatingOp?0.5:1,cursor:creatingOp?"wait":"pointer"})}>{creatingOp?"⏳ Creando ops…":"📦 Me lo entregaron"}</button>
-                  :<button onClick={()=>setPuertoModal({c,fecha:hoyAR()})} title="Llegó a Buenos Aires y queda en aduana" style={btnMini("#fb923c",{padding:"7px 12px",fontSize:12})}>⚓ Llegó</button>}
+                  :null}
+                {c.port_arrived_at&&<button onClick={()=>avisarPuerto(c)} title="Mandar a los clientes el mail de que llegó a Buenos Aires (a quien ya lo recibió no se le repite)" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✉</button>}
+                {c.port_arrived_at?null
+                  :<button onClick={()=>setPuertoModal({c,fecha:hoyAR(),avisar:true})} title="Llegó a Buenos Aires y queda en aduana" style={btnMini("#fb923c",{padding:"7px 12px",fontSize:12})}>⚓ Llegó</button>}
                 <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✎</button>
                 <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={btnMini("#f87171",{padding:"7px 10px"})}>🗑</button>
               </div>

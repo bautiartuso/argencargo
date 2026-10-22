@@ -19,6 +19,7 @@ const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
 
 import { enviarEmail } from "../../../lib/email";
+import { contenidoContenedorPuerto } from "../../../lib/email-contenedor";
 
 export const maxDuration = 30;
 
@@ -213,7 +214,38 @@ export async function POST(req) {
     if (!isAdmin) return Response.json({ error: "unauthorized" }, { status: 401 });
     if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 });
 
-    const { op_id, trigger, force, allow_zero, client_id, package_id } = await req.json();
+    const { op_id, trigger, force, allow_zero, client_id, package_id, container_id } = await req.json();
+    // Contenedor llegó a Buenos Aires (21/10/2026): un mail por cliente con lo suyo que viaja en ese
+    // contenedor. No se repite: si el cliente ya recibió el aviso de ESE contenedor, se saltea.
+    if (trigger === "contenedor_puerto") {
+      if (!container_id || !/^[0-9a-f-]{36}$/i.test(container_id)) return Response.json({ error: "container_id requerido" }, { status: 400 });
+      const cArr = await sb(`/rest/v1/maritime_containers?id=eq.${container_id}&select=*`);
+      const cont = Array.isArray(cArr) ? cArr[0] : null;
+      if (!cont) return Response.json({ error: "contenedor no encontrado" }, { status: 404 });
+      if (!cont.port_arrived_at) return Response.json({ error: "el contenedor no tiene fecha de llegada" }, { status: 400 });
+      const ships = await sb(`/rest/v1/maritime_shipments?container_id=eq.${container_id}&operation_id=is.null&client_id=not.is.null&select=id,client_id,product_description,maritime_packages(quantity,cbm),maritime_warehouses(mostrar_contenedor_cliente),clients(id,first_name,email)`);
+      const porCliente = {};
+      (Array.isArray(ships) ? ships : []).forEach((s) => {
+        const k = s.client_id; if (!porCliente[k]) porCliente[k] = { cl: s.clients, productos: [], bultos: 0, cbm: 0, verCont: !!s.maritime_warehouses?.mostrar_contenedor_cliente };
+        const g = porCliente[k]; if (s.product_description && !g.productos.includes(s.product_description)) g.productos.push(s.product_description);
+        (s.maritime_packages || []).forEach((p) => { g.bultos += Number(p.quantity || 1); g.cbm += Number(p.cbm || 0); });
+      });
+      const tag = `contenedor_puerto:${container_id}`;
+      const resultado = { enviados: 0, sin_email: 0, ya_avisados: 0, errores: 0 };
+      for (const g of Object.values(porCliente)) {
+        if (!g.cl?.email) { resultado.sin_email++; continue; }
+        if (!force) {
+          const prev = await sb(`/rest/v1/email_log?trigger=eq.${encodeURIComponent(tag)}&client_id=eq.${g.cl.id}&ok=eq.true&select=id&limit=1`);
+          if (Array.isArray(prev) && prev.length) { resultado.ya_avisados++; continue; }
+        }
+        const NAVY = "#152D54", AC = "#3B7DD8";
+        const c = contenidoContenedorPuerto({ nombre: g.cl.first_name, productos: g.productos, bultos: g.bultos, cbm: g.cbm, llego: cont.port_arrived_at, contenedor: g.verCont ? cont.code : null, portalUrl: `${BASE_URL}/portal`, NAVY, AC });
+        const html = renderEmailShell({ subject: c.subject, greeting: c.greeting, body: c.body, extraHtml: c.extraHtml, opCode: null, NAVY, AC });
+        const env = await enviarEmail({ to: g.cl.email, subject: c.subject, html, trigger: tag, client_id: g.cl.id });
+        if (env.ok) resultado.enviados++; else resultado.errores++;
+      }
+      return Response.json({ ok: true, ...resultado });
+    }
     // Bulto en depósito (13/09/2026): llega sin operación, así que el aviso es por cliente. Se agrupa:
     // si al cliente ya se le avisó en la última hora (llegaron varios bultos juntos), no se repite.
     if (trigger === "bulto_deposito") {
