@@ -851,7 +851,10 @@ function OpDetalle({ ctx, id }) {
   const [bultos, setBultos] = useState([]);
   const [earning, setEarning] = useState(null);
   const [tarjetas, setTarjetas] = useState([]);
-  const [modal, setModal] = useState(null);
+  const [modal, setModal] = useState(null); // "cobro" | {costo:{monto,nota}}
+  const [editProd, setEditProd] = useState(false);
+  const [filas, setFilas] = useState([]);
+  const [guardandoProd, setGuardandoProd] = useState(false);
   const verPlata = rol !== "empleado";
   const admin = pleno; // socios con control total (20/10/2026)
 
@@ -874,14 +877,19 @@ function OpDetalle({ ctx, id }) {
   const socioId = op.gi_admin_owned ? null : op.gi_partner_id || op.clients?.gi_partner_id || null;
   const socio = d.socios.find((s) => s.id === socioId);
   const res = resumenGI({ op, cobros, pagosProveedor: pagos, fx: d.fx, socio });
-  const st = GI_ESTADOS[op.status] || { l: op.status, c: C.sub };
+  const st = GI_ESTADOS[op.status] || { l: op.status, c: P.sub };
   const cerrada = op.status === "operacion_cerrada";
+  const cancelada = op.status === "cancelada";
+  const activa = !cerrada && !cancelada;
   const refrescar = async () => { await cargar(); recargar(); };
   const patchOp = async (body, msg) => {
     const r = await dq("operations", { method: "PATCH", token, filters: `?id=eq.${op.id}`, body });
     if (!ok(r)) { toast.error("No se pudo guardar"); return false; }
     setOp((p) => ({ ...p, ...body })); if (msg) toast.success(msg); recargar(); return true;
   };
+  const etapas = GI_FLUJO;
+  const idx = etapas.indexOf(op.status);
+  const siguiente = idx >= 0 && idx < etapas.length - 2 ? etapas[idx + 1] : null; // la última (cerrada) va por "Cerrar"
   const cambiarEtapa = async (k) => {
     if (k === op.status) return;
     if (k === "operacion_cerrada") return cerrar();
@@ -889,6 +897,8 @@ function OpDetalle({ ctx, id }) {
   };
   const cerrar = async () => {
     if (res.saldo > 0.5) { toast.error(`Falta cobrar ${fmtUSD(res.saldo)}`); return; }
+    // La liquidación de la base usa los pagos al proveedor: si falta cargarlos, la comisión sale inflada.
+    if (res.mercaderiaFalta > 0.5 && !await confirmDialog(`Al proveedor figuran pagados ${fmtUSD(res.mercaderiaPagada)} de ${fmtUSD(res.mercaderia)}. ¿Cerrar igual? Conviene registrar el pago antes, la comisión se liquida con los pagos.`)) return;
     if (!await confirmDialog(`¿Cerrar ${op.operation_code}? Se liquida la comisión del socio con lo cobrado y los costos cargados.`)) return;
     if (await patchOp({ status: "operacion_cerrada", closed_at: new Date().toISOString(), is_collected: true }, "Operación cerrada")) cargar();
   };
@@ -909,158 +919,259 @@ function OpDetalle({ ctx, id }) {
     toast.success("Cobro borrado"); refrescar();
   };
   const borrarPago = async (p) => {
-    if (!await confirmDialog("¿Borrar este costo?", { danger: true })) return;
+    if (!await confirmDialog("¿Borrar este pago al proveedor?", { danger: true })) return;
     await dq("operation_supplier_payments", { method: "DELETE", token, filters: `?id=eq.${p.id}` });
     await sincronizarCostoProducto(pagos.filter((x) => x.id !== p.id));
-    toast.success("Costo borrado"); refrescar();
+    toast.success("Pago borrado"); refrescar();
   };
   const togglePagado = async (p) => {
     await dq("operation_supplier_payments", { method: "PATCH", token, filters: `?id=eq.${p.id}`, body: { is_paid: !p.is_paid, paid_at: !p.is_paid ? new Date().toISOString() : null } });
     refrescar();
   };
+  // Costo de la mercadería = lo pactado por producto; si los pagos superan eso (extras), mandan los pagos.
+  const costoItems = (lst) => lst.reduce((s, it) => s + Number(it.unit_cost_usd || 0) * Number(it.quantity || 0), 0);
   const sincronizarCostoProducto = async (lista) => {
-    const t = lista.reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
-    await dq("operations", { method: "PATCH", token, filters: `?id=eq.${op.id}`, body: { cost_producto_usd: Math.round(t * 100) / 100 } });
+    const pagado = lista.reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
+    const pactado = costoItems(items) || Number(op.cost_producto_usd || 0);
+    await dq("operations", { method: "PATCH", token, filters: `?id=eq.${op.id}`, body: { cost_producto_usd: Math.round(Math.max(pactado, pagado) * 100) / 100 } });
   };
-  const editarVenta = async () => {
-    const v = await promptDialog("Venta total al cliente (USD)", { defaultValue: String(Number(op.budget_total || 0)) });
-    if (v === null || v === undefined) return;
-    const n = Number(String(v).replace(",", "."));
-    if (!(n >= 0)) { toast.error("Monto inválido"); return; }
-    await patchOp({ budget_total: Math.round(n * 100) / 100 }, "Venta actualizada");
+
+  // ── Productos: cantidad, precio de venta y costo por unidad. La venta total sale de acá. ──
+  const tieneCosto = items.length === 0 || items.some((it) => Object.prototype.hasOwnProperty.call(it, "unit_cost_usd"));
+  const abrirEdicion = () => { setFilas(items.map((it) => ({ id: it.id, description: it.description || "", quantity: String(it.quantity ?? ""), unit_price_usd: it.unit_price_usd != null ? String(Math.round(Number(it.unit_price_usd) * 10000) / 10000) : "", unit_cost_usd: it.unit_cost_usd != null ? String(it.unit_cost_usd) : "", ncm_code: it.ncm_code || null })).concat(items.length ? [] : [{ description: "", quantity: "1", unit_price_usd: "", unit_cost_usd: "" }])); setEditProd(true); };
+  const setFila = (i, k, v) => setFilas((p) => p.map((f, j) => (j === i ? { ...f, [k]: v } : f)));
+  const numero = (v) => Number(String(v || "").replace(",", ".")) || 0;
+  const totVentaF = filas.reduce((s, f) => s + numero(f.quantity) * numero(f.unit_price_usd), 0);
+  const totCostoF = filas.reduce((s, f) => s + numero(f.quantity) * numero(f.unit_cost_usd), 0);
+  const guardarProductos = async () => {
+    const validas = filas.filter((f) => f.description.trim());
+    if (!validas.length) { toast.error("Cargá al menos un producto"); return; }
+    setGuardandoProd(true);
+    const cuerpo = (f, conCosto) => ({ description: f.description.trim(), quantity: numero(f.quantity), unit_price_usd: Math.round(numero(f.unit_price_usd) * 10000) / 10000, ...(conCosto ? { unit_cost_usd: f.unit_cost_usd === "" ? null : numero(f.unit_cost_usd) } : {}) });
+    let conCosto = true;
+    const intentar = async (fn) => { let r = await fn(conCosto); if (!ok(r) && /unit_cost_usd/.test(JSON.stringify(r || ""))) { conCosto = false; r = await fn(false); } return r; };
+    try {
+      const quedan = new Set(validas.filter((f) => f.id).map((f) => f.id));
+      for (const it of items) if (!quedan.has(it.id)) await dq("operation_items", { method: "DELETE", token, filters: `?id=eq.${it.id}` });
+      for (const f of validas) {
+        const r = f.id
+          ? await intentar((cc) => dq("operation_items", { method: "PATCH", token, filters: `?id=eq.${f.id}`, body: cuerpo(f, cc) }))
+          : await intentar((cc) => dq("operation_items", { method: "POST", token, body: { operation_id: op.id, ...cuerpo(f, cc) } }));
+        if (!ok(r)) throw new Error("No se pudo guardar un producto");
+      }
+      const venta = Math.round(validas.reduce((s, f) => s + numero(f.quantity) * numero(f.unit_price_usd), 0) * 100) / 100;
+      const costo = validas.reduce((s, f) => s + numero(f.quantity) * numero(f.unit_cost_usd), 0);
+      const pagado = pagos.reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
+      const body = { budget_total: venta, budget_mode: "manual", description: `Gestión Integral · ${validas.length} producto${validas.length !== 1 ? "s" : ""}` };
+      if (costo > 0) body.cost_producto_usd = Math.round(Math.max(costo, pagado) * 100) / 100;
+      await patchOp(body, conCosto ? "Productos guardados" : "Productos guardados (falta correr el SQL del costo por producto)");
+      setEditProd(false); await cargar();
+    } catch (e) { toast.error(e.message || "No se pudo guardar"); }
+    setGuardandoProd(false);
   };
 
   const kg = bultos.reduce((s, b) => s + Number(b.gross_weight_kg || 0) * Number(b.quantity || 1), 0);
   const cbm = bultos.reduce((s, b) => s + (Number(b.length_cm || 0) * Number(b.width_cm || 0) * Number(b.height_cm || 0)) / 1e6 * Number(b.quantity || 1), 0);
-  const etapas = GI_FLUJO;
-  const idx = etapas.indexOf(op.status);
   const gan = cerrada ? res.real : res.ganancia;
-  const EC = { pendiente: P.mute, en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: P.amber, entregada: P.green, operacion_cerrada: P.green, cancelada: P.red }[op.status] || P.sub;
-  const fila = { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${P.line}` };
-  const xBtn = (fn) => <button onClick={fn} aria-label="Borrar" style={{ border: "none", background: "transparent", color: P.mute, cursor: "pointer", fontSize: 15 }}>✕</button>;
+  const margen = res.venta > 0 ? gan / res.venta * 100 : 0;
+  const COL = { pendiente: "#94a3b8", en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: "#fb923c", entregada: P.green, operacion_cerrada: P.green, cancelada: P.red };
+  const EC = COL[op.status] || P.sub;
+  const pctCobrado = res.venta > 0 ? Math.min(100, res.cobrado / res.venta * 100) : 0;
+  const pctPagado = res.mercaderia > 0 ? Math.min(100, res.mercaderiaPagada / res.mercaderia * 100) : 0;
+
+  // Próximo paso: una sola acción, la que más importa ahora.
+  const paso = !activa ? null
+    : items.length === 0 ? { t: "Cargá los productos con su precio de venta", b: "Cargar productos", fn: abrirEdicion, c: P.goldHi }
+    : verPlata && admin && res.mercaderiaFalta > 0.5 ? { t: `Pago al proveedor pendiente: ${fmtUSD(res.mercaderiaFalta)}`, b: "Registrar pago", fn: () => setModal({ costo: { monto: String(Math.round(res.mercaderiaFalta * 100) / 100), nota: "Mercadería" } }), c: P.amber }
+    : res.saldo > 0.5 ? { t: `Falta cobrarle al cliente ${fmtUSD(res.saldo)}`, b: "Registrar cobro", fn: () => setModal("cobro"), c: P.amber }
+    : siguiente ? { t: `Todo en orden. Siguiente etapa: ${GI_ESTADOS[siguiente].l}`, b: `Pasar a ${GI_ESTADOS[siguiente].l} →`, fn: () => cambiarEtapa(siguiente), c: P.blue }
+    : admin ? { t: "Cobrada y pagada. Lista para cerrar.", b: "Cerrar operación", fn: cerrar, c: P.green } : null;
+
+  const caja = { background: "linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))", border: `1px solid ${P.line}`, borderRadius: 18, padding: movil ? 16 : 20, marginBottom: 14, color: P.txt };
+  const tit = (t, der) => <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}><h3 style={{ margin: 0, fontSize: 11.5, fontWeight: 900, letterSpacing: "0.12em", textTransform: "uppercase", color: P.mute }}>{t}</h3>{der}</div>;
+  const barra = (pct, c) => <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.07)", overflow: "hidden", marginTop: 8 }}><div style={{ height: "100%", width: `${pct}%`, background: c, borderRadius: 999, transition: "width .4s" }} /></div>;
+  const kpi = (l, v, c, sub, extra) => <div style={{ padding: "14px 16px", borderRadius: 14, background: "rgba(0,0,0,0.22)", border: `1px solid ${P.line}`, minWidth: 0 }}>
+    <p style={{ margin: 0, fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: P.mute }}>{l}</p>
+    <p style={{ margin: "5px 0 0", fontSize: movil ? 18 : 21, fontWeight: 900, color: c || P.txt, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</p>
+    {sub && <p style={{ margin: "3px 0 0", fontSize: 11.5, color: P.sub }}>{sub}</p>}
+    {extra}
+  </div>;
+  const accionBtn = (txt, fn, estilo) => <button type="button" onClick={fn} style={{ height: 42, padding: "0 18px", borderRadius: 12, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 8, transition: "transform .12s", ...estilo }}>{txt}</button>;
+  const sec = { border: `1px solid ${P.lineHi}`, background: "rgba(255,255,255,0.05)", color: P.txt };
+  const inpT = { ...inpP, height: 38, padding: "0 10px", fontSize: 13.5 };
+  const xBtn = (fn) => <button onClick={fn} aria-label="Borrar" style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${P.line}`, background: "transparent", color: P.mute, cursor: "pointer", fontSize: 12 }}>✕</button>;
 
   return <div>
     <Volver onClick={() => ir("operaciones")} />
-    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "minmax(0,1fr) 320px", gap: 14, alignItems: "start" }}>
+
+    {/* ── Encabezado ── */}
+    <div style={{ ...caja, padding: movil ? 18 : 24, background: `linear-gradient(135deg,${EC}22 0%,rgba(255,255,255,0.03) 45%,rgba(255,255,255,0.015) 100%)`, borderColor: `${EC}55`, position: "relative", overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 800, color: P.goldHi, padding: "4px 10px", borderRadius: 8, background: P.goldBg, border: `1px solid ${P.gold}44` }}>{op.operation_code}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 800, padding: "5px 12px", borderRadius: 999, color: EC, background: `${EC}1f`, border: `1px solid ${EC}66` }}><span style={{ width: 7, height: 7, borderRadius: 99, background: EC, boxShadow: `0 0 0 3px ${EC}33` }} />{st.l}</span>
+          </div>
+          <p style={{ fontSize: movil ? 24 : 30, fontWeight: 900, margin: "12px 0 4px", color: P.txt, letterSpacing: "-0.02em", lineHeight: 1.1 }}>{nombre(op.clients)}</p>
+          <p style={{ fontSize: 13, color: P.sub, margin: 0 }}>{GI_CANALES[op.channel]?.largo || op.channel}{op.origin ? ` · ${op.origin}` : ""} · {socio ? `Socio ${socio.email.split("@")[0]}` : "De Argencargo"}{op.clients?.client_code ? ` · ${op.clients.client_code}` : ""}</p>
+        </div>
+        <div style={{ minWidth: movil ? "100%" : 260 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: res.saldo > 0.5 ? P.amber : P.green }}>{res.saldo > 0.5 ? "Falta cobrar" : "Cobrada"}</span>
+            <span style={{ fontSize: 12, color: P.sub, fontVariantNumeric: "tabular-nums" }}>{pctCobrado.toFixed(0)}% de {usd0(res.venta)}</span>
+          </div>
+          <p style={{ margin: "4px 0 0", fontSize: movil ? 26 : 32, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", lineHeight: 1.05, textAlign: movil ? "left" : "right" }}>{fmtUSD(res.saldo > 0.5 ? res.saldo : res.cobrado)}</p>
+          {barra(pctCobrado, res.saldo > 0.5 ? `linear-gradient(90deg,${P.amber},#fde68a)` : `linear-gradient(90deg,${P.green},#6ee7b7)`)}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18, alignItems: "center" }}>
+        {activa && accionBtn("＋ Cobro", () => setModal("cobro"), { border: "none", background: GOLD_GRADIENT, color: "#0A1628", boxShadow: "0 6px 18px rgba(201,164,106,0.25)" })}
+        {activa && admin && accionBtn("＋ Pago a proveedor", () => setModal({ costo: { monto: "", nota: "" } }), sec)}
+        {admin && accionBtn("✎ Productos y precios", abrirEdicion, sec)}
+        <span style={{ flex: 1 }} />
+        {admin && cerrada && accionBtn("Reabrir", reabrir, { ...sec, color: P.sub })}
+        {admin && activa && <button type="button" onClick={cancelar} style={{ background: "none", border: "none", color: P.mute, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>Cancelar operación</button>}
+      </div>
+    </div>
+
+    {/* ── Próximo paso ── */}
+    {paso && <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "14px 18px", marginBottom: 14, borderRadius: 16, background: `linear-gradient(90deg,${paso.c}1c,${paso.c}08)`, border: `1px solid ${paso.c}55` }}>
+      <span style={{ width: 34, height: 34, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `${paso.c}26`, color: paso.c, fontWeight: 900, flexShrink: 0 }}>→</span>
+      <div style={{ flex: 1, minWidth: 200 }}><p style={{ margin: 0, fontSize: 10.5, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: paso.c }}>Próximo paso</p><p style={{ margin: "2px 0 0", fontSize: 14.5, fontWeight: 800, color: P.txt }}>{paso.t}</p></div>
+      {accionBtn(paso.b, paso.fn, { border: "none", background: paso.c, color: "#0A1628" })}
+    </div>}
+
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "minmax(0,1fr) 330px", gap: 14, alignItems: "start" }}>
       <div style={{ minWidth: 0 }}>
-        <Papel acento={EC} pad={movil ? 16 : 22}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: P.goldHi }}>{op.operation_code}</span>
-                <PillP c={EC}>{st.l}</PillP>
-              </div>
-              <p style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 2px", color: P.txt, letterSpacing: "-0.01em" }}>{nombre(op.clients)}</p>
-              <p style={{ fontSize: 12.5, color: P.mute, margin: 0 }}>{GI_CANALES[op.channel]?.largo || op.channel}{op.origin ? ` · ${op.origin}` : ""} · {socio ? `Socio ${socio.email.split("@")[0]}` : "De Argencargo"}</p>
+        {/* ── Etapa: línea de progreso ── */}
+        <div style={caja}>
+          {tit("Etapa", activa ? <div style={{ width: 170 }}><DatePicker small value={op.eta ? String(op.eta).slice(0, 10) : ""} onChange={(v) => patchOp({ eta: v || null }, "ETA guardada")} placeholder="ETA" /></div> : op.eta ? <span style={{ fontSize: 12.5, color: P.sub }}>ETA {fmtDate(op.eta)}</span> : null)}
+          <div className="gi-scroll" style={{ overflowX: "auto", paddingBottom: 4 }}>
+            <div style={{ display: "flex", minWidth: movil ? 620 : 0 }}>
+              {etapas.map((k, i) => { const on = k === op.status; const hecho = idx >= 0 && i < idx; const c = COL[k] || P.sub; return <button key={k} type="button" onClick={() => admin || k !== "operacion_cerrada" ? cambiarEtapa(k) : null} style={{ flex: "1 1 0", minWidth: 0, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                  <div style={{ flex: 1, height: 3, borderRadius: 3, background: i === 0 ? "transparent" : hecho || on ? c : "rgba(255,255,255,0.08)" }} />
+                  <span style={{ width: on ? 22 : 16, height: on ? 22 : 16, borderRadius: 999, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#0A1628", background: hecho ? c : on ? c : "rgba(255,255,255,0.1)", boxShadow: on ? `0 0 0 5px ${c}30` : "none", border: hecho || on ? "none" : `1px solid ${P.lineHi}` }}>{hecho ? "✓" : ""}</span>
+                  <div style={{ flex: 1, height: 3, borderRadius: 3, background: i === etapas.length - 1 ? "transparent" : hecho ? c : "rgba(255,255,255,0.08)" }} />
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: on ? 900 : 700, color: on ? c : hecho ? P.sub : P.mute, textAlign: "center", lineHeight: 1.2, padding: "0 4px" }}>{GI_ESTADOS[k].l}</span>
+              </button>; })}
             </div>
-            <div style={{ textAlign: "right", padding: "10px 14px", borderRadius: 12, background: res.saldo > 0.5 ? P.amberBg : P.greenBg }}>
-              <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: res.saldo > 0.5 ? P.amber : P.green }}>{res.saldo > 0.5 ? "Falta cobrar" : "Cobrada"}</p>
-              <p style={{ margin: "2px 0 0", fontSize: 26, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{res.saldo > 0.5 ? fmtUSD(res.saldo) : fmtUSD(res.cobrado)}</p>
+          </div>
+        </div>
+
+        {/* ── Plata ── */}
+        {verPlata && <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : "repeat(4,minmax(0,1fr))", gap: 10, marginBottom: 14 }}>
+          {kpi("Venta", fmtUSD(res.venta), P.txt, `${items.length} producto${items.length !== 1 ? "s" : ""}`)}
+          {kpi("Cobrado", fmtUSD(res.cobrado), P.green, `${pctCobrado.toFixed(0)}% de la venta`, barra(pctCobrado, P.green))}
+          {kpi("Costos", fmtUSD(res.costos), "#fca5a5", res.costosFijos > 0 ? `mercadería ${usd0(res.mercaderia)} + flete ${usd0(res.costosFijos)}` : `mercadería ${usd0(res.mercaderia)}`)}
+          {kpi(cerrada ? "Ganancia" : "Ganancia proy.", fmtUSD(gan), gan >= 0 ? P.green : P.red, res.venta > 0 ? `${margen.toFixed(0)}% de margen` : null)}
+        </div>}
+        {verPlata && socio && <div style={{ ...caja, padding: "12px 16px", display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 13, color: P.sub }}>Comisión de {socio.email.split("@")[0]} ({res.pct}%): <strong style={{ color: P.goldHi }}>{fmtUSD(earning ? earning.commission_usd : res.comision)}</strong>{earning ? (earning.paid_to_partner ? ` · pagada ${fmtDateShort(earning.paid_at)}` : earning.is_estimated ? " · estimada" : " · a pagar") : ""}</span>
+          <span style={{ fontSize: 13, color: P.sub }}>Para Argencargo: <strong style={{ color: P.txt }}>{fmtUSD(earning ? Number(earning.net_profit_usd) - Number(earning.commission_usd) : res.margenAC)}</strong></span>
+        </div>}
+
+        {/* ── Productos ── */}
+        <div style={caja}>
+          {tit(`Productos · ${items.length}`, admin && !editProd ? <BtnP small onClick={abrirEdicion}>✎ Editar</BtnP> : null)}
+          {editProd ? <div>
+            <div style={{ display: movil ? "none" : "grid", gridTemplateColumns: `minmax(0,2.4fr) 80px 110px ${tieneCosto && verPlata ? "110px " : ""}110px 32px`, gap: 8, marginBottom: 6 }}>
+              {["Producto", "Cant.", "Venta c/u", ...(tieneCosto && verPlata ? ["Costo c/u"] : []), "Subtotal", ""].map((h, i) => <span key={i} style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", color: P.mute, textAlign: i === 0 ? "left" : "center" }}>{h}</span>)}
+            </div>
+            {filas.map((f, i) => <div key={f.id || `n${i}`} style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : `minmax(0,2.4fr) 80px 110px ${tieneCosto && verPlata ? "110px " : ""}110px 32px`, gap: 8, marginBottom: 8, alignItems: "center" }}>
+              <input value={f.description} onChange={(e) => setFila(i, "description", e.target.value)} placeholder="Descripción" style={{ ...inpT, gridColumn: movil ? "1 / -1" : undefined }} />
+              <input inputMode="decimal" value={f.quantity} onChange={(e) => setFila(i, "quantity", e.target.value.replace(/[^\d.,]/g, ""))} placeholder="Cant." style={{ ...inpT, textAlign: "center" }} />
+              <input inputMode="decimal" value={f.unit_price_usd} onChange={(e) => setFila(i, "unit_price_usd", e.target.value.replace(/[^\d.,]/g, ""))} placeholder="Venta c/u" style={{ ...inpT, textAlign: "right", color: P.goldHi, fontWeight: 800 }} />
+              {tieneCosto && verPlata && <input inputMode="decimal" value={f.unit_cost_usd} onChange={(e) => setFila(i, "unit_cost_usd", e.target.value.replace(/[^\d.,]/g, ""))} placeholder="Costo c/u" style={{ ...inpT, textAlign: "right", color: "#fca5a5", fontWeight: 800 }} />}
+              <span style={{ textAlign: "right", fontWeight: 900, fontVariantNumeric: "tabular-nums", color: P.txt, fontSize: 13.5 }}>{usd0(numero(f.quantity) * numero(f.unit_price_usd))}</span>
+              <button type="button" onClick={() => setFilas((p) => p.filter((_, j) => j !== i))} aria-label="Quitar" style={{ width: 32, height: 32, borderRadius: 9, border: "1px solid rgba(248,113,113,0.35)", background: P.redBg, color: P.red, cursor: "pointer" }}>✕</button>
+            </div>)}
+            <button type="button" onClick={() => setFilas((p) => [...p, { description: "", quantity: "1", unit_price_usd: "", unit_cost_usd: "" }])} style={{ width: "100%", height: 38, borderRadius: 10, border: `1.5px dashed ${P.gold}66`, background: P.goldBg, color: P.goldHi, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginTop: 2 }}>＋ Agregar producto</button>
+            <div style={{ display: "flex", gap: 18, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${P.line}` }}>
+              <span style={{ fontSize: 13, color: P.sub }}>Venta total <strong style={{ color: P.goldHi, fontSize: 16 }}>{fmtUSD(totVentaF)}</strong></span>
+              {tieneCosto && verPlata && totCostoF > 0 && <span style={{ fontSize: 13, color: P.sub }}>Costo mercadería <strong style={{ color: "#fca5a5", fontSize: 16 }}>{fmtUSD(totCostoF)}</strong></span>}
+              {tieneCosto && verPlata && totCostoF > 0 && totVentaF > 0 && <span style={{ fontSize: 13, color: P.sub }}>Margen <strong style={{ color: P.green, fontSize: 16 }}>{((totVentaF - totCostoF) / totVentaF * 100).toFixed(0)}%</strong></span>}
+              <BtnP v="ghost" onClick={() => setEditProd(false)}>Cancelar</BtnP>
+              <BtnP v="gold" onClick={guardarProductos} disabled={guardandoProd}>{guardandoProd ? "Guardando…" : "Guardar productos"}</BtnP>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-            <BtnP v="gold" onClick={() => setModal("cobro")}>+ Cobro</BtnP>
-            {admin && <BtnP onClick={() => setModal("costo")}>+ Costo</BtnP>}
-            {admin && <BtnP onClick={editarVenta}>✎ Venta</BtnP>}
-            <span style={{ flex: 1 }} />
-            {admin && !cerrada && op.status !== "cancelada" && <BtnP v={res.saldo > 0.5 ? "sec" : "green"} onClick={cerrar}>{res.saldo > 0.5 ? `Falta cobrar ${usd0(res.saldo)}` : "Cerrar operación"}</BtnP>}
-            {admin && cerrada && <BtnP v="ghost" onClick={reabrir}>Reabrir</BtnP>}
-            {admin && !cerrada && op.status !== "cancelada" && <BtnP v="ghost" onClick={cancelar} style={{ color: P.red }}>Cancelar</BtnP>}
-          </div>
-        </Papel>
-
-        <Papel title="Etapa" right={!cerrada ? <div style={{ width: 170 }}><DatePicker small value={op.eta ? String(op.eta).slice(0, 10) : ""} onChange={(v) => patchOp({ eta: v || null }, "ETA guardada")} placeholder="ETA" /></div> : op.eta ? <span style={{ fontSize: 12.5, color: P.sub }}>ETA {fmtDate(op.eta)}</span> : null}>
-          <div className="gi-scroll" style={{ display: "flex", gap: 6, overflowX: "auto" }}>
-            {etapas.map((k, i) => { const on = k === op.status; const hecho = idx >= 0 && i < idx; const e2 = GI_ESTADOS[k]; const col = { pendiente: P.mute, en_deposito_origen: P.amber, en_preparacion: P.violet, en_transito: P.blue, arribo_argentina: P.violet, en_aduana: P.amber, entregada: P.green, operacion_cerrada: P.green }[k] || P.sub; return <button key={k} onClick={() => cambiarEtapa(k)} disabled={k === "operacion_cerrada" && !admin} style={{ flexShrink: 0, padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: on ? 800 : 600, fontFamily: "inherit", cursor: "pointer", border: `1.5px solid ${on ? col : hecho ? `${col}66` : P.line}`, background: on ? `${col}18` : hecho ? P.soft : "transparent", color: on ? col : hecho ? P.sub : P.mute }}>{hecho ? "✓ " : ""}{e2.l}</button>; })}
-          </div>
-        </Papel>
-
-        <Papel title="Plata">
-          <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : `repeat(${verPlata ? 6 : 3},1fr)`, gap: 14 }}>
-            <DatoP label="Venta" val={fmtUSD(res.venta)} />
-            <DatoP label="Cobrado" val={fmtUSD(res.cobrado)} c={P.green} />
-            <DatoP label="Saldo" val={fmtUSD(res.saldo)} c={res.saldo > 0.5 ? P.amber : P.mute} />
-            {verPlata && <DatoP label="Costos" val={fmtUSD(res.costos)} c={P.red} sub={res.estimado ? "con pesos estimados" : null} />}
-            {verPlata && <DatoP label={cerrada ? "Ganancia" : "Ganancia proy."} val={fmtUSD(gan)} c={gan >= 0 ? P.green : P.red} />}
-            {verPlata && <DatoP label={socio ? `Comisión ${res.pct}%` : "Comisión"} val={socio ? fmtUSD(earning ? earning.commission_usd : res.comision) : "—"} c={P.goldHi} sub={earning ? (earning.paid_to_partner ? `pagada ${fmtDateShort(earning.paid_at)}` : earning.is_estimated ? "estimada" : "a pagar") : null} />}
-          </div>
-          {verPlata && socio && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: P.sub }}>Queda para Argencargo: <strong style={{ color: P.txt }}>{fmtUSD(earning ? Number(earning.net_profit_usd) - Number(earning.commission_usd) : res.margenAC)}</strong></p>}
-        </Papel>
-
-        <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr" : "1fr 1fr", gap: 12, alignItems: "start" }}>
-          <Papel title={`Cobros del cliente · ${cobros.length}`}>
-            {cobros.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin cobros todavía.</p> : cobros.map((c) => <div key={c.id} style={fila}>
+          : items.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin productos todavía.</p>
+          : <div>{items.map((it) => { const q = Number(it.quantity || 0), pv = Number(it.unit_price_usd || 0), pc = it.unit_cost_usd != null ? Number(it.unit_cost_usd) : null; const m = pc != null && pv > 0 ? (pv - pc) / pv * 100 : null; return <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderTop: `1px solid ${P.line}` }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{fmtDateShort(c.payment_date)} · {c.payment_method === "cripto" ? "USDT" : (c.payment_method || "—").replace(/_/g, " ")}{c.currency === "ARS" && c.amount_ars ? ` · ARS ${Number(c.amount_ars).toLocaleString("es-AR")} a ${c.exchange_rate}` : ""}</p>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 14, color: P.txt }}>{it.description}</p>
+                <p style={{ margin: "3px 0 0", fontSize: 12, color: P.mute }}>{q.toLocaleString("es-AR")} u. × {fmtUSD(pv)}{verPlata && pc != null ? ` · costo ${fmtUSD(pc)}` : ""}{it.ncm_code ? ` · NCM ${it.ncm_code}` : ""}</p>
+              </div>
+              {verPlata && m != null && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: m >= 0 ? P.green : P.red, background: m >= 0 ? P.greenBg : P.redBg }}>{m.toFixed(0)}%</span>}
+              <span style={{ fontWeight: 900, fontSize: 15, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: P.txt }}>{fmtUSD(q * pv)}</span>
+            </div>; })}</div>}
+        </div>
+
+        {/* ── Cobros y pagos ── */}
+        <div style={{ display: "grid", gridTemplateColumns: movil || !verPlata ? "1fr" : "1fr 1fr", gap: 14, alignItems: "start" }}>
+          <div style={caja}>
+            {tit(`Cobros del cliente · ${cobros.length}`, activa ? <BtnP small onClick={() => setModal("cobro")}>＋ Cobro</BtnP> : null)}
+            {cobros.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin cobros todavía.</p> : cobros.map((c) => <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.line}` }}>
+              <span style={{ width: 32, height: 32, borderRadius: 9, background: P.greenBg, color: P.green, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>↓</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: P.txt }}>{fmtDateShort(c.payment_date)} · {c.payment_method === "cripto" ? "USDT" : (c.payment_method || "—").replace(/_/g, " ")}{c.currency === "ARS" && c.amount_ars ? ` · ARS ${Number(c.amount_ars).toLocaleString("es-AR")}` : ""}</p>
                 {c.notes && <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{c.notes}</p>}
               </div>
-              <span style={{ fontWeight: 800, color: P.green, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(c.amount_usd)}</span>
+              <span style={{ fontWeight: 900, color: P.green, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(c.amount_usd)}</span>
               {admin && xBtn(() => borrarCobro(c))}
             </div>)}
-          </Papel>
+          </div>
 
-          {verPlata && <Papel title={`Costos · ${pagos.length + (res.costosFijos > 0 ? 1 : 0)}`}>
-            {pagos.length === 0 && res.costosFijos === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin costos cargados.</p> : <>
-              {pagos.map((p) => { const ref = p.type === "refund"; const pendiente = Number(p.amount_usd || 0) === 0 && Number(p.amount_ars || 0) > 0; return <div key={p.id} style={fila}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{ref ? "↩ Reembolso" : p.notes || "Pago a proveedor"}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{fmtDateShort(p.payment_date)} · {(p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
-                </div>
-                {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 9px", borderRadius: 999, border: `1px solid ${p.is_paid ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.4)"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
-                <span style={{ fontWeight: 800, color: ref ? P.green : P.red, fontVariantNumeric: "tabular-nums", minWidth: 86, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
-                {admin && xBtn(() => borrarPago(p))}
-              </div>; })}
-              {res.costosFijos > 0 && <div style={fila}>
-                <div style={{ flex: 1 }}><p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>Flete, impuestos y despacho</p><p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>Del vuelo / contenedor</p></div>
-                <span style={{ fontWeight: 800, color: P.red, fontVariantNumeric: "tabular-nums" }}>−{usd0(res.costosFijos)}</span>
-              </div>}
-              <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, fontWeight: 800 }}><span style={{ color: P.sub }}>Total</span><span style={{ color: P.red, fontVariantNumeric: "tabular-nums" }}>−{fmtUSD(res.costos)}</span></div>
-            </>}
-          </Papel>}
-
-          <Papel title={`Productos · ${items.length}`}>
-            {items.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin productos.</p> : items.map((it) => <div key={it.id} style={{ ...fila, justifyContent: "space-between" }}>
-              <div style={{ minWidth: 0 }}><p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: P.txt }}>{it.description}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{it.quantity} u.{it.ncm_code ? ` · NCM ${it.ncm_code}` : ""}</p></div>
-              <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: P.txt }}>{usd0(Number(it.unit_price_usd || 0) * Number(it.quantity || 0))}</span>
-            </div>)}
-          </Papel>
-
-          <Papel title={`Bultos · ${bultos.reduce((s, b) => s + Number(b.quantity || 1), 0)}`} right={bultos.length ? <span style={{ fontSize: 12.5, color: P.sub }}>{kg.toFixed(1)} kg · {cbm.toFixed(3)} m³</span> : null}>
-            {bultos.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin bultos cargados.</p> : bultos.map((b) => <div key={b.id} style={{ ...fila, justifyContent: "space-between", fontSize: 13, color: P.txt }}>
-              <span>#{b.package_number}{Number(b.quantity) > 1 ? ` ×${b.quantity}` : ""} · {b.length_cm && b.width_cm && b.height_cm ? `${b.length_cm}×${b.width_cm}×${b.height_cm} cm` : "sin medidas"}</span>
-              <span style={{ color: P.sub }}>{Number(b.gross_weight_kg || 0) > 0 ? `${Number(b.gross_weight_kg).toFixed(1)} kg` : "—"}</span>
-            </div>)}
-          </Papel>
-
-          {admin && <SocioOp op={op} socios={d.socios} onGuardar={patchOp} pctActual={res.pct} />}
+          {verPlata && <div style={caja}>
+            {tit("Proveedor y costos", activa && admin ? <BtnP small onClick={() => setModal({ costo: { monto: "", nota: "" } })}>＋ Pago</BtnP> : null)}
+            <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,0.22)", border: `1px solid ${P.line}`, marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 12.5, color: P.sub }}>Mercadería</span><strong style={{ fontVariantNumeric: "tabular-nums" }}>{fmtUSD(res.mercaderia)}</strong></div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4 }}><span style={{ fontSize: 12, color: P.mute }}>Pagado {fmtUSD(res.mercaderiaPagada)}</span><span style={{ fontSize: 12, fontWeight: 800, color: res.mercaderiaFalta > 0.5 ? P.amber : P.green }}>{res.mercaderiaFalta > 0.5 ? `falta ${fmtUSD(res.mercaderiaFalta)}` : "pagada"}</span></div>
+              {barra(pctPagado, res.mercaderiaFalta > 0.5 ? P.amber : P.green)}
+            </div>
+            {pagos.map((p) => { const ref = p.type === "refund"; const pendiente = Number(p.amount_usd || 0) === 0 && Number(p.amount_ars || 0) > 0; return <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.line}` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: P.txt }}>{ref ? "↩ Reembolso" : p.notes || "Pago a proveedor"}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{fmtDateShort(p.payment_date)} · {(p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
+              </div>
+              {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 999, border: `1px solid ${p.is_paid ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.4)"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
+              <span style={{ fontWeight: 900, color: ref ? P.green : "#fca5a5", fontVariantNumeric: "tabular-nums", minWidth: 80, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
+              {admin && xBtn(() => borrarPago(p))}
+            </div>; })}
+            {res.costosFijos > 0 && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.line}` }}>
+              <div style={{ flex: 1 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: P.txt }}>Flete, impuestos y despacho</p><p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>Del vuelo / contenedor</p></div>
+              <span style={{ fontWeight: 900, color: "#fca5a5", fontVariantNumeric: "tabular-nums" }}>−{usd0(res.costosFijos)}</span>
+            </div>}
+          </div>}
         </div>
       </div>
 
-      {/* Columna derecha: solo información */}
+      {/* ── Columna derecha: datos, bultos y socio ── */}
       <div style={{ position: movil ? "static" : "sticky", top: 16, maxHeight: movil ? "none" : "calc(100vh - 32px)", overflowY: movil ? "visible" : "auto" }} className="gi-scroll">
-        <Papel title="Datos">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
-            <DatoP label="Cliente" val={nombre(op.clients)} sub={op.clients?.client_code} />
+        <div style={caja}>
+          {tit("Datos")}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 14px" }}>
             <DatoP label="WhatsApp" val={op.clients?.whatsapp && op.clients.whatsapp !== "—" ? op.clients.whatsapp : "—"} />
             <DatoP label="Canal" val={GI_CANALES[op.channel]?.nombre || op.channel} />
             <DatoP label="Origen" val={op.origin || "—"} />
-            <DatoP label="Socio" val={socio ? socio.email.split("@")[0] : "Argencargo"} sub={socio ? `${res.pct}% de comisión` : null} />
             <DatoP label="ETA" val={op.eta ? fmtDate(op.eta) : "—"} />
             <DatoP label="Creada" val={fmtDate(op.created_at)} />
-            {op.closed_at && <DatoP label="Cerrada" val={fmtDate(op.closed_at)} />}
-            <DatoP label="Carga" val={bultos.length ? `${kg.toFixed(1)} kg` : "—"} sub={bultos.length ? `${cbm.toFixed(3)} m³` : null} />
-            <DatoP label="Productos" val={String(items.length)} />
+            {op.closed_at ? <DatoP label="Cerrada" val={fmtDate(op.closed_at)} /> : <DatoP label="Socio" val={socio ? socio.email.split("@")[0] : "Argencargo"} />}
           </div>
-          {op.description && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: P.sub, lineHeight: 1.5 }}>{op.description}</p>}
-        </Papel>
-        {verPlata && <Papel title="Resumen">
-          {[["Venta", res.venta, P.txt], ["Cobrado", res.cobrado, P.green], ["Costos", -res.costos, P.red], [cerrada ? "Ganancia" : "Ganancia proy.", gan, gan >= 0 ? P.green : P.red], socio ? [`Comisión ${res.pct}%`, earning ? Number(earning.commission_usd) : res.comision, P.goldHi] : null, socio ? ["Para Argencargo", earning ? Number(earning.net_profit_usd) - Number(earning.commission_usd) : res.margenAC, P.txt] : null].filter(Boolean).map(([l, v, c]) => <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: `1px solid ${P.line}`, fontSize: 13 }}><span style={{ color: P.sub }}>{l}</span><strong style={{ color: c, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(v)}</strong></div>)}
-        </Papel>}
+        </div>
+        <div style={caja}>
+          {tit(`Bultos · ${bultos.reduce((s, b) => s + Number(b.quantity || 1), 0)}`, bultos.length ? <span style={{ fontSize: 12, color: P.sub }}>{kg.toFixed(1)} kg · {cbm.toFixed(3)} m³</span> : null)}
+          {bultos.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin bultos cargados.</p> : bultos.map((b) => <div key={b.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 0", borderTop: `1px solid ${P.line}`, fontSize: 13 }}>
+            <span style={{ color: P.txt }}>#{b.package_number}{Number(b.quantity) > 1 ? ` ×${b.quantity}` : ""} · {b.length_cm && b.width_cm && b.height_cm ? `${b.length_cm}×${b.width_cm}×${b.height_cm}` : "sin medidas"}</span>
+            <span style={{ color: P.sub }}>{Number(b.gross_weight_kg || 0) > 0 ? `${Number(b.gross_weight_kg).toFixed(1)} kg` : "—"}</span>
+          </div>)}
+        </div>
+        {admin && <SocioOp op={op} socios={d.socios} onGuardar={patchOp} pctActual={res.pct} />}
       </div>
     </div>
 
     {modal === "cobro" && <CobroModal op={op} saldo={res.saldo} token={token} cobrado={res.cobrado} onClose={() => setModal(null)} onListo={() => { setModal(null); refrescar(); }} />}
-    {modal === "costo" && <CostoModal op={op} token={token} tarjetas={tarjetas} pagos={pagos} onClose={() => setModal(null)} onListo={async (lista) => { setModal(null); await sincronizarCostoProducto(lista); refrescar(); }} />}
+    {modal?.costo && <CostoModal op={op} token={token} tarjetas={tarjetas} pagos={pagos} inicial={modal.costo} onClose={() => setModal(null)} onListo={async (lista) => { setModal(null); await sincronizarCostoProducto(lista); refrescar(); }} />}
   </div>;
 }
 
@@ -1119,16 +1230,16 @@ function CobroModal({ op, saldo, cobrado, token, onClose, onListo }) {
   </Modal>;
 }
 
-function CostoModal({ op, token, tarjetas, pagos, onClose, onListo }) {
+function CostoModal({ op, token, tarjetas, pagos, inicial = null, onClose, onListo }) {
   const [tipo, setTipo] = useState("payment");
   const [moneda, setMoneda] = useState("USD");
   const [metodo, setMetodo] = useState("transferencia");
-  const [monto, setMonto] = useState("");
+  const [monto, setMonto] = useState(inicial?.monto || "");
   const [tc, setTc] = useState("");
   const [tarjeta, setTarjeta] = useState(tarjetas[0]?.id || "");
   const [fecha, setFecha] = useState(hoyISO());
   const [pagado, setPagado] = useState(true);
-  const [nota, setNota] = useState("");
+  const [nota, setNota] = useState(inicial?.nota || "");
   const [g, setG] = useState(false);
   const esTC = metodo === "tarjeta_credito";
   const guardar = async () => {
@@ -1152,7 +1263,7 @@ function CostoModal({ op, token, tarjetas, pagos, onClose, onListo }) {
     toast.success(ars && esTC ? "Costo en tarjeta: se dolariza al cierre" : "Costo registrado");
     onListo([...pagos, fila]);
   };
-  return <Modal title={`Costo · ${op.operation_code}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={g}>{g ? "Guardando…" : "Guardar"}</Btn></>}>
+  return <Modal title={`Pago a proveedor · ${op.operation_code}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={g}>{g ? "Guardando…" : "Guardar"}</Btn></>}>
     <Campo label="Tipo"><Opciones value={tipo} onChange={setTipo} cols={2} items={[{ k: "payment", l: "Pago a proveedor" }, { k: "refund", l: "Reembolso" }]} /></Campo>
     <Campo label="Medio"><Opciones value={metodo} onChange={setMetodo} items={[{ k: "transferencia", l: "Transferencia" }, { k: "efectivo", l: "Efectivo" }, { k: "tarjeta_credito", l: "Tarjeta" }, { k: "cripto", l: "USDT" }]} /></Campo>
     {esTC && <Campo label="Tarjeta">{tarjetas.length ? <Opciones value={tarjeta} onChange={setTarjeta} items={tarjetas.map((t) => ({ k: t.id, l: t.name }))} /> : <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>No hay tarjetas cargadas.</p>}</Campo>}
