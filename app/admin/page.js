@@ -4199,7 +4199,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>;
         })()}
         <div style={FIN_SEC}>
-        <p style={FIN_SEC_T}>Flete</p>
+        {/* Marítimo LCL/FCL (22/10/2026): flete e impuestos se pagan juntos, en un solo pago al forwarder. */}
+        <p style={FIN_SEC_T}>{op.channel==="maritimo_blanco"?"Flete e impuestos":"Flete"}</p>
         {(()=>{
           // Canal B (Integral AC): flete siempre se paga en efectivo. Default + única opción.
           // Marítimo blanco (FCL/LCL): no hay agente — flete se paga directo al despachante por efectivo o transferencia (ARS/USD).
@@ -4272,8 +4273,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         </>;})()}
         </div>
         {/* Impuestos: solo aéreo A y marítimo A (en el Integral no hay). Incluyen todo lo de aduana. */}
-        {!op.channel?.includes("negro")&&<><div style={FIN_SEC}>
-          <p style={FIN_SEC_T}>Impuestos</p>
+        {!op.channel?.includes("negro")&&<>{(op.channel!=="maritimo_blanco"||Number(op.cost_impuestos_reales||0)>0||Number(op.cost_impuestos_ars||0)>0||Number(op.cost_impuestos_usd||0)>0)&&<div style={FIN_SEC}>
+          <p style={FIN_SEC_T}>Impuestos{op.channel==="maritimo_blanco"&&<span style={{fontSize:11.5,fontWeight:600,color:"rgba(255,255,255,0.4)"}}> · cargado aparte antes; ahora va dentro de Flete e impuestos</span>}</p>
           {(()=>{
             // Marítimo blanco (FCL/LCL): impuestos solo por efectivo o transferencia, NO tarjeta.
             // Además acepta USD o ARS como moneda — USD se carga directo, ARS se dollariza con TC.
@@ -4339,7 +4340,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               return <p style={{fontSize:11,color:"rgba(96,165,250,0.9)",margin:"6px 0 0",lineHeight:1.5}}>Esta op viajó partida en {conImp.length} vuelos: el impuesto suma el despacho de cada uno — {conImp.map(f=>`${f.flights?.flight_code||"vuelo"} USD ${Number(f.tax_share_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join(" + ")} = <strong style={{color:"#fff"}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>;
             })()}</>;
           })()}
-        </div>
+        </div>}
         {(Number(op.cost_gasto_documental_ars||0)>0||Number(op.cost_gasto_documental||0)>0)&&<div style={FIN_SEC}>
           <p style={FIN_SEC_T}>Gasto documental <span style={{fontSize:11.5,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· cargado antes; ahora va dentro de Impuestos</span></p>
           {(()=>{const isEf=(op.cost_gasto_doc_method||"tarjeta_credito")==="efectivo";return <>
@@ -4497,7 +4498,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               <strong style={{color:"#60a5fa"}}>Presu ajustado al cobro real:</strong> el cliente {ingresoNeto>presuTotal?"pagó más":"pagó menos"} que lo presupuestado, así que cada concepto se prorratea con factor <strong>×{factor.toFixed(3)}</strong>. Saldo refleja la realidad del cobro.
             </div>}
             {cabecera}
-            {block("Flete",bFlete,costFlete)}
+            {/* LCL/FCL: flete e impuestos son un solo pago al forwarder → una sola línea (si no, el flete
+                figura a pérdida y los impuestos con una ganancia que no existe). */}
+            {op.channel==="maritimo_blanco"&&!riPagaImpuestos
+              ? block("Flete e impuestos",bFlete+bTax+bSeg,costFlete+costImp+costDoc+costSeg)
+              : block("Flete",bFlete,costFlete)}
             {/* Impuestos: una sola línea unificada que incluye el gasto documental.
                 Presupuestado = bTax (que ya incluye el desembolso/gasto doc cuando es modo auto;
                 en modo manual respeta lo que cargó el admin, aunque sea 0).
@@ -4508,7 +4513,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Impuestos · fuera de la rentabilidad</p>
                   <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:0,fontStyle:"italic"}}>El RI abonó USD {Number(op.budget_taxes||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de impuestos directo al despachante. No se presupuestó ni se cobró, así que no entra en el cálculo.</p>
                 </div>)
-              : (bTax>0||bSeg>0||costImp>0||costDoc>0||costSeg>0)&&block("Impuestos",bTax+bSeg,costImp+costDoc+costSeg)}
+              : op.channel!=="maritimo_blanco"&&(bTax>0||bSeg>0||costImp>0||costDoc>0||costSeg>0)&&block("Impuestos",bTax+bSeg,costImp+costDoc+costSeg)}
             {riPagaImpuestos&&(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
             {bSurch>0&&block("Recargo por valor",bSurch,0)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}

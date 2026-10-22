@@ -1167,10 +1167,10 @@ function OpDetalle({ ctx, id }) {
               {barra(pctPagado, res.mercaderiaFalta > 0.5 ? P.amber : P.green)}
               {pagos.filter((p) => tipoCosto(p) === "mercaderia").map(filaCosto)}
             </>)}
-            {grupoCosto("Flete", res.flete, <>
+            {grupoCosto(op.channel === "maritimo_blanco" ? "Flete e impuestos" : "Flete", res.flete, <>
               {res.fleteAuto > 0 && autoCosto(fuenteFlete, res.fleteAuto)}
               {pagos.filter((p) => tipoCosto(p) === "flete").map(filaCosto)}
-              {res.flete === 0 && <p style={{ margin: "6px 0 0", fontSize: 12, color: P.mute }}>{fleteAutomatico ? `Se toma ${op.channel === "aereo_blanco" ? "del vuelo cuando se carga su costo" : "del contenedor cuando llega"}.` : "Cargalo con ＋ Costo → Flete (en LCL/FCL se paga todo de una)."}</p>}
+              {res.flete === 0 && <p style={{ margin: "6px 0 0", fontSize: 12, color: P.mute }}>{fleteAutomatico ? `Se toma ${op.channel === "aereo_blanco" ? "del vuelo cuando se carga su costo" : "del contenedor cuando llega"}.` : "Cargalo con ＋ Costo → Flete e impuestos."}</p>}
             </>)}
             {(res.impuestos > 0 || op.channel === "aereo_blanco") && grupoCosto("Impuestos", res.impuestos, <>
               {res.impuestosAuto > 0 && autoCosto(op.channel === "aereo_blanco" ? fuenteFlete : "Cargados en la operación", res.impuestosAuto)}
@@ -1300,7 +1300,7 @@ function CostoModal({ op, token, tarjetas, pagos, res, fuenteFlete, inicial = nu
   const ROJO = "#fca5a5";
   const TIPOS = [
     { k: "mercaderia", l: "Proveedor", s: "La mercadería", i: "M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9z M9 21V12h6v9" },
-    { k: "flete", l: "Flete", s: aereo ? "Sale del vuelo" : integral ? "Sale del contenedor" : "LCL/FCL, todo junto", i: "M3 17h13V6H3z M16 10h4l2 3v4h-6 M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
+    { k: "flete", l: aereo || integral ? "Flete" : "Flete e impuestos", s: aereo ? "Sale del vuelo" : integral ? "Sale del contenedor" : "Un solo pago", i: "M3 17h13V6H3z M16 10h4l2 3v4h-6 M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
     { k: "impuestos", l: "Impuestos", s: aereo ? "Salen del vuelo" : "Despacho, aduana", i: "M9 14l6-6 M9.5 8.5h.01 M14.5 13.5h.01 M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2z" },
     { k: "gastos", l: "Otro", s: "Flete local, seguro…", i: "M12 5v14 M5 12h14" },
   ];
