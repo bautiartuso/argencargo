@@ -18058,6 +18058,12 @@ function MaritimePanel({token,allClients=[]}){
   const [menuMt,setMenuMt]=useState(null); // menú abierto: "pdf" | "cont" | "dep"
   const [subiendoFoto,setSubiendoFoto]=useState(null); // id de la carga que está subiendo foto
   const [fotoGrande,setFotoGrande]=useState(null); // {fotos,i}
+  // Flechas del teclado y Escape en el visor de fotos (22/10/2026).
+  useEffect(()=>{
+    if(!fotoGrande)return;
+    const k=(e)=>{if(e.key==="Escape")setFotoGrande(null);else if(e.key==="ArrowRight")setFotoGrande(f=>f&&({...f,i:(f.i+1)%f.fotos.length}));else if(e.key==="ArrowLeft")setFotoGrande(f=>f&&({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));};
+    window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k);
+  },[!!fotoGrande]);
   const [contAbiertosMt,setContAbiertosMt]=useState(new Set()); // contenedores desplegados (arrancan plegados)
   const [soloSinValor,setSoloSinValor]=useState(false);
   const [vistosPrevios,setVistosPrevios]=useState(()=>mtLeerVistos());
@@ -18706,7 +18712,6 @@ function MaritimePanel({token,allClients=[]}){
     {/* Foto en grande */}
     {fotoGrande&&<div onClick={()=>setFotoGrande(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(5,10,20,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <img src={fotoGrande.fotos[fotoGrande.i].u||fotoGrande.fotos[fotoGrande.i]} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"84vh",borderRadius:12}}/>
-      {fotoGrande.fotos[fotoGrande.i].k&&<span style={{position:"absolute",top:20,left:"50%",transform:"translateX(-50%)",padding:"6px 14px",borderRadius:999,background:"#fff",color:"#0A1628",fontSize:13.5,fontWeight:800}}>{fotoGrande.fotos[fotoGrande.i].k}</span>}
       {fotoGrande.fotos.length>1&&<>
         <button onClick={e=>{e.stopPropagation();setFotoGrande(f=>({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));}} style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.12)",color:"#fff",fontSize:26,cursor:"pointer"}}>‹</button>
         <button onClick={e=>{e.stopPropagation();setFotoGrande(f=>({...f,i:(f.i+1)%f.fotos.length}));}} style={{position:"absolute",right:18,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.12)",color:"#fff",fontSize:26,cursor:"pointer"}}>›</button>
