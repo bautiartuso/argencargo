@@ -937,6 +937,9 @@ function OperationNotesPanel({opId,token}){
 }
 
 function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
+  const [estadoGuardado,setEstadoGuardado]=useState(initOp.status); // para el aviso "cambio sin guardar"
+  const [evAbierto,setEvAbierto]=useState(null); // evento de seguimiento que se está editando
+  const [horaDraft,setHoraDraft]=useState({}); // hora que se está tipeando por evento (HH:MM)
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:hoyAR(),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:hoyAR(),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
@@ -1674,6 +1677,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const trigger=triggerMap[rest.status];
       if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
     }else{flash("Operación guardada");}
+    setEstadoGuardado(op.status);
     setSaving(false);
   };
   const handleSave=()=>{
@@ -1853,7 +1857,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {tab==="general"&&<>
       {/* GI: Asignación de socio + comisión por op (override del cliente) — visible apenas entra al detalle */}
       {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&op.docs_confirmed_at&&<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog("¿Destrabar la mercadería? El cliente va a poder editarla y tendrá que volver a confirmarla."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{docs_confirmed_at:null}});setOp(p=>({...p,docs_confirmed_at:null}));flash("✅ Mercadería destrabada — el cliente puede editar");}}>↻ Destrabar mercadería</Btn>}
+      <Card v2 title="Estado" sub={op.status!==estadoGuardado?<span style={{color:"#fbbf24",fontWeight:700}}>Cambio sin guardar · tocá Guardar</span>:null} actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&op.docs_confirmed_at&&<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog("¿Destrabar la mercadería? El cliente va a poder editarla y tendrá que volver a confirmarla."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{docs_confirmed_at:null}});setOp(p=>({...p,docs_confirmed_at:null}));flash("✅ Mercadería destrabada — el cliente puede editar");}}>↻ Destrabar mercadería</Btn>}
 {op.status==="operacion_cerrada"&&<Btn small variant="secondary" onClick={async()=>{
   // Ajustar saldo: recalcula el excedente del cliente según el presupuesto actual.
   // Lógica: total_recibido = collected_amount + overpayments_actuales (lo que pagó el cliente en total)
@@ -1889,37 +1893,53 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 <Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
 </>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
-        <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
-        <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
-        {/* Aereo A: la ETA se edita en la solapa Seguimiento y las notas se sacaron (pedido 02/08). */}
-        {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
+        {/* Etapas como línea de progreso (rediseño 22/10/2026): tocar una cambia el estado; se guarda con Guardar. */}
+        {(()=>{const flujo=STATUSES.filter(k=>k!=="cancelada"&&!(isGI&&k==="en_preparacion"));const idx=flujo.indexOf(op.status);const cap=(t)=>t.charAt(0)+t.slice(1).toLowerCase();
+          return <div style={{marginBottom:18}}>
+            <div className="ac-editor-tabs" style={{overflowX:"auto",paddingBottom:4}}>
+              <div style={{display:"flex",minWidth:720}}>
+                {flujo.map((k,i)=>{const on=k===op.status;const hecho=idx>=0&&i<idx;const c=SM[k].c;return <button key={k} type="button" onClick={()=>chOp("status")(k)} style={{flex:"1 1 0",minWidth:0,background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",flexDirection:"column",alignItems:"center",gap:9,fontFamily:"inherit"}}>
+                  <div style={{display:"flex",alignItems:"center",width:"100%"}}>
+                    <div style={{flex:1,height:3,borderRadius:3,background:i===0?"transparent":hecho||on?c:"rgba(255,255,255,0.08)"}}/>
+                    <span style={{width:on?24:16,height:on?24:16,borderRadius:999,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:900,color:"#0A1628",background:hecho||on?c:"rgba(255,255,255,0.1)",boxShadow:on?`0 0 0 6px ${c}2e`:"none",border:hecho||on?"none":"1px solid rgba(255,255,255,0.16)",transition:"all 160ms"}}>{hecho?"✓":""}</span>
+                    <div style={{flex:1,height:3,borderRadius:3,background:i===flujo.length-1?"transparent":hecho?c:"rgba(255,255,255,0.08)"}}/>
+                  </div>
+                  <span style={{fontSize:11.5,fontWeight:on?800:600,color:on?c:hecho?"rgba(255,255,255,0.7)":"rgba(255,255,255,0.4)",textAlign:"center",lineHeight:1.25,padding:"0 4px"}}>{cap(SM[k].l)}</span>
+                </button>;})}
+              </div>
+            </div>
+            {op.status==="cancelada"
+              ?<div style={{marginTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",borderRadius:10,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)"}}><span style={{fontSize:13,fontWeight:700,color:"#f87171"}}>Operación cancelada</span></div>
+              :<div style={{marginTop:10,textAlign:"right"}}><button type="button" onClick={()=>chOp("status")("cancelada")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.35)",fontSize:11.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Marcar cancelada</button></div>}
+          </div>;})()}
+        <div style={{display:"grid",gridTemplateColumns:!(op.channel==="aereo_blanco"&&!isGI)?"minmax(0,2fr) minmax(0,1fr)":"1fr",gap:"0 16px"}}>
+          <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
+          {/* Aereo A: la ETA se edita en la solapa Seguimiento y las notas se sacaron (pedido 02/08). */}
+          {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
+        </div>
         {!(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(op.channel)&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
-        <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{padding:"12px 16px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,marginTop:8,cursor:"pointer",display:"flex",alignItems:"center",gap:14,userSelect:"none",transition:"all 180ms"}}>
-          <div style={{width:44,height:24,background:op.skip_review_request?"linear-gradient(135deg, #fb923c, #f97316)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.skip_review_request?"0 0 10px rgba(251,146,60,0.35)":"",flexShrink:0}}>
-            <div style={{position:"absolute",top:2,left:op.skip_review_request?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <p style={{fontSize:13,fontWeight:op.skip_review_request?700:600,color:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.6)",margin:0,letterSpacing:"0.02em"}}>No pedir reseña al cerrar esta op</p>
-            {op.skip_review_request&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.4}}>Usar si la experiencia fue mala y no queremos incentivar una reseña pública.</p>}
-          </div>
+        <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",marginTop:4,marginBottom:8,borderRadius:12,background:"rgba(0,0,0,0.18)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.35)":"rgba(255,255,255,0.07)"}`,cursor:"pointer",userSelect:"none"}}>
+          <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"#fff"}}>No pedir reseña al cerrar</p>{op.skip_review_request&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>No se le manda el pedido de reseña a este cliente</p>}</div>
+          <span style={{width:40,height:22,borderRadius:999,position:"relative",flexShrink:0,background:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.12)",transition:"background 160ms"}}><span style={{position:"absolute",top:3,left:op.skip_review_request?21:3,width:16,height:16,borderRadius:"50%",background:op.skip_review_request?"#0A1628":"#fff",transition:"left 180ms cubic-bezier(0.34,1.56,0.64,1)"}}/></span>
         </div>
         {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
           {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
         </div>}
       </Card>
-      {!isGI&&<Card title="Resumen">
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16}}>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CANAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{CM[op.channel]||op.channel}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ORIGEN</p><p style={{fontSize:14,color:"#fff",margin:0}}>{op.origin||"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRODUCTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{items.length}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>BULTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.length}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>VALOR FOB</p><p style={{fontSize:14,color:"#fff",margin:0}}>USD {items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0).toLocaleString("es-AR")}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} kg</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0).toFixed(4)} m³</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
-        </div>
-      </Card>}
+      {!isGI&&(()=>{const fob=items.reduce((s2,it)=>s2+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const kgB=pkgs.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const m3=pkgs.reduce((s2,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s2+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);const nB=pkgs.reduce((s2,p)=>s2+Number(p.quantity||1),0);
+        const tile=(l,v,c)=><div style={{padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)",minWidth:0}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>{l}</p><p style={{margin:"6px 0 0",fontSize:19,fontWeight:800,color:c||"#fff",letterSpacing:"-0.01em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p></div>;
+        return <Card v2 title="Resumen">
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+            {tile("Canal",CM[op.channel]||op.channel,"#E8D098")}
+            {tile("Origen",`${banderaOrigen(op.origin)} ${op.origin||"—"}`)}
+            {tile("Valor FOB",`USD ${fob.toLocaleString("es-AR",{maximumFractionDigits:2})}`)}
+            {tile("Productos",items.length)}
+            {tile("Bultos",nB)}
+            {tile("Peso bruto",`${kgB.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`)}
+            {tile("Volumen",`${m3.toLocaleString("es-AR",{maximumFractionDigits:3})} m³`)}
+          </div>
+        </Card>;})()}
       {(()=>{
         // Timeline enriquecido: status changes + emails enviados + eventos del courier
         const fmtDt=d=>{try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}catch{return d;}};
@@ -1952,8 +1972,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         // Maritimo A y B sin card de Historia (pedido 02/08).
         if(op.channel?.includes("maritimo"))return null;
 
-        return <Card title="Historia">
-          <div style={{position:"relative",paddingLeft:14}}>
+        return <details style={{marginBottom:16,borderRadius:18,border:"1px solid rgba(255,255,255,0.08)",background:"linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))",padding:"16px 22px"}}>
+          <summary style={{cursor:"pointer",listStyle:"none",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><span style={{fontSize:17,fontWeight:800,color:"#fff",letterSpacing:"-0.015em"}}>Historia <span style={{fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {items.length} movimientos</span></span><span style={{fontSize:12,fontWeight:700,color:"#E8D098"}}>Ver ▾</span></summary>
+          <div style={{position:"relative",paddingLeft:14,marginTop:16}}>
             {/* Línea vertical */}
             <div style={{position:"absolute",left:5,top:6,bottom:6,width:1,background:"linear-gradient(180deg, rgba(184,149,106,0.3) 0%, rgba(255,255,255,0.05) 100%)"}}/>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -1973,7 +1994,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               </div>)}
             </div>
           </div>
-        </Card>;
+        </details>;
       })()}
     </>}
 
@@ -2204,7 +2225,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const manualInputStyle={width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
       // Si manual: usamos los valores guardados como los visualizados
       if(isManual){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
-      return <Card v2 title="Presupuesto" sub={opClient?`${opClient.first_name||""} ${opClient.last_name||""} · ${isRI?"Responsable Inscripto":"No RI"}`.trim():null} actions={
+      return <Card v2 title="Presupuesto" actions={
         (()=>{const b=(bg,col,brd)=>({padding:"6px 13px",fontSize:11,fontWeight:700,borderRadius:7,cursor:saving?"wait":"pointer",letterSpacing:"0.03em",background:bg,color:col,border:brd||"none"});
         return <div style={{display:"flex",gap:7,alignItems:"center"}}>
           {isManual&&!editandoPresu&&<span title="Los valores están cargados a mano, no se recalculan solos" style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.14)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.35)",letterSpacing:"0.07em"}}>MANUAL</span>}
@@ -2241,24 +2262,26 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   const dif=r2(taxesNow)-r2(Object.values(x).reduce((a,b)=>a+b,0)+des);if(Math.abs(dif)>0.01)x.die=Math.max(0,x.die+dif);
                   setManualTax({die:st(x.die),te:st(x.te),iva:st(x.iva),ivaAdic:st(x.ivaAdic),iigg:st(x.iigg),iibb:st(x.iibb),des:des>0?st(des):"",conDes:des>0});}
                 else setManualTax(null);
-                setEditandoPresu(true);}} style={b("rgba(255,255,255,0.07)","#fff","1px solid rgba(255,255,255,0.14)")}>✎ Editar presupuesto</button>
+                setEditandoPresu(true);}} style={{display:"inline-flex",alignItems:"center",gap:7,height:36,padding:"0 15px",borderRadius:10,border:"1px solid rgba(232,208,152,0.45)",background:"linear-gradient(135deg,rgba(232,208,152,0.16),rgba(184,149,106,0.08))",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:saving?"wait":"pointer",fontFamily:"inherit"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Editar presupuesto</button>
             </>}
         </div>;})()
       }>
         {/* Ajustes del aéreo A en un solo bloque (rediseño 22/10/2026): impuestos del RI, entrega del RI y baterías. */}
         {op.channel==="aereo_blanco"&&(()=>{
-          const sw=(on,fn,c="#E8D098")=><button type="button" disabled={saving} onClick={fn} aria-pressed={on} style={{width:40,height:22,borderRadius:999,border:"none",padding:0,cursor:saving?"wait":"pointer",position:"relative",flexShrink:0,background:on?c:"rgba(255,255,255,0.12)",transition:"background 160ms"}}><span style={{position:"absolute",top:3,left:on?21:3,width:16,height:16,borderRadius:"50%",background:on?"#0A1628":"#fff",transition:"left 180ms cubic-bezier(0.34,1.56,0.64,1)"}}/></button>;
-          const fila=(t,sub,ctrl,last)=><div style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderBottom:last?"none":"1px solid rgba(255,255,255,0.05)",flexWrap:"wrap"}}>
-            <div style={{flex:"1 1 220px",minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"#fff"}}>{t}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{sub}</p>}</div>{ctrl}</div>;
           const cobra=!!op.ri_argencargo_collects_taxes;const dir=op.ri_entrega_directa!==false;
           const setCobra=async()=>{const v=!cobra;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo a la aduana");setSaving(false);};
           const setDir=async(v)=>{if(saving||v===dir)return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_entrega_directa:v}});setOp(p=>({...p,ri_entrega_directa:v}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
           const setBat=async()=>{const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?`Recargo por baterías activado (USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg)`:"Recargo por baterías quitado");setSaving(false);};
           const usdKg=bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now());
-          return <div style={{marginBottom:18,borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
-            {isRI&&fila("Argencargo cobra los impuestos",cobra?"Excepción: entran en el total":"El RI los paga directo a la aduana",sw(cobra,setCobra))}
-            {isRI&&fila("Entrega de la carga",null,<div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)"}}>{[[true,"Directa al domicilio"],[false,"Viene a la oficina"]].map(([v,l])=><button key={String(v)} disabled={saving} onClick={()=>setDir(v)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:"none",background:dir===v?"rgba(232,208,152,0.16)":"transparent",color:dir===v?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:dir===v?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none",whiteSpace:"nowrap"}}>{l}</button>)}</div>)}
-            {fila("La carga contiene baterías",op.has_battery?`Recargo USD ${usdKg}/kg facturable`:null,sw(!!op.has_battery,setBat,"#fb923c"),true)}
+          // Tres ajustes en una fila (22/10/2026): Impuestos Cliente/Argencargo · Entrega Domicilio/Oficina · Baterías Sí/No.
+          const seg=(t,val,opts,fn)=><div style={{flex:"1 1 200px",minWidth:0,padding:"10px 12px",borderRadius:12,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+            <p style={{margin:"0 0 7px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>{t}</p>
+            <div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.06)"}}>{opts.map(([v,l,c])=>{const on=val===v;return <button key={String(v)} type="button" disabled={saving} onClick={()=>{if(!on)fn(v);}} style={{flex:1,height:30,borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:saving?"wait":"pointer",fontFamily:"inherit",background:on?`${c}26`:"transparent",color:on?c:"rgba(255,255,255,0.45)",boxShadow:on?`inset 0 0 0 1px ${c}66`:"none",transition:"all 140ms"}}>{l}</button>;})}</div>
+          </div>;
+          return <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
+            {isRI&&seg("Impuestos",cobra?"ac":"cli",[["cli","Cliente","#60a5fa"],["ac","Argencargo","#E8D098"]],()=>setCobra())}
+            {isRI&&seg("Entrega",dir,[[true,"Domicilio","#60a5fa"],[false,"Oficina","#E8D098"]],(v)=>setDir(v))}
+            {seg(`Baterías${op.has_battery?` · USD ${usdKg}/kg`:""}`,!!op.has_battery,[[true,"Sí","#fb923c"],[false,"No","#cbd5e1"]],()=>setBat())}
           </div>;
         })()}
         {/* Aéreo A sin productos: el presupuesto que se ve acá es un cálculo en vivo (flete + seguro)
@@ -2363,101 +2386,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <button disabled={saving} onClick={async()=>{if(!await confirmDialog(`¿Actualizar el presupuesto a USD ${calcVivo.totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}? Cambia lo que se le cobra al cliente en todos lados.`))return;setSaving(true);await autoSyncBudget(true);await reloadOp();setSaving(false);flash("Presupuesto actualizado");}} style={{padding:"8px 14px",fontSize:12,fontWeight:800,borderRadius:8,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:saving?"wait":"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>Actualizar presupuesto</button>
           </div>;
         })()}
-        {/* Desglose impositivo con CIF (pedido 02/08): la formula abierta, item por item. Es el
-            calculo estimado del sistema; si el presupuesto esta en manual o con despacho real
-            cargado, lo que vale es lo guardado y esto queda como referencia. */}
-        {isBlanco&&items.length>0&&(()=>{
-          const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-          const isAereoOp=op.channel?.includes("aereo");
-          const aereoMinKg=minKgAereoDe(op.origin,op?.created_at?Date.parse(op.created_at):Date.now()); // mismo mínimo facturable que lib/calc.js
-          const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
-          const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
-          const segLocal=(totalFob+certFlAmt)*0.01;
-          const cifLocal=totalFob+certFlAmt+segLocal;
-          const getDesembolsoD=(c)=>{const t=tablaDesaduanaje((op?.created_at?Date.parse(op.created_at):Date.now()));for(const[max,amt]of t)if(c<max)return amt;return 120;};
-          const taxItems=applyAntidumpingFloor(items,config);
-          const taxFobL=taxItems!==items?taxItems.reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0):totalFob;
-          const taxCifL=taxFobL!==totalFob?taxFobL+certFlAmt+(taxFobL+certFlAmt)*0.01:cifLocal;
-          const rows=taxItems.map(it=>{
-            const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);
-            const pct=taxFobL>0?itemFob/taxFobL:1;
-            const iCif=itemFob+certFlAmt*pct+(itemFob+certFlAmt*pct)*0.01;
-            const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate);
-            const te=(it.statistics_rate==null||it.statistics_rate==="")?0:Number(it.statistics_rate);
-            const ivaR=(it.iva_rate==null||it.iva_rate==="")?21:Number(it.iva_rate);
-            const die=iCif*dr/100;const tasa=iCif*te/100;const bi=iCif+die+tasa;const iva=bi*ivaR/100;
-            let extra=0,extraLbl=null;
-            if(isMaritimo){
-              const adic=bi*tasaODefault(it.iva_additional_rate,TASA_IVA_ADICIONAL);
-              const iigg=bi*tasaODefault(it.iigg_rate,TASA_IIGG);
-              const iibb=bi*tasaODefault(it.iibb_rate,TASA_IIBB);
-              extra=adic+iigg+iibb;extraLbl="IVA adic + IIGG + IIBB";
-            }else{
-              const desManualOp=op.budget_tax_detail?.desembolso_manual?Number(op.budget_tax_detail.desembolso||0):null;
-              const des=(desManualOp!=null?desManualOp:getDesembolsoD(taxCifL))*pct;
-              extra=des+des*0.21;extraLbl=desManualOp!=null?"Desaduanaje a mano (+IVA 21%)":"Desaduanaje (+IVA 21%)";
-            }
-            return {desc:it.description||"—",itemFob,iCif,dr,die,te,tasa,ivaR,iva,extra,extraLbl,tot:die+tasa+iva+extra};
-          });
-          const totD=rows.reduce((a,r)=>a+r.tot,0);
-          const cell={padding:"5px 10px",fontSize:11.5,textAlign:"right",fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.75)"};
-          return <details style={{marginTop:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"10px 14px"}}>
-            <summary style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.6)"}}>🔍 Desglose impositivo (CIF y fórmula, estimado del sistema)</summary>
-            <div style={{display:"flex",gap:22,flexWrap:"wrap",margin:"12px 0",fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>
-              <span>FOB: <b style={{color:"#fff"}}>USD {fmt2(totalFob)}</b></span>
-              <span>Cert. flete ({isAereoOp?`USD ${certFlRate}/kg ${isRI?"real s/bruto":"ficticio s/facturable"}`:`USD ${certFlRate}/m³`}): <b style={{color:"#fff"}}>USD {fmt2(certFlAmt)}</b></span>
-              <span>Seguro (1%): <b style={{color:"#fff"}}>USD {fmt2(segLocal)}</b></span>
-              <span>CIF: <b style={{color:GOLD_LIGHT}}>USD {fmt2(cifLocal)}</b></span>
-              {taxFobL!==totalFob&&<span title="Piso antidumping aplicado a la base imponible">Base imponible ajustada: <b style={{color:"#fbbf24"}}>USD {fmt2(taxCifL)}</b></span>}
-            </div>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-                  {["Ítem","FOB","CIF prop.","DIE","Estadística","IVA",rows[0]?.extraLbl||"Otros","Total"].map((h,i)=><th key={i} style={{padding:"5px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:i===0?"left":"right",whiteSpace:"nowrap"}}>{h}</th>)}
-                </tr></thead>
-                <tbody>{rows.map((r,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                  <td style={{...cell,textAlign:"left",color:"#fff",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.desc}>{r.desc}</td>
-                  <td style={cell}>{fmt2(r.itemFob)}</td>
-                  <td style={cell}>{fmt2(r.iCif)}</td>
-                  <td style={cell} title={`${r.dr}%`}>{fmt2(r.die)} <span style={{color:"rgba(255,255,255,0.35)"}}>({r.dr}%)</span></td>
-                  <td style={cell} title={`${r.te}%`}>{fmt2(r.tasa)} <span style={{color:"rgba(255,255,255,0.35)"}}>({r.te}%)</span></td>
-                  <td style={cell} title={`${r.ivaR}%`}>{fmt2(r.iva)} <span style={{color:"rgba(255,255,255,0.35)"}}>({r.ivaR}%)</span></td>
-                  <td style={cell}>{fmt2(r.extra)}</td>
-                  <td style={{...cell,fontWeight:700,color:"#fff"}}>{fmt2(r.tot)}</td>
-                </tr>)}</tbody>
-                <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.3)"}}>
-                  <td style={{...cell,textAlign:"left",fontWeight:800,color:"#fff"}}>TOTAL IMPUESTOS</td>
-                  <td colSpan={6}/>
-                  <td style={{...cell,fontWeight:800,color:GOLD_LIGHT,fontSize:12.5}}>{fmt2(totD)}</td>
-                </tr></tfoot>
-              </table>
-            </div>
-          </details>;
-        })()}
-        {/* Envío a domicilio: lo elige el cliente en el link de retiro y el costo se suma solo al
-            presupuesto (delivery_cost_usd entra en calcOpBudget). Antes habia un toggle manual acá
-            que permitia activarlo/desactivarlo a mano y se desincronizaba de lo que el cliente
-            eligio; ahora es solo lectura. */}
-        {(()=>{
-          const eligioDomicilio=op.delivery_choice==="propio"||op.delivery_choice==="carrier";
-          const costoEnvio=Number(op.delivery_cost_usd||0)||(op.shipping_to_door?Number(op.shipping_cost||0):0);
-          return <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",background:eligioDomicilio?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.028)",border:`1px solid ${eligioDomicilio?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:10,flexWrap:"wrap"}}>
-              <span style={{fontSize:16,flexShrink:0}}>{eligioDomicilio?"🚚":"📦"}</span>
-              <div style={{flex:1,minWidth:220}}>
-                <p style={{fontSize:12.5,fontWeight:700,color:eligioDomicilio?"#22c55e":"rgba(255,255,255,0.7)",margin:0}}>
-                  {op.delivery_choice==="propio"?"Envío a domicilio · flete privado":op.delivery_choice==="carrier"?"Envío por transportista":op.delivery_confirmed_at?"Retiro por oficina":"Entrega sin definir"}
-                </p>
-                <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.45}}>
-                  {eligioDomicilio
-                    ?<>Lo eligió el cliente en el link de retiro{costoEnvio>0?<> · suma <strong style={{color:"#fff"}}>USD {costoEnvio.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> al total</>:null}{op.delivery_address?` · ${op.delivery_address}`:""}</>
-                    :op.delivery_confirmed_at?"El cliente eligió retirar por la oficina — sin costo de envío."
-                    :"Cuando el cliente complete el link de retiro, si elige envío a domicilio el costo se suma solo al presupuesto."}
-                </p>
-              </div>
-            </div>
-          </div>;
-        })()}
         {hasStoredBudget&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",gap:12,flexWrap:"wrap"}}>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
           <Btn variant="danger" small onClick={async()=>{if(!await confirmDialog("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0,budget_tax_detail:null}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0,budget_tax_detail:null}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
@@ -2475,20 +2403,20 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {Number(op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
     </Card>}
-    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{items.length>0&&<span style={{display:"inline-flex",alignItems:"baseline",gap:8,padding:"6px 14px",borderRadius:10,background:"rgba(184,149,106,0.12)",border:"1px solid rgba(232,201,155,0.4)",marginRight:4}}><span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>FOB total · {items.length} {items.length===1?"producto":"productos"}</span><span style={{fontSize:16,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>USD {items.reduce((a,x)=>a+Number(x.unit_price_usd||0)*Number(x.quantity||1),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></span>}{!isGI&&items.some(it=>it.description&&it.description.trim()&&needsClassification(it))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
+    {tab==="items"&&<Card v2 title="Productos" actions={<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{items.length>0&&<span style={{display:"inline-flex",alignItems:"baseline",gap:8,padding:"6px 14px",borderRadius:10,background:"rgba(184,149,106,0.12)",border:"1px solid rgba(232,201,155,0.4)",marginRight:4}}><span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>FOB total · {items.length} {items.length===1?"producto":"productos"}</span><span style={{fontSize:16,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>USD {items.reduce((a,x)=>a+Number(x.unit_price_usd||0)*Number(x.quantity||1),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></span>}{!isGI&&items.some(it=>it.description&&it.description.trim()&&needsClassification(it))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
       {/* Productos compactos (12/10/2026): cada producto en una tarjeta baja — descripción, precio,
           cantidad y FOB en una fila; NCM y tasas en la segunda. Menos scroll. */}
-      {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{marginTop:i>0?10:0,padding:"10px 14px 4px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,gap:10,flexWrap:"wrap"}}>
+      {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{marginTop:i>0?12:0,padding:"16px 18px 6px",borderRadius:16,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)",borderLeft:`3px solid ${!isGI&&!isValidNcmCode(it.ncm_code)&&it.description?"#fbbf24":"rgba(232,208,152,0.55)"}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <span style={{width:24,height:24,borderRadius:7,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(184,149,106,0.15)",color:IC,fontSize:12,fontWeight:900}}>{i+1}</span>
-            <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>FOB <span style={{color:GOLD_LIGHT}}>USD {fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></p>
+            <span style={{width:28,height:28,borderRadius:9,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(232,208,152,0.12)",border:"1px solid rgba(232,208,152,0.3)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:900}}>{i+1}</span>
+            <p style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",marginLeft:6,letterSpacing:"0.06em"}}>FOB</span></p>
             {!isGI&&(isValidNcmCode(it.ncm_code)?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null)}
             {!isGI&&it.antidumping_note&&<span title="Este NCM tiene medida antidumping para origen China: revisar derechos específicos y valores criterio antes de cotizar" style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)",fontWeight:800}}>⚠ ANTIDUMPING · {it.antidumping_note}</span>}
           </div>
-          <div style={{display:"flex",gap:6}}>
-            <Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn>
-            <Btn onClick={()=>delItem(it.id)} small variant="danger">Eliminar</Btn>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button type="button" onClick={()=>saveItem(it)} style={{height:32,padding:"0 14px",borderRadius:9,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.12)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Guardar</button>
+            <button type="button" onClick={()=>delItem(it.id)} aria-label="Eliminar producto" title="Eliminar producto" style={{width:32,height:32,borderRadius:9,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",fontSize:13,cursor:"pointer"}}>✕</button>
           </div>
         </div>
         {!isGI&&ncmPreview[it.id]&&(()=>{const p=ncmPreview[it.id];return <div style={{marginBottom:12,padding:"12px 14px",background:"linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.05))",border:"1.5px solid rgba(167,139,250,0.35)",borderRadius:10}}>
@@ -2513,13 +2441,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <Btn small variant="secondary" onClick={()=>classifyOne(it)}>🔄 Re-clasificar</Btn>
           </div>
         </div>;})()}
-        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 130px 100px",gap:"0 10px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 140px 110px",gap:"0 12px"}}>
           <Inp label="Descripción" value={it.description} onChange={v=>chItem(i,"description",v)} small/>
           <Inp label="Precio unit. USD" type="number" value={it.unit_price_usd} onChange={v=>chItem(i,"unit_price_usd",v)} step="0.01" small/>
           <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v?parseInt(v):0)} small/>
         </div>
-        {isBlanco&&!isGI&&<div style={{marginTop:-4}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"0 10px",maxWidth:isAereo?560:720}}>
+        {isBlanco&&!isGI&&<div style={{margin:"0 -18px",padding:"12px 18px 0",borderTop:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.015)",borderRadius:"0 0 16px 16px"}}>
+          <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Alícuotas</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:"0 10px"}}>
             <Inp label="DIE %" type="number" value={it.import_duty_rate??0} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate??21} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
@@ -2530,7 +2459,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>
         </div>}
       </div>;})}
-      {items.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay productos.</p>}
+      {items.length===0&&<div style={{padding:"28px 0",textAlign:"center",borderRadius:14,border:"1.5px dashed rgba(255,255,255,0.1)"}}><p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13.5}}>Todavía no hay productos.</p><button type="button" onClick={addItem} style={{marginTop:10,height:34,padding:"0 16px",borderRadius:9,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.12)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar producto</button></div>}
     </Card>}
 
 
@@ -2789,14 +2718,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </Card>;
     })()}
 
-    {tab==="packages"&&<Card title="Bultos" actions={<div style={{display:"flex",gap:6}}>{pkgs.length>0&&<Btn small variant="secondary" onClick={()=>printPackageLabels({op,packages:pkgs,items,client:opClient})}>🏷️ Imprimir etiquetas</Btn>}<Btn onClick={addPkg} small variant="secondary">+ Agregar bulto</Btn>{pkgs.length>0&&<Btn onClick={saveAllPkgs} small disabled={savingPkgs}>{savingPkgs?"Guardando…":"💾 Guardar"}</Btn>}</div>}>
-      {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
+    {tab==="packages"&&<Card v2 title="Bultos" actions={<div style={{display:"flex",gap:6}}>{pkgs.length>0&&<Btn small variant="secondary" onClick={()=>printPackageLabels({op,packages:pkgs,items,client:opClient})}>🏷️ Imprimir etiquetas</Btn>}<Btn onClick={addPkg} small variant="secondary">+ Agregar bulto</Btn>{pkgs.length>0&&<Btn onClick={saveAllPkgs} small disabled={savingPkgs}>{savingPkgs?"Guardando…":"💾 Guardar"}</Btn>}</div>}>
+      {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{marginTop:i>0?12:0,padding:"16px 18px 12px",borderRadius:16,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{height:28,padding:"0 10px",borderRadius:9,display:"inline-flex",alignItems:"center",background:"rgba(232,208,152,0.12)",border:"1px solid rgba(232,208,152,0.3)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:900}}>Bulto {pk.package_number}</span>
             {pk.created_at&&<span style={{fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:500}}>· cargado {new Date(pk.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}
           </div>
-          <div style={{display:"flex",gap:6}}><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
+          <div style={{display:"flex",gap:6}}><button type="button" onClick={()=>movePkgToOp(pk)} title="Mover este bulto a otra operación" style={{height:32,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.8)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↪ Mover</button><button type="button" onClick={()=>delPkg(pk.id)} aria-label="Eliminar bulto" title="Eliminar bulto" style={{width:32,height:32,borderRadius:9,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",fontSize:13,cursor:"pointer"}}>✕</button></div>
         </div>
         <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
@@ -2811,7 +2740,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           {pk.consolidated_from_trackings.map((tr,k)=><span key={k} style={{fontSize:10.5,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.14)",color:"#60a5fa",fontFamily:"monospace"}}>{tr}</span>)}
         </div>}
         {/* Foto del bulto: SOLO Aéreo A (canal blanco). En los otros 3 canales no hay foto. */}
-        {op.channel==="aereo_blanco"&&<div style={{marginTop:12,padding:"10px 12px",background:pk.photo_url?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.06)",border:`1px solid ${pk.photo_url?"rgba(34,197,94,0.18)":"rgba(251,191,36,0.2)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        {/* Sin foto (22/10/2026): las fotos se borran a los 90 días; ahí no es "pendiente" sino "eliminada".
+            photo_uploaded_at queda aunque se borre la foto, así se distingue de una que nunca se subió. */}
+        {op.channel==="aereo_blanco"&&(()=>{const dias=pk.created_at?(Date.now()-new Date(pk.created_at).getTime())/86400000:0;const eliminada=!pk.photo_url&&(!!pk.photo_uploaded_at||dias>=90);const sinFoto=!pk.photo_url&&!eliminada&&["operacion_cerrada","cancelada","entregada"].includes(op.status);const est=pk.photo_url?"ok":eliminada?"del":sinFoto?"sin":"pend";
+          const C2={ok:["rgba(34,197,94,0.06)","rgba(34,197,94,0.18)"],del:["rgba(255,255,255,0.03)","rgba(255,255,255,0.1)"],sin:["rgba(255,255,255,0.03)","rgba(255,255,255,0.1)"],pend:["rgba(251,191,36,0.06)","rgba(251,191,36,0.2)"]}[est];
+          return <div style={{marginTop:12,padding:"10px 12px",background:C2[0],border:`1px solid ${C2[1]}`,borderRadius:10,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           {pk.photo_url?<>
             <a href={pk.photo_url} target="_blank" rel="noopener noreferrer"><img src={pk.photo_url} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>
             <div style={{flex:1,minWidth:160}}>
@@ -2820,20 +2753,20 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             </div>
             <a href={pk.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:GOLD_LIGHT,fontWeight:600,textDecoration:"none"}}>Ver completa →</a>
           </>:<>
-            <span style={{fontSize:18}}>📷</span>
+            <span style={{fontSize:18,opacity:est==="pend"?1:0.5}}>📷</span>
             <div style={{flex:1,minWidth:160}}>
-              <p style={{fontSize:11,fontWeight:700,color:"#fbbf24",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>Foto pendiente</p>
-              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>El agente aún no subió foto de la mercadería</p>
+              <p style={{fontSize:11,fontWeight:700,color:est==="pend"?"#fbbf24":"rgba(255,255,255,0.55)",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>{est==="del"?"Foto eliminada":est==="sin"?"Sin foto":"Foto pendiente"}</p>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{est==="del"?"Las fotos se borran a los 90 días":est==="sin"?"El agente no subió foto de este bulto":"El agente aún no subió foto de la mercadería"}</p>
             </div>
           </>}
-        </div>}
+        </div>;})()}
         {(bruto>0||vw>0)&&<div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:"rgba(255,255,255,0.4)"}}><span>Bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{vw>0&&<span>Vol: <strong style={{color:"#fff"}}>{vw.toFixed(1)} kg</strong></span>}{cbm>0&&<span>CBM: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>}{vw>bruto&&<span style={{color:"#fb923c"}}>Volumétrico mayor</span>}</div>}
       </div>;})}
       {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20,alignItems:"baseline",flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>{op.created_by_agent_id&&<div style={{marginLeft:"auto"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:0}}>Divisor agente: <strong style={{color:"#fff"}}>÷{agentVolDiv}</strong></p></div>}</div>;})()}
       {pkgs.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay bultos.</p>}
     </Card>}
 
-    {tab==="tracking"&&<><Card title="Carrier & Tracking" actions={<div style={{display:"flex",gap:8}}>
+    {tab==="tracking"&&<><Card v2 title="Carrier y tracking" actions={<div style={{display:"flex",gap:8}}>
         <Btn small variant="secondary" onClick={async()=>{
           if(!op.international_tracking||!op.international_carrier){alertDialog("Cargá carrier y tracking primero");return;}
           const r=await fetch(`/api/tracking/sync?operation_id=${op.id}`,{headers:{Authorization:`Bearer ${token}`}});const d=await r.json();
@@ -2859,25 +2792,49 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/>
         <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
       </div>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Las actualizaciones de DHL/FedEx/UPS se sincronizan automáticamente cada 6h (cron). Podés forzar ahora con el botón ↻.</p>
     </Card>
-    <Card title="Eventos de seguimiento" actions={<>{(op.international_carrier||"").toLowerCase().includes("ups")&&<Btn onClick={()=>setUpsPasteOpen(true)} small variant="secondary">📋 Pegar desde UPS</Btn>}<Btn onClick={addEvt} small>+ Agregar evento</Btn></>}>
-      {events.map((ev,i)=><div key={ev.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>{ev.title||"Sin título"} — {formatDate(ev.occurred_at)}</p>
-          <div style={{display:"flex",gap:6}}><Btn onClick={()=>saveEvt(ev)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delEvt(ev.id)} small variant="danger">Eliminar</Btn></div>
+    <Card v2 title="Eventos" sub={events.length?`${events.length} movimiento${events.length!==1?"s":""}`:null} actions={<>{(op.international_carrier||"").toLowerCase().includes("ups")&&<Btn onClick={()=>setUpsPasteOpen(true)} small variant="secondary">📋 Pegar desde UPS</Btn>}<Btn onClick={()=>{addEvt();setEvAbierto("nuevo");}} small>+ Agregar evento</Btn></>}>
+      {/* Línea de tiempo (rediseño 22/10/2026): cada evento en una fila; ✎ lo abre para editar. */}
+      <div style={{position:"relative"}}>
+      {events.map((ev,i)=>{const abierto=evAbierto===ev.id||(evAbierto==="nuevo"&&ev.title==="Nuevo evento");const visible=ev.is_visible_to_client!==false;const interno=ev.source==="internal";const c=interno?(SM[ev.status_code]?.c||"#E8D098"):"#818cf8";
+        const fecha=ev.occurred_at?String(ev.occurred_at).slice(0,10):"";const hora=ev.occurred_at?String(ev.occurred_at).slice(11,16):"";
+        return <div key={ev.id} style={{display:"grid",gridTemplateColumns:"22px minmax(0,1fr)",gap:12}}>
+        <div style={{position:"relative",display:"flex",justifyContent:"center"}}>
+          <div style={{position:"absolute",top:0,bottom:0,width:2,background:i===events.length-1?"linear-gradient(180deg,rgba(255,255,255,0.08),transparent)":"rgba(255,255,255,0.08)"}}/>
+          <span style={{position:"relative",marginTop:16,width:12,height:12,borderRadius:99,background:"#0F1E3D",border:`2px solid ${c}`,boxShadow:`0 0 0 4px ${c}22`}}/>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Título" value={ev.title} onChange={v=>chEvt(i,"title",v)} small/>
-          <Inp label="Descripción" value={ev.description} onChange={v=>chEvt(i,"description",v)} small/>
-          <Inp label="Ubicación" value={ev.location} onChange={v=>chEvt(i,"location",v)} small/>
+        <div style={{padding:"10px 0",borderBottom:i===events.length-1?"none":"1px solid rgba(255,255,255,0.05)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{flex:"1 1 260px",minWidth:0}}>
+              <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff"}}>{ev.title||"Sin título"}</p>
+              <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{formatDate(ev.occurred_at)}{ev.location?` · ${ev.location}`:""}{ev.source&&!interno?` · ${String(ev.source).toUpperCase()}`:""}</p>
+            </div>
+            {!visible&&<span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,color:"rgba(255,255,255,0.55)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)"}}>Oculto al cliente</span>}
+            <button type="button" onClick={()=>setEvAbierto(abierto?null:ev.id)} aria-label="Editar evento" style={{height:30,padding:"0 11px",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:abierto?"rgba(232,208,152,0.12)":"rgba(255,255,255,0.04)",color:abierto?GOLD_LIGHT:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{abierto?"Cerrar":"✎ Editar"}</button>
+          </div>
+          {abierto&&<div style={{marginTop:12,padding:"14px 14px 2px",borderRadius:12,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+              <Inp label="Título" value={ev.title} onChange={v=>chEvt(i,"title",v)} small/>
+              <Inp label="Ubicación" value={ev.location} onChange={v=>chEvt(i,"location",v)} small/>
+            </div>
+            <Inp label="Descripción" value={ev.description} onChange={v=>chEvt(i,"description",v)} small/>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 110px minmax(0,1.2fr)",gap:"0 12px",alignItems:"end"}}>
+              <Inp label="Fecha" type="date" value={fecha} onChange={v=>chEvt(i,"occurred_at",v?`${v}T${hora||"12:00"}:00`:null)} small/>
+              <Inp label="Hora" value={horaDraft[ev.id]??hora} placeholder="HH:MM" onChange={v=>{const h=String(v).replace(/[^\d:]/g,"").slice(0,5);setHoraDraft(p=>({...p,[ev.id]:h}));if(fecha&&/^\d{2}:\d{2}$/.test(h))chEvt(i,"occurred_at",`${fecha}T${h}:00`);}} small/>
+              <div onClick={()=>chEvt(i,"is_visible_to_client",!visible)} style={{marginBottom:12,height:38,display:"flex",alignItems:"center",gap:10,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",userSelect:"none"}}>
+                <span style={{width:36,height:20,borderRadius:999,position:"relative",flexShrink:0,background:visible?"#22c55e":"rgba(255,255,255,0.12)"}}><span style={{position:"absolute",top:2,left:visible?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 160ms"}}/></span>
+                <span style={{fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.75)"}}>Visible para el cliente</span>
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0 12px"}}>
+              <button type="button" onClick={()=>delEvt(ev.id)} style={{height:32,padding:"0 12px",borderRadius:9,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Eliminar</button>
+              <button type="button" onClick={async()=>{await saveEvt(ev);setEvAbierto(null);}} style={{height:32,padding:"0 16px",borderRadius:9,border:"none",background:`linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`,color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Guardar evento</button>
+            </div>
+          </div>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Fecha" type="datetime-local" value={ev.occurred_at?ev.occurred_at.slice(0,16):""} onChange={v=>chEvt(i,"occurred_at",v?v+":00":null)} small/>
-          <div style={{marginBottom:12,paddingTop:22}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={ev.is_visible_to_client!==false} onChange={e=>chEvt(i,"is_visible_to_client",e.target.checked)}/><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Visible para el cliente</span></label></div>
-        </div>
-      </div>)}
-      {events.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay eventos de seguimiento.</p>}
+      </div>;})}
+      </div>
+      {events.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>Todavía no hay eventos.</p>}
     </Card>
     {upsPasteOpen&&<div onClick={()=>!upsImporting&&setUpsPasteOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:780,maxHeight:"90vh",overflowY:"auto",background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>

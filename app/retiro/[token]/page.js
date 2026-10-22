@@ -123,11 +123,12 @@ export default function EntregaPublica({ params }) {
           if (metodos2.length) setPayMethods([metodos2[0]]);
           const efSplit = split2 ? split2.find((p) => p.method === "efectivo") : null;
           if (efSplit?.currency) setCashCurrencyMode(efSplit.currency);
-          // Lo COTIZADO al coordinar (split guardado) manda: es lo que el cliente vio y paga. Si el
-          // presupuesto cambió después, el link no muestra dos números distintos — lo resuelve el admin.
-          const cotizado2 = split2 ? split2.reduce((a, p) => a + Number(p.amount || 0), 0) : 0;
+          // Siempre el saldo actual de la operación (22/10/2026): si el presupuesto cambió después de
+          // coordinar, el link muestra lo mismo que el panel. Con un solo método, su monto es el saldo.
+          const total2 = Math.round(saldo2 * 100) / 100;
+          if (split2 && split2.length === 1) split2 = [{ ...split2[0], amount: total2 }];
           setConfirmed({
-            total: Math.round((cotizado2 > 0 && !delGrupo.length ? cotizado2 : saldo2) * 100) / 100,
+            total: total2,
             ops_incluidas: [d.op.operation_code, ...delGrupo.map((h) => h.operation_code)],
             delivery_choice: d.op.delivery_choice,
             delivery_zone: d.op.delivery_zone,
@@ -217,7 +218,8 @@ export default function EntregaPublica({ params }) {
   const hermanas = Array.isArray(data.hermanas) ? data.hermanas : [];
   const extraSel = hermanas.filter((h) => selExtra.includes(h.id));
   const saldoExtras = extraSel.reduce((a, h) => a + Number(h.saldo || 0), 0);
-  const total = Math.round((saldo + saldoExtras + (entregada ? 0 : deliveryCost)) * 100) / 100;
+  // El saldo ya trae el envío coordinado antes (está en budget_total): se suma solo la diferencia.
+  const total = Math.round((saldo + saldoExtras + (entregada ? 0 : deliveryCost - Number(op.delivery_cost_usd || 0))) * 100) / 100;
 
   const efectivoBlocked = delivery === "carrier";
 
@@ -651,57 +653,94 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
   const entregaLabel = delivery === "ri" ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
   const [verDetalle, setVerDetalle] = useState(false);
   const rowS = { display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 };
+  // Rediseño 22/10/2026: cabecera navy con el estado, total grande, datos para pagar con botón de copiar.
+  const nombre = (clientName || "").split(" ")[0];
+  const diaTxt = (d) => new Date(d + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  const titulo = entregada ? "¡Ya recibiste tu carga!" : delivery === "ri" ? "Acá tenés todo para abonar" : delivery === "oficina" ? "¡Retiro coordinado!" : delivery === "propio" ? "¡Entrega coordinada!" : "¡Envío coordinado!";
+  const bajada = entregada && op?.delivery_completed_at ? `Entregada el ${new Date(op.delivery_completed_at).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}`
+    : data.delivery_day ? `${delivery === "oficina" ? "Te esperamos el" : "Te la llevamos el"} ${diaTxt(data.delivery_day)} · ${data.delivery_slot || ""}`
+    : delivery === "carrier" ? "Te avisamos apenas se despache" : null;
+  const [copiado, setCopiado] = useState("");
+  const copiar = (k, t) => { try { navigator.clipboard.writeText(String(t)); setCopiado(k); setTimeout(() => setCopiado(""), 1600); } catch {} };
+  const btnCopiar = (k, t) => <button type="button" onClick={() => copiar(k, t)} style={{ flexShrink: 0, height: 30, padding: "0 11px", borderRadius: 8, border: "1px solid rgba(30,125,79,.3)", background: copiado === k ? "#1e7d4f" : "#fff", color: copiado === k ? "#fff" : "#1e5c3d", fontSize: 11.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", transition: "all .15s" }}>{copiado === k ? "Copiado ✓" : "Copiar"}</button>;
+  const totalGrande = todoEnPesos ? `ARS ${Math.round(data.total * tc).toLocaleString("es-AR")}` : fmt(data.total);
+  const fila = (l, v) => <div style={{ display: "flex", justifyContent: "space-between", gap: 14, padding: "11px 0", borderTop: `1px solid ${LINE}`, fontSize: 13.5 }}><span style={{ color: MUTED }}>{l}</span><span style={{ fontWeight: 700, textAlign: "right", color: INK }}>{v}</span></div>;
   return <div style={pageStyle()}>
-    <div style={{ maxWidth: 480, width: "100%", padding: "32px 28px", background: CREAM, color: INK, borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
-      <div style={{ textAlign: "center", marginBottom: 18 }}>
-        <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#22c55e,#16a34a)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "#fff", marginBottom: 10 }}>✓</div>
-        <p style={{ fontSize: 17, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.01em" }}>{entregada ? "¡Listo, ya recibiste tu carga!" : delivery === "ri" ? "¡Listo! Acá tenés todo para abonar" : `¡Listo, ya coordinaste ${delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "tu entrega" : "tu envío"}!`}</p>
-      </div>
-      <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
-        <p style={{ fontSize: 12, fontWeight: 800, margin: "0 0 10px" }}>Resumen</p>
-        {Array.isArray(data.ops_incluidas) && data.ops_incluidas.length > 1 && <div style={rowS}><span style={{ color: MUTED }}>Cargas</span><span style={{ fontWeight: 700, textAlign: "right", fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11.5 }}>{data.ops_incluidas.join(" + ")}</span></div>}
-        <div style={rowS}><span style={{ color: MUTED }}>Entrega</span><span style={{ fontWeight: 700, textAlign: "right" }}>{entregaLabel}</span></div>
-        {entregada && op?.delivery_completed_at && <div style={rowS}><span style={{ color: MUTED }}>Entregada</span><span style={{ fontWeight: 700 }}>{new Date(op.delivery_completed_at).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })}</span></div>}
-        {data.delivery_day && !entregada && <div style={rowS}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
-        <div style={rowS}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700, textAlign: "right" }}>{payLabel}</span></div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}><span style={{ color: MUTED }}>Total</span><span style={{ fontWeight: 800, color: GOLD_A, textAlign: "right" }}>{todoEnPesos ? <>ARS {Math.round(data.total * tc).toLocaleString("es-AR")}<span style={{ display: "block", fontSize: 10.5, color: MUTED, fontWeight: 600 }}>USD {Number(data.total).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></> : fmt(data.total)}</span></div>
-      </div>
-
-      {transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.25)", borderRadius: 12, padding: "13px 16px", marginBottom: 12 }}>
-        <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "#1e5c3d", margin: "0 0 7px" }}>💸 Datos para transferir</p>
-        {data.transfer.alias && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}><span style={{ color: "#3d6b52" }}>Alias</span><span style={{ fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace" }}>{data.transfer.alias}</span></div>}
-        {data.transfer.titular && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}><span style={{ color: "#3d6b52" }}>Titular</span><span style={{ fontWeight: 700 }}>{data.transfer.titular}</span></div>}
-        {tc > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0", borderTop: "1px dashed rgba(30,125,79,.25)", marginTop: 4, paddingTop: 7 }}><span style={{ color: "#3d6b52" }}>Monto a transferir</span><span style={{ fontWeight: 800 }}>ARS {Math.round(transfPart.amount * tc).toLocaleString("es-AR")}</span></div>}
-        <p style={{ fontSize: 10, color: "#3d6b52", margin: "7px 0 0", lineHeight: 1.5 }}>El monto en pesos se ajusta al valor del día en que transferís — te lo reconfirmamos por WhatsApp.</p>
-      </div>}
-
-      {data.crypto_wallet && <div style={{ background: "#f4efe3", border: `1px solid ${LINE}`, borderRadius: 12, padding: "13px 16px", marginBottom: 12 }}>
-        <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 6px" }}>🪙 Billetera USDT (TRC-20)</p>
-        <p style={{ fontSize: 11.5, fontFamily: "'SF Mono','JetBrains Mono',monospace", wordBreak: "break-all", margin: 0, fontWeight: 700 }}>{data.crypto_wallet}</p>
-      </div>}
-
-      {op && <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setVerDetalle(v => !v)}>
-          <p style={{ fontSize: 12, fontWeight: 800, margin: 0 }}>Detalle de la operación · {op.operation_code}</p>
-          <span style={{ fontSize: 10, color: GOLD_A, fontWeight: 700 }}>{verDetalle ? "ocultar ▲" : "ver ▼"}</span>
+    <div style={{ maxWidth: 480, width: "100%", background: CREAM, color: INK, borderRadius: 22, overflow: "hidden", boxShadow: "0 30px 90px rgba(0,0,0,0.55)" }}>
+      <div style={{ background: `radial-gradient(120% 120% at 100% 0%, rgba(232,208,152,0.18), transparent 55%), ${NAVY}`, color: "#fff", padding: "22px 24px 26px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <img src={LOGO} alt="Argencargo" style={{ height: 26, width: "auto", opacity: 0.95 }} />
+          <span style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: GOLD_B, letterSpacing: "0.04em" }}>{Array.isArray(data.ops_incluidas) && data.ops_incluidas.length > 1 ? data.ops_incluidas.join(" + ") : op?.operation_code}</span>
         </div>
-        {verDetalle && <div style={{ marginTop: 8 }}>
-          {cargo && <div style={rowS}><span style={{ color: MUTED }}>Bultos</span><span style={{ fontWeight: 700 }}>{cargo.bultos}</span></div>}
-          {cargo && esMaritimoCv && cargo.maritimo && <div style={rowS}><span style={{ color: MUTED }}>Volumen</span><span style={{ fontWeight: 700 }}>{fmtM3(cargo.maritimo.m3_total)} m³</span></div>}
-          {cargo && isBlanco && !esMaritimoCv && <div style={rowS}><span style={{ color: MUTED }}>Peso facturable</span><span style={{ fontWeight: 700 }}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</span></div>}
-          {op.budget_flete > 0 && <div style={rowS}><span style={{ color: MUTED }}>Flete internacional</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_flete)}</span></div>}
-          {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <div style={rowS}><span style={{ color: MUTED }}>Impuestos &amp; Aduana</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_taxes)}</span></div>}
-          {taxDetail && taxDetail.productos.map((pr, i2) => <div key={i2} style={{ padding: "4px 0 4px 12px", borderLeft: `2px solid ${LINE}` }}>
-            <p style={{ fontSize: 10.5, fontWeight: 800, margin: "0 0 2px" }}>{pr.name}</p>
-            {pr.rows.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: MUTED, padding: "1px 0" }}><span>{l}</span><span>{fmt(v)}</span></div>)}
-          </div>)}
-          {taxDetail && taxDetail.extras.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: MUTED, padding: "1px 0 1px 12px" }}><span>{l}</span><span>{fmt(v)}</span></div>)}
-          {op.budget_seguro > 0 && <div style={rowS}><span style={{ color: MUTED }}>Seguro de carga</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_seguro)}</span></div>}
-        </div>}
-      </div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 22 }}>
+          <span style={{ width: 46, height: 46, borderRadius: 14, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#22c55e,#15803d)", boxShadow: "0 8px 22px rgba(34,197,94,0.35)" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+          </span>
+          <div style={{ minWidth: 0 }}>
+            {nombre && <p style={{ margin: 0, fontSize: 12.5, color: "rgba(255,255,255,0.6)" }}>{nombre},</p>}
+            <p style={{ margin: "1px 0 0", fontSize: 20, fontWeight: 800, letterSpacing: "-0.015em", lineHeight: 1.2 }}>{titulo}</p>
+          </div>
+        </div>
+        {bajada && <p style={{ margin: "14px 0 0", padding: "10px 12px", borderRadius: 11, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", fontSize: 13, color: "rgba(255,255,255,0.88)", fontWeight: 600, textTransform: "none" }}>{bajada.charAt(0).toUpperCase() + bajada.slice(1)}</p>}
+      </div>
 
-      <button onClick={onEdit} style={{ width: "100%", padding: "12px 16px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: `1.5px solid ${GOLD_A}`, background: "#fff", color: "#8b6f4a", cursor: "pointer" }}>{entregada ? "✏️ Cambiar la forma de pago" : "✏️ Cambiar algo (día, horario o forma de pago)"}</button>
-      <p style={{ textAlign: "center", fontSize: 10, color: MUTED, margin: "8px 0 0", lineHeight: 1.5 }}>{entregada ? "La carga ya se entregó: lo único que podés cambiar es cómo pagás." : "Podés modificar tu elección las veces que necesites — siempre vale la última confirmación."}</p>
+      <div style={{ padding: "20px 20px 22px" }}>
+        <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "18px 18px 8px", marginBottom: 12 }}>
+          <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED }}>Total a abonar</p>
+          <p style={{ margin: "6px 0 0", fontSize: 30, fontWeight: 800, letterSpacing: "-0.025em", color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{totalGrande}</p>
+          {todoEnPesos && <p style={{ margin: "4px 0 0", fontSize: 12.5, color: MUTED, fontVariantNumeric: "tabular-nums" }}>{fmt(data.total)} · dólar {tc.toLocaleString("es-AR")}</p>}
+          <div style={{ marginTop: 14 }}>
+            {fila("Entrega", entregaLabel)}
+            {fila("Pago", payLabel)}
+          </div>
+        </div>
+
+        {transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.22)", borderRadius: 16, padding: "16px 16px 14px", marginBottom: 12 }}>
+          <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#1e5c3d", margin: "0 0 10px" }}>Datos para transferir</p>
+          {data.transfer.alias && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Alias / CBU</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13, wordBreak: "break-all", color: INK }}>{data.transfer.alias}</p></div>
+            {btnCopiar("alias", String(data.transfer.alias).match(/\d{22}/)?.[0] || data.transfer.alias)}
+          </div>}
+          {data.transfer.titular && <div style={{ padding: "8px 0", borderTop: "1px solid rgba(30,125,79,.15)" }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Titular</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontSize: 13.5, color: INK }}>{data.transfer.titular}</p></div>}
+          {tc > 0 && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0 2px", borderTop: "1px solid rgba(30,125,79,.15)" }}>
+            <div style={{ flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Monto a transferir</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontSize: 17, color: INK, fontVariantNumeric: "tabular-nums" }}>ARS {Math.round(transfPart.amount * tc).toLocaleString("es-AR")}</p></div>
+            {btnCopiar("monto", Math.round(transfPart.amount * tc))}
+          </div>}
+          <p style={{ fontSize: 11, color: "#3d6b52", margin: "10px 0 0", lineHeight: 1.5 }}>El monto en pesos se ajusta al dólar del día en que transferís. Mandanos el comprobante por WhatsApp.</p>
+        </div>}
+
+        {data.crypto_wallet && <div style={{ background: "#f4efe3", border: `1px solid ${LINE}`, borderRadius: 16, padding: "16px", marginBottom: 12 }}>
+          <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, margin: "0 0 8px" }}>Billetera USDT · TRC-20</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <p style={{ flex: 1, fontSize: 12, fontFamily: "'SF Mono','JetBrains Mono',monospace", wordBreak: "break-all", margin: 0, fontWeight: 700 }}>{data.crypto_wallet}</p>
+            {btnCopiar("wallet", data.crypto_wallet)}
+          </div>
+        </div>}
+
+        {op && <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setVerDetalle(v => !v)}>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0 }}>Detalle de la operación</p>
+            <span style={{ fontSize: 11.5, color: GOLD_A, fontWeight: 800 }}>{verDetalle ? "Ocultar ▲" : "Ver ▼"}</span>
+          </div>
+          {verDetalle && <div style={{ marginTop: 8 }}>
+            {cargo && <div style={rowS}><span style={{ color: MUTED }}>Bultos</span><span style={{ fontWeight: 700 }}>{cargo.bultos}</span></div>}
+            {cargo && esMaritimoCv && cargo.maritimo && <div style={rowS}><span style={{ color: MUTED }}>Volumen</span><span style={{ fontWeight: 700 }}>{fmtM3(cargo.maritimo.m3_total)} m³</span></div>}
+            {cargo && isBlanco && !esMaritimoCv && <div style={rowS}><span style={{ color: MUTED }}>Peso facturable</span><span style={{ fontWeight: 700 }}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</span></div>}
+            {op.budget_flete > 0 && <div style={rowS}><span style={{ color: MUTED }}>Flete internacional</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_flete)}</span></div>}
+            {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <div style={rowS}><span style={{ color: MUTED }}>Impuestos &amp; Aduana</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_taxes)}</span></div>}
+            {taxDetail && taxDetail.productos.map((pr, i2) => <div key={i2} style={{ padding: "4px 0 4px 12px", borderLeft: `2px solid ${LINE}` }}>
+              <p style={{ fontSize: 10.5, fontWeight: 800, margin: "0 0 2px" }}>{pr.name}</p>
+              {pr.rows.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: MUTED, padding: "1px 0" }}><span>{l}</span><span>{fmt(v)}</span></div>)}
+            </div>)}
+            {taxDetail && taxDetail.extras.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: MUTED, padding: "1px 0 1px 12px" }}><span>{l}</span><span>{fmt(v)}</span></div>)}
+            {op.budget_seguro > 0 && <div style={rowS}><span style={{ color: MUTED }}>Seguro de carga</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_seguro)}</span></div>}
+            {Number(op.delivery_cost_usd || 0) > 0 && <div style={rowS}><span style={{ color: MUTED }}>Envío a domicilio</span><span style={{ fontWeight: 700 }}>{fmt(op.delivery_cost_usd)}</span></div>}
+          </div>}
+        </div>}
+
+        <button onClick={onEdit} style={{ width: "100%", height: 48, fontSize: 14, fontWeight: 800, borderRadius: 13, border: "none", background: NAVY, color: "#fff", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 10px 24px rgba(10,22,40,0.2)" }}>{entregada ? "Cambiar la forma de pago" : delivery === "ri" ? "Cambiar la forma de pago" : "Cambiar día, horario o forma de pago"}</button>
+        <p style={{ textAlign: "center", fontSize: 11.5, color: MUTED, margin: "10px 0 0", lineHeight: 1.5 }}>{entregada ? "La carga ya se entregó: solo podés cambiar cómo pagás." : "Podés cambiarlo las veces que quieras: vale la última confirmación."}</p>
+      </div>
     </div>
   </div>;
 }

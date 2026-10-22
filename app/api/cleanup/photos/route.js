@@ -58,7 +58,8 @@ async function limpiarColumna(tabla, ids) {
   if (!ids.length) return;
   await sb(`/rest/v1/${tabla}?id=in.(${ids.join(",")})`, {
     method: "PATCH",
-    body: JSON.stringify({ photo_url: null, photo_uploaded_at: null }),
+    // photo_uploaded_at queda: así el admin muestra "Foto eliminada" y no "Foto pendiente" (22/10/2026).
+    body: JSON.stringify({ photo_url: null }),
   });
 }
 

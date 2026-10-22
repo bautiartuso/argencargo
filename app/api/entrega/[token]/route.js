@@ -342,6 +342,7 @@ export async function GET(req, { params }) {
       origin: op.origin,
       status: op.status,
       budget_total: Number(op.budget_total || 0),
+      delivery_cost_usd: Number(op.delivery_cost_usd || 0),
       budget_flete: Number(op.budget_flete || 0),
       budget_seguro: Number(op.budget_seguro || 0),
       budget_taxes: Number(op.budget_taxes || 0),
@@ -538,7 +539,9 @@ export async function POST(req, { params }) {
   // Cobros parciales de la op y de las hermanas seleccionadas — mismo saldo que muestra el GET.
   const pagosMap = await pagosParciales([op.id, ...extraOps.map((x) => x.id)]).catch(() => ({}));
   const saldo = saldoOf(op, pagosMap[op.id]);
-  const finalTotal = Math.round((saldo + deliveryCost) * 100) / 100;
+  // El saldo ya incluye el envío que se había coordinado antes (está en budget_total): se suma solo la
+  // diferencia. Antes se sumaba el envío entero y al re-coordinar quedaba contado dos veces (AC-0254).
+  const finalTotal = Math.round((saldo + deliveryCost - Number(op.delivery_cost_usd || 0)) * 100) / 100;
   // Reparto del pago: los montos se recalculan server-side contra el total real (el 2do metodo
   // absorbe el resto) — nunca se confia en montos que sumen otra cosa.
   let splitFinal = null;
