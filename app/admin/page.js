@@ -2139,7 +2139,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             budget_surcharge:isBlanco?0:r2(surcharge||0),
             budget_total:0,
           };
-          snap.budget_total=r2((isBlanco?(taxesBilledByArgencargo?snap.budget_taxes:0)+snap.budget_seguro:snap.budget_surcharge)+snap.budget_flete+(op.shipping_to_door?Number(op.shipping_cost||0):0));
+          // envioDom: el envío cargado en la op + el que eligió el cliente en el link (antes se perdía: AC-0254 quedó en 835,83).
+          snap.budget_total=r2((isBlanco?(taxesBilledByArgencargo?snap.budget_taxes:0)+snap.budget_seguro:snap.budget_surcharge)+snap.budget_flete+envioDom);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:snap});
           setOp(p=>({...p,...snap}));
           
@@ -2169,6 +2170,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         };
         if(manualTax&&op.channel==="aereo_blanco"){const des=r2(num(manualTax.des));const die=r2(num(manualTax.die)),te=r2(num(manualTax.te)),iva=r2(num(manualTax.iva)),bat=r2(num(manualTax.bat));
           body.budget_tax_detail={...(op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{}),derechos:die,tasaE:te,iva,desembolso:des,ivaDesembolso:r2(des*0.21),battExtra:bat,desembolso_manual:true,impuestos_base_manual:r2(die+te+iva)};}
+        // Envío a domicilio editado en el presupuesto: se guarda donde corresponde (link u op).
+        if(op.delivery_choice==="propio")body.delivery_cost_usd=r2(num(op.delivery_cost_usd));
+        else{body.shipping_cost=r2(num(op.shipping_cost));body.shipping_to_door=num(op.shipping_cost)>0&&!!op.shipping_to_door;}
         // Marítimo LCL/FCL (22/10/2026): los seis conceptos impositivos editables uno por uno.
         if(manualTax&&op.channel==="maritimo_blanco"){const v=(k)=>r2(num(manualTax[k]));const des=v("des");
           body.budget_tax_detail={...(op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{}),derechos:v("die"),tasaE:v("te"),iva:v("iva"),ivaAdic:v("ivaAdic"),iigg:v("iigg"),iibb:v("iibb"),...(des>0||manualTax.conDes?{desembolso:r2(des/1.21),ivaDesembolso:r2(des-des/1.21)}:{}),impuestos_manual:true};}
@@ -2199,6 +2203,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
         chOp("budget_total")(Math.round(sum*100)/100);
       };
+      // Envío a domicilio desde el editor: cambia el costo y recalcula el total con el resto de los componentes.
+      const handleEnvioChange=(val)=>{
+        if(val!==""&&!/^\d*[.,]?\d*$/.test(val))return;
+        if(op.delivery_choice==="propio")chOp("delivery_cost_usd")(val);
+        else{chOp("shipping_cost")(val);chOp("shipping_to_door")(toNum(val)>0);}
+        const components=isBlanco?(taxesBilledByArgencargo?["budget_taxes","budget_flete","budget_seguro","budget_surcharge"]:["budget_flete","budget_seguro","budget_surcharge"]):["budget_flete","budget_surcharge"];
+        const sum=components.reduce((a,f)=>a+toNum(op[f]),0)+toNum(val);
+        chOp("budget_total")(Math.round(sum*100)/100);
+      };
       // Aéreo A: impuestos de importación + desaduanaje (sin IVA) → budget_taxes = base + desaduanaje × 1,21.
       const handleTaxSplit=(field,val)=>{if(val!==""&&!/^\d*[.,]?\d*$/.test(val))return;
         const next={...(manualTax||{die:"",te:"",iva:"",des:"",bat:"",flete:""}),[field]:val};setManualTax(next);
@@ -2222,20 +2235,20 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           /{unidadFlete} × {cantFact.toLocaleString("es-AR",{maximumFractionDigits:unidadFlete==="kg"?2:3})} {unidadFlete} =
         </span>;};
       // Estilo común reutilizable (sin redefinir componente — evita remount + pérdida de foco)
-      const manualInputStyle={width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
+      const manualInputStyle={width:140,height:38,boxSizing:"border-box",padding:"0 12px",fontSize:14,fontWeight:700,border:"1px solid rgba(232,208,152,0.3)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums",fontFamily:"inherit"};
       // Si manual: usamos los valores guardados como los visualizados
       if(isManual){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
       return <Card v2 title="Presupuesto" actions={
-        (()=>{const b=(bg,col,brd)=>({padding:"6px 13px",fontSize:11,fontWeight:700,borderRadius:7,cursor:saving?"wait":"pointer",letterSpacing:"0.03em",background:bg,color:col,border:brd||"none"});
+        (()=>{const b=(bg,col,brd)=>({display:"inline-flex",alignItems:"center",gap:6,height:36,padding:"0 15px",fontSize:12.5,fontWeight:800,borderRadius:10,cursor:saving?"wait":"pointer",fontFamily:"inherit",background:bg,color:col,border:brd||"none"});
         return <div style={{display:"flex",gap:7,alignItems:"center"}}>
-          {isManual&&!editandoPresu&&<span title="Los valores están cargados a mano, no se recalculan solos" style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.14)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.35)",letterSpacing:"0.07em"}}>MANUAL</span>}
+          {isManual&&!editandoPresu&&<span title="Los valores están cargados a mano, no se recalculan solos" style={{display:"inline-flex",alignItems:"center",gap:7,height:36,padding:"0 13px",borderRadius:10,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.3)",fontSize:12,fontWeight:800,color:"#fb923c"}}><span style={{width:7,height:7,borderRadius:99,background:"#fb923c",boxShadow:"0 0 0 3px rgba(251,146,60,0.2)"}}/>Cargado a mano</span>}
           {editandoPresu
             ?<>
-              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);setManualTax(null);setFleteRateDraft(null);}} style={b("transparent","rgba(255,255,255,0.55)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
-              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);setManualTax(null);setFleteRateDraft(null);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>💾 Guardar</button>
+              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);setManualTax(null);setFleteRateDraft(null);}} style={b("rgba(255,255,255,0.04)","rgba(255,255,255,0.7)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
+              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);setManualTax(null);setFleteRateDraft(null);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>Guardar presupuesto</button>
             </>
             :<>
-              {isManual&&<button disabled={saving} title="Vuelve a calcular el presupuesto con la lógica del sistema" onClick={async()=>{if(!await confirmDialog("Se van a recalcular todos los valores con la lógica del sistema y se pierde lo que cargaste a mano. ¿Seguir?"))return;await setBudgetMode("auto");}} style={b("transparent","rgba(255,255,255,0.6)","1px solid rgba(255,255,255,0.12)")}>↻ Recalcular automático</button>}
+              {isManual&&<button disabled={saving} title="Vuelve a calcular el presupuesto con la lógica del sistema" onClick={async()=>{if(!await confirmDialog("Se van a recalcular todos los valores con la lógica del sistema y se pierde lo que cargaste a mano. ¿Seguir?"))return;await setBudgetMode("auto");}} style={b("rgba(255,255,255,0.04)","rgba(255,255,255,0.75)","1px solid rgba(255,255,255,0.12)")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg>Volver a automático</button>}
               <button disabled={saving} onClick={async()=>{if(!isManual)await setBudgetMode("manual");
                 // Aéreo A: el editor parte el total en impuestos de importación + desaduanaje (editable, pedido 07/09/2026).
                 if(op.channel==="aereo_blanco"&&taxesBilledByArgencargo){const r2=(v)=>Math.round(Number(v||0)*100)/100;const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};const taxesNow=isManual?Number(op.budget_taxes||0):r2(totalTax);
@@ -2324,9 +2337,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </span>
         </div>}
         {editandoPresu?<>
-          <div style={{padding:"8px 12px",marginBottom:10,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:8,fontSize:11.5,color:"#fb923c",lineHeight:1.5}}>
-            <b>Editando:</b> el total se recalcula solo al cambiar cualquier valor. Una vez guardado, el sistema deja de recalcularlo al tocar bultos o ítems — para eso está "Recalcular automático".
-          </div>
+          <div style={{padding:"6px 18px 6px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(232,208,152,0.25)"}}>
+          <p style={{margin:"8px 0 6px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Editando · el total se calcula solo</p>
           {isBlanco?<>
             {manualTax&&op.channel==="maritimo_blanco"&&taxesBilledByArgencargo?<>
               {[["die","Derechos de importación"],["te","Tasa de estadística"],["iva","IVA de importación"],["ivaAdic","IVA adicional"],["iigg","Ganancias"],["iibb","Ingresos brutos"],...(manualTax.conDes?[["des","Gasto documental (con IVA)"]]:[])].map(([k,l])=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{l} (USD)</span><input type="text" inputMode="decimal" value={manualTax[k]} placeholder="0,00" onChange={e=>handleTaxSplit(k,e.target.value)} style={manualInputStyle}/></div>)}
@@ -2349,6 +2361,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Servicio Integral (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por valor (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
           </>}
+          {/* Envío a domicilio editable desde el presupuesto (22/10/2026): el del link (delivery_cost_usd)
+              o, si no eligió por el link, el cargado en la op (shipping_cost). */}
+          {(()=>{const propio=op.delivery_choice==="propio";const val=propio?op.delivery_cost_usd:(op.shipping_to_door?op.shipping_cost:"");
+            return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Envío a domicilio (USD){propio&&<span style={{color:"rgba(255,255,255,0.4)",fontSize:11}}> · lo eligió el cliente en el link</span>}</span><input type="text" inputMode="decimal" value={val??""} placeholder="0,00" onChange={e=>handleEnvioChange(e.target.value)} style={manualInputStyle}/></div>;})()}
+          </div>
         </>:<>
           <div style={{padding:"2px 18px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
           {isBlanco?<>
@@ -2365,7 +2382,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           {envioDom>0&&linea("Envío a domicilio",envioDom,"#22c55e",op.delivery_choice==="propio"?"Lo eligió el cliente en el link de retiro":null)}
           </div>
         </>}
-        {editandoPresu&&envioDom>0&&rw("Envío a domicilio",envioDom)}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"20px 22px",margin:"16px 0 12px",borderRadius:16,background:"radial-gradient(120% 140% at 100% 0%,rgba(232,208,152,0.2),rgba(184,149,106,0.06) 55%,rgba(184,149,106,0.03))",border:"1px solid rgba(232,208,152,0.32)",boxShadow:"0 10px 30px rgba(0,0,0,0.25)"}}>
           <div><span style={{display:"block",fontSize:11.5,fontWeight:800,color:"#E8D098",textTransform:"uppercase",letterSpacing:"0.12em"}}>Total a abonar</span>{!editandoPresu&&<span style={{display:"block",marginTop:4,fontSize:12,color:"rgba(255,255,255,0.5)"}}>{isBlanco?(taxesBilledByArgencargo?"Impuestos + flete":"Flete")+(seguro>0?" + seguro":"")+(envioDom>0?" + envío":""):"Servicio integral"+(surcharge>0?" + recargo":"")+(envioDom>0?" + envío":"")}</span>}</div>
           {editandoPresu
