@@ -18462,11 +18462,28 @@ function MaritimePanel({token,allClients=[]}){
         </button>;})}
     </div>
 
-    <div className="mt-desc-row" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:0,flex:1,minWidth:220}}>{tabAct.h}</p>
+    <div className="mt-desc-row" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:tabMt==="contenedores"?16:12}}>
+      {tabMt==="contenedores"?(()=>{
+        // Ganancia estimada en el agua SOLO del depósito elegido (21/10/2026). La de todos los depósitos
+        // está en el dashboard financiero.
+        const cs=contActivos.filter(c=>c.warehouse===warehouseFilter);
+        const shs=(c)=>shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
+        const gan=cs.reduce((a,c)=>{const l=shs(c);const imp=importeContainer(l);return a+(imp==null?0:imp-costContainer(l));},0);
+        const vol=cs.reduce((a,c)=>a+sumCbm(shs(c)),0);
+        const sub=`${cs.length} contenedor${cs.length!==1?"es":""} en viaje · ${fm3(vol)} m³`;
+        return <div style={{flex:1,minWidth:240,display:"flex"}}>{verPlata&&cs.length>0
+          ?<div style={{display:"inline-flex",alignItems:"center",gap:14,padding:"9px 18px 9px 12px",borderRadius:14,background:"linear-gradient(135deg,rgba(74,222,128,0.18),rgba(74,222,128,0.05))",border:"1px solid rgba(74,222,128,0.4)",boxShadow:"0 6px 20px rgba(34,197,94,0.12)"}}>
+            <span style={{width:40,height:40,borderRadius:11,background:"rgba(74,222,128,0.2)",display:"inline-flex",alignItems:"center",justifyContent:"center",color:"#4ade80",flexShrink:0}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></span>
+            <span style={{display:"flex",flexDirection:"column"}}>
+              <span style={{fontSize:10.5,fontWeight:800,color:"#86efac",textTransform:"uppercase",letterSpacing:".08em"}}>Ganancia estimada en el agua</span>
+              <span style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}><span style={{fontSize:22,fontWeight:900,color:gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",lineHeight:1.15}}>{fusd(gan)}</span><span style={{fontSize:12,color:"rgba(255,255,255,0.55)",fontWeight:600}}>{sub}</span></span>
+            </span>
+          </div>
+          :<p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:0,alignSelf:"center"}}>{cs.length?sub:tabAct.h}</p>}</div>;
+      })():<p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:0,flex:1,minWidth:220}}>{tabAct.h}</p>}
       {sinValorTab>0&&<button onClick={()=>setSoloSinValor(v=>!v)} title="Mostrar solo las cargas sin valor de mercadería" style={{padding:"8px 13px",fontSize:12,fontWeight:800,borderRadius:10,cursor:"pointer",fontFamily:"inherit",border:"1px solid rgba(239,68,68,0.6)",background:soloSinValor?"#ef4444":"rgba(239,68,68,0.14)",color:soloSinValor?"#fff":"#fecaca"}}>⚠ {sinValorTab} sin valor cargado{soloSinValor?" · ver todas":""}</button>}
-      {tabMt!=="historial"&&<input value={qMt} onChange={e=>setQMt(e.target.value)} placeholder="Buscar cliente, tracking o mercadería" style={{width:300,maxWidth:"100%",padding:"9px 13px",fontSize:13,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>}
-      {tabMt==="contenedores"&&<button onClick={()=>setEditingContainer({warehouse:whSel?.name})} style={btnMini("#60a5fa",{padding:"8px 13px",fontSize:12})}>+ 🚢 Nuevo contenedor</button>}
+      {tabMt!=="historial"&&<input value={qMt} onChange={e=>setQMt(e.target.value)} placeholder="Buscar cliente, tracking o mercadería" style={{width:300,maxWidth:"100%",height:tabMt==="contenedores"?42:undefined,boxSizing:"border-box",padding:"9px 13px",fontSize:13,borderRadius:tabMt==="contenedores"?12:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>}
+      {tabMt==="contenedores"&&<button onClick={()=>setEditingContainer({warehouse:whSel?.name})} style={{height:42,padding:"0 18px",borderRadius:12,border:"1px solid rgba(96,165,250,0.55)",background:"linear-gradient(135deg,rgba(96,165,250,0.28),rgba(96,165,250,0.12))",color:"#dbeafe",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:8}}><span style={{fontSize:17,lineHeight:1}}>+</span>Nuevo contenedor</button>}
     </div>
 
     {/* Barra de selección: subir a contenedor o crear la operación */}
@@ -18522,18 +18539,7 @@ function MaritimePanel({token,allClients=[]}){
       const ganDep=conts.reduce((a,c)=>a+(ganDe(shipsDe(c))||0),0);
       const ganAgua=contActivos.reduce((a,c)=>a+(ganDe(shipsDe(c))||0),0);
       const costoDep=conts.reduce((a,c)=>a+costContainer(shipsDe(c)),0);
-      const resumen=verPlata&&contActivos.length>0&&<div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
-        <div style={{flex:"1 1 220px",padding:"14px 18px",borderRadius:14,background:"linear-gradient(135deg,rgba(74,222,128,0.14),rgba(74,222,128,0.04))",border:"1px solid rgba(74,222,128,0.35)"}}>
-          <p style={{margin:0,fontSize:10.5,fontWeight:800,color:"#86efac",textTransform:"uppercase",letterSpacing:".07em"}}>Ganancia estimada en el agua · todos los depósitos</p>
-          <p style={{margin:"3px 0 0",fontSize:24,fontWeight:900,color:ganAgua>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{fusd(ganAgua)}</p>
-          <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>{contActivos.length} contenedor{contActivos.length!==1?"es":""} en viaje</p>
-        </div>
-        {conts.length>0&&conts.length!==contActivos.length&&<div style={{flex:"1 1 220px",padding:"14px 18px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
-          <p style={{margin:0,fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:".07em"}}>{warehouseFilter}</p>
-          <p style={{margin:"3px 0 0",fontSize:20,fontWeight:900,color:ganDep>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{fusd(ganDep)}</p>
-          <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>Costo de sus contenedores {fusd(costoDep)}</p>
-        </div>}
-      </div>;
+      const resumen=null;
       if(conts.length===0)return <>{resumen}{tarjeta(vacio("No hay contenedores en viaje de este depósito."))}</>;
       const filaCont=(sh,grupo)=>{
         const c=cliMap[sh.client_id];const cbm=cbmOf(sh.id),bul=bultosOf(sh.id);
@@ -18615,15 +18621,22 @@ function MaritimePanel({token,allClients=[]}){
               <div style={{minWidth:0}}>
                 <p style={{margin:0,fontSize:18,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".03em"}}>{c.code}</p>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:5,alignItems:"center"}}>
-                  {tb>0&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.4)"})}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}
-                  {c.port_arrived_at&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.16)",border:"1px solid rgba(251,146,60,0.5)"})}>🛃 En aduana · llegó {dd(c.port_arrived_at)} · {Math.max(0,Math.floor((Date.now()-new Date(c.port_arrived_at+"T12:00:00").getTime())/86400000))} d</span>}
+                  {c.port_arrived_at
+                    ?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:900,letterSpacing:".08em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:"#2a1203",background:"linear-gradient(135deg,#fdba74,#fb923c)",boxShadow:"0 3px 10px rgba(251,146,60,0.35)"}}><span style={{width:6,height:6,borderRadius:"50%",background:"#2a1203"}}/>En aduana</span>
+                    :tb>0&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.4)"})}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}
                   {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fecaca",background:"rgba(239,68,68,0.2)",border:"1px solid rgba(239,68,68,0.5)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
                 </div>
               </div>
             </div>
             <div className="mt-cont-stats" style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
-              {dato("ETA Bs. As.",dd(eEta),tb>0?"#fdba74":"#93c5fd")}
-              {dato("Entrega est.",dd(delEta),"#4ade80")}
+              {c.port_arrived_at?<>
+                {dato("Llegó",dd(c.port_arrived_at),"#fdba74")}
+                {(()=>{const d=Math.max(0,Math.floor((Date.now()-new Date(c.port_arrived_at+"T12:00:00").getTime())/86400000));return dato("En aduana",`${d} día${d!==1?"s":""}`,d>14?"#f87171":"#fdba74");})()}
+                {dato("Entrega est.",dd(deliveryEtaStr(c.port_arrived_at)),"#4ade80")}
+              </>:<>
+                {dato("ETA Bs. As.",dd(eEta),tb>0?"#fdba74":"#93c5fd")}
+                {dato("Entrega est.",dd(delEta),"#4ade80")}
+              </>}
               {dato("Bultos",bulC)}
               {/* Volumen y costo juntos, en una sola ficha */}
               <span className="mt-plata" style={{display:"inline-flex",alignItems:"stretch",borderRadius:12,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",background:"rgba(10,22,40,0.45)"}}>
