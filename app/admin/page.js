@@ -18500,7 +18500,8 @@ function MaritimePanel({token,allClients=[]}){
 
     {/* Contenedores en viaje: plegables, con la plata del contenedor y de todo lo que está en el agua */}
     {!lo&&tabMt==="contenedores"&&(()=>{
-      const conts=contActivos.filter(c=>c.warehouse===warehouseFilter);
+      // Ordenados por ETA a Buenos Aires (con transbordo incluido): el que llega primero, arriba. Sin ETA, al final.
+      const conts=contActivos.filter(c=>c.warehouse===warehouseFilter).sort((a,b)=>String(effEta(a)||"9999").localeCompare(String(effEta(b)||"9999")));
       const ganDe=(lst)=>{const imp=importeContainer(lst);return imp==null?null:imp-costContainer(lst);};
       const shipsDe=(c)=>shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
       const ganDep=conts.reduce((a,c)=>a+(ganDe(shipsDe(c))||0),0);

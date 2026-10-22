@@ -134,13 +134,13 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
         <div className="mc-strip" style={{margin:"0 20px",borderRadius:14,border:`1px solid ${LINEA}`,background:"rgba(0,0,0,0.16)",overflow:"hidden"}}>
           {g.contenedor&&celda(t("mar2.container"),<span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:17,letterSpacing:"0.04em",color:ORO}}>{g.contenedor}</span>,{flex:"1.3 1 190px"})}
           {celda(t("mar2.origin"),usa?t("origin.usa"):t("origin.china"),{flex:"0.8 1 130px"})}
-          {celda(t("mar2.arrival"),dep||!g.eta_puerto?<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>:fD(g.eta_puerto))}
+          {g.en_puerto&&!dep?celda(t("mar2.arrivalConfirmed"),fD(g.en_puerto)):celda(t("mar2.arrival"),dep||!g.eta_puerto?<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>:fD(g.eta_puerto))}
           {!dep&&celda(t("mar2.delivery"),fD(g.entrega_estimada)||<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>)}
           {/* En depósito (todavía sin contenedor) bultos, volumen y total se muestran recién cuando la
               carga sube al contenedor (pedido 02/10/2026). */}
           {celda(`${t("mar2.pkgs")} · ${t("mar2.volume")}`,dep?<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>:<>{g.bultos||0} <span style={{color:SUB,fontWeight:700}}>·</span> {m3(g.cbm)}</>)}
         </div>
-        {g.transbordo&&<div style={{margin:"12px 20px 0",padding:"13px 16px",borderRadius:14,background:"linear-gradient(135deg,rgba(232,208,152,0.14),rgba(232,208,152,0.04))",border:"1px solid rgba(232,208,152,0.45)",display:"flex",gap:14,alignItems:"center"}}>
+        {g.transbordo&&!g.en_puerto&&<div style={{margin:"12px 20px 0",padding:"13px 16px",borderRadius:14,background:"linear-gradient(135deg,rgba(232,208,152,0.14),rgba(232,208,152,0.04))",border:"1px solid rgba(232,208,152,0.45)",display:"flex",gap:14,alignItems:"center"}}>
           <span style={{width:42,height:42,flexShrink:0,borderRadius:12,background:"rgba(232,208,152,0.16)",border:"1px solid rgba(232,208,152,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🔄</span>
           <div style={{flex:1,minWidth:0}}>
             <p style={{margin:0,fontSize:14.5,fontWeight:800,color:ORO}}>{t("mar2.tsTitle",{lugar:g.transbordo.lugar})} <span style={{marginLeft:6,fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,background:"rgba(232,208,152,0.2)",color:ORO,whiteSpace:"nowrap"}}>{t("mar2.plusDays",{dias:g.transbordo.dias})}</span></p>
