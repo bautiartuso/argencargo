@@ -1038,7 +1038,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
     return <div style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
       <button onClick={()=>setImpOpen(x=>!x)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"8px 0",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
         <span style={{fontSize:13,color:muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94,display:"inline-flex",alignItems:"center",gap:7}}>
-          {label}{td?.confirmado&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(34,197,94,0.14)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)",letterSpacing:"0.04em"}}>✓ {t("imp.confirmed")}</span>}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
+          {label}{td?.confirmado&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(34,197,94,0.14)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)",letterSpacing:"0.04em"}}>✓ {t("imp.dsiConfirmed")}</span>}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
         </span>
         <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(monto)}</span>
       </button>
@@ -1140,7 +1140,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         {(hasBudget||showEstimate)?<div style={{marginTop:22,paddingTop:18,borderTop:HAIR}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:6}}>
             <p style={LBL}>{hasBudget?(isGI?t("op.priceLanded"):"Presupuesto"):"Costo estimado"}</p>
-            {showEstimate&&<span title={t("imp.estimateTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}{hasBudget&&!isGI&&<span title={t("imp.confirmedTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#4ade80",background:"rgba(74,222,128,0.12)",border:"1px solid rgba(74,222,128,0.45)"}}>{t("imp.confirmed")}</span>}
+            {showEstimate&&<span title={t("imp.estimateTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#fbbf24",background:"rgba(251,191,36,0.14)",border:"1px solid rgba(251,191,36,0.45)"}}>Estimado · lo confirma Argencargo</span>}{hasBudget&&!isGI&&<span title={t("imp.confirmedTitle")} style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 9px",borderRadius:999,color:"#4ade80",background:"rgba(74,222,128,0.12)",border:"1px solid rgba(74,222,128,0.45)"}}>{t(saldoReal<=0.01&&totalCli>0.005?"imp.confirmedPaid":"imp.confirmed")}</span>}
             <span style={{flex:1}}/>
           </div>
           {isGI&&hasBudget&&<div>{items.map((it,i)=>{const qty=Number(it.quantity||0);const unit=Number(it.unit_price_usd||0);return <div key={it.id||i}>{fila(<>{it.description} <span style={{color:"rgba(255,255,255,0.5)"}}>× {qty} · {usd(unit)} c/u</span></>,usd(qty*unit),{last:i===items.length-1})}</div>;})}</div>}
@@ -1197,8 +1197,9 @@ function OperationDetail({op:opProp,token,client,onBack}){
             {fila(t("op.ccMoved"),usd(propio),{bold:true,color:SKY,last:true})}
           </div>;})()}
           {hasBudget&&!ccMov&&cliPmts.length>0&&<div style={{marginTop:12}}>
-            {fila("Pagado",usd(totalCli),{color:"#4ade80"})}
-            {fila(saldoReal>0.01?"Saldo pendiente":t("op.fullyPaid"),usd(saldoReal),{bold:true,color:saldoReal<=0.01?"#4ade80":GOLD_LIGHT,last:true})}
+            {/* Pagó todo (o un poquito de más): una sola fila con lo que pagó, sin "USD 0,00" (22/10/2026). */}
+            {saldoReal>0.01?<>{fila("Pagado",usd(totalCli),{color:"#4ade80"})}{fila("Saldo pendiente",usd(saldoReal),{bold:true,color:GOLD_LIGHT,last:true})}</>
+              :fila(<>✓ {t("op.fullyPaid")}</>,usd(totalCli),{bold:true,color:"#4ade80",last:true})}
             <div style={{height:7,background:"rgba(255,255,255,0.08)",borderRadius:999,overflow:"hidden",margin:"8px 0 12px"}}><div style={{width:`${totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0}%`,height:"100%",background:saldoReal<=0.01?"#4ade80":GOLD_LIGHT}}/></div>
             <p style={{...LBL,marginBottom:6}}>Pagos realizados</p>
             {cliPmts.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none",fontSize:12.5,flexWrap:"wrap"}}><span style={{color:"#fff"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})} · <span style={{textTransform:"capitalize",color:"rgba(255,255,255,0.7)"}}>{p.payment_method}</span>{p.notes?<span style={{color:"rgba(255,255,255,0.5)"}}> · {p.notes}</span>:null}</span><span style={{fontWeight:700,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>{usd(p.amount_usd)}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.5)",fontWeight:400,textAlign:"right"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</span></div>)}
