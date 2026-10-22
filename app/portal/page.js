@@ -1038,7 +1038,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
     return <div style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
       <button onClick={()=>setImpOpen(x=>!x)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,width:"100%",padding:"8px 0",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
         <span style={{fontSize:13,color:muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94,display:"inline-flex",alignItems:"center",gap:7}}>
-          {label}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
+          {label}{td?.confirmado&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(34,197,94,0.14)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)",letterSpacing:"0.04em"}}>✓ {t("imp.confirmed")}</span>}<span style={{fontSize:9,color:GOLD_LIGHT}}>{impOpen?"▲":"▼"}</span>
         </span>
         <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(monto)}</span>
       </button>
@@ -1052,11 +1052,12 @@ function OperationDetail({op:opProp,token,client,onBack}){
         </div>
         {detItems.map((x,j)=><div key={j} style={{display:"grid",gridTemplateColumns:COLS,gap:8,alignItems:"baseline",padding:"7px 0",borderBottom:j<detItems.length-1?"1px solid rgba(255,255,255,0.045)":"none"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis"}}>{x.description||`${t("imp.colProduct")} ${j+1}`}</span>
-          {celda(x.derechos,x.drPct)}
-          {celda(x.tasaE,x.tePct)}
-          {celda(x.iva,x.ivaPct)}
+          {celda(x.derechos,td.confirmado?null:x.drPct)}
+          {celda(x.tasaE,td.confirmado?null:x.tePct)}
+          {celda(x.iva,td.confirmado?null:x.ivaPct)}
           <span style={{...cel,fontWeight:700,color:"#fff"}}>{usd(Number(x.derechos||0)+Number(x.tasaE||0)+Number(x.iva||0))}</span>
         </div>)}
+        {td.confirmado&&<p style={{margin:"8px 0 0",fontSize:11,color:"#4ade80"}}>✓ {t("imp.confirmedNote")}</p>}
         {des>0.005&&pie(t("op.customsClearance"),des)}
         {ivaDes>0.005&&pie(pctIvaDes!=null?`${t("op.customsClearanceIva")} (${String(pctIvaDes).replace(".",",")}%)`:t("op.customsClearanceIva"),ivaDes)}
         {otros>0.005&&pie(t("op.otherTaxes"),otros)}

@@ -217,7 +217,18 @@ export async function GET(req, { params }) {
   // Solo se devuelve si las lineas SUMAN el budget_taxes guardado (±0,05) — si no cuadra
   // (despacho real RI, antidumping, presupuesto manual raro), no se muestra y listo.
   let taxDetail = null;
+  // DSI subida (22/10/2026): lo que se pagó en aduana por producto ya está guardado; no se recalcula.
   try {
+    const tdD = op.budget_tax_detail && typeof op.budget_tax_detail === "object" ? op.budget_tax_detail : null;
+    if (tdD?.confirmado && Array.isArray(tdD.items) && tdD.items.length) {
+      const r2 = (v) => Math.round(Number(v || 0) * 100) / 100;
+      const productos = tdD.items.map((x) => ({ name: x.description || "Producto", rows: [["Derechos importación", r2(x.derechos)], ["Tasa estadística", r2(x.tasaE)], ["IVA de Importación", r2(x.iva)]].filter(([, v]) => v > 0.005) }));
+      const des = Number(tdD.desembolso || 0), ivaDes = Number(tdD.ivaDesembolso || 0);
+      const extras = [["Desaduanaje", r2(des)], ["IVA 21% sobre desaduanaje", r2(ivaDes)]].filter(([, v]) => v > 0.005);
+      taxDetail = { productos, extras, confirmado: true };
+    }
+  } catch (e) { console.error("[GET entrega] taxDetail DSI", e.message); }
+  if (!taxDetail) try {
     const items = (Array.isArray(itemsRes.body) ? itemsRes.body : []).filter((it) => Number(it.unit_price_usd) > 0);
     const bTaxes = Number(op.budget_taxes || 0);
     const bSeg = Number(op.budget_seguro || 0);

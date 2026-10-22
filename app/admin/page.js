@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
+import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
@@ -1281,7 +1282,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     if(vivo)setMbItems(Array.isArray(its)?its:[]);
   })();return()=>{vivo=false;};},[initOp.id,initOp.channel,token]);
 
-  const autoSyncBudget=async(force=false)=>{
+  // soloImpuestos (DSI, 22/10/2026): cambia solo budget_taxes / budget_tax_detail y corre el total por la
+  // diferencia de impuestos cobrados. No toca flete ni nada cargado a mano.
+  const autoSyncBudget=async(force=false,{soloImpuestos=false}={})=>{
     if(op.status==="cancelada")return;
     if(!force && op.budget_mode==="manual")return; // ← Manual: el admin maneja los números a mano, no pisamos
     try{
@@ -1292,7 +1295,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=delivery_confirmed_at,payment_split,channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes`}),
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=delivery_confirmed_at,payment_split,channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes,budget_tax_detail,budget_taxes,budget_total`}),
         dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
       ]);
       // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
@@ -1325,7 +1328,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
       // RI: impuestos sobre el valor declarado (flight_invoice_items de esta op).
-      const{totalTax,flete,seguro,totalAbonar,surcharge,taxDetail}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declFresh);
+      const{totalTax,flete,seguro,totalAbonar,surcharge,taxDetail,taxesBilledByArgencargo:cobraImp}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declFresh);
+      if(soloImpuestos){
+        const r2=(v)=>Math.round(Number(v||0)*100)/100;
+        const nuevoTotal=cobraImp?r2(Number(opForCalc.budget_total||0)-Number(opForCalc.budget_taxes||0)+totalTax):Number(opForCalc.budget_total||0);
+        const body={budget_taxes:r2(totalTax),budget_tax_detail:taxDetail||null,...(cobraImp?{budget_total:nuevoTotal}:{})};
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+        setOp(p=>({...p,...body}));
+        return;
+      }
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar,budget_tax_detail:taxDetail||null}});
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
@@ -2883,52 +2894,108 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     </div>}
     </>}
 
-    {/* Despacho real (RI) — entre el presupuesto y Gestión de Pagos. El admin copia los impuestos
-        tal cual de la factura del despachante/DHL; si está cargado, el presupuesto usa estos
-        valores reales (no la fórmula). 13/06/2026. */}
-    {tab==="finance"&&!isGI&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel==="aereo_blanco"&&(()=>{
-      // Parser es-AR: acepta coma decimal y puntos de miles ("1.059,71") además de punto ("448.62").
+    {/* Despacho (RI aéreo, 22/10/2026): se sube la Destinación Simplificada (PDF) y cada producto toma lo
+        que se liquidó de verdad (lib/dsi.js reparte solo, aunque se hayan comprimido ítems en el vuelo).
+        El cliente lo ve como "Confirmado". Los totales a mano quedan para cuando no hay DSI. */}
+    {tab==="finance"&&!isGI&&opClient?.tax_condition==="responsable_inscripto"&&op.channel==="aereo_blanco"&&(()=>{
       const num=v=>{if(v==null)return NaN;let s=String(v).trim();if(s==="")return NaN;if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");return Number(s);};
       const n=v=>{const x=num(v);return isNaN(x)?0:x;};
-      const total=n(despacho.die)+n(despacho.est)+n(despacho.des)+n(despacho.iva);
-      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-      const cargado=total>0;
       const numOrNull=v=>{const x=num(v);return v===""||v==null||isNaN(x)?null:x;};
-      const saveDespacho=async()=>{
+      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};
+      const dsi=td.dsi&&Array.isArray(td.dsi.lines)?td.dsi:null;
+      // Cerrada: se puede subir igual si Argencargo no cobra los impuestos (el total no se mueve).
+      const cerrada=op.status==="operacion_cerrada"&&!!op.ri_argencargo_collects_taxes;
+      const guardarTd=async(nuevoTd,msg)=>{
+        setSavingDespacho(true);
+        try{
+          const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_tax_detail:nuevoTd}});
+          if(!Array.isArray(r))throw new Error(r?.message||"no se pudo guardar");
+          setOp(p=>({...p,budget_tax_detail:nuevoTd}));
+          await autoSyncBudget(true,{soloImpuestos:true});
+          flash(msg);
+        }catch(e){flash("Error: "+e.message);}
+        setSavingDespacho(false);
+      };
+      const subirDsi=async(file)=>{
+        if(!file)return;
+        setSavingDespacho(true);
+        try{
+          const pdfjs=await cargarPdfJsAdmin();
+          const pdf=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
+          const toks=[];for(let i=1;i<=pdf.numPages;i++){const pg=await pdf.getPage(i);const tc=await pg.getTextContent();toks.push(...tc.items.map(x=>String(x.str||"").trim()).filter(Boolean));}
+          const d=parseDsiTokens(toks);
+          if(!d.lines.length)throw new Error("No encontré ítems: ¿es la Destinación Simplificada del courier?");
+          const nombre=`dsi/${op.operation_code}-${Date.now()}.pdf`;
+          const up=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${nombre}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":"application/pdf","x-upsert":"false"},body:file});
+          const pdf_url=up.ok?`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${nombre}`:null;
+          setSavingDespacho(false);
+          await guardarTd({...td,dsi:{...d,pdf_url,archivo:file.name||"DSI.pdf",cargado_at:new Date().toISOString()}},d.cierra?`DSI cargada · ${d.lines.length} ítems · ${fmt(d.total)}`:`DSI cargada, pero los ítems suman ${fmt(d.suma)} y el total dice ${fmt(d.total)}: revisala`);
+        }catch(e){flash("No se pudo leer la DSI: "+e.message);setSavingDespacho(false);}
+      };
+      const quitarDsi=async()=>{if(!await confirmDialog("¿Quitar la DSI? Los impuestos vuelven al estimado.",{danger:true}))return;const {dsi:_x,confirmado:_y,...resto}=td;await guardarTd(resto,"DSI quitada · vuelve el estimado");};
+      const guardarDesaduanaje=async()=>{setSavingDespacho(true);const body={despacho_desaduanaje_usd:numOrNull(despacho.des)};await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));await autoSyncBudget(true,{soloImpuestos:true});setSavingDespacho(false);flash("Desaduanaje guardado");};
+      const saveManual=async()=>{
         setSavingDespacho(true);
         try{
           const body={despacho_die_usd:numOrNull(despacho.die),despacho_estadistica_usd:numOrNull(despacho.est),despacho_desaduanaje_usd:numOrNull(despacho.des),despacho_iva_usd:numOrNull(despacho.iva)};
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
           setOp(p=>({...p,...body}));
-          await autoSyncBudget(true); // recalcula budget_taxes/total con los valores reales
-          flash("Despacho real guardado · presupuesto recalculado");
-        }catch(e){console.error("save despacho",e);flash("Error al guardar despacho");}
+          await autoSyncBudget(true);
+          flash("Despacho guardado · presupuesto recalculado");
+        }catch(e){flash("Error al guardar despacho");}
         setSavingDespacho(false);
       };
-      const field=(label,key,hint)=>(
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label>
-          <input type="text" inputMode="decimal" value={despacho[key]} onChange={e=>setDespacho(d=>({...d,[key]:e.target.value}))} placeholder="0,00"
-            style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"9px 11px",color:"#fff",fontSize:13.5,fontVariantNumeric:"tabular-nums",width:"100%"}}/>
-          {hint&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{hint}</span>}
+      const inS={background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,height:40,padding:"0 12px",color:"#fff",fontSize:14,fontWeight:700,fontVariantNumeric:"tabular-nums",width:"100%",boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
+      const lblS={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.42)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6};
+      const btnS=(c)=>({height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6});
+      const subir=<label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"22px 16px",borderRadius:14,border:"1.5px dashed rgba(232,208,152,0.4)",background:"rgba(232,208,152,0.05)",cursor:savingDespacho?"wait":"pointer",color:"#E8D098",fontSize:14,fontWeight:800}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg>
+        {savingDespacho?"Leyendo la DSI…":"Subir destinación simplificada (PDF)"}
+        <input type="file" accept="application/pdf,.pdf" style={{display:"none"}} disabled={savingDespacho} onChange={e=>{subirDsi(e.target.files?.[0]);e.target.value="";}}/>
+      </label>;
+      if(!dsi){
+        if(cerrada)return null;
+        return <Card v2 title="Despacho" sub="Sin DSI: los impuestos son estimados">
+          {subir}
+          <details style={{marginTop:12}}>
+            <summary style={{cursor:"pointer",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.5)"}}>Cargar los totales a mano</summary>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginTop:12}}>
+              {[["Derechos","die"],["Estadística","est"],["Desaduanaje","des"],["IVA","iva"]].map(([l,k])=><div key={k}><label style={lblS}>{l}</label><input type="text" inputMode="decimal" value={despacho[k]} onChange={e=>setDespacho(d=>({...d,[k]:e.target.value}))} placeholder="0,00" style={inS}/></div>)}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,gap:10}}>
+              <span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Total <b style={{color:"#fff"}}>{fmt(n(despacho.die)+n(despacho.est)+n(despacho.des)+n(despacho.iva))}</b></span>
+              <button type="button" onClick={saveManual} disabled={savingDespacho} style={btnS("#E8D098")}>{savingDespacho?"Guardando…":"Guardar y recalcular"}</button>
+            </div>
+          </details>
+        </Card>;
+      }
+      const asig=asignarDsi(dsi.lines,items);
+      const tot={die:dsi.lines.reduce((a,l)=>a+l.die,0),te:dsi.lines.reduce((a,l)=>a+l.te,0),iva:dsi.lines.reduce((a,l)=>a+l.iva+(l.otros||0),0)};
+      const tile=(l,v,c)=><div style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)"}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>{l}</p><p style={{margin:"5px 0 0",fontSize:17,fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums"}}>{fmt(v)}</p></div>;
+      return <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Despacho<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)",letterSpacing:"0.04em"}}>✓ Confirmado con DSI</span></span>} sub={`${dsi.fecha?`DSI del ${dsi.fecha}`:"DSI"}${dsi.guia?` · guía ${dsi.guia}`:""} · ${dsi.lines.length} ítem${dsi.lines.length!==1?"s":""}`} actions={<>
+          {dsi.pdf_url&&<a href={dsi.pdf_url} target="_blank" rel="noopener noreferrer" style={btnS("#93c5fd")}>Ver PDF</a>}
+          {!cerrada&&<label style={btnS("#E8D098")}>Reemplazar<input type="file" accept="application/pdf,.pdf" style={{display:"none"}} disabled={savingDespacho} onChange={e=>{subirDsi(e.target.files?.[0]);e.target.value="";}}/></label>}
+          {!cerrada&&<button type="button" onClick={quitarDsi} style={btnS("#f87171")}>Quitar</button>}
+        </>}>
+        {!dsi.cierra&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Los ítems suman {fmt(dsi.suma)} y la DSI dice {fmt(dsi.total)}. Revisá el PDF.</p>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+          {tile("Derechos",tot.die)}{tile("Estadística",tot.te)}{tile("IVA",tot.iva)}{tile("Total DSI",tot.die+tot.te+tot.iva,"#4ade80")}
         </div>
-      );
-      return <Card title="🧾 Despacho real (cliente RI)">
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Copiá los impuestos tal cual figuran en la factura del despachante/DHL. Si cargás esto, el presupuesto del RI usa <strong style={{color:"rgba(255,255,255,0.7)"}}>estos valores reales</strong> en vez del estimado de la fórmula. Incluye IVA (su recupero como crédito fiscal es asunto del cliente con su contador).</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-          {field("Derechos (DIE)","die")}
-          {field("Estadística","est")}
-          {field("Desaduanaje","des","Procesamiento + multiline + otros")}
-          {field("IVA importación","iva")}
+        <div style={{borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",padding:"4px 16px",marginBottom:14,overflowX:"auto"}}>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(180px,2fr) repeat(4,minmax(80px,1fr))",gap:10,padding:"10px 0 8px",borderBottom:"1px solid rgba(255,255,255,0.07)",minWidth:560}}>
+            {["Producto","Derechos","Estadística","IVA","Total"].map((h,k)=><span key={h} style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",textAlign:k?"right":"left"}}>{h}</span>)}
+          </div>
+          {items.map((it,i)=>{const a=asig[i]||{derechos:0,tasaE:0,iva:0,otros:0,lineas:[]};const t=a.derechos+a.tasaE+a.iva+a.otros;return <div key={it.id||i} style={{display:"grid",gridTemplateColumns:"minmax(180px,2fr) repeat(4,minmax(80px,1fr))",gap:10,alignItems:"center",padding:"10px 0",borderBottom:i===items.length-1?"none":"1px solid rgba(255,255,255,0.05)",minWidth:560}}>
+            <div style={{minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.description||`Producto ${i+1}`}</p><p style={{margin:"2px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>DSI {a.lineas.join(" + ")||"—"}</p></div>
+            {[a.derechos,a.tasaE,a.iva+a.otros].map((v,k)=><span key={k} style={{fontSize:13,color:"rgba(255,255,255,0.8)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(v)}</span>)}
+            <span style={{fontSize:13.5,fontWeight:800,color:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(t)}</span>
+          </div>;})}
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",marginTop:14,background:cargado?"rgba(74,222,128,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${cargado?"rgba(74,222,128,0.25)":"rgba(255,255,255,0.1)"}`,borderRadius:8}}>
-          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL IMPUESTOS (real)</span>
-          <span style={{fontSize:16,fontWeight:700,color:cargado?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{fmt(total)}</span>
+        <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
+          <div style={{width:200}}><label style={lblS}>Desaduanaje real (opcional)</label><input type="text" inputMode="decimal" value={despacho.des} onChange={e=>setDespacho(d=>({...d,des:e.target.value}))} placeholder={`tabla: ${Number((td.desembolso||0)+(td.ivaDesembolso||0)).toFixed(2)}`} style={inS}/></div>
+          {!cerrada&&String(despacho.des??"")!==String(op.despacho_desaduanaje_usd??"")&&<button type="button" onClick={guardarDesaduanaje} disabled={savingDespacho} style={{...btnS("#E8D098"),height:40}}>Guardar</button>}
         </div>
-        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
-          <Btn small onClick={saveDespacho} disabled={savingDespacho}>{savingDespacho?"Guardando...":"💾 Guardar despacho y recalcular"}</Btn>
-        </div>
-        {!cargado&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Sin cargar todavía: el presupuesto usa el estimado de la fórmula sobre el valor declarado.</p>}
       </Card>;
     })()}
 
