@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useT } from "../../../lib/i18n-portal";
 import { navieraDe } from "../../../lib/navieras";
 
@@ -13,6 +13,12 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
   const [abiertas,setAbiertas]=useState(()=>new Set());
   const [foto,setFoto]=useState(null); // {fotos:[{u,k}],i}
   const [copiado,setCopiado]=useState(null);
+  // Flechas del teclado y Escape en el visor de fotos (22/10/2026).
+  useEffect(()=>{
+    if(!foto)return;
+    const k=(e)=>{if(e.key==="Escape")setFoto(null);else if(e.key==="ArrowRight")setFoto(f=>f&&({...f,i:(f.i+1)%f.fotos.length}));else if(e.key==="ArrowLeft")setFoto(f=>f&&({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));};
+    window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k);
+  },[!!foto]);
   // Mientras la API responde (sin caché todavía), un esqueleto del mismo tamaño: la tarjeta aparece
   // "ya puesta" en vez de saltar un segundo después (21/10/2026).
   if((!cargo||cargo.length===0)&&cargando)return <div style={{marginBottom:16,borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",background:"linear-gradient(160deg,rgba(255,255,255,0.045),rgba(255,255,255,0.012))",padding:"18px 20px"}}>
@@ -202,7 +208,6 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
 
     {foto&&<div onClick={()=>setFoto(null)} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(5,10,20,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <img src={foto.fotos[foto.i].u} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"82vh",borderRadius:14}}/>
-      <span style={{position:"absolute",top:20,left:"50%",transform:"translateX(-50%)",padding:"6px 14px",borderRadius:999,background:"#fff",color:"#0A1628",fontSize:13.5,fontWeight:800}}>{foto.fotos[foto.i].k}</span>
       <button onClick={()=>setFoto(null)} aria-label="✕" style={{position:"absolute",top:16,right:16,width:40,height:40,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:18,cursor:"pointer"}}>✕</button>
       {foto.fotos.length>1&&<>
         <button onClick={e=>{e.stopPropagation();setFoto(f=>({...f,i:(f.i-1+f.fotos.length)%f.fotos.length}));}} style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",width:46,height:46,borderRadius:999,border:"none",background:"rgba(255,255,255,0.14)",color:"#fff",fontSize:26,cursor:"pointer"}}>‹</button>
