@@ -77,8 +77,10 @@ export async function GET(req, { params }) {
     const costo = costoDeposito(wh, s.mercaderia_tipo, cbm, s.container_id ? cbmCont[s.container_id] : null);
     // "Esperando confirmación": lo que el proveedor despachó y lo que Argencargo marcó como llegado
     // pero el depósito todavía no confirmó.
-    const pendiente = llegadaSinConfirmar(s);
-    const etapa = s.container_id ? "contenedor" : (s.status === "proveedor" || pendiente) ? "camino" : "deposito";
+    // Desde el 22/10/2026 la llegada la marca solo Argencargo: si la marcó, ya está en depósito (el
+    // depósito no confirma más). "Esperando confirmación" queda para lo que todavía no llegó.
+    const pendiente = false;
+    const etapa = s.container_id ? "contenedor" : s.status === "proveedor" ? "camino" : "deposito";
     return {
       id: s.id,
       etapa,

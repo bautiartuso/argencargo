@@ -25,7 +25,8 @@ const T = {
   es: {
     sub: "Planilla del depósito",
     camino: "Esperando confirmación", deposito: "En depósito", contenedores: "Contenedores",
-    camino_hint: "Mercadería que ya viene al depósito. Cuando la tengas, confirmá la llegada.",
+    camino_hint: "Mercadería que viene al depósito. Argencargo marca la llegada cuando la recibís.",
+    dias_dep: (n) => `${n} días en depósito`, alerta_dep: "Hace mucho que está en el depósito",
     deposito_hint: "Mercadería que ya está en el depósito, lista para cargar en un contenedor.",
     cont_hint: "Contenedores que ya salieron hacia Buenos Aires. Tocá uno para ver su detalle.",
     buscar: "Buscar cliente, tracking o mercadería", todas: "Todas",
@@ -52,7 +53,8 @@ const T = {
   zh: {
     sub: "仓库货物表",
     camino: "待确认到货", deposito: "已入仓", contenedores: "集装箱",
-    camino_hint: "正在送往仓库的货物。收到后请确认到货。",
+    camino_hint: "正在送往仓库的货物。到货后由 Argencargo 标记。",
+    dias_dep: (n) => `已在仓库 ${n} 天`, alerta_dep: "在仓库放置时间过长",
     deposito_hint: "已在仓库的货物，等待装柜。",
     cont_hint: "已开往布宜诺斯艾利斯的集装箱。点击查看明细。",
     buscar: "搜索客户、快递单号或货物", todas: "全部",
@@ -206,17 +208,22 @@ export default function DepositoPage({ params }) {
 
   const tipoChip = (c) => {
     const cls = c.tipo === "blanca" ? "dp-tipo-b" : c.tipo === "negra" ? "dp-tipo-n" : "dp-tipo-x";
-    return <button className={`dp-tipo ${cls}`} onClick={() => setTipoModal(c)}>{c.tipo === "blanca" ? "◻" : c.tipo === "negra" ? "◼" : "＋"} {tipoTxt(c.tipo)}</button>;
+    // Solo lectura (22/10/2026): el tipo lo marca Argencargo; el depósito lo ve y no lo confirma.
+    if (!c.tipo) return <span style={{ color: SUB, fontWeight: 700 }}>—</span>;
+    return <span className={`dp-tipo ${cls}`} style={{ cursor: "default" }}>{c.tipo === "blanca" ? "◻" : "◼"} {tipoTxt(c.tipo)}</span>;
   };
 
   const fotosDe = (c) => [...c.fotos.map((u) => ({ u, k: t.foto_bulto })), ...(c.fotos_merc || []).map((u) => ({ u, k: t.foto_merc }))];
+  // Días en depósito desde que llegó (alertas: +20 naranja, +30 roja).
+  const diasDep = (c) => c.llego ? Math.max(0, Math.floor((Date.now() - new Date(String(c.llego).slice(0, 10) + "T12:00:00").getTime()) / 86400000)) : 0;
   const fila = (c, etapa) => {
     const abierto = abiertos.has(c.id);
     const fts = fotosDe(c);
     const inset = c.fotos.length > 0 && (c.fotos_merc || []).length > 0 ? c.fotos_merc[0] : null;
     const toggle = () => setAbiertos((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; });
     const costo = c.costo || {};
-    return <div key={c.id} className={`dp-fila${abierto ? " dp-abierta" : ""}`}>
+    const dd = etapa === "deposito" ? diasDep(c) : 0;
+    return <div key={c.id} className={`dp-fila${abierto ? " dp-abierta" : ""}${dd > 30 ? " dp-alerta-roja" : dd > 20 ? " dp-alerta-nar" : ""}`}>
       <div className="dp-grid">
         <div className="dp-c-foto" onClick={() => { if (fts.length) setFoto({ fotos: fts, i: 0 }); }}>
           {fts.length
@@ -245,20 +252,11 @@ export default function DepositoPage({ params }) {
         </div>
         <div className="dp-c-tipo" data-l={t.tipo}>
           {tipoChip(c)}
-          {c.tipo && (c.tipo_confirmado
-            ? <small style={{ color: c.tipo_corregido ? AMBER_TX : GREEN_TX }}>{c.tipo_corregido ? `✎ ${t.corregido}` : `✓ ${t.confirmado}`}</small>
-            : <small style={{ color: SUB }}>{t.tocar_confirmar}</small>)}
         </div>
         <div className="dp-c-acc">
-          {etapa === "camino" && (c.marcado_argencargo
-            ? <div className="dp-llego-ok">
-                <small style={{ fontSize: 11.5, color: SUB, textAlign: "right" }}>{t.marco_ac(ddmm(c.marcado_argencargo))}</small>
-                <button className="dp-btn-llego" onClick={() => setLlegada(c)}>✓ {t.confirmar_btn}</button>
-              </div>
-            : <button className="dp-btn-llego" onClick={() => setLlegada(c)}>✓ {t.llego}</button>)}
           {etapa === "deposito" && <div className="dp-llego-ok">
             <span className="dp-est" style={{ color: GREEN_TX, background: GREEN_BG }}>✓ {t.llego_el} {ddmm(c.llego)}</span>
-            {c.llego_por_deposito && <button className="dp-link" onClick={() => setDeshacerQ(c)}>{t.deshacer}</button>}
+            {diasDep(c) > 20 && <span className={`dp-dias ${diasDep(c) > 30 ? "dp-dias-rojo" : "dp-dias-nar"}`}>⏱ {t.dias_dep(diasDep(c))}</span>}
           </div>}
           {etapa === "contenedor" && <div className="dp-llego-ok">
             <span className="dp-est" style={{ color: "#fff", background: NAVY }}>🚢 {t.en_cont}</span>
@@ -591,6 +589,12 @@ const CSS = `
 .dp-grid{display:grid;grid-template-columns:88px minmax(110px,.9fr) minmax(150px,1.4fr) minmax(130px,1fr) 56px 74px 108px 124px 158px 138px;gap:12px;align-items:center;padding:12px 18px}
 .dp-head{padding:10px 18px;background:#f3f0e8;border-bottom:1px solid ${LINE};font-size:11px;font-weight:800;color:${INK};text-transform:uppercase;letter-spacing:.06em}
 .dp-fila{border-bottom:1px solid ${LINE}}
+.dp-alerta-nar{background:#FFF4E5;box-shadow:inset 5px 0 0 #F97316}
+.dp-alerta-roja{background:#FDECEC;box-shadow:inset 0 0 0 2px #DC2626,inset 8px 0 0 #DC2626;border-radius:10px;margin:4px 0;animation:dpLatido 2.4s ease-in-out infinite}
+@keyframes dpLatido{0%,100%{box-shadow:inset 0 0 0 2px #DC2626,inset 8px 0 0 #DC2626}50%{box-shadow:inset 0 0 0 3px #EF4444,inset 8px 0 0 #EF4444,0 0 0 4px rgba(220,38,38,0.15)}}
+.dp-dias{font-size:12px;font-weight:900;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.dp-dias-nar{color:#9A3412;background:#FED7AA}
+.dp-dias-roja,.dp-dias-rojo{color:#fff;background:#DC2626}
 .dp-fila:last-of-type{border-bottom:none}
 .dp-abierta{background:#fbfaf6}
 .dp-foto{width:88px;height:88px;border-radius:12px;background-size:cover;background-position:center;background-color:#efeae0;position:relative;border:1px solid ${LINE};cursor:zoom-in}
