@@ -17558,6 +17558,14 @@ function MaritimePanel({token,allClients=[]}){
   const compacta=useEsCelu(1200);
   const [shipments,setShipments]=useState([]);
   const [arriboModal,setArriboModal]=useState(null); // {c, texto, desde}
+  // Llegada a puerto (21/10/2026): el contenedor llegó a Buenos Aires y queda en aduana. Todavía no
+  // se crean ops ni se avisa retiro: eso pasa con "Me lo entregaron" (el arribo de siempre).
+  const [puertoModal,setPuertoModal]=useState(null); // {c, fecha}
+  const guardarPuerto=async(c,fecha)=>{
+    const r=await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{port_arrived_at:fecha||null},prefer:"return=representation"});
+    if(!Array.isArray(r)||r.length===0){toast(/port_arrived_at/.test(String(r?.message||""))?"Falta correr el SQL 2026_10_21_contenedor_puerto en Supabase":`No se pudo guardar: ${r?.message||"error de la base"}`,"error");return false;}
+    toast(fecha?`${c.code} en aduana desde el ${formatDateShort(fecha)}`:`${c.code} vuelve a en viaje`,"success");load();return true;
+  };
   const [packages,setPackages]=useState([]);
   const [items,setItems]=useState([]);
   const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});
@@ -17967,12 +17975,12 @@ function MaritimePanel({token,allClients=[]}){
     if(status==="arribado"&&!opts){
       const pend=shipments.filter(x=>x.container_id===c.id&&!x.operation_id&&x.client_id);
       const nCli=new Set(pend.map(x=>x.client_id)).size;
-      setArriboModal({c,desde:hoyAR(),texto:(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Tarda unos segundos — no cierres la pantalla.`:""}`)});return;
+      setArriboModal({c,desde:hoyAR(),texto:(`¿Te entregaron "${c.code}"?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Después cargás los costos. Tarda unos segundos, no cierres la pantalla.`:""}`)});return;
     }
     setCreatingOp(true);
     try{
       const body={status};
-      if(status==="arribado"){body.arrived_at=hoyAR();const d=opts?.desde;body.entrega_desde=d&&d>hoyAR()?d:null;}
+      if(status==="arribado"){body.arrived_at=c.port_arrived_at||hoyAR();const d=opts?.desde;body.entrega_desde=d&&d>hoyAR()?d:null;}
       if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
       await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
       let extra="";
@@ -18363,20 +18371,36 @@ function MaritimePanel({token,allClients=[]}){
 
   const arriboUI=arriboModal&&createPortal(<div onClick={()=>setArriboModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#0F1D33",border:"1px solid rgba(232,208,152,0.3)",borderRadius:14,padding:20,width:"100%",maxWidth:460,color:"#fff"}}>
-      <div style={{fontSize:16,fontWeight:800,marginBottom:10}}>⚓ Arribo de {arriboModal.c.code}</div>
+      <div style={{fontSize:16,fontWeight:800,marginBottom:10}}>📦 Entrega de {arriboModal.c.code}</div>
       <p style={{fontSize:13,lineHeight:1.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",margin:"0 0 16px"}}>{arriboModal.texto}</p>
       <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Disponible para retirar desde</div>
       <DatePicker value={arriboModal.desde} onChange={v=>setArriboModal(m=>({...m,desde:v||hoyAR()}))}/>
       <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 18px"}}>{arriboModal.desde>hoyAR()?`El link de retiro no deja coordinar antes del ${String(arriboModal.desde).slice(8,10)}/${String(arriboModal.desde).slice(5,7)}.`:"Se puede coordinar desde hoy."}</p>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <button onClick={()=>setArriboModal(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={()=>{const m=arriboModal;setArriboModal(null);setContainerStatus(m.c,"arribado",{desde:m.desde});}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#22c55e",color:"#06240f",fontWeight:800,cursor:"pointer"}}>Marcar arribado</button>
+        <button onClick={()=>{const m=arriboModal;setArriboModal(null);setContainerStatus(m.c,"arribado",{desde:m.desde});}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#22c55e",color:"#06240f",fontWeight:800,cursor:"pointer"}}>Confirmar entrega</button>
+      </div>
+    </div>
+  </div>,document.body);
+  const puertoUI=puertoModal&&createPortal(<div onClick={()=>setPuertoModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#0F1D33",border:`1px solid ${navieraColor(puertoModal.c.shipping_line)}77`,borderRadius:16,padding:20,width:"100%",maxWidth:420,color:"#fff"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+        <NavieraLogo n={puertoModal.c.shipping_line} size={40}/>
+        <div><div style={{fontSize:16,fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{puertoModal.c.code}</div><div style={{fontSize:12.5,color:"rgba(255,255,255,0.6)"}}>Llegó a Buenos Aires · queda en aduana</div></div>
+      </div>
+      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Día que llegó</div>
+      <DatePicker value={puertoModal.fecha} onChange={v=>setPuertoModal(m=>({...m,fecha:v||hoyAR()}))}/>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 18px"}}>El cliente ve "En aduana" en su portal. Cuando te lo entreguen, tocás "Me lo entregaron" y se crean las operaciones.</p>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button onClick={()=>setPuertoModal(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+        <button onClick={async()=>{const m=puertoModal;if(await guardarPuerto(m.c,m.fecha))setPuertoModal(null);}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#fb923c",color:"#2a1203",fontWeight:800,cursor:"pointer"}}>Marcar en aduana</button>
       </div>
     </div>
   </div>,document.body);
   return <div>
     <input ref={fotoInputRef} type="file" accept="image/*" multiple onChange={alElegirFoto} style={{display:"none"}}/>
     {arriboUI}
+    {puertoUI}
     <style>{`.mt-v-card{container-type:inline-size}.mt-v-grid{display:grid;gap:10px;align-items:center;padding:12px 16px}.mt-v-head{padding:9px 18px;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.07);font-size:10px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.07em}.mt-v-fila{border-bottom:1px solid rgba(255,255,255,0.05);transition:background .12s}.mt-v-fila:hover{background:rgba(255,255,255,0.02)}.mt-v-num{font-size:13px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}.mt-v-det-t{margin:0 0 7px;font-size:10px;font-weight:800;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.07em}.mt-v-tab{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025);cursor:pointer;font-family:inherit;text-align:left;color:#fff;transition:all .15s;min-width:0}.mt-v-tab:hover{border-color:rgba(184,149,106,0.4)}.mt-cel-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0 12px 8px}.mt-cel-stats>div{background:rgba(255,255,255,0.035);border-radius:9px;padding:6px 8px;min-width:0;overflow:hidden}.mt-cel-stats>div>span:first-child{display:block;font-size:9.5px;font-weight:800;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}.mt-cel-stats .mt-v-num{font-size:12.5px}.mt-cel-tipo{padding:0 12px 8px}.mt-cel-tipo>div{flex-direction:row!important;align-items:center!important;flex-wrap:wrap;gap:8px!important}.mt-cel-acc{padding:0 12px 12px}.mt-cel-acc>div{justify-content:flex-start!important;gap:6px!important}.mt-cel-acc button{min-height:36px;padding:7px 13px!important;font-size:12.5px!important}.mt-cel-foto>div>div{width:56px!important;height:56px!important}@media(max-width:700px){.mt-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important}.mt-tabs .mt-v-tab{padding:9px 10px;gap:8px}.mt-tabs .mt-v-tab span{white-space:normal!important;line-height:1.2}.mt-desc-row>p{flex:1 1 100%!important;min-width:0!important}.mt-desc-row>input{width:100%!important;flex:1 1 100%}.mt-top-deps{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.mt-top-deps::-webkit-scrollbar{display:none}.mt-top-deps>button{flex-shrink:0}.mt-top-acc{margin-left:0!important}.mt-cont-stats{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 8px!important;width:100%}.mt-cont-stats>.mt-cont-m3{display:none!important}.mt-cont-stats>.mt-plata{grid-column:span 2;padding:6px 10px!important}.mt-cont-stats>.mt-plata>span:last-child{font-size:15px!important}.mt-cont-btns{grid-column:span 3}.mt-cont-btns>button{flex:1;min-height:36px}.mt-cont-btns>button:first-child{flex:2}.mt-cont-stats>span:last-child{justify-self:end;align-self:center}}@container (max-width:1060px){.mt-v-head{display:none}.mt-v-grid{grid-template-columns:26px 64px minmax(0,1fr) minmax(0,1fr) !important}.mt-v-det{padding-left:16px !important;grid-template-columns:1fr !important}}`}</style>
 
     {/* Barra: depósitos + acciones */}
@@ -18567,13 +18591,14 @@ function MaritimePanel({token,allClients=[]}){
         const dato=(l,v,col,cls)=><span className={cls} style={{display:"flex",flexDirection:"column",gap:1}}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</span><span style={{fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
         const plata=(l,v,fg,bg)=><span className="mt-plata" style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderRadius:10,background:bg}}><span style={{fontSize:10,fontWeight:800,color:fg,textTransform:"uppercase",letterSpacing:".06em",opacity:.85}}>{l}</span><span style={{fontSize:15.5,fontWeight:900,color:fg,fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
         return <div key={c.id} style={{marginBottom:12}}>{tarjeta(<>
-          <div onClick={toggle} style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",cursor:"pointer",background:"linear-gradient(180deg,rgba(184,149,106,0.1),rgba(184,149,106,0.02))",borderBottom:abierto?`1px solid ${MT_BORDE}`:"none"}}>
+          <div onClick={toggle} style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",cursor:"pointer",background:`linear-gradient(90deg,${navieraColor(c.shipping_line)}30,${navieraColor(c.shipping_line)}08 55%,rgba(255,255,255,0.01))`,borderLeft:`4px solid ${navieraColor(c.shipping_line)}`,borderBottom:abierto?`1px solid ${MT_BORDE}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
-              <span style={{width:42,height:42,borderRadius:12,background:"rgba(184,149,106,0.16)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🚢</span>
+              <NavieraLogo n={c.shipping_line} size={44}/>
               <div style={{minWidth:0}}>
                 <p style={{margin:0,fontSize:17,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".02em"}}>{c.code}</p>
                 {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:10.5,padding:"1px 8px",marginTop:3,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
                 <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.shipping_line||"Sin naviera"}{celu&&<span style={{color:GOLD_LIGHT,fontWeight:700}}> · {fm3(cbmC)} m³</span>}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
+                {c.port_arrived_at&&<span style={pill({fontSize:11,padding:"2px 9px",marginTop:5,color:"#fdba74",background:"rgba(251,146,60,0.16)",border:"1px solid rgba(251,146,60,0.5)"})}>🛃 En aduana · llegó {dd(c.port_arrived_at)} · {Math.max(0,Math.floor((Date.now()-new Date(c.port_arrived_at+"T12:00:00").getTime())/86400000))} d</span>}
               </div>
             </div>
             <div className="mt-cont-stats" style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"center"}}>
@@ -18585,7 +18610,9 @@ function MaritimePanel({token,allClients=[]}){
               {verPlata&&plata("Costo contenedor",fusd(costC),"#fca5a5","rgba(248,113,113,0.12)")}
               {verPlata&&ganC!=null&&plata("Ganancia est.",fusd(ganC),ganC>=0?"#4ade80":"#f87171",ganC>=0?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)")}
               <div className="mt-cont-btns" onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>
-                <button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Arribó: crea las operaciones y manda los mails de retiro" style={btnMini("#22c55e",{padding:"7px 12px",fontSize:12,opacity:creatingOp?0.5:1,cursor:creatingOp?"wait":"pointer"})}>{creatingOp?"⏳ Creando ops…":"⚓ Arribó"}</button>
+                {c.port_arrived_at
+                  ?<button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Te entregaron el contenedor: crea las operaciones, manda los mails de retiro y abre los costos" style={btnMini("#22c55e",{padding:"7px 12px",fontSize:12,opacity:creatingOp?0.5:1,cursor:creatingOp?"wait":"pointer"})}>{creatingOp?"⏳ Creando ops…":"📦 Me lo entregaron"}</button>
+                  :<button onClick={()=>setPuertoModal({c,fecha:hoyAR()})} title="Llegó a Buenos Aires y queda en aduana" style={btnMini("#fb923c",{padding:"7px 12px",fontSize:12})}>⚓ Llegó</button>}
                 <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✎</button>
                 <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={btnMini("#f87171",{padding:"7px 10px"})}>🗑</button>
               </div>
@@ -20584,6 +20611,19 @@ const NAVIERAS=[
   {n:"Wan Hai",c:"#0068B7"},
 ];
 const navieraColor=(n)=>NAVIERAS.find(x=>x.n.toLowerCase()===String(n||"").trim().toLowerCase())?.c||"#60a5fa";
+// Logo de la naviera como ficha con su color (21/10/2026): reemplaza al 🚢 en los contenedores.
+// Maersk lleva su estrella; el resto, la sigla como la pintan en el casco.
+const NAV_SIGLA={"Maersk":"","MSC":"MSC","CMA CGM":"CMA","COSCO":"COSCO","Hapag-Lloyd":"HL","ONE":"ONE","Evergreen":"EMC","ZIM":"ZIM","HMM":"HMM","Yang Ming":"YM","OOCL":"OOCL","PIL":"PIL","Wan Hai":"WHL"};
+function NavieraLogo({n,size=42}){
+  const nav=NAVIERAS.find(x=>x.n.toLowerCase()===String(n||"").trim().toLowerCase());
+  if(!nav)return <span style={{width:size,height:size,borderRadius:size*0.28,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:size*0.46,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)"}}>🚢</span>;
+  const sigla=NAV_SIGLA[nav.n]??nav.n.slice(0,3).toUpperCase();
+  return <span title={nav.n} style={{width:size,height:size,borderRadius:size*0.28,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(145deg,${nav.c},${nav.c}cc)`,boxShadow:`0 4px 14px ${nav.c}55, inset 0 1px 0 rgba(255,255,255,0.35)`,border:"1px solid rgba(255,255,255,0.25)"}}>
+    {nav.n==="Maersk"
+      ?<svg width={size*0.62} height={size*0.62} viewBox="0 0 24 24"><path fill="#fff" d="M12 1.5l2.2 6.6 6.9-2.1-4.1 5.9 4.1 5.9-6.9-2.1L12 22.5l-2.2-6.8-6.9 2.1L7 11.9 2.9 6l6.9 2.1z"/></svg>
+      :<span style={{fontSize:Math.max(9,size*(sigla.length>3?0.24:0.3)),fontWeight:900,color:"#fff",letterSpacing:"0.02em",textShadow:"0 1px 2px rgba(0,0,0,0.35)",fontFamily:"inherit"}}>{sigla}</span>}
+  </span>;
+}
 
 function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
   const isEdit=!!editing?.id;
@@ -20603,6 +20643,8 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
   const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
   const [tbDias,setTbDias]=useState(editing?.transbordo_dias?String(editing.transbordo_dias):"15");
   const [tbLugar,setTbLugar]=useState(editing?.transbordo_lugar||"Brasil");
+  const tienePuerto=isEdit&&editing&&Object.prototype.hasOwnProperty.call(editing,"port_arrived_at");
+  const [puerto,setPuerto]=useState(editing?.port_arrived_at||"");
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
   const tbAdd=transbordo?(Number(tbDias)||0):0;
@@ -20620,6 +20662,7 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
     if(etaAntes){setErr("La ETA no puede ser anterior a la fecha de salida");return;}
     setSaving(true);setErr("");
     const body={code:codeN,shipping_line:shippingLine||null,departed_at:departedAt||null,eta:eta||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
+    if(tienePuerto&&status!=="arribado")body.port_arrived_at=puerto||null;
     try{
       const r=isEdit
         ?await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body})
@@ -20700,6 +20743,7 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
           <Inp label="Días de demora" type="number" value={tbDias} onChange={setTbDias} placeholder="15"/>
         </div>}
 
+        {tienePuerto&&status!=="arribado"&&<div style={{marginTop:12}}><Inp label="Llegó a puerto (en aduana)" type="date" value={puerto} onChange={setPuerto} placeholder="Todavía en viaje"/>{puerto&&<button type="button" onClick={()=>setPuerto("")} style={{marginTop:-6,background:"none",border:"none",color:"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,cursor:"pointer",padding:0,fontFamily:"inherit"}}>Quitar, sigue en viaje</button>}</div>}
         {isEdit&&status==="arribado"&&<p style={{margin:"12px 0 0",fontSize:12.5,fontWeight:700,color:"#4ade80"}}>⚓ Arribado{editing?.arrived_at?` el ${formatDateShort(editing.arrived_at)}`:""}</p>}
         {err&&<p style={{fontSize:12.5,fontWeight:700,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,padding:"9px 12px",margin:"12px 0 0"}}>{err}</p>}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>

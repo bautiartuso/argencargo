@@ -37,11 +37,12 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
     const hoy=new Date();hoy.setHours(12,0,0,0);
     const llegadas=cargas.map(c=>c.llego).filter(Boolean).sort();
     const recibida=llegadas.length?llegadas[llegadas.length-1]:null;
-    const zarpo=g.zarpo||null,eta=g.eta_puerto||null,entrega=g.entrega_estimada||null;
+    const zarpo=g.zarpo||null,eta=g.eta_puerto||null,entrega=g.entrega_estimada||null,puerto=!dep&&g.en_puerto?g.en_puerto:null;
     const dEta=eta?Math.ceil((new Date(eta+"T12:00:00")-hoy)/DIA):null;
     let pct=null;
     if(!dep&&zarpo&&eta){const a=new Date(zarpo+"T12:00:00"),b=new Date(eta+"T12:00:00");pct=b>a?Math.max(0,Math.min(1,(hoy-a)/(b-a))):null;}
-    const llegada=!dep&&dEta!=null&&dEta<=0;
+    if(puerto)pct=1;
+    const llegada=!!puerto||(!dep&&dEta!=null&&dEta<=0);
     const st=(i,cur)=>i<cur?"done":i===cur?"current":"todo";
     let cur=dep?(cargando||usa?1:2):(llegada?3:2);
     const faltan=dEta==null?null:dEta<=0?t("mar2.arrivingNow"):dEta===1?t("mar2.daysLeft1"):t("mar2.daysLeft",{dias:dEta});
@@ -51,13 +52,13 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
     const pasos=[
       {l:t("mar2.stReceived"),s:null},
       {l:dep&&usa?t("mar2.stConsolidating"):dep&&cargando?t("mar2.stLoading"):t("mar2.stLoaded"),s:zarpo?t("mar2.sailedOn",{fecha:fDc(zarpo)}):null},
-      {l:t("mar2.stSea"),s:!dep?(pct!=null?`${t("mar2.tripPct",{pct:Math.round(pct*100)})}${faltan?` · ${faltan}`:""}`:faltan):null},
-      {l:t("mar2.stPort"),s:eta?fDc(eta):null},
+      {l:t("mar2.stSea"),s:puerto?null:!dep?(pct!=null?`${t("mar2.tripPct",{pct:Math.round(pct*100)})}${faltan?` · ${faltan}`:""}`:faltan):null},
+      puerto?{l:t("mar2.stCustoms"),s:t("mar2.arrivedOn",{fecha:fDc(puerto)})}:{l:t("mar2.stPort"),s:eta?fDc(eta):null},
       {l:t("mar2.stDeliver"),s:entrega?fDc(entrega):null},
     ].map((x,i)=>({...x,st:st(i,cur)}));
-    const siguiente=dep?t("mar2.nextLoading"):llegada?t("mar2.nextPort"):eta?t("mar2.nextSea",{fecha:fD(eta)}):null;
+    const siguiente=dep?t("mar2.nextLoading"):puerto?t("mar2.nextCustoms"):llegada?t("mar2.nextPort"):eta?t("mar2.nextSea",{fecha:fD(eta)}):null;
     const navegacion=!dep&&!llegada&&diaX&&totalDias?t("mar2.dayOf",{x:diaX,y:totalDias}):null;
-    return {pasos,pct,cur,siguiente,navegacion,recibida};
+    return {pasos,pct,cur,siguiente,navegacion,recibida,aduana:!!puerto};
   };
   const Ruta=({r})=>{
     const n=r.pasos.length;
@@ -109,7 +110,7 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
           <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:ORO}}>{t("mar2.eyebrow")}</span>
-              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:TX,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.16)"}}>{dep&&usa?`● ${t("mar2.stageDepotUsa")}`:dep?`● ${t(cargando?"mar2.stageLoading":"mar2.stageShipped")}`:`🚢 ${t("mar2.stageSea")}`}</span>
+              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"3px 10px",borderRadius:999,color:TX,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.16)"}}>{dep&&usa?`● ${t("mar2.stageDepotUsa")}`:dep?`● ${t(cargando?"mar2.stageLoading":"mar2.stageShipped")}`:g.en_puerto?`🛃 ${t("mar2.stageCustoms")}`:`🚢 ${t("mar2.stageSea")}`}</span>
             </div>
             <p style={{margin:"7px 0 0",fontSize:17,fontWeight:800,color:TX,lineHeight:1.3,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{titulo}</p>
           </div>
@@ -124,7 +125,7 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
         {(()=>{const r=rutaDe(g,dep,usa,cargando,cargas);return <>
           <Ruta r={r}/>
           <div style={{margin:"0 20px 14px",padding:"13px 16px",borderRadius:14,background:"rgba(232,208,152,0.07)",border:"1px solid rgba(232,208,152,0.28)"}}>
-            <p style={{margin:0,fontSize:14,fontWeight:800,color:TX}}>{msg?msg[0]:r.navegacion||t("mar2.stageSea")}</p>
+            <p style={{margin:0,fontSize:14,fontWeight:800,color:TX}}>{msg?msg[0]:r.aduana?t("mar2.stageCustoms"):r.navegacion||t("mar2.stageSea")}</p>
             {r.siguiente&&<p style={{margin:"4px 0 0",fontSize:13,color:SUB,lineHeight:1.5}}><span style={{color:ORO,fontWeight:800}}>{t("mar2.nextStep")}:</span> {r.siguiente}</p>}
           </div>
         </>;})()}

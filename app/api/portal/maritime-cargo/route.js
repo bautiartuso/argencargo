@@ -45,7 +45,7 @@ const SHIP_SEL = [
   "id,product_description,tracking_number,status,container_id,revenue_manual,created_at,received_at,fotos,fotos_mercaderia,origin",
   "maritime_packages(bulto_number,quantity,length_cm,width_cm,height_cm,cbm)",
   "maritime_items(description,quantity,unit_price_usd)",
-  "maritime_containers(id,code,status,eta,departed_at,transbordo_dias,transbordo_lugar)",
+  "maritime_containers(*)",
   "maritime_warehouses(id,mostrar_contenedor_cliente,origin)",
 ].join(",");
 // En depósito (sin contenedor) o viajando en un contenedor; nunca lo que todavía espera al proveedor.
@@ -121,7 +121,9 @@ export async function GET(req) {
         eta_puerto: eta,
         // Fecha de zarpe (21/10/2026): la ruta del viaje en el portal la usa para la barra de avance.
         zarpo: c ? (c.departed_at || null) : null,
-        entrega_estimada: addDays(eta, 14),
+        // Llegó a puerto y está en aduana (21/10/2026): la entrega se cuenta desde la llegada real.
+        en_puerto: c ? (c.port_arrived_at || null) : null,
+        entrega_estimada: addDays(c?.port_arrived_at || eta, 14),
         transbordo: tb > 0 ? { dias: tb, lugar: c.transbordo_lugar || "Brasil" } : null,
         cargas: [], bultos: 0, cbm: 0, _fob: 0, _ships: [],
       };
