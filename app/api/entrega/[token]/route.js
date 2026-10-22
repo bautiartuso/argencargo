@@ -345,9 +345,9 @@ export async function GET(req, { params }) {
       budget_flete: Number(op.budget_flete || 0),
       budget_seguro: Number(op.budget_seguro || 0),
       budget_taxes: Number(op.budget_taxes || 0),
-      // RI que abona los impuestos directo al despachante: no se le cobran a Argencargo,
+      // RI de courier que abona los impuestos directo a la aduana: no se le cobran a Argencargo,
       // asi que el desglose del retiro no debe listarlos (sino no cierra con budget_total).
-      taxes_billed_by_argencargo: !(op.clients?.tax_condition === "responsable_inscripto") || !!op.ri_argencargo_collects_taxes,
+      taxes_billed_by_argencargo: op.channel !== "aereo_blanco" || !(op.clients?.tax_condition === "responsable_inscripto") || !!op.ri_argencargo_collects_taxes,
       credit_applied_usd: Number(op.credit_applied_usd || 0),
       debt_applied_usd: Number(op.debt_applied_usd || 0),
       total_anticipos: Number(op.total_anticipos || 0),

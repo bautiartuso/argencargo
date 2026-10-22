@@ -2237,8 +2237,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       }>
         {isRI&&op.channel==="aereo_blanco"&&<div style={{marginBottom:14,padding:"10px 14px",background:taxesBilledByArgencargo?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.05)",border:`1px solid ${taxesBilledByArgencargo?"rgba(34,197,94,0.25)":"rgba(96,165,250,0.15)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <label style={{display:"flex",alignItems:"center",gap:8,cursor:saving?"wait":"pointer",flex:1}}>
-            <input type="checkbox" checked={!!op.ri_argencargo_collects_taxes} disabled={saving} onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo al despachante");setSaving(false);}} style={{width:16,height:16,cursor:"pointer"}}/>
-            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo al despachante/transportista)</span></span>
+            <input type="checkbox" checked={!!op.ri_argencargo_collects_taxes} disabled={saving} onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo a la aduana");setSaving(false);}} style={{width:16,height:16,cursor:"pointer"}}/>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo a la aduana)</span></span>
           </label>
         </div>}
         {/* RI: ¿el courier entrega directo en el domicilio o la carga baja a la oficina? (pedido 11/09/2026).
@@ -2338,7 +2338,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
           </>}
         </>}
-        {isBlanco&&!editandoPresu&&!taxesBilledByArgencargo&&totalTax>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"2px 0 8px",fontStyle:"italic"}}>El RI abona estos impuestos directo al despachante/transportista — no están incluidos en el total a abonar a Argencargo.</p>}
+        {isBlanco&&!editandoPresu&&!taxesBilledByArgencargo&&totalTax>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"2px 0 8px",fontStyle:"italic"}}>El RI abona estos impuestos directo a la aduana — no están incluidos en el total a abonar a Argencargo.</p>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"16px 18px",margin:"14px 0 12px",borderRadius:14,background:"linear-gradient(135deg,rgba(184,149,106,0.14),rgba(184,149,106,0.05))",border:"1px solid rgba(232,208,152,0.28)"}}>
           <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.1em"}}>Total a abonar</span>
@@ -4458,7 +4458,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           // así que quedan FUERA de la rentabilidad (presupuesto, base de prorrateo y filas).
           // Si quedaran dentro, inflan presuTotal, achican el factor y la op figura a pérdida.
           // Vale también con presupuesto manual: depende del cliente, no de budget_mode.
-          const riPagaImpuestos=opClient?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes;
+          const riPagaImpuestos=op.channel==="aereo_blanco"&&opClient?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes; // solo courier: en LCL/FCL los impuestos los cobra Argencargo
           const bFlete=Number(op.budget_flete||0);
           const bTax=isBlancoOp&&!riPagaImpuestos?Number(op.budget_taxes||0):0;
           const bSeg=isBlancoOp?Number(op.budget_seguro||0):0;
@@ -4528,7 +4528,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {riPagaImpuestos
               ? (Number(op.budget_taxes||0)>0&&<div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
                   <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Impuestos · fuera de la rentabilidad</p>
-                  <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:0,fontStyle:"italic"}}>El RI abonó USD {Number(op.budget_taxes||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de impuestos directo al despachante. No se presupuestó ni se cobró, así que no entra en el cálculo.</p>
+                  <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:0,fontStyle:"italic"}}>El RI abonó USD {Number(op.budget_taxes||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de impuestos directo a la aduana. No se presupuestó ni se cobró, así que no entra en el cálculo.</p>
                 </div>)
               : op.channel!=="maritimo_blanco"&&(bTax>0||bSeg>0||costImp>0||costDoc>0||costSeg>0)&&block("Impuestos",bTax+bSeg,costImp+costDoc+costSeg)}
             {riPagaImpuestos&&(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
@@ -13438,7 +13438,7 @@ function FacturasPanel({token}){
   // Precarga completa desde la op: cliente + documento + conceptos del presupuesto + TC del cobro.
   const traerOp=async(codeArg)=>{
     setErr("");const code=String(codeArg||opCode).trim().toUpperCase();if(!code)return;
-    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,description,client_id,budget_flete,budget_seguro,budget_taxes,budget_total,delivery_cost_usd,delivery_choice,ri_argencargo_collects_taxes,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
+    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,channel,description,client_id,budget_flete,budget_seguro,budget_taxes,budget_total,delivery_cost_usd,delivery_choice,ri_argencargo_collects_taxes,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
     const op=Array.isArray(r)?r[0]:null;
     if(!op){setErr(`No existe la operación ${code}`);setOpInfo(null);return;}
     const c=op.clients||{};
@@ -13459,7 +13459,7 @@ function FacturasPanel({token}){
     // que los paga directo al despachante — no se le facturan dos veces.
     const fl=r2(Number(op.budget_flete||0)),seg=r2(Number(op.budget_seguro||0)),tax=r2(Number(op.budget_taxes||0));
     const otros=r2(Math.max(0,Number(op.budget_total||0)-fl-seg-tax));
-    const taxBilled=!(c.tax_condition==="responsable_inscripto")||!!op.ri_argencargo_collects_taxes;
+    const taxBilled=op.channel!=="aereo_blanco"||!(c.tax_condition==="responsable_inscripto")||!!op.ri_argencargo_collects_taxes;
     const ls=[];
     if(fl>0)ls.push({key:"flete",label:"Flete internacional",usd:String(fl),on:true});
     if(seg>0)ls.push({key:"seguro",label:"Seguro de carga",usd:String(seg),on:true});
