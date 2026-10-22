@@ -6,6 +6,7 @@ import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import { NAVIERAS, navieraDe, navieraColor } from "../../lib/navieras";
 import CarrierLogo from "../components/CarrierLogo";
 import { TarifasAgenteResumen } from "../components/TarifasAgente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
@@ -17985,7 +17986,7 @@ function MaritimePanel({token,allClients=[]}){
     if(status==="arribado"&&!opts){
       const pend=shipments.filter(x=>x.container_id===c.id&&!x.operation_id&&x.client_id);
       const nCli=new Set(pend.map(x=>x.client_id)).size;
-      setArriboModal({c,desde:hoyAR(),texto:(`¿Te entregaron "${c.code}"?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Después cargás los costos. Tarda unos segundos, no cierres la pantalla.`:""}`)});return;
+      setArriboModal({c,desde:hoyAR(),texto:(`¿Recibiste "${c.code}"?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Después cargás los costos. Tarda unos segundos, no cierres la pantalla.`:""}`)});return;
     }
     setCreatingOp(true);
     try{
@@ -18381,14 +18382,14 @@ function MaritimePanel({token,allClients=[]}){
 
   const arriboUI=arriboModal&&createPortal(<div onClick={()=>setArriboModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#0F1D33",border:"1px solid rgba(232,208,152,0.3)",borderRadius:14,padding:20,width:"100%",maxWidth:460,color:"#fff"}}>
-      <div style={{fontSize:16,fontWeight:800,marginBottom:10}}>📦 Entrega de {arriboModal.c.code}</div>
+      <div style={{fontSize:16,fontWeight:800,marginBottom:10}}>✓ Recibido {arriboModal.c.code}</div>
       <p style={{fontSize:13,lineHeight:1.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",margin:"0 0 16px"}}>{arriboModal.texto}</p>
       <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Disponible para retirar desde</div>
       <DatePicker value={arriboModal.desde} onChange={v=>setArriboModal(m=>({...m,desde:v||hoyAR()}))}/>
       <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 18px"}}>{arriboModal.desde>hoyAR()?`El link de retiro no deja coordinar antes del ${String(arriboModal.desde).slice(8,10)}/${String(arriboModal.desde).slice(5,7)}.`:"Se puede coordinar desde hoy."}</p>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <button onClick={()=>setArriboModal(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={()=>{const m=arriboModal;setArriboModal(null);setContainerStatus(m.c,"arribado",{desde:m.desde});}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#22c55e",color:"#06240f",fontWeight:800,cursor:"pointer"}}>Confirmar entrega</button>
+        <button onClick={()=>{const m=arriboModal;setArriboModal(null);setContainerStatus(m.c,"arribado",{desde:m.desde});}} style={{padding:"9px 16px",borderRadius:9,border:"none",background:"#22c55e",color:"#06240f",fontWeight:800,cursor:"pointer"}}>Confirmar recibido</button>
       </div>
     </div>
   </div>,document.body);
@@ -18400,7 +18401,7 @@ function MaritimePanel({token,allClients=[]}){
       </div>
       <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginBottom:6}}>Día que llegó</div>
       <DatePicker value={puertoModal.fecha} onChange={v=>setPuertoModal(m=>({...m,fecha:v||hoyAR()}))}/>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 14px"}}>El cliente ve "En aduana" en su portal. Cuando te lo entreguen, tocás "Me lo entregaron" y se crean las operaciones.</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 14px"}}>El cliente ve "En aduana" en su portal. Cuando lo recibas, tocás "Recibido" y se crean las operaciones.</p>
       {(()=>{const nCli=new Set(shipments.filter(x=>x.container_id===puertoModal.c.id&&!x.operation_id&&x.client_id).map(x=>x.client_id)).size;return nCli>0&&<button type="button" onClick={()=>setPuertoModal(m=>({...m,avisar:!m.avisar}))} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 12px",marginBottom:16,borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",background:puertoModal.avisar?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${puertoModal.avisar?"rgba(96,165,250,0.45)":"rgba(255,255,255,0.1)"}`,color:"#fff"}}>
         <span style={{width:18,height:18,borderRadius:5,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,background:puertoModal.avisar?"#60a5fa":"transparent",border:`1.5px solid ${puertoModal.avisar?"#60a5fa":"rgba(255,255,255,0.3)"}`,color:"#0A1628",flexShrink:0}}>{puertoModal.avisar?"✓":""}</span>
         <span style={{fontSize:13,fontWeight:700}}>Avisar por mail a {nCli} cliente{nCli>1?"s":""} que llegó</span>
@@ -18602,47 +18603,44 @@ function MaritimePanel({token,allClients=[]}){
         const toggle=()=>setContAbiertosMt(p=>{const n=new Set(p);if(n.has(c.id))n.delete(c.id);else n.add(c.id);return n;});
         const eEta=effEta(c),tb=tbDays(c),delEta=deliveryEtaStr(eEta);
         const bulC=todas.reduce((a,s)=>a+bultosOf(s.id),0),cbmC=sumCbm(todas),costC=costContainer(todas),ganC=verPlata?ganDe(todas):null;
-        const porTipo=["negra","blanca",null].map(tp=>{const l=todas.filter(s=>(s.mercaderia_tipo||null)===tp);return {tp,n:l.length,cbm:sumCbm(l),cost:l.reduce((a,s)=>a+costOfShip(s),0)};}).filter(x=>x.n>0);
-        const dato=(l,v,col,cls)=><span className={cls} style={{display:"flex",flexDirection:"column",gap:1}}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</span><span style={{fontSize:14.5,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
-        const plata=(l,v,fg,bg)=><span className="mt-plata" style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderRadius:10,background:bg}}><span style={{fontSize:10,fontWeight:800,color:fg,textTransform:"uppercase",letterSpacing:".06em",opacity:.85}}>{l}</span><span style={{fontSize:15.5,fontWeight:900,color:fg,fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+        const nc=navieraColor(c.shipping_line);
+        const dato=(l,v,col)=><span style={{display:"flex",flexDirection:"column",gap:2}}><span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:".07em"}}>{l}</span><span style={{fontSize:15,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></span>;
+        const ico=(d)=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d.map((x,k)=><path key={k} d={x}/>)}</svg>;
+        const icoBtn=(title,onClick,d,hov)=><button title={title} onClick={onClick} style={{width:38,height:38,borderRadius:11,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.85)",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background=hov+"26";e.currentTarget.style.borderColor=hov+"88";e.currentTarget.style.color=hov;}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.14)";e.currentTarget.style.color="rgba(255,255,255,0.85)";}}>{ico(d)}</button>;
+        const accion=(txt,onClick,bg,fg,title,dis)=><button title={title} disabled={dis} onClick={onClick} style={{height:38,padding:"0 16px",borderRadius:11,border:"none",background:bg,color:fg,fontSize:13,fontWeight:800,fontFamily:"inherit",cursor:dis?"wait":"pointer",opacity:dis?0.6:1,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:7,boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>{txt}</button>;
         return <div key={c.id} style={{marginBottom:12}}>{tarjeta(<>
-          <div onClick={toggle} style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",cursor:"pointer",background:`linear-gradient(90deg,${navieraColor(c.shipping_line)}30,${navieraColor(c.shipping_line)}08 55%,rgba(255,255,255,0.01))`,borderLeft:`4px solid ${navieraColor(c.shipping_line)}`,borderBottom:abierto?`1px solid ${MT_BORDE}`:"none"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
-              <NavieraLogo n={c.shipping_line} size={44}/>
+          <div onClick={toggle} style={{padding:"16px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap",cursor:"pointer",background:`linear-gradient(100deg,${nc}5c 0%,${nc}26 32%,${nc}0d 62%,rgba(255,255,255,0.015) 100%)`,borderLeft:`5px solid ${nc}`,borderBottom:abierto?`1px solid ${nc}55`:"none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
+              <NavieraLogo n={c.shipping_line} size={46}/>
               <div style={{minWidth:0}}>
-                <p style={{margin:0,fontSize:17,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".02em"}}>{c.code}</p>
-                {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:10.5,padding:"1px 8px",marginTop:3,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
-                <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.shipping_line||"Sin naviera"}{celu&&<span style={{color:GOLD_LIGHT,fontWeight:700}}> · {fm3(cbmC)} m³</span>}{tb>0&&<span style={{color:"#fb923c",fontWeight:700}}> · 🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}</p>
-                {c.port_arrived_at&&<span style={pill({fontSize:11,padding:"2px 9px",marginTop:5,color:"#fdba74",background:"rgba(251,146,60,0.16)",border:"1px solid rgba(251,146,60,0.5)"})}>🛃 En aduana · llegó {dd(c.port_arrived_at)} · {Math.max(0,Math.floor((Date.now()-new Date(c.port_arrived_at+"T12:00:00").getTime())/86400000))} d</span>}
+                <p style={{margin:0,fontSize:18,fontWeight:900,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:".03em"}}>{c.code}</p>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:5,alignItems:"center"}}>
+                  {tb>0&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.4)"})}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}
+                  {c.port_arrived_at&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.16)",border:"1px solid rgba(251,146,60,0.5)"})}>🛃 En aduana · llegó {dd(c.port_arrived_at)} · {Math.max(0,Math.floor((Date.now()-new Date(c.port_arrived_at+"T12:00:00").getTime())/86400000))} d</span>}
+                  {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fecaca",background:"rgba(239,68,68,0.2)",border:"1px solid rgba(239,68,68,0.5)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
+                </div>
               </div>
             </div>
-            <div className="mt-cont-stats" style={{display:"flex",gap:18,flexWrap:"wrap",alignItems:"center"}}>
-              {dato("Salió",dd(c.departed_at))}
-              {dato("ETA Bs. As.",dd(eEta),tb>0?"#fb923c":"#93c5fd")}
+            <div className="mt-cont-stats" style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
+              {dato("ETA Bs. As.",dd(eEta),tb>0?"#fdba74":"#93c5fd")}
               {dato("Entrega est.",dd(delEta),"#4ade80")}
               {dato("Bultos",bulC)}
-              {dato("m³",fm3(cbmC),GOLD_LIGHT,"mt-cont-m3")}
-              {verPlata&&plata("Costo contenedor",fusd(costC),"#fca5a5","rgba(248,113,113,0.12)")}
-              {verPlata&&ganC!=null&&plata("Ganancia est.",fusd(ganC),ganC>=0?"#4ade80":"#f87171",ganC>=0?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)")}
-              <div className="mt-cont-btns" onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6}}>
+              {/* Volumen y costo juntos, en una sola ficha */}
+              <span className="mt-plata" style={{display:"inline-flex",alignItems:"stretch",borderRadius:12,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",background:"rgba(10,22,40,0.45)"}}>
+                <span className="mt-cont-m3" style={{display:"flex",flexDirection:"column",gap:2,padding:"7px 14px"}}><span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:".07em"}}>Volumen</span><span style={{fontSize:15.5,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{fm3(cbmC)} m³</span></span>
+                {verPlata&&<span style={{display:"flex",flexDirection:"column",gap:2,padding:"7px 14px",borderLeft:"1px solid rgba(255,255,255,0.1)"}}><span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:".07em"}}>Costo</span><span style={{fontSize:15.5,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{fusd(costC)}</span></span>}
+              </span>
+              {verPlata&&ganC!=null&&<span className="mt-plata" style={{display:"flex",flexDirection:"column",gap:2,padding:"7px 14px",borderRadius:12,background:ganC>=0?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",border:`1px solid ${ganC>=0?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`}}><span style={{fontSize:10,fontWeight:800,color:ganC>=0?"#4ade80":"#f87171",textTransform:"uppercase",letterSpacing:".07em"}}>Ganancia est.</span><span style={{fontSize:15.5,fontWeight:900,color:ganC>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{fusd(ganC)}</span></span>}
+              <div className="mt-cont-btns" onClick={e=>e.stopPropagation()} style={{display:"flex",gap:7,alignItems:"center"}}>
                 {c.port_arrived_at
-                  ?<button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Te entregaron el contenedor: crea las operaciones, manda los mails de retiro y abre los costos" style={btnMini("#22c55e",{padding:"7px 12px",fontSize:12,opacity:creatingOp?0.5:1,cursor:creatingOp?"wait":"pointer"})}>{creatingOp?"⏳ Creando ops…":"📦 Me lo entregaron"}</button>
-                  :null}
-                {c.port_arrived_at&&<button onClick={()=>avisarPuerto(c)} title="Mandar a los clientes el mail de que llegó a Buenos Aires (a quien ya lo recibió no se le repite)" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✉</button>}
-                {c.port_arrived_at?null
-                  :<button onClick={()=>setPuertoModal({c,fecha:hoyAR(),avisar:true})} title="Llegó a Buenos Aires y queda en aduana" style={btnMini("#fb923c",{padding:"7px 12px",fontSize:12})}>⚓ Llegó</button>}
-                <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={btnMini("#60a5fa",{padding:"7px 10px"})}>✎</button>
-                <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={btnMini("#f87171",{padding:"7px 10px"})}>🗑</button>
+                  ?accion(creatingOp?"Creando ops…":<>{ico(["M20 6 9 17l-5-5"])}Recibido</>,()=>setContainerStatus(c,"arribado"),"linear-gradient(135deg,#22c55e,#16a34a)","#04230f","Lo recibiste: crea las operaciones, manda los mails de retiro y abre los costos",creatingOp)
+                  :accion(<>⚓ Llegó</>,()=>setPuertoModal({c,fecha:hoyAR(),avisar:true}),"linear-gradient(135deg,#fb923c,#f97316)","#2a1203","Llegó a Buenos Aires y queda en aduana")}
+                {c.port_arrived_at&&icoBtn("Mandar a los clientes el mail de que llegó (no se repite)",()=>avisarPuerto(c),["M4 6h16v12H4z","m4 7 8 6 8-6"],"#60a5fa")}
+                {icoBtn("Editar contenedor",()=>setEditingContainer(c),["M12 20h9","M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"],"#93c5fd")}
+                {icoBtn("Eliminar contenedor",()=>delContainer(c),["M3 6h18","M8 6V4h8v2","M19 6l-1 14H6L5 6","M10 11v6","M14 11v6"],"#f87171")}
               </div>
-              <span style={{width:30,height:30,borderRadius:999,border:"1px solid rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13}}>{abierto?"▴":"▾"}</span>
+              <span style={{width:34,height:34,borderRadius:999,border:`1px solid ${nc}77`,background:`${nc}1f`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13}}>{abierto?"▴":"▾"}</span>
             </div>
-            {porTipo.length>0&&<div style={{width:"100%",display:"flex",gap:"6px 18px",flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.7)"}}>
-              {porTipo.map(x=><span key={x.tp||"x"} style={{display:"inline-flex",alignItems:"center",gap:7}}>
-                {x.tp==="negra"?<span style={pill({fontSize:10.5,padding:"1px 8px",background:"#05080f",color:"#fff",border:"1px solid rgba(255,255,255,0.3)"})}>◼ Negra</span>:x.tp==="blanca"?<span style={pill({fontSize:10.5,padding:"1px 8px",background:"#f8fafc",color:"#0A1628"})}>◻ Blanca</span>:<span style={pill({fontSize:10.5,padding:"1px 8px",color:"#fbbf24",border:"1px dashed rgba(251,191,36,0.55)"})}>Sin tipo</span>}
-                {x.n} carga{x.n!==1?"s":""} · <b style={{color:GOLD_LIGHT}}>{fm3(x.cbm)} m³</b>{verPlata&&x.cost>0&&<> · costo <b style={{color:"#fff"}}>{fusd(x.cost)}</b></>}
-              </span>)}
-            </div>}
-            {c.notes&&<p style={{width:"100%",fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,fontStyle:"italic"}}>{c.notes}</p>}
           </div>
           {abierto&&<>
             {lista.length>0&&!compacta&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
@@ -20620,27 +20618,13 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
     </div>
   </div>;
 }
-// Navieras que llegan a Buenos Aires desde Asia (21/10/2026). El color es el de la marca, para la
-// cara del contenedor en el formulario y los chips del tablero.
-const NAVIERAS=[
-  {n:"Maersk",c:"#42B0D5"},{n:"MSC",c:"#C8A951"},{n:"CMA CGM",c:"#E2001A"},{n:"COSCO",c:"#1C4E9D"},
-  {n:"Hapag-Lloyd",c:"#F26722"},{n:"ONE",c:"#E5007E"},{n:"Evergreen",c:"#00843D"},{n:"ZIM",c:"#2A3E8C"},
-  {n:"HMM",c:"#F47920"},{n:"Yang Ming",c:"#F0B323"},{n:"OOCL",c:"#E2231A"},{n:"PIL",c:"#E30613"},
-  {n:"Wan Hai",c:"#0068B7"},
-];
-const navieraColor=(n)=>NAVIERAS.find(x=>x.n.toLowerCase()===String(n||"").trim().toLowerCase())?.c||"#60a5fa";
-// Logo de la naviera como ficha con su color (21/10/2026): reemplaza al 🚢 en los contenedores.
-// Maersk lleva su estrella; el resto, la sigla como la pintan en el casco.
-const NAV_SIGLA={"Maersk":"","MSC":"MSC","CMA CGM":"CMA","COSCO":"COSCO","Hapag-Lloyd":"HL","ONE":"ONE","Evergreen":"EMC","ZIM":"ZIM","HMM":"HMM","Yang Ming":"YM","OOCL":"OOCL","PIL":"PIL","Wan Hai":"WHL"};
+// Logo real de la naviera (21/10/2026): los cuadrados (MSC, OOCL) van a sangre; los logotipos, sobre
+// una placa blanca. Sin naviera de la lista, queda el barquito.
 function NavieraLogo({n,size=42}){
-  const nav=NAVIERAS.find(x=>x.n.toLowerCase()===String(n||"").trim().toLowerCase());
-  if(!nav)return <span style={{width:size,height:size,borderRadius:size*0.28,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:size*0.46,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)"}}>🚢</span>;
-  const sigla=NAV_SIGLA[nav.n]??nav.n.slice(0,3).toUpperCase();
-  return <span title={nav.n} style={{width:size,height:size,borderRadius:size*0.28,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(145deg,${nav.c},${nav.c}cc)`,boxShadow:`0 4px 14px ${nav.c}55, inset 0 1px 0 rgba(255,255,255,0.35)`,border:"1px solid rgba(255,255,255,0.25)"}}>
-    {nav.n==="Maersk"
-      ?<svg width={size*0.62} height={size*0.62} viewBox="0 0 24 24"><path fill="#fff" d="M12 1.5l2.2 6.6 6.9-2.1-4.1 5.9 4.1 5.9-6.9-2.1L12 22.5l-2.2-6.8-6.9 2.1L7 11.9 2.9 6l6.9 2.1z"/></svg>
-      :<span style={{fontSize:Math.max(9,size*(sigla.length>3?0.24:0.3)),fontWeight:900,color:"#fff",letterSpacing:"0.02em",textShadow:"0 1px 2px rgba(0,0,0,0.35)",fontFamily:"inherit"}}>{sigla}</span>}
-  </span>;
+  const nav=navieraDe(n);
+  if(!nav)return <span style={{width:size,height:size,borderRadius:size*0.26,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:size*0.46,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)"}}>🚢</span>;
+  if(nav.sq)return <img src={nav.logo} alt={nav.n} title={nav.n} style={{width:size,height:size,borderRadius:size*0.26,flexShrink:0,display:"block",objectFit:"cover",boxShadow:`0 6px 18px ${nav.c}55`}}/>;
+  return <span title={nav.n} style={{width:size*2,height:size,borderRadius:size*0.26,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"#fff",padding:`0 ${Math.round(size*0.16)}px`,boxSizing:"border-box",boxShadow:`0 6px 18px ${nav.c}40`}}><img src={nav.logo} alt={nav.n} style={{maxWidth:"100%",maxHeight:size*0.62,objectFit:"contain",display:"block"}}/></span>;
 }
 
 function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){

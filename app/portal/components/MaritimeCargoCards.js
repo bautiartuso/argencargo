@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useT } from "../../../lib/i18n-portal";
+import { navieraDe } from "../../../lib/navieras";
 
 // Cargas marítimas que todavía no son operación (28/09/2026, rediseño 29/09): tarjetas flotantes
 // dentro de "En curso", sin número de operación. Paleta de la marca (navy, blanco y dorado): nada
@@ -103,10 +104,13 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
       const portada=todas[0];
       const descs=cargas.map(c=>c.descripcion).filter(Boolean);
       const titulo=descs.length>1?descs.join(" · "):(descs[0]||t("mar2.seaCargo"));
-      return <div key={g.id} className="mc-card" style={{borderRadius:20,border:"1px solid rgba(255,255,255,0.12)",background:"linear-gradient(160deg,rgba(255,255,255,0.055),rgba(255,255,255,0.015))",boxShadow:"0 14px 34px rgba(0,0,0,0.3)",overflow:"hidden"}}>
+      // Naviera (21/10/2026): logo real y la tarjeta con el color de la naviera.
+      const nav=!dep?navieraDe(g.naviera):null;const nc=nav?.c||null;
+      const logoNav=(h)=>!nav?null:nav.sq?<img src={nav.logo} alt={nav.n} style={{width:h,height:h,borderRadius:h*0.24,objectFit:"cover",display:"block",flexShrink:0}}/>:<span style={{width:h*2.1,height:h,borderRadius:h*0.24,background:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:`0 ${Math.round(h*0.18)}px`,boxSizing:"border-box",flexShrink:0}}><img src={nav.logo} alt={nav.n} style={{maxWidth:"100%",maxHeight:h*0.62,objectFit:"contain",display:"block"}}/></span>;
+      return <div key={g.id} className="mc-card" style={{borderRadius:20,border:`1px solid ${nc?nc+"8c":"rgba(255,255,255,0.12)"}`,borderTop:nc?`4px solid ${nc}`:undefined,background:nc?`linear-gradient(160deg,${nc}55 0%,${nc}1f 38%,${nc}08 70%,rgba(255,255,255,0.02) 100%)`:"linear-gradient(160deg,rgba(255,255,255,0.055),rgba(255,255,255,0.015))",boxShadow:"0 14px 34px rgba(0,0,0,0.3)",overflow:"hidden"}}>
         {/* Encabezado */}
         <div onClick={toggle} style={{display:"flex",gap:16,alignItems:"center",padding:"18px 20px",cursor:"pointer"}}>
-          <div onClick={e=>{if(portada){e.stopPropagation();setFoto({fotos:todas,i:0});}}} style={{width:76,height:76,flexShrink:0,borderRadius:16,background:portada?`url(${portada.u}) center/cover`:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,cursor:portada?"zoom-in":"pointer"}}>{portada?"":"🚢"}</div>
+          <div onClick={e=>{if(portada){e.stopPropagation();setFoto({fotos:todas,i:0});}}} style={{width:76,height:76,flexShrink:0,borderRadius:16,overflow:"hidden",background:portada?`url(${portada.u}) center/cover`:nav&&!nav.sq?"#fff":"rgba(255,255,255,0.06)",border:`1px solid ${nc&&!portada?nc+"aa":"rgba(255,255,255,0.14)"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,cursor:portada?"zoom-in":"pointer"}}>{portada?"":nav?(nav.sq?<img src={nav.logo} alt={nav.n} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>:<img src={nav.logo} alt={nav.n} style={{maxWidth:"84%",maxHeight:"60%",objectFit:"contain",display:"block"}}/>):"🚢"}</div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:ORO}}>{t("mar2.eyebrow")}</span>
@@ -132,6 +136,7 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
 
         {/* Datos del viaje */}
         <div className="mc-strip" style={{margin:"0 20px",borderRadius:14,border:`1px solid ${LINEA}`,background:"rgba(0,0,0,0.16)",overflow:"hidden"}}>
+          {nav&&celda(t("mar2.carrier"),<span style={{display:"inline-flex",alignItems:"center",gap:10}}>{logoNav(30)}<span>{nav.n}</span></span>,{flex:"1.2 1 180px"})}
           {g.contenedor&&celda(t("mar2.container"),<span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:17,letterSpacing:"0.04em",color:ORO}}>{g.contenedor}</span>,{flex:"1.3 1 190px"})}
           {celda(t("mar2.origin"),usa?t("origin.usa"):t("origin.china"),{flex:"0.8 1 130px"})}
           {g.en_puerto&&!dep?celda(t("mar2.arrivalConfirmed"),fD(g.en_puerto)):celda(t("mar2.arrival"),dep||!g.eta_puerto?<span style={{fontSize:13.5,color:SUB,fontWeight:700}}>{t("mar2.etaSoon")}</span>:fD(g.eta_puerto))}

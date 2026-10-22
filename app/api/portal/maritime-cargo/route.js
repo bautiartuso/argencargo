@@ -123,6 +123,8 @@ export async function GET(req) {
         zarpo: c ? (c.departed_at || null) : null,
         // Llegó a puerto y está en aduana (21/10/2026): la entrega se cuenta desde la llegada real.
         en_puerto: c ? (c.port_arrived_at || null) : null,
+        // Naviera (21/10/2026): el portal muestra su logo y pinta la tarjeta con su color.
+        naviera: c ? (c.shipping_line || null) : null,
         entrega_estimada: addDays(c?.port_arrived_at || eta, 14),
         transbordo: tb > 0 ? { dias: tb, lugar: c.transbordo_lugar || "Brasil" } : null,
         cargas: [], bultos: 0, cbm: 0, _fob: 0, _ships: [],
