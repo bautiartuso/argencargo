@@ -970,6 +970,25 @@ function OperationDetail({op:opProp,token,client,onBack}){
   // de una op marítima salía vacío porque est quedaba en null). Mostrarlo como estimado sigue
   // siendo solo de aéreo blanco: en marítimo el número lo pone Argencargo.
   let est=null;try{if(!isGI&&items.length>0&&calcCtx)est=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);}catch(e){est=null;}
+  // Reembalaje (22/10/2026): cartel con la plata ahorrada bien grande; se muestra en Resumen y en Bultos.
+  const repackBanner=()=>{if(!repackInfo)return null;const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;if(!(delta>0.01))return null;
+          // Ahorro en plata: flete con los bultos de antes menos el flete actual (respeta el cambio de
+          // tramo de tarifa y el mínimo de kilos). Sin presupuesto calculable: kilos × valor por kilo.
+          let ahorroUsd=null;
+          try{
+            const snap=Array.isArray(repackInfo.original_packages_snapshot)?repackInfo.original_packages_snapshot:null;
+            if(est&&snap&&snap.length&&calcCtx){const estAntes=calcOpBudget(op,items,snap,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);const d=Number(estAntes?.flete||0)-Number(est.flete||0);if(d>0.005)ahorroUsd=d;}
+            if(ahorroUsd==null){const rate=Number(est?.fleteRate||0)||(Number(op.budget_flete||0)>0&&after>0?Number(op.budget_flete)/after:0);if(rate>0)ahorroUsd=delta*rate;}
+          }catch{ahorroUsd=null;}
+          return <div style={{marginBottom:14,padding:"16px 18px",borderRadius:16,border:"1.5px solid rgba(74,222,128,0.55)",background:"linear-gradient(135deg,rgba(34,197,94,0.24),rgba(34,197,94,0.06))",boxShadow:"0 10px 28px rgba(34,197,94,0.15)",color:"#fff",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{width:52,height:52,borderRadius:14,background:"rgba(74,222,128,0.2)",border:"1px solid rgba(74,222,128,0.45)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>♻️</span>
+            <div style={{flex:"1 1 220px",minWidth:0}}>
+              <p style={{margin:0,fontSize:11.5,fontWeight:900,letterSpacing:"0.1em",textTransform:"uppercase",color:"#4ade80"}}>{String(t("op.repackDone")).replace(/[.。]$/,"")}</p>
+              <p style={{margin:"4px 0 0",display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}><span style={{fontSize:15,fontWeight:800,color:"rgba(255,255,255,0.85)"}}>{t("op.repackYouSaved")}</span><span style={{fontSize:30,fontWeight:900,color:"#4ade80",letterSpacing:"-0.02em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{ahorroUsd>0?`USD ${f2(ahorroUsd)}`:`${f2(delta)} kg`}</span></p>
+              <p style={{margin:"6px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.7)"}}>{ahorroUsd>0&&<><b style={{color:"#fff"}}>{t("op.repackKgLess",{kg:f2(delta)})}</b> · </>}{t("op.repackBilled")}: {f2(before)} kg → <b style={{color:"#fff"}}>{f2(after)} kg</b></p>
+            </div>
+            <span style={{padding:"8px 14px",borderRadius:12,background:"rgba(74,222,128,0.18)",border:"1px solid rgba(74,222,128,0.45)",fontSize:20,fontWeight:900,color:"#4ade80",fontVariantNumeric:"tabular-nums",flexShrink:0}}>−{pct.toFixed(0)}%</span>
+          </div>;};
   // Lo que el cliente paga por fuera de Argencargo. Para el RI de aereo blanco son los impuestos
   // Y el desaduanaje: los abona directo al despachante, asi que no entran en el total de
   // Argencargo. Se muestra aparte para que el "estimado total de la importacion" cierre.
@@ -1106,6 +1125,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
       {/* RESUMEN */}
       {tabCur==="resumen"&&<div style={PANEL}>
         <h3 style={{...H3,marginBottom:14}}>Resumen</h3>
+        {repackBanner()}
         <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
           {kpi(t("ol.import"),op.operation_code)}
           {isGI?<>{kpi("Productos",String(items.length))}{kpi(t("op.totalLanded"),usd(giTotalItems),true)}</>
@@ -1226,22 +1246,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         {!canAsig&&<div style={{marginBottom:12}}/>}
         {pkgs.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("op.noPkgsYet")}</p>}
         {/* Reembalaje (del agente o al despachar el vuelo): solo se muestra si bajó el peso facturable. */}
-        {repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;if(!(delta>0.01))return null;
-          // Ahorro en plata: flete con los bultos de antes menos el flete actual (respeta el cambio de
-          // tramo de tarifa y el mínimo de kilos). Sin presupuesto calculable: kilos × valor por kilo.
-          let ahorroUsd=null;
-          try{
-            const snap=Array.isArray(repackInfo.original_packages_snapshot)?repackInfo.original_packages_snapshot:null;
-            if(est&&snap&&snap.length&&calcCtx){const estAntes=calcOpBudget(op,items,snap,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);const d=Number(estAntes?.flete||0)-Number(est.flete||0);if(d>0.005)ahorroUsd=d;}
-            if(ahorroUsd==null){const rate=Number(est?.fleteRate||0)||(Number(op.budget_flete||0)>0&&after>0?Number(op.budget_flete)/after:0);if(rate>0)ahorroUsd=delta*rate;}
-          }catch{ahorroUsd=null;}
-          return <div style={{marginBottom:12,padding:"12px 14px",borderRadius:12,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",color:"#fff",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-            <span style={{fontSize:20}}>♻️</span>
-            <div style={{flex:1,minWidth:200}}>
-              <p style={{margin:0,fontSize:13.5,fontWeight:800}}><span style={{color:"#4ade80"}}>{t("op.repackDone")}</span> {t("op.repackSaved",{kg:f2(delta)})}{ahorroUsd>0&&<> · <span style={{color:"#4ade80"}}>USD {f2(ahorroUsd)}</span></>} <span style={{color:"rgba(74,222,128,0.8)",fontWeight:700}}>(−{pct.toFixed(0)}%)</span></p>
-              <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.65)"}}>{t("op.repackBilled")}: {f2(before)} kg → <b style={{color:"#fff"}}>{f2(after)} kg</b></p>
-            </div>
-          </div>;})()}
+        {repackBanner()}
         {pkgs.length>0&&<>
           <div className="op-pk-head" style={{display:"grid",gridTemplateColumns:"96px minmax(0,1fr) 130px 104px 104px 90px 112px",gap:10,padding:"0 12px 8px"}}>{["Bulto","Tracking","Medidas","Peso bruto",t("dep.volumetric"),"m³","Escaneo"].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>
           {pkData.map((p,i)=>{const hot=p.vw>p.gw;const enEste=items.filter(it=>Array.isArray(it.package_ids)&&it.package_ids.includes(p.id));
