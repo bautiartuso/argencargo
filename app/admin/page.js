@@ -2992,10 +2992,19 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <span style={{fontSize:13.5,fontWeight:800,color:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(t)}</span>
           </div>;})}
         </div>
-        <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
-          <div style={{width:200}}><label style={lblS}>Desaduanaje real (opcional)</label><input type="text" inputMode="decimal" value={despacho.des} onChange={e=>setDespacho(d=>({...d,des:e.target.value}))} placeholder={`tabla: ${Number((td.desembolso||0)+(td.ivaDesembolso||0)).toFixed(2)}`} style={inS}/></div>
-          {!cerrada&&String(despacho.des??"")!==String(op.despacho_desaduanaje_usd??"")&&<button type="button" onClick={guardarDesaduanaje} disabled={savingDespacho} style={{...btnS("#E8D098"),height:40}}>Guardar</button>}
-        </div>
+        {/* Desaduanaje: no está en la DSI, sale de la factura del courier. Se carga el total con IVA y se
+            reparte entre los productos por FOB. Vacío = el de la tabla. */}
+        {(()=>{const desReal=Number(op.despacho_desaduanaje_usd||0);const desUsado=desReal>0?desReal:Number(td.desembolso||0)+Number(td.ivaDesembolso||0);const totDsi=tot.die+tot.te+tot.iva;
+          return <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:14,flexWrap:"wrap",padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+            <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
+              <div style={{width:230}}><label style={lblS}>Desaduanaje de la factura (con IVA)</label><input type="text" inputMode="decimal" value={despacho.des} onChange={e=>setDespacho(d=>({...d,des:e.target.value}))} placeholder={`Vacío = tabla (${fmt(Number(td.desembolso||0)+Number(td.ivaDesembolso||0))})`} style={inS}/></div>
+              {!cerrada&&String(despacho.des??"")!==String(op.despacho_desaduanaje_usd??"")&&<button type="button" onClick={guardarDesaduanaje} disabled={savingDespacho} style={{...btnS("#E8D098"),height:40}}>Guardar</button>}
+            </div>
+            <div style={{textAlign:"right"}}>
+              <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.5)"}}>DSI {fmt(totDsi)} + desaduanaje {fmt(desUsado)} <span style={{color:"rgba(255,255,255,0.35)"}}>({desReal>0?"factura":"tabla"}, repartido por FOB)</span></p>
+              <p style={{margin:"3px 0 0",fontSize:20,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{fmt(totDsi+desUsado)}</p>
+            </div>
+          </div>;})()}
       </Card>;
     })()}
 
