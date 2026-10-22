@@ -105,6 +105,7 @@ El usuario importa productos desde China/USA para reventa en Argentina. Tu traba
    - parlantes/altavoces → 8518.22.00
    - fundas de celular silicona/TPU → 3926.90.90 (NO clasificar como telecom)
    - smartwatch → 8517.62.72
+   - intercomunicador / intercom Bluetooth para casco de moto o bici → 8517.62.56 "Intercomunicadores" (NO 8517.62.59/.72/.99 ni 8518)
    - protector pantalla vidrio → 7007.19.00
    - cargador USB → 8504.40.90
    - power bank → 8507.60.00
@@ -226,6 +227,10 @@ FORMATO DE SALIDA (JSON estricto, sin markdown):`
 
 // Manual overrides para productos que la IA suele errar
 const OVERRIDES = [
+  // Intercomunicadores Bluetooth de casco (22/10/2026, Bautista): 8517.62.56 "Intercomunicadores" (DIE 20, TE 3).
+  // La IA los repartía entre 8517.62.59/.72/.99 (DIE 0) y hasta 8518 auriculares (AC-0085/0214/0321).
+  // Los porteros / timbres con video no son esto.
+  { keywords: ["intercomunicador", "intercom", "interphone"], exclude: ["doorbell", "portero", "timbre", "video door"], ncm: "8517.62.56", desc: "Intercomunicadores", die: 20, te: 3, intervention: { required: true, types: ["ENACOM"], reason: "Equipo Bluetooth — homologación ENACOM" } },
   { keywords: ["auricular", "headphone", "earphone", "earbuds", "earbud", "tws", "headset", "auriculares"], ncm: "8518.30.00", desc: "Auriculares", die: 35, te: 3, intervention: { required: true, types: ["ENACOM"], reason: "Inalámbrico o bluetooth — homologación ENACOM" } },
   { keywords: ["parlante", "altavoz", "speaker", "bocina", "boombox"], ncm: "8518.22.00", desc: "Altavoces/Parlantes", die: 35, te: 3, intervention: { required: false, types: [], reason: null } },
   // Sets de poker, fichas de casino y sus tapetes: todo 9504.90.90 "Juegos de casino" (19/10/2026: la IA
@@ -240,7 +245,7 @@ const OVERRIDES = [
 function checkOverride(description) {
   const lower = description.toLowerCase();
   for (const ov of OVERRIDES) {
-    if (ov.keywords.some(k => lower.includes(k))) {
+    if (ov.keywords.some(k => lower.includes(k)) && !(ov.exclude || []).some(k => lower.includes(k))) {
       return { ncm_code: ov.ncm, ncm_description: ov.desc, import_duty_rate: ov.die, statistics_rate: ov.te, iva_rate: ov.iva ?? 21, intervention: ov.intervention, source: "override" };
     }
   }
@@ -463,6 +468,11 @@ export async function POST(req) {
       }
     }
 
+    // Con foto también mandan los overrides si la descripción los nombra (intercomunicadores, auriculares…).
+    if (image && description) {
+      const ov = checkOverride(description);
+      if (ov) return Response.json(withHint(await addAntidumping(ov)));
+    }
     // Clasificar: con imagen → vision, sin imagen → texto
     let claudeResult = image
       ? await classifyWithClaudeVision(image, description, image_mime).catch(e => { console.error("Claude vision error:", e?.status||"", e.message); return null; })
