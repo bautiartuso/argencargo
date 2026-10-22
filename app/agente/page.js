@@ -45,9 +45,9 @@ const ensureFreshToken=async(token)=>{
   }
   return token;
 };
-const dq=async(t,{method="GET",body,token,filters=""})=>{
+const dq=async(t,{method="GET",body,token,filters="",prefer})=>{
   const fresh=await ensureFreshToken(token);
-  const doReq=(tk)=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:{})}});
+  const doReq=(tk)=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${tk}`,...(prefer?{Prefer:prefer}:method==="POST"?{Prefer:"return=representation"}:{})}});
   let r=await doReq(fresh);
   // Si JWT expirado (401) → refresh y retry
   if(r.status===401){const newToken=await refreshToken();if(newToken){r=await doReq(newToken);}}
@@ -63,7 +63,7 @@ function usePegarFoto(activo,onFile){
   const ref=useRef(onFile);ref.current=onFile;
   useEffect(()=>{
     if(!activo)return;
-    const h=(e)=>{if(e.defaultPrevented)return;const f=[...(e.clipboardData?.files||[])].find(x=>x.type?.startsWith("image/"));if(!f)return;e.preventDefault();ref.current&&ref.current(f);};
+    const h=(e)=>{if(e.defaultPrevented)return;const cd=e.clipboardData;let f=[...(cd?.files||[])].find(x=>x.type?.startsWith("image/"));if(!f){const it=[...(cd?.items||[])].find(x=>x.kind==="file"&&x.type?.startsWith("image/"));f=it?it.getAsFile():null;}if(!f)return;if(!f.name||f.name==="image.png"){try{f=new File([f],`foto_${Date.now()}.${(f.type.split("/")[1]||"png").replace("jpeg","jpg")}`,{type:f.type});}catch(_){}}e.preventDefault();ref.current&&ref.current(f);};
     window.addEventListener("paste",h);return()=>window.removeEventListener("paste",h);
   },[activo]);
 }
@@ -2422,7 +2422,7 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
   const [removePhoto,setRemovePhoto]=useState(false);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
-  const table=pkg.operation_id?"operation_packages":"unassigned_packages";
+  const table=pkg._tabla||"operation_packages";
   usePegarFoto(true,(f)=>onPhotoChange(f));
   const onPhotoChange=(file)=>{
     setRemovePhoto(false);
@@ -2519,8 +2519,12 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
     const url=await uploadPackagePhoto(file,token);
     if(url){
       // Determinar tabla: operation_packages u unassigned_packages
-      const table=pkg.operation_id?"operation_packages":"unassigned_packages";
-      await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{photo_url:url,photo_uploaded_at:new Date().toISOString()}});
+      // Los bultos del depósito (con o sin operación) están en operation_packages. Antes, sin operación
+      // se guardaba en unassigned_packages (tabla vieja) y la foto se perdía sin avisar (21/10/2026).
+      const table=pkg._tabla||"operation_packages";
+      const r=await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{photo_url:url,photo_uploaded_at:new Date().toISOString()},prefer:"return=representation"});
+      if(!Array.isArray(r)||r.length===0){toast(t.upload_failed,"error");setUploading(false);return;}
+      toast("✓","success");
       onUpdated&&onUpdated();
     }else{
       toast(t.upload_failed,"error");
