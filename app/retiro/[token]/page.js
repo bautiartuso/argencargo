@@ -697,14 +697,23 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
 
         {transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.22)", borderRadius: 16, padding: "16px 16px 14px", marginBottom: 12 }}>
           <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#1e5c3d", margin: "0 0 10px" }}>Datos para transferir</p>
-          {data.transfer.alias && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-            <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Alias / CBU</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13, wordBreak: "break-all", color: INK }}>{data.transfer.alias}</p></div>
-            {btnCopiar("alias", String(data.transfer.alias).match(/\d{22}/)?.[0] || data.transfer.alias)}
-          </div>}
+          {data.transfer.alias && (() => {
+            // El dato guardado puede traer "CBU xxxx · CUIT yyyy": se muestra y se copia el CBU solo (22/10/2026).
+            const raw = String(data.transfer.alias);
+            const cbu = raw.match(/\d{22}/)?.[0];
+            const cuit = raw.match(/CUIT\s*([\d-]{11,13})/i)?.[1];
+            return <>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+                <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>{cbu ? "CBU" : "Alias"}</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13.5, wordBreak: "break-all", color: INK }}>{cbu || raw}</p></div>
+                {btnCopiar("alias", cbu || raw)}
+              </div>
+              {cuit && <div style={{ padding: "8px 0", borderTop: "1px solid rgba(30,125,79,.15)" }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>CUIT</p><p style={{ margin: "2px 0 0", fontWeight: 700, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13, color: INK }}>{cuit}</p></div>}
+            </>;
+          })()}
           {data.transfer.titular && <div style={{ padding: "8px 0", borderTop: "1px solid rgba(30,125,79,.15)" }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Titular</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontSize: 13.5, color: INK }}>{data.transfer.titular}</p></div>}
           {tc > 0 && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0 2px", borderTop: "1px solid rgba(30,125,79,.15)" }}>
             <div style={{ flex: 1 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Monto a transferir</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontSize: 17, color: INK, fontVariantNumeric: "tabular-nums" }}>ARS {Math.round(transfPart.amount * tc).toLocaleString("es-AR")}</p></div>
-            {btnCopiar("monto", Math.round(transfPart.amount * tc))}
+            {btnCopiar("monto", String(Math.round(transfPart.amount * tc)))}
           </div>}
           <p style={{ fontSize: 11, color: "#3d6b52", margin: "10px 0 0", lineHeight: 1.5 }}>El monto en pesos se ajusta al dólar del día en que transferís. Mandanos el comprobante por WhatsApp.</p>
         </div>}
