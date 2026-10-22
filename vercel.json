@@ -83,6 +83,10 @@
     {
       "path": "/api/kairo/nudges",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/autocierre",
+      "schedule": "30 * * * *"
     }
   ]
 }
