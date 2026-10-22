@@ -1772,7 +1772,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       <span style={{fontSize:18}}>🔄</span>
       <div style={{flex:1,minWidth:200}}><p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>El agente avisó que no se puede reempaquetar</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{String(repackReq.agent_notes).replace(/^No es posible reempaquetar:?\s*/i,"")||"Sin motivo"}{repackReq.completed_at?` · ${formatDate(repackReq.completed_at)}`:""}</p></div>
     </div>}
-    {repackReq&&repackReq.status==="done"&&(()=>{const before=Number(repackReq.original_billable_kg||0);const after=Number(repackReq.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;const oSnap=Array.isArray(repackReq.original_packages_snapshot)?repackReq.original_packages_snapshot:null;const nSnap=Array.isArray(repackReq.new_packages_snapshot)?repackReq.new_packages_snapshot:null;const hasSnap=oSnap||nSnap;return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10}}>
+    {tab==="packages"&&repackReq&&repackReq.status==="done"&&(()=>{const before=Number(repackReq.original_billable_kg||0);const after=Number(repackReq.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;const oSnap=Array.isArray(repackReq.original_packages_snapshot)?repackReq.original_packages_snapshot:null;const nSnap=Array.isArray(repackReq.new_packages_snapshot)?repackReq.new_packages_snapshot:null;const hasSnap=oSnap||nSnap;return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:240}}>
           <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✅ Reempaque completado por el agente</p>
@@ -2089,6 +2089,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Solo en aereo A el RI paga los impuestos directo; en maritimo A siempre los cobra Argencargo.
       const taxesBilledByArgencargo=op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes;
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
+      // Envío a domicilio: el cargado en la op + el que eligió el cliente en el link de retiro (ya suma en budget_total).
+      const envioDom=shipCost+(op.delivery_choice==="propio"?Number(op.delivery_cost_usd||0):0);
+      const usd2=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      // Línea del presupuesto (rediseño 22/10/2026): barra de color, concepto, detalle y monto.
+      const linea=(l,v,c,sub,apagada)=><div style={{display:"grid",gridTemplateColumns:"4px minmax(0,1fr) auto",alignItems:"center",gap:14,padding:"13px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        <span style={{width:4,height:sub?32:20,borderRadius:4,background:apagada?"rgba(255,255,255,0.15)":c}}/>
+        <div style={{minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:700,color:apagada?"rgba(255,255,255,0.55)":"#fff"}}>{l}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{sub}</p>}</div>
+        <span style={{fontSize:15,fontWeight:800,fontVariantNumeric:"tabular-nums",color:apagada?"rgba(255,255,255,0.4)":"#fff",whiteSpace:"nowrap"}}>{usd2(v)}</span>
+      </div>;
       const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:"11px 2px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{fontSize:13.5,color:"rgba(255,255,255,0.62)"}}>{l}</span><span style={{fontSize:14,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       const isManual=op.budget_mode==="manual";
       // Toggler auto/manual: al pasar a manual pre-cargamos los valores actuales en budget_*; al pasar a auto recalculamos.
@@ -2164,7 +2173,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const components=isBlanco
           ?(taxesBilledByArgencargo?["budget_taxes","budget_flete","budget_seguro","budget_surcharge"]:["budget_flete","budget_seguro","budget_surcharge"])
           :["budget_flete","budget_surcharge"];
-        const shipCost=op.shipping_to_door?toNum(op.shipping_cost):0;
+        // El envío elegido en el link de retiro también va en el total (si no, editar a mano lo borraba).
+        const shipCost=(op.shipping_to_door?toNum(op.shipping_cost):0)+(op.delivery_choice==="propio"?toNum(op.delivery_cost_usd):0);
         const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
         chOp("budget_total")(Math.round(sum*100)/100);
       };
@@ -2235,31 +2245,22 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             </>}
         </div>;})()
       }>
-        {isRI&&op.channel==="aereo_blanco"&&<div style={{marginBottom:14,padding:"10px 14px",background:taxesBilledByArgencargo?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.05)",border:`1px solid ${taxesBilledByArgencargo?"rgba(34,197,94,0.25)":"rgba(96,165,250,0.15)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <label style={{display:"flex",alignItems:"center",gap:8,cursor:saving?"wait":"pointer",flex:1}}>
-            <input type="checkbox" checked={!!op.ri_argencargo_collects_taxes} disabled={saving} onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo a la aduana");setSaving(false);}} style={{width:16,height:16,cursor:"pointer"}}/>
-            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo a la aduana)</span></span>
-          </label>
-        </div>}
-        {/* RI: ¿el courier entrega directo en el domicilio o la carga baja a la oficina? (pedido 11/09/2026).
-            null = automático (RI → directa). false = viene a la oficina: flujo normal de "lista para retirar"
-            con link, sin el mensaje de "entregada en tu domicilio" ni el cobro en pesos automático. */}
-        {isRI&&op.channel==="aereo_blanco"&&(()=>{const dir=op.ri_entrega_directa!==false;const set=async(v)=>{if(saving)return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_entrega_directa:v}});setOp(p=>({...p,ri_entrega_directa:v}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
-          return <div style={{marginBottom:14,padding:"10px 14px",background:dir?"rgba(96,165,250,0.05)":"rgba(184,149,106,0.06)",border:`1px solid ${dir?"rgba(96,165,250,0.15)":"rgba(184,149,106,0.25)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)",flex:"1 1 260px"}}>Entrega de esta carga (RI) <span style={{color:"rgba(255,255,255,0.45)"}}>· define qué le dice el bot al cliente cuando el courier marca entregado</span></span>
-            <div style={{display:"flex",gap:6}}>
-              {[[true,"Directa al domicilio"],[false,"Viene a la oficina"]].map(([v,l])=><button key={String(v)} disabled={saving} onClick={()=>set(v)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${dir===v?IC:"rgba(255,255,255,0.14)"}`,background:dir===v?"rgba(184,149,106,0.18)":"transparent",color:dir===v?IC:"rgba(255,255,255,0.55)"}}>{l}</button>)}
-            </div>
-          </div>;})()}
-        {/* Aereo A: recargo por baterias, como toggle discreto adentro del presupuesto (antes era
-            un selector gigante en General). Cambiarlo recalcula el presupuesto al toque. */}
-        {op.channel==="aereo_blanco"&&<div onClick={async()=>{if(saving)return;const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?`Recargo por baterías activado (USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg)`:"Recargo por baterías quitado");setSaving(false);}} style={{marginBottom:14,padding:"9px 14px",background:op.has_battery?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${op.has_battery?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:11,cursor:saving?"wait":"pointer",userSelect:"none",transition:"all 160ms"}}>
-          <div style={{width:36,height:20,background:op.has_battery?"linear-gradient(135deg,#fb923c,#f97316)":"rgba(255,255,255,0.12)",borderRadius:999,position:"relative",transition:"all 200ms",flexShrink:0}}>
-            <div style={{position:"absolute",top:2,left:op.has_battery?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 200ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
-          </div>
-          <span style={{fontSize:12.5,fontWeight:op.has_battery?700:600,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.6)"}}>⚡ La carga contiene baterías</span>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{op.has_battery?`Recargo USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg facturable aplicado`:"Sin recargo"}</span>
-        </div>}
+        {/* Ajustes del aéreo A en un solo bloque (rediseño 22/10/2026): impuestos del RI, entrega del RI y baterías. */}
+        {op.channel==="aereo_blanco"&&(()=>{
+          const sw=(on,fn,c="#E8D098")=><button type="button" disabled={saving} onClick={fn} aria-pressed={on} style={{width:40,height:22,borderRadius:999,border:"none",padding:0,cursor:saving?"wait":"pointer",position:"relative",flexShrink:0,background:on?c:"rgba(255,255,255,0.12)",transition:"background 160ms"}}><span style={{position:"absolute",top:3,left:on?21:3,width:16,height:16,borderRadius:"50%",background:on?"#0A1628":"#fff",transition:"left 180ms cubic-bezier(0.34,1.56,0.64,1)"}}/></button>;
+          const fila=(t,sub,ctrl,last)=><div style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderBottom:last?"none":"1px solid rgba(255,255,255,0.05)",flexWrap:"wrap"}}>
+            <div style={{flex:"1 1 220px",minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"#fff"}}>{t}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{sub}</p>}</div>{ctrl}</div>;
+          const cobra=!!op.ri_argencargo_collects_taxes;const dir=op.ri_entrega_directa!==false;
+          const setCobra=async()=>{const v=!cobra;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo a la aduana");setSaving(false);};
+          const setDir=async(v)=>{if(saving||v===dir)return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_entrega_directa:v}});setOp(p=>({...p,ri_entrega_directa:v}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
+          const setBat=async()=>{const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?`Recargo por baterías activado (USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg)`:"Recargo por baterías quitado");setSaving(false);};
+          const usdKg=bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now());
+          return <div style={{marginBottom:18,borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+            {isRI&&fila("Argencargo cobra los impuestos",cobra?"Excepción: entran en el total":"El RI los paga directo a la aduana",sw(cobra,setCobra))}
+            {isRI&&fila("Entrega de la carga",null,<div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)"}}>{[[true,"Directa al domicilio"],[false,"Viene a la oficina"]].map(([v,l])=><button key={String(v)} disabled={saving} onClick={()=>setDir(v)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:"none",background:dir===v?"rgba(232,208,152,0.16)":"transparent",color:dir===v?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:dir===v?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none",whiteSpace:"nowrap"}}>{l}</button>)}</div>)}
+            {fila("La carga contiene baterías",op.has_battery?`Recargo USD ${usdKg}/kg facturable`:null,sw(!!op.has_battery,setBat,"#fb923c"),true)}
+          </div>;
+        })()}
         {/* Aéreo A sin productos: el presupuesto que se ve acá es un cálculo en vivo (flete + seguro)
             que NO se guarda en la base — queda USD 0 y así lo ven el link de retiro y el bot
             (AC-0039, 08/09). Avisar claro. */}
@@ -2326,27 +2327,29 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por valor (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
           </>}
         </>:<>
+          <div style={{padding:"2px 18px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
           {isBlanco?<>
-            {rw(taxesBilledByArgencargo?"Total Impuestos":"Impuestos (informativo, no cobrado — RI paga directo)",totalTax)}
+            {linea("Impuestos",totalTax,"#f59e0b",taxesBilledByArgencargo?(op.channel==="maritimo_blanco"?"Derechos, estadística, IVA, percepciones":"Derechos, estadística, IVA y desaduanaje"):"No entra en el total · el RI los paga directo a la aduana",!taxesBilledByArgencargo)}
             {(()=>{const bat=Number(op.budget_tax_detail?.battExtra||0);
               // Con recargo cargado se muestran las dos líneas; sin él, el flete solo, como antes.
-              return bat>0.005?<>{rw("Flete internacional",flete-bat)}{rw("Recargo por baterías",bat)}</>:rw("Flete internacional",flete);})()}
-            {rw("Seguro de carga",seguro)}
-            {surcharge>0&&rw("Recargo por sobrepeso",surcharge)}
+              return bat>0.005?<>{linea("Flete internacional",flete-bat,"#60a5fa")}{linea("Recargo por baterías",bat,"#fb923c")}</>:linea("Flete internacional",flete,"#60a5fa");})()}
+            {seguro>0&&linea("Seguro de carga",seguro,"#a78bfa")}
+            {surcharge>0&&linea("Recargo por sobrepeso",surcharge,"#fb923c")}
           </>:<>
-            {rw("Servicio Integral ARGENCARGO",flete)}
-            {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
+            {linea("Servicio Integral ARGENCARGO",flete,"#E8D098")}
+            {surcharge>0&&linea(`Recargo por valor (${surchargePct}%)`,surcharge,"#fb923c")}
           </>}
+          {envioDom>0&&linea("Envío a domicilio",envioDom,"#22c55e",op.delivery_choice==="propio"?"Lo eligió el cliente en el link de retiro":null)}
+          </div>
         </>}
-        {isBlanco&&!editandoPresu&&!taxesBilledByArgencargo&&totalTax>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"2px 0 8px",fontStyle:"italic"}}>El RI abona estos impuestos directo a la aduana — no están incluidos en el total a abonar a Argencargo.</p>}
-        {shipCost>0&&rw("Envío a domicilio",shipCost)}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"16px 18px",margin:"14px 0 12px",borderRadius:14,background:"linear-gradient(135deg,rgba(184,149,106,0.14),rgba(184,149,106,0.05))",border:"1px solid rgba(232,208,152,0.28)"}}>
-          <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.1em"}}>Total a abonar</span>
+        {editandoPresu&&envioDom>0&&rw("Envío a domicilio",envioDom)}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"20px 22px",margin:"16px 0 12px",borderRadius:16,background:"radial-gradient(120% 140% at 100% 0%,rgba(232,208,152,0.2),rgba(184,149,106,0.06) 55%,rgba(184,149,106,0.03))",border:"1px solid rgba(232,208,152,0.32)",boxShadow:"0 10px 30px rgba(0,0,0,0.25)"}}>
+          <div><span style={{display:"block",fontSize:11.5,fontWeight:800,color:"#E8D098",textTransform:"uppercase",letterSpacing:"0.12em"}}>Total a abonar</span>{!editandoPresu&&<span style={{display:"block",marginTop:4,fontSize:12,color:"rgba(255,255,255,0.5)"}}>{isBlanco?(taxesBilledByArgencargo?"Impuestos + flete":"Flete")+(seguro>0?" + seguro":"")+(envioDom>0?" + envío":""):"Servicio integral"+(surcharge>0?" + recargo":"")+(envioDom>0?" + envío":"")}</span>}</div>
           {editandoPresu
             ?<div style={{display:"flex",alignItems:"center",gap:12}}>
                 <span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums",minWidth:160,textAlign:"right"}}>USD {toNum(op.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
               </div>
-            :<span style={{fontSize:28,fontWeight:800,color:IC,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+            :<span style={{fontSize:34,fontWeight:800,color:"#E8D098",letterSpacing:"-0.025em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
         </div>
         {difPresu!==0&&!editandoPresu&&(()=>{
           const d=(a,b)=>Math.round((Number(a||0)-Number(b||0))*100)/100;
@@ -2530,47 +2533,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       {items.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay productos.</p>}
     </Card>}
 
-    {/* Declaración a Aduana (valor declarado por ítem) — SOLO clientes RI, ops abiertas.
-        El RI necesita ver la declaración real del despacho (lo que fue a Aduana, ya comprimido/
-        subfacturado), distinta de lo que cargó en sus productos. 11/06/2026. */}
-    {tab==="items"&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&declaredItems.length>0&&(()=>{
-      const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
-      const realTotal=items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);
-      const diff=realTotal-declTotal;
-      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-      return <Card title="📋 Declaración a Aduana (cliente RI)">
-        {/* Hay ops donde se le cobra al cliente sobre el valor que el declaro, no sobre el del
-            despacho: ahi mostrarle los dos numeros distintos solo confunde. */}
-        <label style={{display:"flex",alignItems:"flex-start",gap:9,padding:"10px 12px",marginBottom:12,borderRadius:9,cursor:"pointer",background:op.hide_customs_declaration?"rgba(251,191,36,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.hide_customs_declaration?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.07)"}`}}>
-          <input type="checkbox" checked={!!op.hide_customs_declaration} disabled={saving} style={{marginTop:2,cursor:"pointer"}}
-            onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{hide_customs_declaration:v}});setSaving(false);onReload();}}/>
-          <span>
-            <span style={{fontSize:12.5,fontWeight:600,color:op.hide_customs_declaration?"#fbbf24":"rgba(255,255,255,0.8)"}}>No mostrarle esta declaración al cliente</span>
-            <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:3,lineHeight:1.45}}>Usalo cuando le cobrás sobre el valor que declaró él y no sobre el del despacho. Vos la seguís viendo acá.</span>
-          </span>
-        </label>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>Valores tal como se declararon en el despacho (factura del vuelo). Es lo que el cliente RI ve en su factura de importación — distinto de lo que cargó en sus productos.</p>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
-            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-              {["Descripción","HS Code","Cant.","Unit. USD","Subtotal"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>1?"right":"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>)}
-            </tr></thead>
-            <tbody>{declaredItems.map((d,i)=><tr key={d.id||i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-              <td style={{padding:"8px 12px",color:"#fff"}}>{d.description||"—"}</td>
-              <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",fontFamily:"monospace",fontSize:11.5}}>{d.hs_code||"—"}</td>
-              <td style={{padding:"8px 12px",textAlign:"right",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{Number(d.quantity||0)}</td>
-              <td style={{padding:"8px 12px",textAlign:"right",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{fmt(d.unit_price_declared_usd)}</td>
-              <td style={{padding:"8px 12px",textAlign:"right",color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{fmt(Number(d.quantity||0)*Number(d.unit_price_declared_usd||0))}</td>
-            </tr>)}</tbody>
-          </table>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",marginTop:8,background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8}}>
-          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
-          <span style={{fontSize:16,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>{fmt(declTotal)}</span>
-        </div>
-        {Math.abs(diff)>0.01&&<p style={{fontSize:11,color:"#fbbf24",margin:"8px 0 0",fontStyle:"italic"}}>⚠ El cliente cargó {fmt(realTotal)} en sus productos · diferencia con lo declarado: {fmt(diff)}.</p>}
-      </Card>;
-    })()}
 
 
     {tab==="gi_costs"&&isGI&&(()=>{

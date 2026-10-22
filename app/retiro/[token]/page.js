@@ -197,6 +197,8 @@ export default function EntregaPublica({ params }) {
 
   const { op, client, cargo, delivery: deliveryInfo } = data;
   const modoRi = !!data.modo_ri;
+  // Carga ya entregada: el link solo deja cambiar la forma de pago (el día y la entrega ya pasaron).
+  const entregada = !!op.delivery_completed_at && !modoRi;
   const facturas = Array.isArray(data.facturas) ? data.facturas : [];
   const isBlanco = op.channel?.includes("blanco");
   const esMaritimo = String(op.channel || "").startsWith("maritimo");
@@ -215,13 +217,13 @@ export default function EntregaPublica({ params }) {
   const hermanas = Array.isArray(data.hermanas) ? data.hermanas : [];
   const extraSel = hermanas.filter((h) => selExtra.includes(h.id));
   const saldoExtras = extraSel.reduce((a, h) => a + Number(h.saldo || 0), 0);
-  const total = Math.round((saldo + saldoExtras + deliveryCost) * 100) / 100;
+  const total = Math.round((saldo + saldoExtras + (entregada ? 0 : deliveryCost)) * 100) / 100;
 
   const efectivoBlocked = delivery === "carrier";
 
   // Devuelve el motivo por el que no se puede avanzar, o null si está todo bien.
   const validarEntrega = () => {
-    if (modoRi) return null; // entrega el courier: no hay nada que coordinar
+    if (modoRi || entregada) return null; // entrega el courier / ya entregada: no hay nada que coordinar
     if (delivery === "carrier") {
       if (!carrierMode) return "Elegí si lo recibís en sucursal o en tu domicilio.";
       if (!contacto.nombre.trim() || !contacto.apellido.trim()) return "Completá nombre y apellido de quien recibe.";
@@ -258,6 +260,7 @@ export default function EntregaPublica({ params }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         modo_ri: modoRi || undefined,
+        solo_pago: entregada || undefined,
         delivery_choice: modoRi ? null : delivery,
         delivery_address: delivery === "propio" ? [dirCalle.trim(), dirPiso.trim(), dirLocalidad.trim(), dirCP.trim() ? `CP ${dirCP.trim()}` : ""].filter(Boolean).join(", ") : null,
         payment_method: payMethods[0],
@@ -277,7 +280,7 @@ export default function EntregaPublica({ params }) {
     setConfirmed(d);
   };
 
-  if (confirmed) return <ConfirmedView data={confirmed} delivery={modoRi ? "ri" : delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} onEdit={() => { setConfirmed(null); setPaso(data.modo_ri ? 3 : 2); }} />;
+  if (confirmed) return <ConfirmedView data={confirmed} delivery={modoRi ? "ri" : delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} entregada={entregada} onEdit={() => { setConfirmed(null); setPaso(data.modo_ri || entregada ? 3 : 2); }} />;
 
   return <div style={pageStyle()}>
     <div style={cardStyle()}>
@@ -520,9 +523,11 @@ export default function EntregaPublica({ params }) {
         </div>
 
         {formError && <ErrorBanner msg={formError} />}
-        <button onClick={()=>setPaso(modoRi?1:2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver{modoRi?"":" a la forma de entrega"}</button>
-        <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : "Confirmar y avisar a Argencargo"}</button>
-        <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>{modoRi ? "Al confirmar registramos tu forma de pago — cualquier duda te respondemos por WhatsApp." : "Al confirmar, un asesor coordina el retiro o el envío por WhatsApp."}</p>
+        {entregada
+          ? <button onClick={()=>window.location.reload()} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver sin cambiar</button>
+          : <button onClick={()=>setPaso(modoRi?1:2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver{modoRi?"":" a la forma de entrega"}</button>}
+        <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : entregada ? "Guardar forma de pago" : "Confirmar y avisar a Argencargo"}</button>
+        <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>{entregada ? "Guardamos tu nueva forma de pago — cualquier duda te respondemos por WhatsApp." : modoRi ? "Al confirmar registramos tu forma de pago — cualquier duda te respondemos por WhatsApp." : "Al confirmar, un asesor coordina el retiro o el envío por WhatsApp."}</p>
         </>}
       </div>
 
@@ -631,7 +636,7 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
   </div>;
 }
 
-function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBlanco, onEdit }) {
+function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBlanco, entregada, onEdit }) {
   const esMaritimoCv = String(op?.channel || "").startsWith("maritimo");
   const L = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
   const tc = Number(data.tc_venta || 0);
@@ -650,13 +655,14 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
     <div style={{ maxWidth: 480, width: "100%", padding: "32px 28px", background: CREAM, color: INK, borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
       <div style={{ textAlign: "center", marginBottom: 18 }}>
         <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#22c55e,#16a34a)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "#fff", marginBottom: 10 }}>✓</div>
-        <p style={{ fontSize: 17, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.01em" }}>{delivery === "ri" ? "¡Listo! Acá tenés todo para abonar" : `¡Listo, ya coordinaste ${delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "tu entrega" : "tu envío"}!`}</p>
+        <p style={{ fontSize: 17, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.01em" }}>{entregada ? "¡Listo, ya recibiste tu carga!" : delivery === "ri" ? "¡Listo! Acá tenés todo para abonar" : `¡Listo, ya coordinaste ${delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "tu entrega" : "tu envío"}!`}</p>
       </div>
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
         <p style={{ fontSize: 12, fontWeight: 800, margin: "0 0 10px" }}>Resumen</p>
         {Array.isArray(data.ops_incluidas) && data.ops_incluidas.length > 1 && <div style={rowS}><span style={{ color: MUTED }}>Cargas</span><span style={{ fontWeight: 700, textAlign: "right", fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11.5 }}>{data.ops_incluidas.join(" + ")}</span></div>}
         <div style={rowS}><span style={{ color: MUTED }}>Entrega</span><span style={{ fontWeight: 700, textAlign: "right" }}>{entregaLabel}</span></div>
-        {data.delivery_day && <div style={rowS}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
+        {entregada && op?.delivery_completed_at && <div style={rowS}><span style={{ color: MUTED }}>Entregada</span><span style={{ fontWeight: 700 }}>{new Date(op.delivery_completed_at).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })}</span></div>}
+        {data.delivery_day && !entregada && <div style={rowS}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
         <div style={rowS}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700, textAlign: "right" }}>{payLabel}</span></div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}><span style={{ color: MUTED }}>Total</span><span style={{ fontWeight: 800, color: GOLD_A, textAlign: "right" }}>{todoEnPesos ? <>ARS {Math.round(data.total * tc).toLocaleString("es-AR")}<span style={{ display: "block", fontSize: 10.5, color: MUTED, fontWeight: 600 }}>USD {Number(data.total).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></> : fmt(data.total)}</span></div>
       </div>
@@ -694,8 +700,8 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
         </div>}
       </div>}
 
-      <button onClick={onEdit} style={{ width: "100%", padding: "12px 16px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: `1.5px solid ${GOLD_A}`, background: "#fff", color: "#8b6f4a", cursor: "pointer" }}>✏️ Cambiar algo (día, horario o forma de pago)</button>
-      <p style={{ textAlign: "center", fontSize: 10, color: MUTED, margin: "8px 0 0", lineHeight: 1.5 }}>Podés modificar tu elección las veces que necesites — siempre vale la última confirmación.</p>
+      <button onClick={onEdit} style={{ width: "100%", padding: "12px 16px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: `1.5px solid ${GOLD_A}`, background: "#fff", color: "#8b6f4a", cursor: "pointer" }}>{entregada ? "✏️ Cambiar la forma de pago" : "✏️ Cambiar algo (día, horario o forma de pago)"}</button>
+      <p style={{ textAlign: "center", fontSize: 10, color: MUTED, margin: "8px 0 0", lineHeight: 1.5 }}>{entregada ? "La carga ya se entregó: lo único que podés cambiar es cómo pagás." : "Podés modificar tu elección las veces que necesites — siempre vale la última confirmación."}</p>
     </div>
   </div>;
 }

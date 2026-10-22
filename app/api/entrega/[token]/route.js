@@ -359,6 +359,7 @@ export async function GET(req, { params }) {
       delivery_address: op.delivery_address,
       payment_method_chosen: op.payment_method_chosen,
       delivery_confirmed_at: op.delivery_confirmed_at,
+      delivery_completed_at: op.delivery_completed_at || null,
       delivery_day: op.delivery_day,
       delivery_slot: op.delivery_slot,
       payment_split: op.payment_split,
@@ -396,7 +397,7 @@ export async function POST(req, { params }) {
   if (!SB) return Response.json({ error: "Server config missing" }, { status: 500 });
   const { token } = await params;
   let body = null; try { body = await req.json(); } catch {}
-  if (!body || !body.payment_method || (!body.delivery_choice && !body.modo_ri)) {
+  if (!body || !body.payment_method || (!body.delivery_choice && !body.modo_ri && !body.solo_pago)) {
     return Response.json({ error: "Faltan datos: delivery_choice y payment_method" }, { status: 400 });
   }
   // ── Modo RI (entrega directa por courier): solo se registra la forma de pago ──
@@ -434,6 +435,45 @@ export async function POST(req, { params }) {
       ops_incluidas: [opRi.operation_code],
     });
   }
+  // ── Carga ya entregada (22/10/2026): el día y la entrega quedan fijos, solo se cambia la forma de pago ──
+  if (body.solo_pago === true) {
+    const opE = await loadOpData(token);
+    if (!opE) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
+    if (!opE.delivery_completed_at) return Response.json({ error: "Esta carga todavía no se entregó" }, { status: 400 });
+    if (!["efectivo", "transferencia", "crypto"].includes(body.payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
+    if (body.payment_method === "efectivo" && opE.delivery_choice === "carrier") return Response.json({ error: "Efectivo no disponible para envíos con transportista externo" }, { status: 400 });
+    // Si se coordinó en grupo, cambia la forma de pago de toda la visita.
+    let grupo = [opE];
+    if (opE.delivery_group_id) {
+      const g = await sbFetch(`/operations?delivery_group_id=eq.${opE.delivery_group_id}&client_id=eq.${opE.client_id}&select=*`);
+      if (Array.isArray(g.body) && g.body.length) grupo = g.body;
+    }
+    const pagosE = await pagosParciales(grupo.map((o) => o.id)).catch(() => ({}));
+    const pedido = Array.isArray(body.payment_methods) ? body.payment_methods.find((p) => p && p.method === body.payment_method) : null;
+    const extra = body.payment_method === "efectivo" && pedido ? { currency: pedido.currency || "USD", ...(pedido.currency === "mixto" ? { usd_part: Number(pedido.usd_part) || 0, ars_part: Number(pedido.ars_part) || 0 } : {}) } : {};
+    let totalE = 0;
+    for (const o of grupo) {
+      const s = Math.round(saldoOf(o, pagosE[o.id]) * 100) / 100; totalE += s;
+      await sbFetch(`/operations?id=eq.${o.id}`, { method: "PATCH", body: JSON.stringify({ payment_method_chosen: body.payment_method, payment_split: [{ method: body.payment_method, amount: s, ...extra }] }) });
+    }
+    totalE = Math.round(totalE * 100) / 100;
+    const PLe = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
+    sbFetch(`/op_communications`, { method: "POST", body: JSON.stringify({ operation_id: opE.id, type: "note", direction: "in", content: `💳 Cliente cambió la forma de pago (carga ya entregada): ${PLe[body.payment_method]}\nSaldo: USD ${totalE.toFixed(2)}` }) }).catch(() => {});
+    const [stgE, tcE] = await Promise.all([
+      sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`),
+      fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    const stE = Array.isArray(stgE.body) && stgE.body[0] ? stgE.body[0] : {};
+    return Response.json({
+      ok: true, total: totalE,
+      transfer: body.payment_method === "transferencia" ? { alias: stE.payment_alias || "", titular: stE.payment_titular || "" } : null,
+      crypto_wallet: body.payment_method === "crypto" ? (stE.payment_crypto_wallet || "") : null,
+      tc_venta: Number(tcE?.venta) > 0 ? Number(tcE.venta) : null,
+      delivery_choice: opE.delivery_choice, delivery_zone: opE.delivery_zone, delivery_day: opE.delivery_day, delivery_slot: opE.delivery_slot,
+      payment_method: body.payment_method, payment_methods: [{ method: body.payment_method, amount: totalE, ...extra }],
+      ops_incluidas: grupo.map((o) => o.operation_code),
+    });
+  }
   const { delivery_choice, delivery_address, payment_method, delivery_contact, carrier_mode, delivery_day, delivery_slot, cash_amount, cash_currency } = body;
   if (!["oficina", "propio", "carrier"].includes(delivery_choice)) return Response.json({ error: "Entrega inválida" }, { status: 400 });
   if (!["efectivo", "transferencia", "crypto"].includes(payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
@@ -455,6 +495,7 @@ export async function POST(req, { params }) {
 
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
+  if (op.delivery_completed_at) return Response.json({ error: "Esta carga ya fue entregada: solo podés cambiar la forma de pago" }, { status: 400 });
 
   if ((delivery_choice === "oficina" || delivery_choice === "propio") && delivery_day) {
     const minDia = await entregaDesdeDe([op.id, ...(Array.isArray(body.extra_ops) ? body.extra_ops.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x)) : [])]).catch(() => null);

@@ -944,7 +944,8 @@ function OperationDetail({op:opProp,token,client,onBack}){
   const isGI=op.service_type==="gestion_integral";
   // Al cliente RI le mostramos la declaración del despacho, salvo que en esta op se le cobre
   // sobre el valor que declaró él: ahí ve su propia mercadería y no dos totales distintos.
-  const muestraAduana=client?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&!isGI&&!op.hide_customs_declaration&&declaredItems.length>0;
+  // La declaración a Aduana del RI ya no se muestra (22/10/2026: "ya no aplica más").
+  const muestraAduana=false;
   // ── Rediseño 13/09/2026: tres zonas (cabecera + qué hacer ahora · mercadería y costos · bultos y seguimiento) ──
   const HAIR="1px solid rgba(255,255,255,0.13)";const SKY="#8CC8F5";
   const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:HAIR,borderRadius:18,padding:"22px 26px",marginBottom:16,boxShadow:"0 16px 40px rgba(0,0,0,0.3)"};
