@@ -16531,9 +16531,9 @@ function AdminCalculator({token}){
 .qc-card.off>:not(:first-child),.qc-card.off .qc-ctitle,.qc-card.off .qc-cwarn{opacity:.55}
 .qc-cwarn{font-size:11.5px;color:#fbbf24;margin:10px 0 0;line-height:1.4;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,0.07)}
 .qc-lines{display:flex;flex-direction:column;gap:7px;align-self:start}
-.qc-g{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;padding-top:11px;border-top:1px solid rgba(255,255,255,0.08);font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#E8D098}
-.qc-g.first{margin-top:0;padding-top:0;border-top:none}
-.qc-g b{font-size:13.5px;font-weight:800;color:#fff;letter-spacing:0;text-transform:none}
+.qc-grp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;padding-top:11px;border-top:1px solid rgba(255,255,255,0.08);font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#E8D098}
+.qc-grp.first{margin-top:0;padding-top:0;border-top:none}
+.qc-grp b{font-size:13.5px;font-weight:800;color:#fff;letter-spacing:0;text-transform:none}
 .qc-l{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;color:rgba(255,255,255,0.6);min-height:24px}
 .qc-l em{font-style:normal;color:rgba(255,255,255,0.35);font-size:11.5px;margin-left:4px;white-space:nowrap}
 .qc-l b{color:#fff;font-weight:600;white-space:nowrap}
@@ -16728,7 +16728,7 @@ function AdminCalculator({token}){
             </div>
             <div className="qc-lines">
               {/* Agrupado (22/10/2026): Flete y cargos / Impuestos, cada grupo con su subtotal. */}
-              <div className="qc-g first"><span>{bd.isBlanco?"Flete y cargos":"Servicio"}</span><b>USD {fmt(effTotal-(bd.isBlanco?effTotalImp:0)-cert.total)}</b></div>
+              <div className="qc-grp first"><span>{bd.isBlanco?"Flete y cargos":"Servicio"}</span><b>USD {fmt(effTotal-(bd.isBlanco?effTotalImp:0)-cert.total)}</b></div>
               <div className="qc-l">
                 <span>Flete<em>{qtyTxt}</em></span>
                 <span className="qc-lr">{ovIn(hasRateOv?rateOvStr:String(Number(ch.fleteRate||0)),hasRateOv,v=>setRateOverride(p=>({...p,[ch.key]:v})),sinOv(setRateOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(fleteEff-batt)}</b></span>
@@ -16741,7 +16741,7 @@ function AdminCalculator({token}){
               {bd.isBlanco&&bd.isAereo&&<div className="qc-l"><span>Recargo por sobrepeso</span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOwOv?owOvStr:String(owAuto),hasOwOv&&Math.abs(owEff-owAuto)>0.01,v=>setOwOverride(p=>({...p,[ch.key]:v})),sinOv(setOwOverride,ch.key))}</span></div>}
               {Number(ch.seguro||0)>0&&L("Seguro",ch.seguro)}
               {bd.isBlanco&&<>
-                <div className="qc-g"><span>Impuestos{cert.total>0?" y certificados":""}</span><b>USD {fmt(effTotalImp+cert.total)}</b></div>
+                <div className="qc-grp"><span>Impuestos{cert.total>0?" y certificados":""}</span><b>USD {fmt(effTotalImp+cert.total)}</b></div>
                 {bd.derechos>0&&L("Derechos",bd.derechos)}
                 {bd.tasaE>0&&L("Tasa estadística",bd.tasaE)}
                 {bd.iva>0&&L("IVA",bd.iva)}
