@@ -1994,7 +1994,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       let totalTax,flete,seguro,totalAbonar,surcharge=0,surchargePct=0;
       // Desglose del cálculo automático, para poder pre-llenar el editor manual con cada
       // concepto por separado (16/09/2026): derechos, estadística, IVA, desaduanaje y baterías.
-      const taxAuto={die:0,te:0,iva:0,des:0};let battAuto=0;
+      const taxAuto={die:0,te:0,iva:0,des:0,ivaAdic:0,iigg:0,iibb:0};let battAuto=0;
       if(hasStoredBudget){
         totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);
         const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
@@ -2052,6 +2052,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const iiggR=tasaODefault(it.iigg_rate,TASA_IIGG);
           const iibbR=tasaODefault(it.iibb_rate,TASA_IIBB);
           t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;
+          taxAuto.ivaAdic+=bi*ivaAdicR;taxAuto.iigg+=bi*iiggR;taxAuto.iibb+=bi*iibbR;
         }
         else{const desemb=getDesembolso(taxCifLocal)*pct;t+=desemb+desemb*0.21;taxAuto.des+=desemb;}
         totalTax+=t;});
@@ -2138,6 +2139,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         };
         if(manualTax&&op.channel==="aereo_blanco"){const des=r2(num(manualTax.des));const die=r2(num(manualTax.die)),te=r2(num(manualTax.te)),iva=r2(num(manualTax.iva)),bat=r2(num(manualTax.bat));
           body.budget_tax_detail={...(op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{}),derechos:die,tasaE:te,iva,desembolso:des,ivaDesembolso:r2(des*0.21),battExtra:bat,desembolso_manual:true,impuestos_base_manual:r2(die+te+iva)};}
+        // Marítimo LCL/FCL (22/10/2026): los seis conceptos impositivos editables uno por uno.
+        if(manualTax&&op.channel==="maritimo_blanco"){const v=(k)=>r2(num(manualTax[k]));const des=v("des");
+          body.budget_tax_detail={...(op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{}),derechos:v("die"),tasaE:v("te"),iva:v("iva"),ivaAdic:v("ivaAdic"),iigg:v("iigg"),iibb:v("iibb"),...(des>0||manualTax.conDes?{desembolso:r2(des/1.21),ivaDesembolso:r2(des-des/1.21)}:{}),impuestos_manual:true};}
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
         setOp(p=>({...p,...body}));
         flash("Presupuesto manual guardado");
@@ -2171,6 +2175,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         // budget_flete sigue siendo el TOTAL del flete con el recargo adentro: lo leen el portal,
         // el link de retiro, los PDF y la factura (41 usos). El recargo se guarda aparte en
         // budget_tax_detail para poder desglosarlo y editarlo, sin cambiarle el significado.
+        if(op.channel==="maritimo_blanco"){handleManualChange("budget_taxes",String(rr(["die","te","iva","ivaAdic","iigg","iibb","des"].reduce((a,k)=>a+toNum(next[k]),0))));return;}
         if(field==="bat"||field==="flete")handleManualChange("budget_flete",String(rr(toNum(next.flete)+toNum(next.bat))));
         else handleManualChange("budget_taxes",String(rr(toNum(next.die)+toNum(next.te)+toNum(next.iva)+toNum(next.des)*1.21)));};
       const f2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2216,6 +2221,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   let bat=Number(td.battExtra||0);if(!(bat>0))bat=op.has_battery?battAuto:0;
                   if(fleteTot-bat<-0.01)bat=0;
                   setManualTax({des:st(des),die:st(die),te:st(te),iva:st(iva),bat:st(bat),flete:st(Math.max(0,fleteTot-bat))});}
+                // Marítimo LCL/FCL: derechos, estadística, IVA, IVA adicional, ganancias e IIBB, cada uno editable.
+                else if(op.channel==="maritimo_blanco"&&taxesBilledByArgencargo){const r2=(v)=>Math.round(Number(v||0)*100)/100;const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};const taxesNow=isManual?Number(op.budget_taxes||0):r2(totalTax);
+                  const st=(v)=>String(r2(v)).replace(".",",");
+                  let x={die:Number(td.derechos||0),te:Number(td.tasaE||0),iva:Number(td.iva||0),ivaAdic:Number(td.ivaAdic||0),iigg:Number(td.iigg||0),iibb:Number(td.iibb||0)};
+                  if(!(Object.values(x).reduce((a,b)=>a+b,0)>0))x={die:taxAuto.die,te:taxAuto.te,iva:taxAuto.iva,ivaAdic:taxAuto.ivaAdic,iigg:taxAuto.iigg,iibb:taxAuto.iibb};
+                  const des=r2(Number(td.desembolso||0)+Number(td.ivaDesembolso||0));
+                  // Si el desglose no cierra con el total guardado, la diferencia va a derechos (el total no se mueve).
+                  const dif=r2(taxesNow)-r2(Object.values(x).reduce((a,b)=>a+b,0)+des);if(Math.abs(dif)>0.01)x.die=Math.max(0,x.die+dif);
+                  setManualTax({die:st(x.die),te:st(x.te),iva:st(x.iva),ivaAdic:st(x.ivaAdic),iigg:st(x.iigg),iibb:st(x.iibb),des:des>0?st(des):"",conDes:des>0});}
                 else setManualTax(null);
                 setEditandoPresu(true);}} style={b("rgba(255,255,255,0.07)","#fff","1px solid rgba(255,255,255,0.14)")}>✎ Editar presupuesto</button>
             </>}
@@ -2290,7 +2304,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <b>Editando:</b> el total se recalcula solo al cambiar cualquier valor. Una vez guardado, el sistema deja de recalcularlo al tocar bultos o ítems — para eso está "Recalcular automático".
           </div>
           {isBlanco?<>
-            {manualTax&&op.channel==="aereo_blanco"&&taxesBilledByArgencargo?<>
+            {manualTax&&op.channel==="maritimo_blanco"&&taxesBilledByArgencargo?<>
+              {[["die","Derechos de importación"],["te","Tasa de estadística"],["iva","IVA de importación"],["ivaAdic","IVA adicional"],["iigg","Ganancias"],["iibb","Ingresos brutos"],...(manualTax.conDes?[["des","Gasto documental (con IVA)"]]:[])].map(([k,l])=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{l} (USD)</span><input type="text" inputMode="decimal" value={manualTax[k]} placeholder="0,00" onChange={e=>handleTaxSplit(k,e.target.value)} style={manualInputStyle}/></div>)}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:4}}><span style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Total impuestos (USD)</span><span style={{fontSize:13,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{f2(toNum(op.budget_taxes))}</span></div>
+            </>:manualTax&&op.channel==="aereo_blanco"&&taxesBilledByArgencargo?<>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Derechos de importación (USD)</span><input type="text" inputMode="decimal" value={manualTax.die} placeholder="0,00" onChange={e=>handleTaxSplit("die",e.target.value)} style={manualInputStyle}/></div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Tasa estadística (USD)</span><input type="text" inputMode="decimal" value={manualTax.te} placeholder="0,00" onChange={e=>handleTaxSplit("te",e.target.value)} style={manualInputStyle}/></div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>IVA de importación (USD)</span><input type="text" inputMode="decimal" value={manualTax.iva} placeholder="0,00" onChange={e=>handleTaxSplit("iva",e.target.value)} style={manualInputStyle}/></div>
