@@ -97,7 +97,7 @@ function useDatos(token, rol) {
   const cargar = useCallback(async () => {
     const plata = rol !== "empleado";
     const [reqs, comms, ops, cobros, pagos, earnings, socios, settings, clientesSocio] = await Promise.all([
-      dq("gi_quote_requests", { token, filters: "?select=*,clients(id,first_name,last_name,client_code,whatsapp,email,gi_partner_id,gi_commission_pct),gi_quotes(*),gi_quote_request_products(id)&order=created_at.desc" }),
+      dq("gi_quote_requests", { token, filters: "?select=*,clients(id,first_name,last_name,client_code,whatsapp,email,gi_partner_id,gi_commission_pct),gi_quotes(*,gi_quote_products(description)),gi_quote_request_products(id,description)&order=created_at.desc" }),
       dq("gi_quote_communications", { token, filters: "?select=quote_id,request_id,type,created_at,meta,content&order=created_at.desc&limit=2000" }),
       dq("operations", { token, filters: "?service_type=eq.gestion_integral&select=id,operation_code,status,channel,origin,client_id,description,budget_total,total_anticipos,eta,closed_at,created_at,gi_partner_id,gi_admin_owned,gi_commission_pct,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(id,first_name,last_name,client_code,whatsapp,gi_partner_id,gi_commission_pct)&order=created_at.desc" }),
       dq("operation_client_payments", { token, filters: "?select=operation_id,amount_usd,payment_date,operations!inner(service_type)&operations.service_type=eq.gestion_integral" }),
@@ -117,6 +117,12 @@ function useDatos(token, rol) {
 }
 
 const quoteDe = (r) => (Array.isArray(r?.gi_quotes) ? [...r.gi_quotes].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0] : null) || null;
+// Productos de una cotización (los de la última cotización armada, si no los que pidió el cliente).
+const productosDe = (r) => {
+  const deQuote = (quoteDe(r)?.gi_quote_products || []).map((p) => p.description);
+  const lista = (deQuote.some((x) => x?.trim()) ? deQuote : (r?.gi_quote_request_products || []).map((p) => p.description)).map((x) => (x || "").trim()).filter(Boolean);
+  return lista.length ? lista.slice(0, 2).join(" · ") + (lista.length > 2 ? ` +${lista.length - 2}` : "") : "";
+};
 const vencida = (q) => q?.expires_at && ["draft", "sent"].includes(q.status) && new Date(q.expires_at) < new Date(new Date().toDateString());
 
 // Estado legible de una cotización + último movimiento del cliente.
@@ -359,11 +365,12 @@ function Tablero({ cols, movil, render, vacio = "—" }) {
   </div>;
 }
 
-function Tarjeta({ onClick, arriba, titulo, abajo, acento }) {
+function Tarjeta({ onClick, arriba, titulo, sub, abajo, acento }) {
   return <div onClick={onClick} style={{ padding: "11px 12px", background: "rgba(10,22,40,0.7)", border: `1px solid ${C.line}`, borderLeft: `3px solid ${acento || C.line}`, borderRadius: 10, cursor: "pointer", transition: "border-color 120ms" }}
     onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(201,164,106,0.4)"; e.currentTarget.style.borderLeftColor = acento || C.gold; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.line; e.currentTarget.style.borderLeftColor = acento || C.line; }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>{arriba}</div>
     <p style={{ margin: "6px 0 0", fontWeight: 700, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}</p>
+    {sub && <p style={{ margin: "2px 0 0", fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>}
     {abajo && <div style={{ marginTop: 6, fontSize: 11.5, color: C.mute, display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>{abajo}</div>}
   </div>;
 }
@@ -385,7 +392,7 @@ function Cotizaciones({ ctx }) {
   const [nueva, setNueva] = useState(false);
   useEffect(() => { try { const n = JSON.parse(sessionStorage.getItem("gi_nav") || "{}"); if (n.nueva) { setNueva(true); sessionStorage.setItem("gi_nav", JSON.stringify({ p: "cotizaciones" })); } } catch {} }, []);
   const s = q.trim().toLowerCase();
-  const filas = d.reqs.map((r) => ({ r, e: estadoCot(r, d.comms) })).filter((x) => !s || `${x.r.request_code} ${nombre(x.r.clients)} ${x.r.clients?.client_code || ""}`.toLowerCase().includes(s));
+  const filas = d.reqs.map((r) => ({ r, e: estadoCot(r, d.comms) })).filter((x) => !s || `${x.r.request_code} ${nombre(x.r.clients)} ${x.r.clients?.client_code || ""} ${productosDe(x.r)}`.toLowerCase().includes(s));
   const de = (ks) => filas.filter((x) => ks.includes(x.e.k));
   const cols = [
     { k: "pc", l: "Por cotizar", c: C.amber, items: de(["por_cotizar"]) },
@@ -397,17 +404,17 @@ function Cotizaciones({ ctx }) {
     const qt = e.q; const total = qt ? (totalAceptado(qt) || canalMasBarato(qt)?.t || 0) : 0;
     return <Tarjeta key={r.id} onClick={() => ir("cotizaciones", { id: r.id })} acento={e.c}
       arriba={<><Codigo>{r.request_code}</Codigo><span style={{ fontSize: 11, color: e.c, fontWeight: 700 }}>{e.k === "enviada" ? (e.sinAbrir ? "sin abrir" : `vista ${hace(e.ultimaVista)}`) : hace(r.created_at)}</span></>}
-      titulo={nombre(r.clients)}
+      titulo={productosDe(r) || nombre(r.clients)} sub={productosDe(r) ? nombre(r.clients) : null}
       abajo={<><span>{total > 0 ? `${totalAceptado(qt) ? "" : "desde "}${usd0(total)}` : "sin precio"}</span>{qt?.expires_at && e.k === "enviada" ? <span>vence {fmtDateShort(qt.expires_at)}</span> : null}</>} />;
   };
   const cerradas = de(["convertida", "rechazada", "vencida"]);
   return <div>
-    <Titulo eyebrow="Gestión Integral" sub="Cada pedido de cotización desde que entra hasta que el cliente responde. Tocá una para ver el detalle, el historial y mandarla." right={<Btn v="gold" onClick={() => setNueva(true)}>+ Nueva cotización</Btn>}>Cotizaciones</Titulo>
-    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código o cliente" style={{ ...inp, marginBottom: 14, maxWidth: movil ? "100%" : 360 }} />
+    <Titulo eyebrow="Gestión Integral" right={<Btn v="gold" onClick={() => setNueva(true)}>+ Nueva cotización</Btn>}>Cotizaciones</Titulo>
+    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por código, cliente o producto" style={{ ...inp, marginBottom: 14, maxWidth: movil ? "100%" : 360 }} />
     <Tablero cols={cols} movil={movil} render={tarjeta} vacio="Ninguna" />
     <Historial titulo="Convertidas, rechazadas y vencidas" items={cerradas} render={({ r, e }) => <Fila key={r.id} onClick={() => ir("cotizaciones", { id: r.id })}>
       <Codigo>{r.request_code}</Codigo>
-      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombre(r.clients)}</span>
+      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{productosDe(r) ? <>{productosDe(r)} <span style={{ fontWeight: 500, color: C.mute }}>· {nombre(r.clients)}</span></> : nombre(r.clients)}</span>
       {e.vistas > 0 && <span style={{ fontSize: 11.5, color: C.mute }}>{e.vistas} vistas</span>}
       <Pill c={e.c}>{e.k === "convertida" && e.q?.operation_id ? `→ ${d.ops.find((o) => o.id === e.q.operation_id)?.operation_code || "Operación"}` : e.l}</Pill>
     </Fila>} />
