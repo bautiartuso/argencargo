@@ -16724,7 +16724,6 @@ function AdminCalculator({token}){
               <div className="qc-ctitle">
                 <div style={{minWidth:0}}><p className="qc-cn">{ch.name}</p><p className="qc-ci">{ch.info}</p></div>
               </div>
-              {ch.notVisibleToClient&&<p className="qc-cwarn">⚠ {ch.notVisibleToClient}</p>}
             </div>
             <div className="qc-lines">
               {/* Agrupado (22/10/2026): Flete y cargos / Impuestos, cada grupo con su subtotal. */}
@@ -16790,13 +16789,17 @@ function AdminCalculator({token}){
               const ganImp=impCobrado-impPagado;
               const gan=ganFlete+ganImp;const pct=effTotal>0?gan/effTotal*100:0;
               const verde=(v)=>({color:v>=0?"#4ade80":"#f87171"});
-              return <div className="qc-cost">
+              // El aviso del canal va abajo (22/10/2026): arriba estiraba la fila del título en las 3 tarjetas.
+              return <div style={{display:"flex",flexDirection:"column",gap:10,alignSelf:"start",minWidth:0}}>
+                {ch.notVisibleToClient&&<p className="qc-cwarn" style={{margin:0}}>⚠ {ch.notVisibleToClient}</p>}
+                <div className="qc-cost">
                 <div className="qc-l"><span>Costo flete</span><span className="qc-lr">{ovIn(hasC?ovC:String(rateDef),hasC&&Math.abs(rate-rateDef)>0.001,v=>setCostOverride(o=>({...o,[ch.key]:v})),sinOv(setCostOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(cFlete)}</b></span></div>
                 <div className="qc-l"><span>Ganancia flete</span><b style={verde(ganFlete)}>USD {fmt(ganFlete)}</b></div>
                 {bd.impReal&&<div className="qc-l" title={`Pagás USD ${fmt(impPagado)}: flete certificado USD ${fmt(bd.impReal.certReal)}, IVA adicional 10,5 %, Ganancias 6 %, IIBB 3 %`}><span>Ganancia impuestos<em>pagás USD {fmt(impPagado)}</em></span><b style={verde(ganImp)}>USD {fmt(ganImp)}</b></div>}
                 <div className="qc-l qc-sum qc-gan"><span>Ganancia</span><b style={verde(gan)}>USD {fmt(gan)} <span style={{fontSize:11,opacity:0.8}}>· {pct.toFixed(0)}%</span></b></div>
+                </div>
               </div>;
-            })():<div/>}
+            })():(ch.notVisibleToClient?<p className="qc-cwarn" style={{margin:0,alignSelf:"start"}}>⚠ {ch.notVisibleToClient}</p>:<div/>)}
           </div>;
         })}
       </div>)}
