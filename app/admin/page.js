@@ -2463,7 +2463,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v?parseInt(v):0)} small/>
         </div>
         {isBlanco&&!isGI&&<div style={{margin:"0 -18px",padding:"12px 18px 0",borderTop:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.015)",borderRadius:"0 0 16px 16px"}}>
-          <p style={{margin:"0 0 8px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>Alícuotas</p>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:"0 10px"}}>
             <Inp label="DIE %" type="number" value={it.import_duty_rate??0} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
