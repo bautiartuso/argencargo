@@ -4492,7 +4492,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
     </>}
 
-    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onReload={reloadOp} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
+    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onReload={reloadOp} onEntregarPaga={async()=>{try{const cerro=await entregarYCerrar(op,token);const ahora=new Date().toISOString();setOp(p=>({...p,delivery_completed_at:p.delivery_completed_at||ahora,...(cerro?{status:"operacion_cerrada",closed_at:p.closed_at||ahora}:{})}));if(cerro)setEstadoGuardado("operacion_cerrada");flash(cerro?"Entregada y cerrada":"Marcado como entregado");}catch(e){flash("No se pudo: "+e.message);}}} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
@@ -5625,6 +5625,17 @@ function BlogPanel({token}){
 // Replica el flujo de cobro del editor de op (operation_client_payments + movimiento automatico
 // en la CC de SOLFIN si es transferencia a la financiera + comprobante al bucket) para que el
 // empleado/bot no tenga que abrir la operacion. NO cierra la op salvo cobro exacto (is_collected).
+// Entregada y paga (22/10/2026): se marca entregada y se cierra en el momento, con el mail de cierre.
+// Gestión Integral queda afuera (su cierre liquida la comisión del socio y lo decide el panel GI).
+async function entregarYCerrar(op,token,{yaEntregada}={}){
+  const ahora=new Date().toISOString();
+  const gi=op.service_type==="gestion_integral";
+  const body={...(yaEntregada?{}:{delivery_completed_at:ahora}),...(gi?{}:{status:"operacion_cerrada",closed_at:op.closed_at||ahora})};
+  const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+  if(!Array.isArray(r))throw new Error(r?.message||"No se pudo guardar");
+  if(!gi){try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"cerrada"})});}catch(e){console.error("notify cerrada",e);}}
+  return !gi;
+}
 function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onClose,onSaved}){
   const celu=useEsCelu();
   const hoy=hoyAR();
@@ -5741,37 +5752,47 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
           await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:excedente,description:`Excedente de ${op.operation_code}`,payment_method:metodo==="crypto"?"cripto":metodo,currency:"USD",amount_original:excedente,movement_date:hoy}});
         }
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
+        // Cobró todo: si además se entrega (o ya estaba entregada), la operación se cierra ya.
+        if(upd.is_collected&&(!soloCobro||op.delivery_completed_at)){await entregarYCerrar(op,token,{yaEntregada:soloCobro});onSaved();return;}
       }
       if(!soloCobro)await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});
       onSaved();
     }catch(e){setErr("Error: "+e.message);setGuardando(false);return;}
   };
-  const inp={width:"100%",padding:"10px 12px",fontSize:celu?16:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'};
-  const lbl={display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const segBtn=(act)=>({flex:1,padding:"9px 10px",fontSize:12.5,fontWeight:800,borderRadius:9,cursor:"pointer",border:`1.5px solid ${act?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.12)"}`,background:act?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:act?"#E8C99B":"rgba(255,255,255,0.5)"});
+  // Rediseño 22/10/2026: misma familia que el Presupuesto (cajas oscuras, segmentados, total grande).
+  const inp={width:"100%",height:46,padding:"0 14px",fontSize:celu?16:15,fontWeight:700,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:11,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"',fontFamily:"inherit"};
+  const lbl={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.1em"};
+  const segBtn=(act)=>({flex:1,height:40,padding:"0 10px",fontSize:13,fontWeight:800,borderRadius:8,cursor:"pointer",border:"none",fontFamily:"inherit",background:act?"rgba(232,208,152,0.16)":"transparent",color:act?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:act?"inset 0 0 0 1px rgba(232,208,152,0.45)":"none",transition:"all .14s"});
+  const segBox={display:"flex",gap:4,padding:4,borderRadius:12,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.07)",marginBottom:16};
   const nombre=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"";
   return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:celu?"12px 10px":"34px 16px",overflowY:"auto"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,padding:celu?"18px 16px":"20px 22px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:celu?"0 auto auto":"auto"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>{soloCobro?"💰 Registrar cobro":"✓ Entregar y cobrar"}</h3>
-        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:500,background:"linear-gradient(180deg,#152340,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,padding:celu?"20px 16px":"24px 24px 22px",boxShadow:"0 30px 80px rgba(0,0,0,0.6)",margin:celu?"0 auto auto":"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:6}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{width:40,height:40,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#22c55e,#15803d)",boxShadow:"0 8px 20px rgba(34,197,94,0.3)",flexShrink:0}}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">{soloCobro?<><path d="M12 2v20"/><path d="M17 6.5c0-1.9-2.2-3.5-5-3.5s-5 1.6-5 3.5 2.2 3.5 5 3.5 5 1.6 5 3.5-2.2 3.5-5 3.5-5-1.6-5-3.5"/></>:<path d="M5 12.5l4.5 4.5L19 7.5"/>}</svg></span>
+          <h3 style={{fontSize:18,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>{soloCobro?"Registrar cobro":"Entregar y cobrar"}</h3>
+        </div>
+        <button onClick={onClose} aria-label="Cerrar" style={{width:34,height:34,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",fontSize:16,cursor:"pointer",lineHeight:1}}>✕</button>
       </div>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}><strong style={{fontFamily:"monospace",color:"#E8C99B"}}>{op.operation_code}</strong> · {nombre}{!sinMontos&&<> · saldo <strong style={{color:saldo>0.005?"#fbbf24":"#22c55e"}}>USD {saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></>}</p>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",margin:"14px 0 18px",padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{minWidth:0}}><p style={{margin:0,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:"#E8D098"}}>{op.operation_code}</p><p style={{margin:"2px 0 0",fontSize:14,fontWeight:700,color:"#fff"}}>{nombre}</p></div>
+        {!sinMontos&&<div style={{textAlign:"right"}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>Saldo</p><p style={{margin:"2px 0 0",fontSize:22,fontWeight:800,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",color:saldo>0.005?"#fbbf24":"#4ade80"}}>USD {saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>}
+      </div>
 
-      {!soloCobro&&<label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"rgba(255,255,255,0.7)",marginBottom:12,cursor:"pointer"}}>
-        <input type="checkbox" checked={soloEntregar} onChange={e=>setSoloEntregar(e.target.checked)} style={{accentColor:"#B8956A"}}/>
-        Solo marcar entregada (sin registrar cobro ahora)
-      </label>}
+      {!soloCobro&&<div onClick={()=>setSoloEntregar(v=>!v)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:16,borderRadius:12,background:"rgba(0,0,0,0.2)",border:`1px solid ${soloEntregar?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.07)"}`,cursor:"pointer",userSelect:"none"}}>
+        <div style={{flex:1}}><p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff"}}>Solo marcar entregada</p><p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Queda en entregadas con saldo pendiente</p></div>
+        <span style={{width:40,height:22,borderRadius:999,position:"relative",flexShrink:0,background:soloEntregar?"#fbbf24":"rgba(255,255,255,0.12)",transition:"background .16s"}}><span style={{position:"absolute",top:3,left:soloEntregar?21:3,width:16,height:16,borderRadius:"50%",background:soloEntregar?"#0A1628":"#fff",transition:"left .18s"}}/></span>
+      </div>}
 
       {!soloEntregar&&<>
-      <label style={lbl}>Método de pago</label>
-      <div style={{display:"flex",gap:6,marginBottom:12}}>
-        {[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["crypto","🪙 Cripto"]].map(([k,l])=><button key={k} type="button" onClick={()=>setMetodo(k)} style={segBtn(metodo===k)}>{l}</button>)}
+      <label style={lbl}>Cómo pagó</label>
+      <div style={segBox}>
+        {[["efectivo","Efectivo"],["transferencia","Transferencia"],["crypto","Cripto"]].map(([k,l])=><button key={k} type="button" onClick={()=>setMetodo(k)} style={segBtn(metodo===k)}>{l}</button>)}
       </div>
 
       {metodo==="efectivo"&&<>
         <label style={lbl}>Moneda del efectivo</label>
-        <div style={{display:"flex",gap:6,marginBottom:12}}>
+        <div style={segBox}>
           {[["USD","Dólares"],["ARS","Pesos"]].map(([k,l])=><button key={k} type="button" onClick={()=>setMoneda(k)} style={segBtn(moneda===k)}>{l}</button>)}
         </div>
         {op.cash_arrival_amount&&<p style={{fontSize:11.5,color:"#4ade80",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:8,padding:"7px 10px",margin:"0 0 12px"}}>💵 Avisó que llega con <b>{op.cash_arrival_currency||"USD"} {Number(op.cash_arrival_amount).toLocaleString("es-AR")}</b>{cambio>0?` — cambio a devolver ≈ USD ${cambio.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:""}</p>}
@@ -5787,11 +5808,11 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
           <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" placeholder="1500" style={inp}/>
         </div>}
       </div>
-      {esArs&&cobroUsd>0&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"-4px 0 12px"}}>= USD {cobroUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+      {esArs&&cobroUsd>0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"-4px 0 16px"}}>= <b style={{color:"#4ade80",fontSize:15}}>USD {cobroUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></p>}
 
       {metodo==="transferencia"&&<>
         <label style={lbl}>¿A dónde entró?</label>
-        <div style={{display:"flex",gap:6,marginBottom:12}}>
+        <div style={segBox}>
           {[["financiera","Financiera (SolFin)"],["cuenta","Otra cuenta"]].map(([k,l])=><button key={k} type="button" onClick={()=>setDestino(k)} style={segBtn(destino===k)}>{l}</button>)}
         </div>
         {destino==="financiera"&&<div style={{marginBottom:12}}>
@@ -5815,8 +5836,8 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
       {err&&<div style={{padding:"9px 12px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,fontSize:12,color:"#ff6b6b",marginBottom:12}}>{err}</div>}
 
       <div style={{display:"flex",gap:8,flexDirection:celu?"column":"row"}}>
-        <Btn fullWidth={celu} onClick={guardar} disabled={guardando||subiendo}>{guardando?"Guardando…":soloCobro?"💰 Registrar cobro":soloEntregar?"✓ Marcar entregada":"✓ Cobrar y marcar entregada"}</Btn>
-        <Btn fullWidth={celu} variant="secondary" onClick={onClose} disabled={guardando}>Cancelar</Btn>
+        <button type="button" onClick={guardar} disabled={guardando||subiendo} style={{flex:1,height:48,borderRadius:13,border:"none",background:soloEntregar?"linear-gradient(135deg,#fbbf24,#d97706)":"linear-gradient(135deg,#22c55e,#15803d)",color:soloEntregar?"#0A1628":"#fff",fontSize:14.5,fontWeight:800,cursor:guardando?"wait":"pointer",fontFamily:"inherit",boxShadow:"0 10px 24px rgba(0,0,0,0.3)",opacity:guardando||subiendo?0.6:1}}>{guardando?"Guardando…":soloCobro?"Registrar cobro":soloEntregar?"Marcar entregada":"Cobrar y entregar"}</button>
+        <button type="button" onClick={onClose} disabled={guardando} style={{height:48,padding:"0 20px",borderRadius:13,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
       </div>
     </div>
   </div>;
@@ -5950,6 +5971,13 @@ function EntregasPanel({token,onOpenOp,vista}){
   };
   useEffect(()=>{load();},[token]);
 
+  // "Entregar": si ya está paga no hay nada que cobrar → entregada y cerrada al toque. Si debe, abre el cobro.
+  const entregar=async(o)=>{
+    const paga=!!o.is_collected||(!sinMontos&&saldoFor(o)<=0.005);
+    if(!paga){setCobroModal({op:o});return;}
+    try{const cerro=await entregarYCerrar(o,token);toast(`✓ ${o.operation_code} entregada${cerro?" y cerrada":""}`,"success");load();}
+    catch(e){toast(`No se pudo: ${e.message}`,"error");}
+  };
   const markDelivered=async(o)=>{
     const now=new Date().toISOString();
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:now}});
@@ -6376,7 +6404,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       const mb=(l,fn,prim)=><button key={l} type="button" onClick={fn} style={{flex:prim?1.3:1,minWidth:0,height:42,borderRadius:11,border:prim?`1px solid ${vcVivo?VC_VERDE:GOLD_DEEP}`:`1px solid ${vcVivo?K.btnBd:"rgba(255,255,255,0.14)"}`,background:prim?(vcVivo?VC_VERDE:GOLD_GRADIENT):(vcVivo?K.btnBg:"rgba(255,255,255,0.05)"),color:prim?(vcVivo?"#fff":"#0A1628"):(vcVivo?K.btnTx:"rgba(255,255,255,0.88)"),fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"0 8px"}}>{l}</button>;
       const acciones=contexto==="aviso"?[mb("📨 Avisar",()=>enviarAviso(o),true),mb("💬 WA",()=>waAviso(o)),mb("📋 Link",()=>copyLink(o))]
         :contexto==="esperando"?[mb("🔁 Recordar",()=>waAviso(o),true),mb("Coordinar",()=>setCoordinarModal(o)),mb("📋",()=>copyLink(o))]
-        :contexto==="porentregar"?[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",()=>setCoordinarModal(o)),mb("✓ Entregar",()=>setCobroModal({op:o}),true)]
+        :contexto==="porentregar"?[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",()=>setCoordinarModal(o)),mb("✓ Entregar",()=>entregar(o),true)]
         :contexto==="acobrar"?[mb("💬 WA",()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)),mb("↺",()=>undoDelivered(o)),mb("→ CC",()=>cerrarACC([o])),mb("💰 Cobrar",()=>setCobroModal({op:o,soloCobro:true}),true)]
         :[];
       const tel=dc.telefono||o.clients?.whatsapp;
@@ -6448,11 +6476,11 @@ function EntregasPanel({token,onOpenOp,vista}){
         {contexto==="porentregar"&&(vcVivo?<>
           {btnClaro("WA",()=>waSimple(o))}
           {btnClaro("🖊",()=>setCoordinarModal(o))}
-          {btnClaro("✓ Entregar",()=>setCobroModal({op:o}),true)}
+          {btnClaro("✓ Entregar",()=>entregar(o),true)}
         </>:<>
           <Btn small variant="secondary" onClick={()=>waSimple(o)}>WA</Btn>
           <Btn small variant="secondary" onClick={()=>setCoordinarModal(o)}>🖊</Btn>
-          <Btn small onClick={()=>setCobroModal({op:o})}>✓ Entregar</Btn>
+          <Btn small onClick={()=>entregar(o)}>✓ Entregar</Btn>
         </>)}
         {contexto==="acobrar"&&<>
           <Btn small variant="secondary" onClick={()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)}>WA</Btn>
@@ -6657,7 +6685,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     </Bloque>}
 
     {cobroModal&&<CobroEntregaModal op={cobroModal.op||cobroModal} saldo={saldoFor(cobroModal.op||cobroModal)} cobradoPrevio={Number(cobrosByOp[(cobroModal.op||cobroModal).id]||0)} token={token} sinMontos={sinMontos} soloCobro={!!cobroModal.soloCobro} onClose={()=>setCobroModal(null)} onSaved={()=>{setCobroModal(null);load();toast("✓ Registrado","success");}}/>}
-    {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} token={token} onClose={()=>setCoordinarModal(null)} onEntregada={()=>{const o=coordinarModal;setCoordinarModal(null);setCobroModal({op:o});}} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
+    {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} token={token} onClose={()=>setCoordinarModal(null)} onEntregada={()=>{const o=coordinarModal;setCoordinarModal(null);entregar(o);}} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
   </div>;
 }
 
@@ -6665,7 +6693,7 @@ function EntregasPanel({token,onOpenOp,vista}){
 // cliente no haya completado el link se puede elegir cómo se entrega, el día, la forma de pago y
 // pasarle el importe; arriba siempre está el estado del aviso y el link. Inspirada en MyBox.
 const FRANJAS_ENTREGA={oficina:["10:00 a 12:00","12:00 a 14:00","14:00 a 16:00","16:00 a 18:00"],propio:["10:00 a 13:00","13:00 a 16:00","16:00 a 19:00"]};
-function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
+function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload}){
   const celu=useEsCelu();
   const [tc,setTc]=useState("");
   const [blue,setBlue]=useState(0);
@@ -6945,7 +6973,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
     {/* Entregar / cobrar */}
     <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
       {estado!=="entregada"?<>
-        {accion(pagada?"✓ Marcar entregada":"✓ Entregar y cobrar",()=>pagada?onMarkDelivered():setCobro({soloCobro:false}),true)}
+        {accion(pagada?"✓ Marcar entregada":"✓ Entregar y cobrar",()=>pagada?(onEntregarPaga||onMarkDelivered)():setCobro({soloCobro:false}),true)}
         {!pagada&&accion("Solo marcar entregada",onMarkDelivered)}
         {!pagada&&accion("💰 Registrar cobro",()=>setCobro({soloCobro:true}))}
       </>:<>
