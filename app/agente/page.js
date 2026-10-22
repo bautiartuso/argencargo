@@ -1678,6 +1678,8 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // constancia cuando el agente reembala sin avisar.
   const [dispatchPhotoUrl,setDispatchPhotoUrl]=useState(flight.dispatch_photo_url||"");
   const [subiendoFoto,setSubiendoFoto]=useState(false);
+  // ⌘V con el vuelo abierto pega la captura del desglose (21/10/2026), además de subirla desde archivos.
+  usePegarFoto(!subiendoFoto,(f)=>subirFotoDespacho(f));
   const subirFotoDespacho=async(file)=>{
     if(!file)return;
     setSubiendoFoto(true);
@@ -1983,10 +1985,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
               <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
               {dispatchPhotoUrl?<>
                 <img src={dispatchPhotoUrl} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.15)"}}/>
-                <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
+                <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change} · {t.paste_photo||"o pegala con ⌘V"}</p></div>
               </>:<>
                 <span style={{fontSize:20}}>{subiendoFoto?"⏳":"📎"}</span>
-                <p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
+                <p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":<>{t.dispatch_photo_hint} <b style={{color:"var(--gold)"}}>{t.paste_photo||"o pegala con ⌘V"}</b></>}</p>
               </>}
             </label>
           </div>
@@ -2015,10 +2017,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
           {dispatchPhotoUrl?<>
             <img src={dispatchPhotoUrl} alt="" onClick={e=>{e.preventDefault();setLightboxPhoto(dispatchPhotoUrl);}} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.15)",cursor:"zoom-in"}}/>
-            <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
+            <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change} · {t.paste_photo||"o pegala con ⌘V"}</p></div>
           </>:<>
             <span style={{fontSize:20}}>{subiendoFoto?"⏳":"📎"}</span>
-            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
+            <p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":<>{t.dispatch_photo_hint} <b style={{color:"var(--gold)"}}>{t.paste_photo||"o pegala con ⌘V"}</b></>}</p>
           </>}
         </label>
       </div>
