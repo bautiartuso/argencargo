@@ -16101,6 +16101,11 @@ function AdminCalculator({token}){
     const tabla=tablaDesaduanaje(Date.now());
     const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
     let derechos=0,tasaE=0,iva=0,ivaAdic=0,iigg=0,iibb=0;
+    // Lo que Argencargo paga de verdad en marítimo LCL/FCL (22/10/2026): el flete se certifica a
+    // valor simbólico (cert_flete_maritimo_real, USD 50/m³), IVA adicional 10,5 %, Ganancias 6 %,
+    // IIBB 3 %. Al cliente se le cobra con el flete ficticio y 20/6/5: la diferencia es ganancia.
+    const certReal=isMaritimo?totCBM*(Number(config.cert_flete_maritimo_real)||50):0;
+    const real={derechos:0,tasaE:0,iva:0,ivaAdic:0,iigg:0,iibb:0};
     // Antidumping calzado: solo afecta la base imponible (DIE/TE/IVA/desaduanaje) — el
     // FOB real / seguro mostrado no cambian.
     const taxItems=isBlanco?applyAntidumpingFloor(items,config):items;
@@ -16125,11 +16130,14 @@ function AdminCalculator({token}){
           const iiggR=tasaODefault(it.iigg_rate,TASA_IIGG);
           const iibbR=tasaODefault(it.iibb_rate,TASA_IIBB);
           ivaAdic+=bi*ivaAdicR;iigg+=bi*iiggR;iibb+=bi*iibbR;
+          const cifR=(itemFob+certReal*pct)*1.01;const dieR=cifR*dr,teR=cifR*te,biR=cifR+dieR+teR;
+          real.derechos+=dieR;real.tasaE+=teR;real.iva+=biR*ivaR;real.ivaAdic+=biR*Math.min(0.105,ivaAdicR);real.iigg+=biR*Math.min(0.06,iiggR);real.iibb+=biR*Math.min(0.03,iibbR);
         }
       });
     }
     const desembolsoAuto=isBlanco&&isAereo?getDes(taxCif):0;
-    return {certFl,seguro,cif,derechos,tasaE,iva,ivaAdic,iigg,iibb,desembolsoAuto,isBlanco,isAereo,isMaritimo};
+    const impReal=isBlanco&&isMaritimo?{...real,certReal,total:Object.values(real).reduce((a,b)=>a+b,0)}:null;
+    return {certFl,seguro,cif,derechos,tasaE,iva,ivaAdic,iigg,iibb,desembolsoAuto,isBlanco,isAereo,isMaritimo,impReal};
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
@@ -16507,6 +16515,9 @@ function AdminCalculator({token}){
 .qc-card.off>:not(:first-child),.qc-card.off .qc-ctitle,.qc-card.off .qc-cwarn{opacity:.55}
 .qc-cwarn{font-size:11.5px;color:#fbbf24;margin:10px 0 0;line-height:1.4;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,0.07)}
 .qc-lines{display:flex;flex-direction:column;gap:7px;align-self:start}
+.qc-g{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;padding-top:11px;border-top:1px solid rgba(255,255,255,0.08);font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#E8D098}
+.qc-g.first{margin-top:0;padding-top:0;border-top:none}
+.qc-g b{font-size:13.5px;font-weight:800;color:#fff;letter-spacing:0;text-transform:none}
 .qc-l{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;color:rgba(255,255,255,0.6);min-height:24px}
 .qc-l em{font-style:normal;color:rgba(255,255,255,0.35);font-size:11.5px;margin-left:4px;white-space:nowrap}
 .qc-l b{color:#fff;font-weight:600;white-space:nowrap}
@@ -16700,6 +16711,8 @@ function AdminCalculator({token}){
               {ch.notVisibleToClient&&<p className="qc-cwarn">⚠ {ch.notVisibleToClient}</p>}
             </div>
             <div className="qc-lines">
+              {/* Agrupado (22/10/2026): Flete y cargos / Impuestos, cada grupo con su subtotal. */}
+              <div className="qc-g first"><span>{bd.isBlanco?"Flete y cargos":"Servicio"}</span><b>USD {fmt(effTotal-(bd.isBlanco?effTotalImp:0)-cert.total)}</b></div>
               <div className="qc-l">
                 <span>Flete<em>{qtyTxt}</em></span>
                 <span className="qc-lr">{ovIn(hasRateOv?rateOvStr:String(Number(ch.fleteRate||0)),hasRateOv,v=>setRateOverride(p=>({...p,[ch.key]:v})),sinOv(setRateOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(fleteEff-batt)}</b></span>
@@ -16712,6 +16725,7 @@ function AdminCalculator({token}){
               {bd.isBlanco&&bd.isAereo&&<div className="qc-l"><span>Recargo por sobrepeso</span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOwOv?owOvStr:String(owAuto),hasOwOv&&Math.abs(owEff-owAuto)>0.01,v=>setOwOverride(p=>({...p,[ch.key]:v})),sinOv(setOwOverride,ch.key))}</span></div>}
               {Number(ch.seguro||0)>0&&L("Seguro",ch.seguro)}
               {bd.isBlanco&&<>
+                <div className="qc-g"><span>Impuestos{cert.total>0?" y certificados":""}</span><b>USD {fmt(effTotalImp+cert.total)}</b></div>
                 {bd.derechos>0&&L("Derechos",bd.derechos)}
                 {bd.tasaE>0&&L("Tasa estadística",bd.tasaE)}
                 {bd.iva>0&&L("IVA",bd.iva)}
@@ -16751,13 +16765,20 @@ function AdminCalculator({token}){
               const hasC=ovC!=null&&String(ovC).trim()!=="";
               const rate=hasC?toN(ovC):rateDef;
               const cFlete=qty*rate;
-              const cImp=(bd.isBlanco?effTotalImp:0)+cert.total;
-              const costo=cFlete+cImp;const gan=effTotal-costo;const pct=effTotal>0?gan/effTotal*100:0;
+              // Ganancia = lo que queda del flete (flete + recargos + seguro − costo del flete) + la
+              // diferencia entre los impuestos cobrados y los que se pagan de verdad (solo LCL/FCL).
+              // Los certificados (INAL, seguridad eléctrica) se cobran al costo.
+              const impCobrado=bd.isBlanco?effTotalImp:0;
+              const impPagado=bd.impReal?bd.impReal.total:impCobrado;
+              const ganFlete=effTotal-impCobrado-cert.total-cFlete;
+              const ganImp=impCobrado-impPagado;
+              const gan=ganFlete+ganImp;const pct=effTotal>0?gan/effTotal*100:0;
+              const verde=(v)=>({color:v>=0?"#4ade80":"#f87171"});
               return <div className="qc-cost">
                 <div className="qc-l"><span>Costo flete</span><span className="qc-lr">{ovIn(hasC?ovC:String(rateDef),hasC&&Math.abs(rate-rateDef)>0.001,v=>setCostOverride(o=>({...o,[ch.key]:v})),sinOv(setCostOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(cFlete)}</b></span></div>
-                {(bd.isBlanco||cert.total>0)&&L(cert.total>0?"Impuestos, despacho y certificados":"Impuestos y despacho",cImp)}
-                <div className="qc-l qc-sum"><span>Costo</span><b>USD {fmt(costo)}</b></div>
-                <div className="qc-l qc-gan"><span>Ganancia</span><b style={{color:gan>=0?"#4ade80":"#f87171"}}>USD {fmt(gan)} <span style={{fontSize:11,opacity:0.8}}>· {pct.toFixed(0)}%</span></b></div>
+                <div className="qc-l"><span>Ganancia flete</span><b style={verde(ganFlete)}>USD {fmt(ganFlete)}</b></div>
+                {bd.impReal&&<div className="qc-l" title={`Pagás USD ${fmt(impPagado)}: flete certificado USD ${fmt(bd.impReal.certReal)}, IVA adicional 10,5 %, Ganancias 6 %, IIBB 3 %`}><span>Ganancia impuestos<em>pagás USD {fmt(impPagado)}</em></span><b style={verde(ganImp)}>USD {fmt(ganImp)}</b></div>}
+                <div className="qc-l qc-sum qc-gan"><span>Ganancia</span><b style={verde(gan)}>USD {fmt(gan)} <span style={{fontSize:11,opacity:0.8}}>· {pct.toFixed(0)}%</span></b></div>
               </div>;
             })():<div/>}
           </div>;
