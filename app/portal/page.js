@@ -150,6 +150,10 @@ const CN_SECTIONS=[
 ];
 // Backward-compat: lista plana del nav (usada en bottom-nav mobile y otras refs)
 const CN=CN_SECTIONS.flatMap(s=>s.items);
+// Las fotos de los bultos se borran a los 90 días (22/10/2026): sin foto pero ya subida, o con el bulto
+// de más de 90 días, es "Foto caducada" y no "Sin foto".
+const fotoCaducada=(p)=>!p?.photo_url&&(!!p?.photo_uploaded_at||(p?.created_at&&(Date.now()-new Date(p.created_at).getTime())/86400000>=90));
+
 function WorldMap(){const d=[[120,80],[135,85],[150,78],[165,90],[180,85],[200,95],[215,88],[230,92],[250,100],[265,95],[280,105],[300,98],[320,110],[335,105],[350,115],[370,108],[390,120],[410,112],[430,125],[450,118],[470,130],[490,122],[510,135],[530,128],[550,140],[570,132],[590,145],[610,138],[630,150],[140,120],[160,130],[180,125],[200,140],[220,135],[240,145],[260,138],[280,150],[300,142],[320,155],[340,148],[360,158],[380,152],[400,162],[420,155],[440,165],[460,158],[480,170],[500,162],[520,175],[540,168],[560,180],[580,172],[600,185],[620,178]];const l=[[200,95,450,118],[300,98,520,135],[180,125,400,162],[280,150,500,208],[350,115,570,132]];return <svg width="100%" height="100%" viewBox="0 0 750 320" preserveAspectRatio="xMidYMid slice" style={{position:"absolute",inset:0,opacity:0.05,pointerEvents:"none"}}>{l.map((v,i)=><line key={i} x1={v[0]} y1={v[1]} x2={v[2]} y2={v[3]} stroke="#4A90D9" strokeWidth="0.5" opacity="0.4"/>)}{d.map((v,i)=><circle key={i} cx={v[0]} cy={v[1]} r={1.5} fill="#4A90D9" opacity="0.5"/>)}</svg>;}
 // Cuando type="decimal", usamos type=text + inputMode=decimal: muestra el keyboard numérico en mobile
 // y permite tipear tanto coma como punto como separador (con type=number puro, iOS rechaza la coma).
@@ -357,7 +361,7 @@ function DepositoView({pkgs,token,client,onCreated}){
           <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.vol>0?`${f2(x.vol)} kg`:"—"}</span>
           <span style={{textAlign:"center"}}>{p.photo_url
             ?<button onClick={e=>{e.stopPropagation();setOpen(p.id);}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>
-            :<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t("dep.noPhoto")}</span>}</span>
+            :<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t(fotoCaducada(p)?"dep.photoExpired":"dep.noPhoto")}</span>}</span>
         </div>
       </div>;})}
     {open&&(()=>{const p=pkgs.find(x=>x.id===open);if(!p?.photo_url)return null;const idx=pkgs.indexOf(p);
@@ -1259,7 +1263,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
                 <span style={{fontSize:13,fontWeight:700,color:!hot&&p.gw>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.gw>0?`${f2(p.gw)} kg`:"—"}</span>
                 <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.vw>0?`${f2(p.vw)} kg`:"—"}</span>
                 <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{p.cbm>0?p.cbm.toFixed(3):"—"}</span>
-                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t("dep.noPhoto")}</span>}</span>
+                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t(fotoCaducada(p)||op?.status==="operacion_cerrada"?"dep.photoExpired":"dep.noPhoto")}</span>}</span>
               </div>
               {canAsig&&(()=>{const open=pkOpenDet===p.id;const label=enEste.length===0?t("op.variousUnassigned"):enEste.map(it=>it.description||t("calc.product")).join(", ");
                 return <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 11px",flexWrap:"wrap"}}>
