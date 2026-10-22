@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { ToastStack, DialogHost, toast, confirmDialog, promptDialog } from "../../lib/ui";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
-import { GI_CANALES, GI_ESTADOS, GI_FLUJO, resumenGI, totalAceptado, canalMasBarato, totalCanal, costosProveedor, socioDeOp } from "../../lib/gi";
+import { GI_CANALES, GI_ESTADOS, GI_FLUJO, resumenGI, totalAceptado, canalMasBarato, totalCanal, costosProveedor, socioDeOp, TIPOS_COSTO, tipoCosto } from "../../lib/gi";
 import {
   C, BG, LOGO, MONO, GOLD_GRADIENT, dq, dqTodos, arr, ok, ac, ensureFresh, sesionInicial, saveSession, clearSession, usarSesionPropia,
   fmtDate, fmtDateShort, fmtDateTime, fmtUSD, usd0, hace, hoyISO, nombre, buildQuoteWaMessage, cleanWaNumber, useMovil,
@@ -101,7 +101,7 @@ function useDatos(token, rol) {
       dq("gi_quote_communications", { token, filters: "?select=quote_id,request_id,type,created_at,meta,content&order=created_at.desc&limit=2000" }),
       dq("operations", { token, filters: "?service_type=eq.gestion_integral&select=id,operation_code,status,channel,origin,client_id,description,budget_total,total_anticipos,eta,closed_at,created_at,gi_partner_id,gi_admin_owned,gi_commission_pct,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(id,first_name,last_name,client_code,whatsapp,gi_partner_id,gi_commission_pct)&order=created_at.desc" }),
       dq("operation_client_payments", { token, filters: "?select=operation_id,amount_usd,payment_date,operations!inner(service_type)&operations.service_type=eq.gestion_integral" }),
-      plata ? dq("operation_supplier_payments", { token, filters: "?select=id,operation_id,amount_usd,amount_ars,type,is_paid,payment_date,notes,operations!inner(service_type,operation_code)&operations.service_type=eq.gestion_integral" }) : [],
+      plata ? dq("operation_supplier_payments", { token, filters: "?select=id,operation_id,amount_usd,amount_ars,type,category,is_paid,payment_date,notes,operations!inner(service_type,operation_code)&operations.service_type=eq.gestion_integral" }) : [],
       plata ? dq("gi_partner_earnings", { token, filters: "?select=*&order=closed_at.desc" }) : [],
       dq("profiles", { token, filters: "?is_gi_partner=eq.true&select=id,email,gi_partner_pct" }),
       dq("gi_settings", { token, filters: "?select=default_fx_rate&limit=1" }),
@@ -851,7 +851,8 @@ function OpDetalle({ ctx, id }) {
   const [bultos, setBultos] = useState([]);
   const [earning, setEarning] = useState(null);
   const [tarjetas, setTarjetas] = useState([]);
-  const [modal, setModal] = useState(null); // "cobro" | {costo:{monto,nota}}
+  const [modal, setModal] = useState(null); // "cobro" | {costo:{monto,nota,tipo}}
+  const [origenFlete, setOrigenFlete] = useState(null); // {vuelos:[codigos]} | {cargas, contenedores, estimado}
   const [editProd, setEditProd] = useState(false);
   const [filas, setFilas] = useState([]);
   const [guardandoProd, setGuardandoProd] = useState(false);
@@ -868,7 +869,16 @@ function OpDetalle({ ctx, id }) {
       verPlata ? dq("gi_partner_earnings", { token, filters: `?operation_id=eq.${id}&select=*&limit=1` }) : [],
       admin ? dq("credit_cards", { token, filters: "?select=id,name,brand&order=name.asc" }) : [],
     ]);
-    setOp(arr(o)[0] || false); setCobros(arr(cp)); setPagos(arr(sp)); setItems(arr(it)); setBultos(arr(pk)); setEarning(arr(ea)[0] || null); setTarjetas(arr(tj));
+    const opx = arr(o)[0] || false;
+    setOp(opx); setCobros(arr(cp)); setPagos(arr(sp)); setItems(arr(it)); setBultos(arr(pk)); setEarning(arr(ea)[0] || null); setTarjetas(arr(tj));
+    // De dónde sale el flete: aéreo → del vuelo; marítimo integral → de la carga del contenedor.
+    if (opx && verPlata && opx.channel === "aereo_blanco") {
+      const fo = arr(await dq("flight_operations", { token, filters: `?operation_id=eq.${id}&select=cost_share_usd,tax_share_usd,flights(flight_code)` }).catch(() => []));
+      setOrigenFlete({ vuelos: fo.map((f) => f.flights?.flight_code).filter(Boolean) });
+    } else if (opx && verPlata && opx.channel === "maritimo_negro") {
+      const ms = arr(await dq("maritime_shipments", { token, filters: `?operation_id=eq.${id}&select=id,cost_estimado,maritime_containers(code,status)` }).catch(() => []));
+      setOrigenFlete({ cargas: ms.length, contenedores: [...new Set(ms.map((m) => m.maritime_containers?.code).filter(Boolean))], estimado: ms.reduce((a, m) => a + Number(m.cost_estimado || 0), 0) });
+    } else setOrigenFlete(null);
   }, [id, token, verPlata, admin]);
   useEffect(() => { cargar(); }, [cargar]);
   if (op === null) return <div><Volver onClick={() => ir("operaciones")} /><Cargando /></div>;
@@ -919,19 +929,20 @@ function OpDetalle({ ctx, id }) {
     toast.success("Cobro borrado"); refrescar();
   };
   const borrarPago = async (p) => {
-    if (!await confirmDialog("¿Borrar este pago al proveedor?", { danger: true })) return;
+    if (!await confirmDialog("¿Borrar este costo?", { danger: true })) return;
     await dq("operation_supplier_payments", { method: "DELETE", token, filters: `?id=eq.${p.id}` });
     await sincronizarCostoProducto(pagos.filter((x) => x.id !== p.id));
     toast.success("Pago borrado"); refrescar();
   };
   const togglePagado = async (p) => {
     await dq("operation_supplier_payments", { method: "PATCH", token, filters: `?id=eq.${p.id}`, body: { is_paid: !p.is_paid, paid_at: !p.is_paid ? new Date().toISOString() : null } });
+    await sincronizarCostoProducto(pagos); // la base recalcula el costo con todos los pagos: se vuelve a dejar solo la mercadería
     refrescar();
   };
   // Costo de la mercadería = lo pactado por producto; si los pagos superan eso (extras), mandan los pagos.
   const costoItems = (lst) => lst.reduce((s, it) => s + Number(it.unit_cost_usd || 0) * Number(it.quantity || 0), 0);
   const sincronizarCostoProducto = async (lista) => {
-    const pagado = lista.reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
+    const pagado = lista.filter((p) => tipoCosto(p) === "mercaderia").reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
     const pactado = costoItems(items) || Number(op.cost_producto_usd || 0);
     await dq("operations", { method: "PATCH", token, filters: `?id=eq.${op.id}`, body: { cost_producto_usd: Math.round(Math.max(pactado, pagado) * 100) / 100 } });
   };
@@ -961,7 +972,7 @@ function OpDetalle({ ctx, id }) {
       }
       const venta = Math.round(validas.reduce((s, f) => s + numero(f.quantity) * numero(f.unit_price_usd), 0) * 100) / 100;
       const costo = validas.reduce((s, f) => s + numero(f.quantity) * numero(f.unit_cost_usd), 0);
-      const pagado = pagos.reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
+      const pagado = pagos.filter((p) => tipoCosto(p) === "mercaderia").reduce((s, p) => s + (p.type === "refund" ? -1 : 1) * Number(p.amount_usd || 0), 0);
       const body = { budget_total: venta, budget_mode: "manual", description: `Gestión Integral · ${validas.length} producto${validas.length !== 1 ? "s" : ""}` };
       if (costo > 0) body.cost_producto_usd = Math.round(Math.max(costo, pagado) * 100) / 100;
       await patchOp(body, conCosto ? "Productos guardados" : "Productos guardados (falta correr el SQL del costo por producto)");
@@ -982,7 +993,7 @@ function OpDetalle({ ctx, id }) {
   // Próximo paso: una sola acción, la que más importa ahora.
   const paso = !activa ? null
     : items.length === 0 ? { t: "Cargá los productos con su precio de venta", b: "Cargar productos", fn: abrirEdicion, c: P.goldHi }
-    : verPlata && admin && res.mercaderiaFalta > 0.5 ? { t: `Pago al proveedor pendiente: ${fmtUSD(res.mercaderiaFalta)}`, b: "Registrar pago", fn: () => setModal({ costo: { monto: String(Math.round(res.mercaderiaFalta * 100) / 100), nota: "Mercadería" } }), c: P.amber }
+    : verPlata && admin && res.mercaderiaFalta > 0.5 ? { t: `Pago al proveedor pendiente: ${fmtUSD(res.mercaderiaFalta)}`, b: "Registrar pago", fn: () => setModal({ costo: { monto: String(Math.round(res.mercaderiaFalta * 100) / 100), nota: "", tipo: "mercaderia" } }), c: P.amber }
     : res.saldo > 0.5 ? { t: `Falta cobrarle al cliente ${fmtUSD(res.saldo)}`, b: "Registrar cobro", fn: () => setModal("cobro"), c: P.amber }
     : siguiente ? { t: `Todo en orden. Siguiente etapa: ${GI_ESTADOS[siguiente].l}`, b: `Pasar a ${GI_ESTADOS[siguiente].l} →`, fn: () => cambiarEtapa(siguiente), c: P.blue }
     : admin ? { t: "Cobrada y pagada. Lista para cerrar.", b: "Cerrar operación", fn: cerrar, c: P.green } : null;
@@ -999,6 +1010,33 @@ function OpDetalle({ ctx, id }) {
   const accionBtn = (txt, fn, estilo) => <button type="button" onClick={fn} style={{ height: 42, padding: "0 18px", borderRadius: 12, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 8, transition: "transform .12s", ...estilo }}>{txt}</button>;
   const sec = { border: `1px solid ${P.lineHi}`, background: "rgba(255,255,255,0.05)", color: P.txt };
   const inpT = { ...inpP, height: 38, padding: "0 10px", fontSize: 13.5 };
+  const chipBtn = (c, bg) => ({ height: 32, padding: "0 12px", borderRadius: 9, border: `1px solid ${c}55`, background: bg, color: c, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" });
+  const fleteAutomatico = op.channel === "aereo_blanco" || op.channel === "maritimo_negro";
+  const fuenteFlete = op.channel === "aereo_blanco"
+    ? (origenFlete?.vuelos?.length ? `Vuelo ${origenFlete.vuelos.join(" + ")}` : "Del vuelo")
+    : op.channel === "maritimo_negro" ? (origenFlete?.contenedores?.length ? `Contenedor ${origenFlete.contenedores.join(" + ")}` : "Del contenedor")
+    : "Cargado en la operación";
+  const grupoCosto = (t, v, hijos) => <div style={{ padding: "12px 0", borderTop: `1px solid ${P.line}` }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+      <span style={{ fontSize: 13.5, fontWeight: 900, color: P.txt }}>{t}</span>
+      <strong style={{ fontSize: 14, fontVariantNumeric: "tabular-nums", color: v > 0 ? "#fca5a5" : P.mute }}>{v > 0 ? `−${fmtUSD(v)}` : "—"}</strong>
+    </div>
+    {hijos}
+  </div>;
+  const autoCosto = (l, v) => <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0 0", fontSize: 12.5 }}>
+    <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 6, color: P.blue, background: P.blueBg }}>auto</span>
+    <span style={{ flex: 1, minWidth: 0, color: P.sub }}>{l}</span>
+    <span style={{ fontVariantNumeric: "tabular-nums", color: P.sub }}>{fmtUSD(v)}</span>
+  </div>;
+  const filaCosto = (p) => { const ref = p.type === "refund"; const pendiente = Number(p.amount_usd || 0) === 0 && Number(p.amount_ars || 0) > 0; return <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0 0" }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <p style={{ margin: 0, fontWeight: 700, fontSize: 12.5, color: P.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ref ? "↩ Reembolso" : p.notes || TIPOS_COSTO[tipoCosto(p)].largo}</p>
+      <p style={{ margin: "1px 0 0", fontSize: 11.5, color: P.mute }}>{fmtDateShort(p.payment_date)} · {p.payment_method === "cripto" ? "USDT" : (p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
+    </div>
+    {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, border: `1px solid ${p.is_paid ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.4)"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
+    <span style={{ fontWeight: 800, fontSize: 12.5, color: ref ? P.green : "#fca5a5", fontVariantNumeric: "tabular-nums", minWidth: 74, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
+    {admin && xBtn(() => borrarPago(p))}
+  </div>; };
   const xBtn = (fn) => <button onClick={fn} aria-label="Borrar" style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${P.line}`, background: "transparent", color: P.mute, cursor: "pointer", fontSize: 12 }}>✕</button>;
 
   return <div>
@@ -1025,8 +1063,8 @@ function OpDetalle({ ctx, id }) {
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18, alignItems: "center" }}>
-        {activa && accionBtn("＋ Cobro", () => setModal("cobro"), { border: "none", background: GOLD_GRADIENT, color: "#0A1628", boxShadow: "0 6px 18px rgba(201,164,106,0.25)" })}
-        {activa && admin && accionBtn("＋ Pago a proveedor", () => setModal({ costo: { monto: "", nota: "" } }), sec)}
+        {activa && accionBtn("＋ Cobro", () => setModal("cobro"), { border: "1px solid rgba(52,211,153,0.45)", background: "rgba(52,211,153,0.14)", color: P.green })}
+        {activa && admin && accionBtn("＋ Costo", () => setModal({ costo: {} }), { border: "1px solid rgba(248,113,113,0.45)", background: "rgba(248,113,113,0.12)", color: "#fca5a5" })}
         {admin && accionBtn("✎ Productos y precios", abrirEdicion, sec)}
         <span style={{ flex: 1 }} />
         {admin && cerrada && accionBtn("Reabrir", reabrir, { ...sec, color: P.sub })}
@@ -1064,7 +1102,7 @@ function OpDetalle({ ctx, id }) {
         {verPlata && <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : "repeat(4,minmax(0,1fr))", gap: 10, marginBottom: 14 }}>
           {kpi("Venta", fmtUSD(res.venta), P.txt, `${items.length} producto${items.length !== 1 ? "s" : ""}`)}
           {kpi("Cobrado", fmtUSD(res.cobrado), P.green, `${pctCobrado.toFixed(0)}% de la venta`, barra(pctCobrado, P.green))}
-          {kpi("Costos", fmtUSD(res.costos), "#fca5a5", res.costosFijos > 0 ? `mercadería ${usd0(res.mercaderia)} + flete ${usd0(res.costosFijos)}` : `mercadería ${usd0(res.mercaderia)}`)}
+          {kpi("Costos", fmtUSD(res.costos), "#fca5a5", [`proveedor ${usd0(res.mercaderia)}`, res.flete > 0 ? `flete ${usd0(res.flete)}` : null, res.impuestos > 0 ? `imp. ${usd0(res.impuestos)}` : null, res.gastos > 0 ? `otros ${usd0(res.gastos)}` : null].filter(Boolean).join(" · "))}
           {kpi(cerrada ? "Ganancia" : "Ganancia proy.", fmtUSD(gan), gan >= 0 ? P.green : P.red, res.venta > 0 ? `${margen.toFixed(0)}% de margen` : null)}
         </div>}
         {verPlata && socio && <div style={{ ...caja, padding: "12px 16px", display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
@@ -1107,10 +1145,10 @@ function OpDetalle({ ctx, id }) {
             </div>; })}</div>}
         </div>
 
-        {/* ── Cobros y pagos ── */}
+        {/* ── Cobros (verde) y costos (rojo) ── */}
         <div style={{ display: "grid", gridTemplateColumns: movil || !verPlata ? "1fr" : "1fr 1fr", gap: 14, alignItems: "start" }}>
-          <div style={caja}>
-            {tit(`Cobros del cliente · ${cobros.length}`, activa ? <BtnP small onClick={() => setModal("cobro")}>＋ Cobro</BtnP> : null)}
+          <div style={{ ...caja, borderTop: `2px solid ${P.green}` }}>
+            {tit(<span style={{ color: P.green }}>Cobros · {fmtUSD(res.cobrado)}</span>, activa ? <button type="button" onClick={() => setModal("cobro")} style={chipBtn(P.green, "rgba(52,211,153,0.12)")}>＋ Cobro</button> : null)}
             {cobros.length === 0 ? <p style={{ margin: 0, color: P.mute, fontSize: 13 }}>Sin cobros todavía.</p> : cobros.map((c) => <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.line}` }}>
               <span style={{ width: 32, height: 32, borderRadius: 9, background: P.greenBg, color: P.green, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>↓</span>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1122,26 +1160,28 @@ function OpDetalle({ ctx, id }) {
             </div>)}
           </div>
 
-          {verPlata && <div style={caja}>
-            {tit("Proveedor y costos", activa && admin ? <BtnP small onClick={() => setModal({ costo: { monto: "", nota: "" } })}>＋ Pago</BtnP> : null)}
-            <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,0.22)", border: `1px solid ${P.line}`, marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 12.5, color: P.sub }}>Mercadería</span><strong style={{ fontVariantNumeric: "tabular-nums" }}>{fmtUSD(res.mercaderia)}</strong></div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4 }}><span style={{ fontSize: 12, color: P.mute }}>Pagado {fmtUSD(res.mercaderiaPagada)}</span><span style={{ fontSize: 12, fontWeight: 800, color: res.mercaderiaFalta > 0.5 ? P.amber : P.green }}>{res.mercaderiaFalta > 0.5 ? `falta ${fmtUSD(res.mercaderiaFalta)}` : "pagada"}</span></div>
+          {verPlata && <div style={{ ...caja, borderTop: `2px solid ${P.red}` }}>
+            {tit(<span style={{ color: "#fca5a5" }}>Costos · {fmtUSD(res.costos)}</span>, activa && admin ? <button type="button" onClick={() => setModal({ costo: {} })} style={chipBtn("#fca5a5", "rgba(248,113,113,0.12)")}>＋ Costo</button> : null)}
+            {grupoCosto("Proveedor", res.mercaderia, <>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 12, color: P.mute }}>Pagado {fmtUSD(res.mercaderiaPagada)}</span><span style={{ fontSize: 12, fontWeight: 800, color: res.mercaderiaFalta > 0.5 ? P.amber : P.green }}>{res.mercaderiaFalta > 0.5 ? `falta ${fmtUSD(res.mercaderiaFalta)}` : "pagada"}</span></div>
               {barra(pctPagado, res.mercaderiaFalta > 0.5 ? P.amber : P.green)}
-            </div>
-            {pagos.map((p) => { const ref = p.type === "refund"; const pendiente = Number(p.amount_usd || 0) === 0 && Number(p.amount_ars || 0) > 0; return <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.line}` }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: P.txt }}>{ref ? "↩ Reembolso" : p.notes || "Pago a proveedor"}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{fmtDateShort(p.payment_date)} · {(p.payment_method || "—").replace(/_/g, " ")}{p.currency === "ARS" ? ` · ARS ${Number(p.amount_ars || 0).toLocaleString("es-AR")}` : ""}{pendiente ? " · sin dolarizar" : ""}</p>
-              </div>
-              {admin ? <button onClick={() => togglePagado(p)} style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 999, border: `1px solid ${p.is_paid ? "rgba(52,211,153,0.35)" : "rgba(251,191,36,0.4)"}`, background: p.is_paid ? P.greenBg : P.amberBg, color: p.is_paid ? P.green : P.amber, cursor: "pointer", fontFamily: "inherit" }}>{p.is_paid ? "Pagado" : "Pendiente"}</button> : <PillP c={p.is_paid ? P.green : P.amber}>{p.is_paid ? "Pagado" : "Pendiente"}</PillP>}
-              <span style={{ fontWeight: 900, color: ref ? P.green : "#fca5a5", fontVariantNumeric: "tabular-nums", minWidth: 80, textAlign: "right" }}>{pendiente ? "—" : `${ref ? "+" : "−"}${usd0(p.amount_usd)}`}</span>
-              {admin && xBtn(() => borrarPago(p))}
-            </div>; })}
-            {res.costosFijos > 0 && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.line}` }}>
-              <div style={{ flex: 1 }}><p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: P.txt }}>Flete, impuestos y despacho</p><p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>Del vuelo / contenedor</p></div>
-              <span style={{ fontWeight: 900, color: "#fca5a5", fontVariantNumeric: "tabular-nums" }}>−{usd0(res.costosFijos)}</span>
-            </div>}
+              {pagos.filter((p) => tipoCosto(p) === "mercaderia").map(filaCosto)}
+            </>)}
+            {grupoCosto("Flete", res.flete, <>
+              {res.fleteAuto > 0 && autoCosto(fuenteFlete, res.fleteAuto)}
+              {pagos.filter((p) => tipoCosto(p) === "flete").map(filaCosto)}
+              {res.flete === 0 && <p style={{ margin: "6px 0 0", fontSize: 12, color: P.mute }}>{fleteAutomatico ? `Se toma ${op.channel === "aereo_blanco" ? "del vuelo cuando se carga su costo" : "del contenedor cuando llega"}.` : "Cargalo con ＋ Costo → Flete (en LCL/FCL se paga todo de una)."}</p>}
+            </>)}
+            {(res.impuestos > 0 || op.channel === "aereo_blanco") && grupoCosto("Impuestos", res.impuestos, <>
+              {res.impuestosAuto > 0 && autoCosto(op.channel === "aereo_blanco" ? fuenteFlete : "Cargados en la operación", res.impuestosAuto)}
+              {Number(op.cost_gasto_documental || 0) > 0 && autoCosto("Gasto documental", Number(op.cost_gasto_documental))}
+              {pagos.filter((p) => tipoCosto(p) === "impuestos").map(filaCosto)}
+              {res.impuestos === 0 && <p style={{ margin: "6px 0 0", fontSize: 12, color: P.mute }}>Se toman del vuelo cuando se prorratean los impuestos.</p>}
+            </>)}
+            {res.gastos > 0 && grupoCosto("Otros", res.gastos, <>
+              {[["Seguro", op.cost_seguro], ["Flete local", op.cost_flete_local], ["Otros", op.cost_otros]].filter(([, v]) => Number(v || 0) > 0).map(([l, v]) => <div key={l}>{autoCosto(l, Number(v))}</div>)}
+              {pagos.filter((p) => tipoCosto(p) === "gastos").map(filaCosto)}
+            </>)}
           </div>}
         </div>
       </div>
@@ -1171,7 +1211,7 @@ function OpDetalle({ ctx, id }) {
     </div>
 
     {modal === "cobro" && <CobroModal op={op} saldo={res.saldo} token={token} cobrado={res.cobrado} onClose={() => setModal(null)} onListo={() => { setModal(null); refrescar(); }} />}
-    {modal?.costo && <CostoModal op={op} token={token} tarjetas={tarjetas} pagos={pagos} inicial={modal.costo} onClose={() => setModal(null)} onListo={async (lista) => { setModal(null); await sincronizarCostoProducto(lista); refrescar(); }} />}
+    {modal?.costo && <CostoModal op={op} token={token} tarjetas={tarjetas} pagos={pagos} res={res} fuenteFlete={fuenteFlete} origenFlete={origenFlete} inicial={modal.costo} onClose={() => setModal(null)} onListo={async (lista) => { setModal(null); await sincronizarCostoProducto(lista); refrescar(); }} />}
   </div>;
 }
 
@@ -1218,7 +1258,7 @@ function CobroModal({ op, saldo, cobrado, token, onClose, onListo }) {
     toast.success(`Cobro de ${fmtUSD(body.amount_usd)} registrado`);
     onListo();
   };
-  return <Modal title={`Cobro · ${op.operation_code}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={g || !(usd > 0)}>{g ? "Guardando…" : `Registrar ${usd > 0 ? fmtUSD(usd) : ""}`}</Btn></>}>
+  return <Modal title={<span>Nuevo cobro <span style={{ color: C.mute, fontWeight: 700 }}>· {op.operation_code}</span></span>} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="green" onClick={guardar} disabled={g || !(usd > 0)}>{g ? "Guardando…" : `Registrar cobro ${usd > 0 ? fmtUSD(usd) : ""}`}</Btn></>}>
     <p style={{ margin: "0 0 14px", fontSize: 13, color: C.sub }}>Saldo: <strong style={{ color: C.txt }}>{fmtUSD(saldo)}</strong></p>
     <Campo label="Cómo pagó"><Opciones value={metodo} onChange={setMetodo} cols={2} items={METODOS_COBRO.map((x) => ({ k: x.k, l: x.l }))} /></Campo>
     {enArs ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1230,8 +1270,13 @@ function CobroModal({ op, saldo, cobrado, token, onClose, onListo }) {
   </Modal>;
 }
 
-function CostoModal({ op, token, tarjetas, pagos, inicial = null, onClose, onListo }) {
-  const [tipo, setTipo] = useState("payment");
+// Un costo de la op: proveedor, flete, impuestos u otro (category). En aéreo el flete y los impuestos
+// salen solos del vuelo y en marítimo integral el flete sale del contenedor: ahí no se cargan a mano.
+function CostoModal({ op, token, tarjetas, pagos, res, fuenteFlete, inicial = null, onClose, onListo }) {
+  const movil = useMovil();
+  const [tipo, setTipo] = useState(inicial?.tipo || "");
+  const [reembolso, setReembolso] = useState(false);
+  const [aMano, setAMano] = useState(false);
   const [moneda, setMoneda] = useState("USD");
   const [metodo, setMetodo] = useState("transferencia");
   const [monto, setMonto] = useState(inicial?.monto || "");
@@ -1242,39 +1287,98 @@ function CostoModal({ op, token, tarjetas, pagos, inicial = null, onClose, onLis
   const [nota, setNota] = useState(inicial?.nota || "");
   const [g, setG] = useState(false);
   const esTC = metodo === "tarjeta_credito";
+  const ars = moneda === "ARS" && metodo !== "cripto";
+  useEffect(() => { if (ars && !tc) fetch("https://dolarapi.com/v1/dolares/blue").then((r) => r.json()).then((j) => { if (j?.venta) setTc(String(j.venta)); }).catch(() => {}); }, [ars]);
+  const amt = Number(String(monto).replace(",", ".")) || 0;
+  const usd = ars ? (esTC ? 0 : Number(tc) > 0 ? amt / Number(tc) : 0) : amt;
+
+  const aereo = op.channel === "aereo_blanco", integral = op.channel === "maritimo_negro";
+  // Qué se toma solo para este canal.
+  const auto = tipo === "flete" ? (aereo ? { de: "del vuelo", v: res.fleteAuto } : integral ? { de: "del contenedor", v: res.fleteAuto } : null)
+    : tipo === "impuestos" && aereo ? { de: "del vuelo", v: res.impuestosAuto } : null;
+  const bloqueado = auto && !aMano;
+  const ROJO = "#fca5a5";
+  const TIPOS = [
+    { k: "mercaderia", l: "Proveedor", s: "La mercadería", i: "M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9z M9 21V12h6v9" },
+    { k: "flete", l: "Flete", s: aereo ? "Sale del vuelo" : integral ? "Sale del contenedor" : "LCL/FCL, todo junto", i: "M3 17h13V6H3z M16 10h4l2 3v4h-6 M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
+    { k: "impuestos", l: "Impuestos", s: aereo ? "Salen del vuelo" : "Despacho, aduana", i: "M9 14l6-6 M9.5 8.5h.01 M14.5 13.5h.01 M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2z" },
+    { k: "gastos", l: "Otro", s: "Flete local, seguro…", i: "M12 5v14 M5 12h14" },
+  ];
   const guardar = async () => {
-    const amt = Number(monto);
+    if (!tipo) { toast.error("Elegí qué pagaste"); return; }
     if (!(amt > 0)) { toast.error("Poné el monto"); return; }
     if (esTC && !tarjeta) { toast.error("Elegí la tarjeta"); return; }
-    const ars = moneda === "ARS";
     if (ars && !esTC && !(Number(tc) > 0)) { toast.error("Poné el tipo de cambio para dolarizarlo"); return; }
     setG(true);
     const dolarizado = ars && !esTC;
-    const usd = ars ? (dolarizado ? Math.round((amt / Number(tc)) * 100) / 100 : 0) : amt;
     const body = {
-      operation_id: op.id, payment_date: fecha, type: tipo, payment_method: metodo, currency: moneda,
-      amount_usd: usd, amount_ars: ars ? amt : null, exchange_rate: dolarizado ? Number(tc) : null,
+      operation_id: op.id, payment_date: fecha, type: tipo === "mercaderia" && reembolso ? "refund" : "payment", category: tipo,
+      payment_method: metodo, currency: ars ? "ARS" : "USD",
+      amount_usd: ars ? (dolarizado ? Math.round(usd * 100) / 100 : 0) : amt, amount_ars: ars ? amt : null, exchange_rate: dolarizado ? Number(tc) : null,
       credit_card_id: esTC ? tarjeta : null, notes: nota.trim() || null,
       is_paid: ars && esTC ? false : pagado, paid_at: (ars && esTC) || !pagado ? null : new Date(fecha + "T12:00:00Z").toISOString(),
     };
     const r = await dq("operation_supplier_payments", { method: "POST", token, body });
     const fila = arr(r)[0];
     if (!fila) { toast.error("No se pudo guardar el costo"); setG(false); return; }
-    toast.success(ars && esTC ? "Costo en tarjeta: se dolariza al cierre" : "Costo registrado");
+    toast.success(ars && esTC ? "Costo en tarjeta: se dolariza al cierre" : `${TIPOS_COSTO[tipo].l}: ${fmtUSD(body.amount_usd)} cargado`);
     onListo([...pagos, fila]);
   };
-  return <Modal title={`Pago a proveedor · ${op.operation_code}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={g}>{g ? "Guardando…" : "Guardar"}</Btn></>}>
-    <Campo label="Tipo"><Opciones value={tipo} onChange={setTipo} cols={2} items={[{ k: "payment", l: "Pago a proveedor" }, { k: "refund", l: "Reembolso" }]} /></Campo>
-    <Campo label="Medio"><Opciones value={metodo} onChange={setMetodo} items={[{ k: "transferencia", l: "Transferencia" }, { k: "efectivo", l: "Efectivo" }, { k: "tarjeta_credito", l: "Tarjeta" }, { k: "cripto", l: "USDT" }]} /></Campo>
-    {esTC && <Campo label="Tarjeta">{tarjetas.length ? <Opciones value={tarjeta} onChange={setTarjeta} items={tarjetas.map((t) => ({ k: t.id, l: t.name }))} /> : <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>No hay tarjetas cargadas.</p>}</Campo>}
-    <Campo label="Moneda"><Opciones value={moneda} onChange={setMoneda} cols={2} items={[{ k: "USD", l: "Dólares" }, { k: "ARS", l: "Pesos" }]} /></Campo>
-    <div style={{ display: "grid", gridTemplateColumns: moneda === "ARS" && !esTC ? "1fr 1fr" : "1fr", gap: 10 }}>
-      <Campo label={moneda === "ARS" ? "Pesos" : "Dólares"}><input inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value.replace(/[^\d.]/g, ""))} style={inp} /></Campo>
-      {moneda === "ARS" && !esTC && <Campo label="Tipo de cambio"><input inputMode="decimal" value={tc} onChange={(e) => setTc(e.target.value.replace(/[^\d.]/g, ""))} style={inp} /></Campo>}
+
+  const lbl = (t) => <span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{t}</span>;
+  const seg = (val, set, items) => <div style={{ display: "flex", padding: 3, borderRadius: 11, background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}` }}>
+    {items.map((it) => { const on = val === it.k; return <button key={it.k} type="button" onClick={() => set(it.k)} style={{ flex: 1, height: 34, borderRadius: 8, border: "none", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", padding: "0 10px", background: on ? "rgba(248,113,113,0.16)" : "transparent", color: on ? ROJO : C.sub, boxShadow: on ? "inset 0 0 0 1px rgba(248,113,113,0.4)" : "none" }}>{it.l}</button>; })}
+  </div>;
+  const inpG = { ...inp, height: 46, fontSize: 15 };
+
+  return <Modal width={580} title={<span>Nuevo costo <span style={{ color: C.mute, fontWeight: 700 }}>· {op.operation_code}</span></span>} onClose={onClose} footer={<>
+    <Btn onClick={onClose}>Cancelar</Btn>
+    {!bloqueado && tipo && <button type="button" onClick={guardar} disabled={g} style={{ height: 40, padding: "0 18px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#f87171,#dc2626)", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: g ? "wait" : "pointer", fontFamily: "inherit", opacity: g ? 0.6 : 1, whiteSpace: "nowrap" }}>{g ? "Guardando…" : `Guardar costo${usd > 0 ? ` · ${fmtUSD(usd)}` : ""}`}</button>}
+  </>}>
+    {lbl("¿Qué pagaste?")}
+    <div style={{ display: "grid", gridTemplateColumns: movil ? "1fr 1fr" : "repeat(4,1fr)", gap: 8, marginBottom: 16 }}>
+      {TIPOS.map((t) => { const on = tipo === t.k; return <button key={t.k} type="button" onClick={() => { setTipo(t.k); setAMano(false); }} style={{ textAlign: "left", padding: "12px 12px 11px", borderRadius: 13, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${on ? "rgba(248,113,113,0.6)" : C.line}`, background: on ? "linear-gradient(180deg,rgba(248,113,113,0.16),rgba(248,113,113,0.05))" : "rgba(255,255,255,0.025)", transition: "border-color .12s, background .12s" }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={on ? ROJO : C.sub} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{t.i.split(" M").map((d, i) => <path key={i} d={(i ? "M" : "") + d} />)}</svg>
+        <p style={{ margin: "8px 0 0", fontSize: 13.5, fontWeight: 900, color: on ? C.txt : C.sub }}>{t.l}</p>
+        <p style={{ margin: "2px 0 0", fontSize: 11, color: C.mute, lineHeight: 1.3 }}>{t.s}</p>
+      </button>; })}
     </div>
-    <Campo label="Fecha"><DatePicker value={fecha} onChange={setFecha} /></Campo>
-    {!(moneda === "ARS" && esTC) && <Campo label="Estado"><Opciones value={pagado ? "s" : "n"} onChange={(k) => setPagado(k === "s")} cols={2} items={[{ k: "s", l: "Ya pagado" }, { k: "n", l: "A pagar" }]} /></Campo>}
-    <Campo label="Concepto"><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Proveedor, seña 30%, etc." style={inp} /></Campo>
+
+    {!tipo ? null : bloqueado ? <div style={{ padding: "16px 16px 14px", borderRadius: 13, background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.3)" }}>
+      <p style={{ margin: 0, fontSize: 10.5, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: C.blue }}>Automático</p>
+      <p style={{ margin: "6px 0 0", fontSize: 14, fontWeight: 800, color: C.txt, lineHeight: 1.4 }}>{auto.v > 0 ? `${tipo === "flete" ? "El flete" : "Los impuestos"} ya ${tipo === "flete" ? "está" : "están"} tomado${tipo === "flete" ? "" : "s"} ${auto.de}: ${fmtUSD(auto.v)}` : `${tipo === "flete" ? "El flete se toma" : "Los impuestos se toman"} ${auto.de} cuando ${aereo ? (tipo === "flete" ? "se carga el costo del vuelo" : "se prorratean los impuestos del vuelo") : "llega el contenedor"}.`}</p>
+      {auto.v > 0 && <p style={{ margin: "4px 0 0", fontSize: 12.5, color: C.sub }}>{fuenteFlete}</p>}
+      <button type="button" onClick={() => setAMano(true)} style={{ marginTop: 12, background: "none", border: "none", padding: 0, color: C.sub, fontSize: 12.5, fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>Cargar a mano igual</button>
+    </div> : <>
+      {tipo === "mercaderia" && <div style={{ marginBottom: 14 }}>{seg(reembolso ? "r" : "p", (k) => setReembolso(k === "r"), [{ k: "p", l: "Pago al proveedor" }, { k: "r", l: "Reembolso del proveedor" }])}</div>}
+      <div style={{ padding: 14, borderRadius: 14, background: "rgba(0,0,0,0.22)", border: `1px solid ${C.line}`, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          {lbl("Monto")}
+          <div style={{ width: 170 }}>{seg(ars ? "ARS" : "USD", (k) => { setMoneda(k); if (k === "ARS" && metodo === "cripto") setMetodo("transferencia"); }, [{ k: "USD", l: "Dólares" }, { k: "ARS", l: "Pesos" }])}</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: ars && !esTC ? "1.4fr 1fr" : "1fr", gap: 10 }}>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", fontSize: 13, fontWeight: 800, color: C.mute }}>{ars ? "$" : "USD"}</span>
+            <input autoFocus inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value.replace(/[^\d.,]/g, ""))} placeholder="0" style={{ ...inpG, paddingLeft: ars ? 28 : 50, fontSize: 20, fontWeight: 900, color: C.txt, fontVariantNumeric: "tabular-nums" }} />
+          </div>
+          {ars && !esTC && <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 800, color: C.mute }}>TC</span>
+            <input inputMode="decimal" value={tc} onChange={(e) => setTc(e.target.value.replace(/[^\d.]/g, ""))} placeholder="Tipo de cambio" style={{ ...inpG, paddingLeft: 36, fontVariantNumeric: "tabular-nums" }} />
+          </div>}
+        </div>
+        {ars && (esTC ? <p style={{ margin: "8px 0 0", fontSize: 12, color: C.amber }}>En tarjeta y en pesos: se dolariza cuando se paga el resumen.</p>
+          : usd > 0 && <p style={{ margin: "10px 0 0", fontSize: 13, color: C.sub }}>= <strong style={{ color: ROJO, fontSize: 15, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(usd)}</strong></p>)}
+      </div>
+      {lbl("Medio")}
+      <div style={{ marginBottom: 14 }}>{seg(metodo, (k) => { setMetodo(k); if (k === "cripto") setMoneda("USD"); }, [{ k: "transferencia", l: "Transferencia" }, { k: "efectivo", l: "Efectivo" }, { k: "tarjeta_credito", l: "Tarjeta" }, { k: "cripto", l: "USDT" }])}</div>
+      {esTC && <div style={{ marginBottom: 14 }}>{lbl("Tarjeta")}{tarjetas.length ? <Opciones value={tarjeta} onChange={setTarjeta} items={tarjetas.map((t) => ({ k: t.id, l: t.name }))} /> : <p style={{ margin: 0, color: C.mute, fontSize: 13 }}>No hay tarjetas cargadas.</p>}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: ars && esTC ? "1fr" : movil ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
+        <div>{lbl("Fecha")}<DatePicker value={fecha} onChange={setFecha} /></div>
+        {!(ars && esTC) && <div>{lbl("Estado")}{seg(pagado ? "s" : "n", (k) => setPagado(k === "s"), [{ k: "s", l: "Ya pagado" }, { k: "n", l: "A pagar" }])}</div>}
+      </div>
+      {lbl(tipo === "mercaderia" ? "Concepto" : "A quién / concepto")}
+      <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder={{ mercaderia: "Seña 30%, saldo, extras…", flete: "Global Services Imports, Ariel…", impuestos: "Despacho, UPS, aduana…", gastos: "Flete local, seguro…" }[tipo]} style={inpG} />
+    </>}
   </Modal>;
 }
 

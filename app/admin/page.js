@@ -8678,8 +8678,9 @@ function FinancePanel({token}){
         }
         // Recompute cost_producto_usd: payments suman, refunds restan
         for(const opId of affectedGiOps){
-          const fresh=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${opId}&select=amount_usd,type`});
-          const total=(Array.isArray(fresh)?fresh:[]).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
+          const fresh=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${opId}&select=amount_usd,type,category`});
+          // Flete / impuestos / otros cargados en la op GI no son mercadería (category, 22/10/2026).
+          const total=(Array.isArray(fresh)?fresh:[]).filter(p=>!["flete","impuestos","gastos"].includes(p.category)).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{cost_producto_usd:total}});
         }
         load();flash(`Dollarizados ${items.length} gastos al TC $${rate}`);
@@ -19538,6 +19539,20 @@ function MaritimePanel2({token,allClients=[]}){
   // ── Operaciones (lógica copiada del panel viejo) ───────────────────────────
   // Crear op consolidada. Validación nueva: todas en depósito con received_at o de contenedor arribado;
   // si no, se bloquea (admin puede forzar con un segundo confirm rojo).
+  // GI marítimo integral (22/10/2026): si el cliente tiene una op de Gestión Integral abierta por este
+  // canal, las cargas que llegan son de esa op. No se crea otra: se vinculan y el costo de las cargas
+  // pasa a ser el flete de la GI (sin tocar su venta ni avisar retiro: eso lo maneja el panel GI).
+  const giAbiertaDe=async(cid)=>{const r=await dq("operations",{token,filters:`?client_id=eq.${cid}&service_type=eq.gestion_integral&channel=eq.maritimo_negro&status=not.in.(operacion_cerrada,cancelada)&select=id,operation_code,status,budget_total,cost_flete&order=created_at.asc&limit=1`});return Array.isArray(r)&&r[0]?r[0]:null;};
+  const vincularAGI=async(gi,ships)=>{
+    const ids=ships.map(s=>s.id);
+    for(const id of ids)await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:gi.id}});
+    const linked=await dq("maritime_shipments",{token,filters:`?operation_id=eq.${gi.id}&select=cost_estimado`});
+    const costo=Math.round((Array.isArray(linked)?linked:ships).reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
+    const body={...(costo>0?{cost_flete:costo,cost_flete_currency:"USD",cost_flete_method:"efectivo"}:{})};
+    if(["pendiente","en_deposito_origen","en_transito"].includes(gi.status))body.status="arribo_argentina";
+    if(Object.keys(body).length)await dq("operations",{method:"PATCH",token,filters:`?id=eq.${gi.id}`,body});
+    return costo;
+  };
   const createOperationFromShipments=async(ids,{force}={})=>{
     if(!ids.length)return;
     // Solo el admin crea ops (presupuesto, cost_flete, mail de retiro). El empleado no maneja plata.
@@ -19552,6 +19567,14 @@ function MaritimePanel2({token,allClients=[]}){
       if(!await confirmDialog(`⚠ ${noLlego.length} ${mtPlural(noLlego.length,"carga todavía no llegó","cargas todavía no llegaron")} (sin recepción ni contenedor arribado). Se le avisa retiro al cliente igual.\n\n¿Forzar la creación de la operación?`))return;
     }
     const clientId=[...clientIds][0];const client=clientOf(clientId);
+    const gi=await giAbiertaDe(clientId);
+    if(gi&&await confirmDialog(`${client?.client_code||"Este cliente"} tiene la Gestión Integral ${gi.operation_code} abierta por marítimo integral.\n\n¿Vincular ${ids.length===1?"esta carga":`estas ${ids.length} cargas`} a ${gi.operation_code}? El costo de las cargas pasa a ser su flete.`)){
+      setCreatingOp(true);busyRef.current=true;
+      try{const costo=await vincularAGI(gi,selObjs);setSel({});flash(`🔗 ${ids.length} carga${ids.length>1?"s":""} vinculada${ids.length>1?"s":""} a ${gi.operation_code} (GI)${costo>0?` · flete USD ${costo.toLocaleString("es-AR",{maximumFractionDigits:2})}`:""}`);await load();}
+      catch(e){console.error(e);alertDialog(`Error: ${e.message}`);}
+      finally{setCreatingOp(false);busyRef.current=false;}
+      return;
+    }
     const desc=selObjs.map(s=>s.product_description).filter(Boolean).join(" · ");
     const trackings=selObjs.map(s=>s.tracking_number).filter(Boolean).join(" · ");
     if(!await confirmDialog(`¿Crear operación marítima Integral AC con ${ids.length} carga${ids.length>1?"s":""} de ${client?.client_code||"—"}?\n\nDescripción: ${desc.slice(0,80)}${desc.length>80?"…":""}\n\n• La op nace LISTA PARA RETIRAR\n• Se le manda el email "lista para retirar" al cliente\n• Las cargas salen del depósito (quedan guardadas, linkeadas a la op)`))return;
@@ -19592,9 +19615,17 @@ function MaritimePanel2({token,allClients=[]}){
     const [tariffsR,cfgR]=await Promise.all([dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"})]);
     const tariffs=Array.isArray(tariffsR)?tariffsR:[];const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
     const deliveryEta=mtEntregaEst(c);
-    let created=0;const createdOps=[];
+    let created=0;const createdOps=[];const giVinc=[];
     for(const cid of clientIds){
       const ships=byClient[cid];const ids=ships.map(s=>s.id);const client=clientOf(cid)||{};const origin=ships[0].origin==="usa"?"USA":"China";
+      const gi=await giAbiertaDe(cid);
+      if(gi){
+        const costo=await vincularAGI(gi,ships);
+        const pk=await dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=cbm,quantity`});
+        const cbmGi=(Array.isArray(pk)?pk:[]).reduce((x,p)=>x+Number(p.cbm||0),0);
+        createdOps.push({id:gi.id,code:gi.operation_code,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(gi.budget_total||0),cost_flete:costo>0?costo:null,cbm:Math.round(cbmGi*10000)/10000});
+        giVinc.push(gi.operation_code);continue;
+      }
       const [itR,pkR,ovR]=await Promise.all([dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`}),dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cid}&select=*`})]);
       const mItems=Array.isArray(itR)?itR:[];const mPkgs=Array.isArray(pkR)?pkR:[];
       // Si no se pudieron leer los overrides (RLS/red) NO se crea la op a tarifa de lista en silencio.
@@ -19623,7 +19654,7 @@ function MaritimePanel2({token,allClients=[]}){
       createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(opBody.budget_total||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
       created++;
     }
-    return{msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
+    return{msg:(created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"")+(giVinc.length?` · 🔗 cargas vinculadas a ${giVinc.join(", ")} (GI)`:""),ops:createdOps};
   };
   const openCostModalForContainer=async(c,{silent=false}={})=>{
     const shR=await dq("maritime_shipments",{token,filters:`?container_id=eq.${c.id}&operation_id=not.is.null&select=id,operation_id`});
