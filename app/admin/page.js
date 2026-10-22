@@ -20575,45 +20575,52 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
     </div>
   </div>;
 }
+// Navieras que llegan a Buenos Aires desde Asia (21/10/2026). El color es el de la marca, para la
+// cara del contenedor en el formulario y los chips del tablero.
+const NAVIERAS=[
+  {n:"Maersk",c:"#42B0D5"},{n:"MSC",c:"#C8A951"},{n:"CMA CGM",c:"#E2001A"},{n:"COSCO",c:"#1C4E9D"},
+  {n:"Hapag-Lloyd",c:"#F26722"},{n:"ONE",c:"#E5007E"},{n:"Evergreen",c:"#00843D"},{n:"ZIM",c:"#2A3E8C"},
+  {n:"HMM",c:"#F47920"},{n:"Yang Ming",c:"#F0B323"},{n:"OOCL",c:"#E2231A"},{n:"PIL",c:"#E30613"},
+  {n:"Wan Hai",c:"#0068B7"},
+];
+const navieraColor=(n)=>NAVIERAS.find(x=>x.n.toLowerCase()===String(n||"").trim().toLowerCase())?.c||"#60a5fa";
+
 function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
   const isEdit=!!editing?.id;
+  const celu=useEsCelu(560);
   const [code,setCode]=useState(editing?.code||"");
   // Sin select de estado: el contenedor nace en tránsito y el arribo se marca con ⚓ Arribó en el
-  // tablero (ese botón crea las ops, avisa a los clientes y abre los costos; si se pudiera arribar
-  // desde acá se saltearía todo eso). Al editar uno ya arribado se muestra como texto.
+  // tablero (ese botón crea las ops, avisa a los clientes y abre los costos).
   const status=editing?.status||"en_transito";
-  // Depósito: viene prellenado por prop; si el tablero abre el form desde "Todos" (sin depósito)
-  // se elige acá mismo en vez de fallar el insert con warehouse null.
   const [whName,setWhName]=useState(editing?.warehouse||warehouse||"");
-  const [shippingLine,setShippingLine]=useState(editing?.shipping_line||"");
+  const navIni=editing?.shipping_line||"";
+  const navEnLista=!navIni||NAVIERAS.some(x=>x.n.toLowerCase()===navIni.toLowerCase());
+  const [navSel,setNavSel]=useState(navEnLista?(NAVIERAS.find(x=>x.n.toLowerCase()===navIni.toLowerCase())?.n||""):"__otra");
+  const [navOtra,setNavOtra]=useState(navEnLista?"":navIni);
+  const shippingLine=navSel==="__otra"?navOtra.trim():navSel;
   const [departedAt,setDepartedAt]=useState(editing?.departed_at||hoyAR());
   const [eta,setEta]=useState(editing?.eta||"");
-  const [notes,setNotes]=useState(editing?.notes||"");
   const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
   const [tbDias,setTbDias]=useState(editing?.transbordo_dias?String(editing.transbordo_dias):"15");
   const [tbLugar,setTbLugar]=useState(editing?.transbordo_lugar||"Brasil");
-  // Tamaño → capacity_cbm (alimenta el llenado y la sugerencia "subir a…" del tablero). Presets
-  // estándar + "otro" libre + "sin definir" (null). Default 40' al crear porque es el que más se usa.
-  const CAPS=[{k:"20",l:"20'",cbm:28},{k:"40",l:"40'",cbm:58},{k:"40hc",l:"40' HC",cbm:68}];
-  const capInit=!isEdit?"40":editing.capacity_cbm==null?"":(CAPS.find(p=>p.cbm===Number(editing.capacity_cbm))?.k||"otro");
-  const [capKind,setCapKind]=useState(capInit);
-  const [capOther,setCapOther]=useState(capInit==="otro"?String(editing.capacity_cbm):"");
-  const capacityCbm=capKind===""?null:capKind==="otro"?(Number(String(capOther).replace(",","."))||null):CAPS.find(p=>p.k===capKind).cbm;
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
-  const LBL={display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
-  // Entrega estimada = ETA a puerto + demora por transbordo + 14 días (misma regla que entregaEst() del tablero).
   const tbAdd=transbordo?(Number(tbDias)||0):0;
-  const delEta=eta?(()=>{const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14+tbAdd);return d.toISOString().slice(0,10);})():null;
+  const sumar=(iso,d)=>{const x=new Date(iso+"T12:00:00");x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};
+  const etaReal=eta?sumar(eta,tbAdd):null;
+  const delEta=eta?sumar(eta,14+tbAdd):null;
+  const etaAntes=!!(eta&&departedAt&&eta<departedAt);
+  const diasViaje=eta&&departedAt&&!etaAntes?Math.round((new Date(etaReal+"T12:00:00")-new Date(departedAt+"T12:00:00"))/86400000):null;
+  const col=navieraColor(shippingLine);
+  const codeN=code.toUpperCase().replace(/\s+/g,"");
   const save=async()=>{
-    if(!code.trim()){setErr("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
+    if(!codeN){setErr("Cargá el número del contenedor (ej: MSKU1234567)");return;}
     if(!isEdit&&!whName){setErr("Elegí el depósito del contenedor");return;}
-    if(capKind==="otro"&&!capacityCbm){setErr("Cargá la capacidad en m³ o elegí un tamaño estándar");return;}
+    if(navSel==="__otra"&&!navOtra.trim()){setErr("Escribí el nombre de la naviera");return;}
+    if(etaAntes){setErr("La ETA no puede ser anterior a la fecha de salida");return;}
     setSaving(true);setErr("");
-    const body={code:code.trim(),shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null,capacity_cbm:capacityCbm};
+    const body={code:codeN,shipping_line:shippingLine||null,departed_at:departedAt||null,eta:eta||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
     try{
-      // dq no lanza en 4xx: devuelve el objeto de error (o [] si RLS filtró la fila). Por eso se mira
-      // la respuesta antes de cerrar; antes el form cerraba como si hubiera guardado.
       const r=isEdit
         ?await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body})
         :await dq("maritime_containers",{method:"POST",token,body:{...body,status:"en_transito",warehouse:whName,warehouse_id:warehouses.find(w=>w.name===whName)?.id||null}});
@@ -20622,65 +20629,83 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
       onSave();
     }catch(e){setErr("Error: "+(e?.message||"sin conexión"));setSaving(false);}
   };
-  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <style>{`.mt-cf-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}@media(max-width:767px){.mt-cf-2col{grid-template-columns:1fr}}`}</style>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🚢 {isEdit?"Editar":"Nuevo"} contenedor {whName&&<span style={{color:"#60a5fa",fontSize:13}}>· {whName}</span>}</h3>
-        <button onClick={onCancel} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
-      </div>
-      {!isEdit&&!warehouse&&<Sel label="Depósito" value={whName} onChange={setWhName} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.filter(w=>!w.archived).map(w=>({value:w.name,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>}
-      <div className="mt-cf-2col">
-        <Inp label="Código / N° contenedor" value={code} onChange={setCode} placeholder="Ej: MSKU1234567"/>
-        <Inp label="Naviera" value={shippingLine} onChange={setShippingLine} placeholder="Ej: Maersk, MSC, COSCO…"/>
-      </div>
-      <div className="mt-cf-2col">
-        <Inp label="Fecha de salida" type="date" value={departedAt} onChange={setDepartedAt}/>
-        <Inp label="ETA Puerto Buenos Aires" type="date" value={eta} onChange={setEta}/>
-      </div>
-      {!eta&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 10px",fontStyle:"italic"}}>⚠ Sin ETA el contenedor no tiene semáforo ni entrega estimada en el tablero. Cargala apenas la tengas.</p>}
-      <div style={{margin:"-4px 0 12px",padding:"9px 12px",background:delEta?"rgba(34,197,94,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${delEta?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.08)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
-        <span style={{fontSize:16}}>📦</span>
-        <div>
-          <p style={{...LBL,fontSize:10,marginBottom:0,color:"rgba(255,255,255,0.45)"}}>Entrega estimada de la mercadería</p>
-          <p style={{fontSize:13.5,fontWeight:700,color:delEta?"#4ade80":"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{delEta?formatDateShort(delEta):"— (cargá el arribo a puerto)"}{delEta&&<span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",marginLeft:6}}>· puerto{tbAdd?` + ${tbAdd} d transbordo`:""} + 14 días</span>}</p>
+  const LBL={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.5)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"};
+  const inS={width:"100%",height:44,padding:"0 14px",fontSize:15,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:11,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"};
+  // Hito de la mini línea de tiempo
+  const Hito=({l,v,c,sub})=><div style={{flex:"1 1 0",minWidth:0,textAlign:"center"}}>
+    <p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>{l}</p>
+    <p style={{margin:"3px 0 0",fontSize:14,fontWeight:800,color:v?c:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>{v?formatDateShort(v):"—"}</p>
+    {sub&&<p style={{margin:"1px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{sub}</p>}
+  </div>;
+  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#132036,#0C1628)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,boxShadow:"0 30px 80px rgba(0,0,0,0.65)"}}>
+      {/* Cara del contenedor: puerta corrugada con el número pintado y la naviera */}
+      <div style={{position:"relative",padding:"18px 20px 16px",borderRadius:"18px 18px 0 0",overflow:"hidden",background:`repeating-linear-gradient(90deg,${col} 0px,${col} 14px,${col}d9 14px,${col}d9 18px)`,borderBottom:"3px solid rgba(0,0,0,0.35)"}}>
+        <div style={{position:"absolute",inset:0,background:"linear-gradient(180deg,rgba(255,255,255,0.12),rgba(0,0,0,0.28))",pointerEvents:"none"}}/>
+        {/* Barras de cierre de la puerta */}
+        {[0.3,0.7].map(x=><div key={x} style={{position:"absolute",top:0,bottom:0,left:`${x*100}%`,width:5,background:"rgba(0,0,0,0.28)",boxShadow:"1px 0 0 rgba(255,255,255,0.15)"}}/>)}
+        <div style={{position:"relative",display:"flex",alignItems:"flex-start",gap:12}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:11,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:"rgba(255,255,255,0.9)",textShadow:"0 1px 2px rgba(0,0,0,0.4)"}}>{isEdit?"Editar contenedor":"Nuevo contenedor"}{whName?` · ${whName}`:""}</p>
+            <p style={{margin:"8px 0 0",fontFamily:"'JetBrains Mono',monospace",fontSize:celu?24:30,fontWeight:800,letterSpacing:"0.06em",color:"#fff",textShadow:"0 2px 6px rgba(0,0,0,0.45)",lineHeight:1.05,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{codeN||"XXXU 000000 0"}</p>
+            <p style={{margin:"6px 0 0",fontSize:15,fontWeight:900,letterSpacing:"0.04em",color:"#fff",textShadow:"0 1px 3px rgba(0,0,0,0.45)",textTransform:"uppercase"}}>{shippingLine||"Naviera"}</p>
+          </div>
+          <button onClick={onCancel} style={{position:"relative",width:32,height:32,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.25)",color:"#fff",fontSize:18,cursor:"pointer",lineHeight:1,flexShrink:0}}>×</button>
         </div>
       </div>
-      <div style={{marginBottom:12,padding:"10px 12px",background:transbordo?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${transbordo?"rgba(251,146,60,0.28)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
-        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)"}}>
-          <input type="checkbox" checked={transbordo} onChange={e=>setTransbordo(e.target.checked)} style={{cursor:"pointer",accentColor:"#fb923c",width:16,height:16}}/>
-          🔄 Hace transbordo (demora extra)
-        </label>
+
+      <div style={{padding:"18px 20px 20px"}}>
+        {!isEdit&&!warehouse&&<Sel label="Depósito" value={whName} onChange={setWhName} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.filter(w=>!w.archived).map(w=>({value:w.name,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>}
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:"12px 12px",marginBottom:12}}>
+          <div>
+            <label style={LBL}>N° de contenedor</label>
+            <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="MSKU1234567" style={{...inS,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}/>
+          </div>
+          <div>
+            <Sel label="Naviera" value={navSel} onChange={setNavSel} ph="Elegí la naviera" options={[...NAVIERAS.map(x=>({value:x.n,label:x.n})),{value:"__otra",label:"Otra…"}]}/>
+            {navSel==="__otra"&&<input autoFocus value={navOtra} onChange={e=>setNavOtra(e.target.value)} placeholder="Nombre de la naviera" style={{...inS,marginTop:-4}}/>}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:"0 12px"}}>
+          <Inp label="Salió de origen" type="date" value={departedAt} onChange={setDepartedAt}/>
+          <Inp label="Llega a Buenos Aires (ETA)" type="date" value={eta} onChange={setEta}/>
+        </div>
+
+        {/* Línea de tiempo: salida → puerto → entrega */}
+        <div style={{margin:"2px 0 12px",padding:"14px 12px 12px",borderRadius:14,background:etaAntes?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${etaAntes?"rgba(248,113,113,0.4)":"rgba(255,255,255,0.08)"}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"0 6px 10px"}}>
+            <span style={{width:10,height:10,borderRadius:"50%",background:col,flexShrink:0}}/>
+            <div style={{flex:1,height:2,background:`linear-gradient(90deg,${col},#60a5fa)`}}/>
+            <span style={{fontSize:16}}>🚢</span>
+            <div style={{flex:1,height:2,background:"linear-gradient(90deg,#60a5fa,#4ade80)"}}/>
+            <span style={{width:10,height:10,borderRadius:"50%",background:"#4ade80",flexShrink:0}}/>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <Hito l="Salida" v={departedAt} c="#fff"/>
+            <Hito l="Puerto BA" v={etaReal} c="#60a5fa" sub={diasViaje!=null?`${diasViaje} días de viaje`:null}/>
+            <Hito l="Entrega" v={delEta} c="#4ade80" sub={delEta?"+14 días":null}/>
+          </div>
+          {etaAntes&&<p style={{margin:"10px 0 0",fontSize:12,fontWeight:700,color:"#f87171",textAlign:"center"}}>La ETA es anterior a la salida. Revisá las fechas.</p>}
+          {!eta&&<p style={{margin:"10px 0 0",fontSize:12,fontWeight:700,color:"#fbbf24",textAlign:"center"}}>Sin ETA no hay semáforo ni entrega estimada.</p>}
+        </div>
+
+        {/* Transbordo */}
+        <button type="button" onClick={()=>setTransbordo(!transbordo)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",background:transbordo?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${transbordo?"rgba(251,146,60,0.45)":"rgba(255,255,255,0.08)"}`,color:"#fff"}}>
+          <span style={{width:20,height:20,borderRadius:6,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,background:transbordo?"#fb923c":"transparent",border:`1.5px solid ${transbordo?"#fb923c":"rgba(255,255,255,0.3)"}`,color:"#0A1628",flexShrink:0}}>{transbordo?"✓":""}</span>
+          <span style={{fontSize:13.5,fontWeight:700}}>Hace transbordo</span>
+          {transbordo&&<span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#fb923c"}}>+{Number(tbDias)||0} días</span>}
+        </button>
         {transbordo&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px",marginTop:10}}>
-          <Inp label="Lugar del transbordo" value={tbLugar} onChange={setTbLugar} placeholder="Ej: Brasil"/>
+          <Inp label="Dónde" value={tbLugar} onChange={setTbLugar} placeholder="Brasil"/>
           <Inp label="Días de demora" type="number" value={tbDias} onChange={setTbDias} placeholder="15"/>
         </div>}
-        {transbordo&&<p style={{fontSize:10.5,color:"#fb923c",margin:"6px 0 0",fontStyle:"italic"}}>La ETA y la entrega se corren {Number(tbDias)||0} días. El cliente ve la fecha actualizada y un aviso de demora en su portal.</p>}
-      </div>
-      {/* Tamaño → capacity_cbm */}
-      <div style={{marginBottom:12}}>
-        <label style={LBL}>Tamaño del contenedor</label>
-        <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
-          {[...CAPS.map(p=>({k:p.k,l:`${p.l} · ${p.cbm} m³`})),{k:"otro",l:"Otro"},{k:"",l:"Sin definir"}].map(o=><button key={o.k||"none"} type="button" onClick={()=>setCapKind(o.k)} style={{flex:"1 1 auto",padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",whiteSpace:"nowrap",background:capKind===o.k?"rgba(232,208,152,0.18)":"transparent",color:capKind===o.k?IC:"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+
+        {isEdit&&status==="arribado"&&<p style={{margin:"12px 0 0",fontSize:12.5,fontWeight:700,color:"#4ade80"}}>⚓ Arribado{editing?.arrived_at?` el ${formatDateShort(editing.arrived_at)}`:""}</p>}
+        {err&&<p style={{fontSize:12.5,fontWeight:700,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,padding:"9px 12px",margin:"12px 0 0"}}>{err}</p>}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+          <button type="button" onClick={onCancel} disabled={saving} style={{height:42,padding:"0 16px",borderRadius:11,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.8)",fontSize:13.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+          <button type="button" onClick={save} disabled={saving} style={{height:42,padding:"0 20px",borderRadius:11,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",fontSize:13.5,fontWeight:800,cursor:saving?"default":"pointer",fontFamily:"inherit",opacity:saving?0.6:1,boxShadow:GOLD_GLOW}}>{saving?"Guardando…":isEdit?"Guardar":"Crear contenedor"}</button>
         </div>
-        {capKind==="otro"&&<div style={{marginTop:8}}><Inp label="Capacidad (m³)" type="number" value={capOther} onChange={setCapOther} placeholder="Ej: 33" small/></div>}
-        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{capacityCbm?`El tablero muestra el llenado (m³ cargados / ${capacityCbm} m³) y sugiere a dónde subir cargas.`:"Sin tamaño el tablero no puede calcular el llenado ni sugerir a dónde subir cargas."}</p>
-      </div>
-      {/* Estado: solo lectura. El arribo se marca desde el tablero. */}
-      <div style={{marginBottom:12,padding:"9px 12px",background:status==="arribado"?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.06)",border:`1px solid ${status==="arribado"?"rgba(34,197,94,0.2)":"rgba(96,165,250,0.2)"}`,borderRadius:8}}>
-        <p style={{...LBL,marginBottom:2}}>Estado</p>
-        {status==="arribado"
-          ?<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:0}}>⚓ Arribado{editing?.arrived_at?` el ${formatDateShort(editing.arrived_at)}`:""}</p>
-          :<Fragment>
-            <p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:0}}>🚢 En tránsito</p>
-            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",fontStyle:"italic"}}>Para marcar el arribo usá ⚓ Arribó en el tablero (crea las operaciones y avisa a los clientes).</p>
-          </Fragment>}
-      </div>
-      <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
-      {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 10px"}}>✕ {err}</p>}
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
-        <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
-        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(isEdit?"Guardar":"+ Crear contenedor")}</Btn>
       </div>
     </div>
   </div>;
