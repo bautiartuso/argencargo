@@ -52,7 +52,7 @@ export default function MaritimeCargoCards({cargo,cargando=false}){
     // Solo fechas reales: nada de "se actualiza en estos días" en la ruta (pedido 21/10/2026).
     const pasos=[
       {l:t("mar2.stReceived"),s:null},
-      {l:dep&&usa?t("mar2.stConsolidating"):dep&&cargando?t("mar2.stLoading"):t("mar2.stLoaded"),s:zarpo?t("mar2.sailedOn",{fecha:fDc(zarpo)}):null},
+      {l:dep&&usa?t("mar2.stConsolidating"):dep&&cargando?t("mar2.stLoading"):t("mar2.stLoaded"),s:null}, // sin la fecha de zarpe (pedido 21/10/2026)
       {l:t("mar2.stSea"),s:puerto?null:!dep?(pct!=null?`${t("mar2.tripPct",{pct:Math.round(pct*100)})}${faltan?` · ${faltan}`:""}`:faltan):null},
       puerto?{l:t("mar2.stCustoms"),s:t("mar2.arrivedOn",{fecha:fDc(puerto)})}:{l:t("mar2.stPort"),s:eta?fDc(eta):null},
       {l:t("mar2.stDeliver"),s:entrega?fDc(entrega):null},
