@@ -497,6 +497,8 @@ function OperationsList({token,onSelect,onNew,onOpenEntrega}){
     return ing-cost-comision+pmtGan;
   };
   const sorted=[...filtered].sort((a,b)=>{
+    // Buscando (22/10/2026): las más nuevas arriba. El orden por etapa/ETA dejaba las viejas primero.
+    if(sortCol==="smart"&&search.trim())return (b.created_at||"").localeCompare(a.created_at||"")||String(b.operation_code||"").localeCompare(String(a.operation_code||""));
     if(sortCol==="smart"){
       // Orden: más cercano a entrega primero (status_weight desc), luego ETA asc, luego created_at desc
       const wa=STATUS_WEIGHT[estadoVisto(a)]??-1,wb=STATUS_WEIGHT[estadoVisto(b)]??-1;
@@ -941,6 +943,17 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [estadoGuardado,setEstadoGuardado]=useState(initOp.status); // para el aviso "cambio sin guardar"
   const [evAbierto,setEvAbierto]=useState(null); // evento de seguimiento que se está editando
   const [horaDraft,setHoraDraft]=useState({}); // hora que se está tipeando por evento (HH:MM)
+  // DSI: además del botón, se puede pegar (⌘V / Ctrl+V) o arrastrar el PDF (22/10/2026).
+  const dsiSubirRef=useRef(null);
+  const [dsiDrag,setDsiDrag]=useState(false);
+  useEffect(()=>{
+    const h=(e)=>{
+      if(!dsiSubirRef.current||!document.querySelector("[data-dsi-drop]"))return;
+      const f=[...(e.clipboardData?.files||[])].find(x=>x.type==="application/pdf"||/\.pdf$/i.test(x.name||""));
+      if(f){e.preventDefault();dsiSubirRef.current(f);}
+    };
+    window.addEventListener("paste",h);return()=>window.removeEventListener("paste",h);
+  },[]);
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:hoyAR(),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:hoyAR(),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
@@ -2933,6 +2946,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           await guardarTd({...td,dsi:{...d,pdf_url,archivo:file.name||"DSI.pdf",cargado_at:new Date().toISOString()}},d.cierra?`DSI cargada · ${d.lines.length} ítems · ${fmt(d.total)}`:`DSI cargada, pero los ítems suman ${fmt(d.suma)} y el total dice ${fmt(d.total)}: revisala`);
         }catch(e){flash("No se pudo leer la DSI: "+e.message);setSavingDespacho(false);}
       };
+      dsiSubirRef.current=cerrada?null:subirDsi;
+      const dropProps=cerrada?{}:{"data-dsi-drop":"1",onDragOver:(e)=>{e.preventDefault();if(!dsiDrag)setDsiDrag(true);},onDragLeave:(e)=>{if(!e.currentTarget.contains(e.relatedTarget))setDsiDrag(false);},onDrop:(e)=>{e.preventDefault();setDsiDrag(false);const f=[...(e.dataTransfer?.files||[])].find(x=>x.type==="application/pdf"||/\.pdf$/i.test(x.name||""));if(f)subirDsi(f);else flash("Soltá un PDF");}};
       const quitarDsi=async()=>{if(!await confirmDialog("¿Quitar la DSI? Los impuestos vuelven al estimado.",{danger:true}))return;const {dsi:_x,confirmado:_y,...resto}=td;await guardarTd(resto,"DSI quitada · vuelve el estimado");};
       const guardarDesaduanaje=async()=>{setSavingDespacho(true);const body={despacho_desaduanaje_usd:numOrNull(despacho.des)};await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));await autoSyncBudget(true,{soloImpuestos:true});setSavingDespacho(false);flash("Desaduanaje guardado");};
       const saveManual=async()=>{
@@ -2949,14 +2964,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const inS={background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,height:40,padding:"0 12px",color:"#fff",fontSize:14,fontWeight:700,fontVariantNumeric:"tabular-nums",width:"100%",boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
       const lblS={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.42)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6};
       const btnS=(c)=>({height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6});
-      const subir=<label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"22px 16px",borderRadius:14,border:"1.5px dashed rgba(232,208,152,0.4)",background:"rgba(232,208,152,0.05)",cursor:savingDespacho?"wait":"pointer",color:"#E8D098",fontSize:14,fontWeight:800}}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg>
-        {savingDespacho?"Leyendo la DSI…":"Subir destinación simplificada (PDF)"}
+      const subir=<label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,padding:"24px 16px",borderRadius:14,border:`1.5px dashed ${dsiDrag?"#E8D098":"rgba(232,208,152,0.4)"}`,background:dsiDrag?"rgba(232,208,152,0.14)":"rgba(232,208,152,0.05)",cursor:savingDespacho?"wait":"pointer",color:"#E8D098",fontSize:14,fontWeight:800,transition:"all .15s"}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:10}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/></svg>
+        {savingDespacho?"Leyendo la DSI…":dsiDrag?"Soltá el PDF acá":"Subir destinación simplificada (PDF)"}</span>
+        {!savingDespacho&&!dsiDrag&&<span style={{fontSize:11.5,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>Arrastralo acá o pegalo con ⌘V / Ctrl+V</span>}
         <input type="file" accept="application/pdf,.pdf" style={{display:"none"}} disabled={savingDespacho} onChange={e=>{subirDsi(e.target.files?.[0]);e.target.value="";}}/>
       </label>;
       if(!dsi){
         if(cerrada)return null;
-        return <Card v2 title="Despacho" sub="Sin DSI: los impuestos son estimados">
+        return <div {...dropProps}><Card v2 title="Despacho" sub="Sin DSI: los impuestos son estimados">
           {subir}
           <details style={{marginTop:12}}>
             <summary style={{cursor:"pointer",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.5)"}}>Cargar los totales a mano</summary>
@@ -2968,12 +2984,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               <button type="button" onClick={saveManual} disabled={savingDespacho} style={btnS("#E8D098")}>{savingDespacho?"Guardando…":"Guardar y recalcular"}</button>
             </div>
           </details>
-        </Card>;
+        </Card></div>;
       }
       const asig=asignarDsi(dsi.lines,items);
       const tot={die:dsi.lines.reduce((a,l)=>a+l.die,0),te:dsi.lines.reduce((a,l)=>a+l.te,0),iva:dsi.lines.reduce((a,l)=>a+l.iva+(l.otros||0),0)};
       const tile=(l,v,c)=><div style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)"}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>{l}</p><p style={{margin:"5px 0 0",fontSize:17,fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums"}}>{fmt(v)}</p></div>;
-      return <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Despacho<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)",letterSpacing:"0.04em"}}>✓ Confirmado con DSI</span></span>} sub={`${dsi.fecha?`DSI del ${dsi.fecha}`:"DSI"}${dsi.guia?` · guía ${dsi.guia}`:""} · ${dsi.lines.length} ítem${dsi.lines.length!==1?"s":""}`} actions={<>
+      return <div {...dropProps} style={dsiDrag?{outline:"2px dashed #E8D098",outlineOffset:4,borderRadius:20}:undefined}><Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Despacho<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)",letterSpacing:"0.04em"}}>✓ Confirmado con DSI</span></span>} sub={`${dsi.fecha?`DSI del ${dsi.fecha}`:"DSI"}${dsi.guia?` · guía ${dsi.guia}`:""} · ${dsi.lines.length} ítem${dsi.lines.length!==1?"s":""}`} actions={<>
           {dsi.pdf_url&&<a href={dsi.pdf_url} target="_blank" rel="noopener noreferrer" style={btnS("#93c5fd")}>Ver PDF</a>}
           {!cerrada&&<label style={btnS("#E8D098")}>Reemplazar<input type="file" accept="application/pdf,.pdf" style={{display:"none"}} disabled={savingDespacho} onChange={e=>{subirDsi(e.target.files?.[0]);e.target.value="";}}/></label>}
           {!cerrada&&<button type="button" onClick={quitarDsi} style={btnS("#f87171")}>Quitar</button>}
@@ -3005,7 +3021,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               <p style={{margin:"3px 0 0",fontSize:20,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{fmt(totDsi+desUsado)}</p>
             </div>
           </div>;})()}
-      </Card>;
+      </Card></div>;
     })()}
 
     {tab==="finance"&&!isGI&&(()=>{
