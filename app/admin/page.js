@@ -9105,10 +9105,10 @@ function PedidoDsiVuelo({flight,token,onAdjuntar}){
   if(!d||d.error||!d.guia)return null;
   const fecha=v=>new Date(v).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
   const nombreDe=(de)=>String(de||"").replace(/<[^>]+>/,"").replace(/"/g,"").trim()||de;
-  const enviar=async()=>{
-    if(!form.para.trim()){toast("Falta a quién se lo mandamos","error");return;}
+  const enviar=async(datos=form)=>{
+    if(!String(datos?.para||"").trim()){toast("Falta a quién se lo mandamos","error");return;}
     setEnviando(true);
-    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...form})});const j=await r.json();
+    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...datos})});const j=await r.json();
       if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
       toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();}
     catch(e){toast(e.message,"error");}
@@ -9136,7 +9136,8 @@ function PedidoDsiVuelo({flight,token,onAdjuntar}){
         <p style={{margin:0,fontSize:13,fontWeight:800,color:nueva?"#93c5fd":"#fff"}}>{!p?"Pedir la DSI al courier":p.respuesta_at?`Respondió ${nombreDe(p.respuesta_de)}`:"DSI pedida · esperando respuesta"}</p>
         <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!p?`Mail con asunto "${d.plantilla.asunto}"${d.conectado?"":" · el Gmail no está conectado"}`:p.respuesta_at?`${fecha(p.respuesta_at)} · pedida el ${fecha(p.enviado_at)} a ${p.para}`:`Pedida el ${fecha(p.enviado_at)} a ${p.para}`}</p>
       </div>
-      {!p&&d.conectado&&!form&&btn("✉ Pedir DSI por mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}))}
+      {!p&&d.conectado&&!form&&d.plantilla.para&&btn("✎ Editar mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
+      {!p&&d.conectado&&!form&&<button type="button" disabled={enviando} onClick={()=>{const f={para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto};if(f.para)enviar(f);else setForm(f);}} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":"✉ Solicitar DSI"}</button>}
       {p&&!form&&btn("Volver a pedir",()=>setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
       {nueva&&btn("✓ Revisado",revisado,"#4ade80")}
     </div>
@@ -9150,7 +9151,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar}){
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
         <span style={{flex:1,fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>Para y mensaje quedan guardados para los próximos vuelos de {d.carrier||"este courier"}.</span>
         <button type="button" onClick={()=>setForm(null)} disabled={enviando} style={{height:34,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
-        <button type="button" onClick={enviar} disabled={enviando} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit"}}>{enviando?"Enviando…":"Enviar pedido"}</button>
+        <button type="button" onClick={()=>enviar()} disabled={enviando} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit"}}>{enviando?"Enviando…":"Enviar pedido"}</button>
       </div>
     </div>}
     {respuestas.map(m=><div key={m.id} style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.07)"}}>
@@ -9165,6 +9166,78 @@ function PedidoDsiVuelo({flight,token,onAdjuntar}){
         {btn(usando===a.id?"Adjuntando…":"Es la DSI",()=>esLaDsi(m,a),"#E8D098",{disabled:!!usando})}
       </div>)}</div>:<p style={{margin:"6px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Sin adjuntos</p>}
     </div>)}
+  </div>;
+}
+
+// Aéreos para el empleado (22/10/2026): Facu solo pide las DSI. Ve los vuelos que ya llegaron a
+// Buenos Aires (recibidos o entregados por el courier) con la guía y el transportista; en cada uno pide
+// la DSI por mail, ve la respuesta y elige qué adjunto es la DSI. Nada de costos, bultos ni agentes.
+function AereosEmpleado({token}){
+  const [vuelos,setVuelos]=useState(null);const [abierto,setAbierto]=useState(null);const [q,setQ]=useState("");
+  const dsiResp=useDsiRespondidos();
+  const cargar=useCallback(async()=>{
+    const desde=new Date(Date.now()-150*86400000).toISOString();
+    const fl=await dq("flights",{token,filters:`?or=(status.eq.recibido,carrier_delivered_at.not.is.null)&dispatched_at=gte.${desde}&select=id,flight_code,international_tracking,international_carrier,status,received_at,carrier_delivered_at,dispatched_at,dest_name&order=dispatched_at.desc`});
+    const lista=Array.isArray(fl)?fl.filter(f=>f.international_tracking):[];
+    if(!lista.length){setVuelos([]);return;}
+    const ids=lista.map(f=>f.id).join(",");
+    const [fos,peds]=await Promise.all([
+      dq("flight_operations",{token,filters:`?flight_id=in.(${ids})&select=flight_id,operations(id,operation_code,channel,service_type,status,international_tracking,clients(first_name,last_name,company_name,cuit,tax_condition))`}),
+      dq("dsi_pedidos",{token,filters:`?flight_id=in.(${ids})&select=flight_id,enviado_at,respuesta_at,revisado_at&order=enviado_at.desc`}).catch(()=>[]),
+    ]);
+    const opsDe={};(Array.isArray(fos)?fos:[]).forEach(x=>{if(x.operations&&llevaLegajo(x.operations))(opsDe[x.flight_id]=opsDe[x.flight_id]||[]).push(x.operations);});
+    const opIds=Object.values(opsDe).flat().map(o=>o.id);
+    const leg=opIds.length?await listarLegajo(token,{opIds}):{docs:[]};
+    const pedDe={};(Array.isArray(peds)?peds:[]).forEach(x=>{if(!pedDe[x.flight_id])pedDe[x.flight_id]=x;});
+    // Vigente: alguna op sin cerrar o llegado hace 14 días o menos. Los viejos sin DSI salen solo buscando.
+    const llego=(f)=>new Date(f.received_at||f.carrier_delivered_at||f.dispatched_at).getTime();
+    setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];return {...f,ops,pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
+  },[token]);
+  useEffect(()=>{cargar();},[cargar]);
+  useEffect(()=>{if(vuelos)cargar();},[dsiResp]);// eslint-disable-line
+  // "Es la DSI": se lee el PDF para saber de qué op es (CUIT/guía); si no se sabe, va a todas las del vuelo.
+  const adjuntar=async(f,file)=>{
+    let info={tipo:null};try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}
+    const ids=(info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
+    await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo:"dsi",datos:info.dsi||null});
+    if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
+    toast(`DSI cargada en ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
+    await cargar();
+  };
+  if(!vuelos)return <div style={{padding:40,textAlign:"center",color:"rgba(255,255,255,0.45)",fontSize:13}}>Cargando vuelos…</div>;
+  const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
+  const busca=q.trim().toLowerCase();
+  const visibles=busca?vuelos.filter(f=>[f.international_tracking,f.flight_code,f.international_carrier,...f.ops.flatMap(o=>[o.operation_code,nombre(o)])].join(" ").toLowerCase().includes(busca)):vuelos;
+  const grupos=[
+    {k:"resp",t:"Respondieron · elegí la DSI",c:"#60a5fa",l:visibles.filter(f=>!f.conDsi&&(f.pedido?.respuesta_at||dsiResp.has(f.id)))},
+    {k:"pedir",t:"Para pedir la DSI",c:"#E8D098",l:visibles.filter(f=>!f.conDsi&&!f.pedido&&(f.vigente||busca))},
+    {k:"esp",t:"Esperando respuesta del courier",c:"rgba(255,255,255,0.6)",l:visibles.filter(f=>!f.conDsi&&f.pedido&&!f.pedido.respuesta_at&&!dsiResp.has(f.id))},
+    {k:"ok",t:"Con DSI",c:"#4ade80",l:visibles.filter(f=>f.conDsi).slice(0,20)},
+  ];
+  const fecha=v=>v?new Date(v).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"";
+  const fila=(f,g)=>{const m=marcaCourier(f.international_carrier);const ab=abierto===f.id;return <div key={f.id} style={{borderRadius:14,marginBottom:8,background:ab?"rgba(255,255,255,0.04)":"rgba(255,255,255,0.02)",border:`1px solid ${ab?"rgba(232,208,152,0.35)":"rgba(255,255,255,0.07)"}`}}>
+    <button type="button" onClick={()=>setAbierto(ab?null:f.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",color:"#fff",flexWrap:"wrap"}}>
+      {m?logoMarca(m,40):<span style={{width:40,height:40,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",fontSize:18}}>✈️</span>}
+      <span style={{flex:"1 1 220px",minWidth:0}}>
+        <span style={{display:"block",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:16,fontWeight:700,letterSpacing:"0.03em"}}>{f.international_tracking}</span>
+        <span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{f.international_carrier||"Courier"} · {f.flight_code} · {f.ops.map(o=>`${o.operation_code} ${nombre(o)}`).join(" · ")}</span>
+      </span>
+      <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{f.status==="recibido"?`Recibido ${fecha(f.received_at)}`:`Entregado ${fecha(f.carrier_delivered_at)}`}</span>
+      <span style={{fontSize:10.5,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.06em",textTransform:"uppercase",color:g.c,border:`1px solid ${g.c}`,whiteSpace:"nowrap",opacity:0.9}}>{g.k==="resp"?"📬 Respondió":g.k==="pedir"?"Pedir DSI":g.k==="esp"?`Pedida ${fecha(f.pedido?.enviado_at)}`:"✓ DSI"}</span>
+      <span style={{color:"rgba(255,255,255,0.4)",fontSize:12,transform:ab?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
+    </button>
+    {ab&&<div style={{padding:"0 14px 12px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file)=>adjuntar(f,file)}/></div>}
+  </div>;};
+  return <div style={{maxWidth:1100}}>
+    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:14,flexWrap:"wrap",marginBottom:18}}>
+      <div><h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#fff"}}>DSI de los vuelos</h2><p style={{margin:"4px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Vuelos que ya llegaron a Buenos Aires</p></div>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar guía, vuelo, op o cliente" style={{width:280,maxWidth:"100%",height:38,padding:"0 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+    </div>
+    {grupos.filter(g=>g.l.length).map(g=><div key={g.k} style={{marginBottom:22}}>
+      <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:g.c}}>{g.t} · {g.l.length}</p>
+      {g.l.map(f=>fila(f,g))}
+    </div>)}
+    {!grupos.some(g=>g.l.length)&&<p style={{color:"rgba(255,255,255,0.45)",fontSize:13}}>No hay vuelos llegados a Buenos Aires{busca?" con esa búsqueda":""}.</p>}
   </div>;
 }
 
@@ -17621,7 +17694,7 @@ function AdminDashboard({session,onLogout}){
       {page==="studio"&&<StudioPanel token={token}/>}
       {page==="historias"&&<HistoriasPanel token={token}/>}
       {page==="blog"&&<BlogPanel token={token}/>}
-      {page==="agents"&&<AgentsPanel token={token}/>}
+      {page==="agents"&&(isEmpleado?<AereosEmpleado token={token}/>:<AgentsPanel token={token}/>)}
       {page==="maritime"&&(mtMuelleOn()?<MaritimePanel2 token={token} allClients={allClients}/>:<MaritimePanel token={token} allClients={allClients}/>)}
       {page==="lclfcl"&&<LclFclPanel token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onNew={()=>{setPage("operations");setSelOp(null);setSelClient(null);setNewOp({channel:"maritimo_blanco",origin:"China"});}}/>}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
