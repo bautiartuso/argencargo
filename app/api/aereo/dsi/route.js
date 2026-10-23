@@ -39,6 +39,17 @@ const asuntoDe = (guia) => `Solicitud DSI ${guia}`;
 const claveCarrier = (c) => String(c || "otro").toLowerCase().replace(/[^a-z]/g, "") || "otro";
 const textoBase = (f) => `Buenas tardes,\n\nLes pedimos la DSI (Destinación Simplificada de Importación) de la guía ${f.international_tracking}${f.dest_name ? `, destinatario ${f.dest_name}${f.dest_tax_id ? ` (CUIT ${f.dest_tax_id})` : ""}` : ""}.\n\nMuchas gracias.\nArgencargo`;
 
+// Mail para varias guías juntas (FedEx, 23/10/2026): la plantilla dice "la destinación simplificada de
+// la guía {guia}"; con varias pasa a plural y las guías van una por renglón.
+function textoVarias(plantilla, guias) {
+  const t = plantilla || "Buenas tardes,\n\nLes pedimos la DSI de la guía {guia}.\n\nMuchas gracias.\nArgencargo";
+  if (guias.length === 1) return t.replace(/\{guia\}/g, guias[0]);
+  const lista = guias.map((g) => `- ${g}`).join("\n");
+  return t.replace(/la destinaci[oó]n simplificada/gi, "las destinaciones simplificadas").replace(/la DSI/g, "las DSI")
+    .replace(/(de )?la gu[ií]a \{guia\}\.?/gi, (m, de) => `${de || ""}las guías:\n\n${lista}`).replace(/\{guia\}/g, `\n${lista}\n`);
+}
+const asuntoVarias = (guias) => (guias.length === 1 ? asuntoDe(guias[0]) : `Solicitud DSI ${guias.join(" / ")}`);
+
 async function leerPlantillas() {
   const r = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${PLANTILLAS}`, { cache: "no-store", headers: { apikey: SB, Authorization: `Bearer ${SB}` } });
   if (!r.ok) return {};
@@ -151,6 +162,13 @@ export async function GET(req) {
       }
       return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes });
     }
+    if (accion === "plantilla") {
+      const ids = (u.searchParams.get("flight_ids") || "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+      const fl = ids.length ? lista(await sb(`/rest/v1/flights?id=in.(${ids.join(",")})&select=international_tracking,international_carrier`)) : [];
+      const guias = fl.map((f) => f.international_tracking).filter(Boolean);
+      const pl = (await leerPlantillas())[claveCarrier(fl[0]?.international_carrier)] || {};
+      return json({ para: pl.para || "", cc: pl.cc || "", asunto: asuntoVarias(guias), texto: textoVarias(pl.texto, guias), guias });
+    }
     if (accion === "adjunto") {
       const msg = u.searchParams.get("msg") || "";
       // Solo adjuntos de mails de un pedido de DSI (el hilo o quien contesta los pedidos): el empleado
@@ -179,21 +197,27 @@ export async function POST(req) {
     if (b.accion === "pedir") {
       const para = String(b.para || "").trim();
       if (!para) return json({ error: "Falta a quién se lo mandamos" }, 400);
-      const f = lista(await sb(`/rest/v1/flights?id=eq.${b.flight_id}&select=id,international_tracking,international_carrier&limit=1`))[0];
-      if (!f?.international_tracking) return json({ error: "El vuelo no tiene número de guía" }, 400);
+      // Uno (flight_id) o varios vuelos del mismo courier en un solo mail (flight_ids, FedEx).
+      const ids = (Array.isArray(b.flight_ids) ? b.flight_ids : [b.flight_id]).filter((x) => /^[0-9a-f-]{36}$/i.test(String(x || "")));
+      const fl = ids.length ? lista(await sb(`/rest/v1/flights?id=in.(${ids.join(",")})&select=id,international_tracking,international_carrier`)).filter((f) => f.international_tracking) : [];
+      if (!fl.length) return json({ error: "El vuelo no tiene número de guía" }, 400);
       const cfg = await leerConfig();
       if (!cfg?.refresh_token) return json({ error: "no_conectado" }, 409);
-      const asunto = asuntoDe(f.international_tracking);
-      const texto = String(b.texto || "").trim();
-      const mime = armarMime({ de: cfg.email, para, cc: String(b.cc || "").trim() || undefined, asunto, texto });
+      const guias = fl.map((f) => f.international_tracking);
+      const asunto = asuntoVarias(guias);
+      const texto = String(b.texto || "").trim() || textoVarias(((await leerPlantillas())[claveCarrier(fl[0].international_carrier)] || {}).texto, guias);
+      const cc = String(b.cc || "").trim();
+      const mime = armarMime({ de: cfg.email, para, cc: cc || undefined, asunto, texto });
       const enviado = await gm("/messages/send", { method: "POST", body: JSON.stringify({ raw: b64url(Buffer.from(mime, "utf8")) }) });
-      const ins = await sb(`/rest/v1/dsi_pedidos`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ flight_id: f.id, guia: f.international_tracking, carrier: f.international_carrier, para, cc: String(b.cc || "").trim() || null, asunto, gmail_id: enviado.id || null, gmail_hilo: enviado.threadId || null, enviado_por: uid }) });
-      // Lo que se mandó queda como plantilla de ese courier (la guía vuelve a {guia}).
+      const ins = await sb(`/rest/v1/dsi_pedidos`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(fl.map((f) => ({ flight_id: f.id, guia: f.international_tracking, carrier: f.international_carrier, para, cc: cc || null, asunto, gmail_id: enviado.id || null, gmail_hilo: enviado.threadId || null, enviado_por: uid }))) });
+      // Lo que se mandó queda como plantilla de ese courier (la guía vuelve a {guia}); con varias guías
+      // solo se guardan los destinatarios, el texto en plural no sirve de plantilla.
       const pls = await leerPlantillas();
-      pls[claveCarrier(f.international_carrier)] = { para, cc: String(b.cc || "").trim(), texto: texto.split(f.international_tracking).join("{guia}") };
+      const k = claveCarrier(fl[0].international_carrier);
+      pls[k] = { ...(pls[k] || {}), para, cc, ...(fl.length === 1 ? { texto: texto.split(guias[0]).join("{guia}") } : {}) };
       await guardarPlantillas(pls).catch(() => {});
       if (!ins.ok) return json({ ok: true, aviso: "Se mandó el mail pero falta correr el SQL de dsi_pedidos" });
-      return json({ ok: true, pedido: lista(ins)[0] });
+      return json({ ok: true, pedidos: lista(ins), pedido: lista(ins)[0] });
     }
     if (b.accion === "revisado") {
       const marca = { revisado_at: new Date().toISOString(), revisado_por: uid };
