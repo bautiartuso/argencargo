@@ -12,6 +12,7 @@ import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 import { armarDatosPortal, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import SupportPage from "./components/SupportPage";
 import { hoyAR } from "../../lib/fecha-ar";
+import { printReceiptPdf } from "../../lib/pdf-templates";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -153,6 +154,37 @@ const CN=CN_SECTIONS.flatMap(s=>s.items);
 // Las fotos de los bultos se borran a los 90 días (22/10/2026): sin foto pero ya subida, o con el bulto
 // de más de 90 días, es "Foto caducada" y no "Sin foto".
 const fotoCaducada=(p)=>!p?.photo_url&&(!!p?.photo_uploaded_at||(p?.created_at&&(Date.now()-new Date(p.created_at).getTime())/86400000>=90));
+
+// Legajo de la importación (22/10/2026): lo que existe — facturas de Argencargo, factura del courier,
+// DSI y los recibos de cada pago. Visibilidad y links firmados los resuelve /api/portal/legajo.
+function LegajoPortal({opId,token,t}){
+  const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:"22px 26px",marginBottom:16,boxShadow:"0 16px 40px rgba(0,0,0,0.3)"};
+  const H3={fontSize:12.5,fontWeight:800,color:"#fff",margin:0,letterSpacing:"0.1em",textTransform:"uppercase"};
+  const [d,setD]=useState(null);
+  useEffect(()=>{let vivo=true;(async()=>{try{const r=await fetch(`/api/portal/legajo?op_id=${opId}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const j=await r.json();if(vivo)setD(j);}catch{if(vivo)setD({error:true});}})();return()=>{vivo=false;};},[opId,token]);
+  const fecha=(v)=>v?new Date(String(v).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"";
+  const fila=(icono,titulo,sub,der)=><div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)",marginBottom:10,flexWrap:"wrap"}}>
+    <span style={{width:40,height:40,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(140,200,245,0.1)",fontSize:18}}>{icono}</span>
+    <div style={{flex:"1 1 180px",minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{titulo}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}>{sub}</p>}</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{der}</div>
+  </div>;
+  const btn=(txt,props)=><a {...props} style={{height:34,padding:"0 14px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(140,200,245,0.5)",background:"rgba(140,200,245,0.12)",color:"#8cc8f5",fontSize:12.5,fontWeight:800,textDecoration:"none",cursor:"pointer",whiteSpace:"nowrap"}}>{txt}</a>;
+  if(!d)return <div style={PANEL}><p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13}}>{t("leg.loading")}</p></div>;
+  if(d.error||!d.visible)return <div style={PANEL}><p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13}}>{t("leg.empty")}</p></div>;
+  const doc=(tipo)=>d.docs.find(x=>x.tipo===tipo);
+  const pagado=(d.pagos||[]).reduce((a,p)=>a+Number(p.amount_usd||0),0);
+  const saldo=Math.max(0,Number(d.op.budget_total||0)+Number(d.op.debt_applied_usd||0)-Number(d.op.total_anticipos||0)-Number(d.op.credit_applied_usd||0)-Number(d.op.discount_applied_usd||0)-pagado);
+  const hay=d.facturas.length||d.docs.length||d.pagos.length;
+  return <div style={PANEL}>
+    <h3 style={{...H3,marginBottom:6}}>{t("leg.title")}</h3>
+    <p style={{margin:"0 0 16px",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>{t("leg.desc")}</p>
+    {!hay&&<p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13}}>{t("leg.empty")}</p>}
+    {d.facturas.map((f,i)=><div key={i}>{fila("🧾",`${f.tipo} ${f.numero}`,`${t("leg.invoiceAc")} · ${fecha(f.fecha)}`,btn(t("leg.view"),{href:f.url,target:"_blank",rel:"noopener noreferrer"}))}</div>)}
+    {doc("factura_courier")&&fila("📑",t("leg.courierInvoice"),fecha(doc("factura_courier").fecha),btn(t("leg.download"),{href:doc("factura_courier").url,target:"_blank",rel:"noopener noreferrer"}))}
+    {doc("dsi")&&fila("🛃",t("leg.dsi"),fecha(doc("dsi").fecha),btn(t("leg.download"),{href:doc("dsi").url,target:"_blank",rel:"noopener noreferrer"}))}
+    {d.pagos.map(p=><div key={p.id}>{fila("✅",`${t("leg.receipt")}${p.receipt_number?` N.º ${String(p.receipt_number).padStart(5,"0")}`:""}`,`${fecha(p.payment_date)} · USD ${Number(p.amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,btn(t("leg.download"),{onClick:()=>printReceiptPdf({op:d.op,payment:p,client:d.cliente,settings:d.settings,saldoRestante:Math.round(saldo*100)/100})}))}</div>)}
+  </div>;
+}
 
 function WorldMap(){const d=[[120,80],[135,85],[150,78],[165,90],[180,85],[200,95],[215,88],[230,92],[250,100],[265,95],[280,105],[300,98],[320,110],[335,105],[350,115],[370,108],[390,120],[410,112],[430,125],[450,118],[470,130],[490,122],[510,135],[530,128],[550,140],[570,132],[590,145],[610,138],[630,150],[140,120],[160,130],[180,125],[200,140],[220,135],[240,145],[260,138],[280,150],[300,142],[320,155],[340,148],[360,158],[380,152],[400,162],[420,155],[440,165],[460,158],[480,170],[500,162],[520,175],[540,168],[560,180],[580,172],[600,185],[620,178]];const l=[[200,95,450,118],[300,98,520,135],[180,125,400,162],[280,150,500,208],[350,115,570,132]];return <svg width="100%" height="100%" viewBox="0 0 750 320" preserveAspectRatio="xMidYMid slice" style={{position:"absolute",inset:0,opacity:0.05,pointerEvents:"none"}}>{l.map((v,i)=><line key={i} x1={v[0]} y1={v[1]} x2={v[2]} y2={v[3]} stroke="#4A90D9" strokeWidth="0.5" opacity="0.4"/>)}{d.map((v,i)=><circle key={i} cx={v[0]} cy={v[1]} r={1.5} fill="#4A90D9" opacity="0.5"/>)}</svg>;}
 // Cuando type="decimal", usamos type=text + inputMode=decimal: muestra el keyboard numérico en mobile
@@ -1116,7 +1148,9 @@ function OperationDetail({op:opProp,token,client,onBack}){
 
     {/* Solapas */}
     {!loading&&(()=>{const def=isEditable?"merc":"resumen";const tabCur=tabDet||def;
-      const tabs=[["resumen",t("op.tabResumen")],["merc",t("imports.product")],["bultos",`${t("op.tabBultos")}${pkgs.length?` · ${pkgs.length}`:""}`],["seg",t("op.tabSeg")],...(!isGI&&items.length>0?[["costos",t("op.costPerProduct")]]:[])];
+      // Legajo (22/10/2026): solo aéreo courier, solo RI; automático con entrega directa que paga los impuestos.
+      const verLegajo=!isGI&&op.channel==="aereo_blanco"&&client?.tax_condition==="responsable_inscripto"&&(op.legajo_visible===true||(op.legajo_visible==null&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes));
+      const tabs=[["resumen",t("op.tabResumen")],["merc",t("imports.product")],["bultos",`${t("op.tabBultos")}${pkgs.length?` · ${pkgs.length}`:""}`],["seg",t("op.tabSeg")],...(!isGI&&items.length>0?[["costos",t("op.costPerProduct")]]:[]),...(verLegajo?[["legajo",t("leg.tab")]]:[])];
       // Asignar mercadería a bultos se puede en cualquier etapa: no cambia valores, solo el reparto del costo.
       const canAsig=!isGI&&op.channel==="aereo_blanco"&&items.length>1&&pkgs.length>0;
       const toggleAsig=async(it,pkId)=>{const cur=Array.isArray(it.package_ids)?it.package_ids:[];const next=cur.includes(pkId)?cur.filter(x=>x!==pkId):[...cur,pkId];
@@ -1128,6 +1162,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
         {tabs.map(([k,l])=><button key={k} onClick={()=>setTabDet(k)} style={{padding:"10px 18px",fontSize:12,fontWeight:900,letterSpacing:"0.09em",textTransform:"uppercase",borderRadius:10,cursor:"pointer",border:"none",background:tabCur===k?"rgba(255,255,255,0.1)":"transparent",color:tabCur===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:tabCur===k?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{l}</button>)}
       </div></div>
 
+      {tabCur==="legajo"&&<LegajoPortal opId={op.id} token={token} t={t}/>}
       {/* RESUMEN */}
       {tabCur==="resumen"&&<div style={PANEL}>
         <h3 style={{...H3,marginBottom:14}}>Resumen</h3>

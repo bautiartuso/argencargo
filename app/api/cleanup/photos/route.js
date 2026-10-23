@@ -148,6 +148,33 @@ export async function GET(req) {
       huerfanos++;
     }
 
+    // ── E) Legajo (22/10/2026): los PDF se borran a los 180 días de cerrada la op; los reemplazados,
+    // apenas ninguna fila viva los usa. La fila queda (sin archivo) para saber que existió.
+    let legajoBorrados = 0;
+    try {
+      const borrarLegajo = async (filas) => {
+        const paths = [...new Set(filas.map((f) => f.storage_path).filter(Boolean))];
+        for (let i = 0; i < paths.length; i += 100) {
+          const r = await fetch(`${SB_URL}/storage/v1/object/legajos`, { method: "DELETE", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: paths.slice(i, i + 100) }) });
+          if (r.ok) legajoBorrados += Math.min(100, paths.length - i);
+        }
+        const ids = filas.map((f) => f.id);
+        for (let i = 0; i < ids.length; i += 200) await sb(`/rest/v1/legajo_docs?id=in.(${ids.slice(i, i + 200).join(",")})`, { method: "PATCH", body: JSON.stringify({ storage_path: null }) });
+      };
+      const viejas = await j(`/rest/v1/operations?status=eq.operacion_cerrada&closed_at=lt.${corte(180)}&select=id`);
+      const idsV = viejas.map((o) => o.id);
+      for (let i = 0; i < idsV.length; i += 200) {
+        const filas = await j(`/rest/v1/legajo_docs?operation_id=in.(${idsV.slice(i, i + 200).join(",")})&storage_path=not.is.null&select=id,storage_path`);
+        if (filas.length) await borrarLegajo(filas);
+      }
+      const reemplazados = await j(`/rest/v1/legajo_docs?borrado_at=not.is.null&storage_path=not.is.null&select=id,storage_path`);
+      if (reemplazados.length) {
+        const vivos = new Set((await j(`/rest/v1/legajo_docs?borrado_at=is.null&storage_path=not.is.null&select=storage_path`)).map((f) => f.storage_path));
+        const sueltos = reemplazados.filter((f) => !vivos.has(f.storage_path));
+        if (sueltos.length) await borrarLegajo(sueltos);
+      }
+    } catch (e) { console.error("[cleanup] legajo", e); }
+
     // ── D) Notificaciones viejas: es la tabla mas grande de la base (30k filas) y nadie
     // relee una notificacion de hace meses. Leidas: 60 dias. Sin leer: 180.
     await sb(`/rest/v1/notifications?read=is.true&created_at=lt.${corte(60)}`, { method: "DELETE" });
@@ -164,6 +191,7 @@ export async function GET(req) {
       huerfanos,
       dias_desde_subida: diasSubida,
       dias_desde_cierre: diasCierre,
+      legajo_borrados: legajoBorrados,
     });
   } catch (e) {
     console.error("[cleanup] error", e);

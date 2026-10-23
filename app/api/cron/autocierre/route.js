@@ -30,10 +30,19 @@ function autorizado(req) {
 export async function GET(req) {
   if (!autorizado(req)) return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ ok: false, error: "Server no configurado" }, { status: 500 });
-  const r = await sb(`/rest/v1/operations?status=eq.entregada&is_collected=is.true&delivery_completed_at=not.is.null&or=(service_type.is.null,service_type.neq.gestion_integral)&select=id,operation_code,closed_at`);
+  const r = await sb(`/rest/v1/operations?status=eq.entregada&is_collected=is.true&delivery_completed_at=not.is.null&or=(service_type.is.null,service_type.neq.gestion_integral)&select=id,operation_code,closed_at,channel`);
   const ops = Array.isArray(r.body) ? r.body : [];
+  // Aéreo courier: sin legajo completo (DSI + factura del courier) no se cierra (22/10/2026).
+  const aereos = ops.filter((o) => o.channel === "aereo_blanco").map((o) => o.id);
+  let legajo = null;
+  if (aereos.length) {
+    const l = await sb(`/rest/v1/legajo_docs?operation_id=in.(${aereos.join(",")})&borrado_at=is.null&select=operation_id,tipo`);
+    if (l.ok && Array.isArray(l.body)) legajo = l.body; // si la tabla no existe todavía, no se bloquea
+  }
+  const sinLegajo = [];
   const cerradas = [], errores = [];
   for (const o of ops) {
+    if (o.channel === "aereo_blanco" && legajo && !["dsi", "factura_courier"].every((t) => legajo.some((d) => d.operation_id === o.id && d.tipo === t))) { sinLegajo.push(o.operation_code); continue; }
     const p = await sb(`/rest/v1/operations?id=eq.${o.id}&status=eq.entregada`, {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
@@ -50,5 +59,5 @@ export async function GET(req) {
       });
     } catch (e) { console.error("[autocierre] notify", o.operation_code, e); }
   }
-  return Response.json({ ok: true, cerradas, errores });
+  return Response.json({ ok: true, cerradas, errores, sin_legajo: sinLegajo });
 }

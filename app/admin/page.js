@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
+import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento } from "../../lib/legajo.js";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -1510,6 +1511,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // Maritimo (A y B) sin solapa Seguimiento: el tracking vive en el contenedor.
     ...(initOp.channel?.includes("maritimo")?[]:[{k:"tracking",l:"Seguimiento"}]),
     {k:"entrega",l:"Entrega"},
+    // Legajo (22/10/2026): papeles de la importación, solo aéreo courier comercial.
+    ...(llevaLegajo(initOp)?[{k:"legajo",l:"Legajo"}]:[]),
     // Sin solapa Comunicaciones en ningun canal no-GI (pedido 02/08: ocupaba lugar sin aportar).
     ...(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(initOp.channel)?[]:[{k:"comms",l:"Comunicaciones"}])
   ];
@@ -1704,8 +1707,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     setEstadoGuardado(op.status);
     setSaving(false);
   };
-  const handleSave=()=>{
-    if(op.status==="operacion_cerrada"&&initOp.status!=="operacion_cerrada"){setShowCloseChecklist(true);return;}
+  const handleSave=async()=>{
+    if(op.status==="operacion_cerrada"&&estadoGuardado!=="operacion_cerrada"){
+      // Aéreo courier: sin la DSI y la factura del courier en el Legajo no se cierra (22/10/2026).
+      const l=await legajoCompleto(token,op);
+      if(!l.ok){alertDialog(`No se puede cerrar ${op.operation_code}: falta ${nombresFaltan(l.faltan)} en el Legajo.`);return;}
+      setShowCloseChecklist(true);return;}
     executeSave();
   };
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -2943,6 +2950,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const up=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${nombre}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":"application/pdf","x-upsert":"false"},body:file});
           const pdf_url=up.ok?`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${nombre}`:null;
           setSavingDespacho(false);
+          try{await subirLegajo(token,{file,opIds:[op.id],tipo:"dsi",datos:d});}catch(e){console.error("legajo dsi",e);}
           await guardarTd({...td,dsi:{...d,pdf_url,archivo:file.name||"DSI.pdf",cargado_at:new Date().toISOString()}},d.cierra?`DSI cargada · ${d.lines.length} ítems · ${fmt(d.total)}`:`DSI cargada, pero los ítems suman ${fmt(d.suma)} y el total dice ${fmt(d.total)}: revisala`);
         }catch(e){flash("No se pudo leer la DSI: "+e.message);setSavingDespacho(false);}
       };
@@ -4585,6 +4593,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
     {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onReload={reloadOp} onEntregarPaga={async()=>{try{const cerro=await entregarYCerrar(op,token);const ahora=new Date().toISOString();setOp(p=>({...p,delivery_completed_at:p.delivery_completed_at||ahora,...(cerro?{status:"operacion_cerrada",closed_at:p.closed_at||ahora}:{})}));if(cerro)setEstadoGuardado("operacion_cerrada");flash(cerro?"Entregada y cerrada":"Marcado como entregado");}catch(e){flash("No se pudo: "+e.message);}}} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
+    {tab==="legajo"&&<LegajoOpTab op={op} setOp={setOp} opClient={opClient} token={token} clientPayments={clientPayments} setClientPayments={setClientPayments} flash={flash}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
       // Pre-fill con datos del cliente y TC de la op
@@ -5720,7 +5729,9 @@ function BlogPanel({token}){
 // Gestión Integral queda afuera (su cierre liquida la comisión del socio y lo decide el panel GI).
 async function entregarYCerrar(op,token,{yaEntregada}={}){
   const ahora=new Date().toISOString();
-  const gi=op.service_type==="gestion_integral";
+  // Aéreo courier: sin legajo completo (DSI + factura del courier) se entrega pero no se cierra.
+  const leg=await legajoCompleto(token,op);
+  const gi=op.service_type==="gestion_integral"||!leg.ok;
   const body={...(yaEntregada?{}:{delivery_completed_at:ahora}),...(gi?{}:{status:"operacion_cerrada",closed_at:op.closed_at||ahora})};
   const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
   if(!Array.isArray(r))throw new Error(r?.message||"No se pudo guardar");
@@ -6095,6 +6106,8 @@ function EntregasPanel({token,onOpenOp,vista}){
     const ahora=new Date().toISOString();
     const cerradas=[];
     for(const x of ops){
+      const leg=await legajoCompleto(token,x.o);
+      if(!leg.ok){toast(`${x.o.operation_code}: falta ${nombresFaltan(leg.faltan)} en el Legajo, no se cierra`,"error");continue;}
       const r1=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${x.o.id}`,body:{status:"operacion_cerrada",closed_at:ahora,is_collected:true}});
       if(Array.isArray(r1))cerradas.push(x);else toast(`No se pudo cerrar ${x.o.operation_code}: ${r1?.message||"error"}`,"error");
     }
@@ -8945,6 +8958,197 @@ function FinancePanel({token}){
 
 // Block para registrar/editar la fecha en la que el carrier recolectó el paquete.
 // UPS = input manual (con DatePicker del sistema). DHL/FedEx = se muestra automático desde el sync de tracking.
+
+// Recibo de un cobro: el número se asigna la primera vez que se imprime (secuencia en la base).
+async function imprimirReciboPago({token,op,payment,client,payments}){
+  let nro=payment.receipt_number||null;
+  if(!nro){try{const r=await dq("rpc/next_receipt_number",{method:"POST",token,body:{p_payment_id:payment.id}});nro=typeof r==="number"?r:Number(r)||null;}catch(e){console.error("receipt number",e);}}
+  const st=await dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality,office_address&limit=1"}).catch(()=>[]);
+  const pagado=(payments||[]).reduce((s2,x)=>s2+Number(x.amount_usd||0),0);
+  const saldo=Math.max(0,Number(op.budget_total||0)+Number(op.debt_applied_usd||0)-Number(op.total_anticipos||0)-Number(op.credit_applied_usd||0)-Number(op.discount_applied_usd||0)-pagado);
+  printReceiptPdf({op,payment:{...payment,receipt_number:nro},client,settings:Array.isArray(st)&&st[0]?st[0]:{},saldoRestante:Math.round(saldo*100)/100});
+  return nro;
+}
+
+// Solapa Legajo (22/10/2026): factura de Argencargo (de ARCA, no obligatoria), factura del courier y
+// DSI (obligatorias para cerrar) y los recibos de cada cobro. Qué ve el cliente: RI con entrega directa
+// que paga los impuestos lo ve solo; otros RI, con el tilde; monotributo y consumidor final, nunca.
+function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,flash}){
+  const [docs,setDocs]=useState([]);const [sinTabla,setSinTabla]=useState(false);const [facturas,setFacturas]=useState([]);
+  const [ocupado,setOcupado]=useState(null);const [drag,setDrag]=useState(null);
+  const cargar=useCallback(async()=>{
+    const l=await listarLegajo(token,{opIds:[op.id]});setDocs(l.docs);setSinTabla(!l.ok);
+    const f=await dq("invoices",{token,filters:`?operation_id=eq.${op.id}&status=eq.emitida&select=id,tipo_cbte,punto_venta,numero,fecha,importe,moneda,public_token,anula_id&order=created_at.asc`});
+    setFacturas(Array.isArray(f)?f:[]);
+  },[op.id,token]);
+  useEffect(()=>{cargar();},[cargar]);
+  const doc=(t)=>docs.find(d=>d.tipo===t);
+  const ri=opClient?.tax_condition==="responsable_inscripto";
+  const autoVisible=ri&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes;
+  const visible=ri&&(op.legajo_visible==null?autoVisible:!!op.legajo_visible);
+  const faltan=Object.keys(TIPOS_LEGAJO).filter(t=>!doc(t));
+  const subir=async(tipo,file)=>{
+    if(!file)return;if(sinTabla){flash("Falta correr el SQL del legajo");return;}
+    setOcupado(tipo);
+    try{
+      let datos=null;
+      if(tipo==="dsi"){try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,file);if(info.tipo==="dsi")datos=info.dsi;}catch{}}
+      await subirLegajo(token,{file,opIds:[op.id],flightId:null,tipo,datos});
+      if(tipo==="dsi"&&datos){try{if(await aplicarDsiAOp(token,op.id,datos)){const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));}}catch(e){console.error(e);}}
+      await cargar();flash(`${TIPOS_LEGAJO[tipo].corto} guardada`);
+    }catch(e){flash("No se pudo: "+e.message);}
+    setOcupado(null);
+  };
+  const quitar=async(d)=>{if(!await confirmDialog(`¿Quitar ${TIPOS_LEGAJO[d.tipo].corto} del legajo?`,{danger:true}))return;await quitarLegajo(token,d.id);await cargar();};
+  const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
+  useEffect(()=>{
+    const hp=(e)=>{if(!document.querySelector("[data-legajo-op]"))return;const f=[...(e.clipboardData?.files||[])][0];if(!f)return;e.preventDefault();
+      // Pegado: si dice "Destinación simplificada" es la DSI, si no la factura del courier.
+      (async()=>{let tipo=!doc("factura_courier")&&doc("dsi")?"factura_courier":"dsi";try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,f);if(info.tipo)tipo=info.tipo;}catch{}subir(tipo,f);})();};
+    window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
+  });
+  const fmtUsd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const fila=(icono,titulo,sub,der,extra={})=><div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:`1px solid ${extra.borde||"rgba(255,255,255,0.07)"}`,marginBottom:10,...(extra.style||{})}} {...(extra.props||{})}>
+    <span style={{width:40,height:40,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:extra.ok?"rgba(34,197,94,0.12)":extra.falta?"rgba(251,191,36,0.1)":"rgba(255,255,255,0.05)",fontSize:18}}>{icono}</span>
+    <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{titulo}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:12,color:extra.falta?"#fbbf24":"rgba(255,255,255,0.5)"}}>{sub}</p>}</div>
+    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{der}</div>
+  </div>;
+  const bt=(txt,fn,c="#E8D098")=><button type="button" onClick={fn} style={{height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+  const subirBtn=(tipo,txt)=><label style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:ocupado?"wait":"pointer",whiteSpace:"nowrap"}}>{ocupado===tipo?"Subiendo…":txt}<input type="file" accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{subir(tipo,e.target.files?.[0]);e.target.value="";}}/></label>;
+  const dropDoc=(tipo)=>({props:{onDragOver:e=>{e.preventDefault();if(drag!==tipo)setDrag(tipo);},onDragLeave:e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);},onDrop:e=>{e.preventDefault();setDrag(null);subir(tipo,e.dataTransfer?.files?.[0]);}},borde:drag===tipo?"#E8D098":undefined});
+  const docFila=(tipo,icono)=>{const d=doc(tipo);return fila(icono,TIPOS_LEGAJO[tipo].l,d?`${d.file_name||"Archivo"} · ${new Date(d.uploaded_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}${d.flight_id?" · desde el vuelo":""}`:"Falta · obligatoria para cerrar · arrastrá o pegá el PDF",
+    d?<>{d.storage_path?bt("Ver",()=>abrirDocLegajo(token,d.storage_path),"#93c5fd"):<span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>Archivo eliminado (180 días)</span>}{subirBtn(tipo,"Reemplazar")}{bt("Quitar",()=>quitar(d),"#f87171")}</>:subirBtn(tipo,"Subir"),{ok:!!d,falta:!d,...dropDoc(tipo)});};
+  return <div data-legajo-op="1">
+    <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{faltan.length?`Falta ${nombresFaltan(faltan)}`:"✓ Completo"}</span></span>} sub={faltan.length?"Sin la DSI y la factura del courier no se puede cerrar la operación":"Listo para cerrar"}>
+      {sinTabla&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql).</p>}
+      {fila("🧾","Factura de Argencargo",facturas.length?facturas.map(f=>`${f.tipo_cbte===13?"NC":"Factura C"} ${String(f.punto_venta).padStart(4,"0")}-${String(f.numero).padStart(8,"0")} · ${f.fecha?new Date(String(f.fecha).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):""}`).join(" · "):"Sin factura · no es obligatoria",
+        facturas.map(f=><a key={f.id} href={`/factura/${f.public_token}`} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Ver {f.numero}</a>),{ok:facturas.length>0})}
+      {docFila("factura_courier","📑")}
+      {docFila("dsi","🛃")}
+      {fila("🧾","Recibos",clientPayments.length?`${clientPayments.length} cobro${clientPayments.length!==1?"s":""} · se generan solos con cada pago`:"Todavía no hay cobros",
+        clientPayments.map(p=><button key={p.id} type="button" onClick={async()=>{const nro=await imprimirReciboPago({token,op,payment:p,client:opClient,payments:clientPayments});if(nro&&!p.receipt_number)setClientPayments(prev=>prev.map(x=>x.id===p.id?{...x,receipt_number:nro}:x));}} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#4ade80",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{p.payment_date?new Date(String(p.payment_date).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"Recibo"} · {fmtUsd(p.amount_usd)}</button>),{ok:clientPayments.length>0})}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:6,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div><p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fff"}}>El cliente lo ve en su portal</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>{!ri?"No: es monotributo o consumidor final":op.legajo_visible==null?(autoVisible?"Sí, automático: RI con entrega directa que paga los impuestos":"No, automático"):visible?"Sí, marcado a mano":"No, marcado a mano"} · ve solo los documentos que hay</p></div>
+        {ri&&<div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)"}}>{[[null,"Auto"],[true,"Sí"],[false,"No"]].map(([v,l])=>{const on=(op.legajo_visible??null)===v;return <button key={l} type="button" onClick={()=>setVisible(v)} style={{height:30,padding:"0 13px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none"}}>{l}</button>;})}</div>}
+      </div>
+    </Card>
+  </div>;
+}
+
+// DSI subida desde el vuelo a una op RI (22/10/2026): entra al despacho (budget_tax_detail.dsi) y se
+// recalculan SOLO los impuestos, igual que al subirla desde la op. No toca flete ni lo cargado a mano.
+async function aplicarDsiAOp(token,opId,dsi){
+  const fop=await dq("operations",{token,filters:`?id=eq.${opId}&select=*,clients(tax_condition)&limit=1`});
+  const op=Array.isArray(fop)?fop[0]:null;
+  if(!op||op.channel!=="aereo_blanco"||op.clients?.tax_condition!=="responsable_inscripto")return false;
+  const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};
+  const {clients:_c,...opBase}=op;
+  const opNuevo={...opBase,budget_tax_detail:{...td,dsi:{...dsi,cargado_at:new Date().toISOString()}}};
+  const [its,pks,tar,ov,cfg,decl]=await Promise.all([
+    dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=*`}),
+    dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=*`}),
+    dq("tariffs",{token,filters:"?select=*"}),
+    op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
+    dq("calc_config",{token,filters:"?select=key,value"}),
+    dq("flight_invoice_items",{token,filters:`?operation_id=eq.${opId}&select=quantity,unit_price_declared_usd`}),
+  ]);
+  const configMap={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{configMap[r.key]=Number(r.value);});
+  const items=Array.isArray(its)?its:[];if(!items.length)return false;
+  const {totalTax,taxDetail,taxesBilledByArgencargo}=calcOpBudget(opNuevo,items,Array.isArray(pks)?pks:[],Array.isArray(tar)?tar:[],configMap,Array.isArray(ov)?ov:[],{tax_condition:"responsable_inscripto"},Array.isArray(decl)?decl:[]);
+  const r2=(v)=>Math.round(Number(v||0)*100)/100;
+  const body={budget_taxes:r2(totalTax),budget_tax_detail:taxDetail||null,...(taxesBilledByArgencargo?{budget_total:r2(Number(op.budget_total||0)-Number(op.budget_taxes||0)+totalTax)}:{})};
+  await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body});
+  return true;
+}
+// Abre un documento del legajo (bucket privado): la pestaña se abre antes para que no la bloquee el navegador.
+async function abrirDocLegajo(token,path){const w=window.open("about:blank","_blank");const u=await urlFirmada(token,path);if(u&&w)w.location=u;else{w?.close();toast("No se pudo abrir el archivo","error");}}
+
+// Documentación del vuelo (22/10/2026): se suben de una las DSI y las facturas del courier (archivo,
+// arrastrar o ⌘V). Cada una se asigna sola a su op (guía, CUIT o apellido del destinatario); lo que no
+// se puede asignar queda abajo para elegir. Sin todo completo no se puede marcar el vuelo recibido.
+function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
+  const opIds=(flightOps||[]).map(fo=>fo.operation_id).filter(Boolean);
+  const clave=opIds.join(",");
+  const [ops,setOps]=useState([]);const [docs,setDocs]=useState([]);const [sinTabla,setSinTabla]=useState(false);
+  const [pend,setPend]=useState([]);const [ocupado,setOcupado]=useState(false);const [drag,setDrag]=useState(false);
+  const cargar=useCallback(async()=>{
+    if(!clave)return;
+    const o=await dq("operations",{token,filters:`?id=in.(${clave})&select=id,operation_code,channel,service_type,international_tracking,client_id,clients(first_name,last_name,company_name,cuit,tax_condition)&order=operation_code.asc`});
+    setOps(Array.isArray(o)?o:[]);
+    const l=await listarLegajo(token,{opIds:clave.split(",")});setDocs(l.docs);setSinTabla(!l.ok);
+  },[clave,token]);
+  useEffect(()=>{cargar();},[cargar]);
+  const opsLeg=ops.filter(llevaLegajo);
+  const doc=(opId,t)=>docs.find(d=>d.operation_id===opId&&d.tipo===t);
+  const completo=opsLeg.every(o=>doc(o.id,"dsi")&&doc(o.id,"factura_courier"));
+  const faltan=opsLeg.filter(o=>!doc(o.id,"dsi")||!doc(o.id,"factura_courier"));
+  const guardar=async(file,info,tipo,ids)=>{
+    await subirLegajo(token,{file,opIds:ids,flightId:flight.id,tipo,datos:tipo==="dsi"?(info?.dsi||null):null});
+    if(tipo==="dsi"&&info?.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
+  };
+  const procesar=async(files)=>{
+    const lista=[...(files||[])].filter(Boolean);if(!lista.length)return;
+    if(sinTabla){toast("Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql)","error");return;}
+    setOcupado(true);
+    let pdfjs=null;try{pdfjs=await cargarPdfJsAdmin();}catch{}
+    const base=opsLeg.length?opsLeg:ops;const nuevos=[];let ok=0;
+    for(const f of lista){
+      let info={tipo:null};try{if(pdfjs)info=await analizarDocumento(pdfjs,f);}catch(e){console.error("leer doc",e);}
+      const ids=info.tipo?emparejarDocumento(info,base):null;
+      if(info.tipo&&ids){try{await guardar(f,info,info.tipo,ids);ok++;}catch(e){toast(`${f.name}: ${e.message}`,"error");}}
+      else nuevos.push({key:`${Date.now()}-${Math.random()}`,file:f,info,tipo:info.tipo||"factura_courier",destino:""});
+    }
+    setPend(p=>[...p,...nuevos]);await cargar();setOcupado(false);
+    if(ok)toast(`${ok} documento${ok!==1?"s":""} asignado${ok!==1?"s":""} solo${ok!==1?"s":""}`,"success");
+    if(nuevos.length)toast(`${nuevos.length} para asignar a mano`,"info");
+  };
+  const guardarPend=async(p)=>{
+    const ids=p.destino==="*"?opsLeg.map(o=>o.id):p.destino?[p.destino]:[];
+    if(!ids.length){toast("Elegí a qué operación va","error");return;}
+    setOcupado(true);
+    try{await guardar(p.file,p.info,p.tipo,ids);setPend(x=>x.filter(y=>y.key!==p.key));await cargar();toast("Guardado","success");}catch(e){toast(e.message,"error");}
+    setOcupado(false);
+  };
+  useEffect(()=>{
+    const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();procesar(fs);}};
+    window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
+  });
+  const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
+  const chip=(d,t,o)=>d
+    ?<button type="button" onClick={()=>d.storage_path?abrirDocLegajo(token,d.storage_path):toast("El archivo se eliminó a los 180 días","info")} title={d.file_name||""} style={{height:28,padding:"0 10px",borderRadius:8,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.1)",color:"#4ade80",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✓ {TIPOS_LEGAJO[t].corto}</button>
+    :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(251,191,36,0.45)",color:"#fbbf24",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>Falta {TIPOS_LEGAJO[t].corto}</span>;
+  const recibido=flight.status==="recibido";
+  return <div data-legajo-vuelo={flight.id} onDragOver={e=>{e.preventDefault();if(!drag)setDrag(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(false);}} onDrop={e=>{e.preventDefault();setDrag(false);procesar(e.dataTransfer?.files);}}
+    style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:`1px solid ${drag?"#E8D098":"rgba(255,255,255,0.08)"}`,outline:drag?"2px dashed #E8D098":"none",outlineOffset:3}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <div><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p><p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>DSI y factura del courier de cada operación · arrastrá, pegá con ⌘V o subí</p></div>
+      <label style={{height:36,padding:"0 14px",borderRadius:10,display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:ocupado?"wait":"pointer"}}>
+        {ocupado?"Leyendo…":"＋ Subir documentos"}
+        <input type="file" multiple accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={ocupado} onChange={e=>{procesar(e.target.files);e.target.value="";}}/>
+      </label>
+    </div>
+    {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
+    {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
+      <span style={{flex:"1 1 180px",minWidth:0,fontSize:12.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.file.name}>📄 {p.file.name}{p.info?.nombre?<span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}> · {p.info.nombre}</span>:null}</span>
+      <div style={{display:"flex",padding:3,borderRadius:9,background:"rgba(0,0,0,0.3)"}}>{Object.keys(TIPOS_LEGAJO).map(t=><button key={t} type="button" onClick={()=>setPend(x=>x.map(y=>y.key===p.key?{...y,tipo:t}:y))} style={{height:28,padding:"0 10px",borderRadius:7,border:"none",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:p.tipo===t?"rgba(232,208,152,0.16)":"transparent",color:p.tipo===t?"#E8D098":"rgba(255,255,255,0.5)"}}>{TIPOS_LEGAJO[t].corto}</button>)}</div>
+      <div style={{minWidth:230,marginBottom:-12}}><Sel value={p.destino} onChange={v=>setPend(x=>x.map(y=>y.key===p.key?{...y,destino:v}:y))} ph="¿De qué operación?" options={[...(opsLeg.length>1?[{value:"*",label:"Todas las del vuelo"}]:[]),...opsLeg.map(o=>({value:o.id,label:`${o.operation_code} · ${nombre(o)}`}))]}/></div>
+      <button type="button" onClick={()=>guardarPend(p)} disabled={ocupado} style={{height:32,padding:"0 14px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Guardar</button>
+      <button type="button" onClick={()=>setPend(x=>x.filter(y=>y.key!==p.key))} aria-label="Descartar" style={{width:30,height:30,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>✕</button>
+    </div>)}
+    {opsLeg.map((o,i)=><div key={o.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
+      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,fontWeight:700,color:"#E8D098",minWidth:72}}>{o.operation_code}</span>
+      <span style={{flex:"1 1 160px",minWidth:0,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre(o)}{o.clients?.tax_condition==="responsable_inscripto"&&<span style={{marginLeft:8,fontSize:10,fontWeight:800,color:"#93c5fd"}}>RI</span>}</span>
+      {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}
+    </div>)}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+      <span style={{fontSize:12.5,color:completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{completo?"✓ Documentación completa":`Falta documentación de ${faltan.map(o=>o.operation_code).join(", ")}`}</span>
+      {recibido
+        ?<span style={{height:40,padding:"0 16px",borderRadius:11,display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",fontSize:13,fontWeight:800}}>✓ Recibido en Buenos Aires{flight.received_at?` · ${new Date(flight.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}`:""}</span>
+        :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!completo&&!sinTabla} title={!completo&&!sinTabla?"Primero subí la DSI y la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${completo||sinTabla?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:completo||sinTabla?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:completo||sinTabla?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:completo||sinTabla?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${completo||sinTabla?"#4ade80":"rgba(255,255,255,0.3)"}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{""}</span>Marcar recibido en Buenos Aires</button>}
+    </div>
+  </div>;
+}
 function CarrierPickupBlock({flight,token,onReload}){
   const car=(flight.international_carrier||"").toLowerCase();
   const isUps=car==="ups";
@@ -8961,8 +9165,8 @@ function CarrierPickupBlock({flight,token,onReload}){
     setSaving(false);
     onReload();
   };
-  return <div style={{marginTop:14,padding:"12px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10}}>
-    <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>⏱ Recolección del carrier</p>
+  return <div style={{padding:"14px 16px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16}}>
+    <p style={{fontSize:10.5,fontWeight:800,color:"#E8D098",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Recolección del carrier</p>
     <div style={{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}}>
       {isUps?<>
         <div style={{minWidth:200}}>
@@ -9948,6 +10152,12 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     }
   };
   const markReceived=async()=>{
+    // Sin la DSI y la factura del courier de cada op no se marca recibido (legajo, 22/10/2026).
+    {const ids=flightOps.map(fo=>fo.operation_id).filter(Boolean);
+      if(ids.length){const l=await listarLegajo(token,{opIds:ids});
+        if(l.ok){const os=await dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=id,operation_code,channel,service_type`});
+          const falt=(Array.isArray(os)?os:[]).filter(llevaLegajo).filter(o=>!["dsi","factura_courier"].every(t=>l.docs.some(d=>d.operation_id===o.id&&d.tipo===t)));
+          if(falt.length){alertDialog(`Falta documentación de ${falt.map(o=>o.operation_code).join(", ")}: subí la DSI y la factura del courier.`);return;}}}}
     if(!await confirmDialog(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
     // El status de las ops lo maneja el tracking automático (arribo_argentina, en_aduana, etc).
@@ -10573,20 +10783,19 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             </>;})()}
           </div>;
         })()}
-        {/* Captura del courier con el desglose por bulto que subió el agente al despachar */}
-        {flight.dispatch_photo_url&&<div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10}}>
-            <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📷 Desglose de bultos del courier</p>
-            <Btn small variant="secondary" onClick={()=>setExtraerBultos(true)}>🔍 Extraer bultos con IA</Btn>
-          </div>
-          <a href={flight.dispatch_photo_url} target="_blank" rel="noopener" title="Abrir en tamaño completo">
-            <img src={flight.dispatch_photo_url} alt="Desglose de bultos" style={{maxWidth:"100%",maxHeight:260,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",display:"block",cursor:"zoom-in"}}/>
-          </a>
+        {/* Desglose de bultos (foto del agente) y recolección del carrier lado a lado (rediseño 22/10/2026). */}
+        {(flight.dispatch_photo_url||flight.dispatched_at)&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginTop:14,alignItems:"stretch"}}>
+          {flight.dispatch_photo_url&&<div style={{padding:"14px 16px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",gap:10}}>
+            <p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Desglose de bultos del courier</p>
+            <a href={flight.dispatch_photo_url} target="_blank" rel="noopener" title="Abrir en tamaño completo" style={{display:"block"}}>
+              <img src={flight.dispatch_photo_url} alt="Desglose de bultos" style={{width:"100%",maxHeight:220,objectFit:"contain",objectPosition:"left top",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",display:"block",cursor:"zoom-in",background:"#fff"}}/>
+            </a>
+            <button type="button" onClick={()=>setExtraerBultos(true)} style={{height:36,borderRadius:10,border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>✨ Extraer bultos con IA</button>
+          </div>}
+          {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
         </div>}
         {extraerBultos&&<ExtraerBultosModal flight={flight} flightOps={flightOps} token={token} onClose={()=>setExtraerBultos(false)} onDone={()=>{setExtraerBultos(false);setPkgsV(v=>v+1);onReload?.();}}/>}
-        {/* Pickup del carrier: auto para DHL/FedEx (vía API), manual para UPS */}
-        {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
-        {flight.status==="despachado"&&<div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>}
+        {(flight.status==="despachado"||flight.status==="recibido")&&<LegajoVueloBlock flight={flight} flightOps={flightOps} token={token} onMarcarRecibido={markReceived}/>}
       </>:<>
         <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
           <p style={{fontSize:11,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ Editar redistribuye el costo entre las {flightOps.length} operaciones del vuelo proporcional al peso de cada una. Se actualiza <code>cost_flete</code> en cada op.</p>
