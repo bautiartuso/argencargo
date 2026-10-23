@@ -8957,10 +8957,12 @@ function FinancePanel({token}){
 
 // Pedidos de DSI respondidos por el courier (22/10/2026): el layout pregunta cada 2 min a
 // /api/aereo/dsi y avisa con "ac_dsi_estado"; la campanita de Aéreos y el chip del vuelo lo leen de acá.
-let DSI_RESPONDIDOS=new Set();
-const fijarDsiRespondidos=(ids)=>{DSI_RESPONDIDOS=new Set(ids||[]);if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_dsi_estado"));};
+// porPedir = vuelos llegados a los que falta pedirles la DSI (pelotita naranja).
+let DSI_RESPONDIDOS=new Set();let DSI_POR_PEDIR=0;
+const fijarDsiRespondidos=(ids,porPedir)=>{DSI_RESPONDIDOS=new Set(ids||[]);if(porPedir!=null)DSI_POR_PEDIR=Number(porPedir)||0;if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_dsi_estado"));};
 function useDsiRespondidos(){const [v,setV]=useState(DSI_RESPONDIDOS);useEffect(()=>{const h=()=>setV(DSI_RESPONDIDOS);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
-const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[]);}catch{}};
+function useDsiPorPedir(){const [v,setV]=useState(DSI_POR_PEDIR);useEffect(()=>{const h=()=>setV(DSI_POR_PEDIR);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
+const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[],b.porPedir);}catch{}};
 
 // Recibo de un cobro: el número se asigna la primera vez que se imprime (secuencia en la base).
 async function imprimirReciboPago({token,op,payment,client,payments}){
@@ -9098,7 +9100,7 @@ async function abrirDocLegajo(token,path){const w=window.open("about:blank","_bl
 
 // Pedido de DSI por mail (22/10/2026): se le pide al courier con el Gmail conectado ("Solicitud DSI
 // <guía>"); cuando contesta, acá se ve el mail y con "Es la DSI" el adjunto pasa al legajo del vuelo.
-function PedidoDsiVuelo({flight,token,onAdjuntar}){
+function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio}){
   const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);
   const cargar=useCallback(async()=>{try{const r=await fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flight.id}`,{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();if(r.ok)setD(j);else setD({error:j.error||"x"});}catch{setD({error:"x"});}},[flight.id,token]);
   useEffect(()=>{cargar();},[cargar]);
@@ -9110,7 +9112,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar}){
     setEnviando(true);
     try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...datos})});const j=await r.json();
       if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
-      toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();}
+      toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();refrescarDsiEstado(token);onCambio?.();}
     catch(e){toast(e.message,"error");}
     setEnviando(false);
   };
@@ -9173,7 +9175,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar}){
 // Buenos Aires (recibidos o entregados por el courier) con la guía y el transportista; en cada uno pide
 // la DSI por mail, ve la respuesta y elige qué adjunto es la DSI. Nada de costos, bultos ni agentes.
 function AereosEmpleado({token}){
-  const [vuelos,setVuelos]=useState(null);const [abierto,setAbierto]=useState(null);const [q,setQ]=useState("");
+  const [vuelos,setVuelos]=useState(null);const [abierto,setAbierto]=useState(null);
   const dsiResp=useDsiRespondidos();
   const cargar=useCallback(async()=>{
     const desde=new Date(Date.now()-150*86400000).toISOString();
@@ -9189,12 +9191,11 @@ function AereosEmpleado({token}){
     const opIds=Object.values(opsDe).flat().map(o=>o.id);
     const leg=opIds.length?await listarLegajo(token,{opIds}):{docs:[]};
     const pedDe={};(Array.isArray(peds)?peds:[]).forEach(x=>{if(!pedDe[x.flight_id])pedDe[x.flight_id]=x;});
-    // Vigente: alguna op sin cerrar o llegado hace 14 días o menos. Los viejos sin DSI salen solo buscando.
+    // Vigente: alguna op sin cerrar o llegado hace 14 días o menos (misma regla que la pelotita naranja).
     const llego=(f)=>new Date(f.received_at||f.carrier_delivered_at||f.dispatched_at).getTime();
-    setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];return {...f,ops,pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
+    setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];return {...f,ops,llego:llego(f),pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
   },[token]);
   useEffect(()=>{cargar();},[cargar]);
-  useEffect(()=>{if(vuelos)cargar();},[dsiResp]);// eslint-disable-line
   // "Es la DSI": se lee el PDF para saber de qué op es (CUIT/guía); si no se sabe, va a todas las del vuelo.
   const adjuntar=async(f,file)=>{
     let info={tipo:null};try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}
@@ -9202,42 +9203,36 @@ function AereosEmpleado({token}){
     await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo:"dsi",datos:info.dsi||null});
     if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
     toast(`DSI cargada en ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
-    await cargar();
+    setAbierto(null);await cargar();refrescarDsiEstado(token);
   };
   if(!vuelos)return <div style={{padding:40,textAlign:"center",color:"rgba(255,255,255,0.45)",fontSize:13}}>Cargando vuelos…</div>;
   const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
-  const busca=q.trim().toLowerCase();
-  const visibles=busca?vuelos.filter(f=>[f.international_tracking,f.flight_code,f.international_carrier,...f.ops.flatMap(o=>[o.operation_code,nombre(o)])].join(" ").toLowerCase().includes(busca)):vuelos;
-  const grupos=[
-    {k:"resp",t:"Respondieron · elegí la DSI",c:"#60a5fa",l:visibles.filter(f=>!f.conDsi&&(f.pedido?.respuesta_at||dsiResp.has(f.id)))},
-    {k:"pedir",t:"Para pedir la DSI",c:"#E8D098",l:visibles.filter(f=>!f.conDsi&&!f.pedido&&(f.vigente||busca))},
-    {k:"esp",t:"Esperando respuesta del courier",c:"rgba(255,255,255,0.6)",l:visibles.filter(f=>!f.conDsi&&f.pedido&&!f.pedido.respuesta_at&&!dsiResp.has(f.id))},
-    {k:"ok",t:"Con DSI",c:"#4ade80",l:visibles.filter(f=>f.conDsi).slice(0,20)},
-  ];
+  const respondio=(f)=>!!f.pedido?.respuesta_at||dsiResp.has(f.id);
+  const pedir=vuelos.filter(f=>!f.conDsi&&!f.pedido&&f.vigente).sort((a,b)=>b.llego-a.llego);
+  const esperando=vuelos.filter(f=>!f.conDsi&&f.pedido).sort((a,b)=>(respondio(b)-respondio(a))||(new Date(b.pedido.enviado_at)-new Date(a.pedido.enviado_at)));
   const fecha=v=>v?new Date(v).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"";
-  const fila=(f,g)=>{const m=marcaCourier(f.international_carrier);const ab=abierto===f.id;return <div key={f.id} style={{borderRadius:14,marginBottom:8,background:ab?"rgba(255,255,255,0.04)":"rgba(255,255,255,0.02)",border:`1px solid ${ab?"rgba(232,208,152,0.35)":"rgba(255,255,255,0.07)"}`}}>
-    <button type="button" onClick={()=>setAbierto(ab?null:f.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",color:"#fff",flexWrap:"wrap"}}>
-      {m?logoMarca(m,40):<span style={{width:40,height:40,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",fontSize:18}}>✈️</span>}
-      <span style={{flex:"1 1 220px",minWidth:0}}>
-        <span style={{display:"block",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:16,fontWeight:700,letterSpacing:"0.03em"}}>{f.international_tracking}</span>
-        <span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:2}}>{f.international_carrier||"Courier"} · {f.flight_code} · {f.ops.map(o=>`${o.operation_code} ${nombre(o)}`).join(" · ")}</span>
+  const fila=(f,col)=>{const m=marcaCourier(f.international_carrier);const ab=abierto===f.id;const r=col==="esp"&&respondio(f);return <div key={f.id} style={{borderRadius:12,marginBottom:8,background:r?"rgba(34,197,94,0.07)":ab?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.18)",border:`1px solid ${r?"rgba(74,222,128,0.45)":ab?"rgba(232,208,152,0.35)":"rgba(255,255,255,0.07)"}`}}>
+    <button type="button" onClick={()=>setAbierto(ab?null:f.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 12px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",color:"#fff"}}>
+      {m?logoMarca(m,38):<span style={{width:38,height:38,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",fontSize:17}}>✈️</span>}
+      <span style={{flex:1,minWidth:0}}>
+        <span style={{display:"block",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:15,fontWeight:700,letterSpacing:"0.03em"}}>{f.international_tracking}</span>
+        <span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.flight_code} · {f.ops.map(o=>`${o.operation_code} ${nombre(o)}`).join(" · ")}</span>
       </span>
-      <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{f.status==="recibido"?`Recibido ${fecha(f.received_at)}`:`Entregado ${fecha(f.carrier_delivered_at)}`}</span>
-      <span style={{fontSize:10.5,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.06em",textTransform:"uppercase",color:g.c,border:`1px solid ${g.c}`,whiteSpace:"nowrap",opacity:0.9}}>{g.k==="resp"?"📬 Respondió":g.k==="pedir"?"Pedir DSI":g.k==="esp"?`Pedida ${fecha(f.pedido?.enviado_at)}`:"✓ DSI"}</span>
-      <span style={{color:"rgba(255,255,255,0.4)",fontSize:12,transform:ab?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
+      <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap",color:r?"#4ade80":"rgba(255,255,255,0.45)"}}>{col==="pedir"?`Llegó ${fecha(f.llego)}`:r?"📬 Respondió":`Pedida ${fecha(f.pedido.enviado_at)}`}</span>
+      <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,transform:ab?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
     </button>
-    {ab&&<div style={{padding:"0 14px 12px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file)=>adjuntar(f,file)}/></div>}
+    {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file)=>adjuntar(f,file)} onCambio={cargar}/></div>}
   </div>;};
-  return <div style={{maxWidth:1100}}>
-    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:14,flexWrap:"wrap",marginBottom:18}}>
-      <div><h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#fff"}}>DSI de los vuelos</h2><p style={{margin:"4px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Vuelos que ya llegaron a Buenos Aires</p></div>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar guía, vuelo, op o cliente" style={{width:280,maxWidth:"100%",height:38,padding:"0 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+  const columna=(titulo,color,lst,col,vacio)=><div style={{padding:"18px 16px 10px",borderRadius:18,background:"linear-gradient(180deg,rgba(13,24,45,0.96),rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.08)",alignSelf:"start"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,margin:"0 4px 14px"}}>
+      <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>{titulo}</h3>
+      <span style={{minWidth:22,height:22,padding:"0 7px",borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",background:color,color:"#fff",fontSize:11.5,fontWeight:800}}>{lst.length}</span>
     </div>
-    {grupos.filter(g=>g.l.length).map(g=><div key={g.k} style={{marginBottom:22}}>
-      <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:g.c}}>{g.t} · {g.l.length}</p>
-      {g.l.map(f=>fila(f,g))}
-    </div>)}
-    {!grupos.some(g=>g.l.length)&&<p style={{color:"rgba(255,255,255,0.45)",fontSize:13}}>No hay vuelos llegados a Buenos Aires{busca?" con esa búsqueda":""}.</p>}
+    {lst.length?lst.map(f=>fila(f,col)):<p style={{margin:"0 4px 10px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>{vacio}</p>}
+  </div>;
+  return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(420px,100%),1fr))",gap:16}}>
+    {columna("Pedir DSI","#f97316",pedir,"pedir","No hay DSI para pedir.")}
+    {columna("Esperando respuesta","#475569",esperando,"esp","No hay pedidos esperando respuesta.")}
   </div>;
 }
 
@@ -17596,7 +17591,7 @@ function AdminDashboard({session,onLogout}){
   // Globo del Email: no leídos de la bandeja (se refresca cada 60 s y cuando el panel de mail avisa).
   const [mailUnread,setMailUnread]=useState(0);
   // Campanita de Aéreos: el courier respondió un pedido de DSI (admin y empleado).
-  const dsiResp=useDsiRespondidos();
+  const dsiResp=useDsiRespondidos();const dsiPorPedir=useDsiPorPedir();
   useEffect(()=>{if(!token)return;refrescarDsiEstado(token);const id=setInterval(()=>{if(!document.hidden)refrescarDsiEstado(token);},120000);return()=>clearInterval(id);},[token]);
   useEffect(()=>{if(!token||isEmpleado)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/mail?accion=no_leidos",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setMailUnread(Number(b.n)||0);}catch{}};f();const id=setInterval(()=>{if(!document.hidden)f();},60000);const h=e=>setMailUnread(Number(e.detail)||0);window.addEventListener("ac_mail_noleidos",h);return()=>{on=false;clearInterval(id);window.removeEventListener("ac_mail_noleidos",h);};},[token]);
   useEffect(()=>{if(!token)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/studio?view=blog_count",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setBlogPend(Number(b.pendientes)||0);}catch{}};f();const id=setInterval(()=>{if(!document.hidden)f();},300000);return()=>{on=false;clearInterval(id);};},[token,page]);
@@ -17613,7 +17608,7 @@ function AdminDashboard({session,onLogout}){
     {/* Sidebar nav agrupado por secciones — sentence case, tipografía Inter limpia */}
     <nav style={{flex:1,padding:"10px 10px 14px",overflowY:"auto"}}>{navSections.map(sec=><div key={sec.section} style={{marginTop:16}}>
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
-      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="agents"&&dsiResp.size>0&&<span title={`El courier respondió ${dsiResp.size===1?"un pedido":`${dsiResp.size} pedidos`} de DSI`} style={{background:"#3b82f6",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,display:"inline-flex",alignItems:"center",gap:3}}>🔔 {dsiResp.size}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
+      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="agents"&&(dsiPorPedir>0||dsiResp.size>0)&&<span style={{display:"inline-flex",gap:4}}>{dsiPorPedir>0&&<span title={`${dsiPorPedir} DSI para pedir`} style={{background:"#f97316",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{dsiPorPedir}</span>}{dsiResp.size>0&&<span title={`${dsiResp.size} respuesta${dsiResp.size>1?"s":""} del courier con la DSI`} style={{background:"#22c55e",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{dsiResp.size}</span>}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;

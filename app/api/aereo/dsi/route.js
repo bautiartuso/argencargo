@@ -65,6 +65,28 @@ async function revisar(forzar = false) {
   }));
 }
 
+// Vuelos llegados a Buenos Aires a los que todavía hay que pedirles la DSI (la pelotita naranja de
+// Aéreos). Misma regla que la pantalla del empleado: aéreo courier comercial, sin pedido, sin DSI en
+// todas sus ops, y vigente (alguna op sin cerrar o llegado hace 14 días o menos).
+async function contarPorPedir() {
+  const desde = new Date(Date.now() - 150 * 86400000).toISOString();
+  const fl = lista(await sb(`/rest/v1/flights?or=(status.eq.recibido,carrier_delivered_at.not.is.null)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=id,received_at,carrier_delivered_at,dispatched_at,flight_operations(operations(id,channel,service_type,status))`));
+  const vuelos = fl.map((f) => ({ ...f, ops: (f.flight_operations || []).map((x) => x.operations).filter((o) => o && o.channel === "aereo_blanco" && o.service_type !== "gestion_integral") })).filter((f) => f.ops.length);
+  if (!vuelos.length) return 0;
+  const opIds = vuelos.flatMap((f) => f.ops.map((o) => o.id));
+  const [docs, peds] = await Promise.all([
+    sb(`/rest/v1/legajo_docs?operation_id=in.(${opIds.join(",")})&tipo=eq.dsi&borrado_at=is.null&select=operation_id`),
+    sb(`/rest/v1/dsi_pedidos?flight_id=in.(${vuelos.map((f) => f.id).join(",")})&select=flight_id`),
+  ]);
+  const conDsi = new Set(lista(docs).map((d) => d.operation_id));
+  const pedidos = new Set(lista(peds).map((p) => p.flight_id));
+  return vuelos.filter((f) => {
+    if (pedidos.has(f.id) || f.ops.every((o) => conDsi.has(o.id))) return false;
+    const llego = new Date(f.received_at || f.carrier_delivered_at || f.dispatched_at).getTime();
+    return f.ops.some((o) => !["operacion_cerrada", "cancelada"].includes(o.status)) || Date.now() - llego < 14 * 86400000;
+  }).length;
+}
+
 const textoPlano = (html) => String(html || "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr|li)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\n{3,}/g, "\n\n").trim();
 
 export async function GET(req) {
@@ -76,9 +98,9 @@ export async function GET(req) {
     if (accion === "estado") {
       const cfg = await leerConfig().catch(() => null);
       if (cfg?.refresh_token) await revisar().catch(() => {});
-      const r = await sb(`/rest/v1/dsi_pedidos?respuesta_at=not.is.null&revisado_at=is.null&select=flight_id`);
-      if (!r.ok) return json({ respondidos: 0, sinTabla: r.status === 404 || r.status === 400 });
-      return json({ respondidos: lista(r).length, vuelos: lista(r).map((x) => x.flight_id) });
+      const [r, porPedir] = await Promise.all([sb(`/rest/v1/dsi_pedidos?respuesta_at=not.is.null&revisado_at=is.null&select=flight_id`), contarPorPedir()]);
+      if (!r.ok) return json({ respondidos: 0, vuelos: [], porPedir, sinTabla: r.status === 404 || r.status === 400 });
+      return json({ respondidos: lista(r).length, vuelos: lista(r).map((x) => x.flight_id), porPedir });
     }
     if (accion === "vuelo") {
       const fid = u.searchParams.get("flight_id") || "";
