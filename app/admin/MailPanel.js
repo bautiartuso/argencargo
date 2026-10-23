@@ -38,6 +38,7 @@ export default function MailPanel({ token }) {
   const [estado, setEstado] = useState(null);
   const [carpetas, setCarpetas] = useState([]);
   const [noLeidos, setNoLeidos] = useState(0);
+  const [noLeidosTotal, setNoLeidosTotal] = useState(null); // bandeja + DHL, FedEx y UPS (globo del menú)
   const [carpeta, setCarpeta] = useState("bandeja");
   const [lista, setLista] = useState([]);
   const [sig, setSig] = useState(null);
@@ -60,9 +61,9 @@ export default function MailPanel({ token }) {
   useEffect(() => { (async () => { try { setEstado(await api({ accion: "estado" })); } catch (e) { setEstado({ error: e.message }); } })(); }, [api]);
   useEffect(() => { try { const m = new URLSearchParams(location.search).get("mail"); if (m === "ok") toast("Gmail conectado", "success"); else if (m) toast("No se pudo conectar Gmail", "error"); } catch {} }, []);
 
-  const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); } catch {} }, [api]);
-  // El globo del menú (Email) sigue al de la bandeja.
-  useEffect(() => { try { window.dispatchEvent(new CustomEvent("ac_mail_noleidos", { detail: noLeidos })); } catch {} }, [noLeidos]);
+  const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); setNoLeidosTotal(d.noLeidosTotal ?? null); } catch {} }, [api]);
+  // El globo del menú (Email) suma la bandeja y las carpetas de DHL, FedEx y UPS (23/10/2026).
+  useEffect(() => { if (noLeidosTotal == null) return; try { window.dispatchEvent(new CustomEvent("ac_mail_noleidos", { detail: noLeidosTotal })); } catch {} }, [noLeidosTotal]);
   const cargarLista = useCallback(async (mas) => {
     setCargando(true);
     try { const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}) }); setLista((p) => mas ? [...p, ...d.mensajes] : d.mensajes); setSig(d.siguiente); }
@@ -80,7 +81,11 @@ export default function MailPanel({ token }) {
     setAbierto({ ...m, cargando: true }); if (celu) setVista("mensaje");
     try {
       const d = await api({ accion: "mensaje", id: m.id }); setAbierto(d); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: false } : x));
-      if (m.noLeido) { if (carpeta === "bandeja") setNoLeidos((n) => Math.max(0, n - 1)); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - 1) } : c)); }
+      if (m.noLeido) {
+        if (carpeta === "bandeja") setNoLeidos((n) => Math.max(0, n - 1)); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - 1) } : c));
+        const nombre = carpeta === "bandeja" ? "bandeja" : String(carpetas.find((c) => c.id === carpeta)?.nombre || "").toLowerCase();
+        if (["bandeja", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - 1)));
+      }
     }
     catch (e) { toast(e.message, "error"); setAbierto(null); }
   };

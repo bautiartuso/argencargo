@@ -9166,7 +9166,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   // Cada adjunto se marca como DSI o guía aérea (23/10/2026); lo que no se elige queda descartado.
   const esLaDsi=async(m,a,tipo="dsi")=>{
     setUsando(`${a.id}:${tipo}`);
-    try{const b=await traer(m,a);const guiasEnPdf=tipo==="guia_aerea"&&(m.guias||[]).length>1?(enPdf[a.id]||await guiasEnPdfDsi(m,a,token,m.guias.map(g=>g.guia))):null;
+    try{const b=await traer(m,a);const guiasEnPdf=enPdf[a.id]||null;
       const ok=await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo,{mensaje:m,adjunto:a,guiasEnPdf});
       if(ok!==false)setUsados(u=>({...u,[a.id]:tipo}));}
     catch(e){toast(e.message,"error");}
@@ -9211,16 +9211,18 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
         <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{nombreDe(m.de)} <span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}>· {fecha(m.fecha)}</span></span>
         {m.texto&&<button type="button" onClick={()=>setAbierto(abierto===m.id?null:m.id)} style={{background:"none",border:"none",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{abierto===m.id?"Ocultar mail":"Ver mail"}</button>}
       </div>
-      {(m.guias||[]).length>1&&(()=>{const manif=m.adjuntos.filter(a=>!a.guia&&(enPdf[a.id]||[]).length).length;return <p style={{margin:"6px 0 0",fontSize:11.5,color:"#93c5fd"}}>Este mail trae {m.guias.length} guías ({m.guias.map(g=>g.guia).join(" · ")}){manif>1?` y ${manif} guías aéreas`:""}. Cada guía aérea se carga en los vuelos que nombra y cada DSI en el de su guía.</p>;})()}
+      {(m.guias||[]).length>1&&(()=>{const manif=m.adjuntos.filter(a=>!a.guia&&(enPdf[a.id]||[]).length).length;return <p style={{margin:"6px 0 0",fontSize:11.5,color:"#93c5fd"}}>Este mail trae {m.guias.length} guías ({m.guias.map(g=>g.guia).join(" · ")}){manif>1?` y ${manif} guías aéreas`:""}. Elegí solo lo de esta guía: lo que es de otra aparece tachado.</p>;})()}
       {abierto===m.id&&<p style={{margin:"8px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",lineHeight:1.5,maxHeight:260,overflowY:"auto"}}>{m.texto}</p>}
-      {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.nombre}>📎 {a.nombre}{!a.guia&&(enPdf[a.id]||[]).length>0&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:999,background:enPdf[a.id].includes(d.guia)?"rgba(196,181,253,0.14)":"rgba(147,197,253,0.12)",color:enPdf[a.id].includes(d.guia)?"#c4b5fd":"#93c5fd",border:`1px solid ${enPdf[a.id].includes(d.guia)?"rgba(196,181,253,0.4)":"rgba(147,197,253,0.35)"}`}}>{enPdf[a.id].includes(d.guia)?"guía aérea de esta guía":"guía aérea de otra guía"}</span>}{a.guia&&a.guia!==d.guia&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:999,background:"rgba(147,197,253,0.12)",color:"#93c5fd",border:"1px solid rgba(147,197,253,0.35)"}}>otra guía</span>}</span>
+      {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=>{const otra=(a.guia&&a.guia!==d.guia)||(!a.guia&&(enPdf[a.id]||[]).length>0&&!enPdf[a.id].includes(d.guia));return <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",opacity:otra?0.85:1}}>
+        <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={otra?`${a.nombre} · es de otra guía`:a.nombre}>📎 <span style={otra?{color:"#f87171",textDecoration:"line-through",textDecorationThickness:2}:{color:"#fff"}}>{a.nombre}</span>
+          {otra&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(239,68,68,0.14)",color:"#f87171",border:"1px solid rgba(239,68,68,0.45)",textDecoration:"none"}}>otra guía{a.guia?` · ${a.guia}`:""}</span>}
+          {!otra&&!a.guia&&(enPdf[a.id]||[]).includes(d.guia)&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(196,181,253,0.14)",color:"#c4b5fd",border:"1px solid rgba(196,181,253,0.4)"}}>guía aérea de esta guía</span>}</span>
         {btnC("Ver",()=>ver(m,a),"#93c5fd")}
-        {(()=>{const u=usados[a.id]||Object.keys(cargados||{}).find(t=>(cargados[t]||[]).includes(a.nombre));return u?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>✓ {u==="dsi"?"DSI":"Guía aérea"}</span>:<>
+        {!otra&&(()=>{const u=usados[a.id]||Object.keys(cargados||{}).find(t=>(cargados[t]||[]).includes(a.nombre));return u?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>✓ {u==="dsi"?"DSI":"Guía aérea"}</span>:<>
           {btnC(usando===`${a.id}:dsi`?"…":"DSI",()=>esLaDsi(m,a,"dsi"),"#E8D098",{disabled:!!usando})}
           {btnC(usando===`${a.id}:guia_aerea`?"…":"Guía aérea",()=>esLaDsi(m,a,"guia_aerea"),"#c4b5fd",{disabled:!!usando})}
         </>;})()}
-      </div>)}</div>:<p style={{margin:"6px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Sin adjuntos</p>}
+      </div>;})}</div>:<p style={{margin:"6px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Sin adjuntos</p>}
     </div>)}
   </div>;
 }
@@ -9301,23 +9303,18 @@ function AereosEmpleado({token}){
   useEffect(()=>{cargar();},[cargar]);
   // Precarga el mail y los adjuntos de los que ya respondieron.
   useEffect(()=>{(vuelos||[]).filter(f=>f.pedido&&!f.pedido.revisado_at&&(f.pedido.respuesta_at||dsiResp.has(f.id))).slice(0,12).forEach(f=>cargarDsiVuelo(f.id,token));},[vuelos]);// eslint-disable-line
-  // ctx = {mensaje, adjunto, guiasEnPdf}. La guía aérea va a los vuelos cuyas guías nombra adentro (FedEx
-  // puede mandar dos manifiestos en el mismo mail); si no se pudo leer, solo a este vuelo. La DSI va al
-  // vuelo de la guía que figura en el nombre del archivo o en el PDF, aunque se abra desde otro vuelo.
   const adjuntar=async(f,file,tipo="dsi",ctx={})=>{
-    const porGuia=(g)=>g?vuelos.find(v=>v.international_tracking===g):null;
+    // Cada vuelo se marca por separado (23/10/2026): lo que se elige va solo al vuelo abierto. Lo que es
+    // de otra guía aparece tachado y no se puede elegir acá.
     if(tipo==="guia_aerea"){
-      const nombrados=(ctx.guiasEnPdf||[]).map(porGuia).filter(Boolean);
-      const destinos=nombrados.length?nombrados:[f];
-      for(const v of destinos)await subirLegajo(token,{file,opIds:v.ops.map(o=>o.id),flightId:v.id,tipo,datos:null});
-      toast(`Guía aérea cargada en ${destinos.map(v=>v.flight_code).join(", ")}`,"success");
+      await subirLegajo(token,{file,opIds:f.ops.map(o=>o.id),flightId:f.id,tipo,datos:null});
+      toast(`Guía aérea cargada en ${f.flight_code}`,"success");
     }else{
       let info={tipo:null};try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}
-      const destino=porGuia(ctx.adjunto?.guia)||porGuia(info.dsi?.guia)||vuelos.find(v=>(info.texto||"").includes(v.international_tracking)&&(ctx.mensaje?.guias||[]).some(g=>g.guia===v.international_tracking))||f;
-      const ids=(info.tipo==="dsi"&&emparejarDocumento(info,destino.ops))||destino.ops.map(o=>o.id);
-      await subirLegajo(token,{file,opIds:ids,flightId:destino.id,tipo,datos:info.dsi||null});
+      const ids=(info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
+      await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo,datos:info.dsi||null});
       if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
-      toast(`DSI cargada en ${destino.flight_code} · ${destino.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
+      toast(`DSI cargada en ${f.flight_code} · ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
     }
     await cargar();refrescarDsiEstado(token);
   };

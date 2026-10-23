@@ -45,19 +45,26 @@ const firmar = (v) => crypto.createHmac("sha256", CSECRET || "x").update(v).dige
 // Avisos automáticos de DHL (15/10/2026): documentación de soporte del AWB, recibo de pago y
 // On Demand Delivery ("Entregado" / "Su entrega se realizará hoy"). Van a su propia carpeta, ya
 // leídos, para que en "DHL" queden solo los mails de personas y no se pierdan entre los avisos.
-const DHL_AVISOS = ['subject:"Documentación de soporte para AWB"', 'subject:"Recibo de pago de DHL"', 'subject:"On Demand Delivery"'];
+// 23/10/2026: también van a "DHL avisos" (ya leídos) las respuestas de los pedidos de DSI (las ve Facu
+// desde Aéreos), el mail "DESPACHOS" de FedEx y las alertas de pago de derechos de DHL.
+const DHL_AVISOS = ['subject:"Documentación de soporte para AWB"', 'subject:"Recibo de pago de DHL"', 'subject:"On Demand Delivery"', 'subject:"Solicitud DSI"', 'subject:"Alerta de Pago de Derechos"', "subject:DESPACHOS"];
+const sinAvisos = DHL_AVISOS.map((x) => `-${x}`).join(" ");
 const AUTO = [
-  { nombre: "DHL", q: `from:dhl ${DHL_AVISOS.map((x) => `-${x}`).join(" ")}` },
-  { nombre: "DHL avisos", q: `from:dhl {${DHL_AVISOS.join(" ")}}`, leido: true, sacar: ["DHL"] },
+  { nombre: "DHL", q: `from:dhl ${sinAvisos}` },
+  { nombre: "DHL avisos", q: `{from:dhl from:fedex from:ups} {${DHL_AVISOS.join(" ")}}`, leido: true, sacar: ["DHL", "FedEx", "UPS"] },
   // FedEx: también el reclamo 875399955921 (hilos que Bautista respondió desde su casilla).
-  { nombre: "FedEx", q: "from:fedex OR subject:875399955921" },
-  { nombre: "UPS", q: "from:ups" },
+  { nombre: "FedEx", q: `{from:fedex subject:875399955921} ${sinAvisos}` },
+  { nombre: "UPS", q: `from:ups ${sinAvisos}` },
   { nombre: "WhatsApp", q: "from:whatsapp OR subject:whatsapp" },
   // Informes DMARC diarios (Google, Microsoft, Yahoo…): no hace falta leerlos.
-  { nombre: "DMARC", q: 'from:dmarc OR subject:"Report domain"' },
+  { nombre: "DMARC", q: 'from:dmarc OR subject:"Report domain"', leido: true },
 ];
-// Filtros viejos que se reemplazaron (se borran al ordenar, si no siguen etiquetando).
-const FILTROS_VIEJOS = ["from:dhl"];
+// Filtros viejos que se reemplazaron (se borran al ordenar).
+const AVISOS_15_10 = ['subject:"Documentación de soporte para AWB"', 'subject:"Recibo de pago de DHL"', 'subject:"On Demand Delivery"'];
+const FILTROS_VIEJOS = ["from:dhl", `from:dhl ${AVISOS_15_10.map((x) => `-${x}`).join(" ")}`, `from:dhl {${AVISOS_15_10.join(" ")}}`, "from:fedex OR subject:875399955921", "from:ups"];
+// Lo que cuenta para el globo del Email (23/10/2026): bandeja + DHL, FedEx y UPS. Avisos, DMARC y
+// WhatsApp no.
+const Q_NO_LEIDOS = 'is:unread {in:inbox in:spam label:DHL label:FedEx label:UPS} -label:DHL-avisos -label:DMARC -label:WhatsApp';
 const etiquetaQ = (n) => String(n).replace(/\s+/g, "-");
 const SIN_AUTO = AUTO.map((a) => `-label:${etiquetaQ(a.nombre)}`).join(" ");
 
@@ -102,16 +109,20 @@ export async function GET(req) {
       return json({ url });
     }
     if (accion === "no_leidos") {
-      const d = await gm(`/messages?maxResults=100&includeSpamTrash=true&q=${encodeURIComponent(`is:unread {in:inbox in:spam} ${SIN_AUTO}`)}`);
+      const d = await gm(`/messages?maxResults=200&includeSpamTrash=true&q=${encodeURIComponent(Q_NO_LEIDOS)}`);
       return json({ n: (d.messages || []).length });
     }
     if (accion === "carpetas") {
       const d = await gm("/labels");
       const propias = (d.labels || []).filter((l) => l.type === "user");
       const conteos = await Promise.all(propias.map((l) => gm(`/labels/${l.id}`).catch(() => ({}))));
-      const nl = await gm(`/messages?maxResults=100&includeSpamTrash=true&q=${encodeURIComponent(`is:unread {in:inbox in:spam} ${SIN_AUTO}`)}`).catch(() => ({}));
+      const [nl, tot] = await Promise.all([
+        gm(`/messages?maxResults=100&includeSpamTrash=true&q=${encodeURIComponent(`is:unread {in:inbox in:spam} ${SIN_AUTO}`)}`).catch(() => ({})),
+        gm(`/messages?maxResults=200&includeSpamTrash=true&q=${encodeURIComponent(Q_NO_LEIDOS)}`).catch(() => ({})),
+      ]);
       return json({
         noLeidosBandeja: (nl.messages || []).length,
+        noLeidosTotal: (tot.messages || []).length,
         carpetas: propias.map((l, i) => ({ id: l.id, nombre: l.name, noLeidos: conteos[i]?.messagesUnread || 0 })).sort((a, b) => a.nombre.localeCompare(b.nombre)),
       });
     }
@@ -177,9 +188,19 @@ export async function POST(req) {
         let label = labels.find((x) => x.name.toLowerCase() === a.nombre.toLowerCase());
         if (!label) label = await gm("/labels", { method: "POST", body: JSON.stringify({ name: a.nombre, labelListVisibility: "labelShow", messageListVisibility: "show" }) }).catch(() => null);
         if (!label) continue;
-        const tiene = (f.filter || []).some((x) => x.criteria?.query === a.q && (x.action?.addLabelIds || []).includes(label.id));
         const quitar = ["INBOX", ...(a.leido ? ["UNREAD"] : [])];
-        if (!tiene) await gm("/settings/filters", { method: "POST", body: JSON.stringify({ criteria: { query: a.q }, action: { addLabelIds: [label.id], removeLabelIds: quitar } }) }).catch(() => {});
+        const mismos = (f.filter || []).filter((x) => x.criteria?.query === a.q && (x.action?.addLabelIds || []).includes(label.id));
+        const tiene = mismos.some((x) => quitar.every((q) => (x.action?.removeLabelIds || []).includes(q)));
+        if (!tiene) {
+          for (const x of mismos) await gm(`/settings/filters/${x.id}`, { method: "DELETE" }).catch(() => {});
+          await gm("/settings/filters", { method: "POST", body: JSON.stringify({ criteria: { query: a.q }, action: { addLabelIds: [label.id], removeLabelIds: quitar } }) }).catch(() => {});
+        }
+        // Carpetas que se leen solas: lo que haya quedado sin leer adentro se marca leído.
+        if (a.leido) {
+          const nl = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(`label:${etiquetaQ(a.nombre)} is:unread`)}`).catch(() => ({}));
+          const ids = (nl.messages || []).map((m) => m.id);
+          if (ids.length) await gm("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids, removeLabelIds: ["UNREAD"] }) }).catch(() => {});
+        }
         // Etiquetas de las que estos mails tienen que salir (los avisos de DHL estaban en "DHL").
         const sacarIds = (a.sacar || []).map((n) => labels.find((x) => x.name.toLowerCase() === n.toLowerCase())?.id).filter(Boolean);
         const ex = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(sacarIds.length ? `(${a.q}) -label:${etiquetaQ(a.nombre)}` : `(${a.q}) {in:inbox in:spam}`)}`).catch(() => ({}));
