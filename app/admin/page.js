@@ -1505,7 +1505,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"general",l:"General"},
     // Solapa unificada (11/06/2026): Presupuesto + Cobro/Costos (Finanzas) + Gestión de Pagos
     // viven todos bajo "finance". Los bloques se gatean abajo con tab==="finance"&&!isGI.
-    {k:"finance",l:"Presupuesto y Finanzas"},
+    {k:"finance",l:"Presupuesto"},
     ...(isCanalB?[]:[{k:"items",l:"Productos"}]),
     {k:"packages",l:"Bultos"},
     // Maritimo (A y B) sin solapa Seguimiento: el tracking vive en el contenedor.
@@ -1741,16 +1741,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{fontSize:11,fontWeight:800,padding:"6px 14px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.14em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,animation:"acGiPulse 2.4s ease-in-out infinite"}}>Gestión Integral</span>}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {!op.channel?.includes("negro")&&items.length>0&&<>
-  <Btn onClick={()=>printSimplifiedDeclaration({op,items,pkgs,client:opClient,events,config})} variant="secondary" small title="Genera la Destinación Simplificada de Importación (DSI) en USD">📋 DSI</Btn>
-  <Btn onClick={()=>{window.__facturarOp=op.operation_code;window.dispatchEvent(new CustomEvent("ac_go_facturas"));}} variant="secondary" small title="Emite la Factura C real en ARCA (CAE), precargada con el cliente y los conceptos del presupuesto">🧾 Facturar (ARCA)</Btn>
-</>}
-        <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
+      {/* Acciones de la op (22/10/2026): sin DSI ni Reasignar cliente; facturar vive en Legajo (aéreo courier). */}
+      <div className="ac-op-acciones" style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {!op.channel?.includes("negro")&&items.length>0&&!llevaLegajo(op)&&<button type="button" className="ac-op-acc" onClick={()=>{window.__facturarOp=op.operation_code;window.dispatchEvent(new CustomEvent("ac_go_facturas"));}} title="Emite la Factura C real en ARCA (CAE), precargada con el cliente y los conceptos del presupuesto">🧾 Facturar</button>}
         {op.lost_in_customs_at
-          ?<Btn onClick={unmarkLostInCustoms} variant="secondary" small title="Quitar la marca de perdida en aduana">↩ Deshacer pérdida aduana</Btn>
-          :<Btn onClick={()=>setCustomsLossModal({reason:""})} variant="danger" small title="La carga fue retenida y se abandona: el cliente no abona, la op se cierra como pérdida operativa">🚨 Marcar perdida en aduana</Btn>}
-        <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
+          ?<button type="button" className="ac-op-acc" onClick={unmarkLostInCustoms} title="Quitar la marca de perdida en aduana">↩ Deshacer pérdida en aduana</button>
+          :<button type="button" className="ac-op-acc ac-op-acc-r" onClick={()=>setCustomsLossModal({reason:""})} title="La carga fue retenida y se abandona: el cliente no abona, la op se cierra como pérdida operativa">🚨 Perdida en aduana</button>}
+        <button type="button" className="ac-op-acc ac-op-acc-r" onClick={deleteOp} title="Eliminar operación">🗑 Eliminar</button>
       </div>
     </div>
 
@@ -1794,8 +1791,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         </div>
       </div>
     </div>}
-    {/* Tabs estilo Linear: pill flotante para el tab activo + scroll horizontal en mobile */}
-    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} data-on={active?"1":"0"} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_completed_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
+    {/* Solapas a todo el ancho (22/10/2026): control segmentado, cada solapa ocupa lo mismo. */}
+    <div className="ac-editor-tabs" role="tablist" style={{display:"grid",gridTemplateColumns:`repeat(${tabs.length},minmax(0,1fr))`,gap:4,marginBottom:20,padding:4,borderRadius:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.07)"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} role="tab" aria-selected={active} data-on={active?"1":"0"} onClick={()=>setTab(t.k)} className="ac-editor-tab" style={{height:40,padding:"0 10px",fontSize:12.5,fontWeight:active?800:600,border:`1px solid ${active?"rgba(184,149,106,0.55)":"transparent"}`,borderRadius:10,background:active?"linear-gradient(180deg,rgba(184,149,106,0.22),rgba(184,149,106,0.1))":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,fontFamily:"inherit",boxShadow:active?"0 4px 14px rgba(0,0,0,0.25)":"none",transition:"background 150ms, color 150ms, border-color 150ms"}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_completed_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
         <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
@@ -1858,7 +1855,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     })()}
     {/* Antidumping a nivel op: el badge por producto vive dentro de la solapa Productos y quedaba
         enterrado — la alerta llegaba por Telegram y en la op no se veía. Esto lo sube a la cabecera. */}
-    {!isGI&&(()=>{const ad=items.filter(it=>it.antidumping_note);if(ad.length===0)return null;
+    {!isGI&&tab==="items"&&(()=>{const ad=items.filter(it=>it.antidumping_note);if(ad.length===0)return null;
       const notas=[...new Set(ad.map(it=>it.antidumping_note))];
       return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(248,113,113,0.16),rgba(248,113,113,0.05))",border:"1.5px solid rgba(248,113,113,0.45)",borderRadius:10,display:"flex",gap:12,alignItems:"start",flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:220}}>
@@ -1866,7 +1863,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"4px 0 0",lineHeight:1.5}}>Revisá derechos específicos y valores criterio antes de presupuestar. El costo calculado puede quedar corto.</p>
           <div style={{marginTop:7}}>{ad.slice(0,4).map(it=><p key={it.id} style={{fontSize:11.5,color:"#fecaca",margin:"0 0 2px"}}>• {it.description} · NCM {it.ncm_code}</p>)}{ad.length>4&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0",fontStyle:"italic"}}>+{ad.length-4} más</p>}</div>
         </div>
-        {tab!=="items"&&<button onClick={()=>setTab("items")} style={{padding:"9px 16px",fontSize:12.5,fontWeight:800,borderRadius:9,border:"1px solid rgba(248,113,113,0.6)",background:"rgba(248,113,113,0.2)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>→ Ir a Productos</button>}
       </div>;
     })()}
     {tab!=="finance"&&(()=>{const bal=Number(opClient?.account_balance_usd||0);if(Math.abs(bal)<0.01)return null;const isCredit=bal>0;return <div style={{marginBottom:16,padding:"10px 16px",background:isCredit?"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))":"linear-gradient(90deg,rgba(239,68,68,0.10),rgba(239,68,68,0.02))",border:`1.5px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -9008,27 +9004,45 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
   const fmtUsd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const fila=(icono,titulo,sub,der,extra={})=><div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:`1px solid ${extra.borde||"rgba(255,255,255,0.07)"}`,marginBottom:10,...(extra.style||{})}} {...(extra.props||{})}>
-    <span style={{width:40,height:40,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:extra.ok?"rgba(34,197,94,0.12)":extra.falta?"rgba(251,191,36,0.1)":"rgba(255,255,255,0.05)",fontSize:18}}>{icono}</span>
-    <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{titulo}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:12,color:extra.falta?"#fbbf24":"rgba(255,255,255,0.5)"}}>{sub}</p>}</div>
-    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{der}</div>
-  </div>;
-  const bt=(txt,fn,c="#E8D098")=><button type="button" onClick={fn} style={{height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+  const fFecha=v=>v?new Date(String(v).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"";
+  const ESTADO={ok:["Cargada","#4ade80","rgba(34,197,94,0.12)","rgba(34,197,94,0.35)"],falta:["Falta","#fbbf24","rgba(251,191,36,0.1)","rgba(251,191,36,0.35)"],opc:["Opcional","rgba(255,255,255,0.55)","rgba(255,255,255,0.05)","rgba(255,255,255,0.14)"]};
+  // Cada documento es una tarjeta: estado arriba, detalle y acciones abajo (rediseño 22/10/2026).
+  const tarjeta=({k,icono,titulo,estado,detalle,acciones,drop})=>{const [el,c,bg,bd]=ESTADO[estado];const arrastrando=drop&&drag===k;return <div key={k} {...(drop?{onDragOver:e=>{e.preventDefault();if(drag!==k)setDrag(k);},onDragLeave:e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);},onDrop:e=>{e.preventDefault();setDrag(null);subir(k,e.dataTransfer?.files?.[0]);}}:{})}
+    style={{display:"flex",flexDirection:"column",gap:12,padding:"16px 16px 14px",borderRadius:16,background:arrastrando?"rgba(232,208,152,0.08)":"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))",border:`1px ${estado==="falta"?"dashed":"solid"} ${arrastrando?"#E8D098":estado==="falta"?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.08)"}`,transition:"background 150ms, border-color 150ms"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <span style={{width:42,height:42,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:bg,fontSize:19}}>{icono}</span>
+      <p style={{flex:1,minWidth:0,margin:0,fontSize:14,fontWeight:800,color:"#fff",lineHeight:1.3}}>{titulo}</p>
+      <span style={{fontSize:10.5,fontWeight:800,padding:"4px 9px",borderRadius:999,letterSpacing:"0.06em",textTransform:"uppercase",color:c,background:bg,border:`1px solid ${bd}`,whiteSpace:"nowrap"}}>{el}</span>
+    </div>
+    <div style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.5,minHeight:19}}>{detalle}</div>
+    {acciones&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:"auto"}}>{acciones}</div>}
+  </div>;};
+  const bt=(txt,fn,c="#E8D098",key)=><button key={key} type="button" onClick={fn} style={{height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
   const subirBtn=(tipo,txt)=><label style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:ocupado?"wait":"pointer",whiteSpace:"nowrap"}}>{ocupado===tipo?"Subiendo…":txt}<input type="file" accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{subir(tipo,e.target.files?.[0]);e.target.value="";}}/></label>;
-  const dropDoc=(tipo)=>({props:{onDragOver:e=>{e.preventDefault();if(drag!==tipo)setDrag(tipo);},onDragLeave:e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);},onDrop:e=>{e.preventDefault();setDrag(null);subir(tipo,e.dataTransfer?.files?.[0]);}},borde:drag===tipo?"#E8D098":undefined});
-  const docFila=(tipo,icono)=>{const d=doc(tipo);return fila(icono,TIPOS_LEGAJO[tipo].l,d?`${d.file_name||"Archivo"} · ${new Date(d.uploaded_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}${d.flight_id?" · desde el vuelo":""}`:"Falta · obligatoria para cerrar · arrastrá o pegá el PDF",
-    d?<>{d.storage_path?bt("Ver",()=>abrirDocLegajo(token,d.storage_path),"#93c5fd"):<span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>Archivo eliminado (180 días)</span>}{subirBtn(tipo,"Reemplazar")}{bt("Quitar",()=>quitar(d),"#f87171")}</>:subirBtn(tipo,"Subir"),{ok:!!d,falta:!d,...dropDoc(tipo)});};
+  const docTarjeta=(tipo,icono)=>{const d=doc(tipo);return tarjeta({k:tipo,icono,titulo:TIPOS_LEGAJO[tipo].l,estado:d?"ok":"falta",drop:true,
+    detalle:d?<><span style={{color:"#fff",fontWeight:600}}>{d.file_name||"Archivo"}</span><br/>{fFecha(d.uploaded_at)}{d.flight_id?" · desde el vuelo":""}</>:"Obligatoria para cerrar. Arrastrala acá, pegala con ⌘V o subila.",
+    acciones:d?<>{d.storage_path?bt("Ver",()=>abrirDocLegajo(token,d.storage_path),"#93c5fd"):<span style={{fontSize:12,color:"rgba(255,255,255,0.45)",alignSelf:"center"}}>Archivo eliminado (180 días)</span>}{subirBtn(tipo,"Reemplazar")}{bt("Quitar",()=>quitar(d),"#f87171")}</>:subirBtn(tipo,`Subir ${TIPOS_LEGAJO[tipo].corto}`)});};
+  const facturar=()=>{window.__facturarOp=op.operation_code;window.dispatchEvent(new CustomEvent("ac_go_facturas"));};
+  const obligatorios=Object.keys(TIPOS_LEGAJO).length;
   return <div data-legajo-op="1">
-    <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{faltan.length?`Falta ${nombresFaltan(faltan)}`:"✓ Completo"}</span></span>} sub={faltan.length?"Sin la DSI y la factura del courier no se puede cerrar la operación":"Listo para cerrar"}>
+    <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{faltan.length?`${obligatorios-faltan.length} de ${obligatorios} obligatorios`:"✓ Completo"}</span></span>} sub={faltan.length?`Falta ${nombresFaltan(faltan)} · sin eso no se puede cerrar la operación`:"Listo para cerrar"}>
       {sinTabla&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql).</p>}
-      {fila("🧾","Factura de Argencargo",facturas.length?facturas.map(f=>`${f.tipo_cbte===13?"NC":"Factura C"} ${String(f.punto_venta).padStart(4,"0")}-${String(f.numero).padStart(8,"0")} · ${f.fecha?new Date(String(f.fecha).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):""}`).join(" · "):"Sin factura · no es obligatoria",
-        facturas.map(f=><a key={f.id} href={`/factura/${f.public_token}`} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Ver {f.numero}</a>),{ok:facturas.length>0})}
-      {docFila("factura_courier","📑")}
-      {docFila("dsi","🛃")}
-      {fila("🧾","Recibos",clientPayments.length?`${clientPayments.length} cobro${clientPayments.length!==1?"s":""} · se generan solos con cada pago`:"Todavía no hay cobros",
-        clientPayments.map(p=><button key={p.id} type="button" onClick={async()=>{const nro=await imprimirReciboPago({token,op,payment:p,client:opClient,payments:clientPayments});if(nro&&!p.receipt_number)setClientPayments(prev=>prev.map(x=>x.id===p.id?{...x,receipt_number:nro}:x));}} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#4ade80",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{p.payment_date?new Date(String(p.payment_date).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"Recibo"} · {fmtUsd(p.amount_usd)}</button>),{ok:clientPayments.length>0})}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:6,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
-        <div><p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fff"}}>El cliente lo ve en su portal</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>{!ri?"No: es monotributo o consumidor final":op.legajo_visible==null?(autoVisible?"Sí, automático: RI con entrega directa que paga los impuestos":"No, automático"):visible?"Sí, marcado a mano":"No, marcado a mano"} · ve solo los documentos que hay</p></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+        {docTarjeta("dsi","🛃")}
+        {docTarjeta("factura_courier","📑")}
+        {tarjeta({k:"factura_ac",icono:"🧾",titulo:"Factura de Argencargo",estado:facturas.length?"ok":"opc",
+          detalle:facturas.length?facturas.map(f=><div key={f.id}><span style={{color:"#fff",fontWeight:600}}>{f.tipo_cbte===13?"Nota de crédito C":"Factura C"} {String(f.punto_venta).padStart(4,"0")}-{String(f.numero).padStart(8,"0")}</span> · {fFecha(f.fecha)}</div>):"Todavía no se facturó. No es obligatoria para cerrar.",
+          acciones:facturas.length?facturas.map(f=><a key={f.id} href={`/factura/${f.public_token}`} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Ver {String(f.numero).padStart(8,"0")}</a>)
+            :<button type="button" onClick={facturar} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>🧾 Facturar</button>})}
+        {tarjeta({k:"recibos",icono:"✅",titulo:"Recibos de pago",estado:clientPayments.length?"ok":"opc",
+          detalle:clientPayments.length?`${clientPayments.length} cobro${clientPayments.length!==1?"s":""} · el recibo sale solo de cada pago`:"Todavía no hay cobros.",
+          acciones:clientPayments.length?clientPayments.map(p=>bt(`${p.receipt_number?`N.º ${String(p.receipt_number).padStart(5,"0")} · `:""}${fFecha(p.payment_date)} · ${fmtUsd(p.amount_usd)}`,async()=>{const nro=await imprimirReciboPago({token,op,payment:p,client:opClient,payments:clientPayments});if(nro&&!p.receipt_number)setClientPayments(prev=>prev.map(x=>x.id===p.id?{...x,receipt_number:nro}:x));},"#4ade80",p.id)):null})}
+      </div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:visible?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",fontSize:16}}>{visible?"👁":"🔒"}</span>
+          <div><p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fff"}}>{visible?"El cliente lo ve en su portal":"El cliente no lo ve"}</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>{!ri?"Es monotributo o consumidor final":op.legajo_visible==null?(autoVisible?"Automático: RI con entrega directa que paga los impuestos":"Automático"):"Marcado a mano"}{visible?" · ve solo los documentos que hay":""}</p></div>
+        </div>
         {ri&&<div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)"}}>{[[null,"Auto"],[true,"Sí"],[false,"No"]].map(([v,l])=>{const on=(op.legajo_visible??null)===v;return <button key={l} type="button" onClick={()=>setVisible(v)} style={{height:30,padding:"0 13px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none"}}>{l}</button>;})}</div>}
       </div>
     </Card>
@@ -9070,7 +9084,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   const opIds=(flightOps||[]).map(fo=>fo.operation_id).filter(Boolean);
   const clave=opIds.join(",");
   const [ops,setOps]=useState([]);const [docs,setDocs]=useState([]);const [sinTabla,setSinTabla]=useState(false);
-  const [pend,setPend]=useState([]);const [ocupado,setOcupado]=useState(false);const [drag,setDrag]=useState(false);
+  const [pend,setPend]=useState([]);const [ocupado,setOcupado]=useState(null);const [drag,setDrag]=useState(null);const zonaRef=useRef(null);
   const cargar=useCallback(async()=>{
     if(!clave)return;
     const o=await dq("operations",{token,filters:`?id=in.(${clave})&select=id,operation_code,channel,service_type,international_tracking,client_id,clients(first_name,last_name,company_name,cuit,tax_condition)&order=operation_code.asc`});
@@ -9086,31 +9100,34 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     await subirLegajo(token,{file,opIds:ids,flightId:flight.id,tipo,datos:tipo==="dsi"?(info?.dsi||null):null});
     if(tipo==="dsi"&&info?.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
   };
-  const procesar=async(files)=>{
+  // tipo: lo dice el botón donde se subió/arrastró/pegó (DSI o factura del courier); sin tipo se adivina.
+  const procesar=async(files,tipoFijo=null)=>{
     const lista=[...(files||[])].filter(Boolean);if(!lista.length)return;
     if(sinTabla){toast("Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql)","error");return;}
-    setOcupado(true);
+    setOcupado(tipoFijo||"auto");
     let pdfjs=null;try{pdfjs=await cargarPdfJsAdmin();}catch{}
     const base=opsLeg.length?opsLeg:ops;const nuevos=[];let ok=0;
     for(const f of lista){
       let info={tipo:null};try{if(pdfjs)info=await analizarDocumento(pdfjs,f);}catch(e){console.error("leer doc",e);}
-      const ids=info.tipo?emparejarDocumento(info,base):null;
-      if(info.tipo&&ids){try{await guardar(f,info,info.tipo,ids);ok++;}catch(e){toast(`${f.name}: ${e.message}`,"error");}}
-      else nuevos.push({key:`${Date.now()}-${Math.random()}`,file:f,info,tipo:info.tipo||"factura_courier",destino:""});
+      const tipo=tipoFijo||info.tipo;
+      const ids=tipo?emparejarDocumento(info,base):null;
+      if(tipo&&ids){try{await guardar(f,info,tipo,ids);ok++;}catch(e){toast(`${f.name}: ${e.message}`,"error");}}
+      else nuevos.push({key:`${Date.now()}-${Math.random()}`,file:f,info,tipo:tipo||"factura_courier",destino:""});
     }
-    setPend(p=>[...p,...nuevos]);await cargar();setOcupado(false);
+    setPend(p=>[...p,...nuevos]);await cargar();setOcupado(null);
     if(ok)toast(`${ok} documento${ok!==1?"s":""} asignado${ok!==1?"s":""} solo${ok!==1?"s":""}`,"success");
     if(nuevos.length)toast(`${nuevos.length} para asignar a mano`,"info");
   };
   const guardarPend=async(p)=>{
     const ids=p.destino==="*"?opsLeg.map(o=>o.id):p.destino?[p.destino]:[];
     if(!ids.length){toast("Elegí a qué operación va","error");return;}
-    setOcupado(true);
+    setOcupado("auto");
     try{await guardar(p.file,p.info,p.tipo,ids);setPend(x=>x.filter(y=>y.key!==p.key));await cargar();toast("Guardado","success");}catch(e){toast(e.message,"error");}
-    setOcupado(false);
+    setOcupado(null);
   };
   useEffect(()=>{
-    const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();procesar(fs);}};
+    // ⌘V: va al botón que tiene el mouse encima (o el último que se tocó); si no, se adivina.
+    const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();procesar(fs,zonaRef.current);}};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
   const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
@@ -9118,15 +9135,16 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     ?<button type="button" onClick={()=>d.storage_path?abrirDocLegajo(token,d.storage_path):toast("El archivo se eliminó a los 180 días","info")} title={d.file_name||""} style={{height:28,padding:"0 10px",borderRadius:8,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.1)",color:"#4ade80",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✓ {TIPOS_LEGAJO[t].corto}</button>
     :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(251,191,36,0.45)",color:"#fbbf24",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>Falta {TIPOS_LEGAJO[t].corto}</span>;
   const recibido=flight.status==="recibido";
-  return <div data-legajo-vuelo={flight.id} onDragOver={e=>{e.preventDefault();if(!drag)setDrag(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(false);}} onDrop={e=>{e.preventDefault();setDrag(false);procesar(e.dataTransfer?.files);}}
-    style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:`1px solid ${drag?"#E8D098":"rgba(255,255,255,0.08)"}`,outline:drag?"2px dashed #E8D098":"none",outlineOffset:3}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
-      <div><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p><p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>DSI y factura del courier de cada operación · arrastrá, pegá con ⌘V o subí</p></div>
-      <label style={{height:36,padding:"0 14px",borderRadius:10,display:"inline-flex",alignItems:"center",gap:8,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:ocupado?"wait":"pointer"}}>
-        {ocupado?"Leyendo…":"＋ Subir documentos"}
-        <input type="file" multiple accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={ocupado} onChange={e=>{procesar(e.target.files);e.target.value="";}}/>
-      </label>
-    </div>
+  const zona=(tipo,icono,txt)=><label onMouseEnter={()=>{zonaRef.current=tipo;}} onMouseLeave={()=>{if(zonaRef.current===tipo)zonaRef.current=null;}}
+    onDragOver={e=>{e.preventDefault();if(drag!==tipo)setDrag(tipo);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);}} onDrop={e=>{e.preventDefault();setDrag(null);procesar(e.dataTransfer?.files,tipo);}}
+    style={{flex:"1 1 200px",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,border:`1.5px dashed ${drag===tipo?"#E8D098":"rgba(232,208,152,0.35)"}`,background:drag===tipo?"rgba(232,208,152,0.14)":"rgba(232,208,152,0.05)",cursor:ocupado?"wait":"pointer",transition:"background 150ms, border-color 150ms"}}>
+    <span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(232,208,152,0.12)",fontSize:17}}>{icono}</span>
+    <span style={{minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:800,color:"#E8D098"}}>{ocupado===tipo?"Leyendo…":txt}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:1}}>Elegí, arrastrá o pegá con ⌘V</span></span>
+    <input type="file" multiple accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{procesar(e.target.files,tipo);e.target.value="";}}/>
+  </label>;
+  return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
+    <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi","🛃","Subir DSI")}{zona("factura_courier","📑","Subir factura courier")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
       <span style={{flex:"1 1 180px",minWidth:0,fontSize:12.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.file.name}>📄 {p.file.name}{p.info?.nombre?<span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}> · {p.info.nombre}</span>:null}</span>
@@ -10785,12 +10803,14 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         })()}
         {/* Desglose de bultos (foto del agente) y recolección del carrier lado a lado (rediseño 22/10/2026). */}
         {(flight.dispatch_photo_url||flight.dispatched_at)&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginTop:14,alignItems:"stretch"}}>
-          {flight.dispatch_photo_url&&<div style={{padding:"14px 16px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",gap:10}}>
-            <p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Desglose de bultos del courier</p>
-            <a href={flight.dispatch_photo_url} target="_blank" rel="noopener" title="Abrir en tamaño completo" style={{display:"block"}}>
-              <img src={flight.dispatch_photo_url} alt="Desglose de bultos" style={{width:"100%",maxHeight:220,objectFit:"contain",objectPosition:"left top",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",display:"block",cursor:"zoom-in",background:"#fff"}}/>
+          {flight.dispatch_photo_url&&<div style={{padding:"14px 16px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",gap:14}}>
+            <a href={flight.dispatch_photo_url} target="_blank" rel="noopener noreferrer" title="Abrir en una pestaña nueva" style={{flexShrink:0,display:"block",width:76,height:76,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.14)",background:"#fff"}}>
+              <img src={flight.dispatch_photo_url} alt="Desglose de bultos" style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"left top",display:"block"}}/>
             </a>
-            <button type="button" onClick={()=>setExtraerBultos(true)} style={{height:36,borderRadius:10,border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>✨ Extraer bultos con IA</button>
+            <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:8,alignItems:"flex-start"}}>
+              <p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Desglose de bultos del courier</p>
+              <button type="button" onClick={()=>setExtraerBultos(true)} style={{height:32,padding:"0 12px",borderRadius:9,border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>✨ Extraer bultos con IA</button>
+            </div>
           </div>}
           {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
         </div>}
@@ -17418,6 +17438,10 @@ function AdminDashboard({session,onLogout}){
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
+      .ac-editor-tab[data-on="0"]:hover{color:rgba(255,255,255,0.9)!important;background:rgba(255,255,255,0.04)!important}
+      .ac-op-acc{height:34px;padding:0 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.75);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;transition:background 150ms,border-color 150ms,color 150ms}
+      .ac-op-acc:hover{background:rgba(255,255,255,0.08);border-color:rgba(232,208,152,0.45);color:#E8D098}
+      .ac-op-acc-r:hover{background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.5);color:#fca5a5}
       @media(max-width:900px){
         .ac-editor-tabs{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px!important;border-bottom:none!important;overflow:visible!important}
         .ac-editor-tabs button{border-radius:10px!important;border:1px solid rgba(255,255,255,0.08)!important;padding:10px 4px!important;font-size:10.5px!important;letter-spacing:0.03em!important;white-space:normal!important;margin:0!important;display:flex!important;align-items:center;justify-content:center;gap:5px;text-align:center;line-height:1.2}

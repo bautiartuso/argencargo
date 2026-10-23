@@ -12,7 +12,7 @@ import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 import { armarDatosPortal, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import SupportPage from "./components/SupportPage";
 import { hoyAR } from "../../lib/fecha-ar";
-import { printReceiptPdf } from "../../lib/pdf-templates";
+import { reciboHtml, documentoHtml } from "../../lib/pdf-templates";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -153,36 +153,65 @@ const CN_SECTIONS=[
 const CN=CN_SECTIONS.flatMap(s=>s.items);
 // Las fotos de los bultos se borran a los 90 días (22/10/2026): sin foto pero ya subida, o con el bulto
 // de más de 90 días, es "Foto caducada" y no "Sin foto".
+// Notas de un cobro que ve el cliente: las internas de la acreditación automática (Argy) no.
+const notaCliente=(n)=>/acreditado autom[aá]ticamente|argy/i.test(String(n||""))?"":String(n||"").trim();
 const fotoCaducada=(p)=>!p?.photo_url&&(!!p?.photo_uploaded_at||(p?.created_at&&(Date.now()-new Date(p.created_at).getTime())/86400000>=90));
 
 // Legajo de la importación (22/10/2026): lo que existe — facturas de Argencargo, factura del courier,
 // DSI y los recibos de cada pago. Visibilidad y links firmados los resuelve /api/portal/legajo.
+// Se pide apenas se abre la op (precargarLegajo), así la solapa ya está lista cuando la tocan.
+const legajoVisible=(op,client)=>op?.service_type!=="gestion_integral"&&op?.channel==="aereo_blanco"&&client?.tax_condition==="responsable_inscripto"&&(op.legajo_visible===true||(op.legajo_visible==null&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes));
+const legajoCache=new Map();
+function precargarLegajo(opId,token,forzar=false){
+  const c=legajoCache.get(opId);
+  if(c&&!forzar&&Date.now()-c.ts<50*60000)return c.p;
+  const p=(async()=>{const r=await fetch(`/api/portal/legajo?op_id=${opId}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});return r.json();})().catch(()=>({error:true}));
+  legajoCache.set(opId,{p,ts:Date.now()});
+  return p;
+}
 function LegajoPortal({opId,token,t}){
-  const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:"22px 26px",marginBottom:16,boxShadow:"0 16px 40px rgba(0,0,0,0.3)"};
+  const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:"22px 24px",marginBottom:16,boxShadow:"0 16px 40px rgba(0,0,0,0.3)"};
   const H3={fontSize:12.5,fontWeight:800,color:"#fff",margin:0,letterSpacing:"0.1em",textTransform:"uppercase"};
   const [d,setD]=useState(null);
-  useEffect(()=>{let vivo=true;(async()=>{try{const r=await fetch(`/api/portal/legajo?op_id=${opId}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const j=await r.json();if(vivo)setD(j);}catch{if(vivo)setD({error:true});}})();return()=>{vivo=false;};},[opId,token]);
+  const [bajando,setBajando]=useState(null);
+  useEffect(()=>{let vivo=true;precargarLegajo(opId,token).then(j=>{if(vivo)setD(j);});return()=>{vivo=false;};},[opId,token]);
   const fecha=(v)=>v?new Date(String(v).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"";
-  const fila=(icono,titulo,sub,der)=><div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)",marginBottom:10,flexWrap:"wrap"}}>
+  // Recibos, facturas y "todo" salen del servidor en PDF: se piden con la sesión y se bajan como archivo.
+  const bajarPdf=async(doc,clave)=>{
+    if(bajando)return;setBajando(clave);
+    try{const r=await fetch(`/api/portal/legajo/pdf?op_id=${opId}&doc=${encodeURIComponent(doc)}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});
+      if(!r.ok)throw new Error("x");
+      const nombre=(/filename="([^"]+)"/.exec(r.headers.get("content-disposition")||"")||[])[1]||"legajo.pdf";
+      const url=URL.createObjectURL(await r.blob());const a=document.createElement("a");a.href=url;a.download=nombre;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch{toast(t("leg.error"),"error");}
+    setBajando(null);
+  };
+  const verRecibo=(p)=>{const {title,html}=reciboHtml({op:d.op,payment:p,client:d.cliente,settings:d.settings,saldoRestante:saldo});const w=window.open("","_blank");if(!w)return;w.document.write(documentoHtml(title,html));w.document.close();};
+  const BTN={height:36,padding:"0 14px",borderRadius:10,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,fontSize:12.5,fontWeight:800,textDecoration:"none",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",boxSizing:"border-box"};
+  const ver=(props)=><a {...props} target={props.href?"_blank":undefined} rel="noopener noreferrer" style={{...BTN,border:"1px solid rgba(255,255,255,0.16)",background:"rgba(255,255,255,0.05)",color:"#fff"}}>{t("leg.view")}</a>;
+  const bajar=(props,clave)=><a {...props} style={{...BTN,border:"1px solid rgba(140,200,245,0.5)",background:"rgba(140,200,245,0.12)",color:"#8cc8f5",opacity:bajando&&bajando!==clave?0.5:1}}>{bajando===clave?t("leg.preparing"):`↓ ${t("leg.download")}`}</a>;
+  const fila=(k,icono,titulo,sub,botones)=><div key={k} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 14px",borderRadius:14,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)",marginBottom:8,flexWrap:"wrap"}}>
     <span style={{width:40,height:40,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(140,200,245,0.1)",fontSize:18}}>{icono}</span>
-    <div style={{flex:"1 1 180px",minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{titulo}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}>{sub}</p>}</div>
-    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{der}</div>
+    <div style={{flex:"1 1 160px",minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{titulo}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.55)"}}>{sub}</p>}</div>
+    <div style={{display:"flex",gap:6,flexShrink:0}}>{botones}</div>
   </div>;
-  const btn=(txt,props)=><a {...props} style={{height:34,padding:"0 14px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(140,200,245,0.5)",background:"rgba(140,200,245,0.12)",color:"#8cc8f5",fontSize:12.5,fontWeight:800,textDecoration:"none",cursor:"pointer",whiteSpace:"nowrap"}}>{txt}</a>;
-  if(!d)return <div style={PANEL}><p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13}}>{t("leg.loading")}</p></div>;
+  if(!d)return <div style={PANEL}><h3 style={{...H3,marginBottom:14}}>{t("leg.title")}</h3>{[0,1,2].map(i=><div key={i} style={{height:66,borderRadius:14,background:"rgba(255,255,255,0.04)",marginBottom:8}}/>)}</div>;
   if(d.error||!d.visible)return <div style={PANEL}><p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13}}>{t("leg.empty")}</p></div>;
   const doc=(tipo)=>d.docs.find(x=>x.tipo===tipo);
   const pagado=(d.pagos||[]).reduce((a,p)=>a+Number(p.amount_usd||0),0);
-  const saldo=Math.max(0,Number(d.op.budget_total||0)+Number(d.op.debt_applied_usd||0)-Number(d.op.total_anticipos||0)-Number(d.op.credit_applied_usd||0)-Number(d.op.discount_applied_usd||0)-pagado);
-  const hay=d.facturas.length||d.docs.length||d.pagos.length;
+  const saldo=Math.round(Math.max(0,Number(d.op.budget_total||0)+Number(d.op.debt_applied_usd||0)-Number(d.op.total_anticipos||0)-Number(d.op.credit_applied_usd||0)-Number(d.op.discount_applied_usd||0)-pagado)*100)/100;
+  const hay=d.facturas.length+d.docs.length+d.pagos.length;
+  const adj=(tipo,icono,titulo)=>{const x=doc(tipo);return x&&fila(tipo,icono,titulo,fecha(x.fecha),<>{ver({href:x.url})}{bajar({href:x.descarga},tipo)}</>);};
   return <div style={PANEL}>
-    <h3 style={{...H3,marginBottom:6}}>{t("leg.title")}</h3>
-    <p style={{margin:"0 0 16px",fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>{t("leg.desc")}</p>
+    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <div><h3 style={{...H3,marginBottom:6}}>{t("leg.title")}</h3><p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>{t("leg.desc")}</p></div>
+      {hay>0&&<button onClick={()=>bajarPdf("todo","todo")} disabled={!!bajando} style={{...BTN,height:40,padding:"0 18px",border:"none",background:`linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`,color:"#0A1628",fontSize:13,cursor:bajando?"wait":"pointer",opacity:bajando&&bajando!=="todo"?0.6:1}}>{bajando==="todo"?t("leg.preparing"):`↓ ${t("leg.downloadAll")}`}</button>}
+    </div>
     {!hay&&<p style={{margin:0,color:"rgba(255,255,255,0.5)",fontSize:13}}>{t("leg.empty")}</p>}
-    {d.facturas.map((f,i)=><div key={i}>{fila("🧾",`${f.tipo} ${f.numero}`,`${t("leg.invoiceAc")} · ${fecha(f.fecha)}`,btn(t("leg.view"),{href:f.url,target:"_blank",rel:"noopener noreferrer"}))}</div>)}
-    {doc("factura_courier")&&fila("📑",t("leg.courierInvoice"),fecha(doc("factura_courier").fecha),btn(t("leg.download"),{href:doc("factura_courier").url,target:"_blank",rel:"noopener noreferrer"}))}
-    {doc("dsi")&&fila("🛃",t("leg.dsi"),fecha(doc("dsi").fecha),btn(t("leg.download"),{href:doc("dsi").url,target:"_blank",rel:"noopener noreferrer"}))}
-    {d.pagos.map(p=><div key={p.id}>{fila("✅",`${t("leg.receipt")}${p.receipt_number?` N.º ${String(p.receipt_number).padStart(5,"0")}`:""}`,`${fecha(p.payment_date)} · USD ${Number(p.amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,btn(t("leg.download"),{onClick:()=>printReceiptPdf({op:d.op,payment:p,client:d.cliente,settings:d.settings,saldoRestante:Math.round(saldo*100)/100})}))}</div>)}
+    {d.facturas.map((f,i)=>fila(`f${i}`,"🧾",`${f.tipo} ${f.numero}`,`${t("leg.invoiceAc")} · ${fecha(f.fecha)}`,<>{ver({href:f.url})}{bajar({onClick:()=>bajarPdf(`factura:${f.token}`,`f${i}`)},`f${i}`)}</>))}
+    {adj("factura_courier","📑",t("leg.courierInvoice"))}
+    {adj("dsi","🛃",t("leg.dsi"))}
+    {d.pagos.map(p=>fila(p.id,"✅",`${t("leg.receipt")}${p.receipt_number?` N.º ${String(p.receipt_number).padStart(5,"0")}`:""}`,`${fecha(p.payment_date)} · USD ${Number(p.amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,<>{ver({onClick:()=>verRecibo(p)})}{bajar({onClick:()=>bajarPdf(`recibo:${p.id}`,p.id)},p.id)}</>))}
   </div>;
 }
 
@@ -975,6 +1004,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
   if(e.source==="dhl"&&String(e.title||"").trim()==="SD")return false;
   return true;
 }));setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setCliPmts(Array.isArray(cp)?cp:[]);setLoading(false);};
+  useEffect(()=>{if(legajoVisible(op,client))precargarLegajo(op.id,token);},[op.id,op.legajo_visible,client?.tax_condition]);
   useEffect(()=>{loadAll();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();loadAll();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id,token]);
   const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");
   const isGI=op.service_type==="gestion_integral";
@@ -1149,7 +1179,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
     {/* Solapas */}
     {!loading&&(()=>{const def=isEditable?"merc":"resumen";const tabCur=tabDet||def;
       // Legajo (22/10/2026): solo aéreo courier, solo RI; automático con entrega directa que paga los impuestos.
-      const verLegajo=!isGI&&op.channel==="aereo_blanco"&&client?.tax_condition==="responsable_inscripto"&&(op.legajo_visible===true||(op.legajo_visible==null&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes));
+      const verLegajo=legajoVisible(op,client);
       const tabs=[["resumen",t("op.tabResumen")],["merc",t("imports.product")],["bultos",`${t("op.tabBultos")}${pkgs.length?` · ${pkgs.length}`:""}`],["seg",t("op.tabSeg")],...(!isGI&&items.length>0?[["costos",t("op.costPerProduct")]]:[]),...(verLegajo?[["legajo",t("leg.tab")]]:[])];
       // Asignar mercadería a bultos se puede en cualquier etapa: no cambia valores, solo el reparto del costo.
       const canAsig=!isGI&&op.channel==="aereo_blanco"&&items.length>1&&pkgs.length>0;
@@ -1237,7 +1267,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
               :fila(<>✓ {t("op.fullyPaid")}</>,usd(totalCli),{bold:true,color:"#4ade80",last:true})}
             <div style={{height:7,background:"rgba(255,255,255,0.08)",borderRadius:999,overflow:"hidden",margin:"8px 0 12px"}}><div style={{width:`${totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0}%`,height:"100%",background:saldoReal<=0.01?"#4ade80":GOLD_LIGHT}}/></div>
             <p style={{...LBL,marginBottom:6}}>Pagos realizados</p>
-            {cliPmts.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none",fontSize:12.5,flexWrap:"wrap"}}><span style={{color:"#fff"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})} · <span style={{textTransform:"capitalize",color:"rgba(255,255,255,0.7)"}}>{p.payment_method}</span>{p.notes?<span style={{color:"rgba(255,255,255,0.5)"}}> · {p.notes}</span>:null}</span><span style={{fontWeight:700,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>{usd(p.amount_usd)}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.5)",fontWeight:400,textAlign:"right"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</span></div>)}
+            {cliPmts.map((p,i)=><div key={p.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 0",borderTop:i?"1px solid rgba(255,255,255,0.08)":"none",fontSize:12.5,flexWrap:"wrap"}}><span style={{color:"#fff"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})} · <span style={{textTransform:"capitalize",color:"rgba(255,255,255,0.7)"}}>{p.payment_method}</span>{notaCliente(p.notes)?<span style={{color:"rgba(255,255,255,0.5)"}}> · {notaCliente(p.notes)}</span>:null}</span><span style={{fontWeight:700,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>{usd(p.amount_usd)}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.5)",fontWeight:400,textAlign:"right"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</span></div>)}
           </div>}
         </div>:<p style={{marginTop:18,fontSize:13,color:"rgba(255,255,255,0.55)",lineHeight:1.5}}>{items.length===0?t("op.estWhenLoaded"):t("op.budgetPending")}</p>}
       </div>}
@@ -2652,7 +2682,7 @@ function AccountPage({token,client,onRestartTutorial,onOpenOp}){
     </div>}
     {m.pagos.length>0&&<div style={{marginTop:10}}>
       <p style={{...lblS,color:SKY,marginBottom:4}}>{t("acc.paymentsMade")}</p>
-      {m.pagos.map(p=>{const enPesos=p.currency==="ARS"&&Number(p.amount_ars)>0;return <div key={p.id}>{linea(<>{fecha(p.payment_date)} · {metodoTxt(p.payment_method)}{enPesos&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR",{maximumFractionDigits:2})}{Number(p.exchange_rate)>0?` · ${t("acc.atRate",{v:Number(p.exchange_rate).toLocaleString("es-AR")})}`:""}</span>}{p.notes&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{p.notes}</span>}</>,-Number(p.amount_usd||0),{signed:true,color:"#4ade80"})}</div>;})}
+      {m.pagos.map(p=>{const enPesos=p.currency==="ARS"&&Number(p.amount_ars)>0;return <div key={p.id}>{linea(<>{fecha(p.payment_date)} · {metodoTxt(p.payment_method)}{enPesos&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>ARS {Number(p.amount_ars).toLocaleString("es-AR",{maximumFractionDigits:2})}{Number(p.exchange_rate)>0?` · ${t("acc.atRate",{v:Number(p.exchange_rate).toLocaleString("es-AR")})}`:""}</span>}{notaCliente(p.notes)&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{notaCliente(p.notes)}</span>}</>,-Number(p.amount_usd||0),{signed:true,color:"#4ade80"})}</div>;})}
       {linea(t("acc.totalPaid"),-m.pagado,{total:true,signed:true,color:"#4ade80"})}
     </div>}
     {!cierre&&m.pagado>m.aPagar+0.005?linea(t("acc.overpaidBy"),m.pagado-m.aPagar,{total:true,signed:true,color:"#4ade80"}):linea(t(cierre?"acc.movedToAccount":"acc.leftToPay"),m.saldo,{total:true,color:cierre?SKY:"#fb923c"})}

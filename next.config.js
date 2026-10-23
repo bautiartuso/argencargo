@@ -6,6 +6,7 @@ const nextConfig = {
     // la función salía sin libnss3 & co. Se incluyen a mano en la función que genera PDFs.
     outputFileTracingIncludes: {
       '/api/admin/bot': ['./node_modules/@sparticuz/chromium/bin/**'],
+      '/api/portal/legajo/pdf': ['./node_modules/@sparticuz/chromium/bin/**'],
       '/api/admin/studio': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],
       '/api/cron/studio-queue': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],
       '/api/cron/studio-runner': ['./docs/marca/**'],
