@@ -50,13 +50,24 @@ async function guardarPlantillas(d) {
 
 // Busca respuestas de los pedidos abiertos (los de los últimos 45 días sin respuesta todavía).
 let ultimaRevision = 0;
+// Qué mails son respuesta de un pedido (23/10/2026): los del hilo "Solicitud DSI <guía>" o cualquier
+// mail de quien se le pidió (p.para) que nombre la guía en el texto o en un adjunto. FedEx contesta un
+// solo mail "DESPACHOS" con varias guías, el manifiesto (guía aérea) y una DSI por guía.
+const direccionesDe = (para) => String(para || "").split(/[,;]/).map((x) => (x.match(/[\w.+-]+@[\w.-]+/) || [])[0]).filter(Boolean);
+function consultaPedido(p, { sinMios = false } = {}) {
+  const desde = Math.floor(new Date(p.enviado_at || Date.now()).getTime() / 1000) - 86400;
+  const de = direccionesDe(p.para);
+  const porRemitente = de.length ? ` (from:(${de.join(" OR ")}) "${p.guia}")` : "";
+  return `{subject:"${asuntoDe(p.guia)}"${porRemitente}} after:${desde}${sinMios ? " -from:me" : ""}`;
+}
+
 async function revisar(forzar = false) {
   if (!forzar && Date.now() - ultimaRevision < 2 * 60000) return;
   ultimaRevision = Date.now();
   const desde = new Date(Date.now() - 45 * 86400000).toISOString();
-  const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia`));
+  const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia,para,enviado_at`));
   await Promise.all(abiertos.map(async (p) => {
-    const d = await gm(`/messages?maxResults=5&includeSpamTrash=true&q=${encodeURIComponent(`subject:"${asuntoDe(p.guia)}" -from:me`)}`).catch(() => null);
+    const d = await gm(`/messages?maxResults=5&includeSpamTrash=true&q=${encodeURIComponent(consultaPedido(p, { sinMios: true }))}`).catch(() => null);
     const primero = (d?.messages || []).slice(-1)[0];
     if (!primero) return;
     const m = await gm(`/messages/${primero.id}?format=metadata&metadataHeaders=From`).catch(() => null);
@@ -118,14 +129,23 @@ export async function GET(req) {
       let mensajes = [];
       if (pedido && conectado) {
         if (!pedido.respuesta_at) await revisar(true).catch(() => {});
-        const d = await gm(`/messages?maxResults=10&includeSpamTrash=true&q=${encodeURIComponent(`subject:"${asuntoDe(pedido.guia)}"`)}`).catch(() => ({}));
+        const [d, otrosR] = await Promise.all([
+          gm(`/messages?maxResults=10&includeSpamTrash=true&q=${encodeURIComponent(consultaPedido(pedido))}`).catch(() => ({})),
+          sb(`/rest/v1/dsi_pedidos?enviado_at=gte.${new Date(Date.now() - 60 * 86400000).toISOString()}&select=id,guia,flight_id,revisado_at&order=enviado_at.desc`),
+        ]);
+        // Guías de otros pedidos que aparecen en el mismo mail (texto o nombre de los adjuntos).
+        const pedidosGuia = []; for (const x of lista(otrosR)) if (!pedidosGuia.some((y) => y.guia === x.guia)) pedidosGuia.push(x);
         const full = await Promise.all((d.messages || []).map((m) => gm(`/messages/${m.id}?format=full`).catch(() => null)));
         mensajes = full.filter(Boolean).map((m) => {
           const out = { html: "", texto: "", adjuntos: [] };
           recorrer(m.payload, out);
           const h = m.payload?.headers || [];
           const de = hdr(h, "From");
-          return { id: m.id, de, mio: !!cfg.email && de.toLowerCase().includes(String(cfg.email).toLowerCase()), fecha: Number(m.internalDate) || 0, texto: (out.texto || textoPlano(out.html)).slice(0, 4000), adjuntos: out.adjuntos.filter((a) => !a.cid || /pdf|octet/i.test(a.tipo)).map(({ id, nombre, tipo, tamano }) => ({ id, nombre, tipo, tamano })) };
+          const texto = out.texto || textoPlano(out.html);
+          const adjuntos = out.adjuntos.filter((a) => !a.cid || /pdf|octet/i.test(a.tipo)).map(({ id, nombre, tipo, tamano }) => ({ id, nombre, tipo, tamano, guia: (pedidosGuia.find((x) => String(nombre || "").includes(x.guia)) || {}).guia || null }));
+          const todo = `${hdr(h, "Subject")} ${texto} ${adjuntos.map((a) => a.nombre).join(" ")}`;
+          const guias = pedidosGuia.filter((x) => todo.includes(x.guia)).map((x) => ({ guia: x.guia, flight_id: x.flight_id, pedido_id: x.id }));
+          return { id: m.id, de, asunto: hdr(h, "Subject"), mio: !!cfg.email && de.toLowerCase().includes(String(cfg.email).toLowerCase()), fecha: Number(m.internalDate) || 0, texto: texto.slice(0, 4000), adjuntos, guias };
         }).sort((a, b) => a.fecha - b.fecha);
         if (!pedido.respuesta_at && mensajes.some((m) => !m.mio)) { const pr2 = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${pedido.id}&select=*`))[0]; if (pr2) Object.assign(pedido, pr2); }
       }
@@ -133,9 +153,12 @@ export async function GET(req) {
     }
     if (accion === "adjunto") {
       const msg = u.searchParams.get("msg") || "";
-      // Solo adjuntos de mails de un pedido de DSI: el empleado no ve el resto de la casilla.
-      const m = await gm(`/messages/${msg}?format=metadata&metadataHeaders=Subject`);
-      if (!/Solicitud DSI/i.test(hdr(m.payload?.headers, "Subject"))) return json({ error: "sin_permiso" }, 403);
+      // Solo adjuntos de mails de un pedido de DSI (el hilo o quien contesta los pedidos): el empleado
+      // no ve el resto de la casilla.
+      const m = await gm(`/messages/${msg}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`);
+      const remitente = ((hdr(m.payload?.headers, "From").match(/[\w.+-]+@[\w.-]+/) || [])[0] || "").toLowerCase();
+      const paras = new Set(lista(await sb(`/rest/v1/dsi_pedidos?select=para`)).flatMap((x) => direccionesDe(x.para)).map((x) => x.toLowerCase()));
+      if (!/Solicitud DSI/i.test(hdr(m.payload?.headers, "Subject")) && !paras.has(remitente)) return json({ error: "sin_permiso" }, 403);
       const d = await gm(`/messages/${msg}/attachments/${u.searchParams.get("adj")}`);
       const nombre = u.searchParams.get("nombre") || "adjunto.pdf";
       return new Response(b64dec(d.data), { headers: { "Content-Type": u.searchParams.get("tipo") || "application/pdf", "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(nombre)}`, "Cache-Control": "no-store" } });
@@ -173,8 +196,22 @@ export async function POST(req) {
       return json({ ok: true, pedido: lista(ins)[0] });
     }
     if (b.accion === "revisado") {
-      await sb(`/rest/v1/dsi_pedidos?id=eq.${b.pedido_id}`, { method: "PATCH", body: JSON.stringify({ revisado_at: new Date().toISOString(), revisado_por: uid }) });
-      return json({ ok: true });
+      const marca = { revisado_at: new Date().toISOString(), revisado_por: uid };
+      await sb(`/rest/v1/dsi_pedidos?id=eq.${b.pedido_id}`, { method: "PATCH", body: JSON.stringify(marca) });
+      // Los otros pedidos del mismo mail se cierran solos si su vuelo ya tiene la DSI en todas sus ops.
+      const otros = (Array.isArray(b.otros) ? b.otros : []).filter((x) => /^[0-9a-f-]{36}$/i.test(x) && x !== b.pedido_id);
+      const cerrados = [];
+      for (const id of otros) {
+        const p = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${id}&revisado_at=is.null&select=id,flight_id`))[0];
+        if (!p) continue;
+        const ops = lista(await sb(`/rest/v1/flight_operations?flight_id=eq.${p.flight_id}&select=operations(id,channel,service_type)`)).map((x) => x.operations).filter((o) => o && o.channel === "aereo_blanco" && o.service_type !== "gestion_integral");
+        if (!ops.length) continue;
+        const docs = lista(await sb(`/rest/v1/legajo_docs?operation_id=in.(${ops.map((o) => o.id).join(",")})&tipo=eq.dsi&borrado_at=is.null&select=operation_id`));
+        if (!ops.every((o) => docs.some((d) => d.operation_id === o.id))) continue;
+        await sb(`/rest/v1/dsi_pedidos?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(marca) });
+        cerrados.push(id);
+      }
+      return json({ ok: true, cerrados });
     }
     return json({ error: "accion_desconocida" }, 400);
   } catch (e) {

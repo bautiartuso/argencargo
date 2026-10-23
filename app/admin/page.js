@@ -9134,13 +9134,15 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   // Cada adjunto se marca como DSI o guía aérea (23/10/2026); lo que no se elige queda descartado.
   const esLaDsi=async(m,a,tipo="dsi")=>{
     setUsando(`${a.id}:${tipo}`);
-    try{const b=await traer(m,a);await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo);
-      setUsados(u=>({...u,[a.id]:tipo}));}
+    try{const b=await traer(m,a);const ok=await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo,{mensaje:m,adjunto:a});
+      if(ok!==false)setUsados(u=>({...u,[a.id]:tipo}));}
     catch(e){toast(e.message,"error");}
     setUsando(null);
   };
   // El pedido queda abierto hasta que se cierra a mano: así se elige la DSI y la guía aérea del mismo mail.
-  const revisado=async()=>{await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);await cargar();onCambio?.();onCerrar?.();toast("Mail cerrado","success");};
+  // Los otros pedidos que vinieron en el mismo mail (FedEx manda varias guías juntas) se cierran
+  // también si su vuelo ya tiene la DSI.
+  const revisado=async()=>{const otros=[...new Set((d.mensajes||[]).flatMap(m=>(m.guias||[]).map(g=>g.pedido_id)))];await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id,otros})});refrescarDsiEstado(token);await cargar();onCambio?.();onCerrar?.();toast("Mail cerrado","success");};
   const p=d.pedido;const respuestas=(d.mensajes||[]).filter(m=>!m.mio);const nueva=p?.respuesta_at&&!p.revisado_at;
   const INP={width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",outline:"none"};
   const LBL={display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 5px"};
@@ -9175,9 +9177,10 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
         <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{nombreDe(m.de)} <span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}>· {fecha(m.fecha)}</span></span>
         {m.texto&&<button type="button" onClick={()=>setAbierto(abierto===m.id?null:m.id)} style={{background:"none",border:"none",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{abierto===m.id?"Ocultar mail":"Ver mail"}</button>}
       </div>
+      {(m.guias||[]).length>1&&<p style={{margin:"6px 0 0",fontSize:11.5,color:"#93c5fd"}}>Este mail trae {m.guias.length} guías: {m.guias.map(g=>g.guia).join(" · ")}. La guía aérea se carga en todos esos vuelos y cada DSI va al vuelo de su guía.</p>}
       {abierto===m.id&&<p style={{margin:"8px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",lineHeight:1.5,maxHeight:260,overflowY:"auto"}}>{m.texto}</p>}
       {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.nombre}>📎 {a.nombre}</span>
+        <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.nombre}>📎 {a.nombre}{a.guia&&a.guia!==d.guia&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:999,background:"rgba(147,197,253,0.12)",color:"#93c5fd",border:"1px solid rgba(147,197,253,0.35)"}}>otra guía</span>}</span>
         {btn("Ver",()=>ver(m,a),"#93c5fd")}
         {(()=>{const u=usados[a.id]||Object.keys(cargados||{}).find(t=>(cargados[t]||[]).includes(a.nombre));return u?<span style={{height:32,padding:"0 12px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>✓ {u==="dsi"?"DSI":"Guía aérea"}</span>:<>
           {btn(usando===`${a.id}:dsi`?"Adjuntando…":"Es la DSI",()=>esLaDsi(m,a,"dsi"),"#E8D098",{disabled:!!usando})}
@@ -9215,13 +9218,23 @@ function AereosEmpleado({token}){
   useEffect(()=>{cargar();},[cargar]);
   // "Es la DSI": se lee el PDF para saber de qué op es (CUIT/guía); si no se sabe, va a todas las del vuelo.
   // La guía aérea es del vuelo entero: va a todas sus ops. El vuelo queda abierto para elegir el resto.
-  const adjuntar=async(f,file,tipo="dsi")=>{
-    let info={tipo:null};
-    if(tipo==="dsi"){try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}}
-    const ids=(tipo==="dsi"&&info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
-    await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo,datos:tipo==="dsi"?(info.dsi||null):null});
-    if(tipo==="dsi"&&info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
-    toast(`${tipo==="dsi"?"DSI":"Guía aérea"} cargada en ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
+  // ctx = {mensaje, adjunto}. La guía aérea va a todos los vuelos que nombra el mail (FedEx manda el
+  // manifiesto con varias guías); la DSI va al vuelo de la guía que figura en el nombre del archivo o en
+  // el PDF, aunque se haya abierto desde otro vuelo.
+  const adjuntar=async(f,file,tipo="dsi",ctx={})=>{
+    const porGuia=(g)=>g?vuelos.find(v=>v.international_tracking===g):null;
+    if(tipo==="guia_aerea"){
+      const destinos=[f,...(ctx.mensaje?.guias||[]).map(x=>porGuia(x.guia)).filter(Boolean)].filter((v,i,arr)=>arr.findIndex(y=>y.id===v.id)===i);
+      for(const v of destinos)await subirLegajo(token,{file,opIds:v.ops.map(o=>o.id),flightId:v.id,tipo,datos:null});
+      toast(`Guía aérea cargada en ${destinos.map(v=>v.flight_code).join(", ")}`,"success");
+    }else{
+      let info={tipo:null};try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}
+      const destino=porGuia(ctx.adjunto?.guia)||porGuia(info.dsi?.guia)||vuelos.find(v=>(info.texto||"").includes(v.international_tracking)&&(ctx.mensaje?.guias||[]).some(g=>g.guia===v.international_tracking))||f;
+      const ids=(info.tipo==="dsi"&&emparejarDocumento(info,destino.ops))||destino.ops.map(o=>o.id);
+      await subirLegajo(token,{file,opIds:ids,flightId:destino.id,tipo,datos:info.dsi||null});
+      if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
+      toast(`DSI cargada en ${destino.flight_code} · ${destino.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
+    }
     await cargar();refrescarDsiEstado(token);
   };
   if(!vuelos)return <div style={{padding:40,textAlign:"center",color:"rgba(255,255,255,0.45)",fontSize:13}}>Cargando vuelos…</div>;
@@ -9242,7 +9255,7 @@ function AereosEmpleado({token}){
       <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap",color:r?"#4ade80":"rgba(255,255,255,0.45)"}}>{col==="pedir"?`Llegó ${fecha(f.llego)}`:r?(f.conDsi?"✓ DSI cargada":"📬 Respondió"):`Pedida ${fecha(f.pedido.enviado_at)}`}</span>
       <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,transform:ab?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
     </button>
-    {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file,tipo)=>adjuntar(f,file,tipo)} onCambio={cargar} onCerrar={()=>setAbierto(null)} cargados={f.cargados}/></div>}
+    {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file,tipo,ctx)=>adjuntar(f,file,tipo,ctx)} onCambio={cargar} onCerrar={()=>setAbierto(null)} cargados={f.cargados}/></div>}
   </div>;};
   const columna=(titulo,color,lst,col,vacio)=><div style={{padding:"18px 16px 10px",borderRadius:18,background:"linear-gradient(180deg,rgba(13,24,45,0.96),rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.08)",alignSelf:"start"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,margin:"0 4px 14px"}}>
@@ -9338,7 +9351,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   </div>;};
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
-    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo)=>procesar([f],tipo||"dsi")} cargados={{dsi:docs.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name)}}/>
+    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo,ctx)=>{if(tipo==="dsi"&&ctx?.adjunto?.guia&&ctx.adjunto.guia!==flight.international_tracking){toast(`Esa DSI es de la guía ${ctx.adjunto.guia}: cargala desde ese vuelo`,"info");return false;}return procesar([f],tipo||"dsi");}} cargados={{dsi:docs.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name)}}/>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}{zona("guia_aerea",marcaCourier(flight.international_carrier),"✈️","Subir guía aérea")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
