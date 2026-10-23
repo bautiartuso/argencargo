@@ -32,7 +32,7 @@ const CHANNEL_KEYS = {
 };
 
 const cargarCotizacion = async (token) => {
-  const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,clients(id,auth_user_id,first_name,last_name,email,city,province,gi_partner_id)),gi_quote_products(*),gi_quote_packages(*)`);
+  const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,clients(id,auth_user_id,first_name,last_name,email,city,province,postal_code,gi_partner_id)),gi_quote_products(*),gi_quote_packages(*)`);
   return Array.isArray(q.body) && q.body[0] ? q.body[0] : null;
 };
 
@@ -77,7 +77,7 @@ const opcionesEntrega = async (cliente, kg) => {
   (Array.isArray(cfgR.body) ? cfgR.body : []).forEach((r) => { cfg[r.key] = Number(r.value); });
   const city = cliente?.city && cliente.city !== "—" ? cliente.city : "";
   const prov = cliente?.province && cliente.province !== "—" ? cliente.province : "";
-  const match = matchLocality(city, prov, Array.isArray(locR.body) ? locR.body : []);
+  const match = matchLocality(city, prov, Array.isArray(locR.body) ? locR.body : [], cliente?.postal_code);
   return {
     domicilio: match ? { zona: match.name, costo: computeDeliveryCostUsd(match, cfg, kg) } : null,
     caba: computeDeliveryCostUsd({ name: "CABA", isCaba: true, km_from_origin: 0 }, cfg, kg),

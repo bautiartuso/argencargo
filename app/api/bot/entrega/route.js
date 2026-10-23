@@ -40,7 +40,7 @@ async function envioDomicilio(client, opIds = []) {
     ]);
     const kg = kgDeBultos(Array.isArray(pkRes.body) ? pkRes.body : []);
     const cfg = {}; (Array.isArray(cfgRes.body) ? cfgRes.body : []).forEach((r) => { cfg[r.key] = Number(r.value); });
-    const match = matchLocality(client?.city, client?.province, Array.isArray(locRes.body) ? locRes.body : []);
+    const match = matchLocality(client?.city, client?.province, Array.isArray(locRes.body) ? locRes.body : [], client?.postal_code);
     if (!match) return null;
     return { zona: match.name, costo_usd: computeDeliveryCostUsd(match, cfg, kg) };
   } catch { return null; }

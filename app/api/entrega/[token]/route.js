@@ -202,7 +202,7 @@ export async function GET(req, { params }) {
   const settings = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
 
   const client = op.clients || {};
-  const match = matchLocality(client.city, client.province, localities);
+  const match = matchLocality(client.city, client.province, localities, client.postal_code);
   // El envío se cotiza con el peso de ESTA op. Si el cliente tilda hermanas para coordinarlas juntas,
   // el link vuelve a cotizar con ?cotizar=1&extra=… (21/10/2026: antes sumaba todas las hermanas de entrada).
   const price = match ? computeDeliveryCostUsd(match, cfg, kgDeBultos(pkgs)) : null;
@@ -538,7 +538,7 @@ export async function POST(req, { params }) {
   const dc = delivery_contact && typeof delivery_contact === "object" ? delivery_contact : null;
   const match = delivery_choice === "propio" && dc && (dc.localidad || dc.cp)
     ? matchDireccion(dc.localidad, dc.cp, localities)
-    : matchLocality(client.city, client.province, localities);
+    : matchLocality(client.city, client.province, localities, client.postal_code);
   let deliveryCost = 0, deliveryZone = null;
   if (delivery_choice === "propio") {
     if (!match) return Response.json({ error: "No encontramos una zona de envío propio para tu localidad" }, { status: 400 });
