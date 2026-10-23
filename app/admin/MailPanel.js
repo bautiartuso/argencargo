@@ -143,12 +143,15 @@ export default function MailPanel({ token }) {
   const automaticas = carpetas.filter((c) => esAuto(c.nombre)).sort((x, y) => x.nombre.localeCompare(y.nombre));
   const otras = carpetas.filter((c) => !marca(c.nombre) && !esAuto(c.nombre)).sort((x, y) => (String(x.nombre).toLowerCase() === "whatsapp" ? -1 : String(y.nombre).toLowerCase() === "whatsapp" ? 1 : x.nombre.localeCompare(y.nombre)));
 
-  const fila = (k, l, icono, n, { tenue = false } = {}) => {
+  // soloLogo: los couriers van con su logo y sin texto (el logo ya dice qué es).
+  const fila = (k, l, icono, n, { tenue = false, soloLogo = false } = {}) => {
     const on = carpeta === k;
-    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: 38, padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: soloLogo ? 42 : 38, padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
       {on && <span style={{ position: "absolute", left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: GOLD_LIGHT }} />}
-      <span style={{ width: 22, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>{icono}</span>
-      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
+      {soloLogo ? <span title={l} style={{ flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center" }}>{icono}</span> : <>
+        <span style={{ width: 22, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>{icono}</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
+      </>}
       {n > 0 && <span style={{ minWidth: 20, height: 20, padding: "0 7px", borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, background: tenue ? "rgba(255,255,255,0.08)" : "#ef4444", color: tenue ? "rgba(255,255,255,0.55)" : "#fff" }}>{n}</span>}
     </button>;
   };
@@ -159,7 +162,7 @@ export default function MailPanel({ token }) {
     {seccion("Correo")}
     {NAV.map((x) => fila(x.k, x.l, <Ico d={x.ic} />, x.n))}
     {couriers.length > 0 && seccion("Couriers")}
-    {couriers.map((c) => fila(c.id, c.nombre, <CarrierLogo k={marca(c.nombre)} alto={20} radio={5} />, c.noLeidos))}
+    {couriers.map((c) => fila(c.id, c.nombre, <CarrierLogo k={marca(c.nombre)} alto={26} radio={7} />, c.noLeidos, { soloLogo: true }))}
     {otras.length > 0 && seccion("Carpetas")}
     {otras.map((c) => fila(c.id, c.nombre, String(c.nombre).toLowerCase() === "whatsapp" ? WA : <Ico d={I.carpeta} />, c.noLeidos))}
     {automaticas.length > 0 && seccion("Automáticas · se leen solas")}
