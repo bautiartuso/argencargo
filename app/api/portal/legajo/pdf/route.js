@@ -1,6 +1,6 @@
 // GET /api/portal/legajo/pdf?op_id=…&doc=todo|recibo:<id>|factura:<token>[&ver=1]
 // El legajo en PDF (22/10/2026): un recibo o una factura sueltos, o "todo" en un solo archivo
-// (facturas de Argencargo, factura del courier, DSI y recibos, en ese orden). Recibos y facturas se
+// (facturas de Argencargo, factura del courier, DSI, guía aérea y recibos, en ese orden). Recibos y facturas se
 // imprimen con Chromium; la DSI y la factura del courier se bajan del bucket y se pegan con pdf-lib
 // (si son foto, van en una hoja A4). ver=1 lo abre en la pestaña en vez de descargarlo.
 import { PDFDocument } from "pdf-lib";
@@ -32,7 +32,7 @@ export async function GET(req) {
   const saldo = saldoLegajo(l);
   const recibos = doc === "todo" ? l.pagos : l.pagos.filter((p) => doc === `recibo:${p.id}`);
   const facturas = doc === "todo" ? l.facturas : l.facturas.filter((f) => doc === `factura:${f.token}`);
-  const adjuntos = doc === "todo" ? ["factura_courier", "dsi"].map((t) => l.docs.find((d) => d.tipo === t)).filter(Boolean) : [];
+  const adjuntos = doc === "todo" ? ["factura_courier", "dsi", "guia_aerea"].map((t) => l.docs.find((d) => d.tipo === t)).filter(Boolean) : [];
   if (!recibos.length && !facturas.length && !adjuntos.length) return Response.json({ error: "sin_documentos" }, { status: 404 });
 
   const salida = await PDFDocument.create();

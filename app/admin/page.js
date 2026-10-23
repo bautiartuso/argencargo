@@ -9012,7 +9012,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const ri=opClient?.tax_condition==="responsable_inscripto";
   const autoVisible=ri&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes;
   const visible=ri&&(op.legajo_visible==null?autoVisible:!!op.legajo_visible);
-  const faltan=Object.keys(TIPOS_LEGAJO).filter(t=>!doc(t));
+  const faltan=Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio&&!doc(t));
   const subir=async(tipo,file)=>{
     if(!file)return;if(sinTabla){flash("Falta correr el SQL del legajo");return;}
     setOcupado(tipo);
@@ -9029,7 +9029,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
   useEffect(()=>{
     const hp=(e)=>{if(!document.querySelector("[data-legajo-op]"))return;const f=[...(e.clipboardData?.files||[])][0];if(!f)return;e.preventDefault();
-      if(!pegarEn){toast("Tocá primero el cuadro de la DSI o de la factura del courier y después pegá","info");return;}
+      if(!pegarEn){toast("Tocá primero el cuadro del documento (DSI, factura del courier o guía aérea) y después pegá","info");return;}
       subir(pegarEn,f);};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
@@ -9050,17 +9050,18 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   </div>;};
   const bt=(txt,fn,c="#E8D098",key)=><button key={key} type="button" onClick={fn} style={{height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
   const subirBtn=(tipo,txt)=><label style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:ocupado?"wait":"pointer",whiteSpace:"nowrap"}}>{ocupado===tipo?"Subiendo…":txt}<input type="file" accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{subir(tipo,e.target.files?.[0]);e.target.value="";}}/></label>;
-  const docTarjeta=(tipo,icono,marca)=>{const d=doc(tipo);return tarjeta({k:tipo,icono,marca,titulo:TIPOS_LEGAJO[tipo].l,estado:d?"ok":"falta",drop:true,
-    detalle:d?<><span style={{color:"#fff",fontWeight:600}}>{d.file_name||"Archivo"}</span><br/>{fFecha(d.uploaded_at)}{d.flight_id?" · desde el vuelo":""}</>:"Obligatoria para cerrar. Tocá el cuadro y pegala con ⌘V, arrastrala o subila.",
+  const docTarjeta=(tipo,icono,marca)=>{const d=doc(tipo);const obl=TIPOS_LEGAJO[tipo].obligatorio;return tarjeta({k:tipo,icono,marca,titulo:TIPOS_LEGAJO[tipo].l,estado:d?"ok":obl?"falta":"opc",drop:true,
+    detalle:d?<><span style={{color:"#fff",fontWeight:600}}>{d.file_name||"Archivo"}</span><br/>{fFecha(d.uploaded_at)}{d.flight_id?" · desde el vuelo":""}</>:`${obl?"Obligatoria para cerrar":"No es obligatoria"}. Tocá el cuadro y pegala con ⌘V, arrastrala o subila.`,
     acciones:d?<>{d.storage_path?bt("Ver",()=>abrirDocLegajo(token,d.storage_path),"#93c5fd"):<span style={{fontSize:12,color:"rgba(255,255,255,0.45)",alignSelf:"center"}}>Archivo eliminado (180 días)</span>}{subirBtn(tipo,"Reemplazar")}{bt("Quitar",()=>quitar(d),"#f87171")}</>:subirBtn(tipo,`Subir ${TIPOS_LEGAJO[tipo].corto}`)});};
   const facturar=()=>{window.__facturarOp=op.operation_code;window.dispatchEvent(new CustomEvent("ac_go_facturas"));};
-  const obligatorios=Object.keys(TIPOS_LEGAJO).length;
+  const obligatorios=Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio).length;
   return <div data-legajo-op="1">
     <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{faltan.length?`${obligatorios-faltan.length} de ${obligatorios} obligatorios`:"✓ Completo"}</span></span>} sub={faltan.length?`Falta ${nombresFaltan(faltan)} · sin eso no se puede cerrar la operación`:"Listo para cerrar"}>
       {sinTabla&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql).</p>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
         {docTarjeta("dsi","🛃",MARCA_DSI)}
         {docTarjeta("factura_courier","📑",marcaCourier(op.international_carrier))}
+        {docTarjeta("guia_aerea","✈️",marcaCourier(op.international_carrier))}
         {tarjeta({k:"factura_ac",icono:"🧾",marca:MARCA_AC,titulo:"Factura de Argencargo",estado:facturas.length?"ok":"opc",
           detalle:facturas.length?facturas.map(f=><div key={f.id}><span style={{color:"#fff",fontWeight:600}}>{f.tipo_cbte===13?"Nota de crédito C":"Factura C"} {String(f.punto_venta).padStart(4,"0")}-{String(f.numero).padStart(8,"0")}</span> · {fFecha(f.fecha)}</div>):"Todavía no se facturó. No es obligatoria para cerrar.",
           acciones:facturas.length?facturas.map(f=><a key={f.id} href={`/factura/${f.public_token}`} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Ver {String(f.numero).padStart(8,"0")}</a>)
@@ -9111,6 +9112,7 @@ async function abrirDocLegajo(token,path){const w=window.open("about:blank","_bl
 // Pedido de DSI por mail (22/10/2026): se le pide al courier con el Gmail conectado ("Solicitud DSI
 // <guía>"); cuando contesta, acá se ve el mail y con "Es la DSI" el adjunto pasa al legajo del vuelo.
 function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio}){
+  const [usados,setUsados]=useState({});
   const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);
   const cargar=useCallback(async()=>{try{const r=await fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flight.id}`,{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();if(r.ok)setD(j);else setD({error:j.error||"x"});}catch{setD({error:"x"});}},[flight.id,token]);
   useEffect(()=>{cargar();},[cargar]);
@@ -9128,10 +9130,12 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio}){
   };
   const traer=async(m,a)=>{const r=await fetch(`/api/aereo/dsi?accion=adjunto&msg=${m.id}&adj=${encodeURIComponent(a.id)}&nombre=${encodeURIComponent(a.nombre)}&tipo=${encodeURIComponent(a.tipo||"application/pdf")}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error("No se pudo bajar el adjunto");return r.blob();};
   const ver=async(m,a)=>{const w=window.open("about:blank","_blank");try{const b=await traer(m,a);if(w)w.location=URL.createObjectURL(b);}catch(e){w?.close();toast(e.message,"error");}};
-  const esLaDsi=async(m,a)=>{
-    setUsando(a.id);
-    try{const b=await traer(m,a);await onAdjuntar(new File([b],a.nombre||"DSI.pdf",{type:a.tipo||b.type||"application/pdf"}));
-      if(d.pedido&&!d.pedido.revisado_at){await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);}
+  // Cada adjunto se marca como DSI o guía aérea (23/10/2026); lo que no se elige queda descartado.
+  const esLaDsi=async(m,a,tipo="dsi")=>{
+    setUsando(`${a.id}:${tipo}`);
+    try{const b=await traer(m,a);await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo);
+      setUsados(u=>({...u,[a.id]:tipo}));
+      if(tipo==="dsi"&&d.pedido&&!d.pedido.revisado_at){await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);}
       await cargar();}
     catch(e){toast(e.message,"error");}
     setUsando(null);
@@ -9175,7 +9179,10 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio}){
       {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.nombre}>📎 {a.nombre}</span>
         {btn("Ver",()=>ver(m,a),"#93c5fd")}
-        {btn(usando===a.id?"Adjuntando…":"Es la DSI",()=>esLaDsi(m,a),"#E8D098",{disabled:!!usando})}
+        {usados[a.id]?<span style={{height:32,padding:"0 12px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>✓ {usados[a.id]==="dsi"?"DSI":"Guía aérea"}</span>:<>
+          {btn(usando===`${a.id}:dsi`?"Adjuntando…":"Es la DSI",()=>esLaDsi(m,a,"dsi"),"#E8D098",{disabled:!!usando})}
+          {btn(usando===`${a.id}:guia_aerea`?"Adjuntando…":"Es la guía aérea",()=>esLaDsi(m,a,"guia_aerea"),"#c4b5fd",{disabled:!!usando})}
+        </>}
       </div>)}</div>:<p style={{margin:"6px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Sin adjuntos</p>}
     </div>)}
   </div>;
@@ -9207,19 +9214,21 @@ function AereosEmpleado({token}){
   },[token]);
   useEffect(()=>{cargar();},[cargar]);
   // "Es la DSI": se lee el PDF para saber de qué op es (CUIT/guía); si no se sabe, va a todas las del vuelo.
-  const adjuntar=async(f,file)=>{
-    let info={tipo:null};try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}
-    const ids=(info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
-    await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo:"dsi",datos:info.dsi||null});
-    if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
-    toast(`DSI cargada en ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
-    setAbierto(null);await cargar();refrescarDsiEstado(token);
+  // La guía aérea es del vuelo entero: va a todas sus ops. El vuelo queda abierto para elegir el resto.
+  const adjuntar=async(f,file,tipo="dsi")=>{
+    let info={tipo:null};
+    if(tipo==="dsi"){try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}}
+    const ids=(tipo==="dsi"&&info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
+    await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo,datos:tipo==="dsi"?(info.dsi||null):null});
+    if(tipo==="dsi"&&info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
+    toast(`${tipo==="dsi"?"DSI":"Guía aérea"} cargada en ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
+    await cargar();refrescarDsiEstado(token);
   };
   if(!vuelos)return <div style={{padding:40,textAlign:"center",color:"rgba(255,255,255,0.45)",fontSize:13}}>Cargando vuelos…</div>;
   const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
   const respondio=(f)=>!!f.pedido?.respuesta_at||dsiResp.has(f.id);
   const pedir=vuelos.filter(f=>!f.conDsi&&!f.pedido&&f.vigente).sort((a,b)=>b.llego-a.llego);
-  const esperando=vuelos.filter(f=>!f.conDsi&&f.pedido).sort((a,b)=>(respondio(b)-respondio(a))||(new Date(b.pedido.enviado_at)-new Date(a.pedido.enviado_at)));
+  const esperando=vuelos.filter(f=>(!f.conDsi||abierto===f.id)&&f.pedido).sort((a,b)=>(respondio(b)-respondio(a))||(new Date(b.pedido.enviado_at)-new Date(a.pedido.enviado_at)));
   const fecha=v=>v?new Date(v).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"";
   const fila=(f,col)=>{const m=marcaCourier(f.international_carrier);const ab=abierto===f.id;const r=col==="esp"&&respondio(f);return <div key={f.id} style={{borderRadius:12,marginBottom:8,background:r?"rgba(34,197,94,0.07)":ab?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.18)",border:`1px solid ${r?"rgba(74,222,128,0.45)":ab?"rgba(232,208,152,0.35)":"rgba(255,255,255,0.07)"}`}}>
     <button type="button" onClick={()=>setAbierto(ab?null:f.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 12px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",color:"#fff"}}>
@@ -9228,10 +9237,10 @@ function AereosEmpleado({token}){
         <span style={{display:"block",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:15,fontWeight:700,letterSpacing:"0.03em"}}>{f.international_tracking}</span>
         <span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.flight_code} · {f.ops.map(o=>`${o.operation_code} ${nombre(o)}`).join(" · ")}</span>
       </span>
-      <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap",color:r?"#4ade80":"rgba(255,255,255,0.45)"}}>{col==="pedir"?`Llegó ${fecha(f.llego)}`:r?"📬 Respondió":`Pedida ${fecha(f.pedido.enviado_at)}`}</span>
+      <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap",color:r?"#4ade80":"rgba(255,255,255,0.45)"}}>{col==="pedir"?`Llegó ${fecha(f.llego)}`:f.conDsi?"✓ DSI cargada":r?"📬 Respondió":`Pedida ${fecha(f.pedido.enviado_at)}`}</span>
       <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,transform:ab?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
     </button>
-    {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file)=>adjuntar(f,file)} onCambio={cargar}/></div>}
+    {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file,tipo)=>adjuntar(f,file,tipo)} onCambio={cargar}/></div>}
   </div>;};
   const columna=(titulo,color,lst,col,vacio)=><div style={{padding:"18px 16px 10px",borderRadius:18,background:"linear-gradient(180deg,rgba(13,24,45,0.96),rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.08)",alignSelf:"start"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,margin:"0 4px 14px"}}>
@@ -9279,7 +9288,8 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     for(const f of lista){
       let info={tipo:null};try{if(pdfjs)info=await analizarDocumento(pdfjs,f);}catch(e){console.error("leer doc",e);}
       const tipo=tipoFijo||info.tipo;
-      const ids=tipo?emparejarDocumento(info,base):null;
+      // La guía aérea es del vuelo entero: va a todas sus ops.
+      const ids=tipo==="guia_aerea"?base.map(o=>o.id):tipo?emparejarDocumento(info,base):null;
       if(tipo&&ids){try{await guardar(f,info,tipo,ids);ok++;}catch(e){toast(`${f.name}: ${e.message}`,"error");}}
       else nuevos.push({key:`${Date.now()}-${Math.random()}`,file:f,info,tipo:tipo||"factura_courier",destino:""});
     }
@@ -9297,20 +9307,21 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   useEffect(()=>{
     // ⌘V: va al cuadro que se tocó antes (DSI o factura del courier); sin elegir no se adivina.
     const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(!fs.length)return;e.preventDefault();
-      if(!pegarEn){toast("Tocá primero el cuadro de la DSI o de la factura del courier y después pegá","info");return;}
+      if(!pegarEn){toast("Tocá primero el cuadro del documento (DSI, factura del courier o guía aérea) y después pegá","info");return;}
       procesar(fs,pegarEn);};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
   const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
   const chip=(d,t,o)=>d
     ?<button type="button" onClick={()=>d.storage_path?abrirDocLegajo(token,d.storage_path):toast("El archivo se eliminó a los 180 días","info")} title={d.file_name||""} style={{height:28,padding:"0 10px",borderRadius:8,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.1)",color:"#4ade80",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✓ {TIPOS_LEGAJO[t].corto}</button>
-    :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(251,191,36,0.45)",color:"#fbbf24",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>Falta {TIPOS_LEGAJO[t].corto}</span>;
+    :TIPOS_LEGAJO[t].obligatorio?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(251,191,36,0.45)",color:"#fbbf24",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>Falta {TIPOS_LEGAJO[t].corto}</span>
+    :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.4)",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>Sin {TIPOS_LEGAJO[t].corto.toLowerCase()}</span>;
   const recibido=flight.status==="recibido";
   // Estado del cuadro: cargado cuando todas las ops del vuelo ya tienen ese documento.
   const zona=(tipo,marca,icono,txt)=>{const elegida=pegarEn===tipo,t=marca?.tinte||"#E8D098";
     const conDoc=opsLeg.filter(o=>doc(o.id,tipo)),faltanZ=opsLeg.filter(o=>!doc(o.id,tipo));
     const lista=opsLeg.length>0&&faltanZ.length===0,primero=conDoc[0]?doc(conDoc[0].id,tipo):null;
-    const titulo=ocupado===tipo?"Leyendo…":lista?`✓ ${txt.replace(/^Subir /,"")} cargada`:txt;
+    const nom=txt.replace(/^Subir /,"");const titulo=ocupado===tipo?"Leyendo…":lista?`✓ ${nom.charAt(0).toUpperCase()}${nom.slice(1)} cargada`:txt;
     const sub=elegida?"Listo: pegá con ⌘V":lista?(primero?.file_name||"Cargada"):conDoc.length?`Falta en ${faltanZ.map(o=>o.operation_code).join(", ")} · tocá acá y pegá con ⌘V`:"Tocá acá y pegá con ⌘V, o arrastrá";
     return <div onClick={()=>setPegarEn(tipo)}
     onDragOver={e=>{e.preventDefault();if(drag!==tipo)setDrag(tipo);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);}} onDrop={e=>{e.preventDefault();setDrag(null);procesar(e.dataTransfer?.files,tipo);}}
@@ -9325,8 +9336,8 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   </div>;};
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
-    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f)=>procesar([f],"dsi")}/>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}</div>
+    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo)=>procesar([f],tipo||"dsi")}/>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}{zona("guia_aerea",marcaCourier(flight.international_carrier),"✈️","Subir guía aérea")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
       <span style={{flex:"1 1 180px",minWidth:0,fontSize:12.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.file.name}>📄 {p.file.name}{p.info?.nombre?<span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}> · {p.info.nombre}</span>:null}</span>
@@ -9338,7 +9349,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     {opsLeg.map((o,i)=><div key={o.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
       <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,fontWeight:700,color:"#E8D098",minWidth:72}}>{o.operation_code}</span>
       <span style={{flex:"1 1 160px",minWidth:0,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre(o)}{o.clients?.tax_condition==="responsable_inscripto"&&<span style={{marginLeft:8,fontSize:10,fontWeight:800,color:"#93c5fd"}}>RI</span>}</span>
-      {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}
+      {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}{chip(doc(o.id,"guia_aerea"),"guia_aerea",o)}
     </div>)}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
       <span style={{fontSize:12.5,color:completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{completo?"✓ Documentación completa":`Falta documentación de ${faltan.map(o=>o.operation_code).join(", ")}`}</span>
