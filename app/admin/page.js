@@ -964,6 +964,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Despacho REAL (RI): valores copiados de la factura del despachante/DHL. Si están cargados,
   // los impuestos del presupuesto los toman de acá (no de la fórmula).
   const [despacho,setDespacho]=useState({die:initOp.despacho_die_usd??"",est:initOp.despacho_estadistica_usd??"",des:initOp.despacho_desaduanaje_usd??"",iva:initOp.despacho_iva_usd??""});
+  // Desaduanaje con DSI (22/10/2026): se carga SIN IVA y se guarda con el 21% sumado (despacho_desaduanaje_usd
+  // sigue siendo con IVA para el cálculo). El detalle por producto de la DSI arranca plegado.
+  const desSinIva=(v)=>Number(v)>0?String(Math.round(Number(v)/1.21*100)/100):"";
+  const [desNeto,setDesNeto]=useState(()=>desSinIva(initOp.despacho_desaduanaje_usd));
+  const [dsiDetalle,setDsiDetalle]=useState(false);
   const [savingDespacho,setSavingDespacho]=useState(false);
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
@@ -1169,7 +1174,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const load=async()=>{setLo(true);
     // Refrescar el op desde DB para reflejar cambios externos (SQL, otros admins, etc)
     const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*`});
-    if(Array.isArray(fresh)&&fresh[0]){setOp(p=>({...p,...fresh[0]}));const f=fresh[0];setDespacho({die:f.despacho_die_usd??"",est:f.despacho_estadistica_usd??"",des:f.despacho_desaduanaje_usd??"",iva:f.despacho_iva_usd??""});}
+    if(Array.isArray(fresh)&&fresh[0]){setOp(p=>({...p,...fresh[0]}));const f=fresh[0];setDespacho({die:f.despacho_die_usd??"",est:f.despacho_estadistica_usd??"",des:f.despacho_desaduanaje_usd??"",iva:f.despacho_iva_usd??""});setDesNeto(desSinIva(f.despacho_desaduanaje_usd));}
     const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);(Array.isArray(it)?it:[]).forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;});setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     // Saldo de cuenta corriente: se aplica SOLO en la primera op abierta del cliente, sin que el
@@ -2953,7 +2958,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       dsiSubirRef.current=cerrada?null:subirDsi;
       const dropProps=cerrada?{}:{"data-dsi-drop":"1",onDragOver:(e)=>{e.preventDefault();if(!dsiDrag)setDsiDrag(true);},onDragLeave:(e)=>{if(!e.currentTarget.contains(e.relatedTarget))setDsiDrag(false);},onDrop:(e)=>{e.preventDefault();setDsiDrag(false);const f=[...(e.dataTransfer?.files||[])].find(x=>x.type==="application/pdf"||/\.pdf$/i.test(x.name||""));if(f)subirDsi(f);else flash("Soltá un PDF");}};
       const quitarDsi=async()=>{if(!await confirmDialog("¿Quitar la DSI? Los impuestos vuelven al estimado.",{danger:true}))return;const {dsi:_x,confirmado:_y,...resto}=td;await guardarTd(resto,"DSI quitada · vuelve el estimado");};
-      const guardarDesaduanaje=async()=>{setSavingDespacho(true);const body={despacho_desaduanaje_usd:numOrNull(despacho.des)};await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));await autoSyncBudget(true,{soloImpuestos:true});setSavingDespacho(false);flash("Desaduanaje guardado");};
+      const guardarDesaduanaje=async()=>{setSavingDespacho(true);const neto=numOrNull(desNeto);const body={despacho_desaduanaje_usd:neto==null?null:Math.round(neto*1.21*100)/100};setDespacho(d=>({...d,des:body.despacho_desaduanaje_usd??""}));await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));await autoSyncBudget(true,{soloImpuestos:true});setSavingDespacho(false);flash("Desaduanaje guardado");};
       const saveManual=async()=>{
         setSavingDespacho(true);
         try{
@@ -3002,7 +3007,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:14}}>
           {tile("Derechos",tot.die)}{tile("Estadística",tot.te)}{tile("IVA",tot.iva)}{tile("Total DSI",tot.die+tot.te+tot.iva,"#4ade80")}
         </div>
-        <div style={{borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",padding:"4px 16px",marginBottom:14,overflowX:"auto"}}>
+        <button type="button" onClick={()=>setDsiDetalle(v=>!v)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"11px 16px",marginBottom:dsiDetalle?8:14,borderRadius:12,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          <span>Detalle por producto <span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}>· {items.length} producto{items.length!==1?"s":""}</span></span>
+          <span style={{color:"rgba(255,255,255,0.5)",fontSize:12,transform:dsiDetalle?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
+        </button>
+        {dsiDetalle&&<div style={{borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",padding:"4px 16px",marginBottom:14,overflowX:"auto"}}>
           <div style={{display:"grid",gridTemplateColumns:"minmax(180px,2fr) repeat(4,minmax(80px,1fr))",gap:10,padding:"10px 0 8px",borderBottom:"1px solid rgba(255,255,255,0.07)",minWidth:560}}>
             {["Producto","Derechos","Estadística","IVA","Total"].map((h,k)=><span key={h} style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",textAlign:k?"right":"left"}}>{h}</span>)}
           </div>
@@ -3011,17 +3020,18 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {[a.derechos,a.tasaE,a.iva+a.otros].map((v,k)=><span key={k} style={{fontSize:13,color:"rgba(255,255,255,0.8)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(v)}</span>)}
             <span style={{fontSize:13.5,fontWeight:800,color:"#fff",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(t)}</span>
           </div>;})}
-        </div>
-        {/* Desaduanaje: no está en la DSI, sale de la factura del courier. Se carga el total con IVA y se
-            reparte entre los productos por FOB. Vacío = el de la tabla. */}
+        </div>}
+        {/* Desaduanaje: no está en la DSI, sale de la factura del courier. Se carga SIN IVA, se le suma el
+            21% y se reparte entre los productos por FOB. Vacío = el de la tabla. */}
         {(()=>{const desReal=Number(op.despacho_desaduanaje_usd||0);const desUsado=desReal>0?desReal:Number(td.desembolso||0)+Number(td.ivaDesembolso||0);const totDsi=tot.die+tot.te+tot.iva;
           return <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:14,flexWrap:"wrap",padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
             <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
-              <div style={{width:230}}><label style={lblS}>Desaduanaje de la factura (con IVA)</label><input type="text" inputMode="decimal" value={despacho.des} onChange={e=>setDespacho(d=>({...d,des:e.target.value}))} placeholder={`Vacío = tabla (${fmt(Number(td.desembolso||0)+Number(td.ivaDesembolso||0))})`} style={inS}/></div>
-              {!cerrada&&String(despacho.des??"")!==String(op.despacho_desaduanaje_usd??"")&&<button type="button" onClick={guardarDesaduanaje} disabled={savingDespacho} style={{...btnS("#E8D098"),height:40}}>Guardar</button>}
+              <div style={{width:230}}><label style={lblS}>Desaduanaje de la factura (sin IVA)</label><input type="text" inputMode="decimal" value={desNeto} onChange={e=>setDesNeto(e.target.value)} placeholder={`Vacío = tabla (${fmt(Number(td.desembolso||0))})`} style={inS}/>
+                {n(desNeto)>0&&<p style={{margin:"5px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>+ IVA 21% {fmt(n(desNeto)*0.21)} = <b style={{color:"#fff"}}>{fmt(n(desNeto)*1.21)}</b></p>}</div>
+              {!cerrada&&desNeto!==desSinIva(op.despacho_desaduanaje_usd)&&<button type="button" onClick={guardarDesaduanaje} disabled={savingDespacho} style={{...btnS("#E8D098"),height:40}}>Guardar</button>}
             </div>
             <div style={{textAlign:"right"}}>
-              <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.5)"}}>DSI {fmt(totDsi)} + desaduanaje {fmt(desUsado)} <span style={{color:"rgba(255,255,255,0.35)"}}>({desReal>0?"factura":"tabla"}, repartido por FOB)</span></p>
+              <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.5)"}}>DSI {fmt(totDsi)} + desaduanaje con IVA {fmt(desUsado)} <span style={{color:"rgba(255,255,255,0.35)"}}>({desReal>0?"factura":"tabla"}, repartido por FOB)</span></p>
               <p style={{margin:"3px 0 0",fontSize:20,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{fmt(totDsi+desUsado)}</p>
             </div>
           </div>;})()}
