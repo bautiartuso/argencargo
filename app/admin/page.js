@@ -9111,13 +9111,31 @@ async function abrirDocLegajo(token,path){const w=window.open("about:blank","_bl
 
 // Pedido de DSI por mail (22/10/2026): se le pide al courier con el Gmail conectado ("Solicitud DSI
 // <guía>"); cuando contesta, acá se ve el mail y con "Es la DSI" el adjunto pasa al legajo del vuelo.
+// Precarga (23/10/2026): el mail de cada vuelo y sus adjuntos se piden apenas se abre Aéreos y quedan en
+// memoria, así abrir el vuelo y tocar "Ver" / "Es la DSI" es instantáneo.
+const dsiVueloCache=new Map(),dsiAdjCache=new Map();
+function cargarDsiVuelo(flightId,token,forzar=false){
+  const c=dsiVueloCache.get(flightId);
+  if(c&&!forzar&&Date.now()-c.ts<5*60000)return c.p;
+  const p=fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flightId}`,{headers:{Authorization:`Bearer ${token}`}}).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||"x");precargarAdjuntosDsi(j,token);return j;}).catch(e=>{dsiVueloCache.delete(flightId);return {error:e.message||"x"};});
+  dsiVueloCache.set(flightId,{p,ts:Date.now()});
+  return p;
+}
+function traerAdjuntoDsi(m,a,token){
+  const k=`${m.id}:${a.id}`;
+  if(!dsiAdjCache.has(k)){const p=fetch(`/api/aereo/dsi?accion=adjunto&msg=${m.id}&adj=${encodeURIComponent(a.id)}&nombre=${encodeURIComponent(a.nombre)}&tipo=${encodeURIComponent(a.tipo||"application/pdf")}`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>{if(!r.ok)throw new Error("No se pudo bajar el adjunto");return r.blob();});p.catch(()=>dsiAdjCache.delete(k));dsiAdjCache.set(k,p);}
+  return dsiAdjCache.get(k);
+}
+function precargarAdjuntosDsi(d,token){(d?.mensajes||[]).filter(m=>!m.mio).forEach(m=>(m.adjuntos||[]).forEach(a=>traerAdjuntoDsi(m,a,token).catch(()=>{})));}
+
 // cargados: {dsi:[nombres], guia_aerea:[nombres]} de lo que ya está en el legajo, para marcar esos adjuntos.
 function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   const [usados,setUsados]=useState({});
   const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);
-  const cargar=useCallback(async()=>{try{const r=await fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flight.id}`,{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();if(r.ok)setD(j);else setD({error:j.error||"x"});}catch{setD({error:"x"});}},[flight.id,token]);
-  useEffect(()=>{cargar();},[cargar]);
-  if(!d||d.error||!d.guia)return null;
+  const cargar=useCallback(async(forzar=true)=>{setD(await cargarDsiVuelo(flight.id,token,forzar));},[flight.id,token]);
+  useEffect(()=>{cargar(false);},[cargar]);
+  if(!d)return <div style={{marginBottom:12,padding:"14px",borderRadius:12,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",fontSize:12.5,color:"rgba(255,255,255,0.45)"}}>Cargando el mail…</div>;
+  if(d.error||!d.guia)return null;
   const fecha=v=>new Date(v).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
   const nombreDe=(de)=>String(de||"").replace(/<[^>]+>/,"").replace(/"/g,"").trim()||de;
   const enviar=async(datos=form)=>{
@@ -9129,7 +9147,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
     catch(e){toast(e.message,"error");}
     setEnviando(false);
   };
-  const traer=async(m,a)=>{const r=await fetch(`/api/aereo/dsi?accion=adjunto&msg=${m.id}&adj=${encodeURIComponent(a.id)}&nombre=${encodeURIComponent(a.nombre)}&tipo=${encodeURIComponent(a.tipo||"application/pdf")}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error("No se pudo bajar el adjunto");return r.blob();};
+  const traer=(m,a)=>traerAdjuntoDsi(m,a,token);
   const ver=async(m,a)=>{const w=window.open("about:blank","_blank");try{const b=await traer(m,a);if(w)w.location=URL.createObjectURL(b);}catch(e){w?.close();toast(e.message,"error");}};
   // Cada adjunto se marca como DSI o guía aérea (23/10/2026); lo que no se elige queda descartado.
   const esLaDsi=async(m,a,tipo="dsi")=>{
@@ -9265,8 +9283,8 @@ function AereosEmpleado({token}){
     setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];const ds=leg.docs.filter(d=>ops.some(o=>o.id===d.operation_id));return {...f,ops,llego:llego(f),cargados:{dsi:ds.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:ds.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name)},pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
   },[token]);
   useEffect(()=>{cargar();},[cargar]);
-  // "Es la DSI": se lee el PDF para saber de qué op es (CUIT/guía); si no se sabe, va a todas las del vuelo.
-  // La guía aérea es del vuelo entero: va a todas sus ops. El vuelo queda abierto para elegir el resto.
+  // Precarga el mail y los adjuntos de los que ya respondieron.
+  useEffect(()=>{(vuelos||[]).filter(f=>f.pedido&&!f.pedido.revisado_at&&(f.pedido.respuesta_at||dsiResp.has(f.id))).slice(0,12).forEach(f=>cargarDsiVuelo(f.id,token));},[vuelos]);// eslint-disable-line
   // ctx = {mensaje, adjunto}. La guía aérea va a todos los vuelos que nombra el mail (FedEx manda el
   // manifiesto con varias guías); la DSI va al vuelo de la guía que figura en el nombre del archivo o en
   // el PDF, aunque se haya abierto desde otro vuelo.

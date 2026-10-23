@@ -26,9 +26,18 @@ async function sb(path, init = {}) {
 }
 const lista = (r) => (Array.isArray(r?.data) ? r.data : []);
 
+// La sesión validada se recuerda 5 minutos por token (cada clic pedía usuario + rol de nuevo).
+const sesiones = new Map();
 async function staff(req) {
   const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!tok) return null;
+  const c = sesiones.get(tok);
+  if (c && c.vence > Date.now()) return c.uid;
+  const uid = await staffSinCache(tok);
+  if (uid) { if (sesiones.size > 200) sesiones.clear(); sesiones.set(tok, { uid, vence: Date.now() + 5 * 60000 }); }
+  return uid;
+}
+async function staffSinCache(tok) {
   const u = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (!u?.id) return null;
   const p = await sb(`/rest/v1/profiles?id=eq.${u.id}&select=role&limit=1`);
@@ -77,14 +86,15 @@ async function revisar(forzar = false) {
   ultimaRevision = Date.now();
   const desde = new Date(Date.now() - 45 * 86400000).toISOString();
   const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia,para,enviado_at`));
-  await Promise.all(abiertos.map(async (p) => {
-    const d = await gm(`/messages?maxResults=5&includeSpamTrash=true&q=${encodeURIComponent(consultaPedido(p, { sinMios: true }))}`).catch(() => null);
-    const primero = (d?.messages || []).slice(-1)[0];
-    if (!primero) return;
-    const m = await gm(`/messages/${primero.id}?format=metadata&metadataHeaders=From`).catch(() => null);
-    if (!m) return;
-    await sb(`/rest/v1/dsi_pedidos?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ respuesta_at: new Date(Number(m.internalDate) || Date.now()).toISOString(), respuesta_de: hdr(m.payload?.headers, "From") || null }) });
-  }));
+  await Promise.all(abiertos.map(revisarUno));
+}
+async function revisarUno(p) {
+  const d = await gm(`/messages?maxResults=5&includeSpamTrash=true&q=${encodeURIComponent(consultaPedido(p, { sinMios: true }))}`).catch(() => null);
+  const primero = (d?.messages || []).slice(-1)[0];
+  if (!primero) return;
+  const m = await gm(`/messages/${primero.id}?format=metadata&metadataHeaders=From`).catch(() => null);
+  if (!m) return;
+  await sb(`/rest/v1/dsi_pedidos?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ respuesta_at: new Date(Number(m.internalDate) || Date.now()).toISOString(), respuesta_de: hdr(m.payload?.headers, "From") || null }) });
 }
 
 // Vuelos llegados a Buenos Aires a los que todavía hay que pedirles la DSI (la pelotita naranja de
@@ -126,21 +136,22 @@ export async function GET(req) {
     }
     if (accion === "vuelo") {
       const fid = u.searchParams.get("flight_id") || "";
-      const [fr, pr, cfg] = await Promise.all([
+      const [fr, pr, cfg, pls] = await Promise.all([
         sb(`/rest/v1/flights?id=eq.${fid}&select=id,flight_code,international_tracking,international_carrier,dest_name,dest_tax_id&limit=1`),
         sb(`/rest/v1/dsi_pedidos?flight_id=eq.${fid}&select=*&order=enviado_at.desc&limit=1`),
         leerConfig().catch(() => null),
+        leerPlantillas(),
       ]);
       const f = lista(fr)[0];
       if (!f) return json({ error: "no_encontrado" }, 404);
       const conectado = !!cfg?.refresh_token;
       const pedido = lista(pr)[0] || null;
-      const pl = (await leerPlantillas())[claveCarrier(f.international_carrier)] || {};
+      const pl = pls[claveCarrier(f.international_carrier)] || {};
       const plantilla = { para: pl.para || "", cc: pl.cc || "", asunto: f.international_tracking ? asuntoDe(f.international_tracking) : "", texto: pl.texto ? pl.texto.replace(/\{guia\}/g, f.international_tracking || "") : textoBase(f) };
       let mensajes = [];
       if (pedido && conectado) {
-        if (!pedido.respuesta_at) await revisar(true).catch(() => {});
-        const [d, otrosR] = await Promise.all([
+        const [, d, otrosR] = await Promise.all([
+          pedido.respuesta_at ? null : revisarUno(pedido).catch(() => {}),
           gm(`/messages?maxResults=10&includeSpamTrash=true&q=${encodeURIComponent(consultaPedido(pedido))}`).catch(() => ({})),
           sb(`/rest/v1/dsi_pedidos?enviado_at=gte.${new Date(Date.now() - 60 * 86400000).toISOString()}&select=id,guia,flight_id,revisado_at&order=enviado_at.desc`),
         ]);
@@ -173,11 +184,14 @@ export async function GET(req) {
       const msg = u.searchParams.get("msg") || "";
       // Solo adjuntos de mails de un pedido de DSI (el hilo o quien contesta los pedidos): el empleado
       // no ve el resto de la casilla.
-      const m = await gm(`/messages/${msg}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`);
+      const [m, parasR, d] = await Promise.all([
+        gm(`/messages/${msg}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`),
+        sb(`/rest/v1/dsi_pedidos?select=para`),
+        gm(`/messages/${msg}/attachments/${u.searchParams.get("adj")}`),
+      ]);
       const remitente = ((hdr(m.payload?.headers, "From").match(/[\w.+-]+@[\w.-]+/) || [])[0] || "").toLowerCase();
-      const paras = new Set(lista(await sb(`/rest/v1/dsi_pedidos?select=para`)).flatMap((x) => direccionesDe(x.para)).map((x) => x.toLowerCase()));
+      const paras = new Set(lista(parasR).flatMap((x) => direccionesDe(x.para)).map((x) => x.toLowerCase()));
       if (!/Solicitud DSI/i.test(hdr(m.payload?.headers, "Subject")) && !paras.has(remitente)) return json({ error: "sin_permiso" }, 403);
-      const d = await gm(`/messages/${msg}/attachments/${u.searchParams.get("adj")}`);
       const nombre = u.searchParams.get("nombre") || "adjunto.pdf";
       return new Response(b64dec(d.data), { headers: { "Content-Type": u.searchParams.get("tipo") || "application/pdf", "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(nombre)}`, "Cache-Control": "no-store" } });
     }
