@@ -11,6 +11,7 @@
 //      enviar con reenviar:id suma el mail original y sus adjuntos.
 
 import crypto from "crypto";
+import { FIRMA_DEF, PLANTILLAS_DEF, firmaHtml, firmaTexto } from "../../../../lib/firma-mail";
 import { leerConfig, guardarConfig, fijarToken, accessToken, gm, hdr, b64dec, b64url, recorrer, resumen, armarMime, GM } from "../../../../lib/gmail";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -34,6 +35,15 @@ async function esAdmin(req) {
   const p = await svc(`/rest/v1/profiles?id=eq.${u.id}&select=role&limit=1`).then((r) => r.json()).catch(() => []);
   return Array.isArray(p) && p[0]?.role === "admin";
 }
+
+// ── Firma y plantillas (23/10/2026): mail-config/preferencias.json ─────────────────────────
+const PREFS = "/storage/v1/object/mail-config/preferencias.json";
+async function leerPrefs() {
+  const r = await svc(PREFS);
+  let d = {}; if (r.ok) { try { d = await r.json(); } catch {} }
+  return { firma: { ...FIRMA_DEF, ...(d.firma || {}) }, plantillas: Array.isArray(d.plantillas) ? d.plantillas : PLANTILLAS_DEF };
+}
+const guardarPrefs = (d) => svc(PREFS, { method: "POST", headers: { "Content-Type": "application/json", "x-upsert": "true" }, body: JSON.stringify(d) });
 
 // ── OAuth ─────────────────────────────────────────────────────────────────────────────────
 const redirectUri = (req) => `${new URL(req.url).origin}/api/admin/mail?accion=oauth`;
@@ -158,6 +168,7 @@ export async function GET(req) {
       const nombre = u.searchParams.get("nombre") || "adjunto";
       return new Response(b64dec(d.data), { headers: { "Content-Type": u.searchParams.get("tipo") || "application/octet-stream", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(nombre)}`, "Cache-Control": "no-store" } });
     }
+    if (accion === "preferencias") return json(await leerPrefs());
     if (accion === "filtros") {
       const [f, l] = await Promise.all([gm("/settings/filters").catch(() => ({})), gm("/labels")]);
       const nombres = Object.fromEntries((l.labels || []).map((x) => [x.id, x.name]));
@@ -211,6 +222,14 @@ export async function POST(req) {
       }
       return json({ ok: true, movidos });
     }
+    if (b.accion === "preferencias") {
+      const actual = await leerPrefs();
+      const firma = b.firma ? { ...actual.firma, ...b.firma } : actual.firma;
+      const plantillas = Array.isArray(b.plantillas) ? b.plantillas.filter((x) => String(x?.titulo || "").trim() && String(x?.texto || "").trim()).map((x, i) => ({ id: x.id || `p${Date.now()}${i}`, titulo: String(x.titulo).trim(), asunto: String(x.asunto || "").trim(), texto: String(x.texto) })) : actual.plantillas;
+      const r = await guardarPrefs({ firma, plantillas });
+      if (!r.ok) return json({ error: "No se pudo guardar" }, 500);
+      return json({ ok: true, firma, plantillas });
+    }
     if (b.accion === "desconectar") { await guardarConfig({}); fijarToken(null); return json({ ok: true }); }
     if (b.accion === "enviar" || b.accion === "borrador") {
       if (b.accion === "enviar" && !String(b.para || "").trim()) return json({ error: "Falta el destinatario" }, 400);
@@ -230,6 +249,9 @@ export async function POST(req) {
         };
         adjOrig = await Promise.all(out.adjuntos.map(async (a) => { const d = await gm(`/messages/${b.reenviar}/attachments/${a.id}`).catch(() => null); return d?.data ? { nombre: a.nombre, tipo: a.tipo, datos: b64dec(d.data).toString("base64") } : null; }));
       }
+      // La firma va debajo del texto y antes del mail reenviado (salvo que se saque para este mail).
+      const { firma } = await leerPrefs();
+      if (firma.activa !== false && !b.sinFirma) extra = { htmlExtra: firmaHtml(firma) + extra.htmlExtra, textoExtra: firmaTexto(firma) + extra.textoExtra };
       const mime = armarMime({ de: cfg?.email, para: b.para || "", cc: b.cc, asunto: b.asunto, texto: b.texto, adjuntos: [...(b.adjuntos || []), ...adjOrig.filter(Boolean)], enRespuestaA: b.enRespuestaA, referencias: b.referencias, ...extra });
       if (b.accion === "enviar" && b.reenviar) {
         // Por la carga de subida (hasta 35 MB): los adjuntos del original pueden ser pesados.

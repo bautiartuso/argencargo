@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../../lib/ui";
 import CarrierLogo from "../components/CarrierLogo";
+import { FIRMA_DEF, PLANTILLAS_DEF, firmaHtml, aplicarPlantilla } from "../../lib/firma-mail";
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8C99B";
 const MAX_ADJ = 3.2 * 1024 * 1024; // límite de Vercel para el cuerpo de la request (~4,5 MB en base64)
@@ -48,6 +49,9 @@ export default function MailPanel({ token }) {
   const [redactar, setRedactar] = useState(null);
   const [vista, setVista] = useState("lista"); // celu: carpetas | lista | mensaje
   const [filtrosAbierto, setFiltrosAbierto] = useState(false);
+  const [prefs, setPrefs] = useState({ firma: FIRMA_DEF, plantillas: PLANTILLAS_DEF });
+  const [prefsAbierto, setPrefsAbierto] = useState(false);
+  const [menuPlantillas, setMenuPlantillas] = useState(false);
 
   const api = useCallback(async (params, init) => {
     const r = init ? await fetch("/api/admin/mail", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(init) })
@@ -70,6 +74,7 @@ export default function MailPanel({ token }) {
     setCargando(false);
   }, [api, carpeta, busq, sig]);
   useEffect(() => { if (estado?.conectado) cargarCarpetas(); }, [estado, cargarCarpetas]);
+  useEffect(() => { if (estado?.conectado) api({ accion: "preferencias" }).then(setPrefs).catch(() => {}); }, [estado, api]);
   // Una vez por carga: asegura las carpetas automáticas y saca de la bandeja lo que les corresponde.
   useEffect(() => { if (!estado?.conectado) return; (async () => { try { const d = await api(null, { accion: "ordenar" }); if (d.movidos) { cargarCarpetas(); if (carpeta === "bandeja") cargarLista(false); } } catch {} })(); }, [estado]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (estado?.conectado) { setAbierto(null); cargarLista(false); } }, [estado, carpeta, busq]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -115,13 +120,13 @@ export default function MailPanel({ token }) {
     } catch (e) { toast(e.message, "error"); }
   };
   // Responder es siempre responder a todos: el remitente (o su Reply-To) + los demás destinatarios, sin mi casilla.
-  const responder = (m) => {
+  const responder = (m, plantilla = null) => {
     const yo = String(estado?.email || "").toLowerCase();
     const vistos = new Set([yo]);
     const unicos = (l) => l.filter((x) => { const d = direccion(x); if (!d || vistos.has(d)) return false; vistos.add(d); return true; });
     const para = unicos([...separar(m.responderA || m.de), ...separar(m.para)]);
     const cc = unicos(separar(m.cc));
-    setRedactar({ para: para.join(", "), cc: cc.join(", "), asunto: /^re:/i.test(m.asunto) ? m.asunto : `Re: ${m.asunto}`, texto: "", hilo: m.hilo, enRespuestaA: m.messageId, referencias: [m.referencias, m.messageId].filter(Boolean).join(" ") });
+    setRedactar({ para: para.join(", "), cc: cc.join(", "), asunto: /^re:/i.test(m.asunto) ? m.asunto : `Re: ${m.asunto}`, texto: plantilla ? aplicarPlantilla(plantilla.texto, nombreDe(m.de)) : "", nombreDestino: nombreDe(m.de), hilo: m.hilo, enRespuestaA: m.messageId, referencias: [m.referencias, m.messageId].filter(Boolean).join(" ") });
   };
   const reenviar = (m) => setRedactar({ para: "", asunto: /^(fwd?|rv):/i.test(m.asunto) ? m.asunto : `Fwd: ${m.asunto}`, texto: "", reenviar: m.id, adjOrig: m.adjuntos || [] });
 
@@ -168,6 +173,7 @@ export default function MailPanel({ token }) {
     {automaticas.length > 0 && seccion("Automáticas · se leen solas")}
     {automaticas.map((c) => fila(c.id, c.nombre, <Ico d={I.carpeta} />, c.noLeidos, { tenue: true }))}
     <div style={{ marginTop: "auto", paddingTop: 16 }}>
+      <button onClick={() => setPrefsAbierto(true)} style={{ width: "100%", height: 36, marginBottom: 6, borderRadius: 10, border: "1px solid rgba(184,149,106,0.35)", background: "rgba(184,149,106,0.08)", color: GOLD_LIGHT, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✍ Firma y plantillas</button>
       <button onClick={() => setFiltrosAbierto(true)} style={{ width: "100%", height: 36, borderRadius: 10, border: "1px dashed rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ Carpetas y filtros</button>
       <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", margin: "10px 4px 0", wordBreak: "break-all" }}>{estado.email}</p>
     </div>
@@ -222,6 +228,13 @@ export default function MailPanel({ token }) {
       {celu && <button onClick={() => { setVista("lista"); setAbierto(null); }} style={btnIco} aria-label="Volver"><Ico d={I.volver} /></button>}
       <button onClick={() => responder(abierto)} disabled={abierto.cargando} style={{ ...btnTxt, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628" }}><Ico d={I.responder} s={15} />Responder a todos</button>
       <button onClick={() => reenviar(abierto)} disabled={abierto.cargando} style={btnTxt}><Ico d={I.reenviar} s={15} />Reenviar</button>
+      {prefs.plantillas.length > 0 && <div style={{ position: "relative" }}>
+        <button onClick={() => setMenuPlantillas((v) => !v)} disabled={abierto.cargando} style={btnTxt}><Ico d={["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M8 13h8", "M8 17h5"]} s={15} />Responder con plantilla ▾</button>
+        {menuPlantillas && <><div onClick={() => setMenuPlantillas(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{ position: "absolute", top: 42, left: 0, zIndex: 41, minWidth: 240, padding: 6, borderRadius: 12, background: "#14223a", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 16px 40px rgba(0,0,0,0.45)" }}>
+            {prefs.plantillas.map((pl) => <button key={pl.id} onClick={() => { setMenuPlantillas(false); responder(abierto, pl); }} style={{ width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: 8, border: "none", background: "transparent", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{pl.titulo}</button>)}
+          </div></>}
+      </div>}
       <span style={{ flex: 1 }} />
       <button onClick={() => noLeido(abierto)} style={btnIco} aria-label="Marcar como no leído" title="Marcar como no leído"><Ico d={["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z", "M22 6l-10 7L2 6"]} s={15} /></button>
       <button onClick={() => papelera(abierto)} style={{ ...btnIco, color: "#fca5a5" }} aria-label="Papelera" title="Mover a la papelera"><Ico d={I.papelera} s={15} /></button>
@@ -266,8 +279,9 @@ export default function MailPanel({ token }) {
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", minHeight: 0, overflow: "hidden" }}>{panelLista}</div>
         <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>{panelMensaje}</div>
       </div>}
-    {redactar && <Redactar inicial={redactar} celu={celu} api={api} onCerrar={(enviado) => { setRedactar(null); if (enviado && (carpeta === "enviados" || carpeta === "borradores")) cargarLista(false); }} />}
+    {redactar && <Redactar inicial={redactar} celu={celu} api={api} prefs={prefs} onCerrar={(enviado) => { setRedactar(null); if (enviado && (carpeta === "enviados" || carpeta === "borradores")) cargarLista(false); }} />}
     {filtrosAbierto && <Filtros api={api} celu={celu} onCerrar={() => { setFiltrosAbierto(false); cargarCarpetas(); }} />}
+    {prefsAbierto && <Preferencias api={api} celu={celu} prefs={prefs} onCerrar={(nuevas) => { setPrefsAbierto(false); if (nuevas) setPrefs(nuevas); }} />}
   </div>;
 }
 
@@ -298,8 +312,11 @@ function Modal({ celu, onCerrar, children, ancho = 640 }) {
   </div>;
 }
 
-function Redactar({ inicial, celu, api, onCerrar }) {
+function Redactar({ inicial, celu, api, prefs, onCerrar }) {
   const [f, setF] = useState({ para: inicial.para || "", cc: inicial.cc || "", asunto: inicial.asunto || "", texto: inicial.texto || "" });
+  const [conFirma, setConFirma] = useState(true);
+  const firmaOn = prefs?.firma?.activa !== false;
+  const usarPlantilla = (pl) => setF((p) => ({ ...p, texto: aplicarPlantilla(pl.texto, inicial.nombreDestino || ""), asunto: p.asunto || pl.asunto || "" }));
   const [adj, setAdj] = useState([]);
   const [verCc, setVerCc] = useState(!!inicial.cc);
   const [arrastrando, setArrastrando] = useState(false);
@@ -313,7 +330,7 @@ function Redactar({ inicial, celu, api, onCerrar }) {
   const ir = async (accion) => {
     if (total > MAX_ADJ) { toast(`Los adjuntos pesan ${pesoTxt(total)}: el máximo es ${pesoTxt(MAX_ADJ)}`, "error"); return; }
     setEnviando(true);
-    try { await api(null, { accion, ...f, adjuntos: adj, hilo: inicial.hilo, enRespuestaA: inicial.enRespuestaA, referencias: inicial.referencias, borrador: inicial.borrador, reenviar: inicial.reenviar }); toast(accion === "enviar" ? "Mail enviado" : "Borrador guardado", "success"); onCerrar(true); }
+    try { await api(null, { accion, ...f, sinFirma: !conFirma, adjuntos: adj, hilo: inicial.hilo, enRespuestaA: inicial.enRespuestaA, referencias: inicial.referencias, borrador: inicial.borrador, reenviar: inicial.reenviar }); toast(accion === "enviar" ? "Mail enviado" : "Borrador guardado", "success"); onCerrar(true); }
     catch (e) { toast(e.message, "error"); setEnviando(false); }
   };
   return <Modal celu={celu} onCerrar={() => !enviando && onCerrar(false)}>
@@ -329,7 +346,15 @@ function Redactar({ inicial, celu, api, onCerrar }) {
       </div>
       {verCc && <input value={f.cc} onChange={(e) => setF((p) => ({ ...p, cc: e.target.value }))} placeholder="Cc" style={{ ...campo, marginBottom: 8 }} />}
       <input value={f.asunto} onChange={(e) => setF((p) => ({ ...p, asunto: e.target.value }))} placeholder="Asunto" style={{ ...campo, marginBottom: 8 }} />
-      <textarea value={f.texto} onChange={(e) => setF((p) => ({ ...p, texto: e.target.value }))} placeholder="Escribí el mail o arrastrá archivos acá" style={{ ...campo, height: celu ? 260 : 240, padding: 12, resize: "vertical", lineHeight: 1.55 }} />
+      {prefs?.plantillas?.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 2 }}>Plantillas</span>
+        {prefs.plantillas.map((pl) => <button key={pl.id} onClick={() => usarPlantilla(pl)} style={{ height: 28, padding: "0 11px", borderRadius: 999, border: "1px solid rgba(184,149,106,0.4)", background: "rgba(184,149,106,0.1)", color: GOLD_LIGHT, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{pl.titulo}</button>)}
+      </div>}
+      <textarea data-enter-libre="1" value={f.texto} onChange={(e) => setF((p) => ({ ...p, texto: e.target.value }))} placeholder="Escribí el mail o arrastrá archivos acá" style={{ ...campo, height: celu ? 260 : 240, padding: 12, resize: "vertical", lineHeight: 1.55 }} />
+      {firmaOn && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: conFirma ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.35)", textDecoration: conFirma ? "none" : "line-through", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✍ Firma: {[prefs.firma.nombre, prefs.firma.cargo].filter(Boolean).join(" · ")}</span>
+        <button onClick={() => setConFirma((v) => !v)} style={{ height: 26, padding: "0 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.14)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{conFirma ? "Sin firma en este mail" : "Poner firma"}</button>
+      </div>}
       {inicial.reenviar && <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 12.5, color: "rgba(255,255,255,0.65)" }}>Va el mail original abajo{inicial.adjOrig?.length ? <> con {inicial.adjOrig.length} adjunto{inicial.adjOrig.length > 1 ? "s" : ""}: <b style={{ color: "#fff" }}>{inicial.adjOrig.map((a) => a.nombre).join(", ")}</b></> : null}</div>}
       {adj.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
         {adj.map((a, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 6px 6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", fontSize: 12, color: "#fff", maxWidth: "100%" }}>
@@ -378,6 +403,62 @@ function Filtros({ api, celu, onCerrar }) {
         <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: "#fff" }}>{x.carpeta || "—"}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[x.de && `De: ${x.de}`, x.asunto && `Asunto: ${x.asunto}`, x.query && x.query].filter(Boolean).join(" · ")}</p></div>
         <button onClick={async () => { try { await api(null, { accion: "borrar_filtro", id: x.id }); await cargar(); } catch (e) { toast(e.message, "error"); } }} style={btnIco} aria-label="Borrar filtro"><Ico d={I.papelera} s={14} /></button>
       </div>)}
+    </div>
+  </Modal>;
+}
+
+// Firma y plantillas (23/10/2026): la firma va sola al final de cada mail; las plantillas se insertan con
+// un toque al redactar o con "Responder con plantilla". {nombre} se reemplaza por el nombre de a quién
+// se le responde.
+function Preferencias({ api, celu, prefs, onCerrar }) {
+  const [firma, setFirma] = useState({ ...FIRMA_DEF, ...(prefs.firma || {}) });
+  const [plantillas, setPlantillas] = useState(prefs.plantillas || []);
+  const [guardando, setGuardando] = useState(false);
+  const campoF = (k, l, ph) => <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{l}</span><input value={firma[k] || ""} onChange={(e) => setFirma((p) => ({ ...p, [k]: e.target.value }))} placeholder={ph} style={campo} /></label>;
+  const guardar = async () => {
+    setGuardando(true);
+    try { const d = await api(null, { accion: "preferencias", firma, plantillas }); toast("Firma y plantillas guardadas", "success"); onCerrar({ firma: d.firma, plantillas: d.plantillas }); }
+    catch (e) { toast(e.message, "error"); setGuardando(false); }
+  };
+  const ch = (i, k, v) => setPlantillas((p) => p.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  return <Modal celu={celu} onCerrar={() => !guardando && onCerrar(null)} ancho={760}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#fff" }}>Firma y plantillas</p>
+      <button onClick={() => onCerrar(null)} style={btnIco} aria-label="Cerrar"><Ico d={I.x} s={15} /></button>
+    </div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: GOLD_LIGHT, textTransform: "uppercase", letterSpacing: "0.1em" }}>Firma</p>
+      <button onClick={() => setFirma((p) => ({ ...p, activa: p.activa === false }))} style={{ height: 28, padding: "0 12px", borderRadius: 999, border: `1px solid ${firma.activa !== false ? "rgba(74,222,128,0.45)" : "rgba(255,255,255,0.15)"}`, background: firma.activa !== false ? "rgba(34,197,94,0.12)" : "transparent", color: firma.activa !== false ? "#4ade80" : "rgba(255,255,255,0.5)", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{firma.activa !== false ? "✓ Va en todos los mails" : "Apagada"}</button>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: celu ? "1fr" : "1fr 1fr", gap: 10 }}>
+      {campoF("nombre", "Nombre", "Bautista Artuso")}
+      {campoF("cargo", "Cargo / empresa", "Argencargo")}
+      {campoF("whatsapp", "WhatsApp", "+54 9 11 ...")}
+      {campoF("web", "Web", "argencargo.com.ar")}
+      <div style={{ gridColumn: celu ? "auto" : "1 / -1" }}>{campoF("direccion", "Dirección", "Calle, barrio, ciudad")}</div>
+    </div>
+    <p style={{ margin: "12px 0 6px", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)" }}>Así se ve</p>
+    <iframe title="firma" srcDoc={`<!doctype html><meta charset="utf-8"><body style="margin:0;padding:6px 16px 16px;background:#fff">${firmaHtml(firma)}</body>`} style={{ width: "100%", height: 150, border: "none", borderRadius: 12, background: "#fff", display: "block" }} />
+
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "22px 0 10px" }}>
+      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: GOLD_LIGHT, textTransform: "uppercase", letterSpacing: "0.1em" }}>Plantillas</p>
+      <button onClick={() => setPlantillas((p) => [...p, { id: `p${Date.now()}`, titulo: "", asunto: "", texto: "" }])} style={btnTxt}>+ Nueva plantilla</button>
+    </div>
+    <p style={{ margin: "0 0 10px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{"{nombre}"} se cambia por el nombre de la persona a la que le respondés.</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {plantillas.map((pl, i) => <div key={pl.id || i} style={{ padding: 12, borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={pl.titulo} onChange={(e) => ch(i, "titulo", e.target.value)} placeholder="Nombre de la plantilla (ej. Cotización → WhatsApp)" style={{ ...campo, fontWeight: 700 }} />
+          <button onClick={() => setPlantillas((p) => p.filter((_, j) => j !== i))} style={{ ...btnIco, height: 42, width: 42, color: "#fca5a5" }} aria-label="Borrar plantilla"><Ico d={I.papelera} s={15} /></button>
+        </div>
+        <input value={pl.asunto || ""} onChange={(e) => ch(i, "asunto", e.target.value)} placeholder="Asunto (opcional, para mails nuevos)" style={campo} />
+        <textarea data-enter-libre="1" value={pl.texto} onChange={(e) => ch(i, "texto", e.target.value)} placeholder="Texto de la plantilla" style={{ ...campo, height: 150, padding: 12, resize: "vertical", lineHeight: 1.55 }} />
+      </div>)}
+      {!plantillas.length && <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.4)" }}>Sin plantillas.</p>}
+    </div>
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+      <button onClick={() => onCerrar(null)} disabled={guardando} style={btnTxt}>Cancelar</button>
+      <button onClick={guardar} disabled={guardando} style={{ ...btnTxt, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", padding: "0 20px" }}>{guardando ? "Guardando…" : "Guardar"}</button>
     </div>
   </Modal>;
 }
