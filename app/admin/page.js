@@ -9213,9 +9213,9 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
       </div>
       {(m.guias||[]).length>1&&(()=>{const manif=m.adjuntos.filter(a=>!a.guia&&(enPdf[a.id]||[]).length).length;return <p style={{margin:"6px 0 0",fontSize:11.5,color:"#93c5fd"}}>Este mail trae {m.guias.length} guías ({m.guias.map(g=>g.guia).join(" · ")}){manif>1?` y ${manif} guías aéreas`:""}. Elegí solo lo de esta guía: lo que es de otra aparece tachado.</p>;})()}
       {abierto===m.id&&<p style={{margin:"8px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",lineHeight:1.5,maxHeight:260,overflowY:"auto"}}>{m.texto}</p>}
-      {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=>{const otra=(a.guia&&a.guia!==d.guia)||(!a.guia&&(enPdf[a.id]||[]).length>0&&!enPdf[a.id].includes(d.guia));return <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",opacity:otra?0.85:1}}>
+      {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=>{const usadoOtro=a.usadoEn&&!Object.values(cargados||{}).some(l=>(l||[]).includes(a.nombre));const otra=(a.guia&&a.guia!==d.guia)||(!a.guia&&(enPdf[a.id]||[]).length>0&&!enPdf[a.id].includes(d.guia))||!!usadoOtro;return <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",opacity:otra?0.85:1}}>
         <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={otra?`${a.nombre} · es de otra guía`:a.nombre}>📎 <span style={otra?{color:"#f87171",textDecoration:"line-through",textDecorationThickness:2}:{color:"#fff"}}>{a.nombre}</span>
-          {otra&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(239,68,68,0.14)",color:"#f87171",border:"1px solid rgba(239,68,68,0.45)",textDecoration:"none"}}>otra guía{a.guia?` · ${a.guia}`:""}</span>}
+          {otra&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(239,68,68,0.14)",color:"#f87171",border:"1px solid rgba(239,68,68,0.45)",textDecoration:"none"}}>{usadoOtro&&!(a.guia&&a.guia!==d.guia)?`ya usada en ${a.usadoEn.vuelo}${a.usadoEn.tipo==="guia_aerea"?" · guía aérea":a.usadoEn.tipo==="dsi"?" · DSI":""}`:`otra guía${a.guia?` · ${a.guia}`:""}`}</span>}
           {!otra&&!a.guia&&(enPdf[a.id]||[]).includes(d.guia)&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(196,181,253,0.14)",color:"#c4b5fd",border:"1px solid rgba(196,181,253,0.4)"}}>guía aérea de esta guía</span>}</span>
         {btnC("Ver",()=>ver(m,a),"#93c5fd")}
         {!otra&&(()=>{const u=usados[a.id]||Object.keys(cargados||{}).find(t=>(cargados[t]||[]).includes(a.nombre));return u?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>✓ {u==="dsi"?"DSI":"Guía aérea"}</span>:<>
@@ -9316,6 +9316,7 @@ function AereosEmpleado({token}){
       if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
       toast(`DSI cargada en ${f.flight_code} · ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
     }
+    dsiVueloCache.clear();
     await cargar();refrescarDsiEstado(token);
   };
   if(!vuelos)return <div style={{padding:40,textAlign:"center",color:"rgba(255,255,255,0.45)",fontSize:13}}>Cargando vuelos…</div>;
