@@ -9134,13 +9134,12 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio}){
   const esLaDsi=async(m,a,tipo="dsi")=>{
     setUsando(`${a.id}:${tipo}`);
     try{const b=await traer(m,a);await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo);
-      setUsados(u=>({...u,[a.id]:tipo}));
-      if(tipo==="dsi"&&d.pedido&&!d.pedido.revisado_at){await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);}
-      await cargar();}
+      setUsados(u=>({...u,[a.id]:tipo}));}
     catch(e){toast(e.message,"error");}
     setUsando(null);
   };
-  const revisado=async()=>{await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);cargar();};
+  // El pedido queda abierto hasta que se cierra a mano: así se elige la DSI y la guía aérea del mismo mail.
+  const revisado=async()=>{await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);await cargar();onCambio?.();};
   const p=d.pedido;const respuestas=(d.mensajes||[]).filter(m=>!m.mio);const nueva=p?.respuesta_at&&!p.revisado_at;
   const INP={width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",outline:"none"};
   const LBL={display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 5px"};
@@ -9155,7 +9154,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio}){
       {!p&&d.conectado&&!form&&d.plantilla.para&&btn("✎ Editar mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
       {!p&&d.conectado&&!form&&<button type="button" disabled={enviando} onClick={()=>{const f={para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto};if(f.para)enviar(f);else setForm(f);}} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":"✉ Solicitar DSI"}</button>}
       {p&&!form&&btn("Volver a pedir",()=>setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
-      {nueva&&btn("✓ Revisado",revisado,"#4ade80")}
+      {nueva&&btn("✓ Listo, cerrar mail",revisado,"#4ade80")}
     </div>
     {form&&<div style={{marginTop:12,display:"grid",gap:10}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
@@ -9227,8 +9226,10 @@ function AereosEmpleado({token}){
   if(!vuelos)return <div style={{padding:40,textAlign:"center",color:"rgba(255,255,255,0.45)",fontSize:13}}>Cargando vuelos…</div>;
   const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
   const respondio=(f)=>!!f.pedido?.respuesta_at||dsiResp.has(f.id);
-  const pedir=vuelos.filter(f=>!f.conDsi&&!f.pedido&&f.vigente).sort((a,b)=>b.llego-a.llego);
-  const esperando=vuelos.filter(f=>(!f.conDsi||abierto===f.id)&&f.pedido).sort((a,b)=>(respondio(b)-respondio(a))||(new Date(b.pedido.enviado_at)-new Date(a.pedido.enviado_at)));
+  // Esperando: el pedido sigue abierto (se cierra con "Listo, cerrar mail"). Si se cerró sin DSI vuelve a Pedir.
+  const abiertoP=(f)=>f.pedido&&!f.pedido.revisado_at;
+  const pedir=vuelos.filter(f=>!f.conDsi&&!abiertoP(f)&&f.vigente).sort((a,b)=>b.llego-a.llego);
+  const esperando=vuelos.filter(f=>abiertoP(f)||(abierto===f.id&&f.pedido)).sort((a,b)=>(respondio(b)-respondio(a))||(new Date(b.pedido.enviado_at)-new Date(a.pedido.enviado_at)));
   const fecha=v=>v?new Date(v).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"";
   const fila=(f,col)=>{const m=marcaCourier(f.international_carrier);const ab=abierto===f.id;const r=col==="esp"&&respondio(f);return <div key={f.id} style={{borderRadius:12,marginBottom:8,background:r?"rgba(34,197,94,0.07)":ab?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.18)",border:`1px solid ${r?"rgba(74,222,128,0.45)":ab?"rgba(232,208,152,0.35)":"rgba(255,255,255,0.07)"}`}}>
     <button type="button" onClick={()=>setAbierto(ab?null:f.id)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 12px",background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",color:"#fff"}}>
@@ -9237,7 +9238,7 @@ function AereosEmpleado({token}){
         <span style={{display:"block",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:15,fontWeight:700,letterSpacing:"0.03em"}}>{f.international_tracking}</span>
         <span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.flight_code} · {f.ops.map(o=>`${o.operation_code} ${nombre(o)}`).join(" · ")}</span>
       </span>
-      <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap",color:r?"#4ade80":"rgba(255,255,255,0.45)"}}>{col==="pedir"?`Llegó ${fecha(f.llego)}`:f.conDsi?"✓ DSI cargada":r?"📬 Respondió":`Pedida ${fecha(f.pedido.enviado_at)}`}</span>
+      <span style={{fontSize:11,fontWeight:700,whiteSpace:"nowrap",color:r?"#4ade80":"rgba(255,255,255,0.45)"}}>{col==="pedir"?`Llegó ${fecha(f.llego)}`:r?(f.conDsi?"✓ DSI cargada":"📬 Respondió"):`Pedida ${fecha(f.pedido.enviado_at)}`}</span>
       <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,transform:ab?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
     </button>
     {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file,tipo)=>adjuntar(f,file,tipo)} onCambio={cargar}/></div>}

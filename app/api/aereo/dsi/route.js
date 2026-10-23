@@ -66,7 +66,7 @@ async function revisar(forzar = false) {
 }
 
 // Vuelos llegados a Buenos Aires a los que todavía hay que pedirles la DSI (la pelotita naranja de
-// Aéreos). Misma regla que la pantalla del empleado: aéreo courier comercial, sin pedido, sin DSI en
+// Aéreos). Misma regla que la pantalla del empleado: aéreo courier comercial, sin pedido abierto, sin DSI en
 // todas sus ops, y vigente (alguna op sin cerrar o llegado hace 14 días o menos).
 async function contarPorPedir() {
   const desde = new Date(Date.now() - 150 * 86400000).toISOString();
@@ -76,7 +76,7 @@ async function contarPorPedir() {
   const opIds = vuelos.flatMap((f) => f.ops.map((o) => o.id));
   const [docs, peds] = await Promise.all([
     sb(`/rest/v1/legajo_docs?operation_id=in.(${opIds.join(",")})&tipo=eq.dsi&borrado_at=is.null&select=operation_id`),
-    sb(`/rest/v1/dsi_pedidos?flight_id=in.(${vuelos.map((f) => f.id).join(",")})&select=flight_id`),
+    sb(`/rest/v1/dsi_pedidos?flight_id=in.(${vuelos.map((f) => f.id).join(",")})&revisado_at=is.null&select=flight_id`),
   ]);
   const conDsi = new Set(lista(docs).map((d) => d.operation_id));
   const pedidos = new Set(lista(peds).map((p) => p.flight_id));
