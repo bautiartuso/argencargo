@@ -1,5 +1,5 @@
 "use client";
-// Solapa Email del admin (04/10/2026). Habla con /api/admin/mail (API de Gmail).
+// Solapa Email del admin (04/10/2026, rediseñada el 23/10/2026). Habla con /api/admin/mail (API de Gmail).
 // Bandeja (incluye spam), Enviados, Borradores y carpetas propias con filtros. DHL, FedEx, UPS y
 // WhatsApp (y los informes DMARC) son automáticas: el servidor crea los filtros y saca esos mails de la bandeja.
 // Redactar con varios adjuntos y arrastrar y soltar. En el celu: carpetas → lista → mensaje.
@@ -9,7 +9,6 @@ import CarrierLogo from "../components/CarrierLogo";
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8C99B";
 const MAX_ADJ = 3.2 * 1024 * 1024; // límite de Vercel para el cuerpo de la request (~4,5 MB en base64)
-const AUTO = ["DHL", "FedEx", "UPS", "WhatsApp", "DMARC", "DHL avisos"];
 
 const useCelu = () => { const [c, setC] = useState(false); useEffect(() => { const f = () => setC(window.innerWidth < 760); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []); return c; };
 const Ico = ({ d, s = 17 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d.map((x, i) => <path key={i} d={x} />)}</svg>;
@@ -135,81 +134,146 @@ export default function MailPanel({ token }) {
     <button disabled={!estado.configurado} onClick={async () => { try { const d = await api({ accion: "conectar" }); window.location.href = d.url; } catch (e) { toast(e.message, "error"); } }} style={{ height: 46, padding: "0 24px", borderRadius: 12, border: "none", background: estado.configurado ? `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})` : "rgba(255,255,255,0.08)", color: estado.configurado ? "#0A1628" : "rgba(255,255,255,0.4)", fontWeight: 800, fontSize: 14, cursor: estado.configurado ? "pointer" : "not-allowed" }}>Conectar Gmail</button>
   </div>;
 
+  // ── Rediseño 23/10/2026: tres columnas a pantalla completa, cada una con su scroll ──
   const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }];
   const elegir = (k) => { setCarpeta(k); if (celu) setVista("lista"); };
-  // Carpetas de DHL, FedEx y UPS: con el logo de la empresa en vez del ícono de carpeta.
   const marca = (l) => { const x = String(l || "").toLowerCase(); return x === "dhl" ? "dhl" : x === "fedex" ? "fedex" : x === "ups" ? "ups" : null; };
-  const itemNav = (k, l, ic, n) => { const on = carpeta === k; const mk = ic === I.carpeta ? marca(l) : null; const wa = ic === I.carpeta && String(l).toLowerCase() === "whatsapp"; return <button key={k} onClick={() => elegir(k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.16)" : "transparent", color: on ? GOLD_LIGHT : "rgba(255,255,255,0.72)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>{mk ? <CarrierLogo k={mk} alto={24} radio={6} /> : wa ? <>{WA}WhatsApp</> : <><Ico d={ic} />{l}</>}{n > 0 && <span style={{ marginLeft: "auto", minWidth: 22, textAlign: "center", fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#ef4444", color: "#fff" }}>{n}</span>}</button>; };
-  const ordenCarpetas = [...carpetas].sort((a, b) => { const ia = AUTO.findIndex((x) => x.toLowerCase() === a.nombre.toLowerCase()), ib = AUTO.findIndex((x) => x.toLowerCase() === b.nombre.toLowerCase()); const rk = (n, i) => (/avisos/i.test(n) ? 200 : i < 0 ? 99 : i); return rk(a.nombre, ia) - rk(b.nombre, ib) || a.nombre.localeCompare(b.nombre); });
+  const esAuto = (n) => /avisos|dmarc/i.test(n);
+  const couriers = carpetas.filter((c) => marca(c.nombre)).sort((x, y) => ["dhl", "fedex", "ups"].indexOf(marca(x.nombre)) - ["dhl", "fedex", "ups"].indexOf(marca(y.nombre)));
+  const automaticas = carpetas.filter((c) => esAuto(c.nombre)).sort((x, y) => x.nombre.localeCompare(y.nombre));
+  const otras = carpetas.filter((c) => !marca(c.nombre) && !esAuto(c.nombre)).sort((x, y) => (String(x.nombre).toLowerCase() === "whatsapp" ? -1 : String(y.nombre).toLowerCase() === "whatsapp" ? 1 : x.nombre.localeCompare(y.nombre)));
 
-  const panelCarpetas = <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-    <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ height: 44, marginBottom: 12, borderRadius: 12, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Redactar</button>
-    {NAV.map((x) => itemNav(x.k, x.l, x.ic, x.n))}
-    <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "16px 12px 6px" }}>Carpetas</p>
-    {ordenCarpetas.map((c) => itemNav(c.id, c.nombre, I.carpeta, c.noLeidos))}
-    <button onClick={() => setFiltrosAbierto(true)} style={{ marginTop: 6, padding: "9px 12px", borderRadius: 10, border: "1px dashed rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>+ Carpetas y filtros</button>
-    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", margin: "14px 12px 0", wordBreak: "break-all" }}>{estado.email}</p>
+  const fila = (k, l, icono, n, { tenue = false } = {}) => {
+    const on = carpeta === k;
+    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: 38, padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+      {on && <span style={{ position: "absolute", left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: GOLD_LIGHT }} />}
+      <span style={{ width: 22, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>{icono}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
+      {n > 0 && <span style={{ minWidth: 20, height: 20, padding: "0 7px", borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, background: tenue ? "rgba(255,255,255,0.08)" : "#ef4444", color: tenue ? "rgba(255,255,255,0.55)" : "#fff" }}>{n}</span>}
+    </button>;
+  };
+  const seccion = (t) => <p style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.12em", margin: "18px 12px 6px" }}>{t}</p>;
+
+  const panelCarpetas = <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: celu ? 0 : "16px 12px" }}>
+    <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", fontWeight: 800, fontSize: 14, cursor: "pointer", boxShadow: "0 8px 22px rgba(184,149,106,0.22)", fontFamily: "inherit" }}><Ico d={I.borradores} s={16} />Redactar</button>
+    {seccion("Correo")}
+    {NAV.map((x) => fila(x.k, x.l, <Ico d={x.ic} />, x.n))}
+    {couriers.length > 0 && seccion("Couriers")}
+    {couriers.map((c) => fila(c.id, c.nombre, <CarrierLogo k={marca(c.nombre)} alto={20} radio={5} />, c.noLeidos))}
+    {otras.length > 0 && seccion("Carpetas")}
+    {otras.map((c) => fila(c.id, c.nombre, String(c.nombre).toLowerCase() === "whatsapp" ? WA : <Ico d={I.carpeta} />, c.noLeidos))}
+    {automaticas.length > 0 && seccion("Automáticas · se leen solas")}
+    {automaticas.map((c) => fila(c.id, c.nombre, <Ico d={I.carpeta} />, c.noLeidos, { tenue: true }))}
+    <div style={{ marginTop: "auto", paddingTop: 16 }}>
+      <button onClick={() => setFiltrosAbierto(true)} style={{ width: "100%", height: 36, borderRadius: 10, border: "1px dashed rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>+ Carpetas y filtros</button>
+      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", margin: "10px 4px 0", wordBreak: "break-all" }}>{estado.email}</p>
+    </div>
   </div>;
 
   const titulo = NAV.find((x) => x.k === carpeta)?.l || carpetas.find((c) => c.id === carpeta)?.nombre || "";
   const nCarpeta = carpeta === "bandeja" ? noLeidos : carpetas.find((c) => c.id === carpeta)?.noLeidos || 0;
-  const panelLista = <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-      {celu && <button onClick={() => setVista("carpetas")} style={btnIco} aria-label="Carpetas"><Ico d={I.carpeta} /></button>}
-      {nCarpeta > 0 && <span title="Sin leer" style={{ flexShrink: 0, height: 40, padding: "0 12px", borderRadius: 11, display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(239,68,68,0.14)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5", fontSize: 12.5, fontWeight: 800 }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444" }} />{nCarpeta} sin leer</span>}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${titulo.toLowerCase()}`} style={{ flex: 1, minWidth: 0, height: 40, padding: "0 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "#fff", fontSize: 13, outline: "none" }} />
-      {celu && <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ ...btnIco, background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", border: "none" }} aria-label="Redactar"><Ico d={I.borradores} /></button>}
-    </div>
-    <div style={{ borderRadius: 14, border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)", overflow: "hidden" }}>
-      {lista.length === 0 && !cargando && <p style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", padding: "2.5rem 0", fontSize: 13 }}>No hay mails.</p>}
-      {lista.map((m) => { const on = abierto?.id === m.id; return <button key={m.id} onClick={() => abrir(m)} style={{ width: "100%", display: "block", textAlign: "left", padding: "12px 14px", border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)", background: on ? "rgba(184,149,106,0.1)" : "transparent", cursor: "pointer", fontFamily: "inherit", color: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {m.noLeido && <span style={{ width: 8, height: 8, borderRadius: "50%", background: GOLD_LIGHT, flexShrink: 0 }} />}
-          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: m.noLeido ? 800 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{carpeta === "enviados" || m.borrador ? `Para: ${nombreDe(m.para)}` : nombreDe(m.de)}</span>
-          {m.spam && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
-          {m.adjuntos && <span style={{ color: "rgba(255,255,255,0.45)" }}><Ico d={I.clip} s={13} /></span>}
-          <span style={{ fontSize: 11.5, color: "rgba(255,255,255,0.45)", flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
+  const panelLista = <div style={{ display: "flex", flexDirection: "column", minWidth: 0, height: celu ? "auto" : "100%" }}>
+    <div style={{ padding: celu ? "0 0 12px" : "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        {celu && <button onClick={() => setVista("carpetas")} style={btnIco} aria-label="Carpetas"><Ico d={I.carpeta} /></button>}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}</p>
+          <p style={{ margin: "1px 0 0", fontSize: 12, color: nCarpeta > 0 ? "#fca5a5" : "rgba(255,255,255,0.4)", fontWeight: 600 }}>{nCarpeta > 0 ? `${nCarpeta} sin leer` : "Todo leído"}</p>
         </div>
-        <p style={{ margin: "3px 0 0", fontSize: 13, fontWeight: m.noLeido ? 700 : 500, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.asunto || "(sin asunto)"}</p>
-        <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.extracto}</p>
+        <button onClick={() => { cargarCarpetas(); cargarLista(false); }} style={btnIco} aria-label="Actualizar" title="Actualizar"><Ico d={["M23 4v6h-6", "M1 20v-6h6", "M3.51 9a9 9 0 0 1 14.85-3.36L23 10", "M1 14l4.64 4.36A9 9 0 0 0 20.49 15"]} s={15} /></button>
+        {celu && <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ ...btnIco, background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", border: "none" }} aria-label="Redactar"><Ico d={I.borradores} /></button>}
+      </div>
+      <div style={{ position: "relative" }}>
+        <span style={{ position: "absolute", left: 12, top: 11, color: "rgba(255,255,255,0.35)" }}><Ico d={["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M21 21l-4.35-4.35"]} s={15} /></span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${titulo.toLowerCase()}`} style={{ width: "100%", boxSizing: "border-box", height: 38, padding: "0 12px 0 36px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(0,0,0,0.22)", color: "#fff", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+      </div>
+    </div>
+    <div style={{ flex: 1, overflowY: celu ? "visible" : "auto", minHeight: 0 }}>
+      {lista.length === 0 && !cargando && <div style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", padding: "3rem 1rem", fontSize: 13 }}>No hay mails.</div>}
+      {lista.map((m) => { const on = abierto?.id === m.id; const quien = carpeta === "enviados" || m.borrador ? nombreDe(m.para) : nombreDe(m.de); return <button key={m.id} onClick={() => abrir(m)} className="mp-mail" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", gap: 12, textAlign: "left", padding: "12px 16px", border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)", background: on ? "rgba(184,149,106,0.1)" : "transparent", cursor: "pointer", fontFamily: "inherit", color: "#fff" }}>
+        {on && <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: GOLD_LIGHT }} />}
+        <Avatar nombre={quien} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: m.noLeido ? 800 : 600, color: m.noLeido ? "#fff" : "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{carpeta === "enviados" || m.borrador ? `Para: ${quien}` : quien}</span>
+            {m.spam && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
+            {m.adjuntos && <span style={{ color: "rgba(255,255,255,0.4)", display: "inline-flex" }}><Ico d={I.clip} s={13} /></span>}
+            <span style={{ fontSize: 11.5, color: m.noLeido ? GOLD_LIGHT : "rgba(255,255,255,0.4)", fontWeight: m.noLeido ? 700 : 500, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+            {m.noLeido && <span style={{ width: 7, height: 7, borderRadius: "50%", background: GOLD_LIGHT, flexShrink: 0 }} />}
+            <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 13, fontWeight: m.noLeido ? 700 : 500, color: m.noLeido ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.asunto || "(sin asunto)"}</p>
+          </div>
+          <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.extracto}</p>
+        </div>
       </button>; })}
       {cargando && <p style={{ textAlign: "center", color: "rgba(255,255,255,0.4)", padding: "1rem 0", fontSize: 12.5 }}>Cargando…</p>}
-      {sig && !cargando && <button onClick={() => cargarLista(true)} style={{ width: "100%", padding: "12px", border: "none", background: "transparent", color: GOLD_LIGHT, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Ver más</button>}
+      {sig && !cargando && <button onClick={() => cargarLista(true)} style={{ width: "100%", padding: "14px", border: "none", background: "transparent", color: GOLD_LIGHT, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Ver más</button>}
     </div>
   </div>;
 
-  const panelMensaje = abierto ? <div style={{ minWidth: 0, borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", padding: celu ? "14px" : "18px 20px" }}>
-    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+  const noLeido = async (m) => { try { await api(null, { accion: "leido", id: m.id, leido: false }); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: true } : x)); cargarCarpetas(); toast("Marcado como no leído", "success"); setAbierto(null); if (celu) setVista("lista"); } catch (e) { toast(e.message, "error"); } };
+  const tipoArchivo = (a) => { const n = String(a.nombre || "").toLowerCase(); return /\.pdf$/.test(n) ? ["PDF", "#ef4444"] : /\.(png|jpe?g|gif|webp|heic)$/.test(n) ? ["IMG", "#a78bfa"] : /\.(xlsx?|csv)$/.test(n) ? ["XLS", "#22c55e"] : /\.(docx?)$/.test(n) ? ["DOC", "#3b82f6"] : ["ARCH", "#94a3b8"]; };
+  const panelMensaje = abierto ? <div style={{ minWidth: 0, height: celu ? "auto" : "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", padding: celu ? "0 0 12px" : "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, flexWrap: "wrap" }}>
       {celu && <button onClick={() => { setVista("lista"); setAbierto(null); }} style={btnIco} aria-label="Volver"><Ico d={I.volver} /></button>}
-      <span style={{ flex: 1 }} />
-      <button onClick={() => responder(abierto)} disabled={abierto.cargando} style={btnTxt}><Ico d={I.responder} s={15} />Responder a todos</button>
+      <button onClick={() => responder(abierto)} disabled={abierto.cargando} style={{ ...btnTxt, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628" }}><Ico d={I.responder} s={15} />Responder a todos</button>
       <button onClick={() => reenviar(abierto)} disabled={abierto.cargando} style={btnTxt}><Ico d={I.reenviar} s={15} />Reenviar</button>
-      <button onClick={() => papelera(abierto)} style={btnIco} aria-label="Papelera"><Ico d={I.papelera} s={15} /></button>
+      <span style={{ flex: 1 }} />
+      <button onClick={() => noLeido(abierto)} style={btnIco} aria-label="Marcar como no leído" title="Marcar como no leído"><Ico d={["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z", "M22 6l-10 7L2 6"]} s={15} /></button>
+      <button onClick={() => papelera(abierto)} style={{ ...btnIco, color: "#fca5a5" }} aria-label="Papelera" title="Mover a la papelera"><Ico d={I.papelera} s={15} /></button>
     </div>
-    <p style={{ fontSize: 18, fontWeight: 800, color: "#fff", margin: "0 0 10px", lineHeight: 1.3 }}>{abierto.asunto || "(sin asunto)"}</p>
-    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", margin: 0, wordBreak: "break-word" }}><b style={{ color: "#fff" }}>{nombreDe(abierto.de)}</b> <span style={{ color: "rgba(255,255,255,0.45)" }}>{String(abierto.de).match(/<([^>]+)>/)?.[1] || ""}</span></p>
-    <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "2px 0 14px" }}>Para {abierto.para}{abierto.cc ? ` · Cc ${abierto.cc}` : ""} · {abierto.fecha ? new Date(abierto.fecha).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</p>
-    {abierto.cargando ? <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Cargando…</p> : <>
-      {abierto.adjuntos?.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        {abierto.adjuntos.map((a) => <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 11, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)", maxWidth: "100%" }}>
-          <Ico d={I.clip} s={14} />
-          <button onClick={() => verAdjunto(abierto, a)} style={{ border: "none", background: "transparent", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: 0, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "inherit" }}>{a.nombre}</button>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{pesoTxt(a.tamano)}</span>
-          <button onClick={() => bajar(abierto, a)} aria-label="Descargar" style={{ ...btnIco, width: 28, height: 28 }}><Ico d={I.bajar} s={14} /></button>
-        </div>)}
-      </div>}
-      {abierto.html ? <CuerpoMail key={abierto.id} html={abierto.html} />
-        : <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, color: "rgba(255,255,255,0.85)", margin: 0, lineHeight: 1.6 }}>{abierto.texto}</pre>}
-    </>}
-  </div> : !celu && <div style={{ display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16, border: "1px dashed rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.3)", fontSize: 13, minHeight: 300 }}>Elegí un mail</div>;
+    <div style={{ flex: 1, overflowY: celu ? "visible" : "auto", minHeight: 0, padding: celu ? "14px 0" : "20px 24px 28px" }}>
+      <p style={{ fontSize: 21, fontWeight: 800, color: "#fff", margin: "0 0 16px", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{abierto.asunto || "(sin asunto)"}</p>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
+        <Avatar nombre={nombreDe(abierto.de)} tam={40} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 14, color: "#fff", margin: 0, fontWeight: 800, wordBreak: "break-word" }}>{nombreDe(abierto.de)} <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 500, fontSize: 12.5 }}>{String(abierto.de).match(/<([^>]+)>/)?.[1] || ""}</span></p>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "2px 0 0", wordBreak: "break-word" }}>Para {abierto.para}{abierto.cc ? ` · Cc ${abierto.cc}` : ""}</p>
+        </div>
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", whiteSpace: "nowrap" }}>{abierto.fecha ? new Date(abierto.fecha).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+      </div>
+      {abierto.cargando ? <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Cargando…</p> : <>
+        {abierto.adjuntos?.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 8, marginBottom: 16 }}>
+          {abierto.adjuntos.map((a) => { const [t, c] = tipoArchivo(a); return <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 8px 10px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)", minWidth: 0 }}>
+            <span style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `${c}22`, color: c, fontSize: 9.5, fontWeight: 900, letterSpacing: "0.04em" }}>{t}</span>
+            <button onClick={() => verAdjunto(abierto, a)} title={a.nombre} style={{ flex: 1, minWidth: 0, textAlign: "left", border: "none", background: "transparent", color: "#fff", cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
+              <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span>
+              <span style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{pesoTxt(a.tamano)}</span>
+            </button>
+            <button onClick={() => bajar(abierto, a)} aria-label="Descargar" title="Descargar" style={{ ...btnIco, width: 30, height: 30 }}><Ico d={I.bajar} s={14} /></button>
+          </div>; })}
+        </div>}
+        {abierto.html ? <CuerpoMail key={abierto.id} html={abierto.html} />
+          : <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, color: "rgba(255,255,255,0.85)", margin: 0, lineHeight: 1.6 }}>{abierto.texto}</pre>}
+      </>}
+    </div>
+  </div> : !celu && <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "rgba(255,255,255,0.35)" }}>
+    <span style={{ width: 64, height: 64, borderRadius: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(184,149,106,0.1)", color: GOLD_LIGHT }}><Ico d={I.bandeja} s={28} /></span>
+    <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.55)" }}>Elegí un mail para leerlo</p>
+    {nCarpeta > 0 && <p style={{ margin: 0, fontSize: 12.5 }}>{nCarpeta} sin leer en {titulo}</p>}
+  </div>;
 
   return <div>
+    <style>{`.mp-fila[data-on="0"]:hover{background:rgba(255,255,255,0.05)!important}.mp-mail[data-on="0"]:hover{background:rgba(255,255,255,0.035)!important}`}</style>
     {celu
       ? (vista === "carpetas" ? panelCarpetas : vista === "mensaje" && abierto ? panelMensaje : panelLista)
-      : <div style={{ display: "grid", gridTemplateColumns: "200px minmax(280px,0.75fr) minmax(0,1.5fr)", gap: 16, alignItems: "start" }}>{panelCarpetas}{panelLista}{panelMensaje}</div>}
+      : <div style={{ display: "grid", gridTemplateColumns: "232px minmax(320px,400px) minmax(0,1fr)", height: "calc(100vh - 96px)", minHeight: 560, borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)", background: "linear-gradient(180deg,rgba(13,24,45,0.92),rgba(8,16,32,0.96))", boxShadow: "0 20px 50px rgba(0,0,0,0.3)", overflow: "hidden" }}>
+        <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", overflowY: "auto", background: "rgba(0,0,0,0.12)" }}>{panelCarpetas}</div>
+        <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", minHeight: 0, overflow: "hidden" }}>{panelLista}</div>
+        <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>{panelMensaje}</div>
+      </div>}
     {redactar && <Redactar inicial={redactar} celu={celu} api={api} onCerrar={(enviado) => { setRedactar(null); if (enviado && (carpeta === "enviados" || carpeta === "borradores")) cargarLista(false); }} />}
     {filtrosAbierto && <Filtros api={api} celu={celu} onCerrar={() => { setFiltrosAbierto(false); cargarCarpetas(); }} />}
   </div>;
+}
+
+// Avatar con las iniciales; el color sale del nombre (siempre el mismo para el mismo remitente).
+function Avatar({ nombre, tam = 34 }) {
+  const n = String(nombre || "?").replace(/["']/g, "").trim();
+  const ini = (n.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("") || "?").toUpperCase();
+  let h = 0; for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return <span style={{ width: tam, height: tam, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `hsl(${h} 45% 32%)`, color: `hsl(${h} 80% 85%)`, fontSize: tam * 0.36, fontWeight: 800, letterSpacing: "0.02em" }}>{ini}</span>;
 }
 
 // Cuerpo HTML del mail: sin scripts, pero con allow-same-origin para medir el alto y mostrarlo entero
