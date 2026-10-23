@@ -8955,6 +8955,13 @@ function FinancePanel({token}){
 // Block para registrar/editar la fecha en la que el carrier recolectó el paquete.
 // UPS = input manual (con DatePicker del sistema). DHL/FedEx = se muestra automático desde el sync de tracking.
 
+// Pedidos de DSI respondidos por el courier (22/10/2026): el layout pregunta cada 2 min a
+// /api/aereo/dsi y avisa con "ac_dsi_estado"; la campanita de Aéreos y el chip del vuelo lo leen de acá.
+let DSI_RESPONDIDOS=new Set();
+const fijarDsiRespondidos=(ids)=>{DSI_RESPONDIDOS=new Set(ids||[]);if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_dsi_estado"));};
+function useDsiRespondidos(){const [v,setV]=useState(DSI_RESPONDIDOS);useEffect(()=>{const h=()=>setV(DSI_RESPONDIDOS);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
+const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[]);}catch{}};
+
 // Recibo de un cobro: el número se asigna la primera vez que se imprime (secuencia en la base).
 async function imprimirReciboPago({token,op,payment,client,payments}){
   let nro=payment.receipt_number||null;
@@ -9077,8 +9084,80 @@ async function aplicarDsiAOp(token,opId,dsi){
 // Abre un documento del legajo (bucket privado): la pestaña se abre antes para que no la bloquee el navegador.
 async function abrirDocLegajo(token,path){const w=window.open("about:blank","_blank");const u=await urlFirmada(token,path);if(u&&w)w.location=u;else{w?.close();toast("No se pudo abrir el archivo","error");}}
 
-// Documentación del vuelo (22/10/2026): se suben de una las DSI y las facturas del courier (archivo,
-// arrastrar o ⌘V). Cada una se asigna sola a su op (guía, CUIT o apellido del destinatario); lo que no
+// Pedido de DSI por mail (22/10/2026): se le pide al courier con el Gmail conectado ("Solicitud DSI
+// <guía>"); cuando contesta, acá se ve el mail y con "Es la DSI" el adjunto pasa al legajo del vuelo.
+function PedidoDsiVuelo({flight,token,onAdjuntar}){
+  const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);
+  const cargar=useCallback(async()=>{try{const r=await fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flight.id}`,{headers:{Authorization:`Bearer ${token}`}});const j=await r.json();if(r.ok)setD(j);else setD({error:j.error||"x"});}catch{setD({error:"x"});}},[flight.id,token]);
+  useEffect(()=>{cargar();},[cargar]);
+  if(!d||d.error||!d.guia)return null;
+  const fecha=v=>new Date(v).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+  const nombreDe=(de)=>String(de||"").replace(/<[^>]+>/,"").replace(/"/g,"").trim()||de;
+  const enviar=async()=>{
+    if(!form.para.trim()){toast("Falta a quién se lo mandamos","error");return;}
+    setEnviando(true);
+    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...form})});const j=await r.json();
+      if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
+      toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();}
+    catch(e){toast(e.message,"error");}
+    setEnviando(false);
+  };
+  const traer=async(m,a)=>{const r=await fetch(`/api/aereo/dsi?accion=adjunto&msg=${m.id}&adj=${encodeURIComponent(a.id)}&nombre=${encodeURIComponent(a.nombre)}&tipo=${encodeURIComponent(a.tipo||"application/pdf")}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error("No se pudo bajar el adjunto");return r.blob();};
+  const ver=async(m,a)=>{const w=window.open("about:blank","_blank");try{const b=await traer(m,a);if(w)w.location=URL.createObjectURL(b);}catch(e){w?.close();toast(e.message,"error");}};
+  const esLaDsi=async(m,a)=>{
+    setUsando(a.id);
+    try{const b=await traer(m,a);await onAdjuntar(new File([b],a.nombre||"DSI.pdf",{type:a.tipo||b.type||"application/pdf"}));
+      if(d.pedido&&!d.pedido.revisado_at){await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);}
+      await cargar();}
+    catch(e){toast(e.message,"error");}
+    setUsando(null);
+  };
+  const revisado=async()=>{await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id})});refrescarDsiEstado(token);cargar();};
+  const p=d.pedido;const respuestas=(d.mensajes||[]).filter(m=>!m.mio);const nueva=p?.respuesta_at&&!p.revisado_at;
+  const INP={width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",outline:"none"};
+  const LBL={display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 5px"};
+  const btn=(txt,fn,c="#E8D098",extra={})=><button type="button" onClick={fn} disabled={extra.disabled} style={{height:32,padding:"0 12px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12,fontWeight:800,cursor:extra.disabled?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
+  return <div style={{marginBottom:12,padding:"12px 14px",borderRadius:12,background:nueva?"rgba(59,130,246,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${nueva?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.08)"}`}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <span style={{fontSize:17}}>{nueva?"📬":p?"✉️":"📨"}</span>
+      <div style={{flex:"1 1 200px",minWidth:0}}>
+        <p style={{margin:0,fontSize:13,fontWeight:800,color:nueva?"#93c5fd":"#fff"}}>{!p?"Pedir la DSI al courier":p.respuesta_at?`Respondió ${nombreDe(p.respuesta_de)}`:"DSI pedida · esperando respuesta"}</p>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!p?`Mail con asunto "${d.plantilla.asunto}"${d.conectado?"":" · el Gmail no está conectado"}`:p.respuesta_at?`${fecha(p.respuesta_at)} · pedida el ${fecha(p.enviado_at)} a ${p.para}`:`Pedida el ${fecha(p.enviado_at)} a ${p.para}`}</p>
+      </div>
+      {!p&&d.conectado&&!form&&btn("✉ Pedir DSI por mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}))}
+      {p&&!form&&btn("Volver a pedir",()=>setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
+      {nueva&&btn("✓ Revisado",revisado,"#4ade80")}
+    </div>
+    {form&&<div style={{marginTop:12,display:"grid",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+        <div><span style={LBL}>Para</span><input value={form.para} onChange={e=>setForm(f=>({...f,para:e.target.value}))} placeholder="dsi@courier.com" style={INP}/></div>
+        <div><span style={LBL}>CC (opcional)</span><input value={form.cc} onChange={e=>setForm(f=>({...f,cc:e.target.value}))} style={INP}/></div>
+      </div>
+      <div><span style={LBL}>Asunto</span><div style={{...INP,background:"rgba(0,0,0,0.15)",color:"rgba(255,255,255,0.7)"}}>{d.plantilla.asunto}</div></div>
+      <div><span style={LBL}>Mensaje</span><textarea data-enter-libre="1" value={form.texto} onChange={e=>setForm(f=>({...f,texto:e.target.value}))} rows={6} style={{...INP,resize:"vertical",lineHeight:1.5}}/></div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{flex:1,fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>Para y mensaje quedan guardados para los próximos vuelos de {d.carrier||"este courier"}.</span>
+        <button type="button" onClick={()=>setForm(null)} disabled={enviando} style={{height:34,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+        <button type="button" onClick={enviar} disabled={enviando} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit"}}>{enviando?"Enviando…":"Enviar pedido"}</button>
+      </div>
+    </div>}
+    {respuestas.map(m=><div key={m.id} style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.07)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{nombreDe(m.de)} <span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}>· {fecha(m.fecha)}</span></span>
+        {m.texto&&<button type="button" onClick={()=>setAbierto(abierto===m.id?null:m.id)} style={{background:"none",border:"none",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{abierto===m.id?"Ocultar mail":"Ver mail"}</button>}
+      </div>
+      {abierto===m.id&&<p style={{margin:"8px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",lineHeight:1.5,maxHeight:260,overflowY:"auto"}}>{m.texto}</p>}
+      {m.adjuntos.length>0?<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{m.adjuntos.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <span style={{flex:"1 1 160px",minWidth:0,fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.nombre}>📎 {a.nombre}</span>
+        {btn("Ver",()=>ver(m,a),"#93c5fd")}
+        {btn(usando===a.id?"Adjuntando…":"Es la DSI",()=>esLaDsi(m,a),"#E8D098",{disabled:!!usando})}
+      </div>)}</div>:<p style={{margin:"6px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Sin adjuntos</p>}
+    </div>)}
+  </div>;
+}
+
+// Documentación del vuelo (22/10/2026): DSI y facturas del courier, cada una con su botón (archivo,
+// arrastrar o ⌘V sobre el botón). Cada una se asigna sola a su op (guía, CUIT o apellido del destinatario); lo que no
 // se puede asignar queda abajo para elegir. Sin todo completo no se puede marcar el vuelo recibido.
 function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   const opIds=(flightOps||[]).map(fo=>fo.operation_id).filter(Boolean);
@@ -9144,6 +9223,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   </label>;
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
+    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f)=>procesar([f],"dsi")}/>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi","🛃","Subir DSI")}{zona("factura_courier","📑","Subir factura courier")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
@@ -11367,6 +11447,7 @@ function AgentsPanel({token}){
   const [reenvios,setReenvios]=useState([]); // pedidos de reenvío a otro depósito (forward_requests)
   const [reenvioModal,setReenvioModal]=useState(null); // {agentId,agentName,cliente,operationId,packages}
   const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set());
+  const dsiRespondidos=useDsiRespondidos();
   const [reclamosN,setReclamosN]=useState(0); // reclamos de depósito abiertos (badge de la solapa)
   const [opsLiberadas,setOpsLiberadas]=useState(()=>new Set()); // ops con evento de liberación de aduana del courier // códigos FL con "Extraer bultos con IA" ya aplicado
   const [lo,setLo]=useState(true);
@@ -12398,6 +12479,7 @@ function AgentsPanel({token}){
             if(f.dispatched_at&&!Number(f.total_cost_usd))warns.push({t:"COSTO",c:"#f87171",title:"Despachado sin costo del agente cargado"});
             if(f.status==="recibido"&&ops.some(fo=>Number(fo.operations?.budget_taxes||0)>0&&!Number(fo.operations?.cost_impuestos_reales)))warns.push({t:"IMP",c:"#a78bfa",title:"Hay ops con impuestos presupuestados sin cargar el costo real de aduana"});
             // Desglose del courier subido y todavía no pasado a las ops (Extraer bultos con IA).
+            if(dsiRespondidos.has(f.id))warns.push({t:"📬 DSI",c:"#60a5fa",title:"El courier respondió el pedido de DSI: abrí el vuelo para adjuntarla"});
             if(f.dispatch_photo_url&&f.status!=="recibido"&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
@@ -17416,6 +17498,9 @@ function AdminDashboard({session,onLogout}){
   const [blogPend,setBlogPend]=useState(0);
   // Globo del Email: no leídos de la bandeja (se refresca cada 60 s y cuando el panel de mail avisa).
   const [mailUnread,setMailUnread]=useState(0);
+  // Campanita de Aéreos: el courier respondió un pedido de DSI (admin y empleado).
+  const dsiResp=useDsiRespondidos();
+  useEffect(()=>{if(!token)return;refrescarDsiEstado(token);const id=setInterval(()=>{if(!document.hidden)refrescarDsiEstado(token);},120000);return()=>clearInterval(id);},[token]);
   useEffect(()=>{if(!token||isEmpleado)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/mail?accion=no_leidos",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setMailUnread(Number(b.n)||0);}catch{}};f();const id=setInterval(()=>{if(!document.hidden)f();},60000);const h=e=>setMailUnread(Number(e.detail)||0);window.addEventListener("ac_mail_noleidos",h);return()=>{on=false;clearInterval(id);window.removeEventListener("ac_mail_noleidos",h);};},[token]);
   useEffect(()=>{if(!token)return;let on=true;const f=async()=>{try{const r=await fetch("/api/admin/studio?view=blog_count",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(on&&r.ok)setBlogPend(Number(b.pendientes)||0);}catch{}};f();const id=setInterval(()=>{if(!document.hidden)f();},300000);return()=>{on=false;clearInterval(id);};},[token,page]);
   useEffect(()=>{let mounted=true;const load=async()=>{try{const r=await fetch("/api/admin/bot?count=1",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(mounted&&r.ok)setBotUnread(Number(b.unread||0));}catch{}};load();const iv=setInterval(()=>{if(!document.hidden)load();},60000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
@@ -17431,7 +17516,7 @@ function AdminDashboard({session,onLogout}){
     {/* Sidebar nav agrupado por secciones — sentence case, tipografía Inter limpia */}
     <nav style={{flex:1,padding:"10px 10px 14px",overflowY:"auto"}}>{navSections.map(sec=><div key={sec.section} style={{marginTop:16}}>
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
-      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
+      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="agents"&&dsiResp.size>0&&<span title={`El courier respondió ${dsiResp.size===1?"un pedido":`${dsiResp.size} pedidos`} de DSI`} style={{background:"#3b82f6",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,display:"inline-flex",alignItems:"center",gap:3}}>🔔 {dsiResp.size}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}{item.key==="blog"&&blogPend>0&&<span title={`${blogPend} nota${blogPend>1?"s":""} esperando tu visto`} style={{background:"#fbbf24",color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{blogPend}</span>}</button>;})}
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;
