@@ -8973,12 +8973,23 @@ async function imprimirReciboPago({token,op,payment,client,payments}){
   return nro;
 }
 
+// Marcas de los documentos del legajo (22/10/2026): ARCA en la DSI, el courier en su factura y
+// Argencargo en la suya (logo en el ícono, color de fondo y el logo grande y tenue de marca de agua).
+const MARCA_COURIER={fedex:{logo:"/brand/couriers/fedex.svg",fondo:"#fff",tinte:"#7c3aed"},dhl:{logo:"/brand/couriers/dhl.svg",fondo:"#FFCC00",tinte:"#FFCC00"},ups:{logo:"/brand/couriers/ups.svg",fondo:"#fff",tinte:"#FFB500"}};
+const marcaCourier=(c)=>MARCA_COURIER[String(c||"").toLowerCase().replace(/[^a-z]/g,"")]||null;
+const MARCA_DSI={logo:"/brand/arca.png",fondo:"#25305a",tinte:"#6cc4dc",cubre:true};
+const MARCA_AC={logo:"/argencargo/isotipo.png",fondo:"rgba(29,111,216,0.14)",tinte:"#3b82f6"};
+const logoMarca=(m,size=42)=><span style={{width:size,height:size,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:m.fondo,overflow:"hidden",padding:m.cubre?0:5,boxSizing:"border-box"}}><img src={m.logo} alt="" style={{width:"100%",height:"100%",objectFit:m.cubre?"cover":"contain",display:"block"}}/></span>;
+const aguaMarca=(m)=>m&&<img src={m.logo} alt="" aria-hidden="true" style={{position:"absolute",right:-16,bottom:-20,height:116,maxWidth:"60%",objectFit:"contain",opacity:0.08,pointerEvents:"none",borderRadius:m.cubre?"50%":0}}/>;
+
 // Solapa Legajo (22/10/2026): factura de Argencargo (de ARCA, no obligatoria), factura del courier y
 // DSI (obligatorias para cerrar) y los recibos de cada cobro. Qué ve el cliente: RI con entrega directa
 // que paga los impuestos lo ve solo; otros RI, con el tilde; monotributo y consumidor final, nunca.
 function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,flash}){
   const [docs,setDocs]=useState([]);const [sinTabla,setSinTabla]=useState(false);const [facturas,setFacturas]=useState([]);
   const [ocupado,setOcupado]=useState(null);const [drag,setDrag]=useState(null);
+  // ⌘V va al cuadro que se tocó antes (DSI o factura del courier): sin elegir, no se adivina.
+  const [pegarEn,setPegarEn]=useState(null);
   const cargar=useCallback(async()=>{
     const l=await listarLegajo(token,{opIds:[op.id]});setDocs(l.docs);setSinTabla(!l.ok);
     const f=await dq("invoices",{token,filters:`?operation_id=eq.${op.id}&status=eq.emitida&select=id,tipo_cbte,punto_venta,numero,fecha,importe,moneda,public_token,anula_id&order=created_at.asc`});
@@ -9006,28 +9017,29 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
   useEffect(()=>{
     const hp=(e)=>{if(!document.querySelector("[data-legajo-op]"))return;const f=[...(e.clipboardData?.files||[])][0];if(!f)return;e.preventDefault();
-      // Pegado: si dice "Destinación simplificada" es la DSI, si no la factura del courier.
-      (async()=>{let tipo=!doc("factura_courier")&&doc("dsi")?"factura_courier":"dsi";try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,f);if(info.tipo)tipo=info.tipo;}catch{}subir(tipo,f);})();};
+      if(!pegarEn){toast("Tocá primero el cuadro de la DSI o de la factura del courier y después pegá","info");return;}
+      subir(pegarEn,f);};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
   const fmtUsd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const fFecha=v=>v?new Date(String(v).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"";
   const ESTADO={ok:["Cargada","#4ade80","rgba(34,197,94,0.12)","rgba(34,197,94,0.35)"],falta:["Falta","#fbbf24","rgba(251,191,36,0.1)","rgba(251,191,36,0.35)"],opc:["Opcional","rgba(255,255,255,0.55)","rgba(255,255,255,0.05)","rgba(255,255,255,0.14)"]};
   // Cada documento es una tarjeta: estado arriba, detalle y acciones abajo (rediseño 22/10/2026).
-  const tarjeta=({k,icono,titulo,estado,detalle,acciones,drop})=>{const [el,c,bg,bd]=ESTADO[estado];const arrastrando=drop&&drag===k;return <div key={k} {...(drop?{onDragOver:e=>{e.preventDefault();if(drag!==k)setDrag(k);},onDragLeave:e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);},onDrop:e=>{e.preventDefault();setDrag(null);subir(k,e.dataTransfer?.files?.[0]);}}:{})}
-    style={{display:"flex",flexDirection:"column",gap:12,padding:"16px 16px 14px",borderRadius:16,background:arrastrando?"rgba(232,208,152,0.08)":"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))",border:`1px ${estado==="falta"?"dashed":"solid"} ${arrastrando?"#E8D098":estado==="falta"?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.08)"}`,transition:"background 150ms, border-color 150ms"}}>
-    <div style={{display:"flex",alignItems:"center",gap:12}}>
-      <span style={{width:42,height:42,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:bg,fontSize:19}}>{icono}</span>
+  const tarjeta=({k,icono,marca,titulo,estado,detalle,acciones,drop})=>{const [el,c,bg,bd]=ESTADO[estado];const arrastrando=drop&&drag===k;const elegida=drop&&pegarEn===k;const t=marca?.tinte;return <div key={k} onClick={drop?()=>setPegarEn(k):undefined} {...(drop?{onDragOver:e=>{e.preventDefault();if(drag!==k)setDrag(k);},onDragLeave:e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);},onDrop:e=>{e.preventDefault();setDrag(null);subir(k,e.dataTransfer?.files?.[0]);}}:{})}
+    style={{position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",gap:12,padding:"16px 16px 14px",borderRadius:16,cursor:drop?"pointer":"default",background:arrastrando?"rgba(232,208,152,0.08)":t?`linear-gradient(135deg,${t}24,rgba(255,255,255,0.015) 60%)`:"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))",border:`${elegida?2:1}px ${estado==="falta"&&!elegida?"dashed":"solid"} ${arrastrando||elegida?"#E8D098":t?`${t}66`:estado==="falta"?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.08)"}`,boxShadow:elegida?"0 0 0 4px rgba(232,208,152,0.12)":"none",transition:"background 150ms, border-color 150ms, box-shadow 150ms"}}>
+    {aguaMarca(marca)}
+    <div style={{display:"flex",alignItems:"center",gap:12,position:"relative"}}>
+      {marca?logoMarca(marca):<span style={{width:42,height:42,borderRadius:12,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:bg,fontSize:19}}>{icono}</span>}
       <p style={{flex:1,minWidth:0,margin:0,fontSize:14,fontWeight:800,color:"#fff",lineHeight:1.3}}>{titulo}</p>
       <span style={{fontSize:10.5,fontWeight:800,padding:"4px 9px",borderRadius:999,letterSpacing:"0.06em",textTransform:"uppercase",color:c,background:bg,border:`1px solid ${bd}`,whiteSpace:"nowrap"}}>{el}</span>
     </div>
-    <div style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.5,minHeight:19}}>{detalle}</div>
-    {acciones&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:"auto"}}>{acciones}</div>}
+    <div style={{position:"relative",fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.5,minHeight:19}}>{elegida?<span style={{color:"#E8D098",fontWeight:800}}>Listo: pegá el archivo con ⌘V</span>:detalle}</div>
+    {acciones&&<div style={{position:"relative",display:"flex",gap:6,flexWrap:"wrap",marginTop:"auto"}}>{acciones}</div>}
   </div>;};
   const bt=(txt,fn,c="#E8D098",key)=><button key={key} type="button" onClick={fn} style={{height:34,padding:"0 13px",borderRadius:9,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
   const subirBtn=(tipo,txt)=><label style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(232,208,152,0.45)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:ocupado?"wait":"pointer",whiteSpace:"nowrap"}}>{ocupado===tipo?"Subiendo…":txt}<input type="file" accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{subir(tipo,e.target.files?.[0]);e.target.value="";}}/></label>;
-  const docTarjeta=(tipo,icono)=>{const d=doc(tipo);return tarjeta({k:tipo,icono,titulo:TIPOS_LEGAJO[tipo].l,estado:d?"ok":"falta",drop:true,
-    detalle:d?<><span style={{color:"#fff",fontWeight:600}}>{d.file_name||"Archivo"}</span><br/>{fFecha(d.uploaded_at)}{d.flight_id?" · desde el vuelo":""}</>:"Obligatoria para cerrar. Arrastrala acá, pegala con ⌘V o subila.",
+  const docTarjeta=(tipo,icono,marca)=>{const d=doc(tipo);return tarjeta({k:tipo,icono,marca,titulo:TIPOS_LEGAJO[tipo].l,estado:d?"ok":"falta",drop:true,
+    detalle:d?<><span style={{color:"#fff",fontWeight:600}}>{d.file_name||"Archivo"}</span><br/>{fFecha(d.uploaded_at)}{d.flight_id?" · desde el vuelo":""}</>:"Obligatoria para cerrar. Tocá el cuadro y pegala con ⌘V, arrastrala o subila.",
     acciones:d?<>{d.storage_path?bt("Ver",()=>abrirDocLegajo(token,d.storage_path),"#93c5fd"):<span style={{fontSize:12,color:"rgba(255,255,255,0.45)",alignSelf:"center"}}>Archivo eliminado (180 días)</span>}{subirBtn(tipo,"Reemplazar")}{bt("Quitar",()=>quitar(d),"#f87171")}</>:subirBtn(tipo,`Subir ${TIPOS_LEGAJO[tipo].corto}`)});};
   const facturar=()=>{window.__facturarOp=op.operation_code;window.dispatchEvent(new CustomEvent("ac_go_facturas"));};
   const obligatorios=Object.keys(TIPOS_LEGAJO).length;
@@ -9035,9 +9047,9 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{faltan.length?`${obligatorios-faltan.length} de ${obligatorios} obligatorios`:"✓ Completo"}</span></span>} sub={faltan.length?`Falta ${nombresFaltan(faltan)} · sin eso no se puede cerrar la operación`:"Listo para cerrar"}>
       {sinTabla&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql).</p>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
-        {docTarjeta("dsi","🛃")}
-        {docTarjeta("factura_courier","📑")}
-        {tarjeta({k:"factura_ac",icono:"🧾",titulo:"Factura de Argencargo",estado:facturas.length?"ok":"opc",
+        {docTarjeta("dsi","🛃",MARCA_DSI)}
+        {docTarjeta("factura_courier","📑",marcaCourier(op.international_carrier))}
+        {tarjeta({k:"factura_ac",icono:"🧾",marca:MARCA_AC,titulo:"Factura de Argencargo",estado:facturas.length?"ok":"opc",
           detalle:facturas.length?facturas.map(f=><div key={f.id}><span style={{color:"#fff",fontWeight:600}}>{f.tipo_cbte===13?"Nota de crédito C":"Factura C"} {String(f.punto_venta).padStart(4,"0")}-{String(f.numero).padStart(8,"0")}</span> · {fFecha(f.fecha)}</div>):"Todavía no se facturó. No es obligatoria para cerrar.",
           acciones:facturas.length?facturas.map(f=><a key={f.id} href={`/factura/${f.public_token}`} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Ver {String(f.numero).padStart(8,"0")}</a>)
             :<button type="button" onClick={facturar} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>🧾 Facturar</button>})}
@@ -9163,7 +9175,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   const opIds=(flightOps||[]).map(fo=>fo.operation_id).filter(Boolean);
   const clave=opIds.join(",");
   const [ops,setOps]=useState([]);const [docs,setDocs]=useState([]);const [sinTabla,setSinTabla]=useState(false);
-  const [pend,setPend]=useState([]);const [ocupado,setOcupado]=useState(null);const [drag,setDrag]=useState(null);const zonaRef=useRef(null);
+  const [pend,setPend]=useState([]);const [ocupado,setOcupado]=useState(null);const [drag,setDrag]=useState(null);const [pegarEn,setPegarEn]=useState(null);
   const cargar=useCallback(async()=>{
     if(!clave)return;
     const o=await dq("operations",{token,filters:`?id=in.(${clave})&select=id,operation_code,channel,service_type,international_tracking,client_id,clients(first_name,last_name,company_name,cuit,tax_condition)&order=operation_code.asc`});
@@ -9205,8 +9217,10 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     setOcupado(null);
   };
   useEffect(()=>{
-    // ⌘V: va al botón que tiene el mouse encima (o el último que se tocó); si no, se adivina.
-    const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();procesar(fs,zonaRef.current);}};
+    // ⌘V: va al cuadro que se tocó antes (DSI o factura del courier); sin elegir no se adivina.
+    const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(!fs.length)return;e.preventDefault();
+      if(!pegarEn){toast("Tocá primero el cuadro de la DSI o de la factura del courier y después pegá","info");return;}
+      procesar(fs,pegarEn);};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
   const nombre=(o)=>o.clients?(o.clients.company_name||`${o.clients.first_name||""} ${o.clients.last_name||""}`).trim():"";
@@ -9214,17 +9228,27 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     ?<button type="button" onClick={()=>d.storage_path?abrirDocLegajo(token,d.storage_path):toast("El archivo se eliminó a los 180 días","info")} title={d.file_name||""} style={{height:28,padding:"0 10px",borderRadius:8,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.1)",color:"#4ade80",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✓ {TIPOS_LEGAJO[t].corto}</button>
     :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(251,191,36,0.45)",color:"#fbbf24",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>Falta {TIPOS_LEGAJO[t].corto}</span>;
   const recibido=flight.status==="recibido";
-  const zona=(tipo,icono,txt)=><label onMouseEnter={()=>{zonaRef.current=tipo;}} onMouseLeave={()=>{if(zonaRef.current===tipo)zonaRef.current=null;}}
+  // Estado del cuadro: cargado cuando todas las ops del vuelo ya tienen ese documento.
+  const zona=(tipo,marca,icono,txt)=>{const elegida=pegarEn===tipo,t=marca?.tinte||"#E8D098";
+    const conDoc=opsLeg.filter(o=>doc(o.id,tipo)),faltanZ=opsLeg.filter(o=>!doc(o.id,tipo));
+    const lista=opsLeg.length>0&&faltanZ.length===0,primero=conDoc[0]?doc(conDoc[0].id,tipo):null;
+    const titulo=ocupado===tipo?"Leyendo…":lista?`✓ ${txt.replace(/^Subir /,"")} cargada`:txt;
+    const sub=elegida?"Listo: pegá con ⌘V":lista?(primero?.file_name||"Cargada"):conDoc.length?`Falta en ${faltanZ.map(o=>o.operation_code).join(", ")} · tocá acá y pegá con ⌘V`:"Tocá acá y pegá con ⌘V, o arrastrá";
+    return <div onClick={()=>setPegarEn(tipo)}
     onDragOver={e=>{e.preventDefault();if(drag!==tipo)setDrag(tipo);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(null);}} onDrop={e=>{e.preventDefault();setDrag(null);procesar(e.dataTransfer?.files,tipo);}}
-    style={{flex:"1 1 200px",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,border:`1.5px dashed ${drag===tipo?"#E8D098":"rgba(232,208,152,0.35)"}`,background:drag===tipo?"rgba(232,208,152,0.14)":"rgba(232,208,152,0.05)",cursor:ocupado?"wait":"pointer",transition:"background 150ms, border-color 150ms"}}>
-    <span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(232,208,152,0.12)",fontSize:17}}>{icono}</span>
-    <span style={{minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:800,color:"#E8D098"}}>{ocupado===tipo?"Leyendo…":txt}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:1}}>Elegí, arrastrá o pegá con ⌘V</span></span>
-    <input type="file" multiple accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{procesar(e.target.files,tipo);e.target.value="";}}/>
-  </label>;
+    style={{position:"relative",overflow:"hidden",flex:"1 1 240px",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,cursor:"pointer",border:`${elegida?2:1.5}px ${elegida||drag===tipo||lista?"solid":"dashed"} ${elegida||drag===tipo?"#E8D098":lista?"rgba(74,222,128,0.45)":`${t}66`}`,background:drag===tipo?"rgba(232,208,152,0.14)":`linear-gradient(135deg,${t}22,rgba(255,255,255,0.02) 60%)`,boxShadow:elegida?"0 0 0 4px rgba(232,208,152,0.12)":"none",transition:"background 150ms, border-color 150ms, box-shadow 150ms"}}>
+    {aguaMarca(marca)}
+    {marca?logoMarca(marca,38):<span style={{width:38,height:38,borderRadius:10,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(232,208,152,0.12)",fontSize:17}}>{icono}</span>}
+    <span style={{position:"relative",flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:800,color:lista&&!elegida?"#4ade80":"#fff"}}>{titulo}</span><span style={{display:"block",fontSize:11.5,color:elegida?"#E8D098":"rgba(255,255,255,0.5)",fontWeight:elegida?800:500,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span></span>
+    {lista&&primero?.storage_path&&<button type="button" onClick={e=>{e.stopPropagation();abrirDocLegajo(token,primero.storage_path);}} style={{position:"relative",height:32,padding:"0 12px",borderRadius:9,border:"1px solid rgba(147,197,253,0.45)",background:"rgba(10,22,40,0.6)",color:"#93c5fd",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Ver</button>}
+    <label onClick={e=>e.stopPropagation()} style={{position:"relative",height:32,padding:"0 12px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(232,208,152,0.45)",background:"rgba(10,22,40,0.6)",color:"#E8D098",fontSize:12,fontWeight:800,cursor:ocupado?"wait":"pointer",whiteSpace:"nowrap"}}>{lista?"Reemplazar":"Elegir archivo"}
+      <input type="file" multiple accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{procesar(e.target.files,tipo);e.target.value="";}}/>
+    </label>
+  </div>;};
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
     <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f)=>procesar([f],"dsi")}/>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi","🛃","Subir DSI")}{zona("factura_courier","📑","Subir factura courier")}</div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
       <span style={{flex:"1 1 180px",minWidth:0,fontSize:12.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.file.name}>📄 {p.file.name}{p.info?.nombre?<span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}> · {p.info.nombre}</span>:null}</span>
@@ -21772,11 +21796,18 @@ function AvisoVersion(){
 export default function AdminPage(){
   const [session,setSession]=useState(null);const [restoring,setRestoring]=useState(true);
   useAdminPush(session?.token);
-  useEffect(()=>{const s=loadSession();if(s?.token&&["admin","empleado"].includes(s?.profile?.role)){ROL_SESION=s.profile.role;setSession(s);}setRestoring(false);},[]);
+  // Ver como Facu (22/10/2026): /admin?como=empleado abre el panel con la vista del empleado sin
+  // cambiar de cuenta. Solo para el admin, solo en esta pestaña (sessionStorage) y sin tocar la sesión
+  // guardada: el servidor sigue viendo al admin, lo que cambia es lo que muestra el panel.
+  const [comoEmpleado,setComoEmpleado]=useState(false);
+  useEffect(()=>{const s=loadSession();if(s?.token&&["admin","empleado"].includes(s?.profile?.role)){
+    let como=false;try{const q=new URLSearchParams(window.location.search).get("como");if(q==="empleado")sessionStorage.setItem("ac_ver_como","empleado");if(q==="yo")sessionStorage.removeItem("ac_ver_como");como=s.profile.role==="admin"&&sessionStorage.getItem("ac_ver_como")==="empleado";if(q)window.history.replaceState(null,"",window.location.pathname);}catch{}
+    ROL_SESION=como?"empleado":s.profile.role;setComoEmpleado(como);setSession(como?{...s,profile:{...s.profile,role:"empleado"}}:s);}setRestoring(false);},[]);
+  const salirComoEmpleado=()=>{try{sessionStorage.removeItem("ac_ver_como");}catch{}window.location.reload();};
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
   if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
-  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AvisoVersion/><AdminDashboard session={session} onLogout={logout}/></>;
+  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AvisoVersion/>{comoEmpleado&&<div style={{position:"fixed",top:10,left:"50%",transform:"translateX(-50%)",zIndex:3000,display:"flex",alignItems:"center",gap:12,padding:"8px 10px 8px 16px",borderRadius:999,background:"linear-gradient(135deg,#1d4ed8,#2563eb)",border:"1px solid rgba(147,197,253,0.6)",boxShadow:"0 10px 30px rgba(0,0,0,0.45)",color:"#fff",fontSize:12.5,fontWeight:700,whiteSpace:"nowrap"}}>👁 Estás viendo el panel como Facu (empleado)<button type="button" onClick={salirComoEmpleado} style={{height:28,padding:"0 12px",borderRadius:999,border:"none",background:"#fff",color:"#1d4ed8",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Volver a mi vista</button></div>}<AdminDashboard session={session} onLogout={logout}/></>;
 }
 
 
