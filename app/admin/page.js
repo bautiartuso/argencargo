@@ -9018,8 +9018,9 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     setOcupado(tipo);
     try{
       let datos=null;
-      if(tipo==="dsi"){try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,file);if(info.tipo==="dsi")datos=info.dsi;}catch{}}
+      if(tipo==="dsi"||tipo==="factura_courier"){try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,file);if(tipo==="dsi"&&info.tipo==="dsi")datos=info.dsi;if(tipo==="factura_courier"&&info.desaduanaje)datos={desaduanaje:info.desaduanaje};}catch{}}
       await subirLegajo(token,{file,opIds:[op.id],flightId:null,tipo,datos});
+      if(tipo==="factura_courier"&&datos?.desaduanaje){try{const ok=await aplicarDesaduanajeAOp(token,op.id,datos.desaduanaje);const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=despacho_desaduanaje_usd,budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));flash(`Desaduanaje de la factura: USD ${datos.desaduanaje.usdSinIva} + IVA${ok?" · impuestos recalculados":" · se aplica cuando cargues la DSI"}`);}catch(e){console.error(e);}}
       if(tipo==="dsi"&&datos){try{if(await aplicarDsiAOp(token,op.id,datos)){const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));}}catch(e){console.error(e);}}
       await cargar();flash(`${TIPOS_LEGAJO[tipo].corto} guardada`);
     }catch(e){flash("No se pudo: "+e.message);}
@@ -9089,7 +9090,10 @@ async function aplicarDsiAOp(token,opId,dsi){
   if(!op||op.channel!=="aereo_blanco"||op.clients?.tax_condition!=="responsable_inscripto")return false;
   const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};
   const {clients:_c,...opBase}=op;
-  const opNuevo={...opBase,budget_tax_detail:{...td,dsi:{...dsi,cargado_at:new Date().toISOString()}}};
+  // Desaduanaje leído de la factura del courier (23/10/2026), si todavía no hay uno cargado a mano.
+  let desFactura=null;
+  if(!(Number(op.despacho_desaduanaje_usd)>0)){try{const fc=await dq("legajo_docs",{token,filters:`?operation_id=eq.${opId}&tipo=eq.factura_courier&borrado_at=is.null&select=datos&order=uploaded_at.desc&limit=1`});const d=Array.isArray(fc)&&fc[0]?.datos?.desaduanaje;if(d?.usdConIva>0)desFactura=d.usdConIva;}catch{}}
+  const opNuevo={...opBase,...(desFactura?{despacho_desaduanaje_usd:desFactura}:{}),budget_tax_detail:{...td,dsi:{...dsi,cargado_at:new Date().toISOString()}}};
   const [its,pks,tar,ov,cfg,decl]=await Promise.all([
     dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=*`}),
     dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=*`}),
@@ -9102,9 +9106,19 @@ async function aplicarDsiAOp(token,opId,dsi){
   const items=Array.isArray(its)?its:[];if(!items.length)return false;
   const {totalTax,taxDetail,taxesBilledByArgencargo}=calcOpBudget(opNuevo,items,Array.isArray(pks)?pks:[],Array.isArray(tar)?tar:[],configMap,Array.isArray(ov)?ov:[],{tax_condition:"responsable_inscripto"},Array.isArray(decl)?decl:[]);
   const r2=(v)=>Math.round(Number(v||0)*100)/100;
-  const body={budget_taxes:r2(totalTax),budget_tax_detail:taxDetail||null,...(taxesBilledByArgencargo?{budget_total:r2(Number(op.budget_total||0)-Number(op.budget_taxes||0)+totalTax)}:{})};
+  const body={budget_taxes:r2(totalTax),budget_tax_detail:taxDetail||null,...(desFactura?{despacho_desaduanaje_usd:desFactura}:{}),...(taxesBilledByArgencargo?{budget_total:r2(Number(op.budget_total||0)-Number(op.budget_taxes||0)+totalTax)}:{})};
   await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body});
   return true;
+}
+// Factura del courier subida (23/10/2026): su desaduanaje pasa a la op. Si la op ya tiene la DSI se
+// recalculan los impuestos; si no, queda guardado en la factura y lo toma aplicarDsiAOp cuando llegue.
+async function aplicarDesaduanajeAOp(token,opId,des){
+  if(!(des?.usdConIva>0))return false;
+  const fop=await dq("operations",{token,filters:`?id=eq.${opId}&select=despacho_desaduanaje_usd,budget_tax_detail&limit=1`});
+  const op=Array.isArray(fop)?fop[0]:null;const dsi=op?.budget_tax_detail?.dsi;
+  if(!op||!dsi)return false;
+  await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{despacho_desaduanaje_usd:des.usdConIva}});
+  return aplicarDsiAOp(token,opId,dsi);
 }
 // Abre un documento del legajo (bucket privado): la pestaña se abre antes para que no la bloquee el navegador.
 async function abrirDocLegajo(token,path){const w=window.open("about:blank","_blank");const u=await urlFirmada(token,path);if(u&&w)w.location=u;else{w?.close();toast("No se pudo abrir el archivo","error");}}
@@ -9383,8 +9397,11 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   const completo=opsLeg.every(o=>doc(o.id,"dsi")&&doc(o.id,"factura_courier"));
   const faltan=opsLeg.filter(o=>!doc(o.id,"dsi")||!doc(o.id,"factura_courier"));
   const guardar=async(file,info,tipo,ids)=>{
-    await subirLegajo(token,{file,opIds:ids,flightId:flight.id,tipo,datos:tipo==="dsi"?(info?.dsi||null):null});
+    const datos=tipo==="dsi"?(info?.dsi||null):tipo==="factura_courier"&&info?.desaduanaje?{desaduanaje:info.desaduanaje}:null;
+    await subirLegajo(token,{file,opIds:ids,flightId:flight.id,tipo,datos});
     if(tipo==="dsi"&&info?.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
+    // Una factura por op: con varias ops en la misma factura no se sabe cómo repartir el desaduanaje.
+    if(tipo==="factura_courier"&&info?.desaduanaje&&ids.length===1){try{await aplicarDesaduanajeAOp(token,ids[0],info.desaduanaje);toast(`Desaduanaje de la factura: USD ${info.desaduanaje.usdSinIva} + IVA`,"success");}catch(e){console.error("desaduanaje→op",e);}}
   };
   // tipo: lo dice el botón donde se subió/arrastró/pegó (DSI o factura del courier); sin tipo se adivina.
   const procesar=async(files,tipoFijo=null)=>{
