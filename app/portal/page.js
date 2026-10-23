@@ -160,7 +160,8 @@ const fotoCaducada=(p)=>!p?.photo_url&&(!!p?.photo_uploaded_at||(p?.created_at&&
 // Legajo de la importación (22/10/2026): lo que existe — facturas de Argencargo, factura del courier,
 // DSI y los recibos de cada pago. Visibilidad y links firmados los resuelve /api/portal/legajo.
 // Se pide apenas se abre la op (precargarLegajo), así la solapa ya está lista cuando la tocan.
-const legajoVisible=(op,client)=>op?.service_type!=="gestion_integral"&&op?.channel==="aereo_blanco"&&client?.tax_condition==="responsable_inscripto"&&(op.legajo_visible===true||(op.legajo_visible==null&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes));
+// Monotributo y consumidor final también lo ven (23/10/2026), pero solo con la guía aérea y los recibos.
+const legajoVisible=(op,client)=>op?.service_type!=="gestion_integral"&&op?.channel==="aereo_blanco"&&(client?.tax_condition!=="responsable_inscripto"||op.legajo_visible===true||(op.legajo_visible==null&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes));
 const legajoCache=new Map();
 function precargarLegajo(opId,token,forzar=false){
   const c=legajoCache.get(opId);
