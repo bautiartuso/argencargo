@@ -70,7 +70,7 @@ const refreshToken=async()=>{
   _refreshingPromise=(async()=>{
     const s=loadSession();if(!s?.refresh_token)return null;
     const r=await ac("token?grant_type=refresh_token",{refresh_token:s.refresh_token});
-    if(r?.access_token){const ns={...s,token:r.access_token,refresh_token:r.refresh_token||s.refresh_token,user:r.user||s.user};saveSession(ns);return ns.token;}
+    if(r?.access_token){const ns={...s,token:r.access_token,refresh_token:r.refresh_token||s.refresh_token,user:r.user||s.user};saveSession(ns);if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_token",{detail:ns.token}));return ns.token;}
     clearSession();if(typeof window!=="undefined")window.location.reload();return null;
   })();
   try{return await _refreshingPromise;}finally{_refreshingPromise=null;}
@@ -1715,7 +1715,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const handleSave=async()=>{
     if(op.status==="operacion_cerrada"&&estadoGuardado!=="operacion_cerrada"){
       // Aéreo courier: sin la DSI y la factura del courier en el Legajo no se cierra (22/10/2026).
-      const l=await legajoCompleto(token,op);
+      const l=await legajoCompleto(await ensureFreshToken(token),op);
       if(!l.ok){alertDialog(`No se puede cerrar ${op.operation_code}: falta ${nombresFaltan(l.faltan)} en el Legajo.`);return;}
       setShowCloseChecklist(true);return;}
     executeSave();
@@ -2951,7 +2951,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const up=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${nombre}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":"application/pdf","x-upsert":"false"},body:file});
           const pdf_url=up.ok?`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${nombre}`:null;
           setSavingDespacho(false);
-          try{await subirLegajo(token,{file,opIds:[op.id],tipo:"dsi",datos:d});}catch(e){console.error("legajo dsi",e);}
+          try{await subirLegajo(await ensureFreshToken(token),{file,opIds:[op.id],tipo:"dsi",datos:d});}catch(e){console.error("legajo dsi",e);}
           await guardarTd({...td,dsi:{...d,pdf_url,archivo:file.name||"DSI.pdf",cargado_at:new Date().toISOString()}},d.cierra?`DSI cargada · ${d.lines.length} ítems · ${fmt(d.total)}`:`DSI cargada, pero los ítems suman ${fmt(d.suma)} y el total dice ${fmt(d.total)}: revisala`);
         }catch(e){flash("No se pudo leer la DSI: "+e.message);setSavingDespacho(false);}
       };
@@ -5736,7 +5736,7 @@ function BlogPanel({token}){
 async function entregarYCerrar(op,token,{yaEntregada}={}){
   const ahora=new Date().toISOString();
   // Aéreo courier: sin legajo completo (DSI + factura del courier) se entrega pero no se cierra.
-  const leg=await legajoCompleto(token,op);
+  const leg=await legajoCompleto(await ensureFreshToken(token),op);
   const gi=op.service_type==="gestion_integral"||!leg.ok;
   const body={...(yaEntregada?{}:{delivery_completed_at:ahora}),...(gi?{}:{status:"operacion_cerrada",closed_at:op.closed_at||ahora})};
   const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
@@ -6112,7 +6112,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     const ahora=new Date().toISOString();
     const cerradas=[];
     for(const x of ops){
-      const leg=await legajoCompleto(token,x.o);
+      const leg=await legajoCompleto(await ensureFreshToken(token),x.o);
       if(!leg.ok){toast(`${x.o.operation_code}: falta ${nombresFaltan(leg.faltan)} en el Legajo, no se cierra`,"error");continue;}
       const r1=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${x.o.id}`,body:{status:"operacion_cerrada",closed_at:ahora,is_collected:true}});
       if(Array.isArray(r1))cerradas.push(x);else toast(`No se pudo cerrar ${x.o.operation_code}: ${r1?.message||"error"}`,"error");
@@ -8972,7 +8972,7 @@ let DSI_RESPONDIDOS=new Set();let DSI_POR_PEDIR=0;
 const fijarDsiRespondidos=(ids,porPedir)=>{DSI_RESPONDIDOS=new Set(ids||[]);if(porPedir!=null)DSI_POR_PEDIR=Number(porPedir)||0;if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_dsi_estado"));};
 function useDsiRespondidos(){const [v,setV]=useState(DSI_RESPONDIDOS);useEffect(()=>{const h=()=>setV(DSI_RESPONDIDOS);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
 function useDsiPorPedir(){const [v,setV]=useState(DSI_POR_PEDIR);useEffect(()=>{const h=()=>setV(DSI_POR_PEDIR);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
-const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[],b.porPedir);}catch{}};
+const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[],b.porPedir);}catch{}};
 
 // Recibo de un cobro: el número se asigna la primera vez que se imprime (secuencia en la base).
 async function imprimirReciboPago({token,op,payment,client,payments}){
@@ -9003,7 +9003,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   // ⌘V va al cuadro que se tocó antes (DSI o factura del courier): sin elegir, no se adivina.
   const [pegarEn,setPegarEn]=useState(null);
   const cargar=useCallback(async()=>{
-    const l=await listarLegajo(token,{opIds:[op.id]});setDocs(l.docs);setSinTabla(!l.ok);
+    const l=await listarLegajo(await ensureFreshToken(token),{opIds:[op.id]});if(l.ok||l.sinTabla)setDocs(l.docs);setSinTabla(!!l.sinTabla);
     const f=await dq("invoices",{token,filters:`?operation_id=eq.${op.id}&status=eq.emitida&select=id,tipo_cbte,punto_venta,numero,fecha,importe,moneda,public_token,anula_id&order=created_at.asc`});
     setFacturas(Array.isArray(f)?f:[]);
   },[op.id,token]);
@@ -9019,14 +9019,14 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     try{
       let datos=null;
       if(tipo==="dsi"||tipo==="factura_courier"){try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,file);if(tipo==="dsi"&&info.tipo==="dsi")datos=info.dsi;if(tipo==="factura_courier"&&info.desaduanaje)datos={desaduanaje:info.desaduanaje};}catch{}}
-      await subirLegajo(token,{file,opIds:[op.id],flightId:null,tipo,datos});
+      await subirLegajo(await ensureFreshToken(token),{file,opIds:[op.id],flightId:null,tipo,datos});
       if(tipo==="factura_courier"&&datos?.desaduanaje){try{const ok=await aplicarDesaduanajeAOp(token,op.id,datos.desaduanaje);const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=despacho_desaduanaje_usd,budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));flash(`Desaduanaje de la factura: USD ${datos.desaduanaje.usdSinIva} + IVA${ok?" · impuestos recalculados":" · se aplica cuando cargues la DSI"}`);}catch(e){console.error(e);}}
       if(tipo==="dsi"&&datos){try{if(await aplicarDsiAOp(token,op.id,datos)){const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));}}catch(e){console.error(e);}}
       await cargar();flash(`${TIPOS_LEGAJO[tipo].corto} guardada`);
     }catch(e){flash("No se pudo: "+e.message);}
     setOcupado(null);
   };
-  const quitar=async(d)=>{if(!await confirmDialog(`¿Quitar ${TIPOS_LEGAJO[d.tipo].corto} del legajo?`,{danger:true}))return;await quitarLegajo(token,d.id);await cargar();};
+  const quitar=async(d)=>{if(!await confirmDialog(`¿Quitar ${TIPOS_LEGAJO[d.tipo].corto} del legajo?`,{danger:true}))return;await quitarLegajo(await ensureFreshToken(token),d.id);await cargar();};
   const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
   useEffect(()=>{
     const hp=(e)=>{if(!document.querySelector("[data-legajo-op]"))return;const f=[...(e.clipboardData?.files||[])][0];if(!f)return;e.preventDefault();
@@ -9121,7 +9121,7 @@ async function aplicarDesaduanajeAOp(token,opId,des){
   return aplicarDsiAOp(token,opId,dsi);
 }
 // Abre un documento del legajo (bucket privado): la pestaña se abre antes para que no la bloquee el navegador.
-async function abrirDocLegajo(token,path){const w=window.open("about:blank","_blank");const u=await urlFirmada(token,path);if(u&&w)w.location=u;else{w?.close();toast("No se pudo abrir el archivo","error");}}
+async function abrirDocLegajo(token,path){const w=window.open("about:blank","_blank");const u=await urlFirmada(await ensureFreshToken(token),path);if(u&&w)w.location=u;else{w?.close();toast("No se pudo abrir el archivo","error");}}
 
 // Pedido de DSI por mail (22/10/2026): se le pide al courier con el Gmail conectado ("Solicitud DSI
 // <guía>"); cuando contesta, acá se ve el mail y con "Es la DSI" el adjunto pasa al legajo del vuelo.
@@ -9131,13 +9131,13 @@ const dsiVueloCache=new Map(),dsiAdjCache=new Map();
 function cargarDsiVuelo(flightId,token,forzar=false){
   const c=dsiVueloCache.get(flightId);
   if(c&&!forzar&&Date.now()-c.ts<5*60000)return c.p;
-  const p=fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flightId}`,{headers:{Authorization:`Bearer ${token}`}}).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||"x");precargarAdjuntosDsi(j,token);return j;}).catch(e=>{dsiVueloCache.delete(flightId);return {error:e.message||"x"};});
+  const p=ensureFreshToken(token).then(t=>fetch(`/api/aereo/dsi?accion=vuelo&flight_id=${flightId}`,{headers:{Authorization:`Bearer ${t}`}})).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||"x");precargarAdjuntosDsi(j,token);return j;}).catch(e=>{dsiVueloCache.delete(flightId);return {error:e.message||"x"};});
   dsiVueloCache.set(flightId,{p,ts:Date.now()});
   return p;
 }
 function traerAdjuntoDsi(m,a,token){
   const k=`${m.id}:${a.id}`;
-  if(!dsiAdjCache.has(k)){const p=fetch(`/api/aereo/dsi?accion=adjunto&msg=${m.id}&adj=${encodeURIComponent(a.id)}&nombre=${encodeURIComponent(a.nombre)}&tipo=${encodeURIComponent(a.tipo||"application/pdf")}`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>{if(!r.ok)throw new Error("No se pudo bajar el adjunto");return r.blob();});p.catch(()=>dsiAdjCache.delete(k));dsiAdjCache.set(k,p);}
+  if(!dsiAdjCache.has(k)){const p=ensureFreshToken(token).then(t=>fetch(`/api/aereo/dsi?accion=adjunto&msg=${m.id}&adj=${encodeURIComponent(a.id)}&nombre=${encodeURIComponent(a.nombre)}&tipo=${encodeURIComponent(a.tipo||"application/pdf")}`,{headers:{Authorization:`Bearer ${t}`}})).then(r=>{if(!r.ok)throw new Error("No se pudo bajar el adjunto");return r.blob();});p.catch(()=>dsiAdjCache.delete(k));dsiAdjCache.set(k,p);}
   return dsiAdjCache.get(k);
 }
 // Guías que nombra un PDF (el manifiesto/guía aérea de FedEx puede cubrir varias guías). Se lee una vez.
@@ -9168,7 +9168,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   const enviar=async(datos=form)=>{
     if(!String(datos?.para||"").trim()){toast("Falta a quién se lo mandamos","error");return;}
     setEnviando(true);
-    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...datos})});const j=await r.json();
+    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...datos})});const j=await r.json();
       if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
       toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();refrescarDsiEstado(token);onCambio?.();}
     catch(e){toast(e.message,"error");}
@@ -9189,7 +9189,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   // El pedido queda abierto hasta que se cierra a mano: así se elige la DSI y la guía aérea del mismo mail.
   // Los otros pedidos que vinieron en el mismo mail (FedEx manda varias guías juntas) se cierran
   // también si su vuelo ya tiene la DSI.
-  const revisado=async()=>{const otros=[...new Set((d.mensajes||[]).flatMap(m=>(m.guias||[]).map(g=>g.pedido_id)))];await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id,otros})});refrescarDsiEstado(token);await cargar();onCambio?.();onCerrar?.();toast("Mail cerrado","success");};
+  const revisado=async()=>{const otros=[...new Set((d.mensajes||[]).flatMap(m=>(m.guias||[]).map(g=>g.pedido_id)))];await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id,otros})});refrescarDsiEstado(token);await cargar();onCambio?.();onCerrar?.();toast("Mail cerrado","success");};
   const p=d.pedido;const respuestas=(d.mensajes||[]).filter(m=>!m.mio);const nueva=p?.respuesta_at&&!p.revisado_at;
   const INP={width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",outline:"none"};
   const LBL={display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 5px"};
@@ -9254,12 +9254,12 @@ function GrupoPedidoDsi({vuelos,token,onListo}){
   const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);
   const m=marcaCourier(vuelos[0]?.international_carrier);
   const ids=vuelos.map(v=>v.id);
-  const plantilla=async()=>{const r=await fetch(`/api/aereo/dsi?accion=plantilla&flight_ids=${ids.join(",")}`,{headers:{Authorization:`Bearer ${token}`}});return r.json();};
+  const plantilla=async()=>{const r=await fetch(`/api/aereo/dsi?accion=plantilla&flight_ids=${ids.join(",")}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});return r.json();};
   const enviar=async(datos)=>{
     setEnviando(true);
     try{const d=datos||await plantilla();
       if(!String(d.para||"").trim()){setForm({para:"",cc:d.cc||"",texto:d.texto||""});setEnviando(false);return;}
-      const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({accion:"pedir",flight_ids:ids,para:d.para,cc:d.cc,texto:d.texto})});const j=await r.json();
+      const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir",flight_ids:ids,para:d.para,cc:d.cc,texto:d.texto})});const j=await r.json();
       if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
       toast(j.aviso||`Pedido de ${ids.length} DSI enviado en un solo mail`,"success");setForm(null);refrescarDsiEstado(token);onListo?.();}
     catch(e){toast(e.message,"error");}
@@ -9314,7 +9314,7 @@ function AereosEmpleado({token}){
     ]);
     const opsDe={};(Array.isArray(fos)?fos:[]).forEach(x=>{if(x.operations&&llevaLegajo(x.operations))(opsDe[x.flight_id]=opsDe[x.flight_id]||[]).push(x.operations);});
     const opIds=Object.values(opsDe).flat().map(o=>o.id);
-    const leg=opIds.length?await listarLegajo(token,{opIds}):{docs:[]};
+    const leg=opIds.length?await listarLegajo(await ensureFreshToken(token),{opIds}):{docs:[]};
     const pedDe={};(Array.isArray(peds)?peds:[]).forEach(x=>{if(!pedDe[x.flight_id])pedDe[x.flight_id]=x;});
     // Vigente: alguna op sin cerrar o llegado hace 14 días o menos (misma regla que la pelotita naranja).
     const llego=(f)=>new Date(f.received_at||f.carrier_delivered_at||f.dispatched_at).getTime();
@@ -9327,12 +9327,12 @@ function AereosEmpleado({token}){
     // Cada vuelo se marca por separado (23/10/2026): lo que se elige va solo al vuelo abierto. Lo que es
     // de otra guía aparece tachado y no se puede elegir acá.
     if(tipo==="guia_aerea"){
-      await subirLegajo(token,{file,opIds:f.ops.map(o=>o.id),flightId:f.id,tipo,datos:null});
+      await subirLegajo(await ensureFreshToken(token),{file,opIds:f.ops.map(o=>o.id),flightId:f.id,tipo,datos:null});
       toast(`Guía aérea cargada en ${f.flight_code}`,"success");
     }else{
       let info={tipo:null};try{const pdfjs=await cargarPdfJsAdmin();info=await analizarDocumento(pdfjs,file);}catch{}
       const ids=(info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
-      await subirLegajo(token,{file,opIds:ids,flightId:f.id,tipo,datos:info.dsi||null});
+      await subirLegajo(await ensureFreshToken(token),{file,opIds:ids,flightId:f.id,tipo,datos:info.dsi||null});
       if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
       toast(`DSI cargada en ${f.flight_code} · ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
     }
@@ -9389,7 +9389,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     if(!clave)return;
     const o=await dq("operations",{token,filters:`?id=in.(${clave})&select=id,operation_code,channel,service_type,international_tracking,client_id,clients(first_name,last_name,company_name,cuit,tax_condition)&order=operation_code.asc`});
     setOps(Array.isArray(o)?o:[]);
-    const l=await listarLegajo(token,{opIds:clave.split(",")});setDocs(l.docs);setSinTabla(!l.ok);
+    const l=await listarLegajo(await ensureFreshToken(token),{opIds:clave.split(",")});if(l.ok||l.sinTabla)setDocs(l.docs);setSinTabla(!!l.sinTabla);
   },[clave,token]);
   useEffect(()=>{cargar();},[cargar]);
   const opsLeg=ops.filter(llevaLegajo);
@@ -9398,7 +9398,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   const faltan=opsLeg.filter(o=>!doc(o.id,"dsi")||!doc(o.id,"factura_courier"));
   const guardar=async(file,info,tipo,ids)=>{
     const datos=tipo==="dsi"?(info?.dsi||null):tipo==="factura_courier"&&info?.desaduanaje?{desaduanaje:info.desaduanaje}:null;
-    await subirLegajo(token,{file,opIds:ids,flightId:flight.id,tipo,datos});
+    await subirLegajo(await ensureFreshToken(token),{file,opIds:ids,flightId:flight.id,tipo,datos});
     if(tipo==="dsi"&&info?.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
     // Una factura por op: con varias ops en la misma factura no se sabe cómo repartir el desaduanaje.
     if(tipo==="factura_courier"&&info?.desaduanaje&&ids.length===1){try{await aplicarDesaduanajeAOp(token,ids[0],info.desaduanaje);toast(`Desaduanaje de la factura: USD ${info.desaduanaje.usdSinIva} + IVA`,"success");}catch(e){console.error("desaduanaje→op",e);}}
@@ -10490,7 +10490,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const markReceived=async()=>{
     // Sin la DSI y la factura del courier de cada op no se marca recibido (legajo, 22/10/2026).
     {const ids=flightOps.map(fo=>fo.operation_id).filter(Boolean);
-      if(ids.length){const l=await listarLegajo(token,{opIds:ids});
+      if(ids.length){const l=await listarLegajo(await ensureFreshToken(token),{opIds:ids});
         if(l.ok){const os=await dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=id,operation_code,channel,service_type`});
           const falt=(Array.isArray(os)?os:[]).filter(llevaLegajo).filter(o=>!["dsi","factura_courier"].every(t=>l.docs.some(d=>d.operation_id===o.id&&d.tipo===t)));
           if(falt.length){alertDialog(`Falta documentación de ${falt.map(o=>o.operation_code).join(", ")}: subí la DSI y la factura del courier.`);return;}}}}
@@ -22034,6 +22034,15 @@ export default function AdminPage(){
   useEffect(()=>{const s=loadSession();if(s?.token&&["admin","empleado"].includes(s?.profile?.role)){
     let como=false;try{const q=new URLSearchParams(window.location.search).get("como");if(q==="empleado")sessionStorage.setItem("ac_ver_como","empleado");if(q==="yo")sessionStorage.removeItem("ac_ver_como");como=s.profile.role==="admin"&&sessionStorage.getItem("ac_ver_como")==="empleado";if(q)window.history.replaceState(null,"",window.location.pathname);}catch{}
     ROL_SESION=como?"empleado":s.profile.role;setComoEmpleado(como);setSession(como?{...s,profile:{...s.profile,role:"empleado"}}:s);}setRestoring(false);},[]);
+  // Sesión siempre fresca (24/10/2026): el token vence a la hora y muchas pantallas usaban el de la
+  // entrada (el legajo quedaba vacío con "Falta correr el SQL", el mail y la DSI fallaban). Cuando se
+  // renueva, todo el panel pasa a usar el nuevo; y se renueva solo antes de que venza.
+  useEffect(()=>{
+    const h=(e)=>{const t=e.detail;if(t)setSession(s=>s&&s.token!==t?{...s,token:t}:s);};
+    window.addEventListener("ac_token",h);
+    const id=setInterval(async()=>{const s=loadSession();if(!s?.token)return;const t=jwtExp(s.token)-Date.now()<10*60000?await refreshToken():s.token;if(t)setSession(x=>x&&x.token!==t?{...x,token:t}:x);},4*60000);
+    return()=>{window.removeEventListener("ac_token",h);clearInterval(id);};
+  },[]);
   const salirComoEmpleado=()=>{try{sessionStorage.removeItem("ac_ver_como");}catch{}window.location.reload();};
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
