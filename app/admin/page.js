@@ -14527,21 +14527,23 @@ function ProyeccionTransito({token,usd}){
     const mar=gananciaMaritimaAgua({ships,pkgs:Array.isArray(pk)?pk:[],items:Array.isArray(it)?it:[],tariffs:Array.isArray(tf)?tf:[],ovByCli});
     setD({aereo:{pend:aTotal-aCob,ops:aOps,vuelos:fIds.length,sinPres},mar});
   }catch(e){console.error("proyección",e);setD({error:true});}})();},[token]);
-  const fila=(icono,l,sub,v,c)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-    <p style={{margin:0,fontSize:12.5,fontWeight:700,color:"#fff"}}>{icono} {l}</p>
-    <span style={{fontSize:15,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
+  const fila=(icono,l,sub,v,c)=><div title={sub} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+    <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{icono}</span>
+    <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l}</span>
+    <span style={{fontSize:14,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
   </div>;
   const total=d&&!d.error?d.aereo.pend+d.mar.ganancia:0;
-  return <div style={{background:"linear-gradient(135deg,rgba(232,201,155,0.10),rgba(232,201,155,0.02))",border:"1px solid rgba(232,201,155,0.3)",borderRadius:14,padding:"16px 20px"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:6}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>🛫 En tránsito · proyección</p>
-      {d&&!d.error&&<p style={{fontSize:22,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>+{usd(total)}</p>}
+  // Mismo panel de vidrio que el resto del dashboard (26/10/2026).
+  return <section className="fin-glass fin-in" style={{animationDelay:"280ms",flex:1,display:"flex",flexDirection:"column"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:14,position:"relative"}}>
+      <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.015em"}}>En tránsito</h3>
+      {d&&!d.error&&<span style={{fontSize:24,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}>+<NumAnim v={total} fmt={usd}/></span>}
     </div>
     {!d?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>Calculando…</p>:d.error?<p style={{fontSize:12,color:"#fbbf24",margin:"8px 0 0"}}>No se pudo calcular</p>:<>
       {fila("✈️","Aéreo · por cobrar en el aire",`${d.aereo.ops} op${d.aereo.ops!==1?"s":""} en ${d.aereo.vuelos} vuelo${d.aereo.vuelos!==1?"s":""} · sin impuestos${d.aereo.sinPres?` · ${d.aereo.sinPres} sin presupuesto`:""}`,`+${usd(d.aereo.pend)}`,"#93c5fd")}
-      {fila("🚢","Marítimo · ganancia en el agua",`${d.mar.cargas} carga${d.mar.cargas!==1?"s":""} en ${d.mar.contenedores} contenedor${d.mar.contenedores!==1?"es":""} · cobro ${usd(d.mar.importe)} − costo ${usd(d.mar.costo)}`,`${d.mar.ganancia>=0?"+":"−"}${usd(Math.abs(d.mar.ganancia))}`,d.mar.ganancia>=0?"#4ade80":"#f87171")}
+      {fila("🚢","Marítimo · ganancia en el agua",`${d.mar.cargas} carga${d.mar.cargas!==1?"s":""} en ${d.mar.contenedores} contenedor${d.mar.contenedores!==1?"es":""} · cobro ${usd(d.mar.importe)} − costo ${usd(d.mar.costo)}`,`${d.mar.ganancia>=0?"+":"−"}${usd(Math.abs(d.mar.ganancia))}`,d.mar.ganancia>=0?"#4ade80":"#d98080")}
     </>}
-  </div>;
+  </section>;
 }
 
 // ═══ Dashboard financiero (26/10/2026): vidrio + movimiento ═══
@@ -14553,7 +14555,7 @@ const FIN_CSS=`
 @keyframes fin-bar{from{width:0}to{width:var(--w)}}
 @keyframes fin-float{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,-30px)}}
 @keyframes fin-skel{0%,100%{opacity:.35}50%{opacity:.7}}
-.fin-wrap{isolation:isolate}
+.fin-wrap{isolation:isolate;overflow:clip;padding-bottom:30px}
 .fin-in{animation:fin-in .65s cubic-bezier(.2,.8,.2,1) both}
 .fin-glass{position:relative;border-radius:22px;padding:20px 22px;background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 24px 60px rgba(0,0,0,0.35);overflow:hidden;transition:border-color .25s,box-shadow .25s}
 .fin-glass:hover{border-color:rgba(255,255,255,0.2);box-shadow:inset 0 1px 0 rgba(255,255,255,0.2),0 28px 70px rgba(0,0,0,0.4)}
@@ -14782,7 +14784,8 @@ function FinanceDashboard({token}){
   const usdS=(v)=>`${v<0?"−":""}USD ${n2(Math.abs(v))}`;
   const nomCli=o=>o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim()||"—":"—";
   const MESES3=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  const colorNeto=(v)=>v>0.005?"#4ade80":v<-0.005?"#ff7b7b":"rgba(255,255,255,0.4)";
+  const VERDE="#3ee68a",ROJO="#d98080",ROJO_T="rgba(217,128,128,0.85)";
+  const colorNeto=(v)=>v>0.005?VERDE:v<-0.005?ROJO:"rgba(255,255,255,0.4)";
 
   // ── Por mes (26/10/2026): un solo bloque con dos modos. Caja = la plata que entró y salió ese mes
   // (libroCaja). Resultado = lo que dejó cada mes: sus operaciones cerradas, menos lo que costaron y
@@ -14847,7 +14850,7 @@ function FinanceDashboard({token}){
   const faltaFilas=[
     pendienteListas>0&&{ic:"📦",l:"Listas para retirar sin cobrar",sub:`${opsListasParaEntregar.length} operaci${opsListasParaEntregar.length===1?"ón":"ones"}`,v:pendienteListas,c:"#93c5fd",t:opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usdA(o.falta)}`).join("\n")},
     girosColgados>0&&{ic:"⚠️",l:"Giros hechos que el cliente no pagó",sub:`${girosColgadosDetail.length} operaci${girosColgadosDetail.length===1?"ón":"ones"}`,v:girosColgados,c:"#fb923c",t:girosColgadosDetail.map(d=>`${d.code}: ${usdA(d.real)}`).join("\n")},
-    deudaCC>0&&{ic:"🧾",l:"Deuda en cuenta corriente",sub:`${deudores.length} cliente${deudores.length!==1?"s":""}`,v:deudaCC,c:"#f87171",t:deudores.map(d=>`${d.code?d.code+" · ":""}${d.name}: ${usdA(d.debe)}`).join("\n")},
+    deudaCC>0&&{ic:"🧾",l:"Deuda en cuenta corriente",sub:`${deudores.length} cliente${deudores.length!==1?"s":""}`,v:deudaCC,c:ROJO,t:deudores.map(d=>`${d.code?d.code+" · ":""}${d.name}: ${usdA(d.debe)}`).join("\n")},
     girosPendientes>0&&{ic:"💸",l:"Giros que falta mandar",sub:"el cliente ya pagó",v:-girosPendientes,c:"#60a5fa"},
     deudaTCUsd>0&&{ic:"💳",l:"Tarjeta sin debitar (USD)",sub:deudaTCArs>0?`más $ ${Math.round(deudaTCArs).toLocaleString("es-AR")} en pesos`:"",v:-deudaTCUsd,c:"#c4b5fd"},
   ].filter(Boolean);
@@ -14898,24 +14901,23 @@ function FinanceDashboard({token}){
       {/* Entró · Salió · Quedó */}
       <Glass delay={1} style={{padding:celu?"20px 18px":"26px 30px",marginBottom:14}}>
         <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"1fr 1fr 1.3fr",gap:celu?18:28,alignItems:"end"}}>
-          {hero("Entró",totalIng,"#4ade80","Cobros, pagos y otros ingresos")}
-          {hero("Salió",totalCost,"#ff8a8a","Costos de operaciones, giros y gastos")}
-          <div style={{gridColumn:celu?"1 / -1":"auto"}}>{hero("Quedó",totalGan,totalGan>=0?GOLD_LIGHT:"#ff7b7b",totalIng>0?`${margen.toFixed(1)}% de margen · ${periodOps.length} operaci${periodOps.length===1?"ón":"ones"} cerrada${periodOps.length===1?"":"s"}`:"Sin movimientos en el período",true)}</div>
+          {hero("Entró",totalIng,GOLD_LIGHT,"Cobros, pagos y otros ingresos")}
+          {hero("Salió",totalCost,ROJO,"Costos de operaciones, giros y gastos")}
+          <div style={{gridColumn:celu?"1 / -1":"auto"}}>{hero("Quedó",totalGan,totalGan>=0?VERDE:ROJO,totalIng>0?`${margen.toFixed(1)}% de margen · ${periodOps.length} operaci${periodOps.length===1?"ón":"ones"} cerrada${periodOps.length===1?"":"s"}`:"Sin movimientos en el período",true)}</div>
         </div>
         <div style={{marginTop:20,height:10,borderRadius:99,background:"rgba(255,255,255,0.07)",overflow:"hidden",display:"flex"}}>
-          <div className="fin-bar" style={{width:`${pctSal}%`,background:"linear-gradient(90deg,#ff8a8a,#f87171)",borderRadius:99}}/>
-          {totalGan>0&&<div className="fin-bar" style={{width:`${100-pctSal}%`,background:"linear-gradient(90deg,#B8956A,#E8D098)",borderRadius:99,marginLeft:2}}/>}
+          <div className="fin-bar" style={{width:`${pctSal}%`,background:"linear-gradient(90deg,#b86d6d,#d98080)",borderRadius:99}}/>
+          {totalGan>0&&<div className="fin-bar" style={{width:`${100-pctSal}%`,background:"linear-gradient(90deg,#22c55e,#3ee68a)",borderRadius:99,marginLeft:2}}/>}
         </div>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:7}}><span>{totalIng>0?`${pctSal.toFixed(0)}% de lo que entró, salió`:""}</span><span>{totalIng>0&&totalGan>0?`${(100-pctSal).toFixed(0)}% quedó`:""}</span></div>
       </Glass>
 
       {/* Tenés · Falta · En tránsito */}
       <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr)",gap:14,marginBottom:14,alignItems:"stretch"}}>
-        <Glass delay={2} title="Tenés" sub="Todo lo que entró menos todo lo que salió, desde el día uno">
-          <p style={{margin:"4px 0 0",fontSize:celu?28:32,fontWeight:800,color:cashDisponible>=0?"#4ade80":"#ff7b7b",letterSpacing:"-0.03em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:`0 0 26px ${cashDisponible>=0?"rgba(74,222,128,0.35)":"rgba(255,123,123,0.35)"}`}}><NumAnim v={cashDisponible} fmt={usdS}/></p>
-          <p style={{margin:"10px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)",lineHeight:1.5}}>Es la ganancia neta histórica. No cuenta lo que falta cobrar ni pagar.</p>
+        <Glass delay={2} title="Cash disponible" style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <p style={{margin:"4px 0 0",fontSize:celu?28:32,fontWeight:800,color:cashDisponible>=0?VERDE:ROJO,letterSpacing:"-0.03em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:`0 0 26px ${cashDisponible>=0?"rgba(62,230,138,0.35)":"rgba(217,128,128,0.35)"}`}}><NumAnim v={cashDisponible} fmt={usdS}/></p>
         </Glass>
-        <Glass delay={3} title="Falta" sub="Plata que todavía no entró o no salió" actions={<span style={{fontSize:celu?20:24,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",letterSpacing:"-0.02em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{pendienteNeto>=0?"+":""}<NumAnim v={pendienteNeto} fmt={usdS}/></span>}>
+        <Glass delay={3} title="A cobrar" actions={<span style={{fontSize:celu?20:24,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",letterSpacing:"-0.02em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{pendienteNeto>=0?"+":""}<NumAnim v={pendienteNeto} fmt={usdS}/></span>}>
           {faltaFilas.length?<div style={{display:"flex",flexDirection:"column"}}>
             {faltaFilas.map((f,i)=><div key={f.l} className="fin-row" title={f.t||""} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
               <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{f.ic}</span>
@@ -14924,7 +14926,7 @@ function FinanceDashboard({token}){
             </div>)}
           </div>:<p style={{margin:"8px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Todo cobrado y pagado.</p>}
         </Glass>
-        <div className="fin-in" style={{animationDelay:"240ms",display:"flex"}}><div style={{flex:1,display:"flex",flexDirection:"column"}}><ProyeccionTransito token={token} usd={usdA}/></div></div>
+        <ProyeccionTransito token={token} usd={usdA}/>
       </div>
 
       {/* Por mes */}
@@ -14942,15 +14944,15 @@ function FinanceDashboard({token}){
         {[...mesesVista].reverse().map((x,i)=>{const vacio=Math.abs(x.a)<0.005&&Math.abs(x.b)<0.005&&Math.abs(x.fij)<0.005;const on=mesModo==="resultado"&&x.key===devMesSel;return <div key={x.key} onClick={()=>{if(mesModo==="resultado"&&!vacio)setDevMesSel(on?null:x.key);}} className={mesModo==="resultado"&&!vacio?"fin-row":""} style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":mesModo==="caja"?"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)",gap:10,alignItems:"center",padding:"9px 8px",borderRadius:10,borderTop:"1px solid rgba(255,255,255,0.05)",opacity:vacio?0.35:1,cursor:mesModo==="resultado"&&!vacio?"pointer":"default",background:on?"rgba(96,165,250,0.08)":"transparent"}}>
           {!celu&&<span style={{fontSize:13,fontWeight:x.actual?800:600,color:x.actual?"#fff":"rgba(255,255,255,0.75)"}}>{x.label}{x.actual&&<span style={{marginLeft:7,fontSize:9.5,fontWeight:800,color:GOLD_LIGHT,letterSpacing:"0.08em"}}>ACTUAL</span>}{mesModo==="resultado"&&x.nOps>0&&<span style={{marginLeft:7,fontSize:11,color:"rgba(255,255,255,0.4)"}}>{x.nOps} op{x.nOps!==1?"s":""}</span>}</span>}
           <span style={{textAlign:celu?"left":"right",fontSize:13,color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{celu&&<span style={{display:"block",fontSize:11.5,fontWeight:700,color:x.actual?"#fff":"rgba(255,255,255,0.5)"}}>{x.label}</span>}{x.a>0.005?usdA(x.a):"—"}</span>
-          <span style={{textAlign:"right",fontSize:13,color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.b>0.005?`−${usdA(x.b)}`:"—"}{celu&&mesModo==="resultado"&&x.fij>0.005&&<span style={{display:"block",fontSize:11,color:"rgba(255,140,140,0.6)"}}>fijos −{usdA(x.fij)}</span>}</span>
-          {mesModo==="resultado"&&!celu&&<span style={{textAlign:"right",fontSize:13,color:"rgba(255,140,140,0.7)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.fij>0.005?`−${usdA(x.fij)}`:"—"}</span>}
+          <span style={{textAlign:"right",fontSize:13,color:ROJO_T,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.b>0.005?`−${usdA(x.b)}`:"—"}{celu&&mesModo==="resultado"&&x.fij>0.005&&<span style={{display:"block",fontSize:11,color:"rgba(217,128,128,0.6)"}}>fijos −{usdA(x.fij)}</span>}</span>
+          {mesModo==="resultado"&&!celu&&<span style={{textAlign:"right",fontSize:13,color:"rgba(217,128,128,0.7)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.fij>0.005?`−${usdA(x.fij)}`:"—"}</span>}
           <span style={{textAlign:"right",fontSize:14,fontWeight:800,color:colorNeto(x.neto),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{Math.abs(x.neto)<0.005?"—":usdS(x.neto)}{mesModo==="resultado"&&!vacio&&<span style={{marginLeft:8,fontSize:11,color:"rgba(255,255,255,0.35)",display:"inline-block",transform:on?"rotate(90deg)":"none",transition:"transform 160ms"}}>›</span>}</span>
         </div>;})}
         {(()=>{const t=mesesVista.reduce((a,x)=>({a:a.a+x.a,b:a.b+x.b,fij:a.fij+x.fij,neto:a.neto+x.neto}),{a:0,b:0,fij:0,neto:0});return <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":mesModo==="caja"?"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)",gap:10,alignItems:"center",padding:"12px 8px 2px",borderTop:"1.5px solid rgba(255,255,255,0.14)",marginTop:4}}>
           {!celu&&<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.6)"}}>12 meses</span>}
           <span style={{textAlign:celu?"left":"right",fontSize:13.5,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{celu&&<span style={{display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",color:"rgba(255,255,255,0.5)"}}>12 MESES</span>}{usdA(t.a)}</span>
-          <span style={{textAlign:"right",fontSize:13.5,fontWeight:700,color:"rgba(255,140,140,0.9)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(t.b)}</span>
-          {mesModo==="resultado"&&!celu&&<span style={{textAlign:"right",fontSize:13.5,fontWeight:700,color:"rgba(255,140,140,0.75)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(t.fij)}</span>}
+          <span style={{textAlign:"right",fontSize:13.5,fontWeight:700,color:ROJO_T,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(t.b)}</span>
+          {mesModo==="resultado"&&!celu&&<span style={{textAlign:"right",fontSize:13.5,fontWeight:700,color:"rgba(217,128,128,0.75)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(t.fij)}</span>}
           <span style={{textAlign:"right",fontSize:16,fontWeight:800,color:colorNeto(t.neto),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><NumAnim v={t.neto} fmt={usdS}/></span>
         </div>;})()}
         {mesModo==="resultado"&&selRes&&(()=>{
@@ -14968,7 +14970,7 @@ function FinanceDashboard({token}){
                 <span style={{minWidth:0}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>{o.lost_in_customs_at&&<span style={{marginLeft:6,fontSize:10,color:"#f87171"}}>perdida</span>}{celu&&<span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nomCli(o)} · {canalTxt(o)}</span>}</span>
                 {!celu&&<span style={{fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nomCli(o)} <span style={{color:"rgba(255,255,255,0.4)",fontSize:11.5}}>· {canalTxt(o)}</span></span>}
                 {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n2(g.ing)}</span>}
-                {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums"}}>−{n2(g.cost)}</span>}
+                {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:ROJO_T,fontVariantNumeric:"tabular-nums"}}>−{n2(g.cost)}</span>}
                 {!celu&&<span style={{textAlign:"right",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{mg==null?"—":`${mg.toFixed(0)}%`}</span>}
                 <span style={{textAlign:"right",fontSize:13,fontWeight:800,color:colorNeto(g.gan),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usdS(g.gan)}</span>
               </div>;})}
@@ -14978,7 +14980,7 @@ function FinanceDashboard({token}){
                 <p style={{margin:"0 0 6px",...lblFin}}>Gastos fijos del mes · −{usdA(sel.fij)}</p>
                 {[...sel.fijosList].sort((a2,b2)=>String(b2.date).localeCompare(String(a2.date))).map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:12}}>
                   <span style={{color:"rgba(255,255,255,0.75)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"rgba(255,255,255,0.4)",marginRight:8}}>{formatDate(e.date)}</span>{e.description||CAT_LBL[e.category]||e.category||"Gasto"}</span>
-                  <span style={{color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(usdFE(e))}</span>
+                  <span style={{color:ROJO_T,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(usdFE(e))}</span>
                 </div>)}
               </div>}
               {sel.otrosIngList.length>0&&<div>
@@ -15000,7 +15002,7 @@ function FinanceDashboard({token}){
               <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{CM[ch]||ch} <span style={{fontSize:11.5,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>· {d.count} op{d.count!==1?"s":""}</span></span>
               <span style={{whiteSpace:"nowrap"}}><span style={{fontSize:14,fontWeight:800,color:colorNeto(gan),fontVariantNumeric:"tabular-nums"}}>{usdS(gan)}</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{mg.toFixed(0)}%</span>{navegable&&<span style={{marginLeft:8,color:"rgba(255,255,255,0.35)"}}>›</span>}</span>
             </div>
-            <Barra pct={pct} color={gan>=0?"#22c55e":"#f87171"} delay={i*80}/>
+            <Barra pct={pct} color={gan>=0?"#22c55e":ROJO} delay={i*80}/>
           </div>;});})()}
           {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)",margin:0}}>Sin operaciones cobradas en el período.</p>}
         </Glass>
@@ -15010,7 +15012,7 @@ function FinanceDashboard({token}){
               <span style={{fontSize:13.5,fontWeight:700,color:"#fff",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:22,color:"rgba(255,255,255,0.35)",fontWeight:800}}>{i+1}</span>{name} <span style={{fontSize:11.5,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>· {d.count} op{d.count!==1?"s":""}</span></span>
               <span style={{whiteSpace:"nowrap"}}><span style={{fontSize:13.5,fontWeight:800,color:colorNeto(d.gan),fontVariantNumeric:"tabular-nums"}}>{usdS(d.gan)}</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{mg.toFixed(0)}%</span></span>
             </div>
-            <Barra pct={pct} color={d.gan>=0?"#22c55e":"#f87171"} delay={i*80}/>
+            <Barra pct={pct} color={d.gan>=0?"#22c55e":ROJO} delay={i*80}/>
           </div>;}):<p style={{color:"rgba(255,255,255,0.45)",margin:0}}>Sin operaciones cobradas en el período.</p>}
         </Glass>
       </div>
@@ -15045,7 +15047,7 @@ function FinanceDashboard({token}){
         <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4, minmax(0, 1fr))",gap:12,marginBottom:14}}>
           {kpiN("Ganancia",gan,usdS,colorNeto(gan),`${mg.toFixed(1)}% de margen`)}
           {kpiN("Cobrado",neto,usdA,"#fff",comisiones>0.01?`Ya sin USD ${n2(comisiones)} de comisión`:"Neto de comisiones")}
-          {kpiN("Costos",costos,usdA,"#ff8a8a","Lo que pagaste")}
+          {kpiN("Costos",costos,usdA,ROJO,"Lo que pagaste")}
           {kpiN("Operaciones",filas.length,v=>String(Math.round(v)),"#fff",`USD ${n2(filas.length?gan/filas.length:0)} de ganancia c/u`)}
         </div>
         <Glass delay={2} title="Ganancia por concepto" sub="Tocá un concepto para ver las operaciones que lo forman" style={{marginBottom:14}}>
@@ -15060,10 +15062,10 @@ function FinanceDashboard({token}){
                 <span style={{minWidth:0}}>
                   <span style={{fontSize:14.5,fontWeight:800,color:"#fff"}}>{l}</span>
                   {celu&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:2}}>cobrado {n2(c)} · costo {n2(co)}</span>}
-                  <div style={{maxWidth:180,marginTop:7}}><Barra pct={m==null?100:Math.min(100,Math.max(4,Math.abs(m)))} color={g>=0?"#22c55e":"#f87171"} delay={vi*70} alto={5}/></div>
+                  <div style={{maxWidth:180,marginTop:7}}><Barra pct={m==null?100:Math.min(100,Math.max(4,Math.abs(m)))} color={g>=0?"#22c55e":ROJO} delay={vi*70} alto={5}/></div>
                 </span>
                 {!celu&&<span style={{textAlign:"right",fontSize:14,color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>USD {n2(c)}</span>}
-                {!celu&&<span style={{textAlign:"right",fontSize:14,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(co)}</span>}
+                {!celu&&<span style={{textAlign:"right",fontSize:14,color:ROJO_T,fontVariantNumeric:"tabular-nums"}}>USD {n2(co)}</span>}
                 <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:15,fontWeight:800,color:colorNeto(g),fontVariantNumeric:"tabular-nums"}}>{usdS(g)}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{m==null?"sin cobro":`${m.toFixed(0)}% de margen`}</span></span>
                 <span style={{textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:13,transform:abierto?"rotate(90deg)":"none",transition:"transform 160ms"}}>›</span>
               </div>
@@ -15072,7 +15074,7 @@ function FinanceDashboard({token}){
                 {mostrar.map(({o,c:dc,k:dk})=>{const dg=dc-dk;return <div key={o.id} style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 28px",gap:10,alignItems:"center",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
                   <span style={{minWidth:0}}><span style={{fontFamily:"monospace",fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span> <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{nomCli(o)}</span>{celu&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>cobrado {n2(dc)} · costo {n2(dk)}</span>}</span>
                   {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n2(dc)}</span>}
-                  {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>{n2(dk)}</span>}
+                  {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:ROJO_T,fontVariantNumeric:"tabular-nums"}}>{n2(dk)}</span>}
                   <span style={{textAlign:"right",fontSize:12.5,fontWeight:800,color:colorNeto(dg),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{dg>=0?"+":"−"}{n2(Math.abs(dg))}</span>
                   {!celu&&<span/>}
                 </div>;})}
@@ -15082,7 +15084,7 @@ function FinanceDashboard({token}){
           <div style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,alignItems:"center",padding:"16px 6px 2px"}}>
             <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total</span>
             {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {n2(neto)}</span>}
-            {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(costos)}</span>}
+            {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:ROJO_T,fontVariantNumeric:"tabular-nums"}}>USD {n2(costos)}</span>}
             <span style={{textAlign:"right",fontSize:18,fontWeight:800,color:colorNeto(gan),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><NumAnim v={gan} fmt={usdS}/></span>
             <span/>
           </div>
