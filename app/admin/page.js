@@ -19409,8 +19409,6 @@ function MaritimePanel({token,allClients=[]}){
                     ?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:900,letterSpacing:".08em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:"#2a1203",background:"linear-gradient(135deg,#fdba74,#fb923c)",boxShadow:"0 3px 10px rgba(251,146,60,0.35)"}}><span style={{width:6,height:6,borderRadius:"50%",background:"#2a1203"}}/>En aduana</span>
                     :tb>0&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.4)"})}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}
                   {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fecaca",background:"rgba(239,68,68,0.2)",border:"1px solid rgba(239,68,68,0.5)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
-                  {/* Último evento de la naviera (COSCO): una pastilla corta; el texto completo en el title. */}
-                  {/cosco/i.test(c.shipping_line||"")&&c.tracking_last&&<span title={`${c.tracking_last}${c.tracking_vessel?` · ${c.tracking_vessel}`:""}${c.tracking_updated_at?` · consultado ${new Date(c.tracking_updated_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`:""}`} style={pill({fontSize:11,padding:"2px 9px",color:"rgba(255,255,255,0.75)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",maxWidth:300,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block",verticalAlign:"middle",fontWeight:600,textTransform:"none",letterSpacing:0})}>🛰 {c.tracking_last}</span>}
                 </div>
               </div>
             </div>
@@ -19442,10 +19440,6 @@ function MaritimePanel({token,allClients=[]}){
             </div>
           </div>
           {abierto&&<>
-            {Array.isArray(c.tracking_events)&&c.tracking_events.length>1&&<div style={{padding:"10px 18px 12px",borderBottom:`1px solid ${MT_BORDE}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".08em",marginRight:4}}>Naviera</span>
-              {c.tracking_events.slice(-8).map((ev,i)=><span key={i} title={ev.lugar||""} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,color:ev.estimada?"rgba(255,255,255,0.5)":ev.tipo==="llegada"?"#4ade80":ev.tipo==="salida"?"#93c5fd":"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.05)",border:`1px dashed ${ev.estimada?"rgba(255,255,255,0.18)":"transparent"}`,outline:ev.estimada?"none":"1px solid rgba(255,255,255,0.1)"}}><span style={{color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{ev.fecha?`${ev.fecha.slice(8,10)}/${ev.fecha.slice(5,7)}`:""}</span>{ev.estado}{ev.lugar?<span style={{color:"rgba(255,255,255,0.4)",fontWeight:500}}>{ev.lugar.split("·")[0].split(",")[0]}</span>:null}{ev.estimada?" (est.)":""}</span>)}
-            </div>}
             {lista.length>0&&!compacta&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos · Volumen{verPlata?" · Costo · Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
             {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>filaCont(sh,todas))}
           </>}
