@@ -93,7 +93,7 @@ const I18N={
     pickup_waiting:"sin pick-up",
     eta:"ETA",
     days_short:"d",
-    flights_no_photo:"vuelo(s) sin la foto del detalle de exportación — subila antes de que llegue",
+    flights_no_photo:"vuelo(s) sin la foto del detalle de exportación o sin la factura comercial — subilas antes de que llegue",
     show_them:"Ver",
     search_flights:"Buscar vuelo, tracking u operación…",
     photo_missing_alert:"Falta la foto del detalle de exportación de los bultos",
@@ -108,7 +108,7 @@ const I18N={
     col_fact5:"Fact. ÷5000",
     col_fact6:"Fact. ÷6000",
     col_received:"Recepción",
-    filter_no_photo:"Sin foto",
+    filter_no_photo:"Sin foto o factura",
     clear_filter:"Ver todos",
     stats_billed:"Facturado a Argencargo",
     stats_billed_hint:"vuelos despachados en el período",
@@ -335,6 +335,8 @@ const I18N={
     flight_invoice_change:"Cambiar archivo",
     flight_invoice_required:"Para despachar hay que subir la factura comercial del vuelo",
     flight_invoice_missing_alert:"Falta la factura comercial del vuelo",
+    paste_file:"o tocá el cuadro y pegala con ⌘V",
+    paste_file_ready:"Listo: pegá el archivo con ⌘V",
     fact_note:"Peso facturable (vol > bruto) · usado para $/kg y reparto",
     rate_note:"Tarifa resultante (todo incluido)",
     ow_short:"Sobrepeso",
@@ -471,7 +473,7 @@ const I18N={
     pickup_waiting:"尚未取件",
     eta:"预计到达",
     days_short:"天",
-    flights_no_photo:"个航班缺少出口明细截图 — 请在到达前上传",
+    flights_no_photo:"个航班缺少出口明细截图或商业发票 — 请在到达前上传",
     show_them:"查看",
     search_flights:"搜索航班、单号或操作…",
     photo_missing_alert:"缺少包裹出口明细的截图",
@@ -486,7 +488,7 @@ const I18N={
     col_fact5:"计费 ÷5000",
     col_fact6:"计费 ÷6000",
     col_received:"接收日期",
-    filter_no_photo:"无照片",
+    filter_no_photo:"缺照片或发票",
     clear_filter:"查看全部",
     stats_billed:"向 Argencargo 开票",
     stats_billed_hint:"该时期发出的航班",
@@ -713,6 +715,8 @@ const I18N={
     flight_invoice_change:"更换文件",
     flight_invoice_required:"发送航班前必须上传商业发票",
     flight_invoice_missing_alert:"缺少航班商业发票",
+    paste_file:"或点此框后按 ⌘V 粘贴",
+    paste_file_ready:"可以了：按 ⌘V 粘贴文件",
     fact_note:"计费重量（体积重 > 实重）· 用于 $/kg 与分摊",
     rate_note:"最终费率（全包）",
     ow_short:"超重",
@@ -1488,11 +1492,12 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const FASES=[["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs],["recibido",t.tab_history]];
       const todos=[...activeFlights,...historyFlights];
       const q=flightSearch.trim().toLowerCase();
-      const coincide=(f)=>{if(soloSinFotoVuelo&&!(f.status==="despachado"&&!f.dispatch_photo_url))return false;if(!q)return true;if(String(f.flight_code||"").toLowerCase().includes(q))return true;if(String(f.international_tracking||"").toLowerCase().includes(q))return true;return flightOps.some(fo=>fo.flight_id===f.id&&String(fo.operations?.operation_code||"").toLowerCase().includes(q));};
+      const sinDocs=(f)=>f.status==="despachado"&&(!f.dispatch_photo_url||!f.commercial_invoice_path);
+      const coincide=(f)=>{if(soloSinFotoVuelo&&!sinDocs(f))return false;if(!q)return true;if(String(f.flight_code||"").toLowerCase().includes(q))return true;if(String(f.international_tracking||"").toLowerCase().includes(q))return true;return flightOps.some(fo=>fo.flight_id===f.id&&String(fo.operations?.operation_code||"").toLowerCase().includes(q));};
       const de=(k)=>ordenarVuelos(todos.filter(f=>faseVuelo(f)===k&&coincide(f)));
       const visibles=FASES.filter(([k])=>fase==="todos"||fase===k);
       const nada=visibles.every(([k])=>de(k).length===0);
-      const sinFoto=activeFlights.filter(f=>f.status==="despachado"&&!f.dispatch_photo_url);
+      const sinFoto=activeFlights.filter(sinDocs);
       return <>
         {sinFoto.length>0&&<div className="ac-alerta" style={{marginBottom:14}}>
           <span style={{fontSize:16}}>📷</span>
@@ -1695,7 +1700,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   const [dispatchPhotoUrl,setDispatchPhotoUrl]=useState(flight.dispatch_photo_url||"");
   const [subiendoFoto,setSubiendoFoto]=useState(false);
   // ⌘V con el vuelo abierto pega la captura del desglose (21/10/2026), además de subirla desde archivos.
-  usePegarFoto(!subiendoFoto,(f)=>subirFotoDespacho(f));
+  // ⌘V va al cuadro que se tocó último: la foto del desglose (imagen) o la factura comercial
+  // (PDF o imagen). Sin tocar nada, una imagen pegada es la foto, como siempre.
+  const [pegarEn,setPegarEn]=useState("foto");
+  usePegarFoto(!subiendoFoto&&pegarEn!=="factura",(f)=>subirFotoDespacho(f));
   const subirFotoDespacho=async(file)=>{
     if(!file)return;
     setSubiendoFoto(true);
@@ -1729,13 +1737,20 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     }catch(e){setErr(e.message);}
     setSubiendoFactura(false);
   };
-  const zonaFactura=(compacta)=><div style={{marginTop:compacta?12:0}}>
+  useEffect(()=>{
+    if(pegarEn!=="factura"||subiendoFactura)return;
+    const h=(e)=>{if(e.defaultPrevented)return;const cd=e.clipboardData;let f=[...(cd?.files||[])][0];if(!f){const it=[...(cd?.items||[])].find(x=>x.kind==="file");f=it?it.getAsFile():null;}if(!f)return;
+      if(!f.name||f.name==="image.png"){try{f=new File([f],`factura_${Date.now()}.${(f.type.split("/")[1]||"png").replace("jpeg","jpg")}`,{type:f.type});}catch(_){}}
+      e.preventDefault();subirFacturaVuelo(f);};
+    window.addEventListener("paste",h);return()=>window.removeEventListener("paste",h);
+  });
+  const zonaFactura=(compacta)=><div style={{marginTop:compacta?12:0}} onClick={()=>setPegarEn("factura")}>
     <label style={{display:"block",fontSize:compacta?11:12,fontWeight:compacta?700:600,color:compacta?"var(--gold)":"rgba(var(--ink),0.6)",marginBottom:5,textTransform:compacta?"uppercase":"none"}}>🧾 {t.flight_invoice}</label>
-    <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`1.5px dashed ${facturaNombre?"rgba(34,197,94,0.5)":"rgba(239,68,68,0.45)"}`,borderRadius:10,cursor:"pointer",background:facturaNombre?"rgba(34,197,94,0.06)":"rgba(239,68,68,0.05)"}}>
+    <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`${pegarEn==="factura"?2:1.5}px ${pegarEn==="factura"?"solid":"dashed"} ${pegarEn==="factura"?"var(--gold)":facturaNombre?"rgba(34,197,94,0.5)":"rgba(239,68,68,0.45)"}`,borderRadius:10,cursor:"pointer",background:facturaNombre?"rgba(34,197,94,0.06)":"rgba(239,68,68,0.05)"}}>
       <input type="file" accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={subiendoFactura} onChange={e=>{subirFacturaVuelo(e.target.files?.[0]);e.target.value="";}}/>
       <span style={{fontSize:20}}>{subiendoFactura?"⏳":facturaNombre?"📄":"📎"}</span>
-      {facturaNombre?<div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.flight_invoice_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{facturaNombre} · {t.flight_invoice_change}</p></div>
-      :<p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFactura?"...":t.flight_invoice_hint}</p>}
+      {facturaNombre?<div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.flight_invoice_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{facturaNombre} · {t.flight_invoice_change} · {pegarEn==="factura"?t.paste_file_ready:t.paste_file}</p></div>
+      :<p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFactura?"...":<>{t.flight_invoice_hint} <b style={{color:"var(--gold)"}}>{pegarEn==="factura"?t.paste_file_ready:t.paste_file}</b></>}</p>}
     </label>
   </div>;
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
@@ -2024,7 +2039,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           <div style={{gridColumn:"1 / -1",marginBottom:14}}>
             <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>📷 {t.dispatch_photo}</label>
             <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(var(--ink),0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(var(--ink),0.03)"}}>
-              <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
+              <input type="file" accept="image/*" style={{display:"none"}} onClick={()=>setPegarEn("foto")} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
               {dispatchPhotoUrl?<>
                 <img src={dispatchPhotoUrl} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.15)"}}/>
                 <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change} · {t.paste_photo||"o pegala con ⌘V"}</p></div>
@@ -2057,7 +2072,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       <div style={{marginTop:12}}>
         <label style={{display:"block",fontSize:11,fontWeight:700,color:"var(--gold)",marginBottom:5,textTransform:"uppercase"}}>📷 {t.dispatch_photo}</label>
         <label style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(var(--ink),0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(var(--ink),0.03)"}}>
-          <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
+          <input type="file" accept="image/*" style={{display:"none"}} onClick={()=>setPegarEn("foto")} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
           {dispatchPhotoUrl?<>
             <img src={dispatchPhotoUrl} alt="" onClick={e=>{e.preventDefault();setLightboxPhoto(dispatchPhotoUrl);}} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.15)",cursor:"zoom-in"}}/>
             <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0"}}>{t.photo_change} · {t.paste_photo||"o pegala con ⌘V"}</p></div>
