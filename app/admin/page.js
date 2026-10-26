@@ -1235,7 +1235,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // Refrescar el op desde DB para reflejar cambios externos (SQL, otros admins, etc)
     const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*`});
     if(Array.isArray(fresh)&&fresh[0]){setOp(p=>({...p,...fresh[0]}));const f=fresh[0];setDespacho({die:f.despacho_die_usd??"",est:f.despacho_estadistica_usd??"",des:f.despacho_desaduanaje_usd??"",iva:f.despacho_iva_usd??""});setDesNeto(desSinIva(f.despacho_desaduanaje_usd));}
-    const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);(Array.isArray(it)?it:[]).forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;});setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
+    const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);(Array.isArray(it)?it:[]).forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;origDescRef.current[x.id]=x.description||"";});setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     // Saldo de cuenta corriente: se aplica SOLO en la primera op abierta del cliente, sin que el
     // admin tenga que apretar nada. Antes era manual y quedaba saldo sin imputar. "Primera op
@@ -1441,15 +1441,25 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       gross_weight_kg:numOrNull(it.gross_weight_kg),
       notes:it.notes||null,
     };
+    // Reclasificar (27/10/2026): si cambió la descripción y el admin no tocó la posición a mano, la IA
+    // vuelve a clasificar y actualiza DIE/TE/IVA (antes "juguetes" quedaba con el NCM del producto anterior).
+    const ncmTocado=origNcmRef.current[it.id]!==undefined&&(origNcmRef.current[it.id]||null)!==(body.ncm_code||null);
+    const descCambio=!isGI&&!!body.description&&origDescRef.current[it.id]!==undefined&&String(origDescRef.current[it.id]||"").trim()!==String(body.description).trim();
+    let reclas=null;
+    if(descCambio&&!ncmTocado&&body.ncm_code){
+      try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:body.description})});const d=await r.json();
+        if(d?.ncm_code){const antes=body.ncm_code;const _n=(v,fb)=>v!=null&&v!==""?Number(v):fb;body.ncm_code=d.ncm_code;body.import_duty_rate=_n(d.import_duty_rate,body.import_duty_rate);body.statistics_rate=_n(d.statistics_rate,body.statistics_rate);body.iva_rate=_n(d.iva_rate,body.iva_rate??21);if(antes!==d.ncm_code)reclas=`${antes} → ${d.ncm_code}`;}
+      }catch(e){console.error("reclasificar",e);}
+    }
     // Auto-clasificar NCM si tiene descripción pero no código. En GI no aplica (el cliente paga precio acordado, no se factura por NCM).
     if(!isGI&&body.description&&!body.ncm_code){
       try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:body.description})});const d=await r.json();if(d?.ncm_code){body.ncm_code=d.ncm_code;if(d.import_duty_rate&&body.import_duty_rate==null)body.import_duty_rate=Number(d.import_duty_rate);if(d.statistics_rate&&body.statistics_rate==null)body.statistics_rate=Number(d.statistics_rate);if(d.iva_rate&&body.iva_rate==null)body.iva_rate=Number(d.iva_rate);}}catch(e){}
     }
-    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(!isGI&&body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(reclas?`Producto guardado · reclasificado ${reclas}`:!isGI&&body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");
     // Memoria (20/10/2026): si el admin cambió la posición a mano, el sistema la aprende para esa
     // descripción y las parecidas (ver memoriaAdmin en /api/ncm).
     const orig=origNcmRef.current[it.id];
-    if(!isGI&&body.ncm_code&&body.description&&orig!==undefined&&orig!==body.ncm_code){
+    if(!isGI&&!reclas&&body.ncm_code&&body.description&&orig!==undefined&&orig!==body.ncm_code){
       fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({action:"aprender",description:body.description,ncm_code:body.ncm_code})}).then(r=>r.json()).then(j=>{if(j?.ok)toast(`Aprendido: "${body.description.slice(0,40)}…" → ${body.ncm_code}`,"success");}).catch(()=>{});
     }
     autoSyncBudget();await reloadItems();
@@ -1525,7 +1535,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
   const reloadPkgs=async()=>{const pk=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`});setPkgs(Array.isArray(pk)?pk:[]);};
   const origNcmRef=useRef({}); // NCM con el que se cargó cada item (para saber si el admin lo cambió a mano)
-  const reloadItems=async()=>{const it=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});const l=Array.isArray(it)?it:[];l.forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;});setItems(l);};
+  const origDescRef=useRef({}); // descripción con la que se cargó (si cambia, se reclasifica)
+  const reloadItems=async()=>{const it=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});const l=Array.isArray(it)?it:[];l.forEach(x=>{origNcmRef.current[x.id]=x.ncm_code||null;origDescRef.current[x.id]=x.description||"";});setItems(l);};
   const reloadEvents=async()=>{const ev=await dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`});setEvents(Array.isArray(ev)?ev:[]);};
 
   const savePkg=async(pk)=>{const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Bulto guardado");autoSyncBudget();};
@@ -2565,6 +2576,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         </div>
         {isBlanco&&!isGI&&<div style={{margin:"0 -18px",padding:"12px 18px 0",borderTop:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.015)",borderRadius:"0 0 16px 16px"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:"0 10px"}}>
+            <Inp label="NCM" value={it.ncm_code||""} onChange={v=>chItem(i,"ncm_code",v)} placeholder="8504.40.90" small/>
+            <div style={{display:"flex",alignItems:"center",paddingTop:16}}><button type="button" onClick={()=>classifyOne(it)} disabled={classifying===it.id} title="La IA propone la posición según la descripción; después la aplicás o no" style={{height:34,padding:"0 12px",borderRadius:9,border:"1px solid rgba(167,139,250,0.45)",background:"rgba(167,139,250,0.12)",color:"#c4b5fd",fontSize:12,fontWeight:800,cursor:classifying===it.id?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",opacity:classifying===it.id?0.6:1}}>{classifying===it.id?"Clasificando…":"✨ Clasificar"}</button></div>
             <Inp label="DIE %" type="number" value={it.import_duty_rate??0} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate??21} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
