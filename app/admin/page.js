@@ -15407,7 +15407,8 @@ function SeguimientoPanel({token,templates,flash}){
     if(n(c.bultos_sin_op)>0)l.push(`${c.bultos_sin_op} bulto${n(c.bultos_sin_op)===1?"":"s"} en depósito`);
     if(n(c.claims_pendientes)>0)l.push(`reclamo de depósito pendiente`);
     return l;};
-  const importaciones=(c)=>n(c.ops_cerradas)+(c.mar_ultima_fecha?Math.max(0,n(c.mar_total)-n(c.mar_activos)):0);
+  // Con el SQL viejo (v2) no vienen ops_cerradas ni lo marítimo: se aproxima con total − activas.
+  const importaciones=(c)=>(c.ops_cerradas!=null?n(c.ops_cerradas):Math.max(0,n(c.ops_total)-n(c.ops_activas)))+(c.mar_ultima_fecha?Math.max(0,n(c.mar_total)-n(c.mar_activos)):0);
   const ultimaImp=(c)=>maxF(c.ultima_op_cierre,c.mar_ultima_fecha)||(n(c.ops_cerradas)>0?c.ultima_op_fecha:null);
   const cotizoDespues=(c)=>!!c.ultima_quote_fecha&&(!ultimaImp(c)||new Date(c.ultima_quote_fecha)>new Date(ultimaImp(c)));
 
