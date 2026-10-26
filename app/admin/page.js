@@ -15480,7 +15480,8 @@ function SeguimientoPanel({token,templates,flash}){
   const interpTpl=(text,data)=>String(text||"").replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");
   // Qué trajo la última vez y qué cotizó: se busca al armar el mensaje (una vez por cliente).
   const generico=(s)=>!s||/^(consolidado|varios|mercader[ií]a|productos varios|-+|\.+)$/i.test(String(s).trim());
-  const minus=(s)=>{s=String(s||"").trim();return s&&s.length>1&&s[1]===s[1].toLowerCase()&&!/^[A-Z]{2,}/.test(s)?s[0].toLowerCase()+s.slice(1):s;};
+  // "Pin De Carga De Peso Para Gimnasio" → "pin de carga de peso para gimnasio" (las siglas quedan).
+  const minus=(s)=>String(s||"").trim().split(/\s+/).map(w=>/^[A-ZÁÉÍÓÚÑ0-9]{2,}$/.test(w)?w:w.toLowerCase()).join(" ");
   const contextoDe=async(c)=>{
     if(ctxRef.current[c.id])return ctxRef.current[c.id];
     const ctx={opDesc:"",quoteDesc:""};
@@ -15502,7 +15503,7 @@ function SeguimientoPanel({token,templates,flash}){
     const canal=canalTxt(c.ultima_quote_canal);
     const nb=n(c.bultos_sin_op);
     const data={firstName:apodoDe(c.first_name),clientCode:c.client_code||"",opCode:c.ultima_op_code||"",opDesc:ctx.opDesc,opQue:ctx.opDesc?minus(ctx.opDesc):"tu importación",
-      quoteNum:c.ultima_quote_num||"",quoteCanal:canal,quoteTotal:fmtUsd(c.ultima_quote_total),quoteDias:diasTxt(dias(c.ultima_quote_fecha)).replace(/^hace /,""),quoteDesc:ctx.quoteDesc,
+      quoteNum:c.ultima_quote_num||"",quoteCanal:canal,quoteTotal:fmtUsd(c.ultima_quote_total),quoteDias:diasTxt(dias(c.ultima_quote_fecha)).replace(/^hace /,""),quoteCuando:diasTxt(dias(c.ultima_quote_fecha)),quoteDesc:ctx.quoteDesc,
       quoteQue:ctx.quoteDesc?`para traer ${ctx.quoteDesc}`:canal?`${canal}`:"con nosotros",bultos:`${nb} bulto${nb!==1?"s":""}`};
     return interpTpl(tpl?.body||"Hola {{firstName}}!",data).replace(/Hola\s*!/,"Hola!").replace(/  +/g," ").replace(/ ([,.:;!?])/g,"$1");
   };
