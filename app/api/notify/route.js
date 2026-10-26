@@ -271,7 +271,8 @@ export async function POST(req) {
       return Response.json({ ok: true, resend_id: resp.id, bultos: n });
     }
     if (!op_id || !trigger) return Response.json({ error: "op_id y trigger requeridos" }, { status: 400 });
-    if (!["deposito", "arribo", "retiro", "cerrada"].includes(trigger))
+    // "retenida" (26/10/2026): la Aduana retuvo la carga (excluida del régimen courier); lo dispara el sync.
+    if (!["deposito", "arribo", "retiro", "cerrada", "retenida"].includes(trigger))
       return Response.json({ error: "trigger inválido" }, { status: 400 });
 
     // Fetch op + client

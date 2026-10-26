@@ -1229,6 +1229,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
     setOp(p=>({...p,...body}));setSaving(false);flash("Marca de perdida quitada — revisá el status manualmente");
   };
+  // Retenida por Aduana (26/10/2026): la marca el sync por el tracking; se puede quitar a mano.
+  const quitarRetencionOp=async()=>{if(!await confirmDialog("¿Quitar la marca de retenida por Aduana? Vuelve a seguirse por tracking y el legajo vuelve a ser obligatorio.",{danger:true}))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{retenida_at:null}});setOp(p=>({...p,retenida_at:null}));flash("Retención quitada");};
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
   const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
@@ -1776,6 +1778,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Motivo: <strong style={{color:"#fff"}}>{op.lost_in_customs_reason||"—"}</strong> · Marcada el {formatDate(op.lost_in_customs_at)}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",fontStyle:"italic"}}>El cliente no abona — esta op se trata como pérdida operativa, no aparece en cobros pendientes.</p>
       </div>
+    </div>}
+    {op.retenida_at&&!op.lost_in_customs_at&&<div style={{marginBottom:16,padding:"14px 18px",background:"linear-gradient(135deg,rgba(239,68,68,0.18),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.45)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:220}}>
+        <p style={{fontSize:13,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🛑 Retenida por Aduana</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Excluida del régimen courier desde el <strong style={{color:"#fff"}}>{formatDate(op.retenida_at)}</strong>, según el tracking. El tracking dejó de seguirse y para cerrar no hace falta DSI ni factura del courier.</p>
+      </div>
+      <button type="button" onClick={quitarRetencionOp} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Quitar retención</button>
     </div>}
     {/* Modal: marcar perdida en aduana */}
     {customsLossModal&&<div onClick={()=>!saving&&setCustomsLossModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -9012,7 +9021,8 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const ri=opClient?.tax_condition==="responsable_inscripto";
   const autoVisible=ri&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes;
   const visible=ri&&(op.legajo_visible==null?autoVisible:!!op.legajo_visible);
-  const faltan=Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio&&!doc(t));
+  // Retenida por Aduana: salió del régimen courier, no se exige nada para cerrar.
+  const faltan=op.retenida_at?[]:Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio&&!doc(t));
   const subir=async(tipo,file)=>{
     if(!file)return;if(sinTabla){flash("Falta correr el SQL del legajo");return;}
     setOcupado(tipo);
@@ -9057,7 +9067,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const facturar=()=>{window.__facturarOp=op.operation_code;window.dispatchEvent(new CustomEvent("ac_go_facturas"));};
   const obligatorios=Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio).length;
   return <div data-legajo-op="1">
-    <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{faltan.length?`${obligatorios-faltan.length} de ${obligatorios} obligatorios`:"✓ Completo"}</span></span>} sub={faltan.length?`Falta ${nombresFaltan(faltan)} · sin eso no se puede cerrar la operación`:"Listo para cerrar"}>
+    <Card v2 title={<span style={{display:"inline-flex",alignItems:"center",gap:10}}>Legajo<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,letterSpacing:"0.04em",...(faltan.length?{background:"rgba(251,191,36,0.1)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)"}:{background:"rgba(34,197,94,0.12)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.35)"})}}>{op.retenida_at?"Retenida por Aduana":faltan.length?`${obligatorios-faltan.length} de ${obligatorios} obligatorios`:"✓ Completo"}</span></span>} sub={op.retenida_at?"Excluida del régimen courier: no se exige DSI ni factura del courier para cerrar":faltan.length?`Falta ${nombresFaltan(faltan)} · sin eso no se puede cerrar la operación`:"Listo para cerrar"}>
       {sinTabla&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Falta correr el SQL del legajo (migrations/2026_10_22_legajo.sql).</p>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
         {docTarjeta("dsi","🛃",MARCA_DSI)}
@@ -9442,6 +9452,8 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     :TIPOS_LEGAJO[t].obligatorio?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(251,191,36,0.45)",color:"#fbbf24",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>Falta {TIPOS_LEGAJO[t].corto}</span>
     :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.4)",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>Sin {TIPOS_LEGAJO[t].corto.toLowerCase()}</span>;
   const recibido=flight.status==="recibido";
+  // Retenido por Aduana: se puede marcar recibido sin DSI ni factura del courier.
+  const retenido=!recibido&&!!flight.retenido_at;const puedeRecibir=puedeRecibir||retenido;
   // Estado del cuadro: cargado cuando todas las ops del vuelo ya tienen ese documento.
   const zona=(tipo,marca,icono,txt)=>{const elegida=pegarEn===tipo,t=marca?.tinte||"#E8D098";
     const conDoc=opsLeg.filter(o=>doc(o.id,tipo)),faltanZ=opsLeg.filter(o=>!doc(o.id,tipo));
@@ -9477,11 +9489,11 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
       {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}{chip(doc(o.id,"guia_aerea"),"guia_aerea",o)}
     </div>)}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-      <span style={{fontSize:12.5,color:completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{completo?"✓ Documentación completa":`Falta documentación de ${faltan.map(o=>o.operation_code).join(", ")}`}</span>
+      <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":completo?"✓ Documentación completa":`Falta documentación de ${faltan.map(o=>o.operation_code).join(", ")}`}</span>
       {recibido
         ?<span style={{height:40,padding:"0 16px",borderRadius:11,display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",fontSize:13,fontWeight:800}}>✓ Recibido en Buenos Aires{flight.received_at?` · ${new Date(flight.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}`:""}</span>
-        :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!completo&&!sinTabla} title={!completo&&!sinTabla?"Primero subí la DSI y la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${completo||sinTabla?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:completo||sinTabla?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:completo||sinTabla?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:completo||sinTabla?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
-          <span style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${completo||sinTabla?"#4ade80":"rgba(255,255,255,0.3)"}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{""}</span>Marcar recibido en Buenos Aires</button>}
+        :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!puedeRecibir} title={!puedeRecibir?"Primero subí la DSI y la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${puedeRecibir?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:puedeRecibir?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:puedeRecibir?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:puedeRecibir?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${puedeRecibir?"#4ade80":"rgba(255,255,255,0.3)"}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{""}</span>Marcar recibido en Buenos Aires</button>}
     </div>
   </div>;
 }
@@ -10490,7 +10502,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const markReceived=async()=>{
     // Sin la DSI y la factura del courier de cada op no se marca recibido (legajo, 22/10/2026).
     {const ids=flightOps.map(fo=>fo.operation_id).filter(Boolean);
-      if(ids.length){const l=await listarLegajo(await ensureFreshToken(token),{opIds:ids});
+      if(ids.length&&!flight.retenido_at){const l=await listarLegajo(await ensureFreshToken(token),{opIds:ids});
         if(l.ok){const os=await dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=id,operation_code,channel,service_type`});
           const falt=(Array.isArray(os)?os:[]).filter(llevaLegajo).filter(o=>!["dsi","factura_courier"].every(t=>l.docs.some(d=>d.operation_id===o.id&&d.tipo===t)));
           if(falt.length){alertDialog(`Falta documentación de ${falt.map(o=>o.operation_code).join(", ")}: subí la DSI y la factura del courier.`);return;}}}}
@@ -10561,7 +10573,24 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     </body></html>`;
     w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);
   };
+  // Retenido por Aduana (26/10/2026): banner con las acciones. El sync ya le avisó al cliente; el botón
+  // reenvía el aviso (dedup por sent_notifications, salvo que nunca haya salido).
+  const retenidoFl=flight.status!=="recibido"&&!!flight.retenido_at;
+  const opIdsVuelo=flightOps.map(fo=>fo.operation_id).filter(Boolean);
+  const quitarRetencion=async()=>{if(!await confirmDialog("¿Quitar la marca de retenido? El vuelo vuelve a seguirse por tracking y el legajo vuelve a ser obligatorio.",{danger:true}))return;await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{retenido_at:null}});if(opIdsVuelo.length)await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIdsVuelo.join(",")})`,body:{retenida_at:null}});onFlash?.("Retención quitada");onReload?.();};
+  const avisarRetencion=async()=>{let ok=0,otros=[];for(const id of opIdsVuelo){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({op_id:id,trigger:"retenida"})});const j=await r.json();if(j.ok)ok++;else otros.push(j.skipped||j.error||"?");}catch(e){otros.push(e.message);}}onFlash?.(ok?`Aviso de retención enviado a ${ok} cliente${ok!==1?"s":""}`:`No se mandó: ${otros.join(", ")}`);};
   return <div>
+    {retenidoFl&&<div style={{marginBottom:14,padding:"14px 18px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.2),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.5)",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+      <span style={{fontSize:22}}>🛑</span>
+      <div style={{flex:"1 1 260px",minWidth:0}}>
+        <p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fca5a5",letterSpacing:"0.04em",textTransform:"uppercase"}}>Retenido por Aduana · excluido del régimen courier</p>
+        <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.5}}>Desde el {formatDate(flight.retenido_at)}, según el tracking de {flight.international_carrier||"el courier"}. El tracking dejó de seguirse: cuando la carga llegue, marcá el vuelo recibido. No hace falta DSI ni factura del courier.</p>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" onClick={avisarRetencion} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(252,165,165,0.5)",background:"rgba(239,68,68,0.14)",color:"#fca5a5",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>✉ Avisar al cliente</button>
+        <button type="button" onClick={quitarRetencion} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Quitar retención</button>
+      </div>
+    </div>}
     <div className="ac-fe-sticky" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:10,flexWrap:"wrap",padding:"10px 12px",background:"rgba(10,22,40,0.92)",backdropFilter:"blur(8px)",borderBottom:"1px solid rgba(184,149,106,0.25)",borderRadius:"0 0 12px 12px",margin:"0 -4px 14px"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <button onClick={async()=>{if(itemsDirty&&!(await confirmDialog("Tenés cambios sin guardar en la factura. ¿Salir igual?")))return;onBack();}} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver</button>
@@ -10585,7 +10614,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       </div>
     </div>
     {(()=>{
-      const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];const label=ready?"listo para enviar":flight.status==="despachado"?"en tránsito":flight.status;
+      const ready=flight.status==="preparando"&&flight.invoice_presented_at;const retenidoFe=flight.status!=="recibido"&&!!flight.retenido_at;const c=retenidoFe?"#ef4444":ready?"#22c55e":stColors[flight.status];const label=retenidoFe?"retenido por Aduana":ready?"listo para enviar":flight.status==="despachado"?"en tránsito":flight.status;
       const kg=v=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
       const n2=v=>v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
       // Totales del vuelo con la misma cuenta que cada fila (divisor del agente que creó la op)
@@ -11655,6 +11684,8 @@ function AgentsPanel({token}){
   const [tab,setTab]=useState(_sub.tab||"deposito");
   // Cliente cuyo desglose de bultos en deposito esta abierto (ver tracking de cada bulto).
   const [depOpen,setDepOpen]=useState(null);
+  // Depósito en el celu (26/10/2026): tarjetas en vez de la tabla, con el mismo detalle al tocar.
+  const celu=useEsCelu(900);
   const [signups,setSignups]=useState([]);
   const [profiles,setProfiles]=useState({});
   const [unassigned,setUnassigned]=useState([]);
@@ -12337,156 +12368,15 @@ function AgentsPanel({token}){
       };
       const reenviosAbiertos=reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede");
       const cancelarReenvio=async(r)=>{if(!await confirmDialog(`¿Cancelar el reenvío a ${r.destino_nombre}?`))return;await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"cancelado",resolved_at:new Date().toISOString()}});toast("Reenvío cancelado","success");load();};
-      return <div>
-        {reenvioModal&&<ReenvioModal token={token} {...reenvioModal} historial={reenvios} onClose={()=>setReenvioModal(null)} onSaved={()=>{setReenvioModal(null);load();}}/>}
-        {reenviosAbiertos.length>0&&<div style={{marginBottom:14,borderRadius:12,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.06)",overflow:"hidden"}}>
-          <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(96,165,250,0.2)"}}>↪ Reenvíos pedidos · {reenviosAbiertos.length}</p>
-          {reenviosAbiertos.map(r=>{const ag=approvedAgents.find(a=>a.auth_user_id===r.agent_id);const n=(r.package_ids||[]).length;return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-            <div style={{flex:"1 1 280px",minWidth:0}}>
-              <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={{fontFamily:"monospace"}}>{r.shipping_mark}</span></p>
-              <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${new Date(r.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}, esperando al agente`}</p>
-            </div>
-            <button onClick={()=>cancelarReenvio(r)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
-          </div>;})}
-        </div>}
-        {selectedOps.length>0&&(()=>{
-          const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
-          const riOps=selObjs.filter(o=>o.clients?.tax_condition==="responsable_inscripto");
-          // Totales de lo seleccionado: la misma cuenta que las columnas de la tabla (por bulto, el
-          // mayor entre bruto y volumétrico; ÷6000 con el redondeo del agente al medio kilo).
-          const factDe=(opId,div,redondeo)=>opPackages(opId).reduce((s2,p2)=>{const q2=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v);return s2+(redondeo?Math.ceil(f*2)/2:f)*q2;},0);
-          const tot=selObjs.reduce((a,o)=>({
-            bultos:a.bultos+opPackages(o.id).reduce((s2,p2)=>s2+Number(p2.quantity||1),0),
-            bruto:a.bruto+opPackages(o.id).reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0),
-            f5:a.f5+factDe(o.id,5000,false), f6:a.f6+factDe(o.id,6000,true),
-          }),{bultos:0,bruto:0,f5:0,f6:0});
-          const kg2=(v)=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
-          const Dato=({l,v,c,t:tt})=><div title={tt} style={{minWidth:96}}>
-            <p style={{margin:0,fontSize:9.5,fontWeight:700,letterSpacing:"0.1em",color:"rgba(255,255,255,0.4)"}}>{l}</p>
-            <p style={{margin:"3px 0 0",fontSize:15,fontWeight:700,color:c||"#fff",fontFamily:"monospace"}}>{v}</p>
-          </div>;
-          return <div style={{background:"linear-gradient(180deg,rgba(184,149,106,0.12),rgba(184,149,106,0.05))",border:`1px solid ${IC}55`,borderRadius:14,marginBottom:14,overflow:"hidden"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"13px 16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",minWidth:0}}>
-                <span style={{width:30,height:30,borderRadius:"50%",background:GOLD_GRADIENT,color:"#0A1628",display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:14,flexShrink:0}}>{selectedOps.length}</span>
-                <div style={{minWidth:0}}>
-                  <p style={{margin:0,fontSize:13.5,color:"#fff",fontWeight:700,letterSpacing:"-0.01em"}}>{selectedOps.length===1?"operación seleccionada":"operaciones seleccionadas"}</p>
-                  <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:420}}>{selObjs.map(o=>o.operation_code).join(" · ")}</p>
-                </div>
-                {riOps.length>0&&<span title={"Clientes RI: "+riOps.map(o=>o.clients?.client_code).join(", ")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:6,background:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>⚠ {riOps.length} RI · facturar A</span>}
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
-                <Btn small onClick={createFlight}>+ Crear vuelo con seleccionadas</Btn>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:26,flexWrap:"wrap",padding:"12px 16px",borderTop:`1px solid ${IC}33`,background:"rgba(0,0,0,0.18)"}}>
-              <Dato l="BULTOS" v={tot.bultos}/>
-              <Dato l="BRUTO" v={kg2(tot.bruto)} c="rgba(255,255,255,0.8)"/>
-              <Dato l="FACT. ÷5000" v={kg2(tot.f5)} c={IC} t="Peso facturable con volumétrico a 5000: por bulto, el mayor entre bruto y volumétrico"/>
-              <Dato l="FACT. ÷6000 ↑½" v={kg2(tot.f6)} c="#fb923c" t="Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba"/>
-            </div>
-            {riOps.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:0,padding:"10px 16px",borderTop:"1px solid rgba(96,165,250,0.2)",lineHeight:1.5,background:"rgba(96,165,250,0.06)"}}>Hay clientes Responsable Inscripto en este vuelo. Recordá emitir factura A con su CUIT y aplicar el régimen impositivo correspondiente.</p>}
-          </div>;
-        })()}
-        {Object.keys(byAgent).length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en depósito</p>}
-        {Object.entries(byAgent).map(([agentId,grp])=>{
-          const grpKg=grp.ops.reduce((s2,o)=>s2+opWeight(o.id),0);
-          const grpFob=grp.ops.reduce((s2,o)=>s2+depositItems.filter(i=>i.operation_id===o.id).reduce((a2,i)=>a2+Number(i.unit_price_usd||0)*Number(i.quantity||1),0),0);
-          const grpListas=grp.ops.filter(o=>orderScore(o)===0).length;
-          const collapsed=collapsedAgents.has(agentId);
-          const toggleGrp=()=>setCollapsedAgents(prev=>{const n=new Set(prev);n.has(agentId)?n.delete(agentId):n.add(agentId);return n;});
-          return <div key={agentId} style={{marginBottom:20}}>
-          <div onClick={toggleGrp} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"0 0 10px",cursor:"pointer",userSelect:"none"}}>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.4)",width:12,display:"inline-block"}}>{collapsed?"▸":"▾"}</span>
-            <h3 style={{fontSize:13,fontWeight:800,color:IC,margin:0,textTransform:"uppercase",letterSpacing:"0.04em"}}>{grp.agentName}</h3>
-            <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{grp.ops.length} op{grp.ops.length!==1?"s":""}{grpListas>0?` · ${grpListas} lista${grpListas!==1?"s":""}`:""}</span>
-            {grpKg>0&&<span title="Peso facturable acumulado del agente — la cuenta para decidir si conviene armar vuelo ya" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(184,149,106,0.12)",color:"#E8C99B",fontVariantNumeric:"tabular-nums"}}>Σ {grpKg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg fact.</span>}
-            {grpFob>0&&<span title="FOB declarado acumulado de las ops de este agente" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontVariantNumeric:"tabular-nums"}}>FOB USD {grpFob.toLocaleString("es-AR",{maximumFractionDigits:0})}</span>}
-          </div>
-          {!collapsed&&<div className="ag-dep-wrap" style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-            <table className="ag-dep" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
-              <colgroup>
-                <col style={{width:44}}/>{/* ✓ */}
-                <col style={{width:124}}/>{/* Op — lleva la alerta de DIE 0% en su renglón */}
-                <col style={{width:180}}/>{/* Cliente */}
-                <col style={{width:54}}/>{/* CF */}
-                <col/>{/* Mercadería — toma el resto */}
-                <col style={{width:62}}/>{/* Bultos */}
-                <col style={{width:92}}/>{/* Bruto */}
-                <col style={{width:104}}/>{/* Fact. ÷5000 */}
-                <col style={{width:96}}/>{/* Fact. ÷6000 */}
-                <col style={{width:56}}/>{/* Días */}
-              </colgroup>
-              <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","CF","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000 ↑½","Días"].map(h=><th key={h} title={h.startsWith("Fact. ÷6000")?"Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba":undefined} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
-              </tr></thead>
-              <tbody>{grp.ops.map((o,oIdx)=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
-              const sc=orderScore(o);const scMeta=SCORE_META[sc];
-              const showSep=oIdx===0||orderScore(grp.ops[oIdx-1])!==sc;
-              const days=lastPkgAt>0?Math.floor((Date.now()-lastPkgAt)/864e5):null;
-              const dCol=days==null?null:days>14?{c:"#ef4444",bg:"rgba(239,68,68,0.12)",w:800}:days>7?{c:"#fbbf24",bg:"rgba(251,191,36,0.12)",w:700}:{c:"rgba(255,255,255,0.45)",bg:"rgba(255,255,255,0.05)",w:600};
-              const grossW=opPkgs.reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0);
-              const payingVol=grossW>0&&w>grossW*1.15; // paga volumétrico: candidato a reempaque
-              // Peso facturable con divisor 5000 y 6000 (pedido 07/09/2026): por bulto, el mayor entre bruto y volumétrico.
-              // ÷6000 lleva el redondeo del agente: cada bulto al medio kilo para arriba (misma cuenta que en el vuelo).
-              const factDiv=(div,redondeo)=>opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v)*q;return s2+(redondeo?Math.ceil(f*2)/2:f);},0);
-              const f5=factDiv(5000,false),f6=factDiv(6000,true);
-              const kgTxt=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";
-              const volBadge=(f)=>grossW>0&&f>grossW*1.15?<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg, factura ${f.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{color:"#fbbf24",fontSize:10,marginLeft:4,cursor:"help",verticalAlign:"1px"}}>▲</span>:null;
-              const lockedByAgent=canSelect&&selAgentId&&o.created_by_agent_id!==selAgentId;
-              // Alerta DIE 0% para canal aéreo blanco (canal A): puede ser legítimo pero el admin tiene que revisarlo manual.
-              const isAereoA=o.channel==="aereo_blanco";
-              const itemsForOp=isAereoA?depositItems.filter(i=>i.operation_id===o.id):[];
-              const zeroDieItems=isAereoA?itemsForOp.filter(i=>i.description&&i.description.trim()&&i.ncm_code&&i.ncm_code.trim()&&Number(i.import_duty_rate)===0):[];
-              const hasZeroDie=zeroDieItems.length>0;
-              const ivItems=itemsForOp.filter(i=>i.intervention?.required);
-              const ivTypes=[...new Set(ivItems.flatMap(i=>i.intervention?.types||[]))];
-              return <Fragment key={o.id}>
-              {showSep&&<tr><td colSpan={10} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
-              <tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
-                <td style={{padding:"10px 12px",boxShadow:`inset 3px 0 0 ${scMeta.c}${sc===0?"":"66"}`}}>{canSelect&&!lockedByAgent?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
-                  <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
-                  <span style={{width:18,height:18,borderRadius:5,border:isChecked?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.25)",background:isChecked?GOLD_GRADIENT:"rgba(255,255,255,0.04)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 150ms",boxShadow:isChecked?GOLD_GLOW:"none"}}>
-                    {isChecked&&<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </span>
-                </label>;})():lockedByAgent?<span title="Un vuelo agrupa ops de UN solo agente — ya tildaste ops de otro agente" style={{display:"inline-flex",width:18,height:18,borderRadius:5,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.02)",opacity:0.35,cursor:"not-allowed"}}/>:<span title={inFlight?"Ya está en un vuelo":o.consolidation_confirmed?"Faltan los documentos del cliente (mercadería y valores)":"Falta confirmar la consolidación"} style={{color:"rgba(255,255,255,0.3)",fontSize:14,cursor:"help"}}>{isExpanded?"▾":"▸"}</span>}</td>
-                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,verticalAlign:"top"}}>
-                  <span style={{display:"block"}}>{o.operation_code}</span>
-                  {hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`}
-                    style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)"}}>⚠ DIE 0%</span>}
-                  {ivItems.length>0&&<span title={`Requiere intervención de organismo:\n${ivItems.map(i=>`• ${i.description}: ${(i.intervention.types||[]).join(" / ")}${i.intervention.reason?` — ${i.intervention.reason}`:""}`).join("\n")}\n\nCoordinar ANTES de subirla a un vuelo.`}
-                    style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.45)"}}>⚠ {ivTypes.join("/")||"INTERV."}</span>}
-                </td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.clients?`${o.clients.client_code} - ${(o.clients.first_name||"").trim()}`:"—"}</td>
-                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
-                  const cf=CF_META[o.clients?.tax_condition||""];
-                  if(!cf)return <span style={{color:"rgba(255,255,255,0.25)"}}>—</span>;
-                  return <span title={cf.t} style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:4,background:`${cf.c}26`,color:cf.c,border:`1px solid ${cf.c}66`,letterSpacing:"0.05em"}}>{cf.l}</span>;
-                })()}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
-                  // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
-                  if(o.description&&o.description.trim())return <span title={o.description} style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description}</span>;
-                  const opItems=depositItems.filter(i=>i.operation_id===o.id);
-                  if(opItems.length===0)return <span style={{color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin productos</span>;
-                  const first=opItems[0].description||"Producto";
-                  const more=opItems.length-1;
-                  const fullList=opItems.map(it=>it.description||"—").join(" · ");
-                  return <span title={fullList} style={{display:"block"}}><span style={{display:"inline-block",maxWidth:more>0?160:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{first}</span>{more>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,marginLeft:6,verticalAlign:"middle"}}>+{more}</span>}</span>;
-                })()}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(grossW)}</td>
-                <td style={{padding:"10px 12px",color:grossW>0&&f5>grossW*1.15?"#fbbf24":"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}</td>
-                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
-              </tr>
-              {isExpanded&&(()=>{
+      // Detalle de una op del depósito (productos, bultos, reempaque): lo usan la fila de la tabla y la
+      // tarjeta del celu.
+      const detalleDe=(o)=>{
                 const itemsOfOp=depositItems.filter(i=>i.operation_id===o.id);
                 const pkgsOfOp=opPackages(o.id);
                 const totalFob=itemsOfOp.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
                 const rpk=repackReqOf(o.id);
                 const canRepack=o.created_by_agent_id&&pkgsOfOp.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(o.status)&&(!rpk||rpk.status!=="pending");
-                return <tr><td colSpan={10} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
+                return <>
                   <div style={{padding:"16px 18px",background:"rgba(184,149,106,0.04)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
@@ -12568,10 +12458,240 @@ function AgentsPanel({token}){
                     </div>
                   </div>
                   </div>
-                </td></tr>;
-              })()}</Fragment>;})}</tbody>
-            </table>
+</>;
+      };
+      const chipDep=(t,c)=><span key={t} style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:c?`${c}1F`:"rgba(255,255,255,0.06)",color:c||"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{t}</span>;
+      // Celu: una tarjeta por op con lo que importa (estado, cliente, mercadería, bultos, peso, días) y el
+      // tilde para armar el vuelo; al tocarla se abre el mismo detalle que en la compu.
+      const tarjetaOpCelu=(o)=>{
+        const inFlight=opsInFlightIds.has(o.id);const opPkgs=opPackages(o.id);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
+        const sc=orderScore(o);const scMeta=SCORE_META[sc];
+        const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const days=lastPkgAt>0?Math.floor((Date.now()-lastPkgAt)/864e5):null;
+        const grossW=opPkgs.reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0);
+        const f5=opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/5000:0;return s2+Math.max(g,v)*q;},0);
+        const kgT=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:1,maximumFractionDigits:1})} kg`:"—";
+        const isChecked=selectedOps.includes(o.id);const lockedByAgent=canSelect&&selAgentId&&o.created_by_agent_id!==selAgentId;
+        const cf=CF_META[o.clients?.tax_condition||""];
+        const opItems=depositItems.filter(i=>i.operation_id===o.id);
+        const merc=o.description&&o.description.trim()?o.description:opItems.length?opItems.map(it=>it.description||"—").join(" · "):"";
+        const dCol=days==null?null:days>14?"#ef4444":days>7?"#fbbf24":null;
+        const nBultos=opPkgs.reduce((a,p2)=>a+Number(p2.quantity||1),0);
+        return <div key={o.id} style={{borderRadius:14,border:`1px solid ${isChecked?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.07)"}`,background:isChecked?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.028)",boxShadow:`inset 4px 0 0 ${scMeta.c}`,opacity:canSelect?1:inFlight?0.5:0.8,overflow:"hidden"}}>
+          <div onClick={()=>setExpandedOp(isExpanded?null:o.id)} style={{padding:"12px 14px 12px 16px",cursor:"pointer"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              {canSelect&&!lockedByAgent?<label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",width:26,height:26,alignItems:"center",justifyContent:"center",flexShrink:0,position:"relative"}}>
+                <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
+                <span style={{width:22,height:22,borderRadius:6,border:isChecked?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.3)",background:isChecked?GOLD_GRADIENT:"rgba(255,255,255,0.04)",display:"flex",alignItems:"center",justifyContent:"center"}}>{isChecked&&<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}</span>
+              </label>:<span title={inFlight?"Ya está en un vuelo":lockedByAgent?"Un vuelo agrupa ops de un solo agente":o.consolidation_confirmed?"Faltan los documentos del cliente":"El cliente todavía no confirmó la carga"} style={{width:22,height:22,borderRadius:6,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.02)",flexShrink:0,marginRight:4,opacity:0.5}}/>}
+              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:14,flexShrink:0}}>{o.operation_code}</span>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",color:scMeta.c,background:`${scMeta.c}1A`,padding:"3px 7px",borderRadius:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{scMeta.l.replace(/^[●◐○] /,"")}</span>
+              <span style={{marginLeft:"auto",color:"rgba(255,255,255,0.35)",fontSize:12,flexShrink:0,transform:isExpanded?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,paddingLeft:36,minWidth:0}}>
+              <span style={{fontSize:13,color:"#fff",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{o.clients?`${o.clients.client_code} · ${(o.clients.first_name||"").trim()} ${(o.clients.last_name||"").trim()}`.trim():"—"}</span>
+              {cf&&<span title={cf.t} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:`${cf.c}26`,color:cf.c,border:`1px solid ${cf.c}66`,flexShrink:0}}>{cf.l}</span>}
+            </div>
+            {merc&&<p style={{margin:"4px 0 0",paddingLeft:36,fontSize:12,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{merc}</p>}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10,paddingLeft:36}}>
+              {chipDep(`${nBultos} bulto${nBultos!==1?"s":""}`)}{chipDep(`Bruto ${kgT(grossW)}`)}{chipDep(`Fact. ${kgT(f5)}`,grossW>0&&f5>grossW*1.15?"#fbbf24":null)}{days!=null&&chipDep(`${days} d`,dCol)}{inFlight&&chipDep("En vuelo","#60a5fa")}
+            </div>
+          </div>
+          {isExpanded&&<div style={{borderTop:"1px solid rgba(184,149,106,0.2)"}}>{detalleDe(o)}</div>}
+        </div>;
+      };
+      // Celu: bultos sin importación, una tarjeta por cliente; al tocarla, sus bultos con tracking y medidas.
+      const sueltosCelu=()=>gruposSueltos.map(([cid,g])=>{
+        const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
+        const vol=g.pk.reduce((s2,p)=>{const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);return s2+(l2&&w2&&h2?((l2*w2*h2)/5000)*q:0);},0);
+        const dias=Math.floor((Date.now()-new Date(g.pk[0].created_at))/864e5);
+        const wa=String(g.cl.whatsapp||"").replace(/[^0-9]/g,"");
+        const dCol=dias>14?"#ef4444":dias>7?"#fbbf24":null;
+        const origenes=[...new Set(g.pk.map(p=>p.origin||"China"))].join(" / ");
+        const msg=encodeURIComponent(`Hola ${g.cl.first_name||""}! Tenés ${g.pk.length} bulto${g.pk.length!==1?"s":""} en nuestro depósito (${kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg). Cuando estén todos los que esperás, entrá al portal y armá la importación así la despachamos.`);
+        const open=depOpen===cid;const pesaVol=vol>kg;
+        const kgT=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:1,maximumFractionDigits:1})} kg`:"—";
+        return <div key={cid} style={{borderRadius:14,border:`1px solid ${open?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.07)"}`,background:open?"rgba(184,149,106,0.05)":"rgba(255,255,255,0.028)",overflow:"hidden"}}>
+          <div onClick={()=>setDepOpen(open?null:cid)} style={{padding:"12px 14px",cursor:"pointer"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:"#fff",fontSize:14}}>{g.cl.client_code||"—"}</span>
+                <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[g.cl.first_name,g.cl.last_name].filter(Boolean).join(" ")||"—"}</p>
+              </div>
+              {chipDep(`${dias} d`,dCol)}
+              <span style={{color:"rgba(255,255,255,0.35)",fontSize:12,transform:open?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+              {chipDep(`${g.pk.length} bulto${g.pk.length!==1?"s":""}`)}{chipDep(`Bruto ${kgT(kg)}`,pesaVol?null:undefined)}{vol>0&&chipDep(`Vol. ${kgT(vol)}`,pesaVol?GOLD_LIGHT:null)}{chipDep(origenes)}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              {wa&&<a href={`https://wa.me/${wa}?text=${msg}`} onClick={e=>e.stopPropagation()} target="_blank" rel="noopener noreferrer" style={{flex:"0 0 auto",height:34,padding:"0 12px",borderRadius:9,display:"inline-flex",alignItems:"center",fontSize:12,fontWeight:800,background:"rgba(34,197,94,0.14)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",textDecoration:"none"}}>WhatsApp</a>}
+              <button onClick={e=>{e.stopPropagation();crearPorCliente(cid,g.pk);}} style={{flex:1,height:34,padding:"0 12px",borderRadius:9,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,cursor:"pointer",fontSize:12,fontWeight:800,fontFamily:"inherit"}}>Crear importación por él</button>
+            </div>
+          </div>
+          {open&&<div style={{borderTop:"1px solid rgba(184,149,106,0.2)",padding:"6px 14px 12px"}}>
+            <div style={{display:"flex",justifyContent:"flex-end",padding:"6px 0"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{height:30,padding:"0 11px",borderRadius:8,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↪ Reenviar a otro depósito</button></div>
+            {g.pk.map((p,k)=>{const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);const br=Number(p.gross_weight_kg||0)*q,vo=l2&&w2&&h2?((l2*w2*h2)/5000)*q:0;const trk=p.national_tracking||p.consolidated_from_trackings||null;
+              return <div key={p.id} style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.35)",width:18,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{k+1}</span>
+                  {trk?<span onClick={()=>{navigator.clipboard?.writeText(trk);flash("Tracking copiado");}} title="Tocá para copiar" style={{flex:1,minWidth:0,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12.5,color:GOLD_LIGHT,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{trk}</span>:<span style={{flex:1,fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>sin tracking</span>}
+                  <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",flexShrink:0}}>{p.created_at?new Date(p.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}</span>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6,paddingLeft:26,alignItems:"center"}}>
+                  {chipDep(l2&&w2&&h2?`${l2}×${w2}×${h2}${q>1?` ×${q}`:""}`:"sin medidas")}{chipDep(`Bruto ${kgT(br)}`)}{vo>0&&chipDep(`Vol. ${kgT(vo)}`,vo>br?GOLD_LIGHT:null)}
+                  {p.photo_url&&<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Foto</a>}
+                  <button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>↪ Mover</button>
+                </div>
+              </div>;})}
           </div>}
+        </div>;
+      });
+      return <div>
+        {reenvioModal&&<ReenvioModal token={token} {...reenvioModal} historial={reenvios} onClose={()=>setReenvioModal(null)} onSaved={()=>{setReenvioModal(null);load();}}/>}
+        {reenviosAbiertos.length>0&&<div style={{marginBottom:14,borderRadius:12,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.06)",overflow:"hidden"}}>
+          <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(96,165,250,0.2)"}}>↪ Reenvíos pedidos · {reenviosAbiertos.length}</p>
+          {reenviosAbiertos.map(r=>{const ag=approvedAgents.find(a=>a.auth_user_id===r.agent_id);const n=(r.package_ids||[]).length;return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{flex:"1 1 280px",minWidth:0}}>
+              <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={{fontFamily:"monospace"}}>{r.shipping_mark}</span></p>
+              <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${new Date(r.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}, esperando al agente`}</p>
+            </div>
+            <button onClick={()=>cancelarReenvio(r)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
+          </div>;})}
+        </div>}
+        {selectedOps.length>0&&(()=>{
+          const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
+          const riOps=selObjs.filter(o=>o.clients?.tax_condition==="responsable_inscripto");
+          // Totales de lo seleccionado: la misma cuenta que las columnas de la tabla (por bulto, el
+          // mayor entre bruto y volumétrico; ÷6000 con el redondeo del agente al medio kilo).
+          const factDe=(opId,div,redondeo)=>opPackages(opId).reduce((s2,p2)=>{const q2=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v);return s2+(redondeo?Math.ceil(f*2)/2:f)*q2;},0);
+          const tot=selObjs.reduce((a,o)=>({
+            bultos:a.bultos+opPackages(o.id).reduce((s2,p2)=>s2+Number(p2.quantity||1),0),
+            bruto:a.bruto+opPackages(o.id).reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0),
+            f5:a.f5+factDe(o.id,5000,false), f6:a.f6+factDe(o.id,6000,true),
+          }),{bultos:0,bruto:0,f5:0,f6:0});
+          const kg2=(v)=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+          const Dato=({l,v,c,t:tt})=><div title={tt} style={{minWidth:96}}>
+            <p style={{margin:0,fontSize:9.5,fontWeight:700,letterSpacing:"0.1em",color:"rgba(255,255,255,0.4)"}}>{l}</p>
+            <p style={{margin:"3px 0 0",fontSize:15,fontWeight:700,color:c||"#fff",fontFamily:"monospace"}}>{v}</p>
+          </div>;
+          return <div style={{background:"linear-gradient(180deg,rgba(184,149,106,0.12),rgba(184,149,106,0.05))",border:`1px solid ${IC}55`,borderRadius:14,marginBottom:14,overflow:"hidden"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"13px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",minWidth:0}}>
+                <span style={{width:30,height:30,borderRadius:"50%",background:GOLD_GRADIENT,color:"#0A1628",display:"inline-flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:14,flexShrink:0}}>{selectedOps.length}</span>
+                <div style={{minWidth:0}}>
+                  <p style={{margin:0,fontSize:13.5,color:"#fff",fontWeight:700,letterSpacing:"-0.01em"}}>{selectedOps.length===1?"operación seleccionada":"operaciones seleccionadas"}</p>
+                  <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:420}}>{selObjs.map(o=>o.operation_code).join(" · ")}</p>
+                </div>
+                {riOps.length>0&&<span title={"Clientes RI: "+riOps.map(o=>o.clients?.client_code).join(", ")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:6,background:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>⚠ {riOps.length} RI · facturar A</span>}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
+                <Btn small onClick={createFlight}>+ Crear vuelo con seleccionadas</Btn>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:26,flexWrap:"wrap",padding:"12px 16px",borderTop:`1px solid ${IC}33`,background:"rgba(0,0,0,0.18)"}}>
+              <Dato l="BULTOS" v={tot.bultos}/>
+              <Dato l="BRUTO" v={kg2(tot.bruto)} c="rgba(255,255,255,0.8)"/>
+              <Dato l="FACT. ÷5000" v={kg2(tot.f5)} c={IC} t="Peso facturable con volumétrico a 5000: por bulto, el mayor entre bruto y volumétrico"/>
+              <Dato l="FACT. ÷6000 ↑½" v={kg2(tot.f6)} c="#fb923c" t="Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba"/>
+            </div>
+            {riOps.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:0,padding:"10px 16px",borderTop:"1px solid rgba(96,165,250,0.2)",lineHeight:1.5,background:"rgba(96,165,250,0.06)"}}>Hay clientes Responsable Inscripto en este vuelo. Recordá emitir factura A con su CUIT y aplicar el régimen impositivo correspondiente.</p>}
+          </div>;
+        })()}
+        {Object.keys(byAgent).length===0&&gruposSueltos.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en depósito</p>}
+        {Object.entries(byAgent).map(([agentId,grp])=>{
+          const grpKg=grp.ops.reduce((s2,o)=>s2+opWeight(o.id),0);
+          const grpFob=grp.ops.reduce((s2,o)=>s2+depositItems.filter(i=>i.operation_id===o.id).reduce((a2,i)=>a2+Number(i.unit_price_usd||0)*Number(i.quantity||1),0),0);
+          const grpListas=grp.ops.filter(o=>orderScore(o)===0).length;
+          const collapsed=collapsedAgents.has(agentId);
+          const toggleGrp=()=>setCollapsedAgents(prev=>{const n=new Set(prev);n.has(agentId)?n.delete(agentId):n.add(agentId);return n;});
+          return <div key={agentId} style={{marginBottom:20}}>
+          <div onClick={toggleGrp} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"0 0 10px",cursor:"pointer",userSelect:"none"}}>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.4)",width:12,display:"inline-block"}}>{collapsed?"▸":"▾"}</span>
+            <h3 style={{fontSize:13,fontWeight:800,color:IC,margin:0,textTransform:"uppercase",letterSpacing:"0.04em"}}>{grp.agentName}</h3>
+            <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{grp.ops.length} op{grp.ops.length!==1?"s":""}{grpListas>0?` · ${grpListas} lista${grpListas!==1?"s":""}`:""}</span>
+            {grpKg>0&&<span title="Peso facturable acumulado del agente — la cuenta para decidir si conviene armar vuelo ya" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(184,149,106,0.12)",color:"#E8C99B",fontVariantNumeric:"tabular-nums"}}>Σ {grpKg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg fact.</span>}
+            {grpFob>0&&<span title="FOB declarado acumulado de las ops de este agente" style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontVariantNumeric:"tabular-nums"}}>FOB USD {grpFob.toLocaleString("es-AR",{maximumFractionDigits:0})}</span>}
+          </div>
+          {!collapsed&&(celu?<div style={{display:"flex",flexDirection:"column",gap:8}}>{grp.ops.map(tarjetaOpCelu)}</div>:<div className="ag-dep-wrap" style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+            <table className="ag-dep" style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
+              <colgroup>
+                <col style={{width:44}}/>{/* ✓ */}
+                <col style={{width:124}}/>{/* Op — lleva la alerta de DIE 0% en su renglón */}
+                <col style={{width:180}}/>{/* Cliente */}
+                <col style={{width:54}}/>{/* CF */}
+                <col/>{/* Mercadería — toma el resto */}
+                <col style={{width:62}}/>{/* Bultos */}
+                <col style={{width:92}}/>{/* Bruto */}
+                <col style={{width:104}}/>{/* Fact. ÷5000 */}
+                <col style={{width:96}}/>{/* Fact. ÷6000 */}
+                <col style={{width:56}}/>{/* Días */}
+              </colgroup>
+              <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                {["✓","Op","Cliente","CF","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000 ↑½","Días"].map(h=><th key={h} title={h.startsWith("Fact. ÷6000")?"Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba":undefined} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+              </tr></thead>
+              <tbody>{grp.ops.map((o,oIdx)=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
+              const sc=orderScore(o);const scMeta=SCORE_META[sc];
+              const showSep=oIdx===0||orderScore(grp.ops[oIdx-1])!==sc;
+              const days=lastPkgAt>0?Math.floor((Date.now()-lastPkgAt)/864e5):null;
+              const dCol=days==null?null:days>14?{c:"#ef4444",bg:"rgba(239,68,68,0.12)",w:800}:days>7?{c:"#fbbf24",bg:"rgba(251,191,36,0.12)",w:700}:{c:"rgba(255,255,255,0.45)",bg:"rgba(255,255,255,0.05)",w:600};
+              const grossW=opPkgs.reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0);
+              const payingVol=grossW>0&&w>grossW*1.15; // paga volumétrico: candidato a reempaque
+              // Peso facturable con divisor 5000 y 6000 (pedido 07/09/2026): por bulto, el mayor entre bruto y volumétrico.
+              // ÷6000 lleva el redondeo del agente: cada bulto al medio kilo para arriba (misma cuenta que en el vuelo).
+              const factDiv=(div,redondeo)=>opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v)*q;return s2+(redondeo?Math.ceil(f*2)/2:f);},0);
+              const f5=factDiv(5000,false),f6=factDiv(6000,true);
+              const kgTxt=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";
+              const volBadge=(f)=>grossW>0&&f>grossW*1.15?<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg, factura ${f.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{color:"#fbbf24",fontSize:10,marginLeft:4,cursor:"help",verticalAlign:"1px"}}>▲</span>:null;
+              const lockedByAgent=canSelect&&selAgentId&&o.created_by_agent_id!==selAgentId;
+              // Alerta DIE 0% para canal aéreo blanco (canal A): puede ser legítimo pero el admin tiene que revisarlo manual.
+              const isAereoA=o.channel==="aereo_blanco";
+              const itemsForOp=isAereoA?depositItems.filter(i=>i.operation_id===o.id):[];
+              const zeroDieItems=isAereoA?itemsForOp.filter(i=>i.description&&i.description.trim()&&i.ncm_code&&i.ncm_code.trim()&&Number(i.import_duty_rate)===0):[];
+              const hasZeroDie=zeroDieItems.length>0;
+              const ivItems=itemsForOp.filter(i=>i.intervention?.required);
+              const ivTypes=[...new Set(ivItems.flatMap(i=>i.intervention?.types||[]))];
+              return <Fragment key={o.id}>
+              {showSep&&<tr><td colSpan={10} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
+              <tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
+                <td style={{padding:"10px 12px",boxShadow:`inset 3px 0 0 ${scMeta.c}${sc===0?"":"66"}`}}>{canSelect&&!lockedByAgent?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
+                  <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
+                  <span style={{width:18,height:18,borderRadius:5,border:isChecked?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.25)",background:isChecked?GOLD_GRADIENT:"rgba(255,255,255,0.04)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 150ms",boxShadow:isChecked?GOLD_GLOW:"none"}}>
+                    {isChecked&&<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </span>
+                </label>;})():lockedByAgent?<span title="Un vuelo agrupa ops de UN solo agente — ya tildaste ops de otro agente" style={{display:"inline-flex",width:18,height:18,borderRadius:5,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.02)",opacity:0.35,cursor:"not-allowed"}}/>:<span title={inFlight?"Ya está en un vuelo":o.consolidation_confirmed?"Faltan los documentos del cliente (mercadería y valores)":"Falta confirmar la consolidación"} style={{color:"rgba(255,255,255,0.3)",fontSize:14,cursor:"help"}}>{isExpanded?"▾":"▸"}</span>}</td>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,verticalAlign:"top"}}>
+                  <span style={{display:"block"}}>{o.operation_code}</span>
+                  {hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`}
+                    style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)"}}>⚠ DIE 0%</span>}
+                  {ivItems.length>0&&<span title={`Requiere intervención de organismo:\n${ivItems.map(i=>`• ${i.description}: ${(i.intervention.types||[]).join(" / ")}${i.intervention.reason?` — ${i.intervention.reason}`:""}`).join("\n")}\n\nCoordinar ANTES de subirla a un vuelo.`}
+                    style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,letterSpacing:"0.05em",cursor:"help",display:"block",width:"fit-content",marginTop:3,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.45)"}}>⚠ {ivTypes.join("/")||"INTERV."}</span>}
+                </td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.clients?`${o.clients.client_code} - ${(o.clients.first_name||"").trim()}`:"—"}</td>
+                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
+                  const cf=CF_META[o.clients?.tax_condition||""];
+                  if(!cf)return <span style={{color:"rgba(255,255,255,0.25)"}}>—</span>;
+                  return <span title={cf.t} style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:4,background:`${cf.c}26`,color:cf.c,border:`1px solid ${cf.c}66`,letterSpacing:"0.05em"}}>{cf.l}</span>;
+                })()}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
+                  // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
+                  if(o.description&&o.description.trim())return <span title={o.description} style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description}</span>;
+                  const opItems=depositItems.filter(i=>i.operation_id===o.id);
+                  if(opItems.length===0)return <span style={{color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin productos</span>;
+                  const first=opItems[0].description||"Producto";
+                  const more=opItems.length-1;
+                  const fullList=opItems.map(it=>it.description||"—").join(" · ");
+                  return <span title={fullList} style={{display:"block"}}><span style={{display:"inline-block",maxWidth:more>0?160:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{first}</span>{more>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,marginLeft:6,verticalAlign:"middle"}}>+{more}</span>}</span>;
+                })()}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(grossW)}</td>
+                <td style={{padding:"10px 12px",color:grossW>0&&f5>grossW*1.15?"#fbbf24":"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}</td>
+                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
+              </tr>
+              {isExpanded&&<tr><td colSpan={10} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>{detalleDe(o)}</td></tr>}</Fragment>;})}</tbody>
+            </table>
+          </div>)}
         </div>;})}
         {gruposSueltos.length>0&&<div style={{marginTop:26}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
@@ -12579,7 +12699,7 @@ function AgentsPanel({token}){
             <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:99,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{gruposSueltos.length} cliente{gruposSueltos.length!==1?"s":""} · {gruposSueltos.reduce((s2,[,g])=>s2+g.pk.length,0)} bultos</span>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>el cliente todavía no armó la importación · tocá una fila para ver los trackings</span>
           </div>
-          <div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+          {celu?<div style={{display:"flex",flexDirection:"column",gap:8}}>{sueltosCelu()}</div>:<div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
             {gruposSueltos.map(([cid,g],idx)=>{
               const kg=g.pk.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
               const vol=g.pk.reduce((s2,p)=>{const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);return s2+(l2&&w2&&h2?((l2*w2*h2)/5000)*q:0);},0);
@@ -12633,7 +12753,7 @@ function AgentsPanel({token}){
                 </div>}
               </div>;
             })}
-          </div>
+          </div>}
         </div>}
       </div>;
     })()}
@@ -12711,8 +12831,11 @@ function AgentsPanel({token}){
             // (FedEx evento CC "Liberación de envíos internacionales: importación"; DHL "Despacho
             // aduanero completado"). Va entre "En aduana" y "Recibido".
             const liberado=f.status==="despachado"&&ops.some(fo=>opsLiberadas.has(fo.operation_id));
-            const stepIdx=f.status==="recibido"||entregadoCourier?5:liberado?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
-            const stepInfo=[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Liberado",c:"#2dd4bf"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
+            // Retenido por Aduana (26/10/2026): lo marca el sync por el tracking ("Documentación disponible
+            // para agente externo a FedEx"). Fila en rojo; a "recibido" lo pasa Bautista a mano.
+            const retenido=f.status!=="recibido"&&!!f.retenido_at;
+            const stepIdx=retenido?3:f.status==="recibido"||entregadoCourier?5:liberado?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
+            const stepInfo=retenido?{l:"🛑 Retenido por Aduana",c:"#ef4444"}:[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Liberado",c:"#2dd4bf"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.
             const warns=[];
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
@@ -12721,10 +12844,11 @@ function AgentsPanel({token}){
             // Desglose del courier subido y todavía no pasado a las ops (Extraer bultos con IA).
             if(dsiRespondidos.has(f.id))warns.push({t:"📬 DSI",c:"#60a5fa",title:"El courier respondió el pedido de DSI: abrí el vuelo para adjuntarla"});
             if(f.dispatch_photo_url&&f.status!=="recibido"&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
-            return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            const bgFila=retenido?"rgba(239,68,68,0.10)":"transparent";
+            return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:bgFila,boxShadow:retenido?"inset 4px 0 0 #ef4444":"none"}} onMouseEnter={e=>{e.currentTarget.style.background=retenido?"rgba(239,68,68,0.16)":"rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=bgFila;}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}} title={`${stepInfo.l.replace("⚡ ","")} — paso ${stepIdx+1} de 6`}>
-              <div style={{display:"flex",gap:3,justifyContent:"center",marginBottom:4}}>{[0,1,2,3,4,5].map(i=><span key={i} style={{width:7,height:7,borderRadius:99,background:i<stepIdx?GOLD:i===stepIdx?stepInfo.c:"rgba(255,255,255,0.14)",boxShadow:i===stepIdx?`0 0 9px ${stepInfo.c}99`:"none",transition:"all 200ms"}}/>)}</div>
+              <div style={{display:"flex",gap:3,justifyContent:"center",marginBottom:4}}>{[0,1,2,3,4,5].map(i=><span key={i} style={{width:7,height:7,borderRadius:99,background:retenido?(i<=stepIdx?"#ef4444":"rgba(239,68,68,0.25)"):i<stepIdx?GOLD:i===stepIdx?stepInfo.c:"rgba(255,255,255,0.14)",boxShadow:i===stepIdx?`0 0 9px ${stepInfo.c}99`:"none",transition:"all 200ms"}}/>)}</div>
               <span style={{fontSize:9,fontWeight:800,color:stepInfo.c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stepInfo.l}</span>
             </td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{warns.length===0?"":<span style={{display:"inline-flex",gap:3,flexDirection:"column"}}>{warns.map(wn=><span key={wn.t} title={wn.title} style={{fontSize:8.5,fontWeight:800,padding:"2px 6px",borderRadius:4,background:`${wn.c}1C`,color:wn.c,border:`1px solid ${wn.c}55`,letterSpacing:"0.05em",cursor:"help"}}>{wn.t}</span>)}</span>}</td>
@@ -12755,7 +12879,7 @@ function AgentsPanel({token}){
             const GR=[{k:"preparando",l:"🛠 Preparando",c:"#fbbf24"},{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
             const porNum=(x,y)=>String(y.flight_code||"").localeCompare(String(x.flight_code||""),undefined,{numeric:true});
             // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
-            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
+            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.status!=="recibido"&&f.retenido_at)return -1;if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
             const porEstado=(x,y)=>rangoEstado(x)-rangoEstado(y)||porNum(x,y);
             const out=[];
             GR.forEach(g=>{

@@ -3,6 +3,7 @@
 // Protegido con CRON_SECRET para evitar abuso.
 
 import { SB_URL, SB_SERVICE, upsertEvent, updateSyncStatus, normalizeEvent } from "../_helpers";
+import { tgNotify } from "../../../../lib/telegram";
 import {
   getFedexTracking, fedexConfigured,
   getDhlTracking, dhlConfigured,
@@ -17,6 +18,38 @@ const TIME_BUDGET_MS = 240000;
 
 // Solo ops que todavía viajan. Las "entregada" ya no tienen nada que sincronizar.
 const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana"];
+
+// Retenida por Aduana (26/10/2026): FedEx lo informa como "Documentación disponible para agente
+// externo a FedEx" (excluida del régimen courier; en el historial, todas las ops con ese evento
+// quedaron retenidas). Desde ahí la op y su vuelo quedan marcados, se avisa al cliente y el
+// tracking deja de seguirse: lo que pase después lo maneja Bautista a mano.
+const RETENCION_RE = /agente externo a fedex|retenid[oa] (?:en|por) (?:la )?aduana|excluid[oa] del r[eé]gimen courier/i;
+const esEventoRetencion = (ev) => RETENCION_RE.test(`${ev?.description || ""} ${ev?.title || ""}`);
+const sbHeaders = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" };
+
+async function marcarRetenida(op, ev) {
+  const when = ev?.occurred_at || new Date().toISOString();
+  // La op: queda en "en_aduana" (ahí está) con la marca de retenida.
+  await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&retenida_at=is.null`, { method: "PATCH", headers: sbHeaders, body: JSON.stringify({ retenida_at: when }) });
+  // Evento interno para el cliente (lo ve en su portal).
+  await upsertEvent(normalizeEvent({
+    operation_id: op.id, source: "internal", external_id: `retenida-${op.id}`, status_code: "retenida",
+    title: "Carga retenida por Aduana", location: "Ezeiza, AR", occurred_at: when,
+    description: "La Aduana retuvo la carga y la excluyó del régimen courier. Nos estamos comunicando con vos para informarte los pasos a seguir.",
+  }));
+  // El vuelo (si no se marcó recibido todavía).
+  let vuelo = null;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/flight_operations?operation_id=eq.${op.id}&select=flights(id,flight_code,status,retenido_at)`, { headers: sbHeaders });
+    for (const fo of ((await r.json()) || [])) {
+      const fl = fo.flights; if (!fl) continue; vuelo = vuelo || fl;
+      if (fl.status !== "recibido" && !fl.retenido_at) await fetch(`${SB_URL}/rest/v1/flights?id=eq.${fl.id}`, { method: "PATCH", headers: sbHeaders, body: JSON.stringify({ retenido_at: when }) });
+    }
+  } catch (e) { console.error("[sync] retenida vuelo", e.message); }
+  const mail = await triggerMail(op.id, "retenida");
+  try { await tgNotify(`🛑 <b>${op.operation_code}</b> retenida por Aduana${vuelo ? ` · ${vuelo.flight_code}` : ""} · ${op.international_carrier || ""} ${op.international_tracking || ""}\n${mail?.ok ? "Se le avisó al cliente por mail." : mail?.skipped ? `Mail: ${mail.skipped}` : "No se pudo mandar el mail al cliente."}\nEl tracking deja de seguirse; hay que marcar el vuelo recibido a mano cuando llegue.`); } catch {}
+  return { retenida: true, mail };
+}
 
 // Internal secret for server-to-server calls to /api/notify.
 const CRON_SECRET = process.env.CRON_SECRET || "";
@@ -36,17 +69,22 @@ async function triggerMail(op_id, trigger) {
   } catch (e) { return { error: e.message }; }
 }
 
-async function fetchActiveOps(operationId) {
+async function fetchActiveOps(operationId, conRetencion = true) {
+  // Las retenidas no se siguen más (retenida_at). Si la columna todavía no existe (falta el SQL), se
+  // reintenta sin ese filtro para que el sync no se caiga.
+  const sel = `id,operation_code,international_tracking,international_carrier,status,created_at${conRetencion ? ",retenida_at" : ""}`;
   let url;
   if (operationId) {
-    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&id=eq.${operationId}`;
+    url = `${SB_URL}/rest/v1/operations?select=${sel}&id=eq.${operationId}`;
   } else {
     const statuses = ACTIVE_STATUSES.map(s => `"${s}"`).join(",");
     // Más nuevas primero: lo que está viajando ahora se sincroniza siempre, aunque el tiempo no alcance para todo.
-    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null&order=created_at.desc`;
+    url = `${SB_URL}/rest/v1/operations?select=${sel}&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null${conRetencion ? "&retenida_at=is.null" : ""}&order=created_at.desc`;
   }
   const r = await fetch(url, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
-  return await r.json();
+  const d = await r.json();
+  if (conRetencion && !Array.isArray(d) && String(d?.code) === "42703") return fetchActiveOps(operationId, false);
+  return d;
 }
 
 function carrierRoute(carrier) {
@@ -102,6 +140,13 @@ async function applyEventsToOp(op, route, d) {
     else if (error && errors.length < 3) errors.push(error);
   }
   if (skippedOld > 0) console.log(`[sync] ${op.operation_code}: skipped ${skippedOld} eventos pre-creación (tracking reusado)`);
+
+  // Retenida por Aduana: se marca una sola vez y acá termina el seguimiento de esta op.
+  let retencion = null;
+  const evRet = (d.events || []).find((ev) => esEventoRetencion(ev) && !(cutoffMs && ev.occurred_at && new Date(ev.occurred_at).getTime() < cutoffMs));
+  if (evRet && !op.retenida_at && op.retenida_at !== undefined) {
+    try { retencion = await marcarRetenida(op, evRet); } catch (e) { console.error("[sync] retencion", e.message); }
+  }
 
   // Actualizar carrier_pickup_at en el vuelo asociado (si hay): primer evento del carrier
   // posterior al dispatch del vuelo. Sirve para medir demora del agente en entregar al carrier.
@@ -260,7 +305,7 @@ async function applyEventsToOp(op, route, d) {
   }
 
   await updateSyncStatus(op.id, route, inserted, errors[0] || null);
-  return { op: op.operation_code, inserted, carrier: route, eta_from_carrier: d.eta || null, eta_patch: patch.eta || null, eta_patch_result: patchResult, errors: errors.length ? errors : undefined };
+  return { op: op.operation_code, inserted, carrier: route, eta_from_carrier: d.eta || null, eta_patch: patch.eta || null, eta_patch_result: patchResult, retencion: retencion || undefined, errors: errors.length ? errors : undefined };
 }
 
 // Wrapper para casos individuales (botón manual): llama al carrier y aplica.

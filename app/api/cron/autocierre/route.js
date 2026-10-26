@@ -30,7 +30,7 @@ function autorizado(req) {
 export async function GET(req) {
   if (!autorizado(req)) return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ ok: false, error: "Server no configurado" }, { status: 500 });
-  const r = await sb(`/rest/v1/operations?status=eq.entregada&is_collected=is.true&delivery_completed_at=not.is.null&or=(service_type.is.null,service_type.neq.gestion_integral)&select=id,operation_code,closed_at,channel`);
+  const r = await sb(`/rest/v1/operations?status=eq.entregada&is_collected=is.true&delivery_completed_at=not.is.null&or=(service_type.is.null,service_type.neq.gestion_integral)&select=id,operation_code,closed_at,channel,retenida_at`);
   const ops = Array.isArray(r.body) ? r.body : [];
   // Aéreo courier: sin legajo completo (DSI + factura del courier) no se cierra (22/10/2026).
   const aereos = ops.filter((o) => o.channel === "aereo_blanco").map((o) => o.id);
@@ -42,7 +42,8 @@ export async function GET(req) {
   const sinLegajo = [];
   const cerradas = [], errores = [];
   for (const o of ops) {
-    if (o.channel === "aereo_blanco" && legajo && !["dsi", "factura_courier"].every((t) => legajo.some((d) => d.operation_id === o.id && d.tipo === t))) { sinLegajo.push(o.operation_code); continue; }
+    // Retenida por Aduana: no hay legajo del courier que exigir.
+    if (o.channel === "aereo_blanco" && !o.retenida_at && legajo && !["dsi", "factura_courier"].every((t) => legajo.some((d) => d.operation_id === o.id && d.tipo === t))) { sinLegajo.push(o.operation_code); continue; }
     const p = await sb(`/rest/v1/operations?id=eq.${o.id}&status=eq.entregada`, {
       method: "PATCH",
       headers: { Prefer: "return=representation" },
