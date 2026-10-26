@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
-import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento } from "../../lib/legajo.js";
+import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento } from "../../lib/legajo";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -6117,6 +6117,7 @@ function EntregasPanel({token,onOpenOp,vista}){
   const [cobroModal,setCobroModal]=useState(null); // {op, soloCobro} — cobro/entrega desde cards
   const [coordinarModal,setCoordinarModal]=useState(null); // op a coordinar a mano
   const [hechas,setHechas]=useState([]); // historial reciente: entregadas y cobradas
+  const [docsFaltan,setDocsFaltan]=useState({}); // {opId:[tipos que faltan]} del legajo de las entregadas
   // Sábado o domingo: arranca en el lunes siguiente (que es el primer día de los chips).
   // Feriados de Argentina (Ajustes → Feriados): la agenda no los ofrece (08/10/2026).
   const [feriadosAr,setFeriadosAr]=useState(()=>new Set());
@@ -6131,7 +6132,7 @@ function EntregasPanel({token,onOpenOp,vista}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,description,origin,delivery_receipt_number,labels_printed_at,remito_printed_at,recibo_printed_at,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
+    const sel="id,operation_code,description,origin,delivery_receipt_number,labels_printed_at,remito_printed_at,recibo_printed_at,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,service_type,retenida_at,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code,dni,cuit,company_name)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&status=not.in.(${PRE_ARRIBO.join(",")})&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -6139,6 +6140,11 @@ function EntregasPanel({token,onOpenOp,vista}){
     ]);
     const doneList=Array.isArray(done)?done:[];
     setHechas(doneList);
+    // Pendiente de documentación (27/10/2026): entregadas del aéreo courier a las que les falta la DSI
+    // o la factura del courier. Se ven en Arribadas aunque estén cobradas (o cerradas), hasta subirlas.
+    try{const cand=[...(Array.isArray(entr)?entr:[]),...doneList].filter(o=>o.channel==="aereo_blanco"&&o.service_type!=="gestion_integral"&&!o.retenida_at&&String(o.delivery_completed_at||"")>="2026-10-22");
+      if(cand.length){const l=await listarLegajo(await ensureFreshToken(token),{opIds:cand.map(o=>o.id)});const m={};if(l.ok){cand.forEach(o=>{const f=["dsi","factura_courier"].filter(t=>!l.docs.some(d=>d.operation_id===o.id&&d.tipo===t));if(f.length)m[o.id]=f;});}setDocsFaltan(m);}else setDocsFaltan({});
+    }catch(e){console.error("legajo entregas",e);}
     const list=[...(Array.isArray(pend)?pend:[]),...(Array.isArray(entr)?entr:[])];
     setRows(list);
     // Estado del último WhatsApp del bot por op (enviado / entregado / leído): "¿vio el aviso?"
@@ -6250,6 +6256,8 @@ function EntregasPanel({token,onOpenOp,vista}){
   const pendientesTodas=filtered.filter(o=>!o.delivery_completed_at);
   const pendientes=pendientesTodas.filter(o=>!esRiDir(o));
   const entregadasSinCobrar=[...filtered.filter(o=>o.delivery_completed_at&&!o.is_collected),...pendientesTodas.filter(o=>esRiDir(o)&&saldoFor(o)>0.005)];
+  // Entregadas y cobradas a las que les falta documentación del legajo (no se van de Arribadas hasta subirla).
+  const pendDocs=(()=>{const v=new Set();return [...rows,...hechas].filter(o=>{if(v.has(o.id))return false;v.add(o.id);return o.delivery_completed_at&&o.is_collected&&docsFaltan[o.id]?.length&&matchesQ(o);});})();
   const sinConfirmar=pendientes.filter(o=>!o.delivery_confirmed_at);
   const confirmadas=pendientes.filter(o=>o.delivery_confirmed_at);
 
@@ -6587,17 +6595,18 @@ function EntregasPanel({token,onOpenOp,vista}){
     // Ya entregada (hecha o con saldo): el envío a domicilio ya pasó, sin el azul ni el camioncito.
     const envioVivo=esEnvio&&contexto!=="hecha"&&contexto!=="acobrar";
     const costoEnvio=Number(o.delivery_cost_usd||0);
-    const acento=contexto==="hecha"?"#22c55e":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?(pagada?VC_VERDE:VC_ROJO):contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
+    const acento=contexto==="hecha"?"#22c55e":contexto==="docs"?"#fbbf24":contexto==="acobrar"?"#f87171":envioVivo?"#60a5fa":vcVivo?(pagada?VC_VERDE:VC_ROJO):contexto==="porentregar"?"#B8956A":contexto==="esperando"?"#fbbf24":"rgba(255,255,255,0.15)";
     if(celu){
-      const montoTxt=contexto==="hecha"?"✓ Cobrada":pagada?"✓ Pagado":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo);
-      const montoColor=contexto==="hecha"||pagada?K.green:contexto==="acobrar"?K.red:K.amber;
-      const sub=contexto==="aviso"?`lista hace ${dias} d`:contexto==="esperando"?`avisada hace ${dias} d`:contexto==="acobrar"?`entregada hace ${dias} d`:contexto==="hecha"&&o.delivery_completed_at?`entregada el ${new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:null;
-      const subAlerta=(contexto==="aviso"&&dias>3)||(contexto==="esperando"&&dias>2)||(contexto==="acobrar"&&dias>3);
+      const montoTxt=contexto==="hecha"||contexto==="docs"?"✓ Cobrada":pagada?"✓ Pagado":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo);
+      const montoColor=contexto==="hecha"||contexto==="docs"||pagada?K.green:contexto==="acobrar"?K.red:K.amber;
+      const sub=contexto==="docs"?`falta ${nombresFaltan(docsFaltan[o.id]||[])}`:contexto==="aviso"?`lista hace ${dias} d`:contexto==="esperando"?`avisada hace ${dias} d`:contexto==="acobrar"?`entregada hace ${dias} d`:contexto==="hecha"&&o.delivery_completed_at?`entregada el ${new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:null;
+      const subAlerta=contexto==="docs"||(contexto==="aviso"&&dias>3)||(contexto==="esperando"&&dias>2)||(contexto==="acobrar"&&dias>3);
       const mb=(l,fn,prim)=><button key={l} type="button" onClick={fn} style={{flex:prim?1.3:1,minWidth:0,height:42,borderRadius:11,border:prim?`1px solid ${vcVivo?VC_VERDE:GOLD_DEEP}`:`1px solid ${vcVivo?K.btnBd:"rgba(255,255,255,0.14)"}`,background:prim?(vcVivo?VC_VERDE:GOLD_GRADIENT):(vcVivo?K.btnBg:"rgba(255,255,255,0.05)"),color:prim?(vcVivo?"#fff":"#0A1628"):(vcVivo?K.btnTx:"rgba(255,255,255,0.88)"),fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"0 8px"}}>{l}</button>;
       const acciones=contexto==="aviso"?[mb("📨 Avisar",()=>enviarAviso(o),true),mb("💬 WA",()=>waAviso(o)),mb("📋 Link",()=>copyLink(o))]
         :contexto==="esperando"?[mb("🔁 Recordar",()=>waAviso(o),true),mb("Coordinar",()=>setCoordinarModal(o)),mb("📋",()=>copyLink(o))]
         :contexto==="porentregar"?[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",()=>setCoordinarModal(o)),mb("✓ Entregar",()=>entregar(o),true)]
         :contexto==="acobrar"?[mb("💬 WA",()=>waSimple(o,`Hola! Te escribimos de Argencargo por el saldo pendiente de tu operación ${o.operation_code}.`)),mb("↺",()=>undoDelivered(o)),mb("→ CC",()=>cerrarACC([o])),mb("💰 Cobrar",()=>setCobroModal({op:o,soloCobro:true}),true)]
+        :contexto==="docs"?[mb("📂 Abrir legajo",()=>onOpenOp(o),true)]
         :[];
       const tel=dc.telefono||o.clients?.whatsapp;
       const chip=(t,c)=><span style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:6,background:`${c}22`,color:c,whiteSpace:"nowrap"}}>{t}</span>;
@@ -6638,6 +6647,7 @@ function EntregasPanel({token,onOpenOp,vista}){
           {contexto==="esperando"&&estadoAviso(o,{marginTop:3})}
           {contexto==="acobrar"&&<span> · entregada hace <b style={{color:dias>3?"#f87171":"inherit"}}>{dias} d</b></span>}
           {contexto==="hecha"&&o.delivery_completed_at&&<span> · entregada el {new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
+          {contexto==="docs"&&<span> · entregada el {o.delivery_completed_at?new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"} · falta <b style={{color:"#fbbf24"}}>{nombresFaltan(docsFaltan[o.id]||[])}</b></span>}
           {envioVivo&&o.delivery_address&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"rgba(147,197,253,0.9)",marginTop:2}}>📍 {o.delivery_address}{dc.telefono?` · 📞 ${dc.telefono}`:""}</span>}
           {vcVivo&&<span style={{display:"block",color:K.sub}}><b style={{color:K.green}}>Vía Cargo</b> · {o.carrier_mode==="domicilio"?"a domicilio":"a sucursal"}{dc.nombre?` · recibe ${dc.nombre} ${dc.apellido||""}`:""}</span>}
         </p>
@@ -6645,16 +6655,17 @@ function EntregasPanel({token,onOpenOp,vista}){
       <div style={{textAlign:"right",flexShrink:0}}>
         {badge&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:6,background:K.badgeBg,color:badgeC(badge.c),border:`1px solid ${K.badgeBd}`,whiteSpace:"nowrap"}}>{badge.l}</span>}
         {!sinMontos&&o.cash_arrival_amount&&contexto==="porentregar"&&<span style={{display:"block",fontSize:9.5,color:K.sub,marginTop:3}}>llega con {o.cash_arrival_currency||"USD"} {Number(o.cash_arrival_amount).toLocaleString("es-AR")}</span>}
-        <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:contexto==="hecha"?K.green:pagada?K.green:contexto==="acobrar"?K.red:K.amber}}>
-          {contexto==="hecha"?"✓ COBRADA":pagada?"✓ PAGADO":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo)}
+        <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:contexto==="hecha"||contexto==="docs"?K.green:pagada?K.green:contexto==="acobrar"?K.red:K.amber}}>
+          {contexto==="hecha"||contexto==="docs"?"✓ COBRADA":pagada?"✓ PAGADO":contexto==="acobrar"?`Debe ${usd(saldo)}`:usd(saldo)}
         </span>
         {!sinMontos&&envioVivo&&costoEnvio>0&&!pagada&&<span style={{display:"block",fontSize:9.5,color:"rgba(147,197,253,0.8)",marginTop:2}}>incl. envío {usd(costoEnvio)}</span>}
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
         {/* Entregadas con saldo: ya no se imprime nada, solo cobrar. */}
-        {contexto!=="acobrar"&&printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
-        {contexto!=="acobrar"&&!esCarrier&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
-        {contexto!=="acobrar"&&conRecibo&&!esCarrier&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
+        {contexto!=="acobrar"&&contexto!=="docs"&&printBtn(`🏷 Etiquetas${o.labels_printed_at?" ✓":""}`,()=>imprimirEtiquetasBultos([o]),o.labels_printed_at?`Ya impresas el ${new Date(o.labels_printed_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — volver a imprimir`:"Imprimir las etiquetas de los bultos (100×150, una por bulto)")}
+        {contexto!=="acobrar"&&contexto!=="docs"&&!esCarrier&&printBtn(`📄 Remito${o.remito_printed_at?" ✓":""}`,()=>imprimirRemitos([o]),o.remito_printed_at?"Ya impreso — volver a imprimir":"Imprimir remito (media hoja A4)")}
+        {contexto!=="acobrar"&&contexto!=="docs"&&conRecibo&&!esCarrier&&printBtn(`🧾 Recibo${o.recibo_printed_at?" ✓":""}`,()=>imprimirRecibos([o]),o.recibo_printed_at?"Ya impreso — volver a imprimir":"Imprimir comprobante de entrega + recibo (A4)")}
+        {contexto==="docs"&&<Btn small onClick={()=>onOpenOp(o)}>📂 Abrir legajo</Btn>}
         {contexto==="aviso"&&<>
           <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
@@ -6860,6 +6871,9 @@ function EntregasPanel({token,onOpenOp,vista}){
         {sinAviso.length>0&&<Bloque titulo="📣 Falta avisar" n={sinAviso.length} hint="La carga está lista y el cliente todavía no lo sabe" tone={sinAviso.length>0?"warn":undefined}>
           {sinAviso.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"10px 0",fontSize:13,margin:0}}>Nada sin avisar. 👌</p>
             :renderPorCliente([...sinAviso].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"aviso")}
+        </Bloque>}
+        {pendDocs.length>0&&<Bloque titulo="📂 Pendiente de documentación" n={pendDocs.length} hint="Entregadas y cobradas: falta la DSI o la factura del courier para cerrar el legajo" tone="warn">
+          {renderPorCliente([...pendDocs].sort((a,b)=>new Date(a.delivery_completed_at)-new Date(b.delivery_completed_at)),"docs")}
         </Bloque>}
         {entregadasSinCobrar.length>0&&<Bloque titulo="💰 Entregadas con saldo pendiente" n={entregadasSinCobrar.length} hint={sinMontos?null:`Deben ${usd(entregadasSinCobrar.reduce((a,o)=>a+saldoFor(o),0))} en total`} tone="danger">
           {renderPorCliente([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at||a.delivery_ready_at||a.created_at)-new Date(b.delivery_completed_at||b.delivery_ready_at||b.created_at)),"acobrar")}
