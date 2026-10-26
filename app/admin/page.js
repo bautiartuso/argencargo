@@ -17675,10 +17675,13 @@ function AdminDashboard({session,onLogout}){
   // meterlo despues tiro ReferenceError en el render (paso el 02/08, pantalla blanca).
   const isEmpleado=session?.profile?.role==="empleado";
   // Zoom 90 % real (27/10/2026): solo en la compu; en el celu queda al 100 %.
+  // El ancho y el alto del panel se fijan en píxeles desde acá (ventana ÷ 0,9): bajo zoom, 100vw/100vh
+  // no se interpretan igual en todas las versiones de Chrome y quedaba una franja blanca al costado.
   useEffect(()=>{
-    const f=()=>{document.documentElement.classList.toggle("ac-z90",window.innerWidth>900);};
+    const el=document.documentElement;
+    const f=()=>{const z=window.innerWidth>900;el.classList.toggle("ac-z90",z);const k=z?0.9:1;el.style.setProperty("--vw100",`${Math.ceil(window.innerWidth/k)}px`);el.style.setProperty("--vh100",`${Math.ceil(window.innerHeight/k)}px`);};
     f();window.addEventListener("resize",f);
-    return()=>{window.removeEventListener("resize",f);document.documentElement.classList.remove("ac-z90");};
+    return()=>{window.removeEventListener("resize",f);el.classList.remove("ac-z90");el.style.removeProperty("--vw100");el.style.removeProperty("--vh100");};
   },[]);
   // El empleado tiene Operativa + Comercial + Ajustes (sin Finanzas ni GI): cualquier otra
   // pagina lo devuelve a Operaciones. Lo que muestra ganancia se tapa dentro de cada pantalla.
