@@ -16873,7 +16873,13 @@ const parsearListaCalc=(texto)=>{
       bultosRaw.push({qty:cant?Number(cant[1]):1,length:pegNum(dm[1]),width:pegNum(dm[2]),height:pegNum(dm[3]),weight:isFinite(peso)?peso:""});
       continue;
     }
-    const celdas=l.split(/\t|\s{2,}|\s*\|\s*/).map(c=>c.trim()).filter(Boolean);
+    // Cantidad con palabra (28/10/2026): "30 unidades", "30 u", "30 pcs", "x30", "qty 30". Se saca
+    // de la descripción y vale como cantidad aunque esté pegada al texto. "set de 4 lámparas 8
+    // unidades": cuenta la última (8), el 4 queda en la descripción.
+    const CANT=/(?:^|\s)(?:x\s*(\d+)|(?:qty|cant\.?|cantidad)\s*:?\s*(\d+)|(\d+)\s*(?:unidades|unidad|unid\.?|uds?\.?|u\.?|pcs|pzas?\.?|piezas?|units?|pares|pairs|sets?|juegos?|rollos?|metros|mts?)(?=\s|$|[,;.]))/gi;
+    let cantTxt=null;let lSin=l;
+    {const ms=[...l.matchAll(CANT)];if(ms.length){const m=ms[ms.length-1];cantTxt=Number(m[1]||m[2]||m[3]);lSin=(l.slice(0,m.index)+" "+l.slice(m.index+m[0].length)).replace(/\s{3,}/g,"  ");}}
+    const celdas=lSin.split(/\t|\s{2,}|\s*\|\s*/).map(c=>c.trim()).filter(Boolean);
     const esNum=(c)=>/^(usd|us\$|u\$s|\$)?\s*-?\d[\d.,]*\s*(usd|u\$s)?$/i.test(c);
     let desc=celdas.filter(c=>!esNum(c)&&/[a-záéíóúñ]/i.test(c)).join(" ").trim();
     let numCells=celdas.filter(esNum);
@@ -16887,23 +16893,32 @@ const parsearListaCalc=(texto)=>{
     else if(nums.length>=3){const [a,b,c]=nums;if(Math.abs(a*b-c)<=Math.max(0.02*c,0.05)){qty=a;unit=b;}else if(Math.abs(b*a-c)<=Math.max(0.02*c,0.05)){qty=a;unit=b;}else{qty=a;unit=b;}}
     else if(nums.length===2){const [a,b]=nums;if(Number.isInteger(a)&&!Number.isInteger(b)){qty=a;unit=b;}else if(Number.isInteger(b)&&!Number.isInteger(a)){qty=b;unit=a;}else{qty=a;unit=b;}}
     else if(nums.length===1){qty=1;unit=nums[0];}
+    // La cantidad escrita con palabra manda; si el único número sin moneda era esa cantidad, el precio es el otro.
+    if(cantTxt>0){if(qty===cantTxt||!isFinite(qty)||qty===1){qty=cantTxt;}else if(unit===cantTxt&&isFinite(qty)){unit=qty;qty=cantTxt;}else qty=cantTxt;}
     if(!isFinite(unit)||unit<=0)continue;
-    productos.push({description:desc.replace(/\s+/g," "),quantity:isFinite(qty)&&qty>0?qty:1,unit_price:unit});
+    productos.push({description:desc.replace(/\s+/g," ").replace(/[\s,;\-–]+$/,""),quantity:isFinite(qty)&&qty>0?qty:1,unit_price:unit});
   }
   // Bultos iguales → uno con cantidad
   const bultos=[];
   for(const b of bultosRaw){const ig=bultos.find(x=>x.length===b.length&&x.width===b.width&&x.height===b.height&&x.weight===b.weight);if(ig)ig.qty+=b.qty;else bultos.push({...b});}
   return {productos,bultos};
 };
-function PegarListaModal({onCerrar,onAplicar,hayCargados}){
+function PegarListaModal({onCerrar,onAplicar,hayCargados,token}){
   const [txt,setTxt]=useState("");
-  const r=parsearListaCalc(txt);
+  // Lectura con IA (28/10/2026): el parser local responde al toque; a los 700 ms se manda el texto a
+  // /api/pegar-lista y, si vuelve, manda lo de la IA (entiende cualquier formato).
+  const [ia,setIa]=useState(null);const [iaLo,setIaLo]=useState(false);const [iaErr,setIaErr]=useState("");
+  useEffect(()=>{setIa(null);setIaErr("");const t=txt.trim();if(!t||!token)return;let vivo=true;
+    const h=setTimeout(async()=>{setIaLo(true);try{const r=await fetch("/api/pegar-lista",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({texto:t})});const d=await r.json();if(vivo){if(d.ok)setIa({productos:d.productos,bultos:d.bultos});else setIaErr(d.error||"error");}}catch(e){if(vivo)setIaErr(e.message);}if(vivo)setIaLo(false);},700);
+    return()=>{vivo=false;clearTimeout(h);};},[txt,token]);
+  const local=parsearListaCalc(txt);
+  const r=ia&&(ia.productos.length||ia.bultos.length)?ia:local;
   const fm=(n)=>Number(n).toLocaleString("es-AR",{maximumFractionDigits:2});
   const box={background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 12px"};
   return <div onClick={onCerrar} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 16px",overflowY:"auto"}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:"linear-gradient(160deg,#142038,#0e1a2c)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:"20px 22px",boxSizing:"border-box"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <p style={{margin:0,fontSize:17,fontWeight:800,color:"#fff"}}>Pegar productos y bultos</p>
+        <p style={{margin:0,fontSize:17,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",gap:10}}>Pegar productos y bultos{txt.trim()&&<span style={{fontSize:11,fontWeight:800,padding:"3px 10px",borderRadius:999,background:iaLo?"rgba(167,139,250,0.12)":ia?"rgba(34,197,94,0.12)":"rgba(255,255,255,0.06)",color:iaLo?"#c4b5fd":ia?"#4ade80":"rgba(255,255,255,0.5)",border:`1px solid ${iaLo?"rgba(167,139,250,0.4)":ia?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.12)"}`}}>{iaLo?"✨ Leyendo con IA…":ia?"✨ Leído con IA":iaErr?"Lectura rápida (IA no disponible)":"Lectura rápida"}</span>}</p>
         <button onClick={onCerrar} aria-label="Cerrar" style={{width:34,height:34,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"#fff",cursor:"pointer",fontSize:16}}>×</button>
       </div>
       <textarea autoFocus value={txt} onChange={e=>setTxt(e.target.value)} placeholder={"Pegá acá las tablas (productos, bultos o las dos juntas)"} style={{width:"100%",height:190,boxSizing:"border-box",padding:12,borderRadius:12,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,lineHeight:1.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",resize:"vertical",outline:"none"}}/>
@@ -17547,7 +17562,7 @@ function AdminCalculator({token}){
       </div>)}
     </div>
 
-    {pegarOpen&&<PegarListaModal onCerrar={()=>setPegarOpen(false)} onAplicar={aplicarPegado} hayCargados={products.some(x=>!prodVacio(x))||pkgs.some(x=>!pkVacio(x))}/>}
+    {pegarOpen&&<PegarListaModal token={token} onCerrar={()=>setPegarOpen(false)} onAplicar={aplicarPegado} hayCargados={products.some(x=>!prodVacio(x))||pkgs.some(x=>!pkVacio(x))}/>}
     {/* Bultos */}
     <div className="qc-sec">
       <div className="qc-sh"><span className="qc-lbl">Bultos</span><span style={{display:"flex",gap:6}}><button type="button" className="qc-add" onClick={()=>setPegarOpen(true)}>📋 Pegar lista</button><button type="button" className="qc-add" onClick={addPkg}>+ Bulto</button></span></div>
