@@ -17798,7 +17798,7 @@ function AdminDashboard({session,onLogout}){
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;
-  return <div className="ac-admin-root" style={{position:"fixed",inset:0,display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
+  return <div className="ac-admin-root" style={{position:"fixed",inset:0,display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
     <style dangerouslySetInnerHTML={{__html:AC_THEME_CSS}}/>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
