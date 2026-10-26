@@ -11797,6 +11797,10 @@ function AgentsPanel({token}){
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(_sub.selFlight||null);
   const [flightsSubTab,setFlightsSubTab]=useState(_sub.flightsSubTab||"active"); // active | received
+  // Buscar / filtrar / ordenar vuelos (27/10/2026): por código, guía, cliente u op; courier; orden en Recibidos.
+  const [flightsQ,setFlightsQ]=useState("");
+  const [flightsCarrier,setFlightsCarrier]=useState("all"); // all | dhl | fedex | ups
+  const [flightsSort,setFlightsSort]=useState("fecha"); // fecha | codigo | cliente | peso
   // Bloques de vuelos plegados (listos / DHL / FedEx / UPS), recordados en este navegador.
   const [vuelosPlegados,setVuelosPlegadosRaw]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ac_vuelos_plegados")||"[]"));}catch{return new Set();}});
   const togglePlegado=(k)=>setVuelosPlegadosRaw(prev=>{const n=new Set(prev);n.has(k)?n.delete(k):n.add(k);try{localStorage.setItem("ac_vuelos_plegados",JSON.stringify([...n]));}catch{}return n;});
@@ -12864,7 +12868,30 @@ function AgentsPanel({token}){
         if(!a.received_at)return 1;if(!b.received_at)return -1;
         return new Date(b.received_at)-new Date(a.received_at);
       });
-      const shownFlights=flightsSubTab==="received"?receivedFlights:activeFlights;
+      // Búsqueda y filtro por courier (aplican a las dos solapas); el orden solo a Recibidos.
+      const qv=flightsQ.trim().toLowerCase();
+      const textoVuelo=(f)=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return [f.flight_code,f.international_tracking,f.dest_name,...ops.flatMap(fo=>{const o=fo.operations||{};const c=o.clients||{};return [o.operation_code,c.client_code,c.first_name,c.last_name,c.company_name];})].filter(Boolean).join(" ").toLowerCase();};
+      const pasaFiltro=(f)=>(flightsCarrier==="all"||String(f.international_carrier||"").toLowerCase().includes(flightsCarrier))&&(!qv||textoVuelo(f).includes(qv));
+      const clienteDe=(f)=>{const fo=flightOps.find(x=>x.flight_id===f.id&&x.operations?.clients);const c=fo?.operations?.clients;return c?(c.client_code||`${c.first_name||""} ${c.last_name||""}`):"";};
+      const ordenar=(l)=>flightsSort==="codigo"?[...l].sort((a,b)=>String(b.flight_code).localeCompare(String(a.flight_code)))
+        :flightsSort==="cliente"?[...l].sort((a,b)=>clienteDe(a).localeCompare(clienteDe(b)))
+        :flightsSort==="peso"?[...l].sort((a,b)=>Number(b.total_weight_kg||0)-Number(a.total_weight_kg||0)):l;
+      const shownFlights=(flightsSubTab==="received"?ordenar(receivedFlights):activeFlights).filter(pasaFiltro);
+      const hayFiltro=!!qv||flightsCarrier!=="all";
+      const barraVuelos=<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+        <div style={{position:"relative",flex:"1 1 260px",maxWidth:420}}>
+          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.4)",fontSize:13,pointerEvents:"none"}}>🔍</span>
+          <input value={flightsQ} onChange={e=>setFlightsQ(e.target.value)} placeholder="Buscar vuelo, guía, cliente u operación…" data-enter-libre="1" style={{width:"100%",height:38,padding:"0 34px 0 34px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:11,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+          {flightsQ&&<button type="button" onClick={()=>setFlightsQ("")} aria-label="Limpiar" style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",width:22,height:22,borderRadius:6,border:"none",background:"rgba(255,255,255,0.1)",color:"#fff",cursor:"pointer",fontSize:11}}>✕</button>}
+        </div>
+        <div style={{display:"inline-flex",gap:3,padding:3,borderRadius:11,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          {[["all","Todos"],["dhl","DHL"],["fedex","FedEx"],["ups","UPS"]].map(([k,l])=>{const on=flightsCarrier===k;return <button key={k} type="button" onClick={()=>setFlightsCarrier(k)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:800,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.18)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.45)":"none"}}>{l}</button>;})}
+        </div>
+        {flightsSubTab==="received"&&<div style={{display:"inline-flex",gap:3,padding:3,borderRadius:11,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          {[["fecha","Más recientes"],["codigo","Por código"],["cliente","Por cliente"],["peso","Por peso"]].map(([k,l])=>{const on=flightsSort===k;return <button key={k} type="button" onClick={()=>setFlightsSort(k)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:800,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.5)"}}>{l}</button>;})}
+        </div>}
+        {hayFiltro&&<span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{shownFlights.length} vuelo{shownFlights.length!==1?"s":""}</span>}
+      </div>;
       const tot=shownFlights.reduce((acc,f)=>{const fops=flightOps.filter(fo=>fo.flight_id===f.id);acc.bultos+=fops.reduce((s2,fo)=>s2+((fo.operations?.operation_packages)||[]).reduce((a2,pk)=>a2+Number(pk.quantity||1),0),0);acc.peso+=fops.reduce((s2,fo)=>s2+Number(fo.weight_kg||0),0);acc.kgVuelo+=Number(f.total_weight_kg||0);return acc;},{bultos:0,peso:0,kgVuelo:0});
       return <div>
       {/* Banners de pagos pendientes (Alibaba / Alipay) — el agente despachó pero falta cargar cómo se pagó */}
@@ -12872,7 +12899,8 @@ function AgentsPanel({token}){
         {aliPend.length>0&&<AlibabaPendingBanner flights={aliPend} token={token} onDone={load}/>}
         {aliPay.length>0&&<AlipayPendingBanner flights={aliPay} token={token} onDone={load}/>}
       </>;})()}
-      {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
+      {barraVuelos}
+      {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{hayFiltro?"Ningún vuelo coincide con la búsqueda":flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           {flightsSubTab==="received"&&<thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
