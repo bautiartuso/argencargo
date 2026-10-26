@@ -26,10 +26,11 @@ Si no hay bultos, bultos = []. Devolvé solo JSON.`;
 const SCHEMA = {
   type: "object",
   properties: {
-    productos: { type: "array", items: { type: "object", properties: { description: { type: "string" }, quantity: { type: "number" }, unit_price: { type: "number" } }, required: ["description", "quantity", "unit_price"] } },
-    bultos: { type: "array", items: { type: "object", properties: { qty: { type: "number" }, length: { type: "number" }, width: { type: "number" }, height: { type: "number" }, weight: { type: "number" } }, required: ["qty", "length", "width", "height"] } },
+    productos: { type: "array", items: { type: "object", properties: { description: { type: "string" }, quantity: { type: "number" }, unit_price: { type: "number" } }, required: ["description", "quantity", "unit_price"], additionalProperties: false } },
+    bultos: { type: "array", items: { type: "object", properties: { qty: { type: "number" }, length: { type: "number" }, width: { type: "number" }, height: { type: "number" }, weight: { type: ["number", "null"] } }, required: ["qty", "length", "width", "height", "weight"], additionalProperties: false } },
   },
   required: ["productos", "bultos"],
+  additionalProperties: false,
 };
 
 export async function POST(req) {
