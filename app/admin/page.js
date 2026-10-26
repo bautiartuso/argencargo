@@ -10600,12 +10600,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     }
   };
   const markReceived=async()=>{
-    // Sin la DSI y la factura del courier de cada op no se marca recibido (legajo, 22/10/2026).
+    // Sin la factura del courier de cada op no se marca recibido (27/10/2026; antes pedía también
+    // la DSI, que ahora solo hace falta para cerrar).
     {const ids=flightOps.map(fo=>fo.operation_id).filter(Boolean);
       if(ids.length&&!flight.retenido_at){const l=await listarLegajo(await ensureFreshToken(token),{opIds:ids});
         if(l.ok){const os=await dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=id,operation_code,channel,service_type`});
-          const falt=(Array.isArray(os)?os:[]).filter(llevaLegajo).filter(o=>!["dsi","factura_courier"].every(t=>l.docs.some(d=>d.operation_id===o.id&&d.tipo===t)));
-          if(falt.length){alertDialog(`Falta documentación de ${falt.map(o=>o.operation_code).join(", ")}: subí la DSI y la factura del courier.`);return;}}}}
+          const falt=(Array.isArray(os)?os:[]).filter(llevaLegajo).filter(o=>!l.docs.some(d=>d.operation_id===o.id&&d.tipo==="factura_courier"));
+          if(falt.length){alertDialog(`Falta la factura del courier de ${falt.map(o=>o.operation_code).join(", ")}.`);return;}}}}
     if(!await confirmDialog(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
     // El status de las ops lo maneja el tracking automático (arribo_argentina, en_aduana, etc).
