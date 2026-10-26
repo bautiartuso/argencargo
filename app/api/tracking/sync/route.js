@@ -257,7 +257,7 @@ async function applyEventsToOp(op, route, d) {
   }
 
   // Las transiciones de status (en_transito → arribo_argentina → en_aduana → entregada)
-  // se manejan en DB vía la función SQL auto_update_op_statuses() que corre con pg_cron
+  // se manejan en DB vía la función SQL auto_update_op_statuses(), que dispara /api/cron/estados-ops
   // cada 15 min. Esa lógica se basa en la ubicación de los tracking_events (detecta
   // "tocó Argentina") en vez de depender de status codes específicos del carrier.
   // Acá sólo disparamos la función si insertamos eventos nuevos, para no esperar al cron.
