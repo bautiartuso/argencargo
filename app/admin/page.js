@@ -12520,6 +12520,35 @@ function AgentsPanel({token}){
                       {renderTbl(oSnap,"Antes","#fbbf24")}
                       {renderTbl(nSnap,"Después","#22c55e")}
                     </div>;})()}
+                  {/* Controles previos al vuelo (27/10/2026): lo que hay que mirar antes de armar el vuelo. */}
+                  {(()=>{
+                    const ncmOk=(c)=>/^\d{4}(\.?\d{2}){0,2}$/.test(String(c||"").trim());
+                    const sinNcm=itemsOfOp.filter(i=>!ncmOk(i.ncm_code));
+                    const sinTasas=itemsOfOp.filter(i=>ncmOk(i.ncm_code)&&(i.import_duty_rate==null||i.import_duty_rate===""));
+                    const conInterv=itemsOfOp.filter(i=>i.intervention?.required);
+                    const tiposInterv=[...new Set(conInterv.flatMap(i=>i.intervention?.types||[]))];
+                    const antid=itemsOfOp.filter(i=>i.antidumping_note);
+                    const sinPrecio=itemsOfOp.filter(i=>!(Number(i.unit_price_usd)>0));
+                    const sinMedidas=pkgsOfOp.filter(p=>!(Number(p.gross_weight_kg)>0)||!(Number(p.length_cm)>0&&Number(p.width_cm)>0&&Number(p.height_cm)>0));
+                    const sinPres=!(Number(o.budget_total||0)>0);
+                    const chip=(ok,txt,tono)=><span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 11px",borderRadius:999,fontSize:11.5,fontWeight:800,whiteSpace:"nowrap",background:ok?"rgba(34,197,94,0.1)":tono==="rojo"?"rgba(248,113,113,0.14)":"rgba(251,191,36,0.12)",color:ok?"#4ade80":tono==="rojo"?"#f87171":"#fbbf24",border:`1px solid ${ok?"rgba(34,197,94,0.3)":tono==="rojo"?"rgba(248,113,113,0.4)":"rgba(251,191,36,0.35)"}`}}>{ok?"✓":tono==="rojo"?"⛔":"⚠"} {txt}</span>;
+                    const clasificarFaltantes=async(e)=>{e.stopPropagation();if(!sinNcm.length&&!sinTasas.length)return;setPdfBusy(o.id);let ok=0;
+                      for(const it of [...sinNcm,...sinTasas]){if(!it.description)continue;try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});const d=await r.json();if(d?.ncm_code){const _n=(v,fb)=>v!=null&&v!==""?Number(v):fb;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:ncmOk(it.ncm_code)?it.ncm_code:d.ncm_code,import_duty_rate:_n(d.import_duty_rate,0),statistics_rate:_n(d.statistics_rate,0),iva_rate:_n(d.iva_rate,21),...(d.intervention?{intervention:d.intervention}:{})}});ok++;}}catch(err){console.error("clasificar",err);}}
+                      setPdfBusy(null);toast(`${ok} producto${ok!==1?"s":""} clasificado${ok!==1?"s":""}`,"success");load();};
+                    const todoOk=!sinNcm.length&&!sinTasas.length&&!conInterv.length&&!antid.length&&!sinPrecio.length&&!sinMedidas.length&&!sinPres;
+                    return <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14,padding:"10px 12px",borderRadius:12,background:todoOk?"rgba(34,197,94,0.05)":"rgba(0,0,0,0.2)",border:`1px solid ${todoOk?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.08)"}`}}>
+                      <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".08em",marginRight:4}}>Antes del vuelo</span>
+                      {itemsOfOp.length===0?chip(false,"Sin productos cargados","rojo"):<>
+                        {chip(!sinNcm.length,sinNcm.length?`${sinNcm.length} sin NCM`:"NCM completas")}
+                        {sinTasas.length>0&&chip(false,`${sinTasas.length} sin alícuotas`)}
+                        {chip(!conInterv.length,conInterv.length?`Intervención: ${tiposInterv.join(" · ")} (${conInterv.length})`:"Sin intervenciones","rojo")}
+                        {antid.length>0&&chip(false,`Antidumping en ${antid.length} producto${antid.length!==1?"s":""}`,"rojo")}
+                        {sinPrecio.length>0&&chip(false,`${sinPrecio.length} sin precio`)}
+                      </>}
+                      {pkgsOfOp.length>0&&sinMedidas.length>0&&chip(false,`${sinMedidas.length} bulto${sinMedidas.length!==1?"s":""} sin peso o medidas`)}
+                      {chip(!sinPres,sinPres?"Sin presupuesto":"Presupuesto cargado")}
+                      {(sinNcm.length>0||sinTasas.length>0)&&<button onClick={clasificarFaltantes} disabled={pdfBusy===o.id} style={{marginLeft:"auto",height:30,padding:"0 12px",borderRadius:8,border:"1px solid rgba(167,139,250,0.45)",background:"rgba(167,139,250,0.12)",color:"#c4b5fd",fontSize:11.5,fontWeight:800,cursor:pdfBusy===o.id?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{pdfBusy===o.id?"Clasificando…":"✨ Clasificar faltantes"}</button>}
+                    </div>;})()}
                   <div className="ag-dep-det" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
                     {/* Productos declarados por el cliente */}
                     <div>
@@ -12531,16 +12560,23 @@ function AgentsPanel({token}){
                         <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflow:"hidden"}}>
                           <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
                             <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-                              {["Descripción","Cant.","P.U.","Total"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:h==="Descripción"?"left":"right",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                              {["Descripción","NCM","DIE · TE · IVA","Cant.","P.U.","Total"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:h==="Descripción"||h==="NCM"||h==="DIE · TE · IVA"?"left":"right",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
                             </tr></thead>
                             <tbody>{itemsOfOp.map(it=><tr key={it.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.8)"}}>{it.description||"—"}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.8)"}}>{it.description||"—"}
+                                {(it.intervention?.required||it.antidumping_note)&&<span style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:4}}>
+                                  {it.intervention?.required&&<span title={it.intervention.reason||""} style={{fontSize:9.5,fontWeight:800,padding:"1px 7px",borderRadius:999,background:"rgba(248,113,113,0.14)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⛔ {(it.intervention.types||[]).join(" · ")||"Intervención"}</span>}
+                                  {it.antidumping_note&&<span title={it.antidumping_note} style={{fontSize:9.5,fontWeight:800,padding:"1px 7px",borderRadius:999,background:"rgba(248,113,113,0.14)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ Antidumping</span>}
+                                </span>}
+                              </td>
+                              <td style={{padding:"6px 10px",fontFamily:"monospace",whiteSpace:"nowrap",color:/^\d{4}(\.?\d{2}){0,2}$/.test(String(it.ncm_code||"").trim())?"#4ade80":"#fbbf24"}}>{/^\d{4}(\.?\d{2}){0,2}$/.test(String(it.ncm_code||"").trim())?it.ncm_code:"sin NCM"}</td>
+                              <td style={{padding:"6px 10px",whiteSpace:"nowrap",color:it.import_duty_rate==null?"rgba(255,255,255,0.35)":"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{it.import_duty_rate==null?"—":`${Number(it.import_duty_rate)}% · ${Number(it.statistics_rate||0)}% · ${Number(it.iva_rate??21)}%`}</td>
                               <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{it.quantity||1}</td>
                               <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>USD {Number(it.unit_price_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                               <td style={{padding:"6px 10px",textAlign:"right",color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>USD {(Number(it.unit_price_usd||0)*Number(it.quantity||1)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                             </tr>)}</tbody>
                             <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.3)"}}>
-                              <td colSpan={3} style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,0.7)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total FOB</td>
+                              <td colSpan={5} style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,0.7)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total FOB</td>
                               <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                             </tr></tfoot>
                           </table>
