@@ -17041,7 +17041,9 @@ function AdminCalculator({token}){
     // Lo que Argencargo paga de verdad en marítimo LCL/FCL (22/10/2026): el flete se certifica a
     // valor simbólico (cert_flete_maritimo_real, USD 50/m³), IVA adicional 10,5 %, Ganancias 6 %,
     // IIBB 3 %. Al cliente se le cobra con el flete ficticio y 20/6/5: la diferencia es ganancia.
-    const certReal=isMaritimo?totCBM*(Number(config.cert_flete_maritimo_real)||50):0;
+    // Aéreo (28/10/2026): al mono/CF se le cobra con el flete certificado ficticio (3,5/kg) y el
+    // courier lo certifica al real (2,5/kg): la diferencia de impuestos también es ganancia.
+    const certReal=isMaritimo?totCBM*(Number(config.cert_flete_maritimo_real)||50):isAereo&&!isRI?Math.max(pf,aereoMinKg)*(config.cert_flete_aereo_real||2.5):certFl;
     const real={derechos:0,tasaE:0,iva:0,ivaAdic:0,iigg:0,iibb:0};
     // Antidumping calzado: solo afecta la base imponible (DIE/TE/IVA/desaduanaje) — el
     // FOB real / seguro mostrado no cambian.
@@ -17062,6 +17064,7 @@ function AdminCalculator({token}){
         const tasa=iCif*te;
         const bi=iCif+die+tasa;
         derechos+=die;tasaE+=tasa;iva+=bi*ivaR;
+        if(isAereo){const cifR=(itemFob+certReal*pct)*1.01;const dieR=cifR*dr,teR=cifR*te,biR=cifR+dieR+teR;real.derechos+=dieR;real.tasaE+=teR;real.iva+=biR*ivaR;}
         if(isMaritimo){
           const ivaAdicR=tasaODefault(it.iva_additional_rate,TASA_IVA_ADICIONAL);
           const iiggR=tasaODefault(it.iigg_rate,TASA_IIGG);
@@ -17073,7 +17076,10 @@ function AdminCalculator({token}){
       });
     }
     const desembolsoAuto=isBlanco&&isAereo?getDes(taxCif):0;
-    const impReal=isBlanco&&isMaritimo?{...real,certReal,total:Object.values(real).reduce((a,b)=>a+b,0)}:null;
+    const sumReal=Object.values(real).reduce((a,b)=>a+b,0);
+    // En aéreo el desaduanaje real sale de la tabla con el CIF real (puede caer en un tramo más bajo).
+    const desReal=isBlanco&&isAereo?getDes((taxFob+certReal)*1.01):0;
+    const impReal=isBlanco&&isMaritimo?{...real,certReal,total:sumReal}:isBlanco&&isAereo&&!isRI?{...real,certReal,desReal,total:sumReal}:null;
     return {certFl,seguro,cif,derechos,tasaE,iva,ivaAdic,iigg,iibb,desembolsoAuto,isBlanco,isAereo,isMaritimo,impReal};
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
@@ -17437,7 +17443,7 @@ function AdminCalculator({token}){
 .qc-btn2{height:38px;padding:0 15px;font-size:12.5px;font-weight:700;border-radius:9px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.04);color:#fff;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
 .qc-btn2.gold{border-color:rgba(232,208,152,0.45);color:${IC};background:rgba(184,149,106,0.1)}
 .qc-res{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:12px;margin-bottom:12px}
-.qc-card{display:grid;grid-row:span 5;grid-template-rows:subgrid;row-gap:12px;padding:16px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);min-width:0}
+.qc-card{display:grid;grid-row:span 4;grid-template-rows:subgrid;row-gap:12px;padding:16px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);min-width:0}
 .qc-card.warn{border-color:rgba(251,191,36,0.28)}
 .qc-ctitle{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .qc-cn{font-size:14.5px;font-weight:700;color:${IC};margin:0}
@@ -17464,11 +17470,28 @@ function AdminCalculator({token}){
 .qc-ov input{width:62px;height:28px;padding:0 7px;font-size:12.5px;font-weight:700;text-align:right;border-radius:7px;border:1px solid rgba(255,255,255,0.14);background:rgba(0,0,0,0.3);color:#fff;outline:none;font-family:inherit}
 .qc-ov input.on{border-color:${IC};color:${IC};background:rgba(184,149,106,0.12)}
 .qc-ov button{width:22px;height:22px;border:none;border-radius:5px;background:rgba(232,208,152,0.12);color:${IC};cursor:pointer;font-size:12px;padding:0;font-family:inherit}
-.qc-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:12px 14px;border-radius:11px;background:rgba(184,149,106,0.1);border:1px solid rgba(232,208,152,0.25)}
+.qc-total{display:flex;align-items:center;gap:10px;padding:10px 10px 10px 14px;border-radius:11px;background:rgba(184,149,106,0.1);border:1px solid rgba(232,208,152,0.25)}
+.qc-total strong{margin-left:auto}
 .qc-total span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,0.55)}
 .qc-total strong{font-size:22px;font-weight:800;color:${IC};letter-spacing:-0.02em;white-space:nowrap}
-.qc-pdf{height:38px;border-radius:9px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.75);font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
-.qc-cost{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:11px;background:rgba(0,0,0,0.18);border:1px dashed rgba(255,255,255,0.1);align-self:start}
+.qc-pdf{height:30px;padding:0 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(0,0,0,0.2);color:rgba(255,255,255,0.6);font-size:11px;font-weight:800;letter-spacing:.04em;cursor:pointer;font-family:inherit;flex-shrink:0}
+.qc-pdf:hover{color:#fff;border-color:rgba(255,255,255,0.3)}
+.qc-ganhero{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.qc-ganhero span{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,0.55)}
+.qc-ganhero strong{font-size:24px;font-weight:900;letter-spacing:-0.02em;margin-left:auto;white-space:nowrap}
+.qc-ganhero em{font-style:normal;font-size:12px;font-weight:800;opacity:.85}
+.qc-ganbar{height:5px;border-radius:99px;background:rgba(255,255,255,0.07);overflow:hidden;margin:2px 0 6px}
+.qc-ganbar i{display:block;height:100%;border-radius:99px}
+.qc-gtab{display:flex;flex-direction:column;margin-top:4px;font-variant-numeric:tabular-nums}
+.qc-gh,.qc-gr{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr));gap:6px;align-items:baseline;padding:5px 0}
+.qc-gh span{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:rgba(255,255,255,0.4);text-align:right}
+.qc-gr{border-top:1px solid rgba(255,255,255,0.05);font-size:12.5px;color:rgba(255,255,255,0.75)}
+.qc-gr>span:first-child{color:#fff;font-weight:700;min-width:0}
+.qc-gr>span:first-child em{display:block;font-style:normal;font-weight:500;font-size:10.5px;color:rgba(255,255,255,0.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qc-gr>span:not(:first-child),.qc-gr>b{text-align:right}
+.qc-gr.tot{border-top:1px solid rgba(255,255,255,0.14);font-weight:800}
+.qc-gr.tot>span{color:#fff}
+.qc-cost{display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:13px;background:linear-gradient(160deg,rgba(34,197,94,0.07),rgba(0,0,0,0.2));border:1px solid rgba(74,222,128,0.22);align-self:start}
 .qc-cost .qc-sum{border-top:1px solid rgba(255,255,255,0.07);padding-top:7px;margin-top:2px}
 .qc-cost .qc-gan span:first-child{font-weight:700;color:rgba(255,255,255,0.75)}
 .qc-linkbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -17662,9 +17685,8 @@ function AdminCalculator({token}){
               {Number(ch.seguro||0)>0&&L("Seguro",ch.seguro)}
               {bd.isBlanco&&<>
                 <div className="qc-grp"><span>Impuestos{cert.total>0?" y certificados":""}</span><b>USD {fmt(effTotalImp+cert.total)}</b></div>
-                {bd.derechos>0&&L("Derechos",bd.derechos)}
-                {bd.tasaE>0&&L("Tasa estadística",bd.tasaE)}
-                {bd.iva>0&&L("IVA",bd.iva)}
+                {/* En el admin DIE + TE + IVA van en una línea (el cliente ve el desglose). */}
+                {(bd.derechos+bd.tasaE+bd.iva)>0&&L("DIE · TE · IVA",(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0),<em>{fmt(bd.derechos||0)} · {fmt(bd.tasaE||0)} · {fmt(bd.iva||0)}</em>)}
                 {bd.isMaritimo&&<>
                   {bd.ivaAdic>0&&L("IVA adicional",bd.ivaAdic)}
                   {bd.iigg>0&&L("Ganancias",bd.iigg)}
@@ -17685,13 +17707,11 @@ function AdminCalculator({token}){
                     {(certs.inal.on||certs.seg.on)&&<div className="qc-l"><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Pesos a USD</span><span className="qc-lr"><span className="qc-u">$</span><input className="qc-in" inputMode="decimal" value={tcCert} onChange={e=>setTcCert(e.target.value.replace(/[^\d.,]/g,""))} style={{width:84,height:30,textAlign:"center",padding:0}}/></span></div>}
                   </>;})()}
                 {bd.isAereo&&<>
-                  <div className="qc-l"><span>Desaduanaje</span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOv?ovStr:String(bd.desembolsoAuto||0),hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01,v=>setDesembolsoOverride(p=>({...p,[ch.key]:v})),sinOv(setDesembolsoOverride,ch.key))}</span></div>
-                  {ivaDesEff>0&&L("IVA desaduanaje",ivaDesEff)}
+                  <div className="qc-l"><span>Desaduanaje<em>+ IVA</em></span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOv?ovStr:String(bd.desembolsoAuto||0),hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01,v=>setDesembolsoOverride(p=>({...p,[ch.key]:v})),sinOv(setDesembolsoOverride,ch.key))}<b>USD {fmt(desEff+ivaDesEff)}</b></span></div>
                 </>}
               </>}
             </div>
-            <div className="qc-total"><span>Total</span><strong>USD {fmt(effTotal)}</strong></div>
-            <button type="button" className="qc-pdf" onClick={()=>printPdf({...ch,...(hasRateOv?{flete:fleteEff,fleteRate:fleteRateEff}:{}),overweightSurcharge:owEff},{desEff,ivaDesEff,effTotalImp,effTotal,bd,certLines:cert.lines})}>📄 PDF</button>
+            <div className="qc-total"><span>Total</span><strong>USD {fmt(effTotal)}</strong><button type="button" className="qc-pdf" title="PDF de la cotización para el cliente" onClick={()=>printPdf({...ch,...(hasRateOv?{flete:fleteEff,fleteRate:fleteRateEff}:{}),overweightSurcharge:owEff},{desEff,ivaDesEff,effTotalImp,effTotal,bd,certLines:cert.lines})}>PDF</button></div>
             {/* Costo (solo admin): el costo por rango cargado en Tarifas → Costos de flete. Antes
                 salía de un valor fijo de configuración y el Integral tomaba el mismo que LCL. */}
             {!esEmpleado()?(()=>{
@@ -17704,20 +17724,31 @@ function AdminCalculator({token}){
               // Ganancia = lo que queda del flete (flete + recargos + seguro − costo del flete) + la
               // diferencia entre los impuestos cobrados y los que se pagan de verdad (solo LCL/FCL).
               // Los certificados (INAL, seguridad eléctrica) se cobran al costo.
+              // Ganancia por concepto (28/10/2026): lo que cobrás − lo que te cuesta, renglón por renglón.
+              // Impuestos: en aéreo mono/CF se cobran con el flete declarado 3,5/kg y se pagan con 2,5;
+              // en LCL/FCL con el flete ficticio y 20/6/5 contra el real y 10,5/6/3. Certificados al costo.
               const impCobrado=bd.isBlanco?effTotalImp:0;
-              const impPagado=bd.impReal?bd.impReal.total:impCobrado;
-              const ganFlete=effTotal-impCobrado-cert.total-cFlete;
-              const ganImp=impCobrado-impPagado;
-              const gan=ganFlete+ganImp;const pct=effTotal>0?gan/effTotal*100:0;
+              const desReal=bd.isAereo&&bd.impReal&&!hasOv?(bd.impReal.desReal||0)*1.21:desEff+ivaDesEff;
+              const impPagado=bd.impReal?(bd.impReal.total+(bd.isAereo?desReal:0)):impCobrado;
+              const filas=bd.isBlanco
+                ?[["Flete",fleteEff-batt,cFlete,`${fmt(qty)} ${unit} × ${fmt(rate)}`],batt>0&&["Baterías",batt,0],owEff>0&&["Sobrepeso",owEff,0],Number(ch.seguro||0)>0&&["Seguro (1 %)",Number(ch.seguro||0),0],
+                  bd.impReal&&["Impuestos",impCobrado,impPagado,bd.isAereo?`flete declarado ${fmt(bd.certFl)} vs real ${fmt(bd.impReal.certReal)}`:`cert. ${fmt(bd.certFl)} vs ${fmt(bd.impReal.certReal)} · IVA ad. 10,5 % · IIGG 6 % · IIBB 3 %`]].filter(Boolean)
+                :[["Servicio",fleteEff,cFlete,`${qty.toFixed(2)} m³ × ${fmt(rate)}`],recValor>0&&["Recargo por valor",recValor,0]].filter(Boolean);
+              const cobra=filas.reduce((a,f)=>a+f[1],0),cuesta=filas.reduce((a,f)=>a+f[2],0);
+              const gan=cobra-cuesta;const pct=effTotal>0?gan/effTotal*100:0;
               const verde=(v)=>({color:v>=0?"#4ade80":"#f87171"});
               // El aviso del canal va abajo (22/10/2026): arriba estiraba la fila del título en las 3 tarjetas.
               return <div style={{display:"flex",flexDirection:"column",gap:10,alignSelf:"start",minWidth:0}}>
                 {ch.notVisibleToClient&&<p className="qc-cwarn" style={{margin:0}}>⚠ {ch.notVisibleToClient}</p>}
                 <div className="qc-cost">
-                <div className="qc-l"><span>Costo flete</span><span className="qc-lr">{ovIn(hasC?ovC:String(rateDef),hasC&&Math.abs(rate-rateDef)>0.001,v=>setCostOverride(o=>({...o,[ch.key]:v})),sinOv(setCostOverride,ch.key))}<span className="qc-u">/{unit}</span><b>USD {fmt(cFlete)}</b></span></div>
-                <div className="qc-l"><span>Ganancia flete</span><b style={verde(ganFlete)}>USD {fmt(ganFlete)}</b></div>
-                {bd.impReal&&<div className="qc-l" title={`Pagás USD ${fmt(impPagado)}: flete certificado USD ${fmt(bd.impReal.certReal)}, IVA adicional 10,5 %, Ganancias 6 %, IIBB 3 %`}><span>Ganancia impuestos<em>pagás USD {fmt(impPagado)}</em></span><b style={verde(ganImp)}>USD {fmt(ganImp)}</b></div>}
-                <div className="qc-l qc-sum qc-gan"><span>Ganancia</span><b style={verde(gan)}>USD {fmt(gan)} <span style={{fontSize:11,opacity:0.8}}>· {pct.toFixed(0)}%</span></b></div>
+                  <div className="qc-ganhero"><span>Ganancia</span><strong style={verde(gan)}>USD {fmt(gan)}</strong><em style={verde(gan)}>{pct.toFixed(0)}%</em></div>
+                  <div className="qc-ganbar"><i style={{width:`${Math.max(0,Math.min(100,pct*2))}%`,background:gan>=0?"linear-gradient(90deg,#22c55e,#4ade80)":"#f87171"}}/></div>
+                  <div className="qc-l"><span>Costo flete</span><span className="qc-lr">{ovIn(hasC?ovC:String(rateDef),hasC&&Math.abs(rate-rateDef)>0.001,v=>setCostOverride(o=>({...o,[ch.key]:v})),sinOv(setCostOverride,ch.key))}<span className="qc-u">/{unit}</span></span></div>
+                  <div className="qc-gtab">
+                    <div className="qc-gh"><span/><span>Cobrás</span><span>Cuesta</span><span>Ganás</span></div>
+                    {filas.map(([l,c,k,sub])=><div key={l} className="qc-gr" title={sub||""}><span>{l}{sub&&<em>{sub}</em>}</span><span>{fmt(c)}</span><span>{k>0?fmt(k):"—"}</span><b style={verde(c-k)}>{fmt(c-k)}</b></div>)}
+                    <div className="qc-gr tot"><span>Total</span><span>{fmt(cobra)}</span><span>{fmt(cuesta)}</span><b style={verde(gan)}>{fmt(gan)}</b></div>
+                  </div>
                 </div>
               </div>;
             })():(ch.notVisibleToClient?<p className="qc-cwarn" style={{margin:0,alignSelf:"start"}}>⚠ {ch.notVisibleToClient}</p>:<div/>)}
