@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
+import { soportaTracking as soportaTrackingMt } from "../../lib/tracking/maritimo";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
@@ -9467,6 +9468,10 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   const doc=(opId,t)=>docs.find(d=>d.operation_id===opId&&d.tipo===t);
   const completo=opsLeg.every(o=>doc(o.id,"dsi")&&doc(o.id,"factura_courier"));
   const faltan=opsLeg.filter(o=>!doc(o.id,"dsi")||!doc(o.id,"factura_courier"));
+  // Para recibir el vuelo alcanza con la factura del courier (27/10/2026); la DSI sigue haciendo
+  // falta para cerrar la op, y la guía aérea y la factura comercial se suben después.
+  const recibible=opsLeg.every(o=>doc(o.id,"factura_courier"));
+  const faltanFactura=opsLeg.filter(o=>!doc(o.id,"factura_courier"));
   const guardar=async(file,info,tipo,ids)=>{
     const datos=tipo==="dsi"?(info?.dsi||null):tipo==="factura_courier"&&info?.desaduanaje?{desaduanaje:info.desaduanaje}:null;
     await subirLegajo(await ensureFreshToken(token),{file,opIds:ids,flightId:flight.id,tipo,datos});
@@ -9514,7 +9519,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.4)",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>Sin {TIPOS_LEGAJO[t].corto.toLowerCase()}</span>;
   const recibido=flight.status==="recibido";
   // Retenido por Aduana: se puede marcar recibido sin DSI ni factura del courier.
-  const retenido=!recibido&&!!flight.retenido_at;const puedeRecibir=completo||sinTabla||retenido;
+  const retenido=!recibido&&!!flight.retenido_at;const puedeRecibir=recibible||sinTabla||retenido;
   // Estado del cuadro: cargado cuando todas las ops del vuelo ya tienen ese documento.
   const zona=(tipo,marca,icono,txt)=>{const elegida=pegarEn===tipo,t=marca?.tinte||"#E8D098";
     const conDoc=opsLeg.filter(o=>doc(o.id,tipo)),faltanZ=opsLeg.filter(o=>!doc(o.id,tipo));
@@ -9550,10 +9555,10 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
       {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}{chip(doc(o.id,"guia_aerea"),"guia_aerea",o)}{chip(doc(o.id,"factura_comercial"),"factura_comercial",o)}
     </div>)}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-      <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":completo?"✓ Documentación completa":`Falta documentación de ${faltan.map(o=>o.operation_code).join(", ")}`}</span>
+      <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":completo?"✓ Documentación completa":recibible?`Factura del courier cargada · falta la DSI de ${faltan.map(o=>o.operation_code).join(", ")} para cerrar`:`Falta la factura del courier de ${faltanFactura.map(o=>o.operation_code).join(", ")}`}</span>
       {recibido
         ?<span style={{height:40,padding:"0 16px",borderRadius:11,display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",fontSize:13,fontWeight:800}}>✓ Recibido en Buenos Aires{flight.received_at?` · ${new Date(flight.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}`:""}</span>
-        :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!puedeRecibir} title={!puedeRecibir?"Primero subí la DSI y la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${puedeRecibir?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:puedeRecibir?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:puedeRecibir?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:puedeRecibir?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
+        :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!puedeRecibir} title={!puedeRecibir?"Primero subí la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${puedeRecibir?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:puedeRecibir?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:puedeRecibir?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:puedeRecibir?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
           <span style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${puedeRecibir?"#4ade80":"rgba(255,255,255,0.3)"}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{""}</span>Marcar recibido en Buenos Aires</button>}
     </div>
   </div>;
@@ -18304,6 +18309,18 @@ function MaritimePanel({token,allClients=[]}){
   // Llegada a puerto (21/10/2026): el contenedor llegó a Buenos Aires y queda en aduana. Todavía no
   // se crean ops ni se avisa retiro: eso pasa con "Me lo entregaron" (el arribo de siempre).
   const [puertoModal,setPuertoModal]=useState(null); // {c, fecha}
+  // Seguimiento de la naviera (27/10/2026): consulta COSCO/Maersk ahora mismo para este contenedor.
+  const [trackeando,setTrackeando]=useState(null);
+  const refrescarTracking=async(c)=>{
+    setTrackeando(c.id);
+    try{
+      const r=await fetch("/api/cron/maritimo-tracking",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({container_id:c.id})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok){toast(d?.error||`No se pudo consultar (${r.status})`,"error");}
+      else{toast(d.cambios?.length?d.cambios.join(" · "):d.error?`${d.naviera||"Naviera"}: ${d.error}`:d.ultimo?`${c.code}: ${d.ultimo}${d.eta?` · ETA ${formatDateShort(d.eta)}`:""}`:`${c.code}: sin novedades`,d.error?"warn":"success");load();}
+    }catch(e){toast("No se pudo consultar a la naviera","error");}
+    setTrackeando(null);
+  };
   const guardarPuerto=async(c,fecha)=>{
     const r=await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{port_arrived_at:fecha||null},prefer:"return=representation"});
     if(!Array.isArray(r)||r.length===0){toast(/port_arrived_at/.test(String(r?.message||""))?"Falta correr el SQL 2026_10_21_contenedor_puerto en Supabase":`No se pudo guardar: ${r?.message||"error de la base"}`,"error");return false;}
@@ -19393,6 +19410,7 @@ function MaritimePanel({token,allClients=[]}){
                     :tb>0&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.4)"})}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}
                   {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fecaca",background:"rgba(239,68,68,0.2)",border:"1px solid rgba(239,68,68,0.5)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
                 </div>
+                {soportaTrackingMt(c)&&(c.tracking_last||c.tracking_error)&&<p title={c.tracking_updated_at?`Consultado ${new Date(c.tracking_updated_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`:""} style={{margin:"6px 0 0",fontSize:11.5,color:c.tracking_error&&!c.tracking_last?"#fbbf24":"rgba(255,255,255,0.6)",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12}}>🛰</span>{c.tracking_last||c.tracking_error}{c.tracking_vessel&&<span style={{color:"rgba(255,255,255,0.4)"}}>· {c.tracking_vessel}</span>}{c.tracking_last&&c.tracking_error&&<span style={{color:"#fbbf24"}}>· {c.tracking_error}</span>}</p>}
               </div>
             </div>
             <div className="mt-cont-stats" style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
@@ -19416,6 +19434,7 @@ function MaritimePanel({token,allClients=[]}){
                   ?accion(creatingOp?"Creando ops…":<>{ico(["M20 6 9 17l-5-5"])}Recibido</>,()=>setContainerStatus(c,"arribado"),"linear-gradient(135deg,#22c55e,#16a34a)","#04230f","Lo recibiste: crea las operaciones, manda los mails de retiro y abre los costos",creatingOp)
                   :accion(<>⚓ Llegó</>,()=>setPuertoModal({c,fecha:hoyAR(),avisar:true}),"linear-gradient(135deg,#fb923c,#f97316)","#2a1203","Llegó a Buenos Aires y queda en aduana")}
                 {c.port_arrived_at&&icoBtn("Mandar a los clientes el mail de que llegó (no se repite)",()=>avisarPuerto(c),["M4 6h16v12H4z","m4 7 8 6 8-6"],"#60a5fa")}
+                {soportaTrackingMt(c)&&!c.port_arrived_at&&<span style={{opacity:trackeando===c.id?0.5:1}}>{icoBtn(trackeando===c.id?"Consultando…":`Consultar ahora a ${/cosco/i.test(c.shipping_line)?"COSCO":"Maersk"} (se actualiza solo cada hora)`,()=>trackeando?null:refrescarTracking(c),["M21 12a9 9 0 1 1-3-6.7","M21 3v6h-6"],"#E8D098")}</span>}
                 {icoBtn("Editar contenedor",()=>setEditingContainer(c),["M12 20h9","M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"],"#93c5fd")}
                 {icoBtn("Eliminar contenedor",()=>delContainer(c),["M3 6h18","M8 6V4h8v2","M19 6l-1 14H6L5 6","M10 11v6","M14 11v6"],"#f87171")}
               </div>
@@ -19423,6 +19442,10 @@ function MaritimePanel({token,allClients=[]}){
             </div>
           </div>
           {abierto&&<>
+            {Array.isArray(c.tracking_events)&&c.tracking_events.length>1&&<div style={{padding:"10px 18px 12px",borderBottom:`1px solid ${MT_BORDE}`,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".08em",marginRight:4}}>Naviera</span>
+              {c.tracking_events.slice(-8).map((ev,i)=><span key={i} title={ev.lugar||""} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,color:ev.estimada?"rgba(255,255,255,0.5)":ev.tipo==="llegada"?"#4ade80":ev.tipo==="salida"?"#93c5fd":"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.05)",border:`1px dashed ${ev.estimada?"rgba(255,255,255,0.18)":"transparent"}`,outline:ev.estimada?"none":"1px solid rgba(255,255,255,0.1)"}}><span style={{color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{ev.fecha?`${ev.fecha.slice(8,10)}/${ev.fecha.slice(5,7)}`:""}</span>{ev.estado}{ev.lugar?<span style={{color:"rgba(255,255,255,0.4)",fontWeight:500}}>{ev.lugar.split("·")[0].split(",")[0]}</span>:null}{ev.estimada?" (est.)":""}</span>)}
+            </div>}
             {lista.length>0&&!compacta&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos · Volumen{verPlata?" · Costo · Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
             {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>filaCont(sh,todas))}
           </>}

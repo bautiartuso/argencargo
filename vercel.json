@@ -87,6 +87,10 @@
     {
       "path": "/api/cron/autocierre",
       "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/maritimo-tracking",
+      "schedule": "15 * * * *"
     }
   ]
 }
