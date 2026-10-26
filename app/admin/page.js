@@ -14704,10 +14704,10 @@ function ProyeccionTransito({token,usd}){
     const mar=gananciaMaritimaAgua({ships,pkgs:Array.isArray(pk)?pk:[],items:Array.isArray(it)?it:[],tariffs:Array.isArray(tf)?tf:[],ovByCli});
     setD({aereo:{pend:aTotal-aCob,ops:aOps,vuelos:fIds.length,sinPres},mar});
   }catch(e){console.error("proyección",e);setD({error:true});}})();},[token]);
-  const fila=(icono,l,sub,v,c)=><div title={sub} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+  const fila=(icono,l,sub,v,c,i)=><div className="fin-row" style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
     <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{icono}</span>
-    <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l}</span>
-    <span style={{fontSize:14,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
+    <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3}}>{l}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{sub}</span></span>
+    <span style={{fontSize:13.5,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>
   </div>;
   const total=d&&!d.error?d.aereo.pend+d.mar.ganancia:0;
   // Mismo panel de vidrio que el resto del dashboard (26/10/2026).
@@ -14717,8 +14717,8 @@ function ProyeccionTransito({token,usd}){
       {d&&!d.error&&<span style={{fontSize:24,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}>+<NumAnim v={total} fmt={usd}/></span>}
     </div>
     {!d?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>Calculando…</p>:d.error?<p style={{fontSize:12,color:"#fbbf24",margin:"8px 0 0"}}>No se pudo calcular</p>:<>
-      {fila("✈️","Aéreo · por cobrar en el aire",`${d.aereo.ops} op${d.aereo.ops!==1?"s":""} en ${d.aereo.vuelos} vuelo${d.aereo.vuelos!==1?"s":""} · sin impuestos${d.aereo.sinPres?` · ${d.aereo.sinPres} sin presupuesto`:""}`,`+${usd(d.aereo.pend)}`,"#93c5fd")}
-      {fila("🚢","Marítimo · ganancia en el agua",`${d.mar.cargas} carga${d.mar.cargas!==1?"s":""} en ${d.mar.contenedores} contenedor${d.mar.contenedores!==1?"es":""} · cobro ${usd(d.mar.importe)} − costo ${usd(d.mar.costo)}`,`${d.mar.ganancia>=0?"+":"−"}${usd(Math.abs(d.mar.ganancia))}`,d.mar.ganancia>=0?"#4ade80":"#d98080")}
+      {fila("✈️","Aéreo por cobrar",`${d.aereo.ops} op${d.aereo.ops!==1?"s":""} en ${d.aereo.vuelos} vuelo${d.aereo.vuelos!==1?"s":""} · sin impuestos${d.aereo.sinPres?` · ${d.aereo.sinPres} sin presupuesto`:""}`,`+${usd(d.aereo.pend)}`,"#93c5fd",0)}
+      {fila("🚢","Marítimo ganancia en el agua",`${d.mar.cargas} carga${d.mar.cargas!==1?"s":""} en ${d.mar.contenedores} contenedor${d.mar.contenedores!==1?"es":""} · cobra ${usd(d.mar.importe)} − costo ${usd(d.mar.costo)}`,`${d.mar.ganancia>=0?"+":"−"}${usd(Math.abs(d.mar.ganancia))}`,d.mar.ganancia>=0?"#4ade80":"#d98080",1)}
     </>}
   </section>;
 }
@@ -15090,16 +15090,23 @@ function FinanceDashboard({token}){
       </Glass>
 
       {/* Tenés · Falta · En tránsito */}
-      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr)",gap:14,marginBottom:14,alignItems:"stretch"}}>
-        <Glass delay={2} title="Cash disponible" style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
-          <p style={{margin:"4px 0 0",fontSize:celu?28:32,fontWeight:800,color:cashDisponible>=0?VERDE:ROJO,letterSpacing:"-0.03em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:`0 0 26px ${cashDisponible>=0?"rgba(62,230,138,0.35)":"rgba(217,128,128,0.35)"}`}}><NumAnim v={cashDisponible} fmt={usdS}/></p>
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,1.1fr) minmax(0,1.4fr) minmax(0,1.2fr)",gap:14,marginBottom:14,alignItems:"stretch"}}>
+        {/* Las tres tarjetas con la misma forma (27/10/2026): título a la izquierda, cifra a la derecha y filas abajo. */}
+        <Glass delay={2} title="Cash disponible" actions={<span style={{fontSize:celu?20:24,fontWeight:800,color:cashDisponible>=0?VERDE:ROJO,letterSpacing:"-0.02em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:`0 0 22px ${cashDisponible>=0?"rgba(62,230,138,0.3)":"rgba(217,128,128,0.3)"}`}}><NumAnim v={cashDisponible} fmt={usdS}/></span>}>
+          <div style={{display:"flex",flexDirection:"column"}}>
+            {[["💰","Entró",`Cobros, pagos y otros ingresos`,cashIngHist,GOLD_LIGHT],["💸","Salió","Costos, gastos y giros",-cashCostHist,"#d98080"]].map(([ic,l,sub,v,c],i)=><div key={l} className="fin-row" style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
+              <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{ic}</span>
+              <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700,color:"#fff"}}>{l}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{sub}</span></span>
+              <span style={{fontSize:13.5,fontWeight:800,color:c,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{v>=0?"+":"−"}{usdA(Math.abs(v))}</span>
+            </div>)}
+          </div>
         </Glass>
         <Glass delay={3} title="A cobrar" actions={<span style={{fontSize:celu?20:24,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",letterSpacing:"-0.02em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{pendienteNeto>=0?"+":""}<NumAnim v={pendienteNeto} fmt={usdS}/></span>}>
           {faltaFilas.length?<div style={{display:"flex",flexDirection:"column"}}>
             {faltaFilas.map((f,i)=><div key={f.l} className="fin-row" title={f.t||""} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
               <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{f.ic}</span>
-              <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.l}</span>{f.sub&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{f.sub}</span>}</span>
-              <span style={{fontSize:14,fontWeight:800,color:f.c,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{f.v>=0?"+":"−"}{usdA(Math.abs(f.v))}</span>
+              <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3}}>{f.l}</span>{f.sub&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{f.sub}</span>}</span>
+              <span style={{fontSize:13.5,fontWeight:800,color:f.c,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{f.v>=0?"+":"−"}{usdA(Math.abs(f.v))}</span>
             </div>)}
           </div>:<p style={{margin:"8px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Todo cobrado y pagado.</p>}
         </Glass>
