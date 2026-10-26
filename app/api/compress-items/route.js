@@ -24,9 +24,13 @@ QUÉ MERGEAR (variantes obvias):
 - Items con MISMO HS code Y descripción muy similar (>70% de palabras en común)
 
 QUÉ NO MERGEAR — JAMÁS:
-- HS code de capítulos distintos (primeros 2 dígitos diferentes)
-- Productos de función/uso totalmente diferente aunque compartan HS code
-- Si el merge requiere una descripción genérica que pierde info útil para el cliente o aduana
+- HS code de partidas distintas (primeros 4 dígitos diferentes). El código lo verifica y separa.
+- Productos de función/uso distinto aunque compartan HS code: una aspiradora, un calentador de
+  mamaderas y un disco externo NUNCA van juntos, ni para llegar al máximo.
+- Si el merge requiere una descripción genérica o una lista de cosas sueltas ("X, Y, Z and W").
+  Un grupo describe UN tipo de producto con sus variantes, no una bolsa de cosas distintas.
+- Si no llegás al máximo sin forzar, devolvé más grupos: el exceso se le cobra al cliente, pero
+  una factura forzada hace que la Aduana retenga el vuelo entero (pasó, 26/10/2026).
 
 QUÉ DEVOLVER POR GRUPO:
 - description: en INGLÉS, descriptiva pero específica. NO usar términos vagos como "various items" o "mixed products".
@@ -147,6 +151,23 @@ export async function POST(req) {
         source_indices: validIndices,
       });
     }
+    // GUARDIA (26/10/2026): un grupo que mezcla partidas distintas (4 primeros dígitos del HS)
+    // se parte por partida. La IA ya no lo hace, pero una factura forzada retiene el vuelo.
+    const split = [];
+    for (const g of groups) {
+      const porPartida = {};
+      for (const i of g.source_indices) { const k = String(items[i].hs_code || "").replace(/[^0-9]/g, "").slice(0, 4) || "sin"; (porPartida[k] = porPartida[k] || []).push(i); }
+      const ks = Object.keys(porPartida);
+      if (ks.length <= 1) { split.push(g); continue; }
+      for (const k of ks) {
+        const idx = porPartida[k]; const gi = idx.map(i => items[i]);
+        const q = gi.reduce((s, it) => s + Number(it.quantity || 0), 0);
+        const amt = gi.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
+        split.push({ description: idx.length === 1 ? (gi[0].description || g.description) : g.description, quantity: q, unit_price_usd: q > 0 ? Number((amt / q).toFixed(4)) : 0, hs_code: gi[0].hs_code || null, source_indices: idx });
+      }
+    }
+    const partidasSeparadas = split.length - groups.length;
+    groups.length = 0; groups.push(...split);
     // RESCATE: items que la IA dejó afuera → los agregamos como grupos singleton
     const rescued = [];
     for (let i = 0; i < items.length; i++) {
@@ -181,7 +202,8 @@ export async function POST(req) {
       ...(rescued.length > 0 ? [`La IA dejó ${rescued.length} items sin agrupar (índices: ${rescued.join(",")}) — los agregué como grupos sueltos para no perderlos. Si querés más compresión, tocá Re-comprimir.`] : []),
       ...(aiDuplicates.length > 0 ? [`La IA duplicó ${aiDuplicates.length} índices (los descarté de la 2da ocurrencia).`] : []),
       ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (probable redondeo)`] : []),
-      ...(groups.length > maxItems ? [`Quedaron ${groups.length} grupos (objetivo era ${maxItems}). Tocá Re-comprimir si necesitás reducir más.`] : []),
+      ...(partidasSeparadas > 0 ? [`Separé ${partidasSeparadas} grupo${partidasSeparadas > 1 ? "s" : ""} que mezclaban partidas distintas (HS de 4 dígitos).`] : []),
+      ...(groups.length > maxItems ? [`Quedaron ${groups.length} grupos (objetivo ${maxItems}): no se pudo bajar más sin forzar. El exceso se le cobra al cliente (USD 5 por ítem de más de 8); no fuerces la compresión.`] : []),
     ];
 
     return Response.json({

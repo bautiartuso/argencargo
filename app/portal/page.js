@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab, confirmDialog, DialogHost } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { PROVINCIAS } from "../../lib/provincias";
-import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, tarifaAplica, tablaDesaduanaje, esPkBd, svcAereoDe, SVC_PK_BD, TARIFA_PK_BD , TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget, costoPuestoEnArgentina, minKgAereoDe, bateriaUsdKg, recargoItems, tarifaAplica, tablaDesaduanaje, esPkBd, svcAereoDe, SVC_PK_BD, TARIFA_PK_BD , TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import NuevasTarifas from "./components/NuevasTarifas";
 import MaritimeCargoCards from "./components/MaritimeCargoCards";
@@ -1219,13 +1219,14 @@ function OperationDetail({op:opProp,token,client,onBack}){
             {shipCost>0&&fila(t("op.homeDelivery"),usd(shipCost))}
             {pmtTotal>0&&fila(`Gestión de pagos${pmtAnticipado>0?` (cobrado ${usd(pmtAnticipado)} de ${usd(pmtTotal)})`:""}`,usd(pmtPendiente),{color:pmtPendiente>0?"#fb923c":"#4ade80"})}
           </div>}
-          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);
+          {showEstimate&&(()=>{const td=est.taxDetail||{};const bat=Number(est.battExtra||0);const itx=Number(est.itemsExtra||0);
             // Impuestos y gasto documental en una sola fila, con el desglose por producto adentro:
             // antes el desaduanaje iba en una fila aparte Y se repetía adentro del desglose.
             const impYGastos=Number(td.derechos||0)+Number(td.tasaE||0)+Number(td.iva||0)+Number(td.ivaAdic||0)+Number(td.iigg||0)+Number(td.iibb||0)+Number(td.desembolso||0)+Number(td.ivaDesembolso||0);
             const rows=[
-              [t("op.airFreight"),Number(est.flete||0)-bat,{}],
+              [t("op.airFreight"),Number(est.flete||0)-bat-itx,{}],
               [t("op.batterySurcharge"),bat,{}],
+              [t("op.itemsSurcharge"),itx,{}],
               [t("op.overweight"),Number(est.overweightSurcharge||0),{}],
               [t("op.cargoInsurance"),Number(est.seguro||0),{}],
               [riPagaImpuestosDirecto?t("op.taxesAndFeesDirect"):t("op.taxesAndFees"),impYGastos,{imp:true,muted:riPagaImpuestosDirecto}],
@@ -1784,9 +1785,10 @@ function CalculatorPage({token,client,preset}){
       // girth (lado más largo + 2×(los otros dos)) supera 260 cm. Ítem separado, no dentro del flete.
       const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1);const gw=toN(pk.weight);const l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const mx=Math.max(l,w,h);const girth=l&&w&&h?mx+2*(l+w+h-mx):0;return n+((gw>24||girth>260)?q:0);},0);
       const overweightSurcharge=owPieces*40; // USD 40 por pieza desde el 03/10/2026
-      const totalSvc=flete+seguro+battExtra+overweightSurcharge;
+      const itemsExtra=recargoItems(validProds.length); // 26/10/2026: USD 5 por cada ítem de más de 8
+      const totalSvc=flete+seguro+battExtra+overweightSurcharge+itemsExtra;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:transitoAereo,isBlanco:true,
-        flete,seguro,battExtra,overweightSurcharge,owPieces,totalImp,totalSvc,total:totalImp+totalSvc,items,
+        flete,seguro,battExtra,itemsExtra,overweightSurcharge,owPieces,totalImp,totalSvc,total:totalImp+totalSvc,items,
         pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturableBill,pkgDetails,unit:`${facturableBill.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) China: OCULTO para clientes (pedido 11/06/2026). El canal
@@ -1859,7 +1861,7 @@ function CalculatorPage({token,client,preset}){
   const saveChainRef=useRef(Promise.resolve());
   // Desglose línea por línea de cada vía (se guarda en channel_alternatives.detail: lo lee Mis cotizaciones y el link público).
   const detailOf=(ch)=>{const its=ch.items||[];const sm=f=>its.reduce((a,it)=>a+Number(f(it)||0),0);const d=[];
-    if(ch.isBlanco){d.push(["Flete internacional",Number(ch.flete||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);d.push(["Seguro (1%)",Number(ch.seguro||0)]);d.push(["Derechos de importación",sm(it=>it.derechos)]);d.push(["Tasa estadística",sm(it=>it.tasa_e)]);d.push(["IVA",sm(it=>it.iva)]);if(ch.isMar){d.push([`IVA adicional (${Math.round(TASA_IVA_ADICIONAL*100)}%)`,sm(it=>it.ivaAdic||0)]);d.push([`Ganancias · IIGG (${Math.round(TASA_IIGG*100)}%)`,sm(it=>it.iigg||0)]);d.push([`Ingresos brutos · IIBB (${Math.round(TASA_IIBB*100)}%)`,sm(it=>it.iibb||0)]);}else{d.push(["Gasto documental",sm(it=>it.desembolso)]);if(sm(it=>it.ivaDesemb)>0)d.push(["IVA sobre gasto documental",sm(it=>it.ivaDesemb)]);}}
+    if(ch.isBlanco){d.push(["Flete internacional",Number(ch.flete||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.itemsExtra)>0)d.push(["Recargo por ítems de factura",Number(ch.itemsExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);d.push(["Seguro (1%)",Number(ch.seguro||0)]);d.push(["Derechos de importación",sm(it=>it.derechos)]);d.push(["Tasa estadística",sm(it=>it.tasa_e)]);d.push(["IVA",sm(it=>it.iva)]);if(ch.isMar){d.push([`IVA adicional (${Math.round(TASA_IVA_ADICIONAL*100)}%)`,sm(it=>it.ivaAdic||0)]);d.push([`Ganancias · IIGG (${Math.round(TASA_IIGG*100)}%)`,sm(it=>it.iigg||0)]);d.push([`Ingresos brutos · IIBB (${Math.round(TASA_IIBB*100)}%)`,sm(it=>it.iibb||0)]);}else{d.push(["Gasto documental",sm(it=>it.desembolso)]);if(sm(it=>it.ivaDesemb)>0)d.push(["IVA sobre gasto documental",sm(it=>it.ivaDesemb)]);}}
     else{d.push([ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);}
     return d.map(([l,v])=>[l,Math.round(v*100)/100]);};
   const buildQuoteBody=(channels,chosen)=>{

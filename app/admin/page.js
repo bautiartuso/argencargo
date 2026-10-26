@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
 import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento } from "../../lib/legajo.js";
@@ -2464,9 +2464,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <div style={{padding:"2px 18px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
           {isBlanco?<>
             {linea("Impuestos",totalTax,"#f59e0b",taxesBilledByArgencargo?(op.channel==="maritimo_blanco"?"Derechos, estadística, IVA, percepciones":"Derechos, estadística, IVA y desaduanaje"):"No entra en el total · el RI los paga directo a la aduana",!taxesBilledByArgencargo)}
-            {(()=>{const bat=Number(op.budget_tax_detail?.battExtra||0);
-              // Con recargo cargado se muestran las dos líneas; sin él, el flete solo, como antes.
-              return bat>0.005?<>{linea("Flete internacional",flete-bat,"#60a5fa")}{linea("Recargo por baterías",bat,"#fb923c")}</>:linea("Flete internacional",flete,"#60a5fa");})()}
+            {(()=>{const bat=Number(op.budget_tax_detail?.battExtra||0);const itx=Number(op.budget_tax_detail?.itemsExtra||0);const itn=Number(op.budget_tax_detail?.itemsCount||0);
+              // Con recargo cargado se muestran las líneas aparte; sin él, el flete solo, como antes.
+              return (bat>0.005||itx>0.005)?<>{linea("Flete internacional",flete-bat-itx,"#60a5fa")}{bat>0.005&&linea("Recargo por baterías",bat,"#fb923c")}{itx>0.005&&linea("Recargo por ítems de factura",itx,"#fb923c",`${itn} ítems · ${MAX_ITEMS_FACTURA} incluidos, USD 5 por cada uno de más`)}</>:linea("Flete internacional",flete,"#60a5fa");})()}
             {seguro>0&&linea("Seguro de carga",seguro,"#a78bfa")}
             {surcharge>0&&linea("Recargo por sobrepeso",surcharge,"#fb923c")}
           </>:<>
@@ -10252,6 +10252,40 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     return {opId,count:list.length,target:targetForThisOp,opCode:opsUnique.find(o=>o.id===opId)?.operation_code||"?"};
   }).filter(o=>o.count>o.target):[];
   const [compressState,setCompressState]=useState(null);
+  // Recargo por ítems (26/10/2026): al presentar la factura cada op guarda cuántos renglones le
+  // quedaron en la declaración (invoice_items_count) y se recalcula su presupuesto automático:
+  // si la compresión la dejó en 8 o menos, el recargo se va; si no, se cobra sobre lo que quedó.
+  // No toca presupuestos manuales ni ops que el cliente ya coordinó.
+  const fijarItemsFactura=async()=>{
+    try{
+      const conteo={};items.forEach(it=>{conteo[it.operation_id]=(conteo[it.operation_id]||0)+1;});
+      const ids=Object.keys(conteo);if(!ids.length)return;
+      const [opsR,tar,cfg]=await Promise.all([
+        dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=*`}),
+        dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
+        dq("calc_config",{token,filters:"?select=*"}),
+      ]);
+      const tariffs=Array.isArray(tar)?tar:[];const config={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{config[r.key]=Number(r.value);});
+      for(const o of (Array.isArray(opsR)?opsR:[])){
+        const n=conteo[o.id]||0;
+        if(Number(o.invoice_items_count??-1)!==n)await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{invoice_items_count:n}});
+        if(o.channel!=="aereo_blanco"||o.budget_mode==="manual"||o.delivery_confirmed_at||o.service_type==="gestion_integral")continue;
+        const [it,pk,ov,cl,fii]=await Promise.all([
+          dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
+          dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
+          o.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${o.client_id}&select=*`}):Promise.resolve([]),
+          o.client_id?dq("clients",{token,filters:`?id=eq.${o.client_id}&select=tax_condition`}):Promise.resolve([]),
+          dq("flight_invoice_items",{token,filters:`?operation_id=eq.${o.id}&select=quantity,unit_price_declared_usd`}),
+        ]);
+        const its=Array.isArray(it)?it:[];if(!its.length)continue;
+        // Solo si el recargo cambia: antes (con los productos de la op) vs ahora (renglones de la factura).
+        const antes=recargoItems(its.length,o.created_at?Date.parse(o.created_at):Date.now()),ahora=recargoItems(n,o.created_at?Date.parse(o.created_at):Date.now());
+        if(antes===ahora&&Number(o.budget_tax_detail?.itemsExtra||0)===ahora)continue;
+        const r=calcOpBudget({...o,invoice_items_count:n},its,Array.isArray(pk)?pk:[],tariffs,config,Array.isArray(ov)?ov:[],Array.isArray(cl)?cl[0]:null,Array.isArray(fii)?fii:[]);
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:r.totalTax,budget_flete:r.flete,budget_seguro:r.seguro,budget_surcharge:r.surcharge||0,budget_total:r.totalAbonar,budget_tax_detail:r.taxDetail||null}});
+      }
+    }catch(e){console.error("fijarItemsFactura",e);}
+  };
   // ---- NUEVO: comprimir TODO el vuelo (cross-ops), sin tocar operation_items ----
   // Pensado para vuelos donde varias ops del mismo cliente repiten mercadería: la
   // compresión por op no encuentra duplicados, pero entre ops sí. Solo reescribe
@@ -10841,7 +10875,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </>}
       </FeCard>;})()}
     <FeCard title="Factura de exportación" icon="📋"
-      summary={<><FePill color="#94a3b8">{items.length} ítem{items.length!==1?"s":""}</FePill><FePill color="#E8D098">{usd(totalDeclaredUSD)} declarados</FePill>{flight.invoice_presented_at?<FePill color="#22c55e">✓ Presentada {formatDateShort(flight.invoice_presented_at)}</FePill>:<FePill color="#fbbf24">⏳ Sin presentar</FePill>}</>}
+      summary={<><FePill color="#94a3b8">{items.length} ítem{items.length!==1?"s":""}</FePill><FePill color="#E8D098">{usd(totalDeclaredUSD)} declarados</FePill>{Object.entries(itemsByOp).filter(([,l])=>l.length>MAX_ITEMS_FACTURA).map(([opId,l])=><FePill key={opId} color="#fb923c" title={`${l.length} ítems en la factura: ${MAX_ITEMS_FACTURA} incluidos, USD 5 por cada uno de más. Si la compresión la deja en ${MAX_ITEMS_FACTURA} o menos, no se cobra.`}>{opsUnique.find(o=>o.id===opId)?.operation_code||"?"} · {l.length} ítems · +{usd(recargoItems(l.length))}</FePill>)}{flight.invoice_presented_at?<FePill color="#22c55e">✓ Presentada {formatDateShort(flight.invoice_presented_at)}</FePill>:<FePill color="#fbbf24">⏳ Sin presentar</FePill>}</>}
       actions={<Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn>}>
       {items.length===0&&!flight.invoice_presented_at?<div>
         <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items todavía. Agregá manualmente o esperá a que el cliente complete la documentación.</p>
@@ -10918,7 +10952,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"16px 18px",borderRadius:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,background:flight.invoice_presented_at?"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.14),rgba(184,149,106,0.03))",border:`1px solid ${flight.invoice_presented_at?"rgba(34,197,94,0.4)":"rgba(232,201,155,0.4)"}`}}>
         {flight.invoice_presented_at?<div style={{display:"flex",alignItems:"center",gap:12}}><span style={{width:38,height:38,borderRadius:11,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.45)",fontSize:18}}>✓</span><div><p style={{fontSize:14,fontWeight:800,color:"#4ade80",margin:0}}>Factura presentada · {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div></div>:<div style={{display:"flex",alignItems:"center",gap:12}}><span style={{width:38,height:38,borderRadius:11,display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(184,149,106,0.18)",border:"1px solid rgba(232,201,155,0.45)",fontSize:18}}>📄</span><div><p style={{fontSize:14,fontWeight:800,color:"#E8C99B",margin:0}}>Factura sin presentar</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div></div>}
-        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn variant="gold" disabled={presentando} onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!((dest.dest_address||"").trim()||flight.dest_address||flight.destination_address)){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}setPresentando(true);try{await saveAllItems();{const d={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])d[k]=dest[k];});if(d.dest_address!==undefined)d.destination_address=d.dest_address;if(Object.keys(d).length)await updateFlightSilent(d);}await updateFlight({invoice_presented_at:new Date().toISOString()});await Promise.all(flightOps.map(fo=>dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}})));}finally{setPresentando(false);}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>{presentando?"Presentando…":"📤 Guardar y presentar factura"}</Btn>}
+        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn variant="gold" disabled={presentando} onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!((dest.dest_address||"").trim()||flight.dest_address||flight.destination_address)){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}setPresentando(true);try{await saveAllItems();{const d={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])d[k]=dest[k];});if(d.dest_address!==undefined)d.destination_address=d.dest_address;if(Object.keys(d).length)await updateFlightSilent(d);}await updateFlight({invoice_presented_at:new Date().toISOString()});await Promise.all(flightOps.map(fo=>dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}})));await fijarItemsFactura();}finally{setPresentando(false);}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>{presentando?"Presentando…":"📤 Guardar y presentar factura"}</Btn>}
       </div>}
     </FeCard>
     {/* Impuestos del vuelo. Se paga un monto unico en pesos al despachante y hay que repartirlo
@@ -11928,7 +11962,7 @@ function AgentsPanel({token}){
         clientName:client?`${client.first_name||""} ${client.last_name||""}`.trim():(o.clients?`${o.clients.first_name||""}`.trim():""),
         origin:o.origin||"China",fleteAmt:b.fleteAmt||Math.max(pf,aereoMinKg),
         products:items.map(it=>({description:it.description,quantity:it.quantity,unit_price_usd:it.unit_price_usd,ncm_code:it.ncm_code})),
-        flete:b.flete,battExtra:b.battExtra||0,surcharge:b.surcharge||0,seguro:b.seguro,
+        flete:b.flete,battExtra:b.battExtra||0,itemsExtra:b.itemsExtra||0,surcharge:b.surcharge||0,seguro:b.seguro,
         derechos,tasaE,iva,desembolso,ivaDesembolso,
         totalFob:totFob,totalImport:b.totalAbonar,
         taxesBilledByArgencargo:b.taxesBilledByArgencargo,
@@ -16114,7 +16148,7 @@ function QuotesList({token}){
       const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
       let detail=null;
       if(isBlancoCh&&isAereoCh){
-        detail=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-Number(c.battExtra||0)],["Recargo por baterías",Number(c.battExtra||0)],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
+        detail=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-Number(c.battExtra||0)-Number(c.itemsExtra||0)],["Recargo por baterías",Number(c.battExtra||0)],["Recargo por ítems de factura",Number(c.itemsExtra||0)],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
       }else if(isBlancoCh&&!isAereoCh){
         detail=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),c.flete||0],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];
       }
@@ -16435,7 +16469,7 @@ function QuotesList({token}){
       const detalleDe=(c)=>{const isB=c.type==="maritimo_b"||c.type==="aereo_b";const td=c.taxDetail||{};const ow=Number(c.overweightSurcharge||0);const bat=Number(c.battExtra||0);
         let d=[];
         if(isB){d=[["Servicio integral de importación",Number(c.flete||0)]];}
-        else if(c.type==="aereo_a"){d=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-bat],["Recargo por baterías",bat],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
+        else if(c.type==="aereo_a"){d=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-bat-Number(c.itemsExtra||0)],["Recargo por baterías",bat],["Recargo por ítems de factura",Number(c.itemsExtra||0)],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
         else{d=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),Number(c.flete||0)],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];}
         if(Number(c.shipCost||0)>0)d.push(["Envío a domicilio",c.shipCost]);
         return d.filter(([l,v])=>/^(Derechos|Tasa estad)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);};
@@ -17054,10 +17088,10 @@ function AdminCalculator({token}){
         const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(c.key)?rateOverride[c.key]:null;
         const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
         const fleteRateEff=hasRateOv?toN(rateOvStr):Number(c.fleteRate||0);
-        const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*fleteRateEff+Number(c.battExtra||0)):Number(c.flete||0);
+        const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*fleteRateEff+Number(c.battExtra||0)+Number(c.itemsExtra||0)):Number(c.flete||0);
         // El recargo por baterías venía sumado dentro del flete y no aparecía en ninguna línea:
         // el cliente veía un flete inflado sin saber por qué. Va como línea propia debajo.
-        const batEff=Number(c.battExtra||0);
+        const batEff=Number(c.battExtra||0);const itxEff=Number(c.itemsExtra||0);
         let taxEff=0;
         if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
         else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
@@ -17073,7 +17107,7 @@ function AdminCalculator({token}){
         const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
         let detail=null;
         if(bd.isBlanco&&bd.isAereo){
-          detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff],["Recargo por baterías",batEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
+          detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff-itxEff],["Recargo por baterías",batEff],["Recargo por ítems de factura",itxEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
         }else if(bd.isBlanco&&bd.isMaritimo){
           detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
         }
