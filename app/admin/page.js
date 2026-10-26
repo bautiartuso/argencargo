@@ -1525,7 +1525,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   };
   const applyClassification=async(it)=>{
     const p=ncmPreview[it.id];if(!p)return;
-    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:p.ncm_code,import_duty_rate:p.import_duty_rate,statistics_rate:p.statistics_rate,iva_rate:p.iva_rate}});
+    // Va con lo que está escrito en la tarjeta (descripción, precio, cantidad): si no, al recargar
+    // los productos se perdía lo no guardado y volvía "Nuevo producto" (27/10/2026).
+    const numOrNull=(v)=>{const n=Number(v);return v===""||v==null||isNaN(n)?null:n;};
+    const q=parseInt(it.quantity,10);
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description||null,quantity:isNaN(q)||q<=0?1:q,unit_price_usd:numOrNull(it.unit_price_usd),ncm_code:p.ncm_code,import_duty_rate:p.import_duty_rate,statistics_rate:p.statistics_rate,iva_rate:p.iva_rate,...(p.intervention?{intervention:p.intervention}:{})}});
+    origDescRef.current[it.id]=it.description||"";origNcmRef.current[it.id]=p.ncm_code;
     setNcmPreview(prev=>{const n={...prev};delete n[it.id];return n;});
     await reloadItems();
     autoSyncBudget();
