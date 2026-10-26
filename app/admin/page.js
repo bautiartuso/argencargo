@@ -54,6 +54,9 @@ const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 // usan var(--vh100), que compensa el zoom.
 const AC_THEME_CSS=`:root{--vh100:100vh;--vw100:100vw}
 html.ac-z90{zoom:.9;--vh100:calc(100vh / .9);--vw100:calc(100vw / .9)}
+/* El panel ocupa la ventana entera con position:fixed (no depende de 100vw/100vh bajo zoom) y el
+   fondo de la página es navy, así nunca asoma blanco. */
+html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628}
 @keyframes ac-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes ac-glow{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-24px)}}
 .ac-in{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
@@ -17795,7 +17798,7 @@ function AdminDashboard({session,onLogout}){
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;
-  return <div className="ac-admin-root" style={{height:"var(--vh100)",width:"var(--vw100)",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
+  return <div className="ac-admin-root" style={{position:"fixed",inset:0,display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
     <style dangerouslySetInnerHTML={{__html:AC_THEME_CSS}}/>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
@@ -17854,7 +17857,7 @@ function AdminDashboard({session,onLogout}){
     {/* Mobile sidebar */}
     {mobOpen&&<div className="ac-mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,background:"rgba(10,22,40,0.98)",backdropFilter:"blur(14px)",borderRight:"1px solid rgba(255,255,255,0.06)",flexDirection:"column",zIndex:70,overflow:"hidden",boxShadow:"4px 0 30px rgba(0,0,0,0.5)"}}>{sidebarContent}</div>}
     {/* Desktop sidebar */}
-    <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",backdropFilter:"blur(16px) saturate(140%)",WebkitBackdropFilter:"blur(16px) saturate(140%)",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"var(--vh100)",position:"sticky",top:0}}>{sidebarContent}</div>
+    <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",backdropFilter:"blur(16px) saturate(140%)",WebkitBackdropFilter:"blur(16px) saturate(140%)",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"100%",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
       <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
