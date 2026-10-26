@@ -329,6 +329,12 @@ const I18N={
     dispatch_photo_hint:"Subí la captura del sistema del courier con el peso y las medidas de cada bulto",
     photo_ok:"Foto cargada ✓",
     photo_change:"Cambiar foto",
+    flight_invoice:"Factura comercial del vuelo (PDF)",
+    flight_invoice_hint:"Subí la factura comercial que generó el courier para este envío (exportador → consignatario, con la guía y los valores)",
+    flight_invoice_ok:"Factura cargada ✓",
+    flight_invoice_change:"Cambiar archivo",
+    flight_invoice_required:"Para despachar hay que subir la factura comercial del vuelo",
+    flight_invoice_missing_alert:"Falta la factura comercial del vuelo",
     fact_note:"Peso facturable (vol > bruto) · usado para $/kg y reparto",
     rate_note:"Tarifa resultante (todo incluido)",
     ow_short:"Sobrepeso",
@@ -701,6 +707,12 @@ const I18N={
     dispatch_photo_hint:"上传快递系统中每件包裹重量和尺寸的截图",
     photo_ok:"已上传 ✓",
     photo_change:"更换图片",
+    flight_invoice:"航班商业发票 (PDF)",
+    flight_invoice_hint:"上传快递公司为本次发货生成的商业发票（出口商 → 收货人，含运单号和货值）",
+    flight_invoice_ok:"发票已上传 ✓",
+    flight_invoice_change:"更换文件",
+    flight_invoice_required:"发送航班前必须上传商业发票",
+    flight_invoice_missing_alert:"缺少航班商业发票",
     fact_note:"计费重量（体积重 > 实重）· 用于 $/kg 与分摊",
     rate_note:"最终费率（全包）",
     ow_short:"超重",
@@ -1258,10 +1270,11 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     const isReady=fase==="listo",isWaiting=fase==="preparando",live=fase!=="recibido";
     const despachado=f.status!=="preparando";
     const faltaFoto=despachado&&f.status!=="recibido"&&!f.dispatch_photo_url;
+    const faltaFactura=despachado&&f.status!=="recibido"&&!f.commercial_invoice_path;
     const dem=despachado?demoraPickup(f):null;
     const eta=despachado?etaVuelo(f):null;
     const Pill=({children,color,title,solid})=><span title={title} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:999,color:solid?"#0A1628":color,background:solid?color:`color-mix(in srgb, ${color} 14%, transparent)`,border:`1px solid ${solid?"transparent":`color-mix(in srgb, ${color} 45%, transparent)`}`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6}}>{children}</span>;
-    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card ac-card" style={{cursor:"pointer",background:"rgba(var(--ink),0.028)",border:`1px solid ${faltaFoto?"rgba(239,68,68,0.45)":isReady?"rgba(34,197,94,0.4)":"rgba(var(--ink),0.07)"}`,borderLeft:`3px solid ${c}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card ac-card" style={{cursor:"pointer",background:"rgba(var(--ink),0.028)",border:`1px solid ${faltaFoto||faltaFactura?"rgba(239,68,68,0.45)":isReady?"rgba(34,197,94,0.4)":"rgba(var(--ink),0.07)"}`,borderLeft:`3px solid ${c}`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       {f.dispatch_photo_url&&<a href={f.dispatch_photo_url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} title={t.dispatch_photo} style={{flexShrink:0}}><img src={f.dispatch_photo_url} alt="" style={{width:56,height:56,objectFit:"cover",borderRadius:10,border:"1px solid rgba(var(--ink),0.15)",display:"block"}}/></a>}
       <div style={{flex:1,minWidth:240}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
@@ -1280,6 +1293,9 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         {faltaFoto&&<div onClick={e=>e.stopPropagation()} style={{marginTop:10,padding:"8px 12px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"var(--red)",flex:1,minWidth:200}}>⚠ {t.photo_missing_alert}</span>
           <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:"var(--red)",color:"#fff",cursor:"pointer"}}>📎 {t.attach}<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoVuelo(f,e.target.files?.[0]);e.target.value="";}}/></label>
+        </div>}
+        {faltaFactura&&<div style={{marginTop:faltaFoto?6:10,padding:"8px 12px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"var(--red)",flex:1,minWidth:200}}>⚠ {t.flight_invoice_missing_alert}</span>
         </div>}
       </div>
       <span style={{color:"var(--gold)",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{t.flight} →</span>
@@ -1504,7 +1520,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       </>;})()}
 
     {/* Flight detail (shared by active_flights + history) */}
-    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
+    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}} onFacturaSubida={(path,name)=>setFlights(prev=>prev.map(x=>x.id===f.id?{...x,commercial_invoice_path:path,commercial_invoice_name:name}:x))}/>;})()}
 
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
@@ -1634,7 +1650,7 @@ function AgAdornInp({label,req,value,onChange,placeholder,prefix,suffix}){
   </div>;
 }
 
-function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onBack,onDispatched}){
+function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onBack,onDispatched,onFacturaSubida}){
   const [invoiceItems,setInvoiceItems]=useState([]);
   const [lightboxPhoto,setLightboxPhoto]=useState(null);
   // La lista global de bultos del deposito viene con limit=100 (los mas nuevos): las ops viejas
@@ -1696,6 +1712,32 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     }
     setSubiendoFoto(false);
   };
+  // Factura comercial del vuelo (26/10/2026): la del courier, obligatoria para despachar. Va por
+  // /api/agente/factura-vuelo (bucket privado + legajo de cada op); acá solo se guarda que ya está.
+  const [facturaNombre,setFacturaNombre]=useState(flight.commercial_invoice_name||(flight.commercial_invoice_path?"factura.pdf":""));
+  const [subiendoFactura,setSubiendoFactura]=useState(false);
+  const subirFacturaVuelo=async(file)=>{
+    if(!file)return;
+    setSubiendoFactura(true);
+    try{
+      const fd=new FormData();fd.append("flight_id",flight.id);fd.append("file",file);
+      const fresh=await ensureFreshToken(token);
+      const r=await fetch("/api/agente/factura-vuelo",{method:"POST",headers:{Authorization:`Bearer ${fresh}`},body:fd});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok){setErr(d.error||t.upload_failed||"Error");}
+      else{setFacturaNombre(d.name||file.name);onFacturaSubida?.(d.path,d.name||file.name);}
+    }catch(e){setErr(e.message);}
+    setSubiendoFactura(false);
+  };
+  const zonaFactura=(compacta)=><div style={{marginTop:compacta?12:0}}>
+    <label style={{display:"block",fontSize:compacta?11:12,fontWeight:compacta?700:600,color:compacta?"var(--gold)":"rgba(var(--ink),0.6)",marginBottom:5,textTransform:compacta?"uppercase":"none"}}>🧾 {t.flight_invoice}</label>
+    <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`1.5px dashed ${facturaNombre?"rgba(34,197,94,0.5)":"rgba(239,68,68,0.45)"}`,borderRadius:10,cursor:"pointer",background:facturaNombre?"rgba(34,197,94,0.06)":"rgba(239,68,68,0.05)"}}>
+      <input type="file" accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={subiendoFactura} onChange={e=>{subirFacturaVuelo(e.target.files?.[0]);e.target.value="";}}/>
+      <span style={{fontSize:20}}>{subiendoFactura?"⏳":facturaNombre?"📄":"📎"}</span>
+      {facturaNombre?<div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.flight_invoice_ok}</p><p style={{fontSize:11,color:"rgba(var(--ink),0.45)",margin:"2px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{facturaNombre} · {t.flight_invoice_change}</p></div>
+      :<p style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",margin:0,lineHeight:1.45}}>{subiendoFactura?"...":t.flight_invoice_hint}</p>}
+    </label>
+  </div>;
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
@@ -1992,9 +2034,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
               </>}
             </label>
           </div>
+          <div style={{gridColumn:"1 / -1",marginBottom:14}}>{zonaFactura(false)}{!facturaNombre&&<p style={{fontSize:11.5,fontWeight:700,color:"var(--red)",margin:"6px 0 0"}}>{t.flight_invoice_required}</p>}</div>
         </div>
         </>;})()}
-      {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!(computedCost>0)||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:
+      {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!(computedCost>0)||!tracking||autoWeight<=0||!facturaNombre}>{t.confirm_dispatch}</Btn>:
       <div style={{padding:"14px 18px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10}}>
         <p style={{fontSize:13,color:"var(--amber)",margin:"0 0 12px",fontWeight:600}}>{t.dispatch_warning}</p>
         <div style={{display:"flex",gap:10}}>
@@ -2024,6 +2067,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           </>}
         </label>
       </div>
+      {zonaFactura(true)}
     </div>}
     {lightboxPhoto&&<div onClick={()=>setLightboxPhoto(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
       <button onClick={(e)=>{e.stopPropagation();setLightboxPhoto(null);}} style={{position:"absolute",top:20,right:20,padding:"8px 16px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(var(--ink),0.2)",background:"rgba(0,0,0,0.5)",color:"var(--tx)",cursor:"pointer"}}>✕</button>

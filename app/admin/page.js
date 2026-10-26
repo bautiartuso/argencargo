@@ -65,7 +65,9 @@ html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628;overflo
 .ac-glass{background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);box-shadow:inset 0 1px 0 rgba(255,255,255,0.15),0 18px 44px rgba(0,0,0,0.3);border-radius:20px;transition:border-color .25s,box-shadow .25s}
 .ac-glass:hover{border-color:rgba(255,255,255,0.19)}
 .ac-glass-in{background:linear-gradient(160deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.1);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08)}
-@media(min-width:901px){.ac-glass{backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%)}}
+/* Sin backdrop-filter en tarjetas ni paneles: un contenedor con blur pasa a ser el marco de los
+   position:fixed que tiene adentro y los modales quedaban recortados (Costos del contenedor,
+   26/10/2026). El blur queda solo para la caja de un modal o desplegable (hijo directo del overlay). */
 /* Fondo del área de trabajo: dos resplandores suaves (dorado y azul) */
 .ac-admin-main{background:radial-gradient(900px 520px at 88% -8%,rgba(232,208,152,0.075),transparent 60%),radial-gradient(760px 520px at -6% 70%,rgba(96,165,250,0.06),transparent 55%)}
 /* Entrada de cada pantalla: los bloques aparecen en cascada */
@@ -80,9 +82,11 @@ html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628;overflo
 /* Filas de listas: resaltado al pasar */
 .ac-admin-main div[style*="cursor: pointer"][style*="border-bottom"],.ac-admin-main div[style*="cursor: pointer"][style*="border-top"],.ac-admin-main div[role="button"]{transition:background .15s,border-color .15s}
 .ac-admin-main div[style*="cursor: pointer"][style*="border-bottom"]:hover,.ac-admin-main div[style*="cursor: pointer"][style*="border-top"]:hover,.ac-admin-main div[role="button"]:hover{background:rgba(255,255,255,0.05)!important}
-/* Modales y menúes desplegables: vidrio oscuro con blur */
-div[style*="linear-gradient(rgb(20, 32, 56), rgb(15, 26, 45))"],div[style*="linear-gradient(rgb(20, 32, 56) 0%, rgb(15, 26, 45)"]{background:linear-gradient(165deg,rgba(26,40,70,0.9),rgba(12,22,40,0.94))!important;backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 30px 80px rgba(0,0,0,0.6)!important;animation:ac-in .22s cubic-bezier(.2,.8,.2,1) both}
-div[style*="background: rgb(20, 32, 56)"],div[style*="background: rgb(15, 26, 45)"],div[style*="background: rgb(22, 36, 58)"]{background:rgba(20,32,56,0.86)!important;backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%);border-color:rgba(255,255,255,0.15)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 20px 50px rgba(0,0,0,0.5)!important;animation:ac-in .18s cubic-bezier(.2,.8,.2,1) both}
+/* Modales y menúes desplegables: vidrio oscuro. El blur solo cuando la caja cuelga directo de un
+   overlay fixed (si lo tuviera un panel común, recortaría los modales que abre adentro). */
+div[style*="linear-gradient(rgb(20, 32, 56), rgb(15, 26, 45))"],div[style*="linear-gradient(rgb(20, 32, 56) 0%, rgb(15, 26, 45)"]{background:linear-gradient(165deg,rgba(26,40,70,0.96),rgba(12,22,40,0.98))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 30px 80px rgba(0,0,0,0.6)!important;animation:ac-in .22s cubic-bezier(.2,.8,.2,1) both}
+div[style*="background: rgb(20, 32, 56)"],div[style*="background: rgb(15, 26, 45)"],div[style*="background: rgb(22, 36, 58)"]{background:rgba(20,32,56,0.96)!important;border-color:rgba(255,255,255,0.15)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 20px 50px rgba(0,0,0,0.5)!important;animation:ac-in .18s cubic-bezier(.2,.8,.2,1) both}
+div[style*="position: fixed"]>div[style*="linear-gradient(rgb(20, 32, 56)"],div[style*="position: fixed"]>div[style*="background: rgb(20, 32, 56)"],div[style*="position: fixed"]>div[style*="background: rgb(15, 26, 45)"],div[style*="position: fixed"]>div[style*="background: rgb(22, 36, 58)"]{background:rgba(20,32,56,0.86)!important;backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%)}
 /* Tablas y listas */
 .ac-admin-main table{border-collapse:separate!important;border-spacing:0}
 .ac-admin-main thead th{font-size:10px!important;letter-spacing:.08em!important;text-transform:uppercase!important;font-weight:800!important;color:rgba(255,255,255,0.42)!important}
@@ -9093,7 +9097,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
   useEffect(()=>{
     const hp=(e)=>{if(!document.querySelector("[data-legajo-op]"))return;const f=[...(e.clipboardData?.files||[])][0];if(!f)return;e.preventDefault();
-      if(!pegarEn){toast("Tocá primero el cuadro del documento (DSI, factura del courier o guía aérea) y después pegá","info");return;}
+      if(!pegarEn){toast("Tocá primero el cuadro del documento (DSI, factura del courier, guía aérea o factura comercial) y después pegá","info");return;}
       subir(pegarEn,f);};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
@@ -9126,6 +9130,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
         {docTarjeta("dsi","🛃",MARCA_DSI)}
         {docTarjeta("factura_courier","📑",marcaCourier(op.international_carrier))}
         {docTarjeta("guia_aerea","✈️",marcaCourier(op.international_carrier))}
+        {docTarjeta("factura_comercial","🧾",null)}
         {tarjeta({k:"factura_ac",icono:"🧾",marca:MARCA_AC,titulo:"Factura de Argencargo",estado:facturas.length?"ok":"opc",
           detalle:facturas.length?facturas.map(f=><div key={f.id}><span style={{color:"#fff",fontWeight:600}}>{f.tipo_cbte===13?"Nota de crédito C":"Factura C"} {String(f.punto_venta).padStart(4,"0")}-{String(f.numero).padStart(8,"0")}</span> · {fFecha(f.fecha)}</div>):"Todavía no se facturó. No es obligatoria para cerrar.",
           acciones:facturas.length?facturas.map(f=><a key={f.id} href={`/factura/${f.public_token}`} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 13px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(147,197,253,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Ver {String(f.numero).padStart(8,"0")}</a>)
@@ -9477,7 +9482,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
       let info={tipo:null};try{if(pdfjs)info=await analizarDocumento(pdfjs,f);}catch(e){console.error("leer doc",e);}
       const tipo=tipoFijo||info.tipo;
       // La guía aérea es del vuelo entero: va a todas sus ops.
-      const ids=tipo==="guia_aerea"?base.map(o=>o.id):tipo?emparejarDocumento(info,base):null;
+      const ids=(tipo==="guia_aerea"||tipo==="factura_comercial")?base.map(o=>o.id):tipo?emparejarDocumento(info,base):null;
       if(tipo&&ids){try{await guardar(f,info,tipo,ids);ok++;}catch(e){toast(`${f.name}: ${e.message}`,"error");}}
       else nuevos.push({key:`${Date.now()}-${Math.random()}`,file:f,info,tipo:tipo||"factura_courier",destino:""});
     }
@@ -9495,7 +9500,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   useEffect(()=>{
     // ⌘V: va al cuadro que se tocó antes (DSI o factura del courier); sin elegir no se adivina.
     const hp=(e)=>{if(!document.querySelector(`[data-legajo-vuelo="${flight.id}"]`))return;const fs=[...(e.clipboardData?.files||[])];if(!fs.length)return;e.preventDefault();
-      if(!pegarEn){toast("Tocá primero el cuadro del documento (DSI, factura del courier o guía aérea) y después pegá","info");return;}
+      if(!pegarEn){toast("Tocá primero el cuadro del documento (DSI, factura del courier, guía aérea o factura comercial) y después pegá","info");return;}
       procesar(fs,pegarEn);};
     window.addEventListener("paste",hp);return()=>window.removeEventListener("paste",hp);
   });
@@ -9527,7 +9532,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
     <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo,ctx)=>{if(tipo==="dsi"&&ctx?.adjunto?.guia&&ctx.adjunto.guia!==flight.international_tracking){toast(`Esa DSI es de la guía ${ctx.adjunto.guia}: cargala desde ese vuelo`,"info");return false;}if(tipo==="guia_aerea"&&ctx?.guiasEnPdf?.length&&!ctx.guiasEnPdf.includes(flight.international_tracking)){toast(`Esa guía aérea es de la guía ${ctx.guiasEnPdf.join(", ")}: cargala desde ese vuelo`,"info");return false;}return procesar([f],tipo||"dsi");}} cargados={{dsi:docs.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name)}}/>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}{zona("guia_aerea",marcaCourier(flight.international_carrier),"✈️","Subir guía aérea")}</div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}{zona("guia_aerea",marcaCourier(flight.international_carrier),"✈️","Subir guía aérea")}{zona("factura_comercial",null,"🧾","Subir factura comercial")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
       <span style={{flex:"1 1 180px",minWidth:0,fontSize:12.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.file.name}>📄 {p.file.name}{p.info?.nombre?<span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}> · {p.info.nombre}</span>:null}</span>
@@ -9539,7 +9544,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     {opsLeg.map((o,i)=><div key={o.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
       <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,fontWeight:700,color:"#E8D098",minWidth:72}}>{o.operation_code}</span>
       <span style={{flex:"1 1 160px",minWidth:0,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre(o)}{o.clients?.tax_condition==="responsable_inscripto"&&<span style={{marginLeft:8,fontSize:10,fontWeight:800,color:"#93c5fd"}}>RI</span>}</span>
-      {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}{chip(doc(o.id,"guia_aerea"),"guia_aerea",o)}
+      {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}{chip(doc(o.id,"guia_aerea"),"guia_aerea",o)}{chip(doc(o.id,"factura_comercial"),"factura_comercial",o)}
     </div>)}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
       <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":completo?"✓ Documentación completa":`Falta documentación de ${faltan.map(o=>o.operation_code).join(", ")}`}</span>
@@ -14644,7 +14649,7 @@ const FIN_CSS=`
 @keyframes fin-skel{0%,100%{opacity:.35}50%{opacity:.7}}
 .fin-wrap{isolation:isolate;overflow:clip;padding-bottom:30px}
 .fin-in{animation:fin-in .65s cubic-bezier(.2,.8,.2,1) both}
-.fin-glass{position:relative;border-radius:22px;padding:20px 22px;background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 24px 60px rgba(0,0,0,0.35);overflow:hidden;transition:border-color .25s,box-shadow .25s}
+.fin-glass{position:relative;border-radius:22px;padding:20px 22px;background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 24px 60px rgba(0,0,0,0.35);overflow:hidden;transition:border-color .25s,box-shadow .25s}
 .fin-glass:hover{border-color:rgba(255,255,255,0.2);box-shadow:inset 0 1px 0 rgba(255,255,255,0.2),0 28px 70px rgba(0,0,0,0.4)}
 .fin-glass::before{content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;background:radial-gradient(600px 200px at 20% -10%,rgba(255,255,255,0.09),transparent 60%)}
 .fin-col{transform-origin:bottom;animation:fin-grow .8s cubic-bezier(.2,.8,.2,1) both;transition:height .6s cubic-bezier(.2,.8,.2,1),opacity .2s,box-shadow .2s}
@@ -17893,7 +17898,7 @@ function AdminDashboard({session,onLogout}){
     {/* Mobile sidebar */}
     {mobOpen&&<div className="ac-mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,background:"rgba(10,22,40,0.98)",backdropFilter:"blur(14px)",borderRight:"1px solid rgba(255,255,255,0.06)",flexDirection:"column",zIndex:70,overflow:"hidden",boxShadow:"4px 0 30px rgba(0,0,0,0.5)"}}>{sidebarContent}</div>}
     {/* Desktop sidebar */}
-    <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",backdropFilter:"blur(16px) saturate(140%)",WebkitBackdropFilter:"blur(16px) saturate(140%)",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"100%",position:"sticky",top:0}}>{sidebarContent}</div>
+    <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"100%",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
       <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
