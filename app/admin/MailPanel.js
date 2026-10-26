@@ -274,7 +274,7 @@ export default function MailPanel({ token }) {
     <style>{`.mp-fila[data-on="0"]:hover{background:rgba(255,255,255,0.05)!important}.mp-mail[data-on="0"]:hover{background:rgba(255,255,255,0.035)!important}`}</style>
     {celu
       ? (vista === "carpetas" ? panelCarpetas : vista === "mensaje" && abierto ? panelMensaje : panelLista)
-      : <div style={{ display: "grid", gridTemplateColumns: "232px minmax(320px,400px) minmax(0,1fr)", height: "calc(100vh - 96px)", minHeight: 560, borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)", background: "linear-gradient(180deg,rgba(13,24,45,0.92),rgba(8,16,32,0.96))", boxShadow: "0 20px 50px rgba(0,0,0,0.3)", overflow: "hidden" }}>
+      : <div style={{ display: "grid", gridTemplateColumns: "232px minmax(320px,400px) minmax(0,1fr)", height: "calc(var(--vh100) - 96px)", minHeight: 560, borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)", background: "linear-gradient(180deg,rgba(13,24,45,0.92),rgba(8,16,32,0.96))", boxShadow: "0 20px 50px rgba(0,0,0,0.3)", overflow: "hidden" }}>
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", overflowY: "auto", background: "rgba(0,0,0,0.12)" }}>{panelCarpetas}</div>
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", minHeight: 0, overflow: "hidden" }}>{panelLista}</div>
         <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>{panelMensaje}</div>

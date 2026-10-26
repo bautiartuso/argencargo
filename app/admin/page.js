@@ -49,6 +49,48 @@ const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 10
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 // Keyframes globales (pulsing dots, shimmer)
+// Tema glass del admin (27/10/2026): vidrio fino sobre el navy, entrada en cascada y zoom 90 % real
+// (html.ac-z90): el panel se ve como con el navegador al 90 % pero al 100 %. Los altos de pantalla
+// usan var(--vh100), que compensa el zoom.
+const AC_THEME_CSS=`:root{--vh100:100vh;--vw100:100vw}
+html.ac-z90{zoom:.9;--vh100:calc(100vh / .9);--vw100:calc(100vw / .9)}
+@keyframes ac-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes ac-glow{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-24px)}}
+.ac-in{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
+.ac-glass{background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);box-shadow:inset 0 1px 0 rgba(255,255,255,0.15),0 18px 44px rgba(0,0,0,0.3);border-radius:20px;transition:border-color .25s,box-shadow .25s}
+.ac-glass:hover{border-color:rgba(255,255,255,0.19)}
+.ac-glass-in{background:linear-gradient(160deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.1);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08)}
+@media(min-width:901px){.ac-glass{backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%)}}
+/* Fondo del área de trabajo: dos resplandores suaves (dorado y azul) */
+.ac-admin-main{background:radial-gradient(900px 520px at 88% -8%,rgba(232,208,152,0.075),transparent 60%),radial-gradient(760px 520px at -6% 70%,rgba(96,165,250,0.06),transparent 55%)}
+/* Entrada de cada pantalla: los bloques aparecen en cascada */
+.ac-admin-main-inner>*{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
+.ac-admin-main-inner>*:nth-child(2){animation-delay:50ms}.ac-admin-main-inner>*:nth-child(3){animation-delay:100ms}.ac-admin-main-inner>*:nth-child(4){animation-delay:150ms}.ac-admin-main-inner>*:nth-child(5){animation-delay:200ms}.ac-admin-main-inner>*:nth-child(n+6){animation-delay:240ms}
+/* Paneles armados con estilos en línea: el mismo vidrio (sin blur, por rendimiento) */
+.ac-admin-main div[style*="background: rgba(255,255,255,0.028)"],.ac-admin-main div[style*="background: rgba(255,255,255,0.03)"],.ac-admin-main div[style*="background: rgba(255,255,255,0.025)"],.ac-admin-main div[style*="background: rgba(255,255,255,0.04)"][style*="border-radius: 1"],.ac-admin-main div[style*="background: rgba(255,255,255,0.05)"][style*="border-radius: 1"],.ac-admin-main section[style*="background: rgba(255,255,255,0.0"],.ac-admin-main div[style*="background: linear-gradient(180deg,rgba(255,255,255,0.05)"],.ac-admin-main div[style*="background: linear-gradient(180deg,rgba(255,255,255,0.04)"]{background:linear-gradient(160deg,rgba(255,255,255,0.08),rgba(255,255,255,0.028))!important;border-color:rgba(255,255,255,0.13)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.1)}
+.ac-admin-main div[style*="background: rgba(0,0,0,0.18)"],.ac-admin-main div[style*="background: rgba(0,0,0,0.2)"],.ac-admin-main div[style*="background: rgba(0,0,0,0.22)"],.ac-admin-main div[style*="background: rgba(0,0,0,0.25)"],.ac-admin-main div[style*="background: rgba(0,0,0,0.3)"]{box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),inset 0 0 0 1px rgba(255,255,255,0.02)}
+/* Modales y menúes desplegables: vidrio oscuro con blur */
+div[style*="background: linear-gradient(180deg,#142038,#0F1A2D)"]{background:linear-gradient(165deg,rgba(26,40,70,0.9),rgba(12,22,40,0.94))!important;backdrop-filter:blur(26px) saturate(150%);-webkit-backdrop-filter:blur(26px) saturate(150%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 30px 80px rgba(0,0,0,0.6)!important;animation:ac-in .22s cubic-bezier(.2,.8,.2,1) both}
+div[style*="background: #142038"],div[style*="background: #0F1A2D"],div[style*="background: rgb(20, 32, 56)"]{background:rgba(20,32,56,0.86)!important;backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%);border-color:rgba(255,255,255,0.15)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 20px 50px rgba(0,0,0,0.5)!important;animation:ac-in .18s cubic-bezier(.2,.8,.2,1) both}
+/* Tablas y listas */
+.ac-admin-main table{border-collapse:separate!important;border-spacing:0}
+.ac-admin-main thead th{font-size:10px!important;letter-spacing:.08em!important;text-transform:uppercase!important;font-weight:800!important;color:rgba(255,255,255,0.42)!important}
+.ac-admin-main tbody tr{transition:background .15s}
+.ac-admin-main tbody tr:hover{background:rgba(255,255,255,0.045)!important}
+/* Campos de texto y búsquedas */
+.ac-admin-main input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]):not([style*="background: transparent"]):not([style*="background: #fff"]):not([style*="background: white"]):not([style*="color: #0"]):not([style*="color: #1"]):not([style*="#ff6b6b"]):not([style*="#f87171"]):not([style*="#ef4444"]),.ac-admin-main textarea:not([style*="background: #fff"]),.ac-admin-main select{background:rgba(0,0,0,0.24)!important;border:1px solid rgba(255,255,255,0.12)!important;border-radius:10px!important;box-shadow:inset 0 1px 3px rgba(0,0,0,0.35);transition:border-color .15s,box-shadow .15s,background .15s}
+.ac-admin-main input:focus,.ac-admin-main textarea:focus,.ac-admin-main select:focus{border-color:rgba(232,208,152,0.6)!important;box-shadow:0 0 0 3px rgba(232,208,152,0.14),inset 0 1px 3px rgba(0,0,0,0.35)!important;outline:none!important}
+.ac-admin-main input::placeholder,.ac-admin-main textarea::placeholder{color:rgba(255,255,255,0.35)}
+/* Botones: respuesta al toque */
+.ac-admin-main button{transition:transform .12s,box-shadow .2s,background .15s,border-color .15s,color .15s,opacity .15s}
+.ac-admin-main button:active:not(:disabled){transform:scale(.97)}
+/* Barras de scroll finas */
+.ac-admin-main *::-webkit-scrollbar{width:8px;height:8px}
+.ac-admin-main *::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.14);border-radius:99px;border:2px solid transparent;background-clip:padding-box}
+.ac-admin-main *::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.24);background-clip:padding-box}
+.ac-admin-main *::-webkit-scrollbar-track{background:transparent}
+@media(prefers-reduced-motion:reduce){.ac-in,.ac-admin-main-inner>*{animation:none!important}}
+`;
 const AC_KEYFRAMES=`@keyframes ac_pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}@keyframes ac_pulse_gold{0%{box-shadow:0 0 0 0 rgba(184,149,106,.55)}70%{box-shadow:0 0 0 10px rgba(184,149,106,0)}100%{box-shadow:0 0 0 0 rgba(184,149,106,0)}}@keyframes ac_shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}@keyframes ac_fade_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}@keyframes acGiPulse{0%,100%{box-shadow:0 0 16px rgba(184,149,106,0.35), inset 0 1px 0 rgba(255,255,255,0.4)}50%{box-shadow:0 0 28px rgba(232,208,152,0.6), inset 0 1px 0 rgba(255,255,255,0.4)}}
 /* Checkbox moderno: oculta el nativo y dibuja uno custom dark + acento gold */
 input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:16px;height:16px;border-radius:4px;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.18);cursor:pointer;position:relative;flex-shrink:0;transition:all 150ms;vertical-align:middle}
@@ -185,13 +227,13 @@ function Sel({label,value,onChange,options,ph}){
   useEffect(()=>{if(!abierto)return;const cerrar=(e)=>{if(e&&e.type==="scroll"&&listaRef.current&&(e.target===listaRef.current||listaRef.current.contains(e.target)))return;setAbierto(false);};window.addEventListener("scroll",cerrar,true);window.addEventListener("resize",cerrar);return()=>{window.removeEventListener("scroll",cerrar,true);window.removeEventListener("resize",cerrar);};},[abierto]);
   return <div style={{marginBottom:12}}>
     {label&&<label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>}
-    <button ref={ref} type="button" data-campo="" onClick={()=>abierto?setAbierto(false):abrir()} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:`1px solid ${abierto?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.04)",color:actual&&String(actual.value)!==""?"#fff":"rgba(255,255,255,0.45)",outline:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",boxShadow:abierto?"0 0 0 3px rgba(184,149,106,0.18)":"none",transition:"border-color 160ms, box-shadow 160ms"}}>
+    <button ref={ref} type="button" data-campo="" onClick={()=>abierto?setAbierto(false):abrir()} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:`1px solid ${abierto?GOLD:"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(0,0,0,0.24)",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.35)",color:actual&&String(actual.value)!==""?"#fff":"rgba(255,255,255,0.45)",outline:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",boxShadow:abierto?"0 0 0 3px rgba(184,149,106,0.18)":"none",transition:"border-color 160ms, box-shadow 160ms"}}>
       <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{actual?actual.label:(ph||"Elegir…")}</span>
       <svg width="12" height="12" viewBox="0 0 12 12" style={{flexShrink:0,transform:abierto?"rotate(180deg)":"none",transition:"transform 160ms",opacity:0.6}}><path d="M2.5 4.5 6 8l3.5-3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
     </button>
     {abierto&&pos&&typeof document!=="undefined"&&createPortal(<>
       <div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:4999}}/>
-      <div ref={listaRef} style={{position:"fixed",left:pos.left,top:pos.top,width:pos.width,maxHeight:pos.maxH,overflowY:"auto",overscrollBehavior:"contain",zIndex:5000,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:11,boxShadow:"0 16px 40px rgba(0,0,0,0.5)",padding:4,boxSizing:"border-box",fontFamily:"inherit"}}>
+      <div ref={listaRef} style={{position:"fixed",left:pos.left,top:pos.top,width:pos.width,maxHeight:pos.maxH,overflowY:"auto",overscrollBehavior:"contain",zIndex:5000,background:"rgba(20,32,56,0.86)",backdropFilter:"blur(22px) saturate(140%)",WebkitBackdropFilter:"blur(22px) saturate(140%)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:12,boxShadow:"inset 0 1px 0 rgba(255,255,255,0.12), 0 20px 50px rgba(0,0,0,0.5)",padding:4,boxSizing:"border-box",fontFamily:"inherit",animation:"ac-in .18s cubic-bezier(.2,.8,.2,1) both"}}>
         {lista.map(o=>{const on=String(o.value)===String(value??"");return <div key={String(o.value)} onClick={()=>{onChange(String(o.value));setAbierto(false);}} style={{padding:"9px 10px",fontSize:13,borderRadius:7,cursor:"pointer",color:on?GOLD_LIGHT:"#fff",background:on?"rgba(184,149,106,0.14)":"transparent",fontWeight:on?700:500}} onMouseEnter={e=>{if(!on)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!on)e.currentTarget.style.background="transparent";}}>{o.label}</div>;})}
       </div>
     </>,document.body)}
@@ -203,7 +245,7 @@ function Btn({children,onClick,disabled,variant="primary",small,title,fullWidth}
   const styles={
     primary:{background:hover?"#fff":"rgba(255,255,255,0.95)",color:"#0A1628",border:"1px solid rgba(255,255,255,0.95)",boxShadow:hover?"0 6px 18px rgba(0,0,0,0.25)":"0 2px 6px rgba(0,0,0,0.15)"},
     gold:{background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:hover?GOLD_GLOW_STRONG:GOLD_GLOW,backgroundSize:"200% 100%",backgroundPosition:hover?"100% 0":"0 0"},
-    secondary:{background:hover?"rgba(255,255,255,0.08)":"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.85)",border:`1px solid ${hover?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.14)"}`},
+    secondary:{background:hover?"linear-gradient(160deg,rgba(255,255,255,0.15),rgba(255,255,255,0.06))":"linear-gradient(160deg,rgba(255,255,255,0.09),rgba(255,255,255,0.035))",color:"rgba(255,255,255,0.88)",border:`1px solid ${hover?"rgba(232,208,152,0.45)":"rgba(255,255,255,0.16)"}`,boxShadow:"inset 0 1px 0 rgba(255,255,255,0.1)"},
     ghost:{background:hover?"rgba(255,255,255,0.06)":"transparent",color:"rgba(255,255,255,0.75)",border:"1px solid transparent"},
     danger:{background:hover?"rgba(255,80,80,0.2)":"rgba(255,80,80,0.12)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.3)"},
   };
@@ -221,14 +263,14 @@ const FIN_EQ={display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWe
 function Card({children,title,actions,accent,v2,sub}){
   // v2 (02/10/2026): tarjeta de Presupuesto y Finanzas — título en minúscula y más grande, sin
   // overflow (los desplegables no se cortan) y un fondo con algo más de profundidad.
-  if(v2)return <section style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0.02) 100%)",borderRadius:18,border:"1px solid rgba(255,255,255,0.08)",padding:"20px 22px",marginBottom:16,boxShadow:"0 14px 34px rgba(0,0,0,0.18)",position:"relative"}}>
+  if(v2)return <section className="ac-glass ac-in" style={{padding:"20px 22px",marginBottom:16,position:"relative"}}>
     {(title||actions)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:18}}>
       <div style={{minWidth:0}}>{title&&<h3 style={{fontSize:17,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.015em"}}>{title}</h3>}{sub&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{sub}</p>}</div>
       {actions&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{actions}</div>}
     </div>}
     {children}
   </section>;
-  return <div style={{background:"rgba(255,255,255,0.04)",backdropFilter:"blur(8px)",borderRadius:14,border:`1px solid ${accent?"rgba(184,149,106,0.35)":"rgba(255,255,255,0.08)"}`,padding:"1.25rem 1.5rem",marginBottom:16,boxShadow:accent?GOLD_GLOW:"0 2px 8px rgba(0,0,0,0.12)",transition:"border-color 180ms, box-shadow 180ms",position:"relative",overflow:"hidden"}}>
+  return <div className="ac-glass ac-in" style={{padding:"1.25rem 1.5rem",marginBottom:16,position:"relative",overflow:"hidden",...(accent?{borderColor:"rgba(184,149,106,0.4)",boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.15)`}:{})}}>
     {accent&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
     {(title||actions)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12}}>
       {title&&<h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.95)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>{title}</h3>}
@@ -4914,7 +4956,7 @@ function BotPanel({token}){
   const msgs=thread?.messages||[];
   const fin=ventanaFin(thread);
   const PANEL={background:"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,overflow:"hidden",display:"flex",flexDirection:"column"};
-  return <div style={{display:"flex",gap:14,height:"calc(100vh - 120px)",minHeight:480}}>
+  return <div style={{display:"flex",gap:14,height:"calc(var(--vh100) - 120px)",minHeight:480}}>
     <style>{`.bt-conv{transition:background .12s}.bt-conv:hover{background:rgba(255,255,255,0.05)!important}.bt-scroll::-webkit-scrollbar{width:6px}.bt-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:6px}@keyframes btSk{0%{opacity:.4}50%{opacity:.9}100%{opacity:.4}}.bt-sk{background:rgba(255,255,255,0.08);border-radius:10px;animation:btSk 1.2s ease-in-out infinite}`}</style>
     {showList&&<div style={{...PANEL,width:isMobile?"100%":340,flexShrink:0}}>
       <div style={{padding:"14px 14px 10px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
@@ -9904,7 +9946,7 @@ function ReembalajeVueloModal({flight,token,onClose,onDone}){
 const FE_LBL={fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)",margin:0};
 function FeCard({title,icon,actions,summary,children,tone,id}){
   const border=tone==="ok"?"rgba(34,197,94,0.28)":tone==="warn"?"rgba(251,191,36,0.32)":tone==="danger"?"rgba(248,113,113,0.35)":"rgba(255,255,255,0.07)";
-  return <div id={id} style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${border}`,borderRadius:16,padding:"16px 20px",marginBottom:14}}>
+  return <div id={id} className="ac-glass ac-in" style={{padding:"16px 20px",marginBottom:14,...(tone?{borderColor:border}:{})}}>
     {(title||summary||actions)&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:children?14:0}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><p style={FE_LBL}>{icon?<span style={{marginRight:6}}>{icon}</span>:null}{title}</p>{summary}</div>
       {actions?<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{actions}</div>:null}
@@ -9913,7 +9955,7 @@ function FeCard({title,icon,actions,summary,children,tone,id}){
   </div>;
 }
 function FeDato({label,value,sub,color,mono,title}){
-  return <div title={title} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"11px 14px",minWidth:0}}>
+  return <div title={title} className="ac-glass-in" style={{borderRadius:12,padding:"11px 14px",minWidth:0}}>
     <p style={{...FE_LBL,fontSize:9.5,marginBottom:5}}>{label}</p>
     <p style={{fontSize:16,fontWeight:800,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums",fontFamily:mono?"'JetBrains Mono','SF Mono',monospace":undefined,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{value}</p>
     {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"4px 0 0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</p>}
@@ -17626,6 +17668,12 @@ function AdminDashboard({session,onLogout}){
   // OJO: isEmpleado se declara ANTES del useEffect que lo usa — const no tiene hoisting y
   // meterlo despues tiro ReferenceError en el render (paso el 02/08, pantalla blanca).
   const isEmpleado=session?.profile?.role==="empleado";
+  // Zoom 90 % real (27/10/2026): solo en la compu; en el celu queda al 100 %.
+  useEffect(()=>{
+    const f=()=>{document.documentElement.classList.toggle("ac-z90",window.innerWidth>900);};
+    f();window.addEventListener("resize",f);
+    return()=>{window.removeEventListener("resize",f);document.documentElement.classList.remove("ac-z90");};
+  },[]);
   // El empleado tiene Operativa + Comercial + Ajustes (sin Finanzas ni GI): cualquier otra
   // pagina lo devuelve a Operaciones. Lo que muestra ganancia se tapa dentro de cada pantalla.
   const EMP_PAGES=["operations","agents","maritime","agp","calc","entregas","bot","studio","blog","quotes","comms","clients","settings"];
@@ -17738,7 +17786,8 @@ function AdminDashboard({session,onLogout}){
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;
-  return <div style={{height:"100vh",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
+  return <div className="ac-admin-root" style={{height:"var(--vh100)",width:"var(--vw100)",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden",position:"relative"}}>
+    <style dangerouslySetInnerHTML={{__html:AC_THEME_CSS}}/>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
       .ac-editor-tab[data-on="0"]:hover{color:rgba(255,255,255,0.9)!important;background:rgba(255,255,255,0.04)!important}
@@ -17796,10 +17845,10 @@ function AdminDashboard({session,onLogout}){
     {/* Mobile sidebar */}
     {mobOpen&&<div className="ac-mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,background:"rgba(10,22,40,0.98)",backdropFilter:"blur(14px)",borderRight:"1px solid rgba(255,255,255,0.06)",flexDirection:"column",zIndex:70,overflow:"hidden",boxShadow:"4px 0 30px rgba(0,0,0,0.5)"}}>{sidebarContent}</div>}
     {/* Desktop sidebar */}
-    <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.06)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>{sidebarContent}</div>
+    <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",backdropFilter:"blur(16px) saturate(140%)",WebkitBackdropFilter:"blur(16px) saturate(140%)",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"var(--vh100)",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
-      <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
+      <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)} onOpenEntrega={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
