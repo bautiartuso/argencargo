@@ -69,6 +69,22 @@ async function triggerMail(op_id, trigger) {
   } catch (e) { return { error: e.message }; }
 }
 
+// Retenidas sin aviso (p. ej. marcadas por el SQL de backfill, no por el tracking): se les manda el mail
+// en la próxima corrida. Dedup por sent_notifications.email_retenida (lo escribe /api/notify).
+async function avisarRetenidasPendientes() {
+  const desde = new Date(Date.now() - 14 * 86400000).toISOString();
+  const r = await fetch(`${SB_URL}/rest/v1/operations?retenida_at=gte.${desde}&sent_notifications->>email_retenida=is.null&or=(sent_notifications->>silenciada.is.null)&select=id,operation_code,international_carrier,international_tracking`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+  const ops = await r.json().catch(() => null);
+  if (!Array.isArray(ops)) return [];
+  const out = [];
+  for (const op of ops) {
+    const mail = await triggerMail(op.id, "retenida");
+    out.push({ op: op.operation_code, mail });
+    if (mail?.ok) { try { await tgNotify(`🛑 <b>${op.operation_code}</b> retenida por Aduana · ${op.international_carrier || ""} ${op.international_tracking || ""}\nSe le avisó al cliente por mail.`); } catch {} }
+  }
+  return out;
+}
+
 async function fetchActiveOps(operationId, conRetencion = true) {
   // Las retenidas no se siguen más (retenida_at). Si la columna todavía no existe (falta el SQL), se
   // reintenta sin ese filtro para que el sync no se caiga.
@@ -340,6 +356,8 @@ async function runSync(req) {
 
   const startedAt = Date.now();
   const operationId = new URL(req.url).searchParams.get("operation_id");
+  let avisosRetenidas = [];
+  if (!operationId) { try { avisosRetenidas = await avisarRetenidasPendientes(); } catch (e) { console.error("[sync] avisos retenidas", e.message); } }
   const ops = await fetchActiveOps(operationId);
   if (!Array.isArray(ops)) return Response.json({ error: "failed to fetch ops", detail: ops }, { status: 500 });
 
@@ -416,7 +434,7 @@ async function runSync(req) {
   const results = [...grouped, ...orphanRes];
   // Marca de corrida exitosa (el cron de salud avisa por Telegram si pasa mucho tiempo sin una).
   try { await fetch(`${SB_URL}/rest/v1/cs_settings?on_conflict=key`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "tracking_sync_last_ok", value: { at: new Date().toISOString(), synced: results.length }, updated_at: new Date().toISOString() }) }); } catch {}
-  return Response.json({ synced: results.length, groups: groups.size, results });
+  return Response.json({ synced: results.length, groups: groups.size, avisos_retenidas: avisosRetenidas, results });
 }
 
 // GET y POST → mismo comportamiento. Vercel Cron usa GET por defecto.

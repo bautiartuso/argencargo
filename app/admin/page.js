@@ -10573,21 +10573,18 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     </body></html>`;
     w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);
   };
-  // Retenido por Aduana (26/10/2026): banner con las acciones. El sync ya le avisó al cliente; el botón
-  // reenvía el aviso (dedup por sent_notifications, salvo que nunca haya salido).
+  // Retenido por Aduana (26/10/2026): banner. El aviso al cliente lo manda solo el sync.
   const retenidoFl=flight.status!=="recibido"&&!!flight.retenido_at;
   const opIdsVuelo=flightOps.map(fo=>fo.operation_id).filter(Boolean);
   const quitarRetencion=async()=>{if(!await confirmDialog("¿Quitar la marca de retenido? El vuelo vuelve a seguirse por tracking y el legajo vuelve a ser obligatorio.",{danger:true}))return;await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{retenido_at:null}});if(opIdsVuelo.length)await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIdsVuelo.join(",")})`,body:{retenida_at:null}});onFlash?.("Retención quitada");onReload?.();};
-  const avisarRetencion=async()=>{let ok=0,otros=[];for(const id of opIdsVuelo){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({op_id:id,trigger:"retenida"})});const j=await r.json();if(j.ok)ok++;else otros.push(j.skipped||j.error||"?");}catch(e){otros.push(e.message);}}onFlash?.(ok?`Aviso de retención enviado a ${ok} cliente${ok!==1?"s":""}`:`No se mandó: ${otros.join(", ")}`);};
   return <div>
     {retenidoFl&&<div style={{marginBottom:14,padding:"14px 18px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.2),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.5)",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       <span style={{fontSize:22}}>🛑</span>
       <div style={{flex:"1 1 260px",minWidth:0}}>
         <p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fca5a5",letterSpacing:"0.04em",textTransform:"uppercase"}}>Retenido por Aduana · excluido del régimen courier</p>
-        <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.5}}>Desde el {formatDate(flight.retenido_at)}, según el tracking de {flight.international_carrier||"el courier"}. El tracking dejó de seguirse: cuando la carga llegue, marcá el vuelo recibido. No hace falta DSI ni factura del courier.</p>
+        <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.5}}>Desde el {formatDate(flight.retenido_at)}, según el tracking de {flight.international_carrier||"el courier"}. El cliente ya fue avisado por mail. El tracking dejó de seguirse: cuando la carga llegue, marcá el vuelo recibido. No hace falta DSI ni factura del courier.</p>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button type="button" onClick={avisarRetencion} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(252,165,165,0.5)",background:"rgba(239,68,68,0.14)",color:"#fca5a5",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>✉ Avisar al cliente</button>
         <button type="button" onClick={quitarRetencion} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Quitar retención</button>
       </div>
     </div>}
