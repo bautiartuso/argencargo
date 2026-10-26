@@ -59,9 +59,12 @@ html.ac-z90{--vh100:calc(100vh / .9);--vw100:calc(100vw / .9)}
    franja). Los fixed de adentro toman el panel como referencia, o sea la ventana entera. */
 html.ac-z90 .ac-admin-root{transform:scale(.9);transform-origin:0 0}
 html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628;overflow:hidden}
+/* fill-mode backwards, no both: con "both" Chrome deja el transform final como matriz identidad (no
+   "none") y el elemento pasa a ser el marco de los position:fixed de adentro: los modales se
+   centraban en el medio del contenido en vez de la ventana (CC Financiera, 26/10/2026). */
 @keyframes ac-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes ac-glow{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-24px)}}
-.ac-in{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
+.ac-in{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) backwards}
 .ac-glass{background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);box-shadow:inset 0 1px 0 rgba(255,255,255,0.15),0 18px 44px rgba(0,0,0,0.3);border-radius:20px;transition:border-color .25s,box-shadow .25s}
 .ac-glass:hover{border-color:rgba(255,255,255,0.19)}
 .ac-glass-in{background:linear-gradient(160deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.1);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08)}
@@ -71,9 +74,9 @@ html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628;overflo
 /* Fondo del área de trabajo: dos resplandores suaves (dorado y azul) */
 .ac-admin-main{background:radial-gradient(900px 520px at 88% -8%,rgba(232,208,152,0.075),transparent 60%),radial-gradient(760px 520px at -6% 70%,rgba(96,165,250,0.06),transparent 55%)}
 /* Entrada de cada pantalla: los bloques aparecen en cascada */
-.ac-admin-main-inner>*{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
+.ac-admin-main-inner>*{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) backwards}
 .ac-admin-main-inner>*:nth-child(2){animation-delay:50ms}.ac-admin-main-inner>*:nth-child(3){animation-delay:100ms}.ac-admin-main-inner>*:nth-child(4){animation-delay:150ms}.ac-admin-main-inner>*:nth-child(5){animation-delay:200ms}.ac-admin-main-inner>*:nth-child(n+6){animation-delay:240ms}
-.ac-admin-main-inner>div>*{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
+.ac-admin-main-inner>div>*{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) backwards}
 .ac-admin-main-inner>div>*:nth-child(2){animation-delay:60ms}.ac-admin-main-inner>div>*:nth-child(3){animation-delay:120ms}.ac-admin-main-inner>div>*:nth-child(4){animation-delay:180ms}.ac-admin-main-inner>div>*:nth-child(5){animation-delay:240ms}.ac-admin-main-inner>div>*:nth-child(n+6){animation-delay:280ms}
 /* Paneles armados con estilos en línea: el mismo vidrio (sin blur, por rendimiento). El navegador
    serializa los estilos con espacios: rgba(255, 255, 255, 0.028). */
@@ -84,8 +87,8 @@ html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628;overflo
 .ac-admin-main div[style*="cursor: pointer"][style*="border-bottom"]:hover,.ac-admin-main div[style*="cursor: pointer"][style*="border-top"]:hover,.ac-admin-main div[role="button"]:hover{background:rgba(255,255,255,0.05)!important}
 /* Modales y menúes desplegables: vidrio oscuro. El blur solo cuando la caja cuelga directo de un
    overlay fixed (si lo tuviera un panel común, recortaría los modales que abre adentro). */
-div[style*="linear-gradient(rgb(20, 32, 56), rgb(15, 26, 45))"],div[style*="linear-gradient(rgb(20, 32, 56) 0%, rgb(15, 26, 45)"]{background:linear-gradient(165deg,rgba(26,40,70,0.96),rgba(12,22,40,0.98))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 30px 80px rgba(0,0,0,0.6)!important;animation:ac-in .22s cubic-bezier(.2,.8,.2,1) both}
-div[style*="background: rgb(20, 32, 56)"],div[style*="background: rgb(15, 26, 45)"],div[style*="background: rgb(22, 36, 58)"]{background:rgba(20,32,56,0.96)!important;border-color:rgba(255,255,255,0.15)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 20px 50px rgba(0,0,0,0.5)!important;animation:ac-in .18s cubic-bezier(.2,.8,.2,1) both}
+div[style*="linear-gradient(rgb(20, 32, 56), rgb(15, 26, 45))"],div[style*="linear-gradient(rgb(20, 32, 56) 0%, rgb(15, 26, 45)"]{background:linear-gradient(165deg,rgba(26,40,70,0.96),rgba(12,22,40,0.98))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 30px 80px rgba(0,0,0,0.6)!important;animation:ac-in .22s cubic-bezier(.2,.8,.2,1) backwards}
+div[style*="background: rgb(20, 32, 56)"],div[style*="background: rgb(15, 26, 45)"],div[style*="background: rgb(22, 36, 58)"]{background:rgba(20,32,56,0.96)!important;border-color:rgba(255,255,255,0.15)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),0 20px 50px rgba(0,0,0,0.5)!important;animation:ac-in .18s cubic-bezier(.2,.8,.2,1) backwards}
 div[style*="position: fixed"]>div[style*="linear-gradient(rgb(20, 32, 56)"],div[style*="position: fixed"]>div[style*="background: rgb(20, 32, 56)"],div[style*="position: fixed"]>div[style*="background: rgb(15, 26, 45)"],div[style*="position: fixed"]>div[style*="background: rgb(22, 36, 58)"]{background:rgba(20,32,56,0.86)!important;backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%)}
 /* Tablas y listas */
 .ac-admin-main table{border-collapse:separate!important;border-spacing:0}
@@ -14648,13 +14651,13 @@ const FIN_CSS=`
 @keyframes fin-float{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,-30px)}}
 @keyframes fin-skel{0%,100%{opacity:.35}50%{opacity:.7}}
 .fin-wrap{isolation:isolate;overflow:clip;padding-bottom:30px}
-.fin-in{animation:fin-in .65s cubic-bezier(.2,.8,.2,1) both}
+.fin-in{animation:fin-in .65s cubic-bezier(.2,.8,.2,1) backwards}
 .fin-glass{position:relative;border-radius:22px;padding:20px 22px;background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 24px 60px rgba(0,0,0,0.35);overflow:hidden;transition:border-color .25s,box-shadow .25s}
 .fin-glass:hover{border-color:rgba(255,255,255,0.2);box-shadow:inset 0 1px 0 rgba(255,255,255,0.2),0 28px 70px rgba(0,0,0,0.4)}
 .fin-glass::before{content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;background:radial-gradient(600px 200px at 20% -10%,rgba(255,255,255,0.09),transparent 60%)}
 .fin-col{transform-origin:bottom;animation:fin-grow .8s cubic-bezier(.2,.8,.2,1) both;transition:height .6s cubic-bezier(.2,.8,.2,1),opacity .2s,box-shadow .2s}
 .fin-bar{height:100%;transition:width .9s cubic-bezier(.2,.8,.2,1)}
-.fin-barra{height:100%;border-radius:99px;animation:fin-bar .9s cubic-bezier(.2,.8,.2,1) both}
+.fin-barra{height:100%;border-radius:99px;animation:fin-bar .9s cubic-bezier(.2,.8,.2,1) backwards}
 .fin-row{transition:background .15s}
 .fin-row:hover{background:rgba(255,255,255,0.05)}
 .fin-glow{position:absolute;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:0;animation:fin-float 16s ease-in-out infinite}
@@ -18942,10 +18945,12 @@ function MaritimePanel({token,allClients=[]}){
   const btnMini=(color,extra)=>({padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${color}55`,background:`${color}14`,color,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",...extra});
   const btnGhost={padding:"5px 9px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"};
   const COLS="26px 64px minmax(200px,2.4fr) 96px 48px 72px 168px 92px 150px";
-  const COLS_CONT="26px 56px minmax(150px,1fr) minmax(190px,1.7fr) 168px 56px 76px 190px 128px";
+  const COLS_CONT="26px 56px minmax(150px,1fr) minmax(170px,1.5fr) 150px auto 118px";
   // Selector blanca/negra de un clic, en cualquier etapa (lo puede cambiar Bautista o el depósito).
-  const tipoSel=(sh)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:9,padding:2,gap:2}}>
-    {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=sh.mercaderia_tipo===k;return <button key={k} onClick={e=>{e.stopPropagation();setTipoAdmin(sh,k);}} style={{padding:"4px 9px",fontSize:11,fontWeight:800,border:"none",borderRadius:7,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",background:on?(k==="negra"?"#05080f":"#f8fafc"):"transparent",color:on?(k==="negra"?"#fff":"#0A1628"):"rgba(255,255,255,0.45)",boxShadow:on?"0 0 0 1px rgba(184,149,106,0.7)":"none"}}>{l}</button>;})}
+  // Segmentado oscuro (26/10/2026): el negro/blanco puro desentonaba con el panel. La elegida va en
+  // dorado suave con punto lleno; la otra apagada.
+  const tipoSel=(sh)=><div style={{display:"inline-flex",background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:3,gap:3,boxShadow:"inset 0 1px 2px rgba(0,0,0,0.3)"}}>
+    {[["negra","Negra"],["blanca","Blanca"]].map(([k,l])=>{const on=sh.mercaderia_tipo===k;return <button key={k} onClick={e=>{e.stopPropagation();setTipoAdmin(sh,k);}} style={{display:"inline-flex",alignItems:"center",gap:6,height:28,padding:"0 11px",fontSize:11.5,fontWeight:800,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .15s",background:on?"linear-gradient(135deg,rgba(232,208,152,0.22),rgba(184,149,106,0.14))":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.4)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.5),0 2px 8px rgba(0,0,0,0.25)":"none"}}><span style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:on?(k==="negra"?"#E8D098":"#fff"):"transparent",border:`1.5px solid ${on?(k==="negra"?"#E8D098":"#fff"):"rgba(255,255,255,0.3)"}`}}/>{l}</button>;})}
   </div>;
   const tipoEstado=(sh,etapa)=>sh.tipo_corregido
     ?<span style={{fontSize:10.5,fontWeight:700,color:"#fb923c",display:"inline-flex",gap:6,alignItems:"center"}}>✎ El depósito lo corrigió <button onClick={e=>{e.stopPropagation();okCorreccion(sh);}} title="Visto: sacar el aviso" style={btnMini("#fb923c",{padding:"1px 7px",fontSize:10})}>OK</button></span>
@@ -19314,16 +19319,28 @@ function MaritimePanel({token,allClients=[]}){
         const kTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</div>;
         const kBul=<div className="mt-v-num">{bul||"—"}</div>;
         const kCbm=<div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>;
+        // Misma ficha que la cabecera del contenedor: Bultos | Volumen | Costo, y la ganancia aparte.
+        const celda=(l,v,color,primera)=><span style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderLeft:primera?"none":"1px solid rgba(255,255,255,0.1)",minWidth:0}}><span style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:".07em",whiteSpace:"nowrap"}}>{l}</span><span style={{fontSize:13.5,fontWeight:900,color,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span></span>;
+        const kFicha=<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{display:"inline-flex",alignItems:"stretch",borderRadius:11,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",background:"rgba(10,22,40,0.45)"}}>
+                {celda("Bultos",bul||"—","#fff",true)}
+                {celda("Volumen",cbm>0?`${fm3(cbm)} m³`:"s/medidas",cbm>0?GOLD_LIGHT:"#fbbf24")}
+                {verPlata&&celda("Costo",cost>0?fusd(cost):"—","#fff")}
+              </span>
+              {verPlata&&(imp>0?<span title={`Cobra ${fusd(imp)} · Costo ${cost>0?fusd(cost):"—"}`} style={{display:"flex",flexDirection:"column",gap:1,padding:"6px 12px",borderRadius:11,background:gan>=0?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",border:`1px solid ${gan>=0?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`}}><span style={{fontSize:9.5,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",textTransform:"uppercase",letterSpacing:".07em",whiteSpace:"nowrap"}}>Ganancia est.</span><span style={{fontSize:13.5,fontWeight:900,color:gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fusd(gan)}</span></span>
+                :<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",padding:"0 4px"}}>sin valor</span>)}
+            </div>;
+        const kBtn=(title,onClick,d,hov)=><button title={title} onClick={onClick} style={{width:34,height:34,borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.8)",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 120ms",flexShrink:0}} onMouseEnter={e=>{e.currentTarget.style.background=hov+"26";e.currentTarget.style.borderColor=hov+"88";e.currentTarget.style.color=hov;}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.14)";e.currentTarget.style.color="rgba(255,255,255,0.8)";}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d.map((x,k)=><path key={k} d={x}/>)}</svg></button>;
         const kPlata=<div style={{fontVariantNumeric:"tabular-nums"}}>
               {verPlata?<>
                 {imp>0&&<span style={{display:"inline-block",padding:"3px 10px",borderRadius:8,fontSize:13.5,fontWeight:900,background:gan>=0?"rgba(74,222,128,0.14)":"rgba(248,113,113,0.14)",color:gan>=0?"#4ade80":"#f87171"}}>{gan>=0?"+":""}{fusd(gan)}</span>}
                 <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.55)",marginTop:3}}>Cobra {imp>0?fusd(imp):"—"} · Costo {cost>0?fusd(cost):"—"}</span>
               </>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>—</span>}
             </div>;
-        const kAcc=<div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:5,justifyContent:"flex-end",flexWrap:"wrap"}}>
-              <button onClick={()=>quitarDeContenedor(sh)} title="Bajar del contenedor: vuelve a En depósito" style={btnGhost}>↶</button>
-              <button onClick={()=>{setEditingId(sh.id);setShowNew(true);}} title="Editar" style={btnMini("#60a5fa",{padding:"5px 9px"})}>✎</button>
-              <button onClick={()=>delShipment(sh.id)} title="Eliminar" style={btnMini("#f87171",{padding:"5px 9px"})}>🗑</button>
+        const kAcc=<div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              {kBtn("Bajar del contenedor: vuelve a En depósito",()=>quitarDeContenedor(sh),["M9 14 4 9l5-5","M20 20v-7a4 4 0 0 0-4-4H4"],"#fbbf24")}
+              {kBtn("Editar carga",()=>{setEditingId(sh.id);setShowNew(true);},["M12 20h9","M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"],"#93c5fd")}
+              {kBtn("Eliminar carga",()=>delShipment(sh.id),["M3 6h18","M8 6V4h8v2","M19 6l-1 14H6L5 6","M10 11v6","M14 11v6"],"#f87171")}
             </div>;
         const rowBg={background:isSel?"rgba(184,149,106,0.07)":isExp?"rgba(255,255,255,0.025)":"transparent"};
         if(compacta)return <div key={sh.id} className="mt-v-fila mt-cel" style={rowBg}>
@@ -19348,9 +19365,7 @@ function MaritimePanel({token,allClients=[]}){
             {kCli}
             {kMerc}
             {kTipo}
-            {kBul}
-            {kCbm}
-            {kPlata}
+            {kFicha}
             {kAcc}
           </div>
           {isExp&&detalleDe(sh,imp,sh.fotos||[],bul,packages.filter(p=>p.shipment_id===sh.id),items.filter(it=>it.shipment_id===sh.id))}
@@ -19410,7 +19425,7 @@ function MaritimePanel({token,allClients=[]}){
             </div>
           </div>
           {abierto&&<>
-            {lista.length>0&&!compacta&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos</div><div>m³</div><div>{verPlata?"Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
+            {lista.length>0&&!compacta&&<div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS_CONT}}><div/><div/><div>Cliente</div><div>Mercadería</div><div>Tipo</div><div>Bultos · Volumen{verPlata?" · Costo · Ganancia":""}</div><div style={{textAlign:"right"}}>Acciones</div></div>}
             {lista.length===0?vacio(todas.length?"Nada coincide con la búsqueda.":"Sin cargas. Tildalas en En depósito y usá 🚢 Contenedor."):lista.map(sh=>filaCont(sh,todas))}
           </>}
         </>)}</div>;

@@ -729,7 +729,7 @@ function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
 function Modal({ title, onClose, children }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, width: "100%", maxHeight: "90vh", overflow: "auto", background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 24 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, width: "100%", maxHeight: "90vh", overflow: "auto", background: "linear-gradient(180deg,#142038,#0F1A2D)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 16, padding: 24, boxShadow: "0 30px 80px rgba(0,0,0,0.6)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: T.text }}>{title}</h2>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.textDim, fontSize: 18, cursor: "pointer", padding: "4px 8px", lineHeight: 1 }}>✕</button>
