@@ -2547,7 +2547,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <button type="button" onClick={()=>delItem(it.id)} aria-label="Eliminar producto" title="Eliminar producto" style={{width:32,height:32,borderRadius:9,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",fontSize:13,cursor:"pointer"}}>✕</button>
           </div>
         </div>
-        {!isGI&&ncmPreview[it.id]&&(()=>{const p=ncmPreview[it.id];return <div style={{marginBottom:12,padding:"12px 14px",background:"linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.05))",border:"1.5px solid rgba(167,139,250,0.35)",borderRadius:10}}>
+        {!isGI&&ncmPreview[it.id]&&(()=>{const p=ncmPreview[it.id];const fobX=Number(it.unit_price_usd||0)*Number(it.quantity||1);const taxes=fobX*(Number(p.import_duty_rate||0)+Number(p.statistics_rate||0))/100+(fobX*(1+(Number(p.import_duty_rate||0)+Number(p.statistics_rate||0))/100))*Number(p.iva_rate||0)/100;return <div style={{marginBottom:12,padding:"12px 14px",background:"linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.05))",border:"1.5px solid rgba(167,139,250,0.35)",borderRadius:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
             <span style={{fontSize:11,fontWeight:800,color:"#a78bfa",textTransform:"uppercase",letterSpacing:"0.05em"}}>✨ La IA clasificó este producto</span>
             <button onClick={()=>setNcmPreview(prev=>{const n={...prev};delete n[it.id];return n;})} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
