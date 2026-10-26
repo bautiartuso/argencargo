@@ -14544,13 +14544,67 @@ function ProyeccionTransito({token,usd}){
   </div>;
 }
 
+// ═══ Dashboard financiero (26/10/2026): vidrio + movimiento ═══
+// Paneles translúcidos sobre el navy, números que cuentan al entrar y al cambiar el período, barras
+// que crecen. Todo en CSS y requestAnimationFrame: no hay librerías.
+const FIN_CSS=`
+@keyframes fin-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes fin-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes fin-bar{from{width:0}to{width:var(--w)}}
+@keyframes fin-float{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,-30px)}}
+@keyframes fin-skel{0%,100%{opacity:.35}50%{opacity:.7}}
+.fin-wrap{isolation:isolate}
+.fin-in{animation:fin-in .65s cubic-bezier(.2,.8,.2,1) both}
+.fin-glass{position:relative;border-radius:22px;padding:20px 22px;background:linear-gradient(160deg,rgba(255,255,255,0.085),rgba(255,255,255,0.028));border:1px solid rgba(255,255,255,0.13);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 24px 60px rgba(0,0,0,0.35);overflow:hidden;transition:border-color .25s,box-shadow .25s}
+.fin-glass:hover{border-color:rgba(255,255,255,0.2);box-shadow:inset 0 1px 0 rgba(255,255,255,0.2),0 28px 70px rgba(0,0,0,0.4)}
+.fin-glass::before{content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;background:radial-gradient(600px 200px at 20% -10%,rgba(255,255,255,0.09),transparent 60%)}
+.fin-col{transform-origin:bottom;animation:fin-grow .8s cubic-bezier(.2,.8,.2,1) both;transition:height .6s cubic-bezier(.2,.8,.2,1),opacity .2s,box-shadow .2s}
+.fin-bar{height:100%;transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.fin-barra{height:100%;border-radius:99px;animation:fin-bar .9s cubic-bezier(.2,.8,.2,1) both}
+.fin-row{transition:background .15s}
+.fin-row:hover{background:rgba(255,255,255,0.05)}
+.fin-glow{position:absolute;border-radius:50%;filter:blur(70px);pointer-events:none;z-index:0;animation:fin-float 16s ease-in-out infinite}
+.fin-glow-a{width:520px;height:520px;right:-140px;top:-180px;background:radial-gradient(circle,rgba(232,208,152,0.16),transparent 65%)}
+.fin-glow-b{width:460px;height:460px;left:-160px;top:420px;background:radial-gradient(circle,rgba(96,165,250,0.13),transparent 65%);animation-delay:-7s}
+.fin-skel{border-radius:22px;background:linear-gradient(160deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.08);animation:fin-skel 1.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.fin-in,.fin-col,.fin-barra,.fin-glow{animation:none!important}.fin-bar{transition:none}}
+`;
+// Número que cuenta: arranca en 0 la primera vez y, cuando cambia el valor (otro período), va del
+// anterior al nuevo. Así se ve para dónde se movió.
+function useNumAnim(v,ms=900){
+  const [d,setD]=useState(0);const ref=useRef({cur:0,raf:0});
+  useEffect(()=>{
+    const from=ref.current.cur||0;const to=Number(v)||0;if(from===to){setD(to);return;}
+    const t0=performance.now();cancelAnimationFrame(ref.current.raf);
+    const paso=(t)=>{const p=Math.min(1,(t-t0)/ms);const e=1-Math.pow(1-p,3);const cur=from+(to-from)*e;ref.current.cur=cur;setD(cur);if(p<1)ref.current.raf=requestAnimationFrame(paso);};
+    ref.current.raf=requestAnimationFrame(paso);
+    return()=>cancelAnimationFrame(ref.current.raf);
+  },[v,ms]);
+  return d;
+}
+function NumAnim({v,fmt=(x)=>String(x),ms}){const d=useNumAnim(v,ms);return <>{fmt(d)}</>;}
+function Glass({children,title,sub,actions,style,delay=0}){
+  return <section className="fin-glass fin-in" style={{animationDelay:`${delay*70}ms`,...(style||{})}}>
+    {(title||actions)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:14,position:"relative"}}>
+      <div style={{minWidth:0}}>{title&&<h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.015em"}}>{title}</h3>}{sub&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.45}}>{sub}</p>}</div>
+      {actions&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>{actions}</div>}
+    </div>}
+    <div style={{position:"relative"}}>{children}</div>
+  </section>;
+}
+function Barra({pct,color,delay=0,alto=7}){
+  const w=`${Math.min(Math.max(pct,0),100)}%`;
+  return <div style={{height:alto,background:"rgba(255,255,255,0.06)",borderRadius:99,overflow:"hidden"}}><div className="fin-barra" style={{"--w":w,width:w,background:`linear-gradient(90deg,${color}aa,${color})`,animationDelay:`${delay}ms`,boxShadow:`0 0 10px ${color}55`}}/></div>;
+}
+
 function FinanceDashboard({token}){
   const [ccMovs,setCcMovs]=useState([]);
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>hoyAR());const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);});
   // Dashboard v2 (02/10/2026): solapas General / Aéreo A / Marítimo A / Marítimo B y año navegable.
   const [vista,setVista]=useState("general");const [selYear,setSelYear]=useState(()=>Number(hoyAR().slice(0,4)));
   // Devengado pro (18/10/2026): cuántos meses se ven y qué mes está abierto en detalle.
-  const [devMeses,setDevMeses]=useState(6);const [devMesSel,setDevMesSel]=useState(null);const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
+  // Por mes (26/10/2026): Caja (lo que entró y salió) o Resultado (lo que dejó cada mes); mes abierto en detalle.
+  const [mesModo,setMesModo]=useState("caja");const [devMesSel,setDevMesSel]=useState(null);const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
   const celu=useEsCelu();
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp,ccm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code,tax_condition)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,client_paid_date,giro_status,giro_date,giro_payment_method,giro_tarjeta_paid,giro_tarjeta_paid_at"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("client_account_movements",{token,filters:"?type=in.(overpayment,payment)&select=operation_id,client_id,type,amount_usd,movement_date,created_at"})]);setCcMovs(Array.isArray(ccm)?ccm:[]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
@@ -14713,57 +14767,113 @@ function FinanceDashboard({token}){
   // By channel with margin (sobre ops cobradas)
   const byChannel={};cobradoOps.forEach(o=>{const ch=o.channel||"unknown";if(!byChannel[ch])byChannel[ch]={count:0,ing:0,cost:0};byChannel[ch].count++;const g=calcGan(o);byChannel[ch].ing+=g.ing;byChannel[ch].cost+=g.cost;});
 
-  // By origin (cerradas del período, como antes)
-  const byOrigin={};periodOps.forEach(o=>{const or=o.origin||"China";if(!byOrigin[or])byOrigin[or]={count:0,ing:0};byOrigin[or].count++;byOrigin[or].ing+=calcGan(o).ing;});
 
   // Top clients sorted by PROFIT (sobre ops cobradas)
   const byClient={};cobradoOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!byClient[cn])byClient[cn]={count:0,ing:0,gan:0};byClient[cn].count++;const g=calcGan(o);byClient[cn].ing+=g.ing;byClient[cn].gan+=g.gan;});
   const topClients=Object.entries(byClient).sort((a,b)=>b[1].gan-a[1].gan).slice(0,8);
   const maxClientGan=topClients.length>0?Math.max(...topClients.map(([,d])=>Math.abs(d.gan)),1):1;
 
-  // Monthly profit (last 6 months) — usando MISMA lógica que el KPI principal: flujo del libro diario completo
-  const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  const monthly=[];for(let i=5;i>=0;i--){
-    const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth();const y=d.getFullYear();
-    const inThisMonth=(ds)=>{if(!ds)return false;const p=parseLocalDate(ds);return p.m===m&&p.y===y;};
-    const {ing:mIng,cost:mCost}=libroCaja(inThisMonth);
-    const mOpsCount=closedOps.filter(o=>{if(!o.closed_at)return false;const p=parseLocalDate(o.closed_at);return p.m===m&&p.y===y;}).length;
-    monthly.push({label:`${MN[m]} ${y}`,ing:mIng,cost:mCost,gan:mIng-mCost,ops:mOpsCount});
+
+
+
+
+  const n2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const usdA=(v)=>`USD ${n2(v)}`;
+  const usdS=(v)=>`${v<0?"−":""}USD ${n2(Math.abs(v))}`;
+  const nomCli=o=>o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim()||"—":"—";
+  const MESES3=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const colorNeto=(v)=>v>0.005?"#4ade80":v<-0.005?"#ff7b7b":"rgba(255,255,255,0.4)";
+
+  // ── Por mes (26/10/2026): un solo bloque con dos modos. Caja = la plata que entró y salió ese mes
+  // (libroCaja). Resultado = lo que dejó cada mes: sus operaciones cerradas, menos lo que costaron y
+  // los gastos fijos del mes (reemplaza al "Devengado"). Siempre los últimos 12 meses.
+  const CANAL_LBL={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC",aereo_negro:"Aéreo Integral AC",gi:"Gestión Integral",otro:"Otros servicios"};
+  const usdFE=(e)=>e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);
+  const partesOp=(o)=>{
+    const g=calcGan(o);const pm=pmtsByOp[o.id]||[];
+    const pmtIng=pm.reduce((s2,x)=>s2+(x.client_paid?Number(x.client_paid_amount_usd??x.client_amount_usd??0):0),0);
+    const pmtCost=pm.reduce((s2,x)=>s2+(x.giro_status==="confirmado"?Number(x.giro_amount_usd||0)+Number(x.cost_comision_giro||0):0),0);
+    const isGI=o.service_type==="gestion_integral";
+    const canal=isGI?"gi":(CANAL_LBL[o.channel]?o.channel:"otro");
+    return {g,canal,pmtIng,pmtCost};
+  };
+  const mesesCaja=[],mesesRes=[];
+  for(let i=11;i>=0;i--){
+    const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth(),y=d.getFullYear();
+    const ini=`${y}-${String(m+1).padStart(2,"0")}-01`;const nx=new Date(y,m+1,1);const fin=`${nx.getFullYear()}-${String(nx.getMonth()+1).padStart(2,"0")}-01`;
+    const en=(ds)=>{if(!ds)return false;const s2=String(ds).slice(0,10);return s2>=ini&&s2<fin;};
+    const key=`${y}-${m}`;const label=`${MESES3[m]} ${String(y).slice(2)}`;
+    const {ing:cIng,cost:cCost}=libroCaja(en);
+    mesesCaja.push({key,label,m,actual:i===0,a:cIng,b:cCost,fij:0,neto:cIng-cCost});
+    const opsM=closedOps.filter(o=>en(o.closed_at));
+    let ingR=0,cosR=0;const porCanal={};const detOps=[];
+    opsM.forEach(o=>{const x=partesOp(o);ingR+=x.g.ing;cosR+=x.g.cost;porCanal[x.canal]=(porCanal[x.canal]||0)+x.g.gan;detOps.push({o,x});});
+    const otrosIngList=finEntries.filter(e=>e.type==="ingreso"&&en(e.date));
+    const otrosIng=otrosIngList.reduce((s2,e)=>s2+usdFE(e),0);ingR+=otrosIng;
+    const fijosList=fixedCostsManual.filter(e=>en(e.date));
+    const fij=fijosList.reduce((s2,e)=>s2+usdFE(e),0);
+    mesesRes.push({key,label,m,actual:i===0,a:ingR,b:cosR,fij,neto:ingR-cosR-fij,nOps:opsM.length,detOps,fijosList,otrosIngList,otrosIng,porCanal});
   }
-  const maxMonthGan=Math.max(...monthly.map(m=>Math.abs(m.gan)),1);
-  const maxMonthOps=Math.max(...monthly.map(m=>m.ops),1);
+  const mesesVista=mesModo==="caja"?mesesCaja:mesesRes;
+  const maxNeto=Math.max(...mesesVista.map(x=>Math.abs(x.neto)),1);
+  const selRes=mesesRes.find(x=>x.key===devMesSel)||null;
 
-  // Cost breakdown
-  const costBreakdown=[
-    {label:"Flete",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete||0),0),color:"#60a5fa"},
-    {label:"Impuestos",value:periodOps.reduce((s,o)=>s+Number(o.cost_impuestos_reales||0),0),color:"#f97316"},
-    {label:"Gasto doc.",value:periodOps.reduce((s,o)=>s+Number(o.cost_gasto_documental||0),0),color:"#a78bfa"},
-    {label:"Seguro",value:periodOps.reduce((s,o)=>s+Number(o.cost_seguro||0),0),color:"#fbbf24"},
-    {label:"Flete local",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete_local||0),0),color:"#34d399"},
-    {label:"Otros",value:periodOps.reduce((s,o)=>s+Number(o.cost_otros||0),0),color:"#fb7185"}
-  ].filter(c=>c.value>0);
-  const totalCostBreak=costBreakdown.reduce((s,c)=>s+c.value,0);
+  // ── Falta: lo que todavía no es plata (misma cuenta que antes) ──
+  const {ing:cashIngHist,cost:cashCostHist}=libroCaja(()=>true);
+  const cashDisponible=cashIngHist-cashCostHist;
+  const girosColgadosDetail=[];
+  ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,real});});
+  const girosColgados=girosColgadosDetail.reduce((s,d)=>s+d.real,0);
+  const girosPendientes=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid&&p.giro_status!=="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0),0);},0);
+  const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0)+supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&p.currency==="ARS"&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_ars||p.amount_usd||0),0);
+  const deudaTCUsd=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0)
+    +Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0)
+    +supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0)
+    +ops.filter(o=>o.cost_flete_method==="tarjeta_credito"&&!o.cost_flete_paid_at&&Number(o.cost_flete||0)>0).reduce((s,o)=>s+Number(o.cost_flete||0),0);
+  const opsListasParaEntregar=ops.filter(o=>o.status==="entregada").map(o=>{
+    const bt=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0);
+    const pmtsPaid=(clientPmts||[]).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+    const colCash=o.is_collected?Number(o.collected_amount||0):0;
+    const falta=Math.max(0,bt-Math.max(pmtsPaid,colCash));
+    return {code:o.operation_code,clientId:o.client_id,client:nomCli(o),falta};
+  }).filter(x=>x.falta>0);
+  const pendienteListas=opsListasParaEntregar.reduce((s,x)=>s+x.falta,0);
+  const clientesConOpLista=new Set(opsListasParaEntregar.map(x=>x.clientId).filter(Boolean));
+  const deudores=(clients||[]).filter(c=>Number(c.account_balance_usd||0)<-0.01&&!clientesConOpLista.has(c.id)).map(c=>({name:`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—",code:c.client_code||"",debe:Math.abs(Number(c.account_balance_usd||0))})).sort((a,b)=>b.debe-a.debe);
+  const deudaCC=deudores.reduce((s,d)=>s+d.debe,0);
+  const porCobrar=pendienteListas+girosColgados+deudaCC;
+  const porPagar=girosPendientes+deudaTCUsd;
+  const pendienteNeto=porCobrar-porPagar;
+  const faltaFilas=[
+    pendienteListas>0&&{ic:"📦",l:"Listas para retirar sin cobrar",sub:`${opsListasParaEntregar.length} operaci${opsListasParaEntregar.length===1?"ón":"ones"}`,v:pendienteListas,c:"#93c5fd",t:opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usdA(o.falta)}`).join("\n")},
+    girosColgados>0&&{ic:"⚠️",l:"Giros hechos que el cliente no pagó",sub:`${girosColgadosDetail.length} operaci${girosColgadosDetail.length===1?"ón":"ones"}`,v:girosColgados,c:"#fb923c",t:girosColgadosDetail.map(d=>`${d.code}: ${usdA(d.real)}`).join("\n")},
+    deudaCC>0&&{ic:"🧾",l:"Deuda en cuenta corriente",sub:`${deudores.length} cliente${deudores.length!==1?"s":""}`,v:deudaCC,c:"#f87171",t:deudores.map(d=>`${d.code?d.code+" · ":""}${d.name}: ${usdA(d.debe)}`).join("\n")},
+    girosPendientes>0&&{ic:"💸",l:"Giros que falta mandar",sub:"el cliente ya pagó",v:-girosPendientes,c:"#60a5fa"},
+    deudaTCUsd>0&&{ic:"💳",l:"Tarjeta sin debitar (USD)",sub:deudaTCArs>0?`más $ ${Math.round(deudaTCArs).toLocaleString("es-AR")} en pesos`:"",v:-deudaTCUsd,c:"#c4b5fd"},
+  ].filter(Boolean);
 
-  const newClients=clients.filter(c=>{const d=new Date(c.created_at);return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;}).length;
-  const pendingQuotes=quotes.filter(q=>q.status==="pending").length;
-
-  const usd=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const stat=(l,v,color,big)=><div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{l}</p><p style={{fontSize:big?28:20,fontWeight:700,color:color||"#fff",margin:0}}>{v}</p></div>;
-  const kpi=(label,value,color,sub,borde)=><div style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:`1px solid ${borde||"rgba(255,255,255,0.08)"}`,borderRadius:16,padding:celu?"14px 15px":"18px 20px",minWidth:0}}>
-    <p style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 9px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</p>
-    <p style={{fontSize:celu?18:27,fontWeight:800,color:color||"#fff",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</p>
-    {sub&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"7px 0 0"}}>{sub}</p>}
+  const lblFin={margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"};
+  const hero=(label,v,color,sub,big)=><div style={{minWidth:0}}>
+    <p style={lblFin}>{label}</p>
+    <p style={{margin:"6px 0 0",fontSize:big?(celu?30:40):(celu?23:30),fontWeight:800,color,letterSpacing:"-0.03em",lineHeight:1.05,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:big?`0 0 28px ${color}55`:"none"}}><NumAnim v={v} fmt={usdS}/></p>
+    <p style={{margin:"7px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{sub}</p>
   </div>;
-  const usdK=v=>{const a=Math.abs(v);return `${v<0?"−":""}${a>=1000?`${(a/1000).toLocaleString("es-AR",{maximumFractionDigits:1})}k`:Math.round(a).toLocaleString("es-AR")}`;};
-  const bar=(pct,color)=><div style={{height:7,background:"rgba(255,255,255,0.06)",borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(Math.max(pct,0),100)}%`,height:"100%",background:`linear-gradient(90deg,${color}aa,${color})`,borderRadius:99,transition:"width 0.3s"}}/></div>;
+  const kpiN=(label,v,fmt,color,sub)=><Glass style={{padding:celu?"14px 16px":"18px 20px"}}>
+    <p style={lblFin}>{label}</p>
+    <p style={{margin:"7px 0 0",fontSize:celu?20:27,fontWeight:800,color:color||"#fff",letterSpacing:"-0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}><NumAnim v={v} fmt={fmt}/></p>
+    {sub&&<p style={{margin:"6px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{sub}</p>}
+  </Glass>;
+  const pctSal=totalIng>0?Math.min(100,totalCost/totalIng*100):(totalCost>0?100:0);
 
-  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
+  if(lo)return <div className="fin-wrap" style={{display:"grid",gap:14}}><style>{FIN_CSS}</style>{[120,150,220,260].map((h,i)=><div key={i} className="fin-skel" style={{height:h,animationDelay:`${i*120}ms`}}/>)}</div>;
 
-  return <div>
-    {/* Barra (02/10/2026): sin título. Solapas por servicio a la izquierda y período a la derecha. */}
+  return <div className="fin-wrap" style={{position:"relative"}}>
+    <style>{FIN_CSS}</style>
+    <div className="fin-glow fin-glow-a" aria-hidden="true"/><div className="fin-glow fin-glow-b" aria-hidden="true"/>
+    {/* Barra: servicio a la izquierda, período a la derecha */}
     {(()=>{
-      const grupo={display:"flex",gap:3,padding:4,borderRadius:12,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.08)",boxSizing:"border-box"};
-      const pill=(on)=>({height:34,padding:celu?"0 4px":"0 15px",minWidth:0,borderRadius:9,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:celu?12:12.5,fontWeight:800,whiteSpace:"nowrap",background:on?GOLD_GRADIENT:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.55)",transition:"background 150ms,color 150ms",flex:celu?1:"none"});
+      const grupo={display:"flex",gap:3,padding:4,borderRadius:14,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",backdropFilter:"blur(14px)",boxSizing:"border-box"};
+      const pill=(on)=>({height:34,padding:celu?"0 4px":"0 15px",minWidth:0,flex:celu?1:"none",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:celu?12:12.5,fontWeight:800,whiteSpace:"nowrap",background:on?GOLD_GRADIENT:"transparent",color:on?"#0A1628":"rgba(255,255,255,0.6)",transition:"background 160ms, color 160ms",boxShadow:on?"0 6px 18px rgba(184,149,106,0.3)":"none"});
       const flecha=(t,fn,dis)=><button onClick={fn} disabled={dis} style={{width:32,height:34,borderRadius:9,border:"none",background:"transparent",color:dis?"rgba(255,255,255,0.18)":"#fff",cursor:dis?"default":"pointer",fontSize:18,fontWeight:700,fontFamily:"inherit"}}>{t}</button>;
       const MNL=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
       const nav=period==="day"?{l:selDay===today?`Hoy · ${fmtDM(selDay)}`:fmtDM(selDay),prev:()=>setSelDay(d=>addDaysStr(d,-1)),next:()=>setSelDay(d=>d<today?addDaysStr(d,1):d),fin:selDay>=today}
@@ -14771,10 +14881,10 @@ function FinanceDashboard({token}){
         :period==="month"?{l:`${MNL[selM-1]} ${selY}`,prev:()=>{const d=new Date(selY,selM-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);},next:()=>{const d=new Date(selY,selM,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);},fin:selY>thisYear||(selY===thisYear&&selM-1>=thisMonth)}
         :period==="year"?{l:String(selYear),prev:()=>setSelYear(y=>y-1),next:()=>setSelYear(y=>y+1),fin:selYear>=thisYear}
         :null;
-      return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:18}}>
+      return <div className="fin-in" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16,position:"relative",zIndex:1}}>
         <div style={{...grupo,width:celu?"100%":"auto"}}>{[["general","General"],["aereo_blanco","Aéreo A"],["maritimo_blanco","Marítimo A"],["maritimo_negro","Marítimo B"]].map(([k,l])=><button key={k} onClick={()=>setVista(k)} style={pill(vista===k)}>{l}</button>)}</div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",width:celu?"100%":"auto"}}>
-          <div style={{...grupo,width:celu?"100%":"auto"}}>{[["day","Día"],["week","Semana"],["month","Mes"],["year","Año"],["all","Total"]].map(([k,l])=><button key={k} onClick={()=>{setPeriod(k);if(k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);if(k==="day")setSelDay(hoyAR());if(k==="week")setSelWeekMon(mondayOfToday());if(k==="year")setSelYear(thisYear);}} style={pill(period===k)}>{l}</button>)}</div>
+          <div style={{...grupo,width:celu?"100%":"auto"}}>{[["day","Día"],["week","Semana"],["month","Mes"],["year","Año"],["all","Total"]].map(([k,l])=><button key={k} onClick={()=>{setPeriod(k);if(k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);if(k==="day")setSelDay(today);if(k==="week")setSelWeekMon(mondayOfToday());if(k==="year")setSelYear(thisYear);}} style={pill(period===k)}>{l}</button>)}</div>
           {nav&&<div style={{...grupo,alignItems:"center",width:celu?"100%":"auto",justifyContent:"space-between"}}>
             {flecha("‹",nav.prev)}
             <span style={{fontSize:13,fontWeight:800,color:"#fff",minWidth:128,textAlign:"center",whiteSpace:"nowrap"}}>{nav.l}</span>
@@ -14784,380 +14894,129 @@ function FinanceDashboard({token}){
       </div>;
     })()}
 
-    {vista==="general"&&<>
-    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4, minmax(0, 1fr))",gap:12,marginBottom:14}}>
-      {kpi("Ganancia neta",usd(totalGan),totalGan>=0?"#4ade80":"#f87171","Ingresos − egresos",totalGan>=0?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)")}
-      {kpi("Ingresos",usd(totalIng),"#fff","Lo que entró")}
-      {kpi("Egresos",usd(totalCost),"#fff","Lo que salió")}
-      {kpi("Margen",`${margen.toFixed(1)}%`,margen>=20?"#4ade80":margen>=0?"#fbbf24":"#f87171",margen>=20?"Saludable":margen>=0?"Ajustado":"En rojo")}
-    </div>
+    {vista==="general"&&<div style={{position:"relative",zIndex:1}}>
+      {/* Entró · Salió · Quedó */}
+      <Glass delay={1} style={{padding:celu?"20px 18px":"26px 30px",marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"1fr 1fr 1.3fr",gap:celu?18:28,alignItems:"end"}}>
+          {hero("Entró",totalIng,"#4ade80","Cobros, pagos y otros ingresos")}
+          {hero("Salió",totalCost,"#ff8a8a","Costos de operaciones, giros y gastos")}
+          <div style={{gridColumn:celu?"1 / -1":"auto"}}>{hero("Quedó",totalGan,totalGan>=0?GOLD_LIGHT:"#ff7b7b",totalIng>0?`${margen.toFixed(1)}% de margen · ${periodOps.length} operaci${periodOps.length===1?"ón":"ones"} cerrada${periodOps.length===1?"":"s"}`:"Sin movimientos en el período",true)}</div>
+        </div>
+        <div style={{marginTop:20,height:10,borderRadius:99,background:"rgba(255,255,255,0.07)",overflow:"hidden",display:"flex"}}>
+          <div className="fin-bar" style={{width:`${pctSal}%`,background:"linear-gradient(90deg,#ff8a8a,#f87171)",borderRadius:99}}/>
+          {totalGan>0&&<div className="fin-bar" style={{width:`${100-pctSal}%`,background:"linear-gradient(90deg,#B8956A,#E8D098)",borderRadius:99,marginLeft:2}}/>}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:7}}><span>{totalIng>0?`${pctSal.toFixed(0)}% de lo que entró, salió`:""}</span><span>{totalIng>0&&totalGan>0?`${(100-pctSal).toFixed(0)}% quedó`:""}</span></div>
+      </Glass>
 
-    {(()=>{
-      // Cash disponible = el libro de caja completo (sin filtro de fecha): ingresos − egresos de toda la
-      // historia. Es el mismo número que "Ganancia neta" con el período en Total.
-      const {ing:cashIngHist,cost:cashCostHist}=libroCaja(()=>true);
-      // Colgados: lo que DEBE el cliente (client_amount) − anticipos. Eso es plata real pendiente de cobrar.
-      const girosColgadosDetail=[];
-      ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",debe,anticipo:ant,real});});
-      const girosColgados=girosColgadosDetail.reduce((s,d)=>s+d.real,0);
-      // Clientes pagaron pero giro no enviado
-      const girosPendientes=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid&&p.giro_status!=="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0),0);},0);
-      // Margen operaciones activas (TODAS las no cerradas/canceladas): ingreso (budget+pmts cobrados) - costos
-      const margenActivas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return s+(ing-cost)+pmtGan;},0);
-      // Deuda TC pendiente en ARS (de finance_entries + supplier_payments ARS no pagados)
-      const deudaTCArsFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      // Solo costos pendientes (no refunds — un refund pendiente es plata viniendo a vos, no deuda TC)
-      const deudaTCArsSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&p.currency==="ARS"&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_ars||p.amount_usd||0),0);
-      const deudaTCArs=deudaTCArsFinance+deudaTCArsSup;
-      // Deuda tarjeta USD: finance_entries USD + payment_management TC pendientes + supplier_payments TC USD pendientes
-      const deudaTCUsdFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0);
-      const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
-      const deudaTCUsdSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      // Fletes (Alibaba u otra) pagados con TC y todavía no debitados → deuda tarjeta en USD.
-      const deudaTCUsdFlete=ops.filter(o=>o.cost_flete_method==="tarjeta_credito"&&!o.cost_flete_paid_at&&Number(o.cost_flete||0)>0).reduce((s,o)=>s+Number(o.cost_flete||0),0);
-      const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup+deudaTCUsdFlete;
-      const cashDisponible=cashIngHist-cashCostHist;
-      // Ops listas para entregar (status=entregada) sin cobro completo: lo que falta cobrar al cliente.
-      // Saldo canónico (igual que la lista de ops y Entregas): el presupuesto MÁS la deuda de CC
-      // aplicada a la op, menos crédito/descuento. Sin debt_applied, la deuda vieja de un cliente
-      // con op lista desaparecía del dashboard: acá no se sumaba y Deuda CC lo excluye (balance 0
-      // tras aplicarse).
-      const opsListasParaEntregar=ops.filter(o=>o.status==="entregada").map(o=>{
-        const bt=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0);
-        const pmtsPaid=(clientPmts||[]).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-        const colCash=o.is_collected?Number(o.collected_amount||0):0;
-        const totalPagado=Math.max(pmtsPaid,colCash);
-        const falta=Math.max(0,bt-totalPagado);
-        return {code:o.operation_code,clientId:o.client_id,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",bt,pagado:totalPagado,falta};
-      }).filter(x=>x.falta>0);
-      const pendienteListas=opsListasParaEntregar.reduce((s,x)=>s+x.falta,0);
-      // Deuda de cuenta corriente de ops ya cerradas. Solo cuenta si el cliente NO tiene una op
-      // lista para retirar: si la tiene, su saldo ya se le aplico a esa op y sumarlo aparte lo
-      // duplicaria. Sin esto, el saldo deudor de ops cerradas no aparecia en ningun lado.
-      const clientesConOpLista=new Set(opsListasParaEntregar.map(x=>x.clientId).filter(Boolean));
-      const deudores=(clients||[]).filter(c=>Number(c.account_balance_usd||0)<-0.01&&!clientesConOpLista.has(c.id))
-        .map(c=>({id:c.id,name:`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—",code:c.client_code||"",debe:Math.abs(Number(c.account_balance_usd||0))}))
-        .sort((a,b)=>b.debe-a.debe);
-      const deudaCC=deudores.reduce((s,d)=>s+d.debe,0);
-      const porCobrar=pendienteListas+girosColgados+deudaCC;
-      const porPagar=girosPendientes;
-      const pendienteNeto=porCobrar-porPagar;
-      return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginBottom:24}}>
-        {/* Cash disponible — SOLO plata real, sin proyecciones */}
-        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))":"linear-gradient(135deg,rgba(255,80,80,0.08),rgba(255,80,80,0.02))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.22)":"rgba(255,80,80,0.22)"}`,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>💵 Cash disponible</p>
-          <p style={{fontSize:28,fontWeight:800,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"auto 0 0",paddingTop:8}}>Todo lo que entró menos todo lo que salió, desde el día uno. Es la ganancia neta histórica; no incluye por cobrar ni por pagar.</p>
-        </div>
-        {/* Pendientes — plata que falta entrar/salir, todavía NO es cash */}
-        <div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.02))",border:"1px solid rgba(96,165,250,0.28)",borderRadius:14,padding:"16px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>⏳ Por cobrar ya (neto)</p>
-            <p style={{fontSize:22,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{pendienteNeto>=0?"+":"−"}{usd(Math.abs(pendienteNeto))}</p>
-          </div>
-          {(porCobrar>0||porPagar>0)?<div style={{display:"flex",flexDirection:"column",gap:5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-            {pendienteListas>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usd(o.falta)}`).join("\n")}>
-              <span style={{color:"#93c5fd"}}>📦 Por cobrar (listas para retirar)</span>
-              <span style={{color:"#93c5fd",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(pendienteListas)}</span>
-            </div>}
-            {girosColgados>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>
-              <span style={{color:"#fb923c"}}>⚠ Por cobrar (giros sin cobrar)</span>
-              <span style={{color:"#fb923c",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(girosColgados)}</span>
-            </div>}
-            {deudaCC>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={deudores.map(d=>`${d.code?d.code+" · ":""}${d.name}: ${usd(d.debe)}`).join("\n")}>
-              <span style={{color:"#f87171"}}>🧾 Deuda en cuenta corriente ({deudores.length} cliente{deudores.length!==1?"s":""})</span>
-              <span style={{color:"#f87171",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(deudaCC)}</span>
-            </div>}
-            {girosPendientes>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
-              <span style={{color:"#60a5fa"}}>⏳ Giro pendiente de enviar</span>
-              <span style={{color:"#60a5fa",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>−{usd(girosPendientes)}</span>
-            </div>}
-          </div>:<p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.3)",margin:"6px 0 0",textAlign:"center"}}>Sin pendientes</p>}
-        </div>
-        {/* Lo que todavía viaja (13/10/2026): aéreo por cobrar en el aire y ganancia marítima en el agua. */}
-        <ProyeccionTransito token={token} usd={usd}/>
-      </div>;
-    })()}
+      {/* Tenés · Falta · En tránsito */}
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr)",gap:14,marginBottom:14,alignItems:"stretch"}}>
+        <Glass delay={2} title="Tenés" sub="Todo lo que entró menos todo lo que salió, desde el día uno">
+          <p style={{margin:"4px 0 0",fontSize:celu?28:32,fontWeight:800,color:cashDisponible>=0?"#4ade80":"#ff7b7b",letterSpacing:"-0.03em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:`0 0 26px ${cashDisponible>=0?"rgba(74,222,128,0.35)":"rgba(255,123,123,0.35)"}`}}><NumAnim v={cashDisponible} fmt={usdS}/></p>
+          <p style={{margin:"10px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)",lineHeight:1.5}}>Es la ganancia neta histórica. No cuenta lo que falta cobrar ni pagar.</p>
+        </Glass>
+        <Glass delay={3} title="Falta" sub="Plata que todavía no entró o no salió" actions={<span style={{fontSize:celu?20:24,fontWeight:800,color:pendienteNeto>=0?"#93c5fd":"#fb923c",letterSpacing:"-0.02em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{pendienteNeto>=0?"+":""}<NumAnim v={pendienteNeto} fmt={usdS}/></span>}>
+          {faltaFilas.length?<div style={{display:"flex",flexDirection:"column"}}>
+            {faltaFilas.map((f,i)=><div key={f.l} className="fin-row" title={f.t||""} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
+              <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{f.ic}</span>
+              <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.l}</span>{f.sub&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{f.sub}</span>}</span>
+              <span style={{fontSize:14,fontWeight:800,color:f.c,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{f.v>=0?"+":"−"}{usdA(Math.abs(f.v))}</span>
+            </div>)}
+          </div>:<p style={{margin:"8px 0 0",fontSize:13,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Todo cobrado y pagado.</p>}
+        </Glass>
+        <div className="fin-in" style={{animationDelay:"240ms",display:"flex"}}><div style={{flex:1,display:"flex",flexDirection:"column"}}><ProyeccionTransito token={token} usd={usdA}/></div></div>
+      </div>
 
-    <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:16}}>
-      <Card v2 title="Ganancia por canal" sub="Operaciones cobradas en el período · tocá un canal para ver el detalle">
-        {(()=>{const entries=Object.entries(byChannel).sort((a,b)=>(b[1].ing-b[1].cost)-(a[1].ing-a[1].cost));const maxGan=Math.max(...entries.map(([,d])=>Math.abs(d.ing-d.cost)),1);return entries.map(([ch,d])=>{const gan=d.ing-d.cost;const mg=d.ing>0?((gan/d.ing)*100):0;const pct=(Math.abs(gan)/maxGan)*100;const navegable=["aereo_blanco","maritimo_blanco","maritimo_negro"].includes(ch);return <div key={ch} onClick={()=>navegable&&setVista(ch)} style={{padding:"11px 12px",margin:"0 -12px 4px",borderRadius:12,cursor:navegable?"pointer":"default",transition:"background 150ms"}} onMouseEnter={e=>{if(navegable)e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:7}}>
-            <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{CM[ch]||ch} <span style={{fontSize:11.5,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>· {d.count} op{d.count!==1?"s":""}</span></span>
-            <span style={{whiteSpace:"nowrap"}}><span style={{fontSize:14,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{usd(gan)}</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{mg.toFixed(0)}%</span>{navegable&&<span style={{marginLeft:8,color:"rgba(255,255,255,0.3)"}}>›</span>}</span>
-          </div>
-          {bar(pct,gan>=0?"#22c55e":"#f87171")}
-        </div>;});})()}
-        {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)",margin:0}}>Sin operaciones cobradas en el período.</p>}
-      </Card>
-      <Card v2 title="Top clientes" sub="Por ganancia, en el período">
-        {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:13}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:7}}>
-            <span style={{fontSize:13.5,fontWeight:700,color:"#fff",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:22,color:"rgba(255,255,255,0.35)",fontWeight:800}}>{i+1}</span>{name} <span style={{fontSize:11.5,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>· {d.count} op{d.count!==1?"s":""}</span></span>
-            <span style={{whiteSpace:"nowrap"}}><span style={{fontSize:13.5,fontWeight:800,color:d.gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{usd(d.gan)}</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{mg.toFixed(0)}%</span></span>
-          </div>
-          {bar(pct,d.gan>=0?"#22c55e":"#f87171")}
-        </div>;}):<p style={{color:"rgba(255,255,255,0.45)",margin:0}}>Sin operaciones cobradas en el período.</p>}
-      </Card>
-      <Card v2 title="Ganancia por mes" sub="Últimos 6 meses">
-        <Columnas datos={monthly} valor={m=>m.gan} color={v=>v>=0?"#22c55e":"#f87171"} fmtV={usdK}/>
-      </Card>
-      <Card v2 title="Operaciones por mes" sub="Cerradas, últimos 6 meses">
-        <Columnas datos={monthly} valor={m=>m.ops} color={()=>GOLD_LIGHT} fmtV={v=>String(v)}/>
-      </Card>
-    </div>
-    <div style={{height:16}}/>
-
-    {(()=>{
-      // ═══ Devengado pro (18/10/2026): estado de resultados por mes ═══
-      // Cada operación se imputa ENTERA al mes en que se cerró (servicio prestado), con lo que se
-      // cobró por ella y lo que costó, sin importar cuándo entró o salió la plata. Los gastos fijos
-      // van al mes de la fecha del gasto (la tarjeta también). Misma cuenta que calcGan: acá solo
-      // se abre por concepto para que se vea de dónde sale cada número.
-      const MN2=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-      const CANAL_LBL={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC",aereo_negro:"Aéreo Integral AC",gi:"Gestión Integral",otro:"Otros servicios"};
-      const partesOp=(o)=>{
-        const g=calcGan(o);
-        const pm=pmtsByOp[o.id]||[];
-        const pmtIng=pm.reduce((s2,x)=>s2+(x.client_paid?Number(x.client_paid_amount_usd??x.client_amount_usd??0):0),0);
-        const pmtCost=pm.reduce((s2,x)=>s2+(x.giro_status==="confirmado"?Number(x.giro_amount_usd||0)+Number(x.cost_comision_giro||0):0),0);
-        const isGI=o.service_type==="gestion_integral";
-        const prov=isGI?(supplierPmts||[]).filter(x=>x.operation_id===o.id&&x.is_paid).reduce((s2,x)=>s2+(x.type==="refund"?-1:1)*Number(x.amount_usd||0),0):0;
-        const canal=isGI?"gi":(CANAL_LBL[o.channel]?o.channel:"otro");
-        return {g,canal,ingCanal:g.ing-pmtIng,pmtIng,pmtCost,flete:Number(o.cost_flete||0),imp:Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0),seg:Number(o.cost_seguro||0),local:Number(o.cost_flete_local||0),otros:Number(o.cost_otros||0),prov};
-      };
-      const usdFE=(e)=>e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);
-      const meses=[];
-      for(let i=devMeses-1;i>=0;i--){
-        const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth(),y=d.getFullYear();
-        const ini=`${y}-${String(m+1).padStart(2,"0")}-01`;const nx=new Date(y,m+1,1);const fin=`${nx.getFullYear()}-${String(nx.getMonth()+1).padStart(2,"0")}-01`;
-        const en=(ds)=>{if(!ds)return false;const s2=String(ds).slice(0,10);return s2>=ini&&s2<fin;};
-        const opsM=closedOps.filter(o=>en(o.closed_at));
-        const ing={aereo_blanco:0,maritimo_blanco:0,maritimo_negro:0,aereo_negro:0,gi:0,otro:0,pagos:0,otrosIng:0};
-        const cos={flete:0,imp:0,seg:0,local:0,prov:0,giros:0,otros:0};
-        const detOps=[];
-        opsM.forEach(o=>{const x=partesOp(o);ing[x.canal]+=x.ingCanal;ing.pagos+=x.pmtIng;cos.flete+=x.flete;cos.imp+=x.imp;cos.seg+=x.seg;cos.local+=x.local;cos.prov+=x.prov;cos.giros+=x.pmtCost;cos.otros+=x.otros;detOps.push({o,x});});
-        const otrosIngList=finEntries.filter(e=>e.type==="ingreso"&&en(e.date));
-        ing.otrosIng=otrosIngList.reduce((s2,e)=>s2+usdFE(e),0);
-        const fijosList=fixedCostsManual.filter(e=>en(e.date));
-        const fijos={};fijosList.forEach(e=>{const k=e.category||"otros";fijos[k]=(fijos[k]||0)+usdFE(e);});
-        const totIng=Object.values(ing).reduce((a2,b2)=>a2+b2,0);
-        const totCos=Object.values(cos).reduce((a2,b2)=>a2+b2,0);
-        const totFij=Object.values(fijos).reduce((a2,b2)=>a2+b2,0);
-        meses.push({key:`${y}-${m}`,label:`${MN2[m]} ${y}`,corto:`${MN2[m]} ${String(y).slice(2)}`,ing,cos,fijos,totIng,totCos,bruto:totIng-totCos,totFij,neto:totIng-totCos-totFij,nOps:opsM.length,detOps,fijosList,otrosIngList,actual:i===0});
-      }
-      const catsFijos=[...new Set(meses.flatMap(x=>Object.keys(x.fijos)))].sort((a2,b2)=>(CAT_LBL[a2]||a2).localeCompare(CAT_LBL[b2]||b2));
-      const sumCol=(f)=>meses.reduce((s2,x)=>s2+f(x),0);
-      // Filas del estado de resultados. tipo: sec (título de sección), lin (línea), tot (subtotal), res (resultado), pct (porcentaje), info.
-      const filas=[
-        {tipo:"sec",label:"Ingresos"},
-        ...["aereo_blanco","maritimo_blanco","maritimo_negro","aereo_negro","gi","otro"].map(k=>({tipo:"lin",label:CANAL_LBL[k],f:x=>x.ing[k]})),
-        {tipo:"lin",label:"Gestión de pagos (cobrado)",f:x=>x.ing.pagos},
-        {tipo:"lin",label:"Otros ingresos",f:x=>x.ing.otrosIng},
-        {tipo:"tot",label:"Total ingresos",f:x=>x.totIng},
-        {tipo:"sec",label:"Costos directos de las operaciones"},
-        {tipo:"lin",label:"Flete internacional",f:x=>x.cos.flete,neg:true},
-        {tipo:"lin",label:"Impuestos y aduana",f:x=>x.cos.imp,neg:true},
-        {tipo:"lin",label:"Seguro",f:x=>x.cos.seg,neg:true},
-        {tipo:"lin",label:"Flete local y entregas",f:x=>x.cos.local,neg:true},
-        {tipo:"lin",label:"Proveedores (Gestión Integral)",f:x=>x.cos.prov,neg:true},
-        {tipo:"lin",label:"Giros y comisiones (gestión de pagos)",f:x=>x.cos.giros,neg:true},
-        {tipo:"lin",label:"Otros costos de operaciones",f:x=>x.cos.otros,neg:true},
-        {tipo:"tot",label:"Total costos directos",f:x=>x.totCos,neg:true},
-        {tipo:"res",label:"Margen bruto",f:x=>x.bruto},
-        {tipo:"pct",label:"Margen bruto sobre ingresos",f:x=>x.totIng>0?x.bruto/x.totIng*100:null},
-        {tipo:"sec",label:"Gastos fijos y de estructura"},
-        ...catsFijos.map(k=>({tipo:"lin",label:CAT_LBL[k]||k,f:x=>x.fijos[k]||0,neg:true})),
-        {tipo:"tot",label:"Total gastos fijos",f:x=>x.totFij,neg:true},
-        {tipo:"res",label:"Resultado neto del mes",f:x=>x.neto,final:true},
-        {tipo:"pct",label:"Margen neto sobre ingresos",f:x=>x.totIng>0?x.neto/x.totIng*100:null},
-        {tipo:"info",label:"Operaciones cerradas",f:x=>x.nOps},
-      ].filter(r=>r.tipo!=="lin"||Math.abs(sumCol(r.f))>0.005);
-      const n0=(v)=>Math.abs(v)<0.005?"—":Math.round(v).toLocaleString("es-AR");
-      const pct0=(v)=>v==null?"—":`${v.toFixed(0)}%`;
-      const colorRes=(v)=>v>0.005?"#22c55e":v<-0.005?"#ff6b6b":"rgba(255,255,255,0.4)";
-      const sel=meses.find(x=>x.key===devMesSel)||null;
-      const TH={padding:"8px 10px",fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap",textAlign:"right",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.1)"};
-      const celda=(r,v,extra={})=>{
-        if(r.tipo==="pct")return <td key={extra.k} style={{padding:"4px 10px",textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",...extra.st}}>{pct0(v)}</td>;
-        if(r.tipo==="info")return <td key={extra.k} style={{padding:"6px 10px",textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",...extra.st}}>{v||"—"}</td>;
-        if(r.tipo==="res")return <td key={extra.k} style={{padding:r.final?"10px":"8px 10px",textAlign:"right",fontSize:r.final?13.5:12.5,fontWeight:800,color:colorRes(v),fontVariantNumeric:"tabular-nums",...extra.st}}>{Math.abs(v)<0.005?"—":`${v<0?"−":""}${n0(Math.abs(v))}`}</td>;
-        if(r.tipo==="tot")return <td key={extra.k} style={{padding:"7px 10px",textAlign:"right",fontSize:12,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums",...extra.st}}>{r.neg&&Math.abs(v)>=0.005?`−${n0(v)}`:n0(v)}</td>;
-        return <td key={extra.k} style={{padding:"5px 10px",textAlign:"right",fontSize:12,color:r.neg?"rgba(255,140,140,0.85)":"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",...extra.st}}>{r.neg&&Math.abs(v)>=0.005?`−${n0(v)}`:n0(v)}</td>;
-      };
-      const rowStyle=(r)=>r.tipo==="sec"?{background:"rgba(255,255,255,0.035)"}:r.tipo==="tot"?{borderTop:"1px solid rgba(255,255,255,0.12)"}:r.tipo==="res"?{borderTop:"1.5px solid rgba(255,255,255,0.2)",background:r.final?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.03)"}:{};
-      const stickyTd={position:"sticky",left:0,background:"#0D1B33",zIndex:1};
-      const selSt=(x)=>x.key===devMesSel?{background:"rgba(96,165,250,0.08)"}:{};
-      return <>
-      <Card v2 title="Devengado · estado de resultados por mes" sub="Cada operación va entera al mes en que se cerró, con lo cobrado y lo que costó, cobres o pagues cuando sea · los gastos fijos, al mes del gasto · tocá un mes para ver qué lo compone">
-        <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:10}}>
-          {[[6,"6 meses"],[12,"12 meses"]].map(([n,l])=><button key={n} onClick={()=>setDevMeses(n)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:devMeses===n?"rgba(255,255,255,0.12)":"transparent",color:devMeses===n?"#fff":"rgba(255,255,255,0.55)",cursor:"pointer"}}>{l}</button>)}
+      {/* Por mes */}
+      <Glass delay={4} title="Por mes" sub={mesModo==="caja"?"La plata que entró y salió cada mes · últimos 12 meses":"Lo que dejó cada mes: sus operaciones cerradas, menos lo que costaron y los gastos fijos · tocá un mes para ver qué lo compone"} style={{marginBottom:14}}
+        actions={<div style={{display:"flex",gap:3,padding:3,borderRadius:11,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)"}}>{[["caja","Caja"],["resultado","Resultado"]].map(([k,l])=><button key={k} onClick={()=>{setMesModo(k);setDevMesSel(null);}} style={{height:30,padding:"0 13px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:12.5,fontWeight:800,background:mesModo===k?"rgba(232,208,152,0.18)":"transparent",color:mesModo===k?GOLD_LIGHT:"rgba(255,255,255,0.5)",boxShadow:mesModo===k?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none",transition:"all 160ms"}}>{l}</button>)}</div>}>
+        <div key={mesModo} style={{display:"flex",alignItems:"flex-end",gap:celu?4:8,height:118,padding:"0 2px 8px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+          {mesesVista.map((x,i)=>{const h=Math.max(3,Math.abs(x.neto)/maxNeto*100);const c=colorNeto(x.neto);const on=mesModo==="resultado"&&x.key===devMesSel;return <div key={x.key} onClick={()=>{if(mesModo==="resultado")setDevMesSel(devMesSel===x.key?null:x.key);}} title={`${x.label}: ${usdS(x.neto)}`} style={{flex:1,minWidth:0,height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:6,cursor:mesModo==="resultado"?"pointer":"default"}}>
+            <div className="fin-col" style={{width:"100%",maxWidth:40,height:`${h}%`,borderRadius:"8px 8px 3px 3px",background:Math.abs(x.neto)<0.005?"rgba(255,255,255,0.06)":`linear-gradient(180deg,${c},${c}33)`,boxShadow:x.actual||on?`0 0 18px ${c}55`:"none",opacity:on||x.actual?1:0.7,animationDelay:`${i*45}ms`}}/>
+            <span style={{fontSize:10.5,fontWeight:x.actual||on?800:600,color:on?"#93c5fd":x.actual?"#fff":"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{celu?x.label.slice(0,3):x.label}</span>
+          </div>;})}
         </div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{borderCollapse:"collapse",minWidth:"100%"}}>
-            <thead>
-              <tr>
-                <th style={{...TH,...stickyTd,textAlign:"left",cursor:"default",color:"rgba(255,255,255,0.5)",minWidth:210}}>USD</th>
-                {meses.map(x=><th key={x.key} onClick={()=>setDevMesSel(devMesSel===x.key?null:x.key)} title="Ver el detalle del mes" style={{...TH,...selSt(x),color:x.key===devMesSel?"#93c5fd":x.actual?"#fff":"rgba(255,255,255,0.6)"}}>{x.corto}{x.actual&&<span style={{display:"block",fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.4)",letterSpacing:0,textTransform:"none"}}>en curso</span>}</th>)}
-                <th style={{...TH,cursor:"default",color:GOLD_LIGHT,borderLeft:"1px solid rgba(255,255,255,0.1)"}}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((r,ri)=><tr key={ri} style={rowStyle(r)}>
-                <td style={{...stickyTd,padding:r.tipo==="sec"?"9px 10px 5px":r.tipo==="res"?(r.final?"10px":"8px 10px"):r.tipo==="pct"||r.tipo==="info"?"4px 10px":"5px 10px",fontSize:r.tipo==="sec"?10.5:r.tipo==="res"?(r.final?13.5:12.5):r.tipo==="pct"||r.tipo==="info"?11:12,fontWeight:r.tipo==="sec"||r.tipo==="tot"||r.tipo==="res"?800:500,textTransform:r.tipo==="sec"?"uppercase":"none",letterSpacing:r.tipo==="sec"?"0.08em":0,color:r.tipo==="sec"?GOLD_LIGHT:r.tipo==="pct"||r.tipo==="info"?"rgba(255,255,255,0.45)":r.tipo==="lin"?"rgba(255,255,255,0.75)":"#fff",paddingLeft:r.tipo==="lin"?22:10,whiteSpace:"nowrap"}}>{r.label}</td>
-                {meses.map(x=>r.tipo==="sec"?<td key={x.key} style={selSt(x)}/>:celda(r,r.f(x),{k:x.key,st:selSt(x)}))}
-                {r.tipo==="sec"?<td style={{borderLeft:"1px solid rgba(255,255,255,0.1)"}}/>:r.tipo==="pct"?celda(r,(()=>{const ti=sumCol(x=>x.totIng);if(!(ti>0))return null;return r.label.includes("bruto")?sumCol(x=>x.bruto)/ti*100:sumCol(x=>x.neto)/ti*100;})(),{k:"t",st:{borderLeft:"1px solid rgba(255,255,255,0.1)"}}):celda(r,sumCol(r.f),{k:"t",st:{borderLeft:"1px solid rgba(255,255,255,0.1)",fontWeight:700}})}
-              </tr>)}
-            </tbody>
-          </table>
+        <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":mesModo==="caja"?"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)",gap:10,padding:"10px 8px 6px",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>
+          {!celu&&<span>Mes</span>}<span style={{textAlign:celu?"left":"right"}}>{mesModo==="caja"?"Entró":"Ingresos"}</span><span style={{textAlign:"right"}}>{mesModo==="caja"?"Salió":"Costos"}</span>{mesModo==="resultado"&&!celu&&<span style={{textAlign:"right"}}>Fijos</span>}<span style={{textAlign:"right"}}>{mesModo==="caja"?"Quedó":"Resultado"}</span>
         </div>
-        {sel&&(()=>{
-          const opsOrd=[...sel.detOps].sort((a2,b2)=>b2.x.g.gan-a2.x.g.gan);
+        {[...mesesVista].reverse().map((x,i)=>{const vacio=Math.abs(x.a)<0.005&&Math.abs(x.b)<0.005&&Math.abs(x.fij)<0.005;const on=mesModo==="resultado"&&x.key===devMesSel;return <div key={x.key} onClick={()=>{if(mesModo==="resultado"&&!vacio)setDevMesSel(on?null:x.key);}} className={mesModo==="resultado"&&!vacio?"fin-row":""} style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":mesModo==="caja"?"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)",gap:10,alignItems:"center",padding:"9px 8px",borderRadius:10,borderTop:"1px solid rgba(255,255,255,0.05)",opacity:vacio?0.35:1,cursor:mesModo==="resultado"&&!vacio?"pointer":"default",background:on?"rgba(96,165,250,0.08)":"transparent"}}>
+          {!celu&&<span style={{fontSize:13,fontWeight:x.actual?800:600,color:x.actual?"#fff":"rgba(255,255,255,0.75)"}}>{x.label}{x.actual&&<span style={{marginLeft:7,fontSize:9.5,fontWeight:800,color:GOLD_LIGHT,letterSpacing:"0.08em"}}>ACTUAL</span>}{mesModo==="resultado"&&x.nOps>0&&<span style={{marginLeft:7,fontSize:11,color:"rgba(255,255,255,0.4)"}}>{x.nOps} op{x.nOps!==1?"s":""}</span>}</span>}
+          <span style={{textAlign:celu?"left":"right",fontSize:13,color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{celu&&<span style={{display:"block",fontSize:11.5,fontWeight:700,color:x.actual?"#fff":"rgba(255,255,255,0.5)"}}>{x.label}</span>}{x.a>0.005?usdA(x.a):"—"}</span>
+          <span style={{textAlign:"right",fontSize:13,color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.b>0.005?`−${usdA(x.b)}`:"—"}{celu&&mesModo==="resultado"&&x.fij>0.005&&<span style={{display:"block",fontSize:11,color:"rgba(255,140,140,0.6)"}}>fijos −{usdA(x.fij)}</span>}</span>
+          {mesModo==="resultado"&&!celu&&<span style={{textAlign:"right",fontSize:13,color:"rgba(255,140,140,0.7)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.fij>0.005?`−${usdA(x.fij)}`:"—"}</span>}
+          <span style={{textAlign:"right",fontSize:14,fontWeight:800,color:colorNeto(x.neto),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{Math.abs(x.neto)<0.005?"—":usdS(x.neto)}{mesModo==="resultado"&&!vacio&&<span style={{marginLeft:8,fontSize:11,color:"rgba(255,255,255,0.35)",display:"inline-block",transform:on?"rotate(90deg)":"none",transition:"transform 160ms"}}>›</span>}</span>
+        </div>;})}
+        {(()=>{const t=mesesVista.reduce((a,x)=>({a:a.a+x.a,b:a.b+x.b,fij:a.fij+x.fij,neto:a.neto+x.neto}),{a:0,b:0,fij:0,neto:0});return <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":mesModo==="caja"?"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)":"minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)",gap:10,alignItems:"center",padding:"12px 8px 2px",borderTop:"1.5px solid rgba(255,255,255,0.14)",marginTop:4}}>
+          {!celu&&<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.6)"}}>12 meses</span>}
+          <span style={{textAlign:celu?"left":"right",fontSize:13.5,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{celu&&<span style={{display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",color:"rgba(255,255,255,0.5)"}}>12 MESES</span>}{usdA(t.a)}</span>
+          <span style={{textAlign:"right",fontSize:13.5,fontWeight:700,color:"rgba(255,140,140,0.9)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(t.b)}</span>
+          {mesModo==="resultado"&&!celu&&<span style={{textAlign:"right",fontSize:13.5,fontWeight:700,color:"rgba(255,140,140,0.75)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(t.fij)}</span>}
+          <span style={{textAlign:"right",fontSize:16,fontWeight:800,color:colorNeto(t.neto),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><NumAnim v={t.neto} fmt={usdS}/></span>
+        </div>;})()}
+        {mesModo==="resultado"&&selRes&&(()=>{
+          const sel=selRes;const opsOrd=[...sel.detOps].sort((a2,b2)=>b2.x.g.gan-a2.x.g.gan);
           const canalTxt=(o)=>o.service_type==="gestion_integral"?"GI":(CM[o.channel]||o.channel||"—");
-          const nomCli=(o)=>o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
-          const TD2=(v,st={})=><td style={{padding:"7px 10px",fontSize:12,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",...st}}>{v}</td>;
-          return <div style={{marginTop:18,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.1)"}}>
+          const canales=Object.entries(sel.porCanal).filter(([,v])=>Math.abs(v)>0.005).sort((a2,b2)=>b2[1]-a2[1]);
+          return <div className="fin-in" style={{marginTop:16,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.1)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:10}}>
-              <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{sel.label} <span style={{fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.5)"}}>· {sel.nOps} operación{sel.nOps!==1?"es":""} cerrada{sel.nOps!==1?"s":""} · resultado <b style={{color:colorRes(sel.neto)}}>{usd(sel.neto)}</b></span></p>
-              <button onClick={()=>setDevMesSel(null)} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>Cerrar</button>
+              <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{sel.label} <span style={{fontSize:12,fontWeight:500,color:"rgba(255,255,255,0.5)"}}>· {sel.nOps} operaci{sel.nOps!==1?"ones":"ón"} cerrada{sel.nOps!==1?"s":""} · resultado <b style={{color:colorNeto(sel.neto)}}>{usdS(sel.neto)}</b></span></p>
+              <button onClick={()=>setDevMesSel(null)} style={{height:30,padding:"0 12px",fontSize:11.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>Cerrar</button>
             </div>
-            {opsOrd.length>0?<div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr style={{background:"rgba(255,255,255,0.03)"}}>{["Operación","Cliente","Servicio","Cerrada","Ingreso","Costo","Ganancia","%"].map((h,i)=><th key={h} style={{padding:"7px 10px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"rgba(255,255,255,0.5)",textAlign:i>=4?"right":"left",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                <tbody>{opsOrd.map(({o,x})=>{const g=x.g;const mg=g.ing>0?g.gan/g.ing*100:null;return <tr key={o.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-                  <td style={{padding:"7px 10px",fontSize:12,fontWeight:700,color:GOLD_LIGHT,fontFamily:"monospace",whiteSpace:"nowrap"}}>{o.operation_code}{o.lost_in_customs_at&&<span style={{marginLeft:6,fontSize:10,color:"#f87171"}}>retenida</span>}</td>
-                  <td style={{padding:"7px 10px",fontSize:12,color:"#fff",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nomCli(o)}</td>
-                  <td style={{padding:"7px 10px",fontSize:11.5,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{canalTxt(o)}</td>
-                  <td style={{padding:"7px 10px",fontSize:11.5,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{o.closed_at?formatDate(o.closed_at):"—"}</td>
-                  {TD2(usd(g.ing),{color:"rgba(255,255,255,0.8)"})}
-                  {TD2(usd(g.cost),{color:"rgba(255,140,140,0.85)"})}
-                  {TD2(usd(g.gan),{fontWeight:800,color:colorRes(g.gan)})}
-                  {TD2(mg==null?"—":`${mg.toFixed(0)}%`,{color:"rgba(255,255,255,0.5)"})}
-                </tr>;})}</tbody>
-              </table>
+            {canales.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>{canales.map(([k,v])=><span key={k} style={{fontSize:11.5,fontWeight:700,padding:"4px 10px",borderRadius:999,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.8)"}}>{CANAL_LBL[k]||k} <b style={{color:colorNeto(v)}}>{usdS(v)}</b></span>)}</div>}
+            {opsOrd.length>0?<div style={{display:"flex",flexDirection:"column"}}>
+              {opsOrd.map(({o,x})=>{const g=x.g;const mg=g.ing>0?g.gan/g.ing*100:null;return <div key={o.id} className="fin-row" style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"110px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)",gap:10,alignItems:"center",padding:"8px 8px",margin:"0 -8px",borderRadius:10,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                <span style={{minWidth:0}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>{o.lost_in_customs_at&&<span style={{marginLeft:6,fontSize:10,color:"#f87171"}}>perdida</span>}{celu&&<span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nomCli(o)} · {canalTxt(o)}</span>}</span>
+                {!celu&&<span style={{fontSize:12.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nomCli(o)} <span style={{color:"rgba(255,255,255,0.4)",fontSize:11.5}}>· {canalTxt(o)}</span></span>}
+                {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n2(g.ing)}</span>}
+                {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums"}}>−{n2(g.cost)}</span>}
+                {!celu&&<span style={{textAlign:"right",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{mg==null?"—":`${mg.toFixed(0)}%`}</span>}
+                <span style={{textAlign:"right",fontSize:13,fontWeight:800,color:colorNeto(g.gan),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usdS(g.gan)}</span>
+              </div>;})}
             </div>:<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.45)"}}>No se cerró ninguna operación en {sel.label}.</p>}
             {(sel.fijosList.length>0||sel.otrosIngList.length>0)&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:14,marginTop:14}}>
               {sel.fijosList.length>0&&<div>
-                <p style={{margin:"0 0 6px",fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.5)"}}>Gastos fijos del mes · {usd(sel.totFij)}</p>
+                <p style={{margin:"0 0 6px",...lblFin}}>Gastos fijos del mes · −{usdA(sel.fij)}</p>
                 {[...sel.fijosList].sort((a2,b2)=>String(b2.date).localeCompare(String(a2.date))).map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:12}}>
-                  <span style={{color:"rgba(255,255,255,0.75)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"rgba(255,255,255,0.4)",marginRight:8}}>{formatDate(e.date)}</span>{e.description||CAT_LBL[e.category]||e.category||"Gasto"}{e.payment_method==="tarjeta_credito"&&!e.is_paid&&<span style={{marginLeft:6,fontSize:10,color:"#fbbf24"}}>tarjeta · pendiente</span>}</span>
-                  <span style={{color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usd(usdFE(e))}</span>
+                  <span style={{color:"rgba(255,255,255,0.75)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"rgba(255,255,255,0.4)",marginRight:8}}>{formatDate(e.date)}</span>{e.description||CAT_LBL[e.category]||e.category||"Gasto"}</span>
+                  <span style={{color:"rgba(255,140,140,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>−{usdA(usdFE(e))}</span>
                 </div>)}
               </div>}
               {sel.otrosIngList.length>0&&<div>
-                <p style={{margin:"0 0 6px",fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.5)"}}>Otros ingresos del mes · {usd(sel.ing.otrosIng)}</p>
+                <p style={{margin:"0 0 6px",...lblFin}}>Otros ingresos del mes · +{usdA(sel.otrosIng)}</p>
                 {sel.otrosIngList.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:12}}>
                   <span style={{color:"rgba(255,255,255,0.75)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"rgba(255,255,255,0.4)",marginRight:8}}>{formatDate(e.date)}</span>{e.description||"Ingreso"}</span>
-                  <span style={{color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>+{usd(usdFE(e))}</span>
+                  <span style={{color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>+{usdA(usdFE(e))}</span>
                 </div>)}
               </div>}
             </div>}
           </div>;})()}
-      </Card>
-      <div style={{height:16}}/>
-      </>;
-    })()}
-    {(()=>{
-      // Tabla mensual de caja (últimos 12 meses): la plata que entró y salió de verdad.
-      const MN2=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-      const rows=[];
-      for(let i=11;i>=0;i--){
-        const d=new Date(thisYear,thisMonth-i,1);
-        const m=d.getMonth();const y=d.getFullYear();
-        const monthStart=`${y}-${String(m+1).padStart(2,"0")}-01`;
-        const nextMonth=new Date(y,m+1,1);
-        const monthEnd=`${nextMonth.getFullYear()}-${String(nextMonth.getMonth()+1).padStart(2,"0")}-01`;
-        const inMonth=(ds)=>{if(!ds)return false;const s=String(ds).slice(0,10);return s>=monthStart&&s<monthEnd;};
+      </Glass>
 
+      {/* De dónde sale */}
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:14}}>
+        <Glass delay={5} title="Por servicio" sub="Ganancia de lo cobrado en el período · tocá para ver el detalle">
+          {(()=>{const entries=Object.entries(byChannel).sort((a,b)=>(b[1].ing-b[1].cost)-(a[1].ing-a[1].cost));const maxGan=Math.max(...entries.map(([,d])=>Math.abs(d.ing-d.cost)),1);return entries.map(([ch,d],i)=>{const gan=d.ing-d.cost;const mg=d.ing>0?((gan/d.ing)*100):0;const pct=(Math.abs(gan)/maxGan)*100;const navegable=!!CM[ch];return <div key={ch} className={navegable?"fin-row":""} onClick={()=>{if(navegable)setVista(ch);}} style={{padding:"10px 8px",margin:"0 -8px",borderRadius:10,cursor:navegable?"pointer":"default"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:7}}>
+              <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{CM[ch]||ch} <span style={{fontSize:11.5,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>· {d.count} op{d.count!==1?"s":""}</span></span>
+              <span style={{whiteSpace:"nowrap"}}><span style={{fontSize:14,fontWeight:800,color:colorNeto(gan),fontVariantNumeric:"tabular-nums"}}>{usdS(gan)}</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{mg.toFixed(0)}%</span>{navegable&&<span style={{marginLeft:8,color:"rgba(255,255,255,0.35)"}}>›</span>}</span>
+            </div>
+            <Barra pct={pct} color={gan>=0?"#22c55e":"#f87171"} delay={i*80}/>
+          </div>;});})()}
+          {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)",margin:0}}>Sin operaciones cobradas en el período.</p>}
+        </Glass>
+        <Glass delay={6} title="Mejores clientes" sub="Por ganancia en el período">
+          {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{padding:"10px 0"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:7}}>
+              <span style={{fontSize:13.5,fontWeight:700,color:"#fff",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:22,color:"rgba(255,255,255,0.35)",fontWeight:800}}>{i+1}</span>{name} <span style={{fontSize:11.5,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>· {d.count} op{d.count!==1?"s":""}</span></span>
+              <span style={{whiteSpace:"nowrap"}}><span style={{fontSize:13.5,fontWeight:800,color:colorNeto(d.gan),fontVariantNumeric:"tabular-nums"}}>{usdS(d.gan)}</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{mg.toFixed(0)}%</span></span>
+            </div>
+            <Barra pct={pct} color={d.gan>=0?"#22c55e":"#f87171"} delay={i*80}/>
+          </div>;}):<p style={{color:"rgba(255,255,255,0.45)",margin:0}}>Sin operaciones cobradas en el período.</p>}
+        </Glass>
+      </div>
+    </div>}
 
-        // === CAJA (Cash Flow) === misma lógica exacta que el KPI "Ganancia neta del período" de arriba
-        // (totalIng/totalCost), parametrizada por mes en vez de por el selector de período. Clave: los
-        // costos de una operación se imputan a la fecha en que REALMENTE se pagaron, no a la fecha en que
-        // cerró la operación — si no, un costo pagado en mayo de una op cerrada en junio aparecería como
-        // "salida de caja de junio", inflando el neto de caja del mes.
-        let cashIn=0;
-        ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&inMonth(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
-          const opPmts=clientPmts.filter(p=>p.operation_id===o.id);
-          if(opPmts.length>0)return;
-          const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
-          const cash=isArs&&rate>0?raw/rate:raw;
-          const collectedUsd=cash;const overpay=Math.max(0,collectedUsd-Number(o.budget_total||0));
-          const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
-          const cashInOp=extraCharge>0.01?collectedUsd:(collectedUsd+overpay-creditApp);
-          if(cashInOp>0)cashIn+=cashInOp;
-        });
-        cashIn+=clientPmts.filter(p=>inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-        cashIn+=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
-        cashIn+=supplierPmts.filter(p=>p.is_paid&&p.type==="refund"&&inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-        cashIn+=finEntries.filter(e=>e.type==="ingreso"&&inMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
-        cashIn+=agentMvs.filter(m=>m.type==="refund"&&inMonth(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
-
-        let cashOut=0;
-        ops.forEach(o=>{
-          const fleteMethod=o.cost_flete_method||"cuenta_corriente";
-          const closedDate=o.closed_at?.slice(0,10)||null;
-          const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
-          const pickDateStrict=(paid)=>paid?.slice(0,10)||null;
-          const fleteIsTC=fleteMethod==="tarjeta_credito";
-          const fleteDate=fleteIsTC?pickDateStrict(o.cost_flete_paid_at):pickDate(o.cost_flete_paid_at);
-          if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate&&inMonth(fleteDate))cashOut+=Number(o.cost_flete);
-          const segDate=pickDate(o.cost_seguro_paid_at);
-          if(Number(o.cost_seguro||0)>0&&segDate&&inMonth(segDate))cashOut+=Number(o.cost_seguro);
-          const flDate=pickDate(o.cost_flete_local_paid_at);
-          if(Number(o.cost_flete_local||0)>0&&flDate&&inMonth(flDate))cashOut+=Number(o.cost_flete_local);
-          const otDate=pickDate(o.cost_otros_paid_at);
-          if(Number(o.cost_otros||0)>0&&otDate&&inMonth(otDate))cashOut+=Number(o.cost_otros);
-        });
-        cashOut+=supplierPmts.filter(p=>p.is_paid&&p.type!=="refund"&&inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-        Object.values(pmtsByOp).flat().forEach(p=>{
-          if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0&&inMonth(p.giro_date||p.client_paid_date))cashOut+=Number(p.cost_comision_giro);
-          const tarjetaPend=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
-          const giroDate=p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date;
-          if(p.giro_status==="confirmado"&&!tarjetaPend&&Number(p.giro_amount_usd||0)>0&&inMonth(giroDate))cashOut+=Number(p.giro_amount_usd);
-        });
-        cashOut+=finEntries.filter(e=>e.type==="gasto"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)&&inMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
-        cashOut+=agentMvs.filter(m=>m.type==="anticipo"&&inMonth(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
-        const cashNeto=cashIn-cashOut;
-
-        rows.push({label:`${MN2[m]} ${y}`,m,y,cashIn,cashOut,cashNeto});
-      }
-      // Acumulado
-      const tot=rows.reduce((a,r)=>({cashIn:a.cashIn+r.cashIn,cashOut:a.cashOut+r.cashOut,cashNeto:a.cashNeto+r.cashNeto}),{cashIn:0,cashOut:0,cashNeto:0});
-
-      return <Card v2 title="Caja por mes" sub="Solo la plata que efectivamente entró o salió cada mes · últimos 12 meses">
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                <th style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Mes</th>
-                <th style={{textAlign:"right",padding:"8px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Entró</th>
-                <th style={{textAlign:"right",padding:"8px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Salió</th>
-                <th style={{textAlign:"right",padding:"8px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>Neto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r=>{
-                const isEmpty=r.cashIn===0&&r.cashOut===0;
-                return <tr key={r.label} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:isEmpty?0.3:1}}>
-                  <td style={{padding:"8px 10px",fontWeight:600,color:"#fff"}}>{r.label}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.cashIn>0?usd(r.cashIn):"—"}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.cashOut>0?usd(r.cashOut):"—"}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:r.cashNeto>0?"#22c55e":r.cashNeto<0?"#ff6b6b":"rgba(255,255,255,0.4)"}}>{r.cashNeto!==0?usd(r.cashNeto):"—"}</td>
-                </tr>;
-              })}
-              <tr style={{borderTop:"1.5px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.03)"}}>
-                <td style={{padding:"10px",fontWeight:700,color:"#fff",textTransform:"uppercase",fontSize:11}}>Total 12m</td>
-                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.cashIn)}</td>
-                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.cashOut)}</td>
-                <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:tot.cashNeto>0?"#22c55e":"#ff6b6b"}}>{usd(tot.cashNeto)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </Card>;
-    })()}
-    </>}
-    {/* ═══ Vista por servicio (02/10/2026): lo cobrado contra lo que costó, concepto por concepto ═══ */}
+    {/* ═══ Vista por servicio: lo cobrado contra lo que costó, concepto por concepto ═══ */}
     {vista!=="general"&&(()=>{
       const opsCanal=cobradoOps.filter(o=>o.channel===vista&&o.service_type!=="gestion_integral");
       const filas=opsCanal.map(o=>({o,a:analizarOp(o)}));
@@ -15172,56 +15031,49 @@ function FinanceDashboard({token}){
       const gan=neto-costos;const mg=neto>0?gan/neto*100:0;
       const comisiones=filas.reduce((s2,f)=>s2+f.a.comision,0);
       const visibles=CONCEPTOS.filter(([k])=>tot[k].c>0.005||tot[k].k>0.005);
-      const n2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-      const nomCli=o=>o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim()||"—":"—";
       const COLS="minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 28px";
       const COLS_CELU="minmax(0,1fr) auto 22px";
-      if(filas.length===0)return <Card v2 title={CM[vista]||vista}><p style={{color:"rgba(255,255,255,0.45)",margin:0,fontSize:14}}>No hay operaciones de este servicio cobradas en el período.</p></Card>;
-      // Top clientes del servicio
+      if(filas.length===0)return <Glass delay={1} title={CM[vista]||vista} style={{position:"relative",zIndex:1}}><p style={{color:"rgba(255,255,255,0.45)",margin:0,fontSize:14}}>No hay operaciones de este servicio cobradas en el período.</p></Glass>;
       const porCli={};filas.forEach(({o,a})=>{const n=nomCli(o);if(!porCli[n])porCli[n]={n,ops:0,gan:0,neto:0};porCli[n].ops++;porCli[n].gan+=a.gan;porCli[n].neto+=a.neto;});
       const topCli=Object.values(porCli).sort((x,y)=>y.gan-x.gan).slice(0,5);
       const topOps=[...filas].sort((x,y)=>y.a.gan-x.a.gan).slice(0,5);
       const fila5=(clave,izq,sub,g,m)=><div key={clave} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"11px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
         <span style={{minWidth:0}}>{izq}<span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span></span>
-        <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:14,fontWeight:800,color:g>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{g>=0?"+":"−"}USD {n2(Math.abs(g))}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.4)"}}>{m.toFixed(0)}% margen</span></span>
+        <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:14,fontWeight:800,color:colorNeto(g),fontVariantNumeric:"tabular-nums"}}>{usdS(g)}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{m.toFixed(0)}% de margen</span></span>
       </div>;
-      return <>
-        <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4, minmax(0, 1fr))",gap:12,marginBottom:16}}>
-          {kpi("Ganancia",usd(gan),gan>=0?"#4ade80":"#f87171",`${mg.toFixed(1)}% de margen`,gan>=0?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)")}
-          {kpi("Cobrado",usd(neto),"#fff",comisiones>0.01?`Ya sin USD ${n2(comisiones)} de comisión`:"Neto de comisiones")}
-          {kpi("Costos",usd(costos),"#fff","Lo que pagaste")}
-          {kpi("Operaciones",String(filas.length),"#fff",`USD ${n2(filas.length?gan/filas.length:0)} de ganancia c/u`)}
+      return <div style={{position:"relative",zIndex:1}}>
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4, minmax(0, 1fr))",gap:12,marginBottom:14}}>
+          {kpiN("Ganancia",gan,usdS,colorNeto(gan),`${mg.toFixed(1)}% de margen`)}
+          {kpiN("Cobrado",neto,usdA,"#fff",comisiones>0.01?`Ya sin USD ${n2(comisiones)} de comisión`:"Neto de comisiones")}
+          {kpiN("Costos",costos,usdA,"#ff8a8a","Lo que pagaste")}
+          {kpiN("Operaciones",filas.length,v=>String(Math.round(v)),"#fff",`USD ${n2(filas.length?gan/filas.length:0)} de ganancia c/u`)}
         </div>
-
-        {/* Ganancia por concepto: una fila por concepto; tocándola se ven las operaciones que la
-            forman, de la que más movió a la que menos (para encontrar cargas mal registradas). */}
-        <Card v2 title="Ganancia por concepto">
+        <Glass delay={2} title="Ganancia por concepto" sub="Tocá un concepto para ver las operaciones que lo forman" style={{marginBottom:14}}>
           <div style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,padding:"0 6px 9px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
             {(celu?["Concepto","Ganancia",""]:["Concepto","Cobrado","Costo","Ganancia",""]).map((h,i)=><span key={i} style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em",textAlign:i?"right":"left"}}>{h}</span>)}
           </div>
-          {visibles.map(([k,l])=>{const c=tot[k].c,co=tot[k].k,g=c-co,m=c>0?g/c*100:null;const abierto=conceptoAbierto===k;
+          {visibles.map(([k,l],vi)=>{const c=tot[k].c,co=tot[k].k,g=c-co,m=c>0?g/c*100:null;const abierto=conceptoAbierto===k;
             const detalle=abierto?filas.map(({o,a})=>({o,c:a.cobrado[k]||0,k:a.cost[k]||0})).filter(x=>x.c>0.005||x.k>0.005).sort((x,y)=>Math.max(y.c,y.k)-Math.max(x.c,x.k)):[];
             const mostrar=verTodoConcepto?detalle:detalle.slice(0,10);
-            return <div key={k} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:abierto?"rgba(255,255,255,0.025)":"transparent",borderRadius:abierto?12:0,margin:abierto?"4px 0":0}}>
-              <div onClick={()=>{setConceptoAbierto(abierto?null:k);setVerTodoConcepto(false);}} style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,alignItems:"center",padding:"14px 6px",cursor:"pointer"}}>
+            return <div key={k} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:abierto?"rgba(255,255,255,0.03)":"transparent",borderRadius:abierto?12:0,margin:abierto?"4px 0":0}}>
+              <div onClick={()=>{setConceptoAbierto(abierto?null:k);setVerTodoConcepto(false);}} className="fin-row" style={{display:"grid",gridTemplateColumns:celu?COLS_CELU:COLS,gap:10,alignItems:"center",padding:"14px 6px",cursor:"pointer",borderRadius:10}}>
                 <span style={{minWidth:0}}>
                   <span style={{fontSize:14.5,fontWeight:800,color:"#fff"}}>{l}</span>
                   {celu&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",marginTop:2}}>cobrado {n2(c)} · costo {n2(co)}</span>}
-                  {/* margen del concepto: cuánto de lo cobrado quedó */}
-                  <span style={{display:"block",height:5,borderRadius:99,background:"rgba(255,255,255,0.06)",marginTop:7,maxWidth:180,overflow:"hidden"}}><span style={{display:"block",height:"100%",width:`${m==null?100:Math.min(100,Math.max(4,Math.abs(m)))}%`,background:g>=0?"linear-gradient(90deg,#22c55e88,#22c55e)":"linear-gradient(90deg,#f8717188,#f87171)",borderRadius:99}}/></span>
+                  <div style={{maxWidth:180,marginTop:7}}><Barra pct={m==null?100:Math.min(100,Math.max(4,Math.abs(m)))} color={g>=0?"#22c55e":"#f87171"} delay={vi*70} alto={5}/></div>
                 </span>
                 {!celu&&<span style={{textAlign:"right",fontSize:14,color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>USD {n2(c)}</span>}
                 {!celu&&<span style={{textAlign:"right",fontSize:14,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(co)}</span>}
-                <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:15,fontWeight:800,color:g>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums"}}>{g>=0?"+":"−"}USD {n2(Math.abs(g))}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.4)"}}>{m==null?"sin cobro":`${m.toFixed(0)}%`}</span></span>
+                <span style={{textAlign:"right",whiteSpace:"nowrap"}}><span style={{fontSize:15,fontWeight:800,color:colorNeto(g),fontVariantNumeric:"tabular-nums"}}>{usdS(g)}</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{m==null?"sin cobro":`${m.toFixed(0)}% de margen`}</span></span>
                 <span style={{textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:13,transform:abierto?"rotate(90deg)":"none",transition:"transform 160ms"}}>›</span>
               </div>
-              {abierto&&<div style={{padding:"0 6px 12px"}}>
+              {abierto&&<div className="fin-in" style={{padding:"0 6px 12px"}}>
                 <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"0 0 6px"}}>{detalle.length} operaci{detalle.length===1?"ón":"ones"} con {l.toLowerCase()} · de la que más movió a la que menos</p>
                 {mostrar.map(({o,c:dc,k:dk})=>{const dg=dc-dk;return <div key={o.id} style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) 28px",gap:10,alignItems:"center",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
                   <span style={{minWidth:0}}><span style={{fontFamily:"monospace",fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span> <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{nomCli(o)}</span>{celu&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>cobrado {n2(dc)} · costo {n2(dk)}</span>}</span>
                   {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{n2(dc)}</span>}
                   {!celu&&<span style={{textAlign:"right",fontSize:12.5,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>{n2(dk)}</span>}
-                  <span style={{textAlign:"right",fontSize:12.5,fontWeight:800,color:dg>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{dg>=0?"+":"−"}{n2(Math.abs(dg))}</span>
+                  <span style={{textAlign:"right",fontSize:12.5,fontWeight:800,color:colorNeto(dg),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{dg>=0?"+":"−"}{n2(Math.abs(dg))}</span>
                   {!celu&&<span/>}
                 </div>;})}
                 {detalle.length>10&&<button onClick={()=>setVerTodoConcepto(v=>!v)} style={{marginTop:8,height:32,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{verTodoConcepto?"Ver menos":`Ver las ${detalle.length}`}</button>}
@@ -15231,35 +15083,23 @@ function FinanceDashboard({token}){
             <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total</span>
             {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {n2(neto)}</span>}
             {!celu&&<span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>USD {n2(costos)}</span>}
-            <span style={{textAlign:"right",fontSize:18,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{gan>=0?"+":"−"}USD {n2(Math.abs(gan))}</span>
+            <span style={{textAlign:"right",fontSize:18,fontWeight:800,color:colorNeto(gan),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><NumAnim v={gan} fmt={usdS}/></span>
             <span/>
           </div>
-        </Card>
-
-        <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:16}}>
-          <Card v2 title="Top 5 operaciones" sub="Las que más ganancia dejaron">
+        </Glass>
+        <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:14}}>
+          <Glass delay={3} title="Top 5 operaciones" sub="Las que más ganancia dejaron">
             {topOps.map(({o,a})=>fila5(o.id,<span style={{fontFamily:"monospace",fontSize:13.5,fontWeight:800,color:GOLD_LIGHT}}>{o.operation_code}</span>,nomCli(o),a.gan,a.neto>0?a.gan/a.neto*100:0))}
-          </Card>
-          <Card v2 title="Top 5 clientes" sub={`Por ganancia en ${CM[vista]||vista}`}>
+          </Glass>
+          <Glass delay={4} title="Top 5 clientes" sub={`Por ganancia en ${CM[vista]||vista}`}>
             {topCli.map((x,i)=>fila5(x.n,<span style={{fontSize:13.5,fontWeight:800,color:"#fff"}}><span style={{color:"rgba(255,255,255,0.35)",marginRight:8}}>{i+1}</span>{x.n}</span>,`${x.ops} operaci${x.ops===1?"ón":"ones"}`,x.gan,x.neto>0?x.gan/x.neto*100:0))}
-          </Card>
+          </Glass>
         </div>
-      </>;
+      </div>;
     })()}
   </div>;
 }
 
-// Gráfico de columnas simple (dashboard financiero): una columna por mes, el último resaltado.
-function Columnas({datos,valor,color,fmtV}){
-  const vals=datos.map(valor);const max=Math.max(...vals.map(v=>Math.abs(v)),1);
-  return <div style={{display:"flex",alignItems:"flex-end",gap:10,height:190,paddingTop:8}}>
-    {datos.map((d,i)=>{const v=vals[i];const h=Math.max(4,Math.abs(v)/max*130);const c=color(v);const ult=i===datos.length-1;return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",gap:6,minWidth:0,height:"100%"}}>
-      <span style={{fontSize:11,fontWeight:800,color:v?c:"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{v?fmtV(v):"—"}</span>
-      <div style={{width:"100%",maxWidth:46,height:h,borderRadius:"9px 9px 4px 4px",background:v?`linear-gradient(180deg,${c},${c}40)`:"rgba(255,255,255,0.06)",opacity:ult?1:0.7,boxShadow:ult&&v?`0 0 18px ${c}33`:"none"}}/>
-      <span style={{fontSize:11.5,color:ult?"#fff":"rgba(255,255,255,0.45)",fontWeight:ult?800:600}}>{String(d.label).split(" ")[0]}</span>
-    </div>;})}
-  </div>;
-}
 
 // Centro de comunicaciones: muestra ops con estados que requieren WA al cliente
 // y no se han enviado todavía. 1 click por cliente = WA abierto con mensaje prellenado.
