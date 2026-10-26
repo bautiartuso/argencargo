@@ -21,9 +21,10 @@ const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana"];
 
 // Retenida por Aduana (26/10/2026): FedEx lo informa como "Documentación disponible para agente
 // externo a FedEx" (excluida del régimen courier; en el historial, todas las ops con ese evento
-// quedaron retenidas). Desde ahí la op y su vuelo quedan marcados, se avisa al cliente y el
+// quedaron retenidas). Se busca "agente externo" a secas: al guardar el evento se le sacan las
+// menciones al courier y queda cortado en "...agente externo a". Desde ahí la op y su vuelo quedan marcados, se avisa al cliente y el
 // tracking deja de seguirse: lo que pase después lo maneja Bautista a mano.
-const RETENCION_RE = /agente externo a fedex|retenid[oa] (?:en|por) (?:la )?aduana|excluid[oa] del r[eé]gimen courier/i;
+const RETENCION_RE = /agente externo|retenid[oa] (?:en|por) (?:la )?aduana|excluid[oa] del r[eé]gimen courier/i;
 const esEventoRetencion = (ev) => RETENCION_RE.test(`${ev?.description || ""} ${ev?.title || ""}`);
 const sbHeaders = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" };
 
