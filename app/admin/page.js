@@ -18090,12 +18090,13 @@ function LclFclPanel({token,onSelectOp,onNew}){
   const ultimoEv=(id)=>eventos.find(e=>e.operation_id===id&&!(e.source==="internal"&&/^Estado actualizado/.test(e.title||"")));
   const costoReal=(o)=>Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0)+Number(o.cost_seguro||0);
 
-  // Riel de avance: 5 pasos. Cada op está en uno; los anteriores quedan "hechos".
-  const PASOS=[{k:"prep",l:"Preparación"},{k:"agua",l:"En el agua"},{k:"arribo",l:"Arribo"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"Entrega"}];
-  const pasoDe=(o)=>o.status==="operacion_cerrada"?5:o.status==="entregada"?4:o.status==="en_aduana"?3:o.status==="arribo_argentina"?2:o.status==="en_transito"?1:0;
-  const fechaPaso=(o,i)=>[o.docs_confirmed_at||o.created_at,o.dispatched_at,o.arrived_in_argentina_at,o.cleared_customs_at,o.delivery_completed_at||o.closed_at][i];
+  // Riel de avance: 4 pasos. Cada op está en uno; los anteriores quedan "hechos". El arribo
+  // (status arribo_argentina) cuenta como aduana: para marítimo no hay "arribó sin despachar".
+  const PASOS=[{k:"prep",l:"Preparación"},{k:"agua",l:"En el agua"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"Entrega"}];
+  const pasoDe=(o)=>o.status==="operacion_cerrada"?4:o.status==="entregada"?3:(o.status==="en_aduana"||o.status==="arribo_argentina")?2:o.status==="en_transito"?1:0;
+  const fechaPaso=(o,i)=>[o.docs_confirmed_at||o.created_at,o.dispatched_at,o.arrived_in_argentina_at||o.cleared_customs_at,o.delivery_completed_at||o.closed_at][i];
   const activa=o=>!["operacion_cerrada","cancelada"].includes(o.status);
-  const COLS_PASO={0:"#a78bfa",1:"#60a5fa",2:"#818cf8",3:"#fb923c",4:"#22c55e",5:"#10b981"};
+  const COLS_PASO={0:"#a78bfa",1:"#60a5fa",2:"#fb923c",3:"#22c55e",4:"#10b981"};
   const enFiltro=(o,k)=>k==="curso"?activa(o):k==="cerrada"?o.status==="operacion_cerrada":activa(o)&&pasoDe(o)===Number(k);
   const qn=q.trim().toLowerCase();
   const lista=ops.filter(o=>qn?`${o.operation_code} ${o.clients?.client_code||""} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.description||""}`.toLowerCase().includes(qn):enFiltro(o,filtro))
@@ -18109,7 +18110,7 @@ function LclFclPanel({token,onSelectOp,onNew}){
     if(pasoDe(o)===0&&!o.docs_confirmed_at)l.push(["Docs sin confirmar","#fbbf24"]);
     if(cbmDe(o)===0)l.push(["Sin medidas","#fbbf24"]);
     if(activa(o)&&Number(o.budget_total||0)===0)l.push(["Sin presupuesto","#f87171"]);
-    if(pasoDe(o)>=4&&!o.is_collected)l.push(["Falta cobrar","#fbbf24"]);
+    if(pasoDe(o)>=3&&!o.is_collected)l.push(["Falta cobrar","#fbbf24"]);
     return l;};
 
   const pill=(txt,color,extra={})=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"2px 8px",borderRadius:999,color,background:`${color}1f`,border:`1px solid ${color}55`,whiteSpace:"nowrap",...extra}}>{txt}</span>;
@@ -18117,7 +18118,7 @@ function LclFclPanel({token,onSelectOp,onNew}){
 
   // Riel de avance de una op
   const Riel=({o})=>{const p=pasoDe(o);const col=COLS_PASO[p];return <div style={{display:"flex",alignItems:"flex-start",gap:0,minWidth:0}}>
-    {PASOS.map((s,i)=>{const hecho=i<p||p===5;const actual=i===p;const f=fechaPaso(o,i);return <div key={s.k} style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",alignItems:i===0?"flex-start":i===PASOS.length-1?"flex-end":"center",position:"relative"}}>
+    {PASOS.map((s,i)=>{const hecho=i<p||p===4;const actual=i===p;const f=fechaPaso(o,i);return <div key={s.k} style={{flex:"1 1 0",minWidth:0,display:"flex",flexDirection:"column",alignItems:i===0?"flex-start":i===PASOS.length-1?"flex-end":"center",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",width:"100%"}}>
         {i>0&&<div style={{flex:1,height:2,background:hecho||actual?col:"rgba(255,255,255,0.1)",opacity:hecho||actual?0.9:1}}/>}
         <div style={{width:actual?14:10,height:actual?14:10,borderRadius:"50%",background:hecho?col:actual?col:"rgba(255,255,255,0.12)",boxShadow:actual?`0 0 0 4px ${col}33`:"none",flexShrink:0}}/>
@@ -18176,18 +18177,17 @@ function LclFclPanel({token,onSelectOp,onNew}){
   // Secciones por etapa, de la más urgente a la menos: lo que está en aduana se resuelve hoy,
   // lo que está en el agua se mira por ETA, lo que está en preparación espera documentación.
   const SECCIONES=[
-    {k:3,l:"En aduana",c:"#fb923c",ord:(a,b)=>String(a.arrived_in_argentina_at||"").localeCompare(String(b.arrived_in_argentina_at||""))},
-    {k:2,l:"Arribadas · sin despachar",c:"#818cf8",ord:(a,b)=>String(a.arrived_in_argentina_at||"").localeCompare(String(b.arrived_in_argentina_at||""))},
+    {k:2,l:"En aduana",c:"#fb923c",ord:(a,b)=>String(a.arrived_in_argentina_at||"").localeCompare(String(b.arrived_in_argentina_at||""))},
     {k:1,l:"En el agua",c:"#60a5fa",ord:(a,b)=>String(a.eta||"9999").localeCompare(String(b.eta||"9999"))},
     {k:0,l:"Preparación",c:"#a78bfa",ord:(a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||""))},
-    {k:4,l:"Entregadas · por cerrar",c:"#22c55e",ord:(a,b)=>String(b.delivery_completed_at||"").localeCompare(String(a.delivery_completed_at||""))},
+    {k:3,l:"Entregadas · por cerrar",c:"#22c55e",ord:(a,b)=>String(b.delivery_completed_at||"").localeCompare(String(a.delivery_completed_at||""))},
   ];
   const Tx=({children,color="#fff",size=13,w=700,mono,style={}})=><span style={{fontSize:size,fontWeight:w,color,fontFamily:mono?"'JetBrains Mono',monospace":undefined,fontVariantNumeric:"tabular-nums",...style}}>{children}</span>;
   const Sub=({children,color="rgba(255,255,255,0.45)"})=><span style={{display:"block",fontSize:11,color,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{children}</span>;
 
   const FechaClave=({o,sec})=>{
     const p=pasoDe(o);
-    if(sec.k===3||sec.k===2){const d=dias(o.arrived_in_argentina_at);const tarde=sec.k===3&&d!=null&&d>7;return <div><Tx>{o.arrived_in_argentina_at?`Arribó ${fdY(o.arrived_in_argentina_at)}`:o.eta?`ETA ${fdY(o.eta)}`:"Arribó —"}</Tx><Sub color={tarde?"#f87171":undefined}>{d!=null?`${d} d ${sec.k===3?"en aduana":"en puerto"}`:"sin fecha de arribo"}</Sub></div>;}
+    if(sec.k===2){const d=dias(o.arrived_in_argentina_at);const tarde=d!=null&&d>7;return <div><Tx>{o.arrived_in_argentina_at?`Arribó ${fdY(o.arrived_in_argentina_at)}`:o.eta?`ETA ${fdY(o.eta)}`:"Arribó —"}</Tx><Sub color={tarde?"#f87171":undefined}>{d!=null?`${d} d en aduana`:"sin fecha de arribo"}</Sub></div>;}
     if(sec.k===1||sec.k===0){const etaDias=o.eta?Math.ceil((new Date(o.eta+"T12:00:00").getTime()-Date.now())/86400000):null;
       return <div onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",gap:8}}><Tx size={10.5} w={800} color="rgba(255,255,255,0.4)" style={{letterSpacing:"0.08em"}}>ETA</Tx><div style={{width:118}}><DatePicker small value={o.eta?String(o.eta).slice(0,10):""} onChange={v=>guardarEta(o,v)} placeholder="sin ETA"/></div></div>
@@ -18238,7 +18238,7 @@ function LclFclPanel({token,onSelectOp,onNew}){
 
   const cerradas=ops.filter(o=>o.status==="operacion_cerrada").sort((a,b)=>String(b.closed_at||"").localeCompare(String(a.closed_at||""))).slice(0,30);
   const buscadas=qn?ops.filter(o=>`${o.operation_code} ${o.clients?.client_code||""} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.description||""}`.toLowerCase().includes(qn)):null;
-  const secDe=(o)=>SECCIONES.find(s=>s.k===pasoDe(o))||SECCIONES[3];
+  const secDe=(o)=>SECCIONES.find(s=>s.k===pasoDe(o))||SECCIONES[2];
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:18}}>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar op, cliente o mercadería…" style={{flex:celu?"1 1 100%":"0 1 300px",height:36,padding:"0 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
@@ -18246,8 +18246,8 @@ function LclFclPanel({token,onSelectOp,onNew}){
       <span style={{marginLeft:"auto"}}>{onNew&&btn(celu?"+ Nueva":"+ Nueva operación",onNew,{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:36})}</span>
     </div>
     {lo?<SkeletonTable rows={6} cols={4}/>
-    :buscadas?(buscadas.length===0?<EmptyState icon="ship" title="Sin resultados" description={`Nada coincide con "${qn}"`}/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>{buscadas.map(o=><Fila key={o.id} o={o} sec={o.status==="operacion_cerrada"?{k:5,l:"Cerrada",c:"#10b981"}:secDe(o)}/>)}</div>)
-    :filtro==="cerrada"?(cerradas.length===0?<EmptyState icon="ship" title="Sin cerradas" description="Todavía no hay operaciones LCL/FCL cerradas."/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>{cerradas.map(o=><Fila key={o.id} o={o} sec={{k:5,l:"Cerrada",c:"#10b981"}}/>)}</div>)
+    :buscadas?(buscadas.length===0?<EmptyState icon="ship" title="Sin resultados" description={`Nada coincide con "${qn}"`}/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>{buscadas.map(o=><Fila key={o.id} o={o} sec={o.status==="operacion_cerrada"?{k:4,l:"Cerrada",c:"#10b981"}:secDe(o)}/>)}</div>)
+    :filtro==="cerrada"?(cerradas.length===0?<EmptyState icon="ship" title="Sin cerradas" description="Todavía no hay operaciones LCL/FCL cerradas."/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>{cerradas.map(o=><Fila key={o.id} o={o} sec={{k:4,l:"Cerrada",c:"#10b981"}}/>)}</div>)
     :enCurso.length===0?<EmptyState icon="ship" title="Nada en curso" description="No hay operaciones LCL/FCL abiertas." cta={onNew?"+ Nueva operación":undefined} ctaOnClick={onNew}/>
     :SECCIONES.map(sec=><Seccion key={sec.k} sec={sec} lista={enCurso.filter(o=>pasoDe(o)===sec.k).sort(sec.ord)}/>)}
   </div>;
