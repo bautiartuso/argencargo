@@ -9453,7 +9453,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.4)",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>Sin {TIPOS_LEGAJO[t].corto.toLowerCase()}</span>;
   const recibido=flight.status==="recibido";
   // Retenido por Aduana: se puede marcar recibido sin DSI ni factura del courier.
-  const retenido=!recibido&&!!flight.retenido_at;const puedeRecibir=puedeRecibir||retenido;
+  const retenido=!recibido&&!!flight.retenido_at;const puedeRecibir=completo||sinTabla||retenido;
   // Estado del cuadro: cargado cuando todas las ops del vuelo ya tienen ese documento.
   const zona=(tipo,marca,icono,txt)=>{const elegida=pegarEn===tipo,t=marca?.tinte||"#E8D098";
     const conDoc=opsLeg.filter(o=>doc(o.id,tipo)),faltanZ=opsLeg.filter(o=>!doc(o.id,tipo));
