@@ -53,10 +53,12 @@ const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 // (html.ac-z90): el panel se ve como con el navegador al 90 % pero al 100 %. Los altos de pantalla
 // usan var(--vh100), que compensa el zoom.
 const AC_THEME_CSS=`:root{--vh100:100vh;--vw100:100vw}
-html.ac-z90{zoom:.9;--vh100:calc(100vh / .9);--vw100:calc(100vw / .9)}
-/* El panel ocupa la ventana entera con position:fixed (no depende de 100vw/100vh bajo zoom) y el
-   fondo de la página es navy, así nunca asoma blanco. */
-html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628}
+html.ac-z90{--vh100:calc(100vh / .9);--vw100:calc(100vw / .9)}
+/* El panel mide ventana ÷ 0,9 y se escala al 90 % con transform (no con zoom: bajo zoom los
+   position:fixed de los modales y el propio panel quedaban al 90 % de la ventana y asomaba una
+   franja). Los fixed de adentro toman el panel como referencia, o sea la ventana entera. */
+html.ac-z90 .ac-admin-root{transform:scale(.9);transform-origin:0 0}
+html.ac-z90,html.ac-z90 body,body:has(.ac-admin-root){background:#0A1628;overflow:hidden}
 @keyframes ac-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes ac-glow{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-24px)}}
 .ac-in{animation:ac-in .5s cubic-bezier(.2,.8,.2,1) both}
@@ -17798,7 +17800,7 @@ function AdminDashboard({session,onLogout}){
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;
-  return <div className="ac-admin-root" style={{position:"fixed",inset:0,display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
+  return <div className="ac-admin-root" style={{position:"fixed",left:0,top:0,width:"var(--vw100)",height:"var(--vh100)",display:"flex",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
     <style dangerouslySetInnerHTML={{__html:AC_THEME_CSS}}/>
     <style dangerouslySetInnerHTML={{__html:`
       .ac-fe-sticky{position:sticky;top:61px;z-index:15}
