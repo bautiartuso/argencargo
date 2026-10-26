@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { soportaTracking as soportaTrackingMt } from "../../lib/tracking/maritimo";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
@@ -19410,8 +19409,9 @@ function MaritimePanel({token,allClients=[]}){
                     ?<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:900,letterSpacing:".08em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:"#2a1203",background:"linear-gradient(135deg,#fdba74,#fb923c)",boxShadow:"0 3px 10px rgba(251,146,60,0.35)"}}><span style={{width:6,height:6,borderRadius:"50%",background:"#2a1203"}}/>En aduana</span>
                     :tb>0&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fdba74",background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.4)"})}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} +{tb}d</span>}
                   {todas.some(s=>!(valorOf(s.id)>0))&&<span style={pill({fontSize:11,padding:"2px 9px",color:"#fecaca",background:"rgba(239,68,68,0.2)",border:"1px solid rgba(239,68,68,0.5)"})}>⚠ {todas.filter(s=>!(valorOf(s.id)>0)).length} sin valor cargado</span>}
+                  {/* Último evento de la naviera (COSCO): una pastilla corta; el texto completo en el title. */}
+                  {/cosco/i.test(c.shipping_line||"")&&c.tracking_last&&<span title={`${c.tracking_last}${c.tracking_vessel?` · ${c.tracking_vessel}`:""}${c.tracking_updated_at?` · consultado ${new Date(c.tracking_updated_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`:""}`} style={pill({fontSize:11,padding:"2px 9px",color:"rgba(255,255,255,0.75)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",maxWidth:300,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block",verticalAlign:"middle",fontWeight:600,textTransform:"none",letterSpacing:0})}>🛰 {c.tracking_last}</span>}
                 </div>
-                {soportaTrackingMt(c)&&(c.tracking_last||c.tracking_error)&&<p title={c.tracking_updated_at?`Consultado ${new Date(c.tracking_updated_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`:""} style={{margin:"6px 0 0",fontSize:11.5,color:c.tracking_error&&!c.tracking_last?"#fbbf24":"rgba(255,255,255,0.6)",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12}}>🛰</span>{c.tracking_last||c.tracking_error}{c.tracking_vessel&&<span style={{color:"rgba(255,255,255,0.4)"}}>· {c.tracking_vessel}</span>}{c.tracking_last&&c.tracking_error&&<span style={{color:"#fbbf24"}}>· {c.tracking_error}</span>}</p>}
               </div>
             </div>
             <div className="mt-cont-stats" style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
