@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
-import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento } from "../../lib/legajo";
+import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento, destinosLegajo } from "../../lib/legajo";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -3033,7 +3033,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const up=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${nombre}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":"application/pdf","x-upsert":"false"},body:file});
           const pdf_url=up.ok?`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${nombre}`:null;
           setSavingDespacho(false);
-          try{await subirLegajo(await ensureFreshToken(token),{file,opIds:[op.id],tipo:"dsi",datos:d});}catch(e){console.error("legajo dsi",e);}
+          try{const ft=await ensureFreshToken(token);let ids=[op.id];try{ids=await destinosLegajo(ft,op.id,"dsi");}catch{}await subirLegajo(ft,{file,opIds:ids,tipo:"dsi",datos:d});}catch(e){console.error("legajo dsi",e);}
           await guardarTd({...td,dsi:{...d,pdf_url,archivo:file.name||"DSI.pdf",cargado_at:new Date().toISOString()}},d.cierra?`DSI cargada · ${d.lines.length} ítems · ${fmt(d.total)}`:`DSI cargada, pero los ítems suman ${fmt(d.suma)} y el total dice ${fmt(d.total)}: revisala`);
         }catch(e){flash("No se pudo leer la DSI: "+e.message);setSavingDespacho(false);}
       };
@@ -9116,7 +9116,10 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     try{
       let datos=null;
       if(tipo==="dsi"||tipo==="factura_courier"){try{const pdfjs=await cargarPdfJsAdmin();const info=await analizarDocumento(pdfjs,file);if(tipo==="dsi"&&info.tipo==="dsi")datos=info.dsi;if(tipo==="factura_courier"&&info.desaduanaje)datos={desaduanaje:info.desaduanaje};}catch{}}
-      await subirLegajo(await ensureFreshToken(token),{file,opIds:[op.id],flightId:null,tipo,datos});
+      // Se asigna también a las ops del mismo vuelo (misma guía): la documentación es del vuelo.
+      const freshTok=await ensureFreshToken(token);let ids=[op.id];try{ids=await destinosLegajo(freshTok,op.id,tipo);}catch(e){console.error("hermanas",e);}
+      await subirLegajo(freshTok,{file,opIds:ids,flightId:null,tipo,datos});
+      if(ids.length>1)toast(`${TIPOS_LEGAJO[tipo].corto} asignada también a ${ids.length-1} operación${ids.length>2?"es":""} del mismo vuelo`,"info");
       if(tipo==="factura_courier"&&datos?.desaduanaje){try{const ok=await aplicarDesaduanajeAOp(token,op.id,datos.desaduanaje);const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=despacho_desaduanaje_usd,budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));flash(`Desaduanaje de la factura: USD ${datos.desaduanaje.usdSinIva} + IVA${ok?" · impuestos recalculados":" · se aplica cuando cargues la DSI"}`);}catch(e){console.error(e);}}
       if(tipo==="dsi"&&datos){try{if(await aplicarDsiAOp(token,op.id,datos)){const f=await dq("operations",{token,filters:`?id=eq.${op.id}&select=budget_taxes,budget_total,budget_tax_detail`});if(Array.isArray(f)&&f[0])setOp(p=>({...p,...f[0]}));}}catch(e){console.error(e);}}
       await cargar();flash(`${TIPOS_LEGAJO[tipo].corto} guardada`);
