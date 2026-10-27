@@ -17495,7 +17495,7 @@ function AdminCalculator({token}){
 .qc-gr>span:not(:first-child),.qc-gr>b{text-align:right}
 .qc-gr.tot{border-top:1px solid rgba(255,255,255,0.14);font-weight:800}
 .qc-gr.tot>span{color:#fff}
-.qc-cost{display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:13px;background:linear-gradient(160deg,rgba(34,197,94,0.07),rgba(0,0,0,0.2));border:1px solid rgba(74,222,128,0.22);align-self:start}
+.qc-cost{display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:13px;background:linear-gradient(160deg,rgba(34,197,94,0.07),rgba(0,0,0,0.2));border:1px solid rgba(74,222,128,0.22);align-self:stretch}
 .qc-cost .qc-sum{border-top:1px solid rgba(255,255,255,0.07);padding-top:7px;margin-top:2px}
 .qc-cost .qc-gan span:first-child{font-weight:700;color:rgba(255,255,255,0.75)}
 .qc-linkbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -17742,7 +17742,7 @@ function AdminCalculator({token}){
               const gan=cobra-cuesta;const pct=effTotal>0?gan/effTotal*100:0;
               const verde=(v)=>({color:v>=0?"#4ade80":"#f87171"});
               // El aviso del canal va abajo (22/10/2026): arriba estiraba la fila del título en las 3 tarjetas.
-              return <div style={{display:"flex",flexDirection:"column",gap:10,alignSelf:"start",minWidth:0}}>
+              return <div style={{display:"flex",flexDirection:"column",gap:10,alignSelf:"start",width:"100%",minWidth:0}}>
                 <div className="qc-cost">
                   <div className="qc-ganhero"><span>Ganancia</span><strong style={verde(gan)}>USD {fmt(gan)}</strong><em style={verde(gan)}>{pct.toFixed(0)}%</em></div>
                   <div className="qc-ganbar"><i style={{width:`${Math.max(0,Math.min(100,pct*2))}%`,background:gan>=0?"linear-gradient(90deg,#22c55e,#4ade80)":"#f87171"}}/></div>
