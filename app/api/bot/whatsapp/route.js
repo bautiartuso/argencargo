@@ -23,8 +23,26 @@ import { CLAUDE_MODEL } from "../../../../lib/anthropic";
 import { tgNotify, logUso, costoClaude } from "../../../../lib/telegram";
 import { waitUntil } from "@vercel/functions";
 import crypto from "crypto";
-// Se pone en true una vez confirmado en los logs que la firma de los webhooks reales coincide.
-const FIRMA_ESTRICTA = false;
+// Firma estricta: se activa sola con el primer webhook real cuya firma coincide (queda marcado en
+// calc_config.wa_firma_verificada). Hasta entonces solo se registra, para no cortar el bot si la
+// clave secreta de Meta no está cargada en Vercel. Si la firma no coincide se avisa por Telegram.
+let firmaVerificadaCache = null;
+async function firmaYaVerificada() {
+  if (firmaVerificadaCache) return true;
+  try {
+    const r = await fetch(`https://nhfslvixhlbiyfmedmbr.supabase.co/rest/v1/calc_config?key=eq.wa_firma_verificada&select=value`, { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}` } });
+    const d = await r.json();
+    firmaVerificadaCache = Array.isArray(d) && Number(d[0]?.value) === 1;
+  } catch { firmaVerificadaCache = false; }
+  return firmaVerificadaCache;
+}
+async function marcarFirmaVerificada() {
+  firmaVerificadaCache = true;
+  try {
+    await fetch(`https://nhfslvixhlbiyfmedmbr.supabase.co/rest/v1/calc_config?on_conflict=key`, { method: "POST", headers: { apikey: process.env.SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "wa_firma_verificada", value: 1, label: "Webhook de WhatsApp: firma de Meta verificada (rechaza mensajes sin firma)" }) });
+  } catch {}
+}
+let avisoFirmaEnviado = false;
 
 // Firma de Meta (28/10/2026): cada webhook trae X-Hub-Signature-256 = HMAC del body con la clave
 // secreta de la app. Sin firma válida no se procesa nada (antes cualquiera podía mandar un mensaje
@@ -433,7 +451,22 @@ export async function POST(req) {
   if (body?.test !== true) {
     const f = firmaMetaValida(raw, req.headers.get("x-hub-signature-256"));
     console.log("[bot/whatsapp] firma", f.motivo);
-    if (!f.ok && process.env.WA_FIRMA_ESTRICTA !== "0" && FIRMA_ESTRICTA) return Response.json({ error: "firma inválida" }, { status: 401 });
+    if (f.ok) {
+      if (!(await firmaYaVerificada())) await marcarFirmaVerificada();
+    } else if (process.env.WA_FIRMA_ESTRICTA !== "0" && (await firmaYaVerificada())) {
+      return Response.json({ error: "firma inválida" }, { status: 401 });
+    } else if (!avisoFirmaEnviado) {
+      // Un aviso por día como mucho (todas las instancias comparten la marca en calc_config).
+      avisoFirmaEnviado = true;
+      waitUntil((async () => {
+        const hoy = Math.floor(Date.now() / 864e5);
+        const h = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" };
+        const r = await fetch(`${SB_URL}/rest/v1/calc_config?key=eq.wa_firma_aviso_dia&select=value`, { headers: h }).then((x) => x.json()).catch(() => []);
+        if (Array.isArray(r) && Number(r[0]?.value) === hoy) return;
+        await fetch(`${SB_URL}/rest/v1/calc_config?on_conflict=key`, { method: "POST", headers: { ...h, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "wa_firma_aviso_dia", value: hoy, label: "Último día en que se avisó que el webhook de WhatsApp llega sin firma válida" }) });
+        await tgNotify(`⚠️ El webhook de WhatsApp llega sin firma válida (${f.motivo}). Cargá en Vercel WA_APP_SECRET con la clave secreta de la app de Meta (Configuración → Básica) para que el bot rechace mensajes falsos.`);
+      })().catch(() => {}));
+    }
   }
 
   // Modo test: probar el agente sin WhatsApp (auth interna — CRON_SECRET o BOT_TEST_SECRET).

@@ -18,7 +18,7 @@ export async function GET(req) {
   if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
 
   const who = new URL(req.url).searchParams.get("user");
-  if (who) return profileOf(who);
+  if (who) return /^[0-9a-f-]{36}$/i.test(who) ? profileOf(who) : Response.json({ error: "No existe" }, { status: 404 });
 
   const people = arr(await sb(`/rest/v1/kairo_profile?select=user_id,nombre,avatar`));
   const now = new Date(), monthStart = new Date(now.getFullYear(), now.getMonth(), 1), since = new Date(now.getTime() - 120 * 86400e3);
