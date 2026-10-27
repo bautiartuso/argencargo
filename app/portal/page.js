@@ -14,6 +14,7 @@ import SupportPage from "./components/SupportPage";
 import { hoyAR } from "../../lib/fecha-ar";
 import { reciboHtml, documentoHtml } from "../../lib/pdf-templates";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
+import { filtrosSeguros } from "../../lib/columnas-seguras";
 instalarAuthFetch(["ac_s"]);
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -93,7 +94,8 @@ const avisarAdmin=async(token,{title,body,url="/admin"})=>{
 const dq=async(t,{method="GET",body,token,filters=""})=>{
   const fresh=await ensureFreshToken(token);
   const doReq=async(tk)=>{
-    const r=await fetch(`${SB_URL}/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:{})}});
+    // El cliente lee sin costos: select=* pasa a la lista de columnas seguras (lib/columnas-seguras).
+    const r=await fetch(`${SB_URL}/rest/v1/${t}${filtrosSeguros(t,filters,method)}`,{method,body:body?JSON.stringify(body):undefined,headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:{})}});
     const body2=await r.json().catch(()=>null);
     return {status:r.status,body:body2};
   };

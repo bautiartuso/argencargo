@@ -102,7 +102,7 @@ function Shell({ses,setSes,tema,setTema}){
   const dq=async(t,{method="GET",body,filters="",prefer}={})=>{
     let tk=token;if(jwtExp(tk)&&Date.now()>jwtExp(tk)-60000){tk=(await refrescar())||tk;}
     const pedir=(k)=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${k}`,...(prefer||method==="POST"||method==="PATCH"?{Prefer:prefer||"return=representation"}:{})}});
-    let r=await pedir(tk);if(r.status===401){const nt=await refrescar();if(nt)r=await pedir(nt);}
+    let r=await pedir(tk);if(r.status===401||r.body?.code==="42501"){const nt=await refrescar();if(nt)r=await pedir(nt);}
     if(r.status>=400){const msg=r.body?.message||r.body?.error||`Error ${r.status}`;throw new Error(msg);}
     return r.body;
   };

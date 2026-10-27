@@ -378,7 +378,7 @@ export function Proveedor({ children }) {
   const dq = useCallback(async (t, { method = "GET", body, filters = "", prefer } = {}) => {
     let tk = ses?.token || null;
     if (tk && jwtExp(tk) && Date.now() > jwtExp(tk) - 60000) tk = (await refrescar()) || null;
-    const pedir = (k) => sf(`/rest/v1/${t}${filters}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { ...(k ? { Authorization: `Bearer ${k}` } : {}), ...(prefer || method === "POST" || method === "PATCH" ? { Prefer: prefer || "return=representation" } : {}) } });
+    const pedir = (k) => sf(`/rest/v1/${t}${filtrosSeguros(t, filters, method)}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { ...(k ? { Authorization: `Bearer ${k}` } : {}), ...(prefer || method === "POST" || method === "PATCH" ? { Prefer: prefer || "return=representation" } : {}) } });
     let r = await pedir(tk); if (r.status === 401 && tk) { const nt = await refrescar(); if (nt) r = await pedir(nt); }
     if (r.status >= 400) throw new Error(r.body?.message || r.body?.error || `Error ${r.status}`);
     return r.body;
@@ -406,6 +406,7 @@ export function Ico({ d, size = 17 }) { return <svg width={size} height={size} v
 
 // ── Precios por cantidad: lo que ve el cliente, compartido por tarjetas, ficha, carrito y panel ──
 import { escalonPara } from "../../lib/canales-maquinas";
+import { filtrosSeguros } from "../../lib/columnas-seguras";
 export const precioVidriera = (pr) => {
   const e = pr?.escalera; const tr = e?.maritima?.[0] || e?.aerea?.[0];
   if (tr) return { unit: Number(tr.unit), via: tr.via, q: Number(tr.q) || 1 };

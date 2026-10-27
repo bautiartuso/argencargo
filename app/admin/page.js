@@ -173,7 +173,9 @@ const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
     return {status:r.status,body:parsed};
   };
   let r=await doReq(fresh);
-  if(r.status===401){const nt=await refreshToken();if(nt){r=await doReq(nt);}}
+  // 403/42501 = permiso de columna: el token es de antes de pasar al rol "staff" (28/10/2026).
+  // Se renueva la sesión (el token nuevo trae el rol) y se reintenta una vez.
+  if(r.status===401||(r.status===403&&r.body?.code==="42501")||(r.status===401&&r.body?.code==="42501")){const nt=await refreshToken();if(nt){r=await doReq(nt);}}
   return r.body;
 };
 // Pide UNA pagina de filas y devuelve ademas cuantas hay en total (lo lee del header

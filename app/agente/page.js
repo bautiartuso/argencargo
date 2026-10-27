@@ -8,6 +8,7 @@ import { comprimirImagen } from "../../lib/img";
 import { TarifasAgenteEditor, TarifasAgenteAdmin } from "../components/TarifasAgente";
 import { hoyAR } from "../../lib/fecha-ar";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
+import { filtrosSeguros } from "../../lib/columnas-seguras";
 instalarAuthFetch(["ac_agent_s"]);
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -49,7 +50,8 @@ const ensureFreshToken=async(token)=>{
 };
 const dq=async(t,{method="GET",body,token,filters="",prefer})=>{
   const fresh=await ensureFreshToken(token);
-  const doReq=(tk)=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${tk}`,...(prefer?{Prefer:prefer}:method==="POST"?{Prefer:"return=representation"}:{})}});
+  // Agentes leen sin costos: select=* pasa a la lista de columnas seguras (lib/columnas-seguras).
+  const doReq=(tk)=>sf(`/rest/v1/${t}${filtrosSeguros(t,filters,method)}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${tk}`,...(prefer?{Prefer:prefer}:method==="POST"?{Prefer:"return=representation"}:{})}});
   let r=await doReq(fresh);
   // Si JWT expirado (401) → refresh y retry
   if(r.status===401){const newToken=await refreshToken();if(newToken){r=await doReq(newToken);}}

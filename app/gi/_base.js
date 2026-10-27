@@ -119,7 +119,7 @@ export const dq = async (t, { method = "GET", body, token, filters = "", headers
   const cb = (method === "PATCH" || method === "POST") ? _sanitize(body) : body;
   const doReq = (tk) => sf(`/rest/v1/${t}${filters}`, { method, body: cb ? JSON.stringify(cb) : undefined, headers: { Authorization: `Bearer ${tk}`, ...(method === "POST" || method === "PATCH" ? { Prefer: "return=representation" } : {}), ...headers } });
   let r = await doReq(fresh);
-  if (r.status === 401) { const nt = await refreshToken(); if (nt) r = await doReq(nt); }
+  if (r.status === 401 || r.body?.code === "42501") { const nt = await refreshToken(); if (nt) r = await doReq(nt); }
   if (r.status >= 400) console.error(`[dq] ${method} ${t} ${r.status}`, r.body);
   return r.body;
 };
