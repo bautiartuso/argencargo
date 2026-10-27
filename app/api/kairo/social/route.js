@@ -87,7 +87,7 @@ export async function POST(req) {
   }
 
   const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
-  const push = (user_id, title, body, tag) => fetch(`${base}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id, portal: "kairo", strict: true, title, body, url: "/kairo?tab=hoy", tag }) }).catch(() => {});
+  const push = (user_id, title, body, tag) => fetch(`${base}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: JSON.stringify({ user_id, portal: "kairo", strict: true, title, body, url: "/kairo?tab=hoy", tag }) }).catch(() => {});
   const myName = async () => ((arr(await sb(`/rest/v1/kairo_profile?user_id=eq.${me.id}&select=nombre`))[0]?.nombre) || "Alguien").split(" ")[0];
 
   if (action === "react" && story_id) {
@@ -120,7 +120,7 @@ export async function POST(req) {
     const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
     const others = people.filter(p => p.user_id !== me.id);
     await Promise.all(others.map(p => fetch(`${base}/api/push/send`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
       body: JSON.stringify({ user_id: p.user_id, portal: "kairo", strict: true, title: `${name} subió una historia`, body: "Tocá para verla", url: "/kairo?tab=hoy", tag: `kairo-story-${me.id}` }),
     }).catch(() => {})));
     return Response.json({ ok: true, sent: others.length });

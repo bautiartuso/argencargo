@@ -4,6 +4,7 @@
 
 import { SB_URL, SB_SERVICE, upsertEvent, updateSyncStatus, normalizeEvent } from "../_helpers";
 import { tgNotify } from "../../../../lib/telegram";
+import { payloadVerificado } from "../../../../lib/auth-server";
 import {
   getFedexTracking, fedexConfigured,
   getDhlTracking, dhlConfigured,
@@ -338,18 +339,18 @@ async function syncOne(op) {
 }
 
 async function runSync(req) {
-  const auth = req.headers.get("authorization") || new URL(req.url).searchParams.get("secret") || "";
+  const auth = req.headers.get("authorization") || "";
   const expected = process.env.CRON_SECRET || "";
-  let authorized = !expected || auth === `Bearer ${expected}` || auth === expected;
+  let authorized = !!expected && auth === `Bearer ${expected}`;
   if (!authorized && auth.startsWith("Bearer ")) {
     // Verificar que es un JWT de admin válido
     const jwt = auth.slice(7);
     try {
-      const v = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString()).sub}`, {
+      const v = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${(await payloadVerificado(jwt)).sub}`, {
         headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` }
       });
       const p = await v.json();
-      if (Array.isArray(p) && p[0]?.role === "admin") authorized = true;
+      if (Array.isArray(p) && ["admin", "empleado"].includes(p[0]?.role)) authorized = true;
     } catch {}
   }
   if (!authorized) return Response.json({ error: "unauthorized" }, { status: 401 });

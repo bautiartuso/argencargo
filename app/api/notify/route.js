@@ -20,6 +20,7 @@ const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
 
 import { enviarEmail } from "../../../lib/email";
 import { contenidoContenedorPuerto } from "../../../lib/email-contenedor";
+import { payloadVerificado, firmaLink } from "../../../lib/auth-server";
 
 export const maxDuration = 30;
 
@@ -45,7 +46,7 @@ async function verifyAdmin(req) {
   const cronSecret = process.env.CRON_SECRET || "";
   if (cronSecret && token === cronSecret) return true;
   try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(token));
     const p = await sb(`/rest/v1/profiles?select=role&id=eq.${payload.sub}`);
     // El empleado tambien dispara estos mails: al marcar un contenedor arribado salen los
     // avisos de retiro, y desde Entregas se reenvian.
@@ -123,7 +124,7 @@ async function renderEmail(trigger, op, client) {
   const opCode = op.operation_code || "";
   const desc = op.description || "tu mercadería";
   const portalLink = `${BASE_URL}/portal?op=${opCode}`;
-  const feedbackLink = `${BASE_URL}/feedback?op=${opCode}`;
+  const feedbackLink = `${BASE_URL}/feedback?op=${opCode}&s=${firmaLink(opCode)}`;
   const data = { firstName, opCode, desc, portalLink, feedbackLink };
   const NAVY = "#152D54"; const AC = "#3B7DD8";
 
@@ -147,7 +148,7 @@ async function renderEmail(trigger, op, client) {
   const extraHtml = pideResena
     ? `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px">
         <p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p>
-        <div>${[1,2,3,4,5].map(n => `<a href="${BASE_URL}/feedback?op=${opCode}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div>
+        <div>${[1,2,3,4,5].map(n => `<a href="${BASE_URL}/feedback?op=${opCode}&s=${firmaLink(opCode)}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div>
         <p style="font-size:11px;color:#999;margin:12px 0 0">1 = muy mala · 5 = excelente</p>
       </div>`
     : (ctaText && ctaLink ? button(ctaLink, ctaText) : "");

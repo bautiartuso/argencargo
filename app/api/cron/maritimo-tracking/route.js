@@ -9,6 +9,7 @@
 // POST { container_id } → admin/empleado (JWT) o CRON_SECRET: uno solo, al toque.
 import { rastrearContenedor, soportaTracking, resumenEvento } from "../../../../lib/tracking/maritimo";
 import { tgNotify } from "../../../../lib/telegram";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -24,7 +25,7 @@ async function esStaff(req) {
   const a = req.headers.get("authorization") || "";
   if (!a.startsWith("Bearer ")) return false;
   try {
-    const payload = JSON.parse(Buffer.from(a.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(a.slice(7)));
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p.data) && ["admin", "empleado"].includes(p.data[0]?.role);
   } catch { return false; }

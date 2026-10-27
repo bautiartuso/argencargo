@@ -11,13 +11,14 @@ const LOGO_WHITE = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/p
 const LOGO_COLOR = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
 
 import { enviarEmail } from "../../../../lib/email";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 async function verifyAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   const jwt = auth.slice(7);
   try {
-    const payload = JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(jwt));
     const r = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${payload.sub}`, {
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` },
     });

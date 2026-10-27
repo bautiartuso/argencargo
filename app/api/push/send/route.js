@@ -4,6 +4,7 @@
 
 import crypto from "crypto";
 
+import { quienLlama } from "../../../../lib/auth-server";
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY;
@@ -143,8 +144,19 @@ export async function POST(req) {
     }
     // strict: solo a las suscripciones de ese portal (sin caer a las demás). urgency: "high" para avisos
     // que tienen que llegar ya (fin de descanso en Kairo).
-    const { user_id, title, body, url, tag, portal, strict, urgency } = await req.json();
+    const { user_id, title, body, url: urlPedida, tag, portal, strict, urgency } = await req.json();
     if (!user_id || !title) return Response.json({ ok: false, error: "missing fields" }, { status: 400 });
+    // 28/10/2026: antes cualquiera mandaba avisos a cualquier usuario. Ahora: el servidor (CRON_SECRET),
+    // el equipo a cualquiera, y el resto de los usuarios logueados solo avisos al panel admin.
+    const esServidor = !!process.env.CRON_SECRET && (req.headers.get("authorization") || "") === `Bearer ${process.env.CRON_SECRET}`;
+    let yo = null;
+    if (!esServidor) {
+      yo = await quienLlama(req);
+      if (!yo) return Response.json({ ok: false, error: "no_auth" }, { status: 401 });
+      if (!yo.staff && !(yo.role === "agente" && portal === "admin") && portal !== "admin" && !(portal === "kairo")) return Response.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
+    // Solo links internos (nada de mandar a sitios de afuera desde una notificación).
+    const url = typeof urlPedida === "string" && urlPedida.startsWith("/") && !urlPedida.startsWith("//") ? urlPedida : "/";
 
     // El portal es una PREFERENCIA, no un filtro duro. Un mismo usuario puede estar suscripto desde
     // varias PWAs (admin, agente, cinabrio): si mandamos a todas, el aviso del admin lo muestra el
@@ -184,7 +196,8 @@ export async function POST(req) {
         results.push({ status: "error", error: e.message, endpoint: s.endpoint });
       }
     }
-    return Response.json({ ok: true, sent: results.filter(r => r.status >= 200 && r.status < 300).length, portal: portal || null, fallbackPortal, results });
+    const sent = results.filter(r => r.status >= 200 && r.status < 300).length;
+    return Response.json(esServidor || yo?.staff ? { ok: true, sent, portal: portal || null, fallbackPortal, results } : { ok: true, sent });
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
   }

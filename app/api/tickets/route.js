@@ -1,4 +1,5 @@
 // /api/tickets — GET listado (admin: todos / cliente: solo propios), POST crear
+import { quienLlama } from "../../../lib/auth-server";
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -22,9 +23,13 @@ async function sb(path, opts = {}) {
 const j = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
+// 28/10/2026: antes no tenía ningún control. El equipo ve todo; el cliente solo sus tickets.
 export async function GET(req) {
+  const yo = await quienLlama(req);
+  if (!yo) return j({ ok: false, error: "no_auth" }, 401);
   const url = new URL(req.url);
-  const clientId = url.searchParams.get("clientId");
+  const clientId = yo.staff ? url.searchParams.get("clientId") : yo.clientId;
+  if (!yo.staff && !clientId) return j({ ok: true, tickets: [] });
   const status = url.searchParams.get("status");
   const limit = Math.min(500, Number(url.searchParams.get("limit")) || 200);
 
@@ -36,9 +41,12 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
+  const yo = await quienLlama(req);
+  if (!yo) return j({ ok: false, error: "no_auth" }, 401);
   const body = await req.json().catch(() => null);
   if (!body) return j({ ok: false, error: "body inválido" }, 400);
-  const { client_id, operation_id, subject, description, category, priority, created_by_type } = body;
+  let { client_id, operation_id, subject, description, category, priority, created_by_type } = body;
+  if (!yo.staff) { client_id = yo.clientId; created_by_type = "client"; priority = "normal"; }
   if (!subject || !description) return j({ ok: false, error: "subject y description requeridos" }, 400);
   const row = await sb(`/rest/v1/support_tickets`, {
     method: "POST",

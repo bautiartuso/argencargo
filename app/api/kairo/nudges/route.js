@@ -19,7 +19,7 @@ export async function GET(req) {
   const hhmm = slot(ar.getUTCHours(), ar.getUTCMinutes()), date = ar.toISOString().slice(0, 10), dow = (ar.getUTCDay() + 6) % 7;
   const dayStart = `${date}T03:00:00Z`; // medianoche argentina en UTC
   const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
-  const push = (user_id, title, body, tag, tab = "hoy") => fetch(`${base}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id, portal: "kairo", strict: true, title, body, url: `/kairo?tab=${tab}`, tag }) }).catch(() => {});
+  const push = (user_id, title, body, tag, tab = "hoy") => fetch(`${base}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: JSON.stringify({ user_id, portal: "kairo", strict: true, title, body, url: `/kairo?tab=${tab}`, tag }) }).catch(() => {});
 
   const people = arr(await sb(`/rest/v1/kairo_profile?select=user_id,nombre,dias,estrategia,cardio_plan,peso_kg`));
   if (!people.length) return Response.json({ ok: true, sent: 0 });

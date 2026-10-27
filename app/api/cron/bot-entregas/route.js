@@ -47,7 +47,7 @@ async function notifyAdmins(title, body) {
   const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
   await Promise.all(ids.flatMap((id) => [
     sb(`/notifications`, { method: "POST", body: JSON.stringify({ user_id: id, portal: "admin", title, body, link: "/admin" }) }).catch(() => {}),
-    fetch(`${BASE_URL}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: id, portal: "admin", title, body, url: "/admin" }) }).catch(() => {}),
+    fetch(`${BASE_URL}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: JSON.stringify({ user_id: id, portal: "admin", title, body, url: "/admin" }) }).catch(() => {}),
   ]));
 }
 

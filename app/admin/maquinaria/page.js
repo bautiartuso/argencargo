@@ -10,6 +10,8 @@ import { Studio } from "./Studio";
 import { Maquinas, Proveedores } from "./Catalogo";
 import { Pedidos } from "./Pedidos";
 import { Resumen, Libro, Tarifas, CCFinanciera } from "./Finanzas";
+import { instalarAuthFetch } from "../../../lib/auth-fetch";
+instalarAuthFetch(["ac_admin","ac_gi_s"]);
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";

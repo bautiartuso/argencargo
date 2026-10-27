@@ -4,6 +4,8 @@
 // Comprime listas largas de items en N grupos para cumplir limitación aduanera (RG 5608: max 8 items/factura).
 
 import { callClaudeText, HAIKU_MODEL } from "../../../lib/anthropic";
+import { quienLlama } from "../../../lib/auth-server";
+import { limitar } from "../../../lib/ratelimit";
 
 export const maxDuration = 60;
 
@@ -54,6 +56,10 @@ FORMATO:
 }`;
 
 export async function POST(req) {
+  // 28/10/2026: gasta IA; antes estaba abierta a cualquiera.
+  if (!(await quienLlama(req))) return Response.json({ ok: false, error: "no_auth" }, { status: 401 });
+  const frenado = limitar(req, { clave: "compress", limite: 20, ventanaMs: 60_000 });
+  if (frenado) return frenado;
   try {
     const { items, maxItems = 8 } = await req.json();
     if (!Array.isArray(items) || items.length === 0) {

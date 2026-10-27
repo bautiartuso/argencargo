@@ -20,9 +20,9 @@ async function sb(path, opts = {}) {
 }
 
 async function run(req) {
-  const auth = req.headers.get("authorization") || new URL(req.url).searchParams.get("secret") || "";
+  const auth = req.headers.get("authorization") || "";
   const expected = process.env.CRON_SECRET || "";
-  const authorized = !expected || auth === `Bearer ${expected}` || auth === expected;
+  const authorized = !!expected && auth === `Bearer ${expected}`;
   if (!authorized) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "service role missing" }, { status: 500 });
 

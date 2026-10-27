@@ -21,7 +21,7 @@ async function fireWhenDue(id, fireAt) {
   const base = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
   await fetch(`${base}/api/push/send`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
     body: JSON.stringify({ user_id: t.user_id, portal: "kairo", strict: true, urgency: "high", title: t.title || "Descanso terminado", body: t.body || "A la próxima serie", url: "/kairo", tag: "kairo-rest" }),
   }).catch(e => console.error("[kairo rest] push", e));
 }

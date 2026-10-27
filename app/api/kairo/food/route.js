@@ -4,6 +4,7 @@
 
 import { callClaudeText } from "../../../../lib/anthropic";
 import { kairoUser } from "../../../../lib/kairo-server";
+import { limitar } from "../../../../lib/ratelimit";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ const SCHEMA = {
 };
 
 export async function POST(req) {
+  const frenado = limitar(req, { clave: "kairo-food", limite: 20 }); if (frenado) return frenado;
   const me = await kairoUser(req);
   if (!me) return Response.json({ error: "No autorizado" }, { status: 401 });
   const { text } = await req.json().catch(() => ({}));

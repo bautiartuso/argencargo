@@ -1,3 +1,4 @@
+import { limitar } from "../../../../lib/ratelimit";
 // GET /api/track/[code]
 // Devuelve info pública de seguimiento de una op (sin auth).
 // Solo expone: code, descripción, estado, ETA, tracking events del carrier, fechas clave.
@@ -14,6 +15,7 @@ async function sb(path) {
 }
 
 export async function GET(req, { params }) {
+  const frenado = limitar(req, { clave: "track", limite: 30 }); if (frenado) return frenado;
   const code = (params.code || "").toUpperCase().trim();
   if (!code || !/^AC-?\d+$/i.test(code)) {
     return Response.json({ error: "código inválido" }, { status: 400 });
@@ -38,7 +40,6 @@ export async function GET(req, { params }) {
   return Response.json({
     ok: true,
     operation_code: op.operation_code,
-    description: op.description || null,
     status: op.status,
     channel: op.channel,
     origin: op.origin,

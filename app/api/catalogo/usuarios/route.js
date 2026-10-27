@@ -43,13 +43,17 @@ export async function POST(req) {
   try {
     if (!SB_SERVICE) return Response.json({ error: "server no configurado" }, { status: 500 });
     const token = String(req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-    if (!(await quien(token))) return Response.json({ error: "No autorizado" }, { status: 401 });
+    const yo = await quien(token);
+    // 28/10/2026: cambiar mail, contraseña o rol de otra cuenta lo hace solo el admin (antes
+    // cualquier empleado o socio podía cambiarle la contraseña al admin y entrar como él).
+    if (!yo || yo.role !== "admin") return Response.json({ error: "No autorizado" }, { status: 401 });
     const b = await req.json();
     const id = String(b.id || "");
     if (!id) return Response.json({ error: "Falta el usuario" }, { status: 400 });
     const p = await (await svc(`/rest/v1/profiles?id=eq.${id}&select=id,role,is_gi_partner,argenmaq_role`)).json();
     const prof = Array.isArray(p) ? p[0] : null;
     if (!prof) return Response.json({ error: "Usuario no encontrado" }, { status: 400 });
+    if (prof.role === "admin" && prof.id !== yo.id) return Response.json({ error: "No se puede modificar otra cuenta admin" }, { status: 403 });
     // Rol en ARGENMAQ: admin / socio / empleado / null (sin acceso). Puede darse a cualquier cuenta.
     if ("argenmaq_role" in b) {
       const rol = b.argenmaq_role || null;

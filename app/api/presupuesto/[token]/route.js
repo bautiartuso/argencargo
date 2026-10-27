@@ -118,7 +118,7 @@ export async function POST(req, { params }) {
       }).catch(() => {});
       fetch(`${BASE_URL}/api/push/send`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
         body: JSON.stringify({ user_id: id, portal: "admin", title, body: msg, url: "/admin" }),
       }).catch(() => {});
     }

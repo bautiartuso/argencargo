@@ -11,6 +11,7 @@ const NAVY = "#152D54"; const AC = "#3B7DD8"; const BG = "#0a1223";
 function FeedbackPageInner() {
   const searchParams = useSearchParams();
   const opCode = searchParams.get("op");
+  const firma = searchParams.get("s") || "";
   const preRating = Number(searchParams.get("r") || 0);
   const [step, setStep] = useState(preRating >= 1 && preRating <= 5 ? (preRating >= 4 ? "high" : "low") : "rate");
   const [rating, setRating] = useState(preRating || 0);
@@ -34,10 +35,10 @@ function FeedbackPageInner() {
       fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: opCode, rating: preRating }),
+        body: JSON.stringify({ op: opCode, s: firma, rating: preRating }),
       }).then(r => r.json()).then(onOk).catch(() => setError("Error al cargar"));
     } else {
-      fetch(`/api/feedback?op=${encodeURIComponent(opCode)}`).then(r => r.json()).then(onOk).catch(() => setError("Error al cargar"));
+      fetch(`/api/feedback?op=${encodeURIComponent(opCode)}&s=${encodeURIComponent(firma)}`).then(r => r.json()).then(onOk).catch(() => setError("Error al cargar"));
     }
   }, [opCode, preRating]);
 
@@ -48,7 +49,7 @@ function FeedbackPageInner() {
       await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: opCode, rating: finalRating, comment: finalComment || null }),
+        body: JSON.stringify({ op: opCode, s: firma, rating: finalRating, comment: finalComment || null }),
       });
     } catch (e) { console.error(e); }
     setSubmitting(false);
@@ -61,7 +62,7 @@ function FeedbackPageInner() {
     fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ op: opCode, clicked_google_review: true }),
+      body: JSON.stringify({ op: opCode, s: firma, clicked_google_review: true }),
     }).catch(() => {});
   };
 
@@ -234,7 +235,7 @@ function FeedbackPageInner() {
                 await fetch("/api/feedback", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ op: opCode, rating, comment: comment || null }),
+                  body: JSON.stringify({ op: opCode, s: firma, rating, comment: comment || null }),
                 }).catch(() => {});
                 setSubmitting(false);
                 setStep("thanks");

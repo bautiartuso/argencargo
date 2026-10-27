@@ -119,9 +119,9 @@ async function sendReminder(op, trigger) {
 }
 
 async function runReminders(req) {
-  const auth = req.headers.get("authorization") || new URL(req.url).searchParams.get("secret") || "";
+  const auth = req.headers.get("authorization") || "";
   const expected = process.env.CRON_SECRET || "";
-  const authorized = !expected || auth === `Bearer ${expected}` || auth === expected;
+  const authorized = !!expected && auth === `Bearer ${expected}`;
   if (!authorized) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "SUPABASE_SERVICE_ROLE no configurado" }, { status: 500 });
   if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 });

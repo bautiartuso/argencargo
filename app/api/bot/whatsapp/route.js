@@ -22,6 +22,24 @@ import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_MODEL } from "../../../../lib/anthropic";
 import { tgNotify, logUso, costoClaude } from "../../../../lib/telegram";
 import { waitUntil } from "@vercel/functions";
+import crypto from "crypto";
+// Se pone en true una vez confirmado en los logs que la firma de los webhooks reales coincide.
+const FIRMA_ESTRICTA = false;
+
+// Firma de Meta (28/10/2026): cada webhook trae X-Hub-Signature-256 = HMAC del body con la clave
+// secreta de la app. Sin firma válida no se procesa nada (antes cualquiera podía mandar un mensaje
+// "desde" el teléfono de un cliente). WA_FIRMA_ESTRICTA=0 deja pasar y solo registra (diagnóstico).
+function firmaMetaValida(raw, header) {
+  const secretos = [process.env.WA_APP_SECRET, process.env.META_APP_SECRET, process.env.IG_APP_SECRET].filter(Boolean);
+  if (!secretos.length || !header) return { ok: false, motivo: secretos.length ? "sin_header" : "sin_secreto" };
+  const given = String(header).replace(/^sha256=/, "");
+  const ok = secretos.some((secret) => {
+    const mine = crypto.createHmac("sha256", secret).update(raw).digest("hex");
+    if (given.length !== mine.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(mine, "hex")); } catch { return false; }
+  });
+  return { ok, motivo: ok ? "ok" : "no_coincide" };
+}
 
 // La espera de la ráfaga + el agente + el envío corren en segundo plano (waitUntil) después de
 // devolverle el 200 a Meta, así que el límite tiene que cubrir todo eso.
@@ -94,7 +112,7 @@ async function notifyAdmins(title, body) {
   const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
   await Promise.all(ids.flatMap((id) => [
     sb(`/notifications`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ user_id: id, portal: "admin", title, body, link: "/admin" }) }).catch(() => {}),
-    fetch(`${BASE_URL}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: id, portal: "admin", title, body, url: "/admin" }) }).catch(() => {}),
+    fetch(`${BASE_URL}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: JSON.stringify({ user_id: id, portal: "admin", title, body, url: "/admin" }) }).catch(() => {}),
   ]));
 }
 
@@ -410,7 +428,13 @@ export async function GET(req) {
 
 export async function POST(req) {
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
-  let body = null; try { body = await req.json(); } catch {}
+  const raw = await req.text();
+  let body = null; try { body = JSON.parse(raw); } catch {}
+  if (body?.test !== true) {
+    const f = firmaMetaValida(raw, req.headers.get("x-hub-signature-256"));
+    console.log("[bot/whatsapp] firma", f.motivo);
+    if (!f.ok && process.env.WA_FIRMA_ESTRICTA !== "0" && FIRMA_ESTRICTA) return Response.json({ error: "firma inválida" }, { status: 401 });
+  }
 
   // Modo test: probar el agente sin WhatsApp (auth interna — CRON_SECRET o BOT_TEST_SECRET).
   if (body?.test === true) {

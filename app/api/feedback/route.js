@@ -5,6 +5,10 @@
 // GET  /api/feedback?op=AC-0123          → { ok:true, op_id } | { ok:false }
 // POST /api/feedback                     → body { op, rating, comment? } → upsert feedback
 
+import { firmaLink } from "../../../lib/auth-server";
+import { limitar } from "../../../lib/ratelimit";
+// 28/10/2026: los links nuevos traen &s=<firma>. Sin firma (links viejos) solo se puede calificar
+// una vez y no se muestra el nombre del cliente (los códigos AC-xxxx se pueden adivinar).
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -16,8 +20,11 @@ const sbFetch = (path, init = {}) =>
 
 export async function GET(req) {
   if (!SB_SERVICE) return Response.json({ ok: false, error: "Server no configurado" }, { status: 500 });
-  const opCode = new URL(req.url).searchParams.get("op");
+  const frenado = limitar(req, { clave: "feedback-get", limite: 30 }); if (frenado) return frenado;
+  const sp = new URL(req.url).searchParams;
+  const opCode = sp.get("op");
   if (!opCode) return Response.json({ ok: false, error: "Falta op" }, { status: 400 });
+  const firmado = sp.get("s") === firmaLink(String(opCode).trim());
   // Normalizamos: la URL puede traer espacios o lowercase
   const code = String(opCode).trim().toUpperCase();
   try {
@@ -25,7 +32,7 @@ export async function GET(req) {
     const arr = await r.json();
     if (!Array.isArray(arr) || arr.length === 0) return Response.json({ ok: false, error: "No encontramos esa operación" }, { status: 404 });
     const op = arr[0];
-    const firstName = op.clients?.first_name ? String(op.clients.first_name).trim().split(/\s+/)[0] : null;
+    const firstName = firmado && op.clients?.first_name ? String(op.clients.first_name).trim().split(/\s+/)[0] : null;
     return Response.json({ ok: true, op_id: op.id, first_name: firstName });
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
@@ -34,8 +41,10 @@ export async function GET(req) {
 
 export async function POST(req) {
   if (!SB_SERVICE) return Response.json({ ok: false, error: "Server no configurado" }, { status: 500 });
+  const frenado = limitar(req, { clave: "feedback-post", limite: 10 }); if (frenado) return frenado;
   let body; try { body = await req.json(); } catch { return Response.json({ ok: false, error: "Body inválido" }, { status: 400 }); }
   const opCode = String(body.op || "").trim().toUpperCase();
+  const firmado = String(body.s || "") === firmaLink(opCode);
   const rating = Number(body.rating);
   const comment = body.comment ? String(body.comment).slice(0, 2000) : null;
   const clickedGoogle = body.clicked_google_review === true;
@@ -49,11 +58,14 @@ export async function POST(req) {
     const arr = await lookup.json();
     if (!Array.isArray(arr) || arr.length === 0) return Response.json({ ok: false, error: "No encontramos esa operación" }, { status: 404 });
     const opId = arr[0].id;
-    const firstName = arr[0].clients?.first_name ? String(arr[0].clients.first_name).trim().split(/\s+/)[0] : null;
+    const firstName = firmado && arr[0].clients?.first_name ? String(arr[0].clients.first_name).trim().split(/\s+/)[0] : null;
     // ¿Ya existe feedback para esta op?
-    const existR = await sbFetch(`/rest/v1/op_feedback?operation_id=eq.${opId}&select=id&limit=1`);
+    const existR = await sbFetch(`/rest/v1/op_feedback?operation_id=eq.${opId}&select=id,submitted_at&limit=1`);
     const existArr = await existR.json();
     const exists = Array.isArray(existArr) && existArr[0]?.id;
+    // Sin firma, solo se completa en la misma visita (hasta 2 h después de la primera calificación).
+    const reciente = exists && existArr[0].submitted_at && Date.now() - new Date(existArr[0].submitted_at).getTime() < 2 * 3600e3;
+    if (exists && !firmado && !clickedGoogle && !reciente) return Response.json({ ok: false, error: "Esta operación ya fue calificada" }, { status: 409 });
     if (exists) {
       // PATCH: actualizar campos provistos
       const patch = {};

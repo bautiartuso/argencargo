@@ -6,6 +6,7 @@
 // Body: { flight_id }  →  { bultos: [{peso_kg, largo_cm, ancho_cm, alto_cm}], total_kg }
 
 import { callClaudeVision, HAIKU_MODEL } from "../../../../lib/anthropic";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -21,7 +22,7 @@ async function isAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(auth.slice(7)));
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p) && ["admin","empleado"].includes(p[0]?.role);
   } catch { return false; }

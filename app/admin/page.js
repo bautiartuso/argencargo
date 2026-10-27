@@ -24,6 +24,8 @@ import TicketsPanel from "./components/TicketsPanel";
 import HistoriasPanel from "./components/HistoriasPanel";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 import { comprimirImagen } from "../../lib/img";
+import { instalarAuthFetch } from "../../lib/auth-fetch";
+instalarAuthFetch(["ac_admin"]);
 
 // Cuenta para transferencias en pesos. Un solo lugar: antes estaba escrita a mano adentro del
 // mensaje de WhatsApp y quedo con los datos viejos sin que nadie lo viera.

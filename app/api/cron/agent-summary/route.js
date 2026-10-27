@@ -20,7 +20,7 @@ async function sendPush(userId, title, body, url) {
     const baseUrl = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
     await fetch(`${baseUrl}/api/push/send`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
       body: JSON.stringify({ user_id: userId, portal: "agente", title, body, url }),
     });
   } catch (e) {

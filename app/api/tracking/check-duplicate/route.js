@@ -1,3 +1,4 @@
+import { payloadVerificado } from "../../../../lib/auth-server";
 // GET /api/tracking/check-duplicate?code=XXX&exclude_op=uuid
 // Busca si un tracking ya existe en operaciones, paquetes, avisos o paquetes huérfanos.
 // Útil para detectar cuando un cliente o agente carga un tracking que ya existe en otra op.
@@ -21,8 +22,11 @@ async function isAuthenticated(req) {
   const token = auth.slice(7);
   if (token === process.env.CRON_SECRET) return true;
   try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
-    return !!payload?.sub;
+    const payload = (await payloadVerificado(token));
+    // 28/10/2026: solo equipo o agentes (devuelve códigos de op y nombres de clientes).
+    const r = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${payload.sub}`, { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE}` } });
+    const p = await r.json();
+    return Array.isArray(p) && ["admin", "empleado", "agente"].includes(p[0]?.role);
   } catch { return false; }
 }
 

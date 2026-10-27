@@ -3,6 +3,7 @@
 // marcado como repuesto, y se avisa por Telegram al equipo. La descripción lleva una primera línea
 // "[Repuesto]" con email y zona, porque la tabla no tiene esas columnas (el panel la lee y la limpia).
 import { tgNotify } from "../../../../lib/telegram";
+import { limitar } from "../../../../lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ const limpiar = (v, max) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0,
 const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
 
 export async function POST(req) {
+  const frenado = limitar(req, { clave: "repuesto", limite: 5, ventanaMs: 10 * 60_000 }); if (frenado) return frenado;
   let b = {};
   try { b = await req.json(); } catch { return Response.json({ error: "Datos inválidos." }, { status: 400 }); }
 

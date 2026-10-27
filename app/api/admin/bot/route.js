@@ -12,6 +12,7 @@
 
 import { sendWaText, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
 import { igBotConfig, igTexts, igSaveTexts, igStats } from "../../../../lib/ig";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -91,7 +92,7 @@ async function isAdmin(req) {
   const hit = _roles.get(tok);
   if (hit && Date.now() - hit.t < 10 * 60e3) return hit.ok;
   try {
-    const payload = JSON.parse(Buffer.from(tok.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(tok));
     if (payload.exp && payload.exp * 1000 < Date.now()) return false;
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
     const ok = Array.isArray(p.body) && ["admin","empleado"].includes(p.body[0]?.role);

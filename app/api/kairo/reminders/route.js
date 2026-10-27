@@ -38,7 +38,7 @@ export async function GET(req) {
       const body = m === 0 ? `${dose ? dose + " · " : ""}${hhmm}${toma} · tocá para tildarlo` : `La toma de las ${hhmm}${toma}${dose ? ` · ${dose}` : ""}. Tomala y tildala en Kairo.`;
       console.log(`[kairo reminders] aviso ${s.name} ${hhmm} (+${m} min) a ${s.user_id}`);
       await fetch(`${base}/api/push/send`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
         body: JSON.stringify({ user_id: s.user_id, portal: "kairo", strict: true, urgency: "high", title, body, url: "/kairo?tab=nutricion", tag: `kairo-supp-${s.id}-${hhmm}` }),
       }).catch(() => {});
       sent++;

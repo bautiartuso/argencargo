@@ -12,13 +12,14 @@ const LOGO_WHITE = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/p
 const LOGO_COLOR = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
 
 import { enviarEmail } from "../../../../lib/email";
+import { payloadVerificado, firmaLink } from "../../../../lib/auth-server";
 
 async function verifyAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   const jwt = auth.slice(7);
   try {
-    const payload = JSON.parse(Buffer.from(jwt.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(jwt));
     const r = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${payload.sub}`, {
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` },
     });
@@ -117,7 +118,7 @@ export async function POST(req) {
       opCode,
       desc: "Auriculares Bluetooth",
       portalLink: `${BASE_URL}/portal?op=${opCode}`,
-      feedbackLink: `${BASE_URL}/feedback?op=${opCode}`,
+      feedbackLink: `${BASE_URL}/feedback?op=${opCode}&s=${firmaLink(opCode)}`,
       retiroLink: `${BASE_URL}/retiro/ejemplo`,
       importTotal: "USD 1.250,00",
       envioCost: "USD 13,00",
@@ -134,7 +135,7 @@ export async function POST(req) {
     const NAVY = "#152D54", AC = "#3B7DD8";
     const pideResena = !tpl.cta_text && key.startsWith("email_cerrada");
     const extraHtml = pideResena
-      ? `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px"><p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p><div>${[1,2,3,4,5].map(n=>`<a href="${BASE_URL}/feedback?op=${opCode}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div><p style="font-size:11px;color:#999;margin:12px 0 0">1 = muy mala · 5 = excelente</p></div>`
+      ? `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px"><p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p><div>${[1,2,3,4,5].map(n=>`<a href="${BASE_URL}/feedback?op=${opCode}&s=${firmaLink(opCode)}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div><p style="font-size:11px;color:#999;margin:12px 0 0">1 = muy mala · 5 = excelente</p></div>`
       : (tpl.cta_text ? `<div style="text-align:center;margin:24px 0"><a href="${data.portalLink}" style="display:inline-block;padding:14px 32px;background:${AC};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">${tpl.cta_text}</a></div>` : "");
 
     const html = renderShell({ subject, greeting, body: bodyRendered, extraHtml, opCode, isPreview: true });

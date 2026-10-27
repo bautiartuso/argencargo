@@ -1,3 +1,4 @@
+import { payloadVerificado } from "../../../../lib/auth-server";
 // GET /api/cron/client-nudges
 // Cron diario que detecta ops/avisos donde el cliente tiene una acción pendiente
 // y le manda recordatorio (in-app notification + web push si está suscripto).
@@ -27,12 +28,12 @@ async function sb(path, opts = {}) {
 
 async function isAuthorized(req) {
   const auth = req.headers.get("authorization") || "";
-  if (auth === `Bearer ${process.env.CRON_SECRET || ""}`) return true;
+  if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
   // Admin manual
   if (!auth.startsWith("Bearer ")) return false;
   const token = auth.slice(7);
   try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(token));
     if (!payload?.sub) return false;
     const p = await sb(`/rest/v1/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p) && p[0]?.role === "admin";

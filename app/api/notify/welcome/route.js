@@ -11,6 +11,7 @@ const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 
 import { enviarEmail } from "../../../../lib/email";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 export const maxDuration = 30;
 
@@ -101,7 +102,7 @@ async function isAuthorized(req, clientId) {
   if (cronSecret && token === cronSecret) return true;
   // JWT del propio cliente: verificamos que el auth_user_id del client coincida con el sub
   try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(token));
     if (!payload?.sub || !clientId) return false;
     const cl = await sb(`/rest/v1/clients?select=auth_user_id&id=eq.${clientId}`);
     const ownerId = Array.isArray(cl) && cl[0] ? cl[0].auth_user_id : null;

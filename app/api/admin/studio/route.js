@@ -19,6 +19,7 @@ import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from
 import { analisis, actualizarInsights } from "../../../../lib/ig-insights";
 import { blogSettings, guardarBlogSettings, candidatosBlog, encolarNota, publicarNota, despublicarNota, notasPendientes } from "../../../../lib/blog";
 import { liStatus, liAuthUrl, liDisconnect, liSettings, liUserinfo, liPublish, liPostUrl, encolarLinkedin, guardarLinkedinSettings } from "../../../../lib/linkedin";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -27,7 +28,7 @@ async function isStaff(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(auth.slice(7)));
     const p = await sb(`/profiles?select=role,email&id=eq.${payload.sub}`);
     return Array.isArray(p.body) && ["admin", "empleado"].includes(p.body[0]?.role) ? (p.body[0].email || p.body[0].role) : false;
   } catch { return false; }

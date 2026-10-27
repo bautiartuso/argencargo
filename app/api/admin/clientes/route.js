@@ -1,3 +1,4 @@
+import { payloadVerificado } from "../../../../lib/auth-server";
 // POST /api/admin/clientes {action:"eliminar", client_id, forzar?} → borra un cliente de la base.
 //
 // Un cliente con operaciones NO se borra (las ops son historia contable): la respuesta dice cuántas
@@ -23,7 +24,7 @@ async function isAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(auth.slice(7)));
     const p = await sb(`/rest/v1/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p.body) && p.body[0]?.role === "admin";
   } catch { return false; }

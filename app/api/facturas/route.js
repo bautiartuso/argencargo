@@ -12,6 +12,7 @@
 // El flujo es de una sola vía: se llama a ARCA únicamente acá, al emitir.
 
 import { arcaReady, arcaConfig, emitirFacturaC } from "../../../lib/arca";
+import { payloadVerificado } from "../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -32,7 +33,7 @@ async function isAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(auth.slice(7)));
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p.body) && p.body[0]?.role === "admin";
   } catch { return false; }

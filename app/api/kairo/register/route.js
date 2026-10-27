@@ -4,11 +4,13 @@
 // y pudiendo borrar usuarios desde Perfil.
 import { sb, arr } from "../../../../lib/kairo-server";
 import { SB_URL } from "../../../../lib/sb-client";
+import { limitar } from "../../../../lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 
 export async function POST(req) {
+  const frenado = limitar(req, { clave: "kairo-register", limite: 3, ventanaMs: 60 * 60_000 }); if (frenado) return frenado;
   const { email, password } = await req.json().catch(() => ({}));
   const mail = String(email || "").trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return Response.json({ error: "Email inválido" }, { status: 400 });

@@ -3,6 +3,8 @@
 // Devuelve: { ncm_code, ncm_description, import_duty_rate, statistics_rate, iva_rate, intervention: {required, types, reason}, source }
 
 import { callClaudeText, callClaudeVision } from "../../../lib/anthropic";
+import { payloadVerificado } from "../../../lib/auth-server";
+import { limitar } from "../../../lib/ratelimit";
 
 // Margen para los reintentos con backoff ante overload (529) de la API.
 export const maxDuration = 60;
@@ -389,7 +391,7 @@ async function esAdmin(req) {
   const auth = req.headers.get("authorization") || ""; if (!auth.startsWith("Bearer ")) return false;
   const key = process.env.SUPABASE_SERVICE_ROLE; if (!key) return false;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(auth.slice(7)));
     const r = await fetch(`${SB_URL}/rest/v1/profiles?select=role&id=eq.${payload.sub}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
     const p = await r.json(); return Array.isArray(p) && ["admin", "empleado"].includes(p[0]?.role);
   } catch { return false; }
@@ -405,6 +407,7 @@ async function aprender(description, ncm_code) {
 }
 
 export async function POST(req) {
+  const frenado = limitar(req, { clave: "ncm", limite: 40 }); if (frenado) return frenado;
   try {
     const { description, image, image_mime, check_ncm_only, hint, action, ncm_code } = await req.json();
     if (action === "aprender") {

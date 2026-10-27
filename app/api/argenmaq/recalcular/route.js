@@ -7,6 +7,7 @@
 // quedaban congelados en el momento de guardar los canales, así que una tarifa nueva no se veía
 // hasta volver a entrar máquina por máquina (21/09/2026).
 import { VIAS, analizarVias, armarCanales } from "../../../../lib/canales-maquinas";
+import { quienLlama, esCronValido } from "../../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -54,5 +55,10 @@ async function recalcular() {
   return { revisadas, actualizadas };
 }
 
-export async function GET() { try { return Response.json(await recalcular()); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); } }
+// 28/10/2026: lo dispara el cron (CRON_SECRET) o alguien del equipo de ARGENMAQ con sesión verificada.
+export async function GET(req) {
+  const ok = esCronValido(req) || !!(await quienLlama(req).then((y) => y && (y.staff || y.argenmaqRole || y.isGiPartner)));
+  if (!ok) return Response.json({ error: "unauthorized" }, { status: 401 });
+  try { return Response.json(await recalcular()); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
+}
 export const POST = GET;

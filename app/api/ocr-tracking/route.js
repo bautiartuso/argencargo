@@ -4,12 +4,18 @@
 // Usa Claude Vision (claude-opus-4-7) para extraer el código.
 
 import { callClaudeVision, HAIKU_MODEL } from "../../../lib/anthropic";
+import { quienLlama } from "../../../lib/auth-server";
+import { limitar } from "../../../lib/ratelimit";
 
 export const maxDuration = 30;
 
 const SYSTEM = "Sos un asistente que extrae códigos de tracking de etiquetas de courier (DHL, FedEx, UPS, China Post, EMS, Yunda, SF Express, etc.). Respondé SOLO el código, sin explicación. Si hay varios códigos, devolvé el principal (el más prominente). Si no encontrás ninguno, respondé exactamente 'NONE'.";
 
 export async function POST(req) {
+  // 28/10/2026: gasta IA; antes estaba abierta a cualquiera.
+  if (!(await quienLlama(req))) return Response.json({ ok: false, error: "no_auth" }, { status: 401 });
+  const frenado = limitar(req, { clave: "ocr", limite: 40, ventanaMs: 60_000 });
+  if (frenado) return frenado;
   try {
     const { image_base64 } = await req.json();
     if (!image_base64) return Response.json({ ok: false, error: "missing image" }, { status: 400 });

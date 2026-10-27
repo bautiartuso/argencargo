@@ -3,6 +3,7 @@
 // Excel, WhatsApp, PDF copiado, "30 unidades", "x30", "USD 9,00", precios totales, inglés/chino.
 // Body: { texto } → { ok, productos:[{description,quantity,unit_price}], bultos:[{qty,length,width,height,weight}] }
 import { callClaudeText, HAIKU_MODEL } from "../../../lib/anthropic";
+import { limitar } from "../../../lib/ratelimit";
 
 export const maxDuration = 60;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -34,6 +35,7 @@ const SCHEMA = {
 };
 
 export async function POST(req) {
+  const frenado = limitar(req, { clave: "pegar-lista", limite: 30 }); if (frenado) return frenado;
   try {
     const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
     const u = tok ? await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;

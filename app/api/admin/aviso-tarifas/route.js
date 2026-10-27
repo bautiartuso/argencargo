@@ -4,6 +4,7 @@
 //   POST → lo manda a los que todavía no lo recibieron. Solo admin / empleado.
 import { enviarEmail } from "../../../../lib/email";
 import { mailTarifas, TARIFAS_TRIGGER } from "../../../../lib/email-tarifas";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 export const maxDuration = 300;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -19,7 +20,7 @@ async function esAdmin(req) {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;
   try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(auth.slice(7)));
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p) && ["admin", "empleado"].includes(p[0]?.role);
   } catch { return false; }

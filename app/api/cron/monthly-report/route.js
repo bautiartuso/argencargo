@@ -79,6 +79,7 @@ const GOLD = "#B8956A";
 const GOLD_LIGHT = "#D4B17A";
 
 import { enviarEmail } from "../../../../lib/email";
+import { usuarioConRol } from "../../../../lib/auth-server";
 
 function renderEmailHtml(r, periodLabel) {
   const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
@@ -172,9 +173,10 @@ function renderEmailHtml(r, periodLabel) {
 export async function GET(req) {
   // Auth: Vercel cron usa Bearer del CRON_SECRET, o el admin lo dispara manual
   const auth = req.headers.get("authorization") || "";
-  const isCron = auth === `Bearer ${process.env.CRON_SECRET || ""}`;
+  const isCron = !!process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`;
   const url = new URL(req.url);
-  const isManual = url.searchParams.get("preview") === "1" || url.searchParams.get("send") === "1";
+  // Manual (preview/send) solo con sesión de admin verificada: antes cualquiera veía el P&L.
+  const isManual = (url.searchParams.get("preview") === "1" || url.searchParams.get("send") === "1") && !!(await usuarioConRol(req, ["admin"]));
   if (!isCron && !isManual) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurado" }, { status: 500 });

@@ -4,6 +4,8 @@
 // Usa Claude Vision (claude-opus-4-7) para extraer items de facturas comerciales chinas/USA.
 
 import { callClaudeVision, HAIKU_MODEL } from "../../../lib/anthropic";
+import { quienLlama } from "../../../lib/auth-server";
+import { limitar } from "../../../lib/ratelimit";
 
 export const maxDuration = 60;
 
@@ -36,6 +38,10 @@ FORMATO DE SALIDA (JSON estricto):
 Si no encontrás ningún item, devolvé {"items": []}.`;
 
 export async function POST(req) {
+  // 28/10/2026: gasta IA; antes estaba abierta a cualquiera.
+  if (!(await quienLlama(req))) return Response.json({ ok: false, error: "no_auth" }, { status: 401 });
+  const frenado = limitar(req, { clave: "parse-pdf", limite: 20, ventanaMs: 60_000 });
+  if (frenado) return frenado;
   try {
     const { images } = await req.json();
     if (!Array.isArray(images) || images.length === 0) {

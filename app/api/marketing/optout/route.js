@@ -8,7 +8,7 @@ export async function GET(req) {
   const url = new URL(req.url);
   const cid = url.searchParams.get("cid");
   let msg = "";
-  if (!cid || cid === "preview" || cid === "test") {
+  if (!cid || cid === "preview" || cid === "test" || !/^[0-9a-f-]{36}$/i.test(cid)) {
     msg = "Esto es solo un preview del enlace.";
   } else if (!SB_SERVICE) {
     msg = "Error: configuración faltante.";

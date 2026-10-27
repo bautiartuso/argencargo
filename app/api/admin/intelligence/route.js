@@ -3,6 +3,7 @@
 // Combina #10 Importaciones similares + #11 Predicción próxima importación + #13 Tendencias mercadería
 // 100% determinístico — no consume API de IA
 
+import { usuarioConRol } from "../../../../lib/auth-server";
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -52,6 +53,8 @@ function topByKey(rows, key, limit = 8) {
 }
 
 export async function GET(req) {
+  // 28/10/2026: antes no pedía sesión y devolvía todas las ops con montos.
+  if (!(await usuarioConRol(req))) return j({ error: "no_auth" }, 401);
   const url = new URL(req.url);
   const mode = url.searchParams.get("mode") || "client";
 

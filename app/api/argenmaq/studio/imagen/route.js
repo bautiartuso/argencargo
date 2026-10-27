@@ -354,6 +354,8 @@ const TAMANOS = { ficha: [1080, 1350], rubro: [1080, 1350], portada: [1080, 1350
 export async function GET(req) {
   const u = new URL(req.url);
   let d; try { d = decodificar(u.searchParams.get("d") || ""); } catch { return new Response("Datos inválidos", { status: 400 }); }
+  // 28/10/2026: la foto solo puede venir de nuestros dominios (antes bajaba cualquier URL).
+  if (d && d.foto && !/^https:\/\/(nhfslvixhlbiyfmedmbr\.supabase\.co|(www\.)?argencargo\.com\.ar|argenmaq\.vercel\.app)\//.test(String(d.foto))) d.foto = null;
   const Pl = PLANTILLAS[d.p]; if (!Pl) return new Response("Plantilla desconocida", { status: 400 });
   const [w, h] = TAMANOS[d.p] || [1080, 1920];
   const [reg, semi, extra] = await Promise.all([fuenteReg, fuenteSemi, fuenteExtra]);

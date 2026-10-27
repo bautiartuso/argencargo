@@ -7,6 +7,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../../lib/ui";
 import CarrierLogo from "../components/CarrierLogo";
 import { FIRMA_DEF, PLANTILLAS_DEF, firmaHtml, aplicarPlantilla } from "../../lib/firma-mail";
+import { instalarAuthFetch } from "../../lib/auth-fetch";
+instalarAuthFetch(["ac_admin"]);
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8C99B";
 const MAX_ADJ = 3.2 * 1024 * 1024; // límite de Vercel para el cuerpo de la request (~4,5 MB en base64)

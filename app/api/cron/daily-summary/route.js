@@ -21,11 +21,11 @@ async function sb(path) {
 
 async function isAuth(req) {
   const auth = req.headers.get("authorization") || "";
-  if (auth === `Bearer ${process.env.CRON_SECRET || ""}`) return true;
+  if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
   if (!auth.startsWith("Bearer ")) return false;
   const token = auth.slice(7);
   try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+    const payload = (await payloadVerificado(token));
     if (!payload?.sub) return false;
     const p = await sb(`/rest/v1/profiles?select=role&id=eq.${payload.sub}`);
     return Array.isArray(p) && p[0]?.role === "admin";
@@ -37,6 +37,7 @@ const usd = (n) => `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFracti
 const NAVY = "#152D54", AC = "#3B7DD8", GOLD = "#B8956A", GOLD_LIGHT = "#D4B17A";
 
 import { enviarEmail } from "../../../../lib/email";
+import { payloadVerificado } from "../../../../lib/auth-server";
 
 function renderHtml({ yesterdayDate, opsCreatedYesterday, opsCobradasYesterday, montoCobradoYesterday, packagesYesterday, todayPending, overdueReminders }) {
   const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
