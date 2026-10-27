@@ -17449,15 +17449,18 @@ function AdminCalculator({token}){
 .qc-ctitle{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .qc-cn{font-size:14.5px;font-weight:700;color:${IC};margin:0}
 .qc-ci{font-size:11.5px;color:rgba(255,255,255,0.4);margin:2px 0 0}
-.qc-sw{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;height:42px;padding:0 12px 0 14px;margin:0 0 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.5);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .2s,border-color .2s,color .2s}
-.qc-sw:hover{border-color:rgba(255,255,255,0.2)}
-.qc-sw.on{border-color:rgba(96,165,250,0.5);background:rgba(96,165,250,0.12);color:#93c5fd}
+.qc-cert{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 8px;border-radius:999px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:rgba(255,255,255,0.55);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.qc-cert i{width:10px;height:10px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.35)}
+.qc-cert.on{border-color:rgba(96,165,250,0.55);background:rgba(96,165,250,0.14);color:#bfdbfe}
+.qc-cert.on i{background:#60a5fa;border-color:#60a5fa}
+.qc-sw{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:auto;height:auto;padding:0;margin:2px 0 0;border:none;background:none;cursor:pointer}
+
 .qc-sw i{position:relative;flex-shrink:0;width:38px;height:22px;border-radius:22px;background:rgba(255,255,255,0.16);transition:background .2s}
 .qc-sw i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.35);transition:transform .2s cubic-bezier(.2,.8,.2,1)}
 .qc-sw.on i{background:#60a5fa}
 .qc-sw.on i::after{transform:translateX(16px)}
 .qc-card.off>:not(:first-child),.qc-card.off .qc-ctitle,.qc-card.off .qc-cwarn{opacity:.55}
-.qc-cwarn{font-size:11.5px;color:#fbbf24;margin:10px 0 0;line-height:1.4;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,0.07)}
+.qc-cwarn{display:inline-block;margin-left:8px;font-size:10.5px;font-weight:800;color:#fbbf24;padding:1px 8px;border-radius:999px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);cursor:help;vertical-align:1px}
 .qc-lines{display:flex;flex-direction:column;gap:7px;align-self:start}
 .qc-grp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;padding-top:11px;border-top:1px solid rgba(255,255,255,0.08);font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#E8D098}
 .qc-grp.first{margin-top:0;padding-top:0;border-top:none}
@@ -17662,12 +17665,11 @@ function AdminCalculator({token}){
           const on=canalesLink.includes(ch.key);
           return <div key={ch.key} className={"qc-card"+(ch.notVisibleToClient?" warn":"")+(on?"":" off")}>
             <div>
-              {/* Si esta opción va en el link del cliente: barra entera clickeable con interruptor. */}
-              <button type="button" role="switch" aria-checked={on} className={"qc-sw"+(on?" on":"")} onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])}>
-                <span>{on?"Se muestra en el link":"No se muestra en el link"}</span><i/>
-              </button>
+              {/* Título con el interruptor "va en el link" a la derecha; el aviso del canal va acá
+                  como chip (abajo desalineaba las tarjetas). */}
               <div className="qc-ctitle">
-                <div style={{minWidth:0}}><p className="qc-cn">{ch.name}</p><p className="qc-ci">{ch.info}</p></div>
+                <div style={{minWidth:0}}><p className="qc-cn">{ch.name}</p><p className="qc-ci">{ch.info}{ch.notVisibleToClient&&<span className="qc-cwarn" title={ch.notVisibleToClient}>⚠ {/CBM/.test(ch.notVisibleToClient)?"poco volumen":"no se ofrece"}</span>}</p></div>
+                <button type="button" role="switch" aria-checked={on} title={on?"Se muestra en el link del cliente":"No se muestra en el link del cliente"} className={"qc-sw"+(on?" on":"")} onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])}><i/></button>
               </div>
             </div>
             <div className="qc-lines">
@@ -17701,12 +17703,13 @@ function AdminCalculator({token}){
                     </span>
                     <span className="qc-lr">{c.on&&<><input className="qc-in" inputMode="numeric" value={c.n} onChange={e=>setCerts(p=>({...p,[k]:{...p[k],n:e.target.value.replace(/[^\d]/g,"")}}))} style={{width:44,height:30,textAlign:"center",padding:0}}/><span className="qc-u">cert.</span></>}<b>{c.on?`USD ${fmt(usd)}`:"—"}</b></span>
                   </div>;};
-                  const nI=Math.max(1,Math.round(toN(certs.inal.n)||1)),nS=Math.max(1,Math.round(toN(certs.seg.n)||1));
-                  return <>
-                    {fila("inal","INAL",(tc>0?nI*850000/tc:0)+1200)}
-                    {fila("seg","Seguridad eléctrica",tc>0?nS*1500000/tc:0)}
-                    {(certs.inal.on||certs.seg.on)&&<div className="qc-l"><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Pesos a USD</span><span className="qc-lr"><span className="qc-u">$</span><input className="qc-in" inputMode="decimal" value={tcCert} onChange={e=>setTcCert(e.target.value.replace(/[^\d.,]/g,""))} style={{width:84,height:30,textAlign:"center",padding:0}}/></span></div>}
-                  </>;})()}
+                  // Certificados (28/10/2026): dos chips en un renglón; prendido = lleva ese certificado.
+                  // El importe entra en Impuestos; el tipo de cambio solo aparece si hay alguno prendido.
+                  const chipC=(k,lb)=>{const on=certs[k].on;return <button key={k} type="button" onClick={()=>setCerts(p=>({...p,[k]:{...p[k],on:!p[k].on}}))} className={"qc-cert"+(on?" on":"")}><i/>{lb}</button>;};
+                  return <div className="qc-l" style={{gap:8}}>
+                    <span style={{display:"inline-flex",gap:6,flexWrap:"wrap"}}>{chipC("inal","INAL")}{chipC("seg","Seg. eléctrica")}</span>
+                    {(certs.inal.on||certs.seg.on)&&<span className="qc-lr" title="Tipo de cambio para pasar a dólares el costo de los certificados"><span className="qc-u">$</span><input className="qc-in" inputMode="decimal" value={tcCert} onChange={e=>setTcCert(e.target.value.replace(/[^\d.,]/g,""))} style={{width:72,height:28,textAlign:"center",padding:0}}/></span>}
+                  </div>;})()}
                 {bd.isAereo&&<>
                   <div className="qc-l"><span>Desaduanaje<em>+ IVA</em></span><span className="qc-lr"><span className="qc-u">USD</span>{ovIn(hasOv?ovStr:String(bd.desembolsoAuto||0),hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01,v=>setDesembolsoOverride(p=>({...p,[ch.key]:v})),sinOv(setDesembolsoOverride,ch.key))}<b>USD {fmt(desEff+ivaDesEff)}</b></span></div>
                 </>}
@@ -17740,7 +17743,6 @@ function AdminCalculator({token}){
               const verde=(v)=>({color:v>=0?"#4ade80":"#f87171"});
               // El aviso del canal va abajo (22/10/2026): arriba estiraba la fila del título en las 3 tarjetas.
               return <div style={{display:"flex",flexDirection:"column",gap:10,alignSelf:"start",minWidth:0}}>
-                {ch.notVisibleToClient&&<p className="qc-cwarn" style={{margin:0}}>⚠ {ch.notVisibleToClient}</p>}
                 <div className="qc-cost">
                   <div className="qc-ganhero"><span>Ganancia</span><strong style={verde(gan)}>USD {fmt(gan)}</strong><em style={verde(gan)}>{pct.toFixed(0)}%</em></div>
                   <div className="qc-ganbar"><i style={{width:`${Math.max(0,Math.min(100,pct*2))}%`,background:gan>=0?"linear-gradient(90deg,#22c55e,#4ade80)":"#f87171"}}/></div>
@@ -17752,7 +17754,7 @@ function AdminCalculator({token}){
                   </div>
                 </div>
               </div>;
-            })():(ch.notVisibleToClient?<p className="qc-cwarn" style={{margin:0,alignSelf:"start"}}>⚠ {ch.notVisibleToClient}</p>:<div/>)}
+            })():<div/>}
           </div>;
         })}
       </div>)}
