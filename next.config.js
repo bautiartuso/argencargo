@@ -1,12 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+    serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core', 'pdfjs-dist'],
     // Chromium carga sus binarios y libs (.br) con fs en runtime: el tracing de Next no los ve y
     // la función salía sin libnss3 & co. Se incluyen a mano en la función que genera PDFs.
     outputFileTracingIncludes: {
       '/api/admin/bot': ['./node_modules/@sparticuz/chromium/bin/**'],
       '/api/portal/legajo/pdf': ['./node_modules/@sparticuz/chromium/bin/**'],
+      '/api/portal/dsi': ['./node_modules/@sparticuz/chromium/bin/**', './node_modules/pdfjs-dist/legacy/build/**'],
       '/api/admin/studio': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],
       '/api/cron/studio-queue': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],
       '/api/cron/studio-runner': ['./docs/marca/**'],

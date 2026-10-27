@@ -207,3 +207,7 @@ create policy package_photos_auth_delete on storage.objects for delete using (bu
 create policy solfin_comprob_auth_insert on storage.objects for insert with check (bucket_id = 'solfin-comprobantes' and (select public.es_equipo()));
 create policy solfin_comprob_auth_update on storage.objects for update using (bucket_id = 'solfin-comprobantes' and (select public.es_equipo()));
 create policy solfin_comprob_auth_delete on storage.objects for delete using (bucket_id = 'solfin-comprobantes' and (select public.es_equipo()));
+
+-- rol_auth_de solo la usa el trigger sincronizar_rol_auth (corre como dueño): nadie de afuera.
+revoke execute on function public.rol_auth_de(uuid) from public, anon, authenticated;
+grant execute on function public.rol_auth_de(uuid) to service_role;
