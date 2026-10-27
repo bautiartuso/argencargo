@@ -7276,8 +7276,18 @@ function ClientsList({token,onSelect}){
     // cliente aunque el nombre y el apellido esten en columnas distintas.
     const palabras=busq.replace(/[(),*:"'\\]/g," ").split(/\s+/).filter(Boolean).slice(0,4);
     if(palabras.length){
-      const cond=w=>{const e=encodeURIComponent(w);return `or(first_name.ilike.*${e}*,last_name.ilike.*${e}*,client_code.ilike.*${e}*,email.ilike.*${e}*)`;};
-      f+=`&and=(${palabras.map(cond).join(",")})`;
+      // Teléfono (27/10/2026): si lo que se escribe o pega es un número ("+54 9 11 2386-3156", con
+      // espacios, guiones o marcas invisibles de WhatsApp), se busca por los últimos 8 dígitos contra
+      // el WhatsApp sin formato (whatsapp_digitos), el CUIT o el DNI. Si no, por palabras.
+      const limpio=busq.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,"");
+      const dig=limpio.replace(/\D/g,"");
+      if(dig.length>=6&&/^[\d\s+\-‑–().]+$/.test(limpio.trim())){
+        const ult=dig.slice(-8);
+        f+=`&or=(whatsapp_digitos.ilike.*${ult}*,cuit.ilike.*${dig}*,dni.ilike.*${dig}*)`;
+      }else{
+        const cond=w=>{const e=encodeURIComponent(w);return `or(first_name.ilike.*${e}*,last_name.ilike.*${e}*,company_name.ilike.*${e}*,client_code.ilike.*${e}*,email.ilike.*${e}*)`;};
+        f+=`&and=(${palabras.map(cond).join(",")})`;
+      }
     }
     return f;
   },[fCond,busq]);
@@ -7507,7 +7517,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const chCl=f=>v=>setCl(p=>({...p,[f]:v}));
   const saveClient=async()=>{
     setSaving(true);
-    const{id,created_at,updated_at,auth_user_id,...rest}=cl;
+    const{id,created_at,updated_at,auth_user_id,whatsapp_digitos:_wd,...rest}=cl;
     const taxChanged=rest.tax_condition!==initClient.tax_condition;
     await dq("clients",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     flash(taxChanged?"Cliente guardado · re-sincronizando ops…":"Cliente guardado");
