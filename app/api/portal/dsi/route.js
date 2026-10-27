@@ -9,6 +9,7 @@ import { armarDsiArgencargo, dsiArgencargoHtml, condicionDgi } from "../../../..
 import { nombreArchivo, BASE_URL } from "../../../../lib/legajo-server";
 import { launchBrowser } from "../../../../lib/chromium";
 import { arcaReady, arcaConfig, consultarPadron } from "../../../../lib/arca";
+import { minKgAereoDe } from "../../../../lib/calc";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function GET(req) {
   if (!UUID.test(opId)) return json({ error: "op_invalida" }, 400);
   const firmado = q.get("s") && q.get("s") === firmaLink(`dsi:${opId}`);
 
-  const [op] = lista(await svc(`/rest/v1/operations?id=eq.${opId}&select=id,operation_code,channel,client_id,clients(auth_user_id,tax_condition)&limit=1`));
+  const [op] = lista(await svc(`/rest/v1/operations?id=eq.${opId}&select=id,operation_code,channel,origin,created_at,client_id,clients(auth_user_id,tax_condition)&limit=1`));
   if (!op) return json({ error: "no_encontrada" }, 404);
   let quien = null;
   if (!firmado) {
@@ -44,11 +45,12 @@ export async function GET(req) {
     return json({ url: `${BASE_URL}/api/portal/dsi?op_id=${opId}&s=${firmaLink(`dsi:${opId}`)}&ver=1` });
   }
 
-  const [docs, fos, bultosR, fii] = await Promise.all([
+  const [docs, fos, bultosR, fii, cfgR] = await Promise.all([
     svc(`/rest/v1/legajo_docs?operation_id=eq.${opId}&tipo=eq.dsi&borrado_at=is.null&storage_path=not.is.null&select=id,storage_path,datos,flight_id,uploaded_at&order=uploaded_at.desc`),
     svc(`/rest/v1/flight_operations?operation_id=eq.${opId}&select=flight_id,flights(id,flight_code,international_carrier,international_tracking,dest_name,dest_tax_id,dest_address,received_at)`),
-    svc(`/rest/v1/operation_packages?operation_id=eq.${opId}&select=quantity`),
+    svc(`/rest/v1/operation_packages?operation_id=eq.${opId}&select=quantity,gross_weight_kg,length_cm,width_cm,height_cm`),
     svc(`/rest/v1/flight_invoice_items?operation_id=eq.${opId}&select=flight_id,description,quantity,unit_price_declared_usd,hs_code,sort_order&order=sort_order.asc`),
+    svc(`/rest/v1/calc_config?key=eq.cert_flete_aereo_ficticio&select=value`),
   ]);
   const doc = lista(docs)[0];
   if (!doc) return json({ error: "sin_dsi", mensaje: "La operación todavía no tiene la DSI cargada en el legajo." }, 404);
@@ -83,7 +85,13 @@ export async function GET(req) {
   const opsEnGuia = flight?.id ? lista(await svc(`/rest/v1/flight_operations?flight_id=eq.${flight.id}&select=operation_id`)).length : 1;
   const items = lista(fii).filter((i) => !flight?.id || i.flight_id === flight.id);
   const bultos = lista(bultosR).reduce((a, p) => a + Number(p.quantity || 1), 0) || 1;
-  const d = armarDsiArgencargo({ dsi: datos, flight, op, items, bultos, condicion: condicionDgi(datos.cab?.destinatarioCondIva), unica: opsEnGuia === 1 });
+  // Flete declarado para monotributo/CF: USD 3,5 (calc_config) por kg facturable, con el mismo
+  // mínimo y el mismo volumétrico (÷5000) que la calculadora.
+  const pf = lista(bultosR).reduce((a, p) => { const q = Number(p.quantity || 1); const b = Number(p.gross_weight_kg || 0) * q; const l = Number(p.length_cm || 0), w = Number(p.width_cm || 0), h = Number(p.height_cm || 0); const v = l && w && h ? (l * w * h / 5000) * q : 0; return a + Math.max(b, v); }, 0);
+  const tasaFlete = Number(lista(cfgR)[0]?.value) || 3.5;
+  const kg = pf > 0 ? Math.max(pf, minKgAereoDe(op.origin, op.created_at ? Date.parse(op.created_at) : Date.now())) : 0;
+  const fleteDeclarado = kg > 0 ? Math.round(kg * tasaFlete * 100) / 100 : null;
+  const d = armarDsiArgencargo({ dsi: datos, flight, op, items, bultos, condicion: condicionDgi(datos.cab?.destinatarioCondIva), unica: opsEnGuia === 1, fleteDeclarado });
   const html = dsiArgencargoHtml(d);
   if (q.get("formato") === "html") return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 
