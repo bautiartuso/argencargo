@@ -12948,7 +12948,8 @@ function AgentsPanel({token}){
       const ordenar=(l)=>flightsSort==="codigo"?[...l].sort((a,b)=>String(b.flight_code).localeCompare(String(a.flight_code)))
         :flightsSort==="cliente"?[...l].sort((a,b)=>clienteDe(a).localeCompare(clienteDe(b)))
         :flightsSort==="peso"?[...l].sort((a,b)=>Number(b.total_weight_kg||0)-Number(a.total_weight_kg||0)):l;
-      const shownFlights=(flightsSubTab==="received"?ordenar(receivedFlights):activeFlights).filter(pasaFiltro);
+      // Buscador y filtro solo en Recibidos: En operación ya viene separado por courier.
+      const shownFlights=flightsSubTab==="received"?ordenar(receivedFlights).filter(pasaFiltro):activeFlights;
       const hayFiltro=!!qv||flightsCarrier!=="all";
       const barraVuelos=<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
         <div style={{position:"relative",flex:"1 1 260px",maxWidth:420}}>
@@ -12971,7 +12972,7 @@ function AgentsPanel({token}){
         {aliPend.length>0&&<AlibabaPendingBanner flights={aliPend} token={token} onDone={load}/>}
         {aliPay.length>0&&<AlipayPendingBanner flights={aliPay} token={token} onDone={load}/>}
       </>;})()}
-      {barraVuelos}
+      {flightsSubTab==="received"&&barraVuelos}
       {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{hayFiltro?"Ningún vuelo coincide con la búsqueda":flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
