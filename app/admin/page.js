@@ -14687,7 +14687,7 @@ function gananciaMaritimaAgua({ships,pkgs,items,tariffs,ovByCli}){
   const porCont={};ships.forEach(s=>{(porCont[s.container_id]=porCont[s.container_id]||[]).push(s);});
   Object.values(porCont).forEach(list=>{
     const byCli={};list.forEach(s=>{if(s.client_id)(byCli[s.client_id]=byCli[s.client_id]||[]).push(s);});
-    const impCli={};Object.entries(byCli).forEach(([cid,ss])=>{const ids=new Set(ss.map(x=>x.id));const cbm=ss.reduce((a,x)=>a+cbmOf(x.id),0);const fob=items.filter(it=>ids.has(it.shipment_id)).reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const ov=ovByCli[cid]||[];impCli[cid]=cbm*rateFor(cbm,ov)+surFor(fob,cbm,ov);});
+    const impCli={};Object.entries(byCli).forEach(([cid,ss])=>{const ids=new Set(ss.map(x=>x.id));const cbm=ss.reduce((a,x)=>a+cbmOf(x.id),0);const fob=items.filter(it=>ids.has(it.shipment_id)).reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const ov=ovByCli[cid]||[];{const v=cbm*rateFor(cbm,ov)+surFor(fob,cbm,ov);impCli[cid]=v>0&&v<100?100:v;}});
     list.forEach(s=>{
       costo+=Number(s.cost_estimado||0);
       if(s.revenue_manual!=null){importe+=Number(s.revenue_manual)||0;return;}
@@ -18802,7 +18802,8 @@ function MaritimePanel({token,allClients=[]}){
       const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const fob=items.filter(it=>sids.has(it.shipment_id)).reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       const overrides=mtOverrides[cid]||[];
-      out[cid]=cbm*fleteRateForCbm(cbm,overrides)+surchargeForValue(fob,cbm,overrides);
+      // Mínimo de servicio del Integral: USD 100 por cliente (igual que lib/calc.js).
+      {const v=cbm*fleteRateForCbm(cbm,overrides)+surchargeForValue(fob,cbm,overrides);out[cid]=v>0&&v<100?100:v;}
     });
     return out;
   };
@@ -19808,7 +19809,7 @@ function mtMoney({tariffs,overrides,pkgByShip,itemsByShip,shipments,containers})
     Object.entries(byCli).forEach(([cid,ships])=>{
       const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const fob=ships.reduce((s,sh)=>s+(itemsByShip[sh.id]||[]).reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0),0);
-      out[cid]=cbm*fleteRateForCbm(cbm,overrides[cid]||[])+surchargeForValue(fob,cbm,overrides[cid]||[]);
+      {const v=cbm*fleteRateForCbm(cbm,overrides[cid]||[])+surchargeForValue(fob,cbm,overrides[cid]||[]);out[cid]=v>0&&v<100?100:v;} // mínimo USD 100
     });
     return out;
   };
