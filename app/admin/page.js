@@ -11351,7 +11351,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
               </div>
             </>}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-              <Inp label="Carrier" value={costForm.international_carrier} onChange={v=>setCostForm(p=>({...p,international_carrier:v}))}/>
+              <Sel label="Carrier" value={costForm.international_carrier||""} onChange={v=>setCostForm(p=>({...p,international_carrier:v}))} ph="Elegir…" options={[...["FedEx","DHL","UPS"],...(costForm.international_carrier&&!["FedEx","DHL","UPS"].includes(costForm.international_carrier)?[costForm.international_carrier]:[])]}/>
               <Inp label="Tracking" value={costForm.international_tracking} onChange={v=>setCostForm(p=>({...p,international_tracking:v}))}/>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
