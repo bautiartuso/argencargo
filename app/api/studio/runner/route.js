@@ -10,7 +10,7 @@
 // POST ?op=photo  (json: id, nota?) → genera la foto real con fal.ai (si la pieza la pide) → {photo_url}.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
-import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto, generarFotoRaw } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, ejemplosAprobados, guardarPortadaCompetencia, uploadStorage, borrarImagenesPieza, generarFoto, generarFotoRaw } from "../../../../lib/studio";
 import { guardarNota, publicarNota, blogSettings } from "../../../../lib/blog";
 import { liSettings, proximoSlotLinkedin } from "../../../../lib/linkedin";
 
@@ -30,8 +30,17 @@ export async function GET(req) {
   const lock = await sb(`/cs_pieces?id=eq.${piece.id}&status=eq.generating&or=(locked_at.is.null,locked_at.lt.${stale})`, { method: "PATCH", body: JSON.stringify({ locked_at: new Date().toISOString() }) });
   if (!(Array.isArray(lock.body) && lock.body.length)) return new Response(null, { status: 204 });
   const [memory, assets, aprobados] = await Promise.all([loadMemory(), loadAssets(), ejemplosAprobados(6)]);
+  // Historia basada en una publicación de la competencia: el runner baja su portada como referencia de composición.
+  let competencia = null;
+  if (piece.ref_competencia) {
+    const c = await sb(`/cs_competitor_posts?ig_media_id=eq.${encodeURIComponent(piece.ref_competencia)}&select=*&limit=1`);
+    const post = Array.isArray(c.body) && c.body[0];
+    const url = post && (post.cover_url || await guardarPortadaCompetencia(post).catch(() => null));
+    if (url) competencia = { url, formato: post.analysis?.formato || post.media_type, concepto_visual: post.analysis?.concepto_visual || "", texto_en_imagen: post.analysis?.texto_en_imagen || "" };
+  }
   return Response.json({
     piece,
+    competencia,
     memory: Object.fromEntries(memory.map((m) => [m.key, m.content])),
     assets,
     aprobados: aprobados.filter((p) => p.id !== piece.id).map((p) => ({ id: p.id, kind: p.kind, title: p.title, headline: p.headline, html: p.html, image_url: p.image_url })),
