@@ -50,7 +50,7 @@ export default function EntregaPublica({ params }) {
   const [dirCP, setDirCP] = useState("");
   const [dirTel, setDirTel] = useState("");
   const [payment, setPayment] = useState("efectivo"); // legacy: primer método (se mantiene sincronizado)
-  // Quien recibe, solo para envio por transportista (Andreani): el despacho exige el DNI. Se
+  // Quien recibe, solo para envio por Vía Cargo: el despacho exige el DNI. Se
   // precarga con los datos del cliente, pero es editable porque a veces recibe otra persona.
   // El link avanza de a bloques, como el de MyBox: se ve un paso por vez y el siguiente aparece
   // recién cuando el anterior está resuelto. Mostrar los tres juntos hacía que el cliente saltara
@@ -230,9 +230,9 @@ export default function EntregaPublica({ params }) {
     if (delivery === "carrier") {
       if (!carrierMode) return "Elegí si lo recibís en sucursal o en tu domicilio.";
       if (!contacto.nombre.trim() || !contacto.apellido.trim()) return "Completá nombre y apellido de quien recibe.";
-      if (contacto.dni.replace(/\D/g, "").length < 7) return "Completá el DNI de quien recibe — el transportista lo necesita para el despacho.";
-      if (contacto.telefono.replace(/\D/g, "").length < 8) return "Completá el teléfono de quien recibe — el transportista llama antes de entregar.";
-      if (!contacto.cp.trim()) return "Completá el código postal — el transportista lo necesita para cotizar el despacho.";
+      if (contacto.dni.replace(/\D/g, "").length < 7) return "Completá el DNI de quien recibe — Vía Cargo lo necesita para el despacho.";
+      if (contacto.telefono.replace(/\D/g, "").length < 8) return "Completá el teléfono de quien recibe — Vía Cargo llama antes de entregar.";
+      if (!contacto.cp.trim()) return "Completá el código postal — Vía Cargo lo necesita para cotizar el despacho.";
       if (carrierMode === "sucursal" && !contacto.sucursal.trim()) return "Indicá en qué sucursal lo vas a retirar.";
       if (carrierMode === "domicilio" && !contacto.direccion.trim()) return "Completá la dirección de entrega.";
     }
@@ -250,7 +250,7 @@ export default function EntregaPublica({ params }) {
   };
 
   const confirm = async () => {
-    // Andreani no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
+    // Vía Cargo no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
     const errEntrega = validarEntrega();
     if (errEntrega) { setFormError(errEntrega); return; }
     const errPago = validarPago();
@@ -451,7 +451,7 @@ export default function EntregaPublica({ params }) {
             <ModoEntrega selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} icon="oficina" label="Retiro en oficina" meta={deliveryInfo.office_locality || "Buenos Aires"} price="Sin cargo" />
             {hasPropio
               ? <ModoEntrega selected={delivery === "propio"} onClick={() => setDelivery("propio")} icon="domicilio" label="Envío a domicilio" meta={cotEnvio?.zone || inferredZone || "A tu dirección"} price={precioPropio != null ? "+ " + fmt(precioPropio) : "Fuera de zona"} />
-              : <ModoEntrega selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} icon="transporte" label="Envío al interior" meta="Por Vía Cargo o Andreani" price="A coordinar" />}
+              : <ModoEntrega selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} icon="transporte" label="Envío al interior" meta="Por Vía Cargo" price="A coordinar" />}
           </div>
 
           {delivery === "oficina" && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}` }}>
@@ -494,7 +494,7 @@ export default function EntregaPublica({ params }) {
               {carrierMode && (
                 <div style={{ padding: "13px 15px", borderRadius: 12, background: "rgba(10,22,40,0.035)", border: "1px solid rgba(10,22,40,0.10)" }}>
                   <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 3px" }}>Datos de quien recibe</p>
-                  <p style={{ fontSize: 11.5, color: MUTED, margin: "0 0 10px", lineHeight: 1.45 }}>El transportista pide el DNI del destinatario para poder despachar.</p>
+                  <p style={{ fontSize: 11.5, color: MUTED, margin: "0 0 10px", lineHeight: 1.45 }}>Vía Cargo pide el DNI de quien recibe para poder despachar.</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <input value={contacto.nombre} onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))} placeholder="Nombre" style={contactInputStyle()} />
                     <input value={contacto.apellido} onChange={(e) => setContacto((c) => ({ ...c, apellido: e.target.value }))} placeholder="Apellido" style={contactInputStyle()} />
@@ -532,7 +532,7 @@ export default function EntregaPublica({ params }) {
           {/* Rediseño 28/10/2026: el total en el mismo bloque navy del paso 1, con qué incluye y cuándo. */}
           {(() => {
             const enPesos = payMethods[0] === "transferencia" && tcVenta > 0;
-            const modoTxt = modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro en oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por transportista";
+            const modoTxt = modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro en oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por Vía Cargo";
             const dE = diaEntrega ? new Date(diaEntrega + "T12:00:00") : null;
             const cuando = dE ? `${["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][dE.getDay()]} ${dE.getDate()}/${dE.getMonth() + 1}${franjaEntrega ? ` · ${franjaEntrega} hs` : ""}` : "";
             const incl = multi ? cargas.filter((c) => c.main || selExtra.includes(c.id)) : [];
@@ -565,7 +565,7 @@ export default function EntregaPublica({ params }) {
             return <div style={{ marginTop: 16 }}>
               <p style={{ ...fieldLblStyle(), marginBottom: 8 }}>¿Cómo querés pagar?</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {!soloRemoto && <ModoEntrega selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && elegir("efectivo")} disabled={efectivoBlocked} icon="efectivo" label="Efectivo" meta={efectivoBlocked ? "No disponible con transportista" : `Dólares o pesos, al ${delivery === "propio" ? "recibir" : "retirar"}`} />}
+                {!soloRemoto && <ModoEntrega selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && elegir("efectivo")} disabled={efectivoBlocked} icon="efectivo" label="Efectivo" meta={efectivoBlocked ? "No disponible con Vía Cargo" : `Dólares o pesos, al ${delivery === "propio" ? "recibir" : "retirar"}`} />}
                 <ModoEntrega selected={payMethods.includes("transferencia")} onClick={() => elegir("transferencia")} icon="transferencia" label="Transferencia" meta="En pesos" price={tcVenta > 0 ? `ARS ${Math.round(total * tcVenta).toLocaleString("es-AR")}` : ""} />
                 <ModoEntrega selected={payMethods.includes("crypto")} onClick={() => elegir("crypto")} icon="cripto" label="Cripto (USDT)" meta="Red TRC-20 · te pasamos la billetera" />
               </div>
@@ -726,7 +726,7 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
     ? split.map((p) => `${L[p.method] || p.method} (${montoTxt(p)})`).join(" + ")
     : split && split[0] ? `${L[split[0].method]}${split[0].currency === "ARS" ? " en pesos" : split[0].currency === "mixto" ? " (USD + ARS)" : ""}` : (L[data.payment_method] || data.payment_method);
   const transfPart = split ? split.find((p) => p.method === "transferencia") : null;
-  const entregaLabel = delivery === "ri" ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
+  const entregaLabel = delivery === "ri" ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por Vía Cargo";
   const [verDetalle, setVerDetalle] = useState(false);
   const rowS = { display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 };
   // Rediseño 22/10/2026: cabecera navy con el estado, total grande, datos para pagar con botón de copiar.

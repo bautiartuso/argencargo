@@ -666,7 +666,7 @@ export async function POST(req, { params }) {
   const settingsP = sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`);
   const tcP = fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null);
 
-  const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por transportista (Via Cargo/Andreani)";
+  const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por Vía Cargo";
   const PL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
   const CUR_LBL = { USD: "en dólares", ARS: "en pesos", mixto: "USD + ARS" };
   const payLabel = splitFinal && splitFinal.length > 1
