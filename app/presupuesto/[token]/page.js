@@ -19,16 +19,25 @@ const fmt = (n) => Number(n || 0).toLocaleString("es-AR", { minimumFractionDigit
 const usd = (n) => `USD ${fmt(n)}`;
 const fmtKg = (n) => `${fmt(n)} kg`;
 // Certificados (09/10/2026): las líneas "INAL (n certificados)" / "Seguridad eléctrica (n
-// certificado)" se muestran con un distintivo CERTIFICACIÓN · nombre.
+// certificado)" se muestran con un distintivo CERTIFICACIÓN · nombre. Desde el 29/10/2026 llevan un
+// "?" que despliega qué es y cómo se cobra (pensado para el celular: se toca, no se pasa el mouse).
+const EXPLICA_CERT = {
+  inal: "El INAL es el certificado que exige el Estado para importar productos que tocan alimentos, como utensilios de cocina. El certificado cuesta $850.000 y dura 5 años: mientras esté vigente, tus próximas importaciones no lo vuelven a pagar. Además, cada importación paga USD 1.200 fijos por la intervención. Ya está incluido en el total.",
+  seg: "La certificación de seguridad eléctrica es obligatoria para importar productos que se enchufan o usan electricidad. Cuesta $1.500.000 por certificado. Ya está incluida en el total.",
+};
 function EtiquetaLinea({ l }) {
+  const [abierto, setAbierto] = useState(false);
   const m = String(l || "").match(/^(.+?)\s*\((\d+)\s*certificados?\)\s*$/i);
   if (!m) return <span>{l}</span>;
   const n = Number(m[2]);
+  const texto = /inal/i.test(m[1]) ? EXPLICA_CERT.inal : /el[eé]ctric/i.test(m[1]) ? EXPLICA_CERT.seg : null;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "#1F3B2D", color: "#E8F5E9", fontSize: 10.5, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.5 }}>✓ Certificación</span>
       <span style={{ color: "rgba(26,26,26,0.35)" }}>·</span>
       <span style={{ fontWeight: 700, color: "#1a1a1a" }}>{m[1]}{n > 1 ? ` ×${n}` : ""}</span>
+      {texto && <button type="button" onClick={() => setAbierto((v) => !v)} aria-label="Qué es esta certificación" aria-expanded={abierto} style={{ width: 22, height: 22, borderRadius: 999, border: "1px solid rgba(26,26,26,0.25)", background: abierto ? "#0A1628" : "#fff", color: abierto ? "#E8D098" : "#1a1a1a", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>?</button>}
+      {texto && abierto && <span style={{ flexBasis: "100%", marginTop: 6, padding: "10px 12px", borderRadius: 10, background: "#fff", border: "1px solid #eae4d6", fontSize: 12.5, lineHeight: 1.55, color: "rgba(26,26,26,0.8)", fontWeight: 400 }}>{texto}</span>}
     </span>
   );
 }
