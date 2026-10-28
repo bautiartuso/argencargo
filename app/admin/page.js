@@ -18942,8 +18942,10 @@ function MaritimePanel({token,allClients=[]}){
   // cargas de ese contenedor que todavía no son operación. Presupuesto auto (flete CBM +
   // recargo por valor). Nace en 'entregada' (LISTA PARA RETIRAR) y se manda el mail de
   // retiro al cliente — igual que el flujo manual createOperationFromShipments.
-  const createOpsForContainer=async(c)=>{
-    const conShips=shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
+  // soloIds: cargas que llegaron sueltas antes que el contenedor (28/10/2026); se les arma la op ya,
+  // salen del contenedor y, con sinCosto, la op queda con costo 0 (no se pagó flete por ellas).
+  const createOpsForContainer=async(c,{soloIds=null,sinCosto=false}={})=>{
+    const conShips=shipments.filter(s=>s.container_id===c.id&&!s.operation_id&&(!soloIds||soloIds.includes(s.id)));
     const byClient={};
     conShips.forEach(s=>{if(s.client_id)(byClient[s.client_id]=byClient[s.client_id]||[]).push(s);});
     const clientIds=Object.keys(byClient);
@@ -18954,7 +18956,7 @@ function MaritimePanel({token,allClients=[]}){
     ]);
     const tariffs=Array.isArray(tariffsR)?tariffsR:[];
     const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
-    const deliveryEta=deliveryEtaStr(effEta(c));
+    const deliveryEta=soloIds?hoyAR():deliveryEtaStr(effEta(c));
     let created=0;const createdOps=[];
     for(const cid of clientIds){
       const ships=byClient[cid];const ids=ships.map(s=>s.id);
@@ -18976,14 +18978,14 @@ function MaritimePanel({token,allClients=[]}){
       // Costo de la op = suma del costo de sus cargas (CBM x tarifa del deposito de cada una).
       // Se suma carga por carga porque un mismo cliente puede tener mercaderia de dos depositos
       // en el mismo contenedor, y cada deposito cobra distinto.
-      const costoOp=Math.round(ships.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
+      const costoOp=sinCosto?0:Math.round(ships.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
       const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0),
-        ...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{})};
+        ...(costoOp>0||sinCosto?{cost_flete:costoOp,cost_flete_currency:"USD"}:{})};
       {const pm=presuManualMaritimo(ships,s=>importeOfShip(s,ships));if(pm)Object.assign(opBody,pm);}
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id)continue;
-      for(const id of ids)await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});
+      for(const id of ids)await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:soloIds?{operation_id:op.id,container_id:null}:{operation_id:op.id}});
       const trackByShipment={};ships.forEach(s=>{trackByShipment[s.id]=s.tracking_number||null;});
       let pkgNum=0;
       for(const p of mPkgs){pkgNum++;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});}
@@ -18991,7 +18993,7 @@ function MaritimePanel({token,allClients=[]}){
       // Mail "lista para retirar" al cliente (igual que cualquier op que pasa a entregada).
       try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
       const cbmOp=mPkgs.reduce((a,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);return a+(l&&w&&h?(l*w*h/1000000)*q:0);},0);
-      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(opBody.budget_total||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(opBody.budget_total||0),cost_flete:costoOp>0||sinCosto?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
       created++;
     }
     return {msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
@@ -19161,6 +19163,18 @@ function MaritimePanel({token,allClients=[]}){
   const verPlata=!esEmpleado();
 
   // Acciones nuevas de la vista
+  // Llegó suelta, antes que su contenedor: op LISTA PARA RETIRAR con mail de retiro, sin costo.
+  const llegoSuelta=async(sh)=>{
+    if(creatingOp)return;
+    const c=containers.find(x=>x.id===sh.container_id);if(!c)return;
+    if(!sh.client_id){toast("La carga no tiene cliente asignado","error");return;}
+    const cl=cliMap[sh.client_id];
+    if(!(await confirmDialog(`¿Llegó suelta la carga de ${cl?.client_code||"este cliente"} (${sh.product_description||"sin descripción"})?\n\nSale de ${c.code}, se crea la operación LISTA PARA RETIRAR con costo USD 0 y se le manda el mail de retiro.`)))return;
+    setCreatingOp(true);
+    try{const r=await createOpsForContainer(c,{soloIds:[sh.id],sinCosto:true});if(r?.ops?.length)flash(`📦 ${r.ops[0].code} lista para retirar · mail enviado`);else toast("No se pudo crear la operación","error");await load();}
+    catch(e){console.error("llego suelta",e);toast("No se pudo crear la operación","error");}
+    finally{setCreatingOp(false);}
+  };
   const quitarDeContenedor=async(sh)=>{await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{container_id:null,status:"en_deposito",shipped_to_ar_at:null}});flash("Carga devuelta al depósito");load();};
   const setTipoAdmin=async(sh,tipo)=>{
     if(sh.mercaderia_tipo===tipo)return;
@@ -19220,7 +19234,7 @@ function MaritimePanel({token,allClients=[]}){
   const btnMini=(color,extra)=>({padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${color}55`,background:`${color}14`,color,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",...extra});
   const btnGhost={padding:"5px 9px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"};
   const COLS="26px 64px minmax(200px,2.4fr) 96px 48px 72px 168px 92px 150px";
-  const COLS_CONT="26px 56px minmax(150px,1fr) minmax(170px,1.5fr) 150px auto 118px";
+  const COLS_CONT="26px 56px minmax(150px,1fr) minmax(170px,1.5fr) 150px auto 158px";
   // Selector blanca/negra de un clic, en cualquier etapa (lo puede cambiar Bautista o el depósito).
   // Segmentado oscuro (26/10/2026): el negro/blanco puro desentonaba con el panel. La elegida va en
   // dorado suave con punto lleno; la otra apagada.
@@ -19611,6 +19625,7 @@ function MaritimePanel({token,allClients=[]}){
               </>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>—</span>}
             </div>;
         const kAcc=<div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              {kBtn("Llegó suelta, antes que el contenedor: queda lista para retirar (sin costo)",()=>llegoSuelta(sh),["M20 6 9 17l-5-5"],"#4ade80")}
               {kBtn("Bajar del contenedor: vuelve a En depósito",()=>quitarDeContenedor(sh),["M9 14 4 9l5-5","M20 20v-7a4 4 0 0 0-4-4H4"],"#fbbf24")}
               {kBtn("Editar carga",()=>{setEditingId(sh.id);setShowNew(true);},["M12 20h9","M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"],"#93c5fd")}
               {kBtn("Eliminar carga",()=>delShipment(sh.id),["M3 6h18","M8 6V4h8v2","M19 6l-1 14H6L5 6","M10 11v6","M14 11v6"],"#f87171")}
