@@ -192,6 +192,18 @@ export async function POST(req) {
     await patch(id, { status: "scheduled", scheduled_at: when.toISOString(), publish_error: null });
     return Response.json({ ok: true });
   }
+  // Reparto al azar (28/10/2026): programa varias piezas de una, cada una con su día.
+  if (a === "schedule_many") {
+    const items = (Array.isArray(body.items) ? body.items : []).slice(0, 60);
+    let programadas = 0;
+    for (const it of items) {
+      const when = it?.scheduled_at ? new Date(it.scheduled_at) : null;
+      if (!it?.id || !when || isNaN(when)) continue;
+      await patch(it.id, { status: "scheduled", scheduled_at: when.toISOString(), publish_error: null });
+      programadas++;
+    }
+    return Response.json({ ok: true, programadas });
+  }
   if (a === "unschedule") { await patch(id, { status: "approved", scheduled_at: null, publish_error: null }); return Response.json({ ok: true }); }
   if (a === "published") { await patch(id, { status: "published", published_at: now }); return Response.json({ ok: true }); }
   if (a === "publish_now") {

@@ -5141,6 +5141,8 @@ function BotPanel({token}){
 // Claude Code); la web es la cola, la aprobación, el calendario y el vigilante de Instagram.
 // ═══════════════════════════════════════════════════════════════════════════
 function StudioPanel({token}){
+  // Estética 28/10/2026: un solo acento de marca para todo el estudio.
+  const ACC="#E8C99B";
   const [tab,setTab]=useState("analisis");
   const [an,setAn]=useState(null);const [anLo,setAnLo]=useState(false); // Análisis de Instagram
   const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot: auto | feed | carousel | story
@@ -5216,37 +5218,37 @@ function StudioPanel({token}){
     </div>
     {urls.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center"}}>{urls.map((u,j)=><img key={j} src={u} alt="" onClick={()=>setSlideIdx(j)} style={{height:p.kind==="story"?64:52,borderRadius:5,cursor:"pointer",border:`2px solid ${j===i?"#E8C99B":"transparent"}`,opacity:j===i?1:0.55}}/>)}</div>}
   </div>;};
-  const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
+  const chip=(txt,col)=><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10.5,fontWeight:700,padding:"3px 8px 3px 7px",borderRadius:99,background:"rgba(6,11,22,0.72)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",color:"#fff",border:"1px solid rgba(255,255,255,0.12)",letterSpacing:"0.01em",whiteSpace:"nowrap"}}><span style={{width:6,height:6,borderRadius:99,background:col,flexShrink:0}}/>{txt}</span>;
   const pedirCambio=(p)=>setCambio({p,texto:"",modo:"cambio"});
   const pedirDescarte=(p)=>setCambio({p,texto:"",modo:"descartar"});
   const enviarDescarte=async()=>{const p=cambio.p;const note=(cambio.texto||"").trim();setCambio(null);await act("reject",{id:p.id,note},note?"Descartada · el motivo quedó anotado en Aprendizajes":"Descartada");};
   const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Se rehace con foto nueva y diseño nuevo (tu Mac, 5 a 8 min)":"Se rehace el diseño con tu cambio (tu Mac, 5 a 8 min)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
-  const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-    <div onClick={()=>(p.image_url||(p.kind==="linkedin"&&p.caption))&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="linkedin"&&!p.image_url?"auto":p.kind==="blog"?"1200/630":p.kind==="linkedin"?"1/1":p.kind==="story"?"9/16":"4/5",cursor:(p.image_url||(p.kind==="linkedin"&&p.caption))?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
+  const Card=({p,children,compact})=><div className="cs-card" style={{background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))",border:"1px solid rgba(255,255,255,0.09)",borderRadius:18,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 12px 32px rgba(0,0,0,0.28)",transition:"transform .18s, border-color .18s"}}>
+    <div onClick={()=>(p.image_url||(p.kind==="linkedin"&&p.caption))&&setPreview(p)} style={{position:"relative",background:"radial-gradient(120% 90% at 50% 0%,#111c30,#070d18)",aspectRatio:p.kind==="linkedin"&&!p.image_url?"auto":p.kind==="blog"?"1200/630":p.kind==="linkedin"?"1/1":p.kind==="story"?"9/16":"4/5",cursor:(p.image_url||(p.kind==="linkedin"&&p.caption))?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
       {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>{p.kind==="linkedin"||p.kind==="blog"?"✍️":"🎨"}</div>{p.locked_at?(p.kind==="linkedin"?"Escribiendo el post en tu Mac…":p.kind==="blog"?"Escribiendo la nota en tu Mac…":conFoto(p)&&!p.photo_url?"Generando la foto y diseñando en tu Mac…":"Diseñando en tu Mac…"):"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:p.kind==="linkedin"&&p.caption?<div style={{width:"100%",boxSizing:"border-box",padding:"36px 14px 14px",fontSize:12,lineHeight:1.5,color:"rgba(255,255,255,0.85)",whiteSpace:"pre-wrap",maxHeight:300,overflow:"hidden",maskImage:"linear-gradient(180deg,#000 75%,transparent)",WebkitMaskImage:"linear-gradient(180deg,#000 75%,transparent)"}}>{p.caption}</div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
       <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(kindLabel(p),"#60a5fa")}{conFoto(p)&&chip("📷 foto","#f472b6")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}{p.source==="radar"&&chip("radar","#fb923c")}</div>
       {slidesOf(p).length>1&&<div style={{position:"absolute",bottom:8,left:0,right:0,display:"flex",justifyContent:"center",gap:4}}>{slidesOf(p).map((_,j)=><span key={j} style={{width:6,height:6,borderRadius:99,background:j===0?"#fff":"rgba(255,255,255,0.45)"}}/>)}</div>}
     </div>
-    <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
-      <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>{p.headline||p.title||"—"}</p>
+    <div style={{padding:"12px 14px 14px",display:"flex",flexDirection:"column",gap:7,flex:1}}>
+      <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff",lineHeight:1.3,letterSpacing:"-0.01em"}}>{p.headline||p.title||"—"}</p>
       {!compact&&p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
       {!compact&&p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:96,overflow:"hidden"}}>{p.caption}</p>}
       {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ {p.locked_at?"Tu Mac está rehaciendo el diseño con tu cambio (5 a 8 min)":"En cola: tu Mac va a rehacer el diseño con tu cambio"}{conFoto(p)&&p.photo_url?" · misma foto":""}: {p.feedback}</p>}
       {p.publish_error&&<p style={{margin:0,fontSize:10.5,color:"#f87171"}}>{p.kind==="linkedin"?"LinkedIn":"Instagram"}: {p.publish_error}</p>}
-      <div style={{marginTop:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
+      <div style={{marginTop:"auto",paddingTop:4,display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
     </div>
   </div>;
   const porFiltro=(l)=>l.filter(p=>filtro==="todos"||p.kind===filtro);
   const review=porFiltro(pieces.filter(p=>["review","generating","error"].includes(p.status)));
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
-  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12,alignItems:"start"};
+  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:16,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
   const liOk=!!meta.linkedin?.connected&&!meta.linkedin?.vencido;
   const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:pieces.filter(p=>p.status==="approved").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
-  const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
-  const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
-  const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
+  const inp={width:"100%",boxSizing:"border-box",padding:"11px 13px",borderRadius:12,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.045)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
+  const sel={padding:"9px 10px",borderRadius:11,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
+  const box={background:"linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.012))",border:"1px solid rgba(255,255,255,0.09)",borderRadius:18,padding:18,boxShadow:"0 10px 30px rgba(0,0,0,0.22)"};
   const micBtn=(setter,key)=><button onClick={()=>dictar(setter,key)} title="Dictar por voz" style={{width:40,height:40,borderRadius:10,border:`1px solid ${dictando===key?"#ef4444":"rgba(255,255,255,0.12)"}`,background:dictando===key?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.05)",color:"#fff",fontSize:18,cursor:"pointer",flexShrink:0}}>{dictando===key?"■":"🎤"}</button>;
   const subirAsset=async(kindA,file)=>{if(!file)return;const fd=new FormData();fd.append("kind",kindA);fd.append("file",file,file.name);setBusy("asset");try{await api("",{method:"POST",body:fd});toast("Subido","success");await loadMeta();}catch(e){toast(e.message,"error");}finally{setBusy("");}};
   const enviarChat=async()=>{
@@ -5256,13 +5258,50 @@ function StudioPanel({token}){
     catch(e){toast(e.message,"error");}finally{setBusy("");}
   };
   const adjuntarChat=(file)=>{if(!file)return;const rd=new FileReader();rd.onload=()=>{const s=String(rd.result||"");const m=s.match(/^data:([^;]+);base64,(.*)$/);if(m)setChatImgs(x=>[...x,{mime:m[1],b64:m[2],name:file.name}].slice(0,4));};rd.readAsDataURL(file);};
+  // Programación automática (28/10/2026). Tres categorías con calendario propio: posteos y carruseles,
+  // historias y LinkedIn. "Día libre" = día sin nada programado ni publicado de esa categoría.
+  const catDe=(k)=>k==="story"?"story":k==="linkedin"?"linkedin":"feed";
+  const diaAR=(t)=>new Date(new Date(t).getTime()-3*3600000).toISOString().slice(0,10);
+  const ocupadosDe=(cat)=>{const s=new Set();pieces.forEach(p=>{const t=p.scheduled_at||p.published_at;if(t&&["scheduled","published"].includes(p.status)&&p.kind!=="blog"&&catDe(p.kind)===cat)s.add(diaAR(t));});return s;};
+  const diasLibres=(cat,n)=>{const occ=ocupadosDe(cat);const out=[];let t=Date.now()+86400000;for(let g=0;out.length<n&&g<1000;g++,t+=86400000){const d=diaAR(t);if(!occ.has(d))out.push(d);}return out;};
+  const proximoLibre=(p)=>diasLibres(catDe(p.kind),1)[0];
+  const diaCorto=(d)=>{if(!d)return "";const x=new Date(d+"T12:00:00");return `${["dom","lun","mar","mié","jue","vie","sáb"][x.getDay()]} ${x.getDate()}/${x.getMonth()+1}`;};
+  const HORA_CAT={feed:10,story:10,linkedin:9};
+  // Reparte al azar las aprobadas sin fecha de una categoría: una por día, en los próximos días libres.
+  const repartir=async(cat,lista)=>{
+    if(!lista.length)return;
+    const dias=diasLibres(cat,lista.length);
+    const mezcla=[...lista];for(let i=mezcla.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[mezcla[i],mezcla[j]]=[mezcla[j],mezcla[i]];}
+    if(!await confirmDialog(`¿Repartir ${lista.length} pieza${lista.length===1?"":"s"} al azar, una por día, entre el ${diaCorto(dias[0])} y el ${diaCorto(dias[dias.length-1])}? Solo en los días que todavía no tienen nada.`))return;
+    const items=mezcla.map((p,i)=>({id:p.id,scheduled_at:new Date(`${dias[i]}T${String(HORA_CAT[cat]).padStart(2,"0")}:00:00-03:00`).toISOString()}));
+    await act("schedule_many",{items},x=>`${x.programadas} programadas · del ${diaCorto(dias[0])} al ${diaCorto(dias[dias.length-1])}`);
+  };
   const programar=async()=>{if(!sched?.date)return;const iso=new Date(`${sched.date}T${String(sched.hour).padStart(2,"0")}:${String(sched.min).padStart(2,"0")}:00-03:00`);if(isNaN(iso)){toast("Fecha inválida","error");return;}await act("schedule",{id:sched.p.id,scheduled_at:iso.toISOString()},(sched.p.kind==="linkedin"?liOk:igOk)?"Programada: el vigilante la publica a esa hora":sched.p.kind==="linkedin"?"Programada (sin LinkedIn conectado: la publicás vos)":"Programada (sin Instagram conectado: la subís vos)");setSched(null);};
 
+  const ICO_TAB={analisis:["M4 19V5","M4 19h16","M8 15l3-4 3 2 4-6"],calendario:["M4 6h16v14H4z","M4 10h16","M9 3v4","M15 3v4"],contenido:["M4 4h7v7H4z","M13 4h7v7h-7z","M4 13h7v7H4z","M13 13h7v7h-7z"],runner:["M12 3v3","M12 18v3","M3 12h3","M18 12h3","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"],chatbot:["M4 5h16v11H8l-4 4z"],marca:["M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"],knowledge:["M5 4h10l4 4v12H5z","M9 12h6","M9 16h6"],conexion:["M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1","M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"]};
+  const macVivo=!!(meta.estado?.mac?.last_seen_at&&Date.now()-new Date(meta.estado.mac.last_seen_at).getTime()<10*60000);
+  const estadoPill=(ok,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:7,padding:"6px 11px",borderRadius:99,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"}}><span style={{width:7,height:7,borderRadius:99,background:ok?"#4ade80":"#f87171",boxShadow:`0 0 0 3px ${ok?"rgba(74,222,128,0.18)":"rgba(248,113,113,0.18)"}`}}/>{txt}</span>;
+
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}{x.dot&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:x.dot,marginLeft:6}}/>}</button>)}
+    <style>{`.cs-card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,0.16)!important} .cs-tabs::-webkit-scrollbar{display:none}`}</style>
+    <div style={{display:"flex",alignItems:"flex-end",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <div>
+        <p style={{margin:0,fontSize:11,fontWeight:800,letterSpacing:"0.16em",textTransform:"uppercase",color:ACC}}>Argencargo</p>
+        <p style={{margin:"3px 0 0",fontSize:24,fontWeight:900,color:"#fff",letterSpacing:"-0.025em",lineHeight:1.1}}>Content Studio</p>
       </div>
+      <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+        {estadoPill(igOk,igOk?"Instagram conectado":"Instagram sin conectar")}
+        {estadoPill(macVivo,macVivo?"Mac en línea":"Mac sin señal")}
+        {generando>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 11px",borderRadius:99,background:`${ACC}1f`,border:`1px solid ${ACC}55`,fontSize:11.5,fontWeight:800,color:ACC}}>{generando} diseñándose</span>}
+      </div>
+    </div>
+    <div className="cs-tabs" style={{display:"flex",gap:4,padding:5,marginBottom:18,borderRadius:16,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto",scrollbarWidth:"none"}}>
+      {tabs.map(x=>{const on=tab===x.k;return <button key={x.k} onClick={()=>setTab(x.k)} style={{flex:isMobile?"0 0 auto":1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,padding:"9px 13px",fontSize:12.5,fontWeight:800,borderRadius:12,cursor:"pointer",border:"none",whiteSpace:"nowrap",fontFamily:"inherit",background:on?`linear-gradient(135deg,${ACC}2e,${ACC}14)`:"transparent",boxShadow:on?`inset 0 0 0 1px ${ACC}66`:"none",color:on?ACC:"rgba(255,255,255,0.55)",transition:"all .15s"}}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{(ICO_TAB[x.k]||[]).map((d,k)=><path key={k} d={d}/>)}</svg>
+        {x.l}
+        {x.n>0&&<span style={{minWidth:18,height:18,padding:"0 5px",borderRadius:99,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{x.n}</span>}
+        {x.dot&&<span style={{width:7,height:7,borderRadius:99,background:x.dot}}/>}
+      </button>;})}
     </div>
 
     {tab==="analisis"&&(()=>{
@@ -5325,7 +5364,7 @@ function StudioPanel({token}){
 
     {tab==="contenido"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        {(()=>{const rev=pieces.filter(p=>p.status==="review");const cnt=(k)=>k==="todos"?rev.length:rev.filter(p=>p.kind===k).length;return [["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"],["linkedin","LinkedIn"],["blog","Blog"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)",display:"inline-flex",alignItems:"center",gap:6}}>{l}{cnt(k)>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:99,background:filtro===k?"rgba(96,165,250,0.35)":"rgba(255,255,255,0.1)",color:"#fff"}}>{cnt(k)}</span>}</button>);})()}
+        {(()=>{const rev=pieces.filter(p=>p.status==="review");const cnt=(k)=>k==="todos"?rev.length:rev.filter(p=>p.kind===k).length;return [["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"],["linkedin","LinkedIn"],["blog","Blog"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"7px 13px",fontSize:12,fontWeight:800,borderRadius:99,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${filtro===k?`${ACC}77`:"rgba(255,255,255,0.1)"}`,background:filtro===k?`${ACC}1f`:"rgba(255,255,255,0.03)",color:filtro===k?ACC:"rgba(255,255,255,0.6)",display:"inline-flex",alignItems:"center",gap:7,transition:"all .15s"}}>{l}{cnt(k)>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:99,background:filtro===k?`${ACC}44`:"rgba(255,255,255,0.1)",color:"#fff"}}>{cnt(k)}</span>}</button>);})()}
         {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
         <span style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
           {review.filter(p=>p.status==="review").length>1&&<button onClick={async()=>{const ids=review.filter(p=>p.status==="review").map(p=>p.id);if(await confirmDialog(`¿Descartar las ${ids.length} piezas que quedan sin aprobar? Se borran sus imágenes; los temas quedan anotados para no repetirlos.`))act("reject_all",{ids},x=>`${x.rechazadas} descartadas`);}} disabled={!!busy} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#f87171"}}>✕ Descartar las restantes</button>}
@@ -5341,7 +5380,7 @@ function StudioPanel({token}){
               {ic:"✓",col:"#22c55e",tit:p.kind==="blog"?"Publicar en el blog":"Aprobar",fn:()=>act("approve",{id:p.id},p.kind==="blog"?"Publicada en argencargo.com.ar/blog":"Aprobada ✅ · guardada como referencia")},
               {ic:"✎",col:"#fbbf24",tit:"Pedir cambio",fn:()=>pedirCambio(p)},
               {ic:"✕",col:"#ef4444",tit:"Descartar",fn:()=>pedirDescarte(p)},
-            ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:1,height:38,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1f`,color:b.col,fontSize:17,fontWeight:900,cursor:"pointer"}}>{b.ic}</button>)}
+            ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:b.ic==="✓"?1.4:1,height:40,borderRadius:12,border:b.ic==="✓"?"none":`1px solid ${b.col}44`,background:b.ic==="✓"?`linear-gradient(135deg,${b.col},${b.col}cc)`:`${b.col}14`,color:b.ic==="✓"?"#052e14":b.col,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,boxShadow:b.ic==="✓"?`0 6px 16px ${b.col}40`:"none"}}><span style={{fontSize:14}}>{b.ic}</span>{b.ic==="✓"?(b.tit==="Aprobar"?"Aprobar":"Publicar"):b.ic==="✎"?"Cambio":"Descartar"}</button>)}
           </div>}
           {p.status==="error"&&<Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Reintentando")} disabled={!!busy}>↻ Reintentar</Btn>}
         </Card>)}
@@ -5373,12 +5412,12 @@ function StudioPanel({token}){
         const mesLabel=new Date(y,m,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
         return <div style={{marginBottom:22}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-            <span style={{fontSize:14,fontWeight:800,color:"#E8C99B"}}>{titulo}</span>
+            <span style={{fontSize:15,fontWeight:900,color:"#fff",letterSpacing:"-0.01em"}}>{titulo}</span>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {enMes} este mes</span>
             <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
-              <button onClick={()=>setMes(c=>({y:c.m===0?c.y-1:c.y,m:c.m===0?11:c.m-1}))} style={{...sel,cursor:"pointer",padding:"5px 10px"}}>‹</button>
+              <button onClick={()=>setMes(c=>({y:c.m===0?c.y-1:c.y,m:c.m===0?11:c.m-1}))} style={{width:32,height:32,borderRadius:99,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:16,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}>‹</button>
               <span style={{fontSize:12.5,fontWeight:800,color:"#fff",textTransform:"capitalize",minWidth:140,textAlign:"center"}}>{mesLabel}</span>
-              <button onClick={()=>setMes(c=>({y:c.m===11?c.y+1:c.y,m:c.m===11?0:c.m+1}))} style={{...sel,cursor:"pointer",padding:"5px 10px"}}>›</button>
+              <button onClick={()=>setMes(c=>({y:c.m===11?c.y+1:c.y,m:c.m===11?0:c.m+1}))} style={{width:32,height:32,borderRadius:99,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:16,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",padding:0}}>›</button>
             </div>
           </div>
           {isMobile
@@ -5386,11 +5425,11 @@ function StudioPanel({token}){
               {celdas.filter(Boolean).map(d=>{const k=`${y}-${m}-${d}`;const l=porDia[k]||[];if(!l.length)return null;return <div key={d} style={{...box,padding:10}}><p style={{margin:"0 0 6px",fontSize:12,fontWeight:800,color:k===hoyK?"#E8C99B":"#fff"}}>{new Date(y,m,d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric"})}</p><div style={{display:"grid",gap:4}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div></div>;})}
               {enMes===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Nada programado este mes.</p>}
             </div>
-            :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>
+            :<div style={{border:"1px solid rgba(255,255,255,0.09)",borderRadius:18,overflow:"hidden",background:"rgba(255,255,255,0.015)",boxShadow:"0 10px 30px rgba(0,0,0,0.22)"}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"rgba(255,255,255,0.03)"}}>{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{padding:"6px 8px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{d}</div>)}</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))"}}>
                 {celdas.map((d,i)=>{const k=d?`${y}-${m}-${d}`:null;const l=k?(porDia[k]||[]):[];const esHoy=k===hoyK;return <div key={i} style={{minHeight:kind==="story"?96:88,minWidth:0,overflow:"hidden",padding:6,borderTop:"1px solid rgba(255,255,255,0.06)",borderLeft:i%7?"1px solid rgba(255,255,255,0.06)":"none",background:esHoy?"rgba(184,149,106,0.07)":d?"transparent":"rgba(0,0,0,0.15)"}}>
-                  {d&&<div style={{fontSize:11,fontWeight:800,color:esHoy?"#E8C99B":"rgba(255,255,255,0.55)",marginBottom:4}}>{d}</div>}
+                  {d&&<div style={{width:22,height:22,borderRadius:99,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,marginBottom:4,background:esHoy?ACC:"transparent",color:esHoy?"#0b1220":"rgba(255,255,255,0.55)"}}>{d}</div>}
                   <div style={{display:"grid",gap:3}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div>
                 </div>;})}
               </div>
@@ -5399,24 +5438,41 @@ function StudioPanel({token}){
       };
       return <div>
         {!igOk&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 10px"}}>Instagram no está conectado: lo programado no se publica solo.</p>}
-        <div style={{...box,marginBottom:18}}>
-          <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Sin programar <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>· aprobadas que todavía no tienen día y hora</span></p>
-          {sinFecha.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Contenido aparece acá.</p>}
-          <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4}}>
-            {sinFecha.map(p=><div key={p.id} style={{flex:"0 0 auto",width:170,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:8}}>
-              <div onClick={()=>setPreview(p)} style={{height:110,borderRadius:7,overflow:"hidden",background:"#0b1220",cursor:"zoom-in",marginBottom:6,display:"flex",justifyContent:"center"}}>{p.image_url?<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>:p.kind==="linkedin"?<div style={{padding:"8px 10px",fontSize:10.5,lineHeight:1.4,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",overflow:"hidden",width:"100%"}}>{String(p.caption||"").slice(0,220)}</div>:null}</div>
-              <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(kindLabel(p),"#60a5fa")}</div>
-              <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
-              <div style={{display:"flex",gap:6,justifyContent:"center"}}>
-                {[
-                  {t:"Programar: elegir día y hora",ic:<IcoCalendario/>,col:"#E8C99B",fn:()=>setSched({p,date:isoAR(Date.now()+86400000),hour:10,min:0}),show:true},
-                  {t:"Subir ahora a Instagram",ic:<IcoInstagram/>,col:"#f472b6",fn:async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");},show:igOk&&p.kind!=="linkedin"},
-                  {t:"Publicar ahora en LinkedIn",ic:<IcoLinkedin/>,col:"#38bdf8",fn:async()=>{if(await confirmDialog(`¿Publicar ahora en LinkedIn como ${p.li_author==="pagina"?"la página":"vos"}?`))act("publish_now",{id:p.id},"Publicada en LinkedIn");},show:liOk&&p.kind==="linkedin"},
-                  {t:"Descargar la imagen",ic:<IcoDescarga/>,col:"#60a5fa",fn:()=>{const a=document.createElement("a");a.href=p.image_url;a.download="";a.target="_blank";a.rel="noreferrer";a.click();},show:!!p.image_url},
-                ].filter(b=>b.show).map(b=><button key={b.t} title={b.t} onClick={b.fn} disabled={!!busy} style={{flex:1,maxWidth:56,height:36,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1a`,color:b.col,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{b.ic}</button>)}
-              </div>
-            </div>)}
+        <div style={{...box,marginBottom:22}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+            <p style={{margin:0,fontSize:15,fontWeight:900,color:"#fff",letterSpacing:"-0.01em"}}>Sin programar</p>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>Aprobadas que todavía no tienen día. Programá cada una o repartilas al azar en los días libres.</span>
           </div>
+          {sinFecha.length===0&&<p style={{margin:"12px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Contenido aparece acá.</p>}
+          {[["feed","Posteos y carruseles"],["story","Historias"],["linkedin","LinkedIn"]].map(([cat,tit])=>{
+            const ls=sinFecha.filter(p=>catDe(p.kind)===cat);if(!ls.length)return null;
+            const libres=diasLibres(cat,ls.length);
+            return <div key={cat} style={{marginTop:16,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+                <span style={{fontSize:13.5,fontWeight:800,color:"#fff"}}>{tit}</span>
+                <span style={{minWidth:22,height:22,padding:"0 7px",borderRadius:99,background:`${ACC}22`,color:ACC,fontSize:11.5,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ls.length}</span>
+                <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{ls.length>1?`Días libres: ${diaCorto(libres[0])} → ${diaCorto(libres[libres.length-1])}`:`Próximo día libre: ${diaCorto(libres[0])}`}</span>
+                <button onClick={()=>repartir(cat,ls)} disabled={!!busy} style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8,height:36,padding:"0 15px",borderRadius:11,border:"none",background:`linear-gradient(135deg,${ACC},${ACC}bb)`,color:"#0b1220",fontSize:12.5,fontWeight:900,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 6px 18px ${ACC}40`}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"/></svg>
+                  {busy==="schedule_many"?"Repartiendo…":"Repartir al azar"}
+                </button>
+              </div>
+              <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:6}}>
+                {ls.map(p=><div key={p.id} style={{flex:"0 0 auto",width:164,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:8}}>
+                  <div onClick={()=>setPreview(p)} style={{height:cat==="story"?190:150,borderRadius:10,overflow:"hidden",background:"#070d18",cursor:"zoom-in",marginBottom:8,display:"flex",justifyContent:"center",position:"relative"}}>{p.image_url?<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>:p.kind==="linkedin"?<div style={{padding:"8px 10px",fontSize:10.5,lineHeight:1.4,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",overflow:"hidden",width:"100%"}}>{String(p.caption||"").slice(0,220)}</div>:null}<span style={{position:"absolute",left:6,top:6}}>{chip(kindLabel(p),"#60a5fa")}</span></div>
+                  <p style={{margin:"0 2px 8px",fontSize:11.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
+                  <div style={{display:"flex",gap:5}}>
+                    {[
+                      {t:"Programar: día y hora",ic:<IcoCalendario/>,col:ACC,fn:()=>setSched({p,date:proximoLibre(p),hour:HORA_CAT[catDe(p.kind)],min:0}),show:true},
+                      {t:"Subir ahora a Instagram",ic:<IcoInstagram/>,col:"#f472b6",fn:async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");},show:igOk&&p.kind!=="linkedin"},
+                      ...(typeof liOk!=="undefined"?[{t:"Publicar ahora en LinkedIn",ic:<IcoLinkedin/>,col:"#38bdf8",fn:async()=>{if(await confirmDialog(`¿Publicar ahora en LinkedIn como ${p.li_author==="pagina"?"la página":"vos"}?`))act("publish_now",{id:p.id},"Publicada en LinkedIn");},show:liOk&&p.kind==="linkedin"}]:[]),
+                      {t:"Descargar la imagen",ic:<IcoDescarga/>,col:"#60a5fa",fn:()=>{const a=document.createElement("a");a.href=p.image_url;a.download="";a.target="_blank";a.rel="noreferrer";a.click();},show:!!p.image_url},
+                    ].filter(b=>b.show).map((b,bi)=><button key={b.t} title={b.t} onClick={b.fn} disabled={!!busy} style={{flex:bi===0?1.6:1,height:36,borderRadius:10,border:bi===0?"none":`1px solid ${b.col}44`,background:bi===0?`${ACC}26`:`${b.col}14`,color:b.col,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5,fontSize:11.5,fontWeight:800,fontFamily:"inherit"}}>{b.ic}{bi===0&&!isMobile?"Programar":""}</button>)}
+                  </div>
+                </div>)}
+              </div>
+            </div>;
+          })}
         </div>
         <Calendario kind="feed" titulo="Posteos, carruseles y LinkedIn"/>
         <Calendario kind="story" titulo="Historias"/>
@@ -5705,17 +5761,28 @@ function StudioPanel({token}){
       </div>)}
     </div>}
 
-    {sched&&<div onClick={()=>setSched(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:20,width:"100%",maxWidth:380}}>
-        <h3 style={{margin:"0 0 10px",fontSize:15,color:"#fff"}}>📅 Programar · {sched.p.headline||sched.p.title}</h3>
-        <Inp label="Día" type="date" value={sched.date} onChange={v=>setSched(s=>({...s,date:v}))} marks={pieces.filter(p=>["scheduled","published"].includes(p.status)&&p.kind!=="blog"&&(p.scheduled_at||p.published_at)).map(p=>{const x=new Date(p.scheduled_at||p.published_at);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;})}/>
-        <p style={{margin:"-6px 0 10px",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Los días con un punto ya tienen contenido preparado (podés sumar más igual).</p>
-        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
-          <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",textTransform:"uppercase"}}>Hora</span>
-          <select value={sched.hour} onChange={e=>setSched(s=>({...s,hour:Number(e.target.value)}))} style={sel}>{Array.from({length:24},(_,h)=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}</select>
-          <select value={sched.min} onChange={e=>setSched(s=>({...s,min:Number(e.target.value)}))} style={sel}>{[0,15,30,45].map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}</select>
+    {sched&&<div onClick={()=>setSched(null)} style={{position:"fixed",inset:0,background:"rgba(3,7,15,0.78)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#152238,#0c1626)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:22,padding:22,width:"100%",maxWidth:420,boxShadow:"0 30px 80px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16}}>
+          {sched.p.image_url&&<img src={sched.p.image_url} alt="" style={{width:46,height:sched.p.kind==="story"?72:56,objectFit:"cover",borderRadius:10,flexShrink:0}}/>}
+          <div style={{minWidth:0}}>
+            <p style={{margin:0,fontSize:11,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:ACC}}>Programar</p>
+            <p style={{margin:"3px 0 0",fontSize:14.5,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sched.p.headline||sched.p.title}</p>
+          </div>
         </div>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="secondary" onClick={()=>setSched(null)}>Cancelar</Btn><Btn onClick={programar} disabled={!!busy}>Programar</Btn></div>
+        {(()=>{const libre=proximoLibre(sched.p);return sched.date!==libre?<button onClick={()=>setSched(s=>({...s,date:libre}))} style={{width:"100%",marginBottom:12,padding:"9px 12px",borderRadius:11,border:`1px dashed ${ACC}66`,background:`${ACC}10`,color:ACC,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>↺ Volver al próximo día libre · {diaCorto(libre)}</button>:<p style={{margin:"0 0 12px",fontSize:12,color:"#4ade80",fontWeight:700}}>✓ Es el próximo día libre de {sched.p.kind==="story"?"historias":sched.p.kind==="linkedin"?"LinkedIn":"posteos"}</p>;})()}
+        <Inp label="Día" type="date" value={sched.date} onChange={v=>setSched(s=>({...s,date:v}))} marks={[...ocupadosDe(catDe(sched.p.kind))]}/>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Hora</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:5,marginBottom:8}}>
+          {[8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23].map(h=><button key={h} onClick={()=>setSched(s=>({...s,hour:h}))} style={{height:34,borderRadius:9,border:`1px solid ${sched.hour===h?ACC:"rgba(255,255,255,0.1)"}`,background:sched.hour===h?`${ACC}26`:"rgba(255,255,255,0.03)",color:sched.hour===h?ACC:"rgba(255,255,255,0.75)",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{String(h).padStart(2,"0")}</button>)}
+        </div>
+        <div style={{display:"flex",gap:5,marginBottom:18}}>
+          {[0,15,30,45].map(m=><button key={m} onClick={()=>setSched(s=>({...s,min:m}))} style={{flex:1,height:32,borderRadius:9,border:`1px solid ${sched.min===m?ACC:"rgba(255,255,255,0.1)"}`,background:sched.min===m?`${ACC}26`:"rgba(255,255,255,0.03)",color:sched.min===m?ACC:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>:{String(m).padStart(2,"0")}</button>)}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setSched(null)} style={{flex:1,height:44,borderRadius:12,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.75)",fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+          <button onClick={programar} disabled={!!busy} style={{flex:2,height:44,borderRadius:12,border:"none",background:`linear-gradient(135deg,${ACC},${ACC}bb)`,color:"#0b1220",fontSize:13.5,fontWeight:900,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 8px 22px ${ACC}40`}}>Programar · {diaCorto(sched.date)} {String(sched.hour).padStart(2,"0")}:{String(sched.min).padStart(2,"0")}</button>
+        </div>
       </div>
     </div>}
 
