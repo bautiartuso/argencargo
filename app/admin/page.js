@@ -12110,6 +12110,16 @@ function AgentsPanel({token}){
   const [moveSaving,setMoveSaving]=useState(false);
   // fromOp=null: el bulto está suelto en el depósito del cliente (modelo 13/09/2026), todavía sin
   // importación. Se puede mover igual: cambia de dueño y se queda en depósito, o entra a una op.
+  // Eliminar un bulto del depósito (29/10/2026): borra el bulto y el reclamo de depósito con su
+  // mismo tracking, si lo hay. La foto la limpia sola el cron de fotos.
+  const eliminarBultoDeposito=async(p)=>{
+    const trk=p.national_tracking||"";
+    if(!await confirmDialog(`¿Eliminar el bulto${trk?` ${trk}`:""}? Se borra de todo el sistema y no se puede deshacer.`,{confirmText:"Eliminar",danger:true}))return;
+    const r=await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
+    if(r&&!Array.isArray(r)&&(r.code||r.message)){toast("No se pudo eliminar el bulto","error");return;}
+    if(trk)await dq("deposit_claims",{method:"DELETE",token,filters:`?tracking=eq.${encodeURIComponent(trk)}${p.client_id?`&client_id=eq.${p.client_id}`:""}`}).catch(()=>{});
+    flash("Bulto eliminado");load();
+  };
   const openMoveModal=async(pkg,fromOp)=>{
     setMovePkgState({pkg,fromOp:fromOp||null});setMoveSearch("");setMoveSelClient(null);
     if(moveClients.length===0){
@@ -12728,6 +12738,7 @@ function AgentsPanel({token}){
                   {chipDep(l2&&w2&&h2?`${l2}×${w2}×${h2}${q>1?` ×${q}`:""}`:"sin medidas")}{chipDep(`Bruto ${kgT(br)}`)}{vo>0&&chipDep(`Vol. ${kgT(vo)}`,vo>br?GOLD_LIGHT:null)}
                   {p.photo_url&&<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Foto</a>}
                   <button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>↪ Mover</button>
+                  <button onClick={e=>{e.stopPropagation();eliminarBultoDeposito(p);}} title="Eliminar este bulto" style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)",color:"#ff8a8a",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>🗑 Eliminar</button>
                 </div>
               </div>;})}
           </div>}
@@ -12917,14 +12928,14 @@ function AgentsPanel({token}){
                 </div>
                 {open&&<div style={{padding:"0 14px 12px 40px"}}>
                   <div style={{display:"flex",justifyContent:"flex-end",padding:"4px 0 8px"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito</button></div>
-                  <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 92px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 130px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
                     <span>#</span><span>Tracking</span><span style={{textAlign:"center"}}>Llegó</span><span style={{textAlign:"center"}}>Medidas (cm)</span><span style={{textAlign:"right"}}>Bruto</span><span style={{textAlign:"right"}}>Volumétrico</span><span style={{textAlign:"center"}}>Escaneo</span>
-                  <span style={{textAlign:"center"}}>Mover</span></div>
+                  <span style={{textAlign:"center"}}>Acciones</span></div>
                   {g.pk.map((p,k)=>{
                     const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);
                     const br=Number(p.gross_weight_kg||0)*q, vo=l2&&w2&&h2?((l2*w2*h2)/5000)*q:0;
                     const trk=p.national_tracking||p.consolidated_from_trackings||null;
-                    return <div key={p.id} style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 92px",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:k<g.pk.length-1?"1px solid rgba(255,255,255,0.035)":"none"}}>
+                    return <div key={p.id} style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 130px",gap:10,alignItems:"center",padding:"8px 10px",borderBottom:k<g.pk.length-1?"1px solid rgba(255,255,255,0.035)":"none"}}>
                       <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>{k+1}</span>
                       {trk
                         ? <span title={trk} style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:GOLD_LIGHT,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"copy"}} onClick={()=>{navigator.clipboard?.writeText(trk);flash("Tracking copiado");}}>{trk}</span>
@@ -12934,7 +12945,7 @@ function AgentsPanel({token}){
                       <span style={{fontSize:11.5,color:"rgba(255,255,255,0.8)",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{br>0?`${br.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                       <span style={{fontSize:11.5,color:vo>br?GOLD_LIGHT:"rgba(255,255,255,0.45)",fontWeight:vo>br?700:400,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{vo>0?`${vo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                       <span style={{textAlign:"center"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10.5,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Ver</a>:<span style={{fontSize:10.5,color:"rgba(255,255,255,0.22)"}}>—</span>}</span>
-                      <span style={{textAlign:"center"}}><button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} title="Reasignar este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></span>
+                      <span style={{textAlign:"center"}}><button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} title="Reasignar este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button><button onClick={e=>{e.stopPropagation();eliminarBultoDeposito(p);}} title="Eliminar este bulto de todo el sistema" style={{marginLeft:6,fontSize:10,padding:"3px 7px",borderRadius:4,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)",color:"#ff8a8a",cursor:"pointer",fontWeight:600}}>🗑</button></span>
                     </div>;
                   })}
                 </div>}
