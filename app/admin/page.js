@@ -16689,8 +16689,17 @@ function QuotesList({token}){
       const visibles=Array.isArray(q.visible_channels)&&q.visible_channels.length>0?q.visible_channels:alts.map(a=>a.key);
       const toggleVis=async(k)=>{const next=visibles.includes(k)?visibles.filter(x=>x!==k):[...visibles,k];
         if(next.length===0){toast("Tiene que quedar al menos una opción visible","error");return;}
-        await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{visible_channels:next}});
-        setSelQuote(p=>({...p,visible_channels:next}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,visible_channels:next}:x));};
+        // Con una sola vía visible, esa pasa a ser la vía de la cotización (lista, total y PDF).
+        const unica=next.length===1?alts.find(a=>a.key===next[0]):null;
+        const body={visible_channels:next,...(unica?{channel_key:unica.key,channel_name:unica.name,total_cost:Number(unica.totalAbonar||0)}:{})};
+        await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body});
+        setSelQuote(p=>({...p,...body}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,...body}:x));};
+      // PDF de una vía (29/10/2026): el mismo PDF de la calculadora y del portal (lib/cotizacion-pdf.js).
+      const pdfCanal=(c)=>{
+        const td=c.taxDetail||{};const isB=c.type==="maritimo_b"||c.type==="aereo_b";
+        const bd={...td,isBlanco:!isB,isAereo:c.key.includes("aereo"),isMaritimo:c.key.includes("maritimo")};
+        abrirCotizacionPdf(armarDatosAdmin({ch:{...c,bd},eff:{bd,desEff:Number(td.desembolso||0),ivaDesEff:Number(td.ivaDesembolso||0),recargoValor:isB?Number(c.surcharge||0):0,effTotal:Number(c.totalAbonar||0)},products:editProds,pkgs:editPkgs,origin:editOrigin,taxCond:cl?.tax_condition||"",clientName:q.client_name||"",codigo:numQ(q)}));
+      };
       const link=q.public_token?`https://argencargo.com.ar/presupuesto/${q.public_token}`:null;
       const prodDesc=editProds.map(p=>p.description||p.type).filter(Boolean).join(", ");
     return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setSelQuote(null)}>
@@ -16829,6 +16838,7 @@ function QuotesList({token}){
               </div>
               <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                 {det.length>0&&<button onClick={()=>setOpenAlt(dOpen?null:`m:${c.key}`)} style={{padding:"9px 14px",fontSize:11.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{dOpen?"Ocultar ▲":"Ver desglose ▼"}</button>}
+                <button onClick={()=>pdfCanal(c)} title="Descargar el PDF de esta vía" style={{padding:"9px 14px",fontSize:11.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(184,149,106,0.45)",background:"rgba(184,149,106,0.1)",color:GOLD_LIGHT,cursor:"pointer",whiteSpace:"nowrap"}}>PDF</button>
                 {alts.length>0&&<button onClick={()=>toggleVis(c.key)} title="Mostrar u ocultar esta vía en el link del cliente" style={{padding:"9px 14px",fontSize:11.5,fontWeight:700,borderRadius:9,cursor:"pointer",whiteSpace:"nowrap",border:`1px solid ${visible?"rgba(34,197,94,0.55)":"rgba(255,255,255,0.18)"}`,background:visible?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.05)",color:visible?"#4ade80":"rgba(255,255,255,0.5)"}}>{visible?"✓ Visible":"Oculta"}</button>}
               </div>
             </div>
@@ -16854,7 +16864,7 @@ function QuotesList({token}){
           <div style={{display:"flex",gap:9,flexWrap:"wrap",alignItems:"center"}}>
             <button onClick={guardarYLink} disabled={saving||okCanales.length===0} style={{padding:"11px 20px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:saving?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW,opacity:okCanales.length===0?0.5:1}}>{saving?"Guardando…":link?"Guardar y regenerar link":"Guardar y generar link"}</button>
             <button onClick={saveQuoteEdit} disabled={saving} style={{padding:"11px 18px",fontSize:12.5,fontWeight:700,borderRadius:10,border:HR,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:saving?"wait":"pointer"}}>Guardar sin link</button>
-            <button onClick={()=>downloadPdf(q)} style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Descargar PDF</button>
+            <button onClick={()=>{const c=okCanales.find(x=>visibles.includes(x.key))||barata||okCanales[0];if(c)pdfCanal(c);else downloadPdf(q);}} style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Descargar PDF</button>
             {wa&&<a href={`https://wa.me/${wa}?text=${encodeURIComponent(msgSeg(q,dias<=0))}`} target="_blank" rel="noopener noreferrer" style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(37,211,102,0.35)",background:"rgba(37,211,102,0.1)",color:"#25D366",textDecoration:"none"}}>Seguimiento por WhatsApp</a>}
             <span style={{flex:1}}/>
             <button onClick={()=>{borrarQuotes([q.id],`¿Eliminar la cotización ${numQ(q)}? No se puede deshacer.`);}} style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:"pointer"}}>Eliminar</button>
