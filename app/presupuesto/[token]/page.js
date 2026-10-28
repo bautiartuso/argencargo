@@ -36,7 +36,7 @@ function EtiquetaLinea({ l, abierto, onToggle }) {
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "#1F3B2D", color: "#E8F5E9", fontSize: 10.5, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.5 }}>✓ Certificación</span>
       <span style={{ color: "rgba(26,26,26,0.35)" }}>·</span>
       <span style={{ fontWeight: 700, color: "#1a1a1a" }}>{m[1]}{n > 1 ? ` ×${n}` : ""}</span>
-      {texto && onToggle && <button type="button" onClick={onToggle} aria-label="Qué es esta certificación" aria-expanded={!!abierto} style={{ flex: "none", width: 22, height: 22, minWidth: 22, borderRadius: "50%", border: "1px solid rgba(26,26,26,0.25)", background: abierto ? "#0A1628" : "#fff", color: abierto ? "#E8D098" : "#1a1a1a", fontSize: 12, fontWeight: 800, lineHeight: "20px", cursor: "pointer", padding: 0, textAlign: "center", fontFamily: "inherit" }}>?</button>}
+      {texto && onToggle && <button type="button" onClick={onToggle} aria-label="Qué es esta certificación" aria-expanded={!!abierto} style={{ flex: "none", width: 22, height: 22, minWidth: 22, minHeight: 0, maxHeight: 22, boxSizing: "border-box", alignSelf: "center", borderRadius: "50%", border: "1px solid rgba(26,26,26,0.25)", background: abierto ? "#0A1628" : "#fff", color: abierto ? "#E8D098" : "#1a1a1a", fontSize: 12, fontWeight: 800, lineHeight: "20px", cursor: "pointer", padding: 0, textAlign: "center", fontFamily: "inherit" }}>?</button>}
     </span>
   );
 }
