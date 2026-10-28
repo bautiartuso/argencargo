@@ -62,7 +62,7 @@ function saldoOf(op, pagos) {
     - Number(op.credit_applied_usd || 0) - Number(op.discount_applied_usd || 0));
 }
 
-const HERMANA_SEL = "id,operation_code,description,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_cost_usd,delivery_day,delivery_slot,delivery_confirmed_at,delivery_group_id";
+const HERMANA_SEL = "id,operation_code,description,channel,created_at,delivery_ready_at,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_cost_usd,delivery_day,delivery_slot,delivery_confirmed_at,delivery_group_id";
 
 // Otras cargas LISTAS del mismo cliente (avisadas o entregables, sin entregar todavía):
 // el link las ofrece para coordinar todo en una sola visita.
@@ -72,16 +72,30 @@ async function loadHermanas(op) {
   const list = Array.isArray(r.body) ? r.body : [];
   if (list.length === 0) return [];
   const [pk, pagos] = await Promise.all([
-    sbFetch(`/operation_packages?operation_id=in.(${list.map((o) => o.id).join(",")})&select=operation_id,quantity`),
+    sbFetch(`/operation_packages?operation_id=in.(${list.map((o) => o.id).join(",")})&select=operation_id,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking`),
     pagosParciales(list.map((o) => o.id)),
   ]);
-  const bm = {};
-  (Array.isArray(pk.body) ? pk.body : []).forEach((p) => { bm[p.operation_id] = (bm[p.operation_id] || 0) + Number(p.quantity || 1); });
+  // Por carga: bultos, m³ y kilos facturables (para mostrarlas todas iguales en el link único) y trackings.
+  const bm = {}, m3 = {}, kgf = {}, trk = {};
+  (Array.isArray(pk.body) ? pk.body : []).forEach((p) => {
+    const q = Number(p.quantity || 1), l = Number(p.length_cm || 0), w = Number(p.width_cm || 0), h = Number(p.height_cm || 0);
+    bm[p.operation_id] = (bm[p.operation_id] || 0) + q;
+    m3[p.operation_id] = (m3[p.operation_id] || 0) + (l && w && h ? (l * w * h / 1e6) * q : 0);
+    kgf[p.operation_id] = (kgf[p.operation_id] || 0) + Math.max(Number(p.gross_weight_kg || 0) * q, l && w && h ? (l * w * h / 5000) * q : 0);
+    const t = String(p.national_tracking || "").trim();
+    if (t && t !== "-" && !/^SEA\s/i.test(t)) (trk[p.operation_id] = trk[p.operation_id] || new Set()).add(t);
+  });
   return list.map((o) => ({
     id: o.id,
     operation_code: o.operation_code,
     description: o.description,
+    channel: o.channel,
+    created_at: o.created_at,
+    delivery_ready_at: o.delivery_ready_at,
     bultos: bm[o.id] || 0,
+    m3: Math.round((m3[o.id] || 0) * 1e4) / 1e4,
+    peso_facturable: Math.round((kgf[o.id] || 0) * 100) / 100,
+    tracking: [...(trk[o.id] || [])],
     saldo: Math.round(saldoOf(o, pagos[o.id]) * 100) / 100,
     delivery_day: o.delivery_day,
     delivery_slot: o.delivery_slot,
@@ -150,7 +164,8 @@ export async function GET(req, { params }) {
     return Response.json({ zone: m ? m.name : null, price: m ? computeDeliveryCostUsd(m, cfg, kg) : null });
   }
   // Registro de apertura del link (primera vez, última vez, cantidad) — lo ven Entregas y Argy.
-  sbFetch(`/rpc/link_opened`, { method: "POST", body: JSON.stringify({ p_token: token }) }).catch(() => {});
+  // En desarrollo no cuenta: si no, probar el link en local marca que el cliente lo abrió.
+  if (process.env.NODE_ENV !== "development") sbFetch(`/rpc/link_opened`, { method: "POST", body: JSON.stringify({ p_token: token }) }).catch(() => {});
 
   const [pkgsRes, settingsRes, itemsRes, { cfg, localities }, hermanas, pagosOp, factRes] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=eq.${op.id}&select=package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking&order=package_number.asc`),
@@ -348,6 +363,8 @@ export async function GET(req, { params }) {
     feriados_ar: feriadosAr,
     op: {
       operation_code: op.operation_code,
+      created_at: op.created_at,
+      delivery_ready_at: op.delivery_ready_at,
       description: op.description,
       channel: op.channel,
       origin: op.origin,

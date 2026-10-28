@@ -22,6 +22,7 @@
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
 import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES, uploadWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
+import { tokenRetiro, nombreCargas } from "../../../../lib/link-retiro";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -66,7 +67,7 @@ export async function GET(req) {
 
   // ── Avisos de retiro automáticos ──
   const out = { avisos: [], avisos_enviados: 0, recordatorios: [], enviados: 0, wa: waConfigured(), hora_ar: horaAr };
-  const r0 = await sb(`/operations?status=eq.entregada&delivery_ready_at=is.null&delivery_completed_at=is.null&ri_entrega_directa=not.is.true&select=id,operation_code,description,channel,budget_total,delivery_public_token,sent_notifications,office_received_at,ri_entrega_directa,clients(first_name,client_code,email,whatsapp,tax_condition)`);
+  const r0 = await sb(`/operations?status=eq.entregada&delivery_ready_at=is.null&delivery_completed_at=is.null&ri_entrega_directa=not.is.true&select=id,client_id,delivery_confirmed_at,operation_code,description,channel,budget_total,delivery_public_token,sent_notifications,office_received_at,ri_entrega_directa,clients(first_name,client_code,email,whatsapp,tax_condition)`);
   const cand = Array.isArray(r0.body) ? r0.body : [];
   // Sin NCM en algún producto, el presupuesto está incompleto (derechos 0 %): NO se avisa —
   // el cliente pagaría de menos (AC-0128, 04/09). Se avisa al admin una vez por día.
@@ -112,7 +113,8 @@ export async function GET(req) {
       if (j?.error === "cliente sin email" && waNumber(c.whatsapp) && op.delivery_public_token) {
         // Sin mail: sale solo el WhatsApp y se marca lista igual (mismo efecto que /api/notify).
         const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
-        const w = await sendWaTemplate(c.whatsapp, "carga_lista", [c.first_name || "Hola", carga, `${BASE_URL}/retiro/${op.delivery_public_token}`]);
+        const tk = (await tokenRetiro({ ...op, client_id: op.client_id }).catch(() => null)) || op.delivery_public_token;
+        const w = await sendWaTemplate(c.whatsapp, "carga_lista", [c.first_name || "Hola", carga, `${BASE_URL}/retiro/${tk}`]);
         if (w?.ok) {
           out.avisos_enviados++;
           await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ delivery_ready_at: new Date().toISOString(), sent_notifications: { ...(op.sent_notifications || {}), wa_retiro: new Date().toISOString() } }) });
@@ -123,31 +125,43 @@ export async function GET(req) {
     } catch (e) { console.error("[bot-entregas] aviso", op.operation_code, e.message); }
   }
 
-  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,sent_notifications,clients(first_name,last_name,client_code,whatsapp)`);
+  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,client_id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,sent_notifications,clients(first_name,last_name,client_code,whatsapp)`);
 
+  // Link único (28/10/2026): un cliente con varias cargas sin coordinar recibe UN recordatorio con
+  // todas y el link compartido (el de la avisada primero), no uno por carga.
+  const porCliente = new Map();
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
-    if (!enHorario && !dry) { out.recordatorios_fuera_de_horario = true; break; }
     if (op.sent_notifications?.silenciada) continue;
-    const base = new Date(op.bot_coord_reminder_at || op.delivery_ready_at).getTime();
+    const k = op.client_id || op.id;
+    if (!porCliente.has(k)) porCliente.set(k, []);
+    porCliente.get(k).push(op);
+  }
+  for (const grupo of porCliente.values()) {
+    if (!enHorario && !dry) { out.recordatorios_fuera_de_horario = true; break; }
+    grupo.sort((a, b) => String(a.delivery_ready_at || "").localeCompare(String(b.delivery_ready_at || "")));
+    const op = grupo[0];
+    // Se cuenta desde el último contacto del grupo: una carga recién avisada frena el recordatorio.
+    const base = Math.max(...grupo.map((o) => new Date(o.bot_coord_reminder_at || o.delivery_ready_at).getTime()));
     if (now - base < H60) continue;
     const num = waNumber(op.clients?.whatsapp);
-    if (!num || !op.delivery_public_token) continue;
-    const paso = op.bot_coord_reminder_count || 0; // 0, 1 o 2 → plantilla de la escalera
+    const tk = grupo.find((o) => o.delivery_public_token)?.delivery_public_token;
+    if (!num || !tk) continue;
+    const paso = Math.min(1, Math.max(...grupo.map((o) => o.bot_coord_reminder_count || 0))); // 0 o 1 → plantilla de la escalera
     const plantilla = ESCALERA[paso];
-    out.recordatorios.push(`${op.operation_code} → ${plantilla}`);
+    out.recordatorios.push(`${grupo.map((o) => o.operation_code).join(" + ")} → ${plantilla}`);
     if (dry) continue;
     // "Mazos de cartas (AC-0121)" — con la descripción el cliente sabe de qué carga hablamos.
-    const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
+    const carga = nombreCargas(grupo);
     const r = await sendWaTemplate(num, plantilla, [
-      op.clients?.first_name || "Hola", carga, `${BASE_URL}/retiro/${op.delivery_public_token}`,
+      op.clients?.first_name || "Hola", carga, `${BASE_URL}/retiro/${tk}`,
     ]);
     if (r?.ok) {
       out.enviados++;
-      await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ bot_coord_reminder_at: new Date().toISOString(), bot_coord_reminder_count: paso + 1 }) });
+      await sb(`/operations?id=in.(${grupo.map((o) => o.id).join(",")})`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ bot_coord_reminder_at: new Date().toISOString(), bot_coord_reminder_count: paso + 1 }) });
       // Tras el 2º y último aviso, la gestión pasa a un humano — el bot no insiste más.
       if (paso === 1) {
         const c = op.clients || {};
-        await notifyAdmins("⚠️ Entrega sin respuesta — tomar gestión humana", `${c.first_name || ""} ${c.last_name || ""} (${c.client_code || "?"}) · ${op.operation_code}: 2 recordatorios sin coordinar ni pagar.`);
+        await notifyAdmins("⚠️ Entrega sin respuesta — tomar gestión humana", `${c.first_name || ""} ${c.last_name || ""} (${c.client_code || "?"}) · ${grupo.map((o) => o.operation_code).join(" + ")}: 2 recordatorios sin coordinar ni pagar.`);
       }
     }
   }

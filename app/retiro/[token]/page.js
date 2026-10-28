@@ -76,6 +76,7 @@ export default function EntregaPublica({ params }) {
   const [confirmed, setConfirmed] = useState(null);
   // Otras cargas listas del mismo cliente: ids seleccionadas para coordinar en la misma visita.
   const [selExtra, setSelExtra] = useState([]);
+  const [verCarga, setVerCarga] = useState(null); // carga desplegada en el link único
   // Cotización del envío con la dirección que el cliente editó (localidad / CP). null = la de la carga.
   const [cotEnvio, setCotEnvio] = useState(null);
 
@@ -282,39 +283,23 @@ export default function EntregaPublica({ params }) {
     setConfirmed(d);
   };
 
-  if (confirmed) return <ConfirmedView data={confirmed} delivery={modoRi ? "ri" : delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} entregada={entregada} onEdit={() => { setConfirmed(null); setPaso(data.modo_ri || entregada ? 3 : 2); }} />;
-
-  return <div style={pageStyle()}>
-    <div style={cardStyle()}>
-      {/* header */}
-      <div style={{ background: NAVY, color: "#fff", padding: "20px 28px 18px", position: "relative" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
-          <img src={LOGO} alt="Argencargo" style={{ height: 40, width: "auto" }} />
-          <div style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 22, fontWeight: 700, color: GOLD_B, letterSpacing: "0.03em", textAlign: "right", lineHeight: 1 }}>{op.operation_code}</div>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div><p style={lblStyle()}>Cliente</p><p style={{ fontSize: 17, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>{clientName}</p></div>
-          <div style={{ textAlign: "right" }}><p style={lblStyle()}>Canal</p><p style={{ fontSize: 17, fontWeight: 700, color: GOLD_B, letterSpacing: "-0.01em" }}>{CHANNEL_NAME[op.channel] || op.channel}</p></div>
-        </div>
-        <div style={{ height: 4, position: "absolute", left: 0, right: 0, bottom: 0, background: `linear-gradient(90deg,${GOLD_A},${GOLD_B},${GOLD_A})` }} />
-      </div>
-
-      <div style={{ padding: "22px 24px 26px", display: "flex", flexDirection: "column", gap: 16, background: CREAM, color: INK }}>
-        {paso===1&&<>
-        {modoRi&&<div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 15px", borderRadius: 11, background: "#eaf6ef", border: "1px solid rgba(30,125,79,.25)", color: "#1e5c3d", fontSize: 12.5, lineHeight: 1.5, fontWeight: 600 }}>
-          <span style={{ fontSize: 16 }}>📦</span><span>Tu carga {op.status === "entregada" ? "fue entregada" : "se entrega"} directamente en tu domicilio por el courier internacional — no hace falta coordinar nada. Acá tenés el detalle completo, la documentación y los datos para abonar.</span>
-        </div>}
-        {/* 01 — carga */}
-        <div style={stepStyle()}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>01</span><span style={stepTitleStyle()}>Tu carga</span></div>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${LINE}` }}>
+  // Link único: con otras cargas listas, todas se muestran iguales (ordenadas por cuándo se avisaron),
+  // así el link es el mismo para el cliente sin importar desde qué carga lo abra.
+  const multi = hermanas.length > 0 && !modoRi && !entregada;
+  const cargas = [{ key: "main", main: true, id: null, operation_code: op.operation_code, description: op.description, channel: op.channel, bultos: cargo.bultos, m3: cargo.maritimo?.m3_total || 0, peso_facturable: cargo.peso_facturable, saldo: Math.round(saldo * 100) / 100, orden: op.delivery_ready_at || op.created_at || "" },
+    ...hermanas.map((h) => ({ ...h, key: h.id, orden: h.delivery_ready_at || h.created_at || "" }))]
+    .sort((a, b) => String(a.orden || "9").localeCompare(String(b.orden || "9")));
+  const canales = [...new Set((multi ? cargas.filter((c) => c.main || selExtra.includes(c.id)) : [op]).map((c) => CHANNEL_NAME[c.channel] || c.channel))];
+  const canalTxt = canales.length === 1 ? canales[0] : "Varios canales";
+  const detalleOp = <>
+          {!multi&&<div style={{ display: "flex", gap: 12, alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${LINE}` }}>
             <div style={{ width: 38, height: 38, borderRadius: 9, flexShrink: 0, background: "linear-gradient(135deg,#f3ead9,#e8d8b8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, border: "1px solid #ddc99a" }}>📦</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: INK, lineHeight: 1.35 }}>{op.description || "Tu mercadería"}</div>
-              <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>{cargo.bultos} bultos</div>
+              <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>{cargo.bultos} {cargo.bultos === 1 ? "bulto" : "bultos"}</div>
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          </div>}
+          <div style={{ display: "flex", gap: 8, marginTop: multi ? 4 : 12, flexWrap: "wrap" }}>
             {isBlanco && !esMaritimo && <div style={factStyle()}><div style={factLblStyle()}>Peso factur.</div><div style={factValStyle()}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</div></div>}
             {(!isBlanco || esMaritimo) && <div style={factStyle()}><div style={factLblStyle()}>Bultos</div><div style={factValStyle()}>{cargo.bultos}</div></div>}
             {esMaritimo && cargo.maritimo && <div style={factStyle()}><div style={factLblStyle()}>Volumen</div><div style={factValStyle()}>{fmtM3(cargo.maritimo.m3_total)} m³</div></div>}
@@ -361,24 +346,99 @@ export default function EntregaPublica({ params }) {
               {cargo.tracking.map((t, i) => <div key={i}>– {t}</div>)}
             </div>
           </>}
-          {paso===1&&(hermanas.length===0||modoRi)&&<button onClick={()=>setPaso(modoRi?3:2)} style={nextBtnStyle()}>Continuar →</button>}
-        </div>
+  </>;
 
-        {/* Cargas hermanas: coordinar todo en una sola visita, o destildar las que no se lleva hoy. */}
-        {hermanas.length>0&&!modoRi&&<div style={stepStyle()}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 6 }}><span style={stepNStyle()}>+</span><span style={stepTitleStyle()}>También tenés {hermanas.length === 1 ? "otra carga lista" : `${hermanas.length} cargas más listas`}</span></div>
-          <p style={{ fontSize: 11, color: MUTED, margin: "0 0 10px", lineHeight: 1.5 }}>Podés coordinar todo en una sola visita — destildá las que no quieras incluir ahora.</p>
-          {hermanas.map((h) => {
-            const on = selExtra.includes(h.id);
-            const yaCoord = !!h.delivery_confirmed_at && h.delivery_day;
-            return <PayCheck key={h.id} checked={on} onClick={() => setSelExtra((p) => on ? p.filter((x) => x !== h.id) : [...p, h.id])}
-              label={`${h.operation_code} · ${h.description || "Carga"}`}
-              meta={<>{h.bultos} {h.bultos === 1 ? "bulto" : "bultos"} · saldo {fmt(h.saldo)}{yaCoord && <span style={{ color: GOLD_A, fontWeight: 700 }}> · ya coordinada: {new Date(h.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "numeric" })}{h.delivery_slot ? ` · ${h.delivery_slot}` : ""}</span>}</>} />;
-          })}
-          {selExtra.length>0&&<p style={{ fontSize: 11, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "6px 0 0", lineHeight: 1.5 }}>Vas a coordinar <b>{1 + selExtra.length} cargas juntas</b> — total de la visita: <b>{fmt(total)}</b></p>}
-          {paso===1&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
+  if (confirmed) return <ConfirmedView data={confirmed} delivery={modoRi ? "ri" : delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} entregada={entregada} onEdit={() => { setConfirmed(null); setPaso(data.modo_ri || entregada ? 3 : 2); }} />;
+
+  return <div style={pageStyle()}>
+    <div style={cardStyle()}>
+      {/* header */}
+      <div style={{ background: NAVY, color: "#fff", padding: "20px 28px 18px", position: "relative" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
+          <img src={LOGO} alt="Argencargo" style={{ height: 40, width: "auto" }} />
+          {multi
+            ? <div style={{ textAlign: "right" }}>
+                <span style={{ display: "inline-block", padding: "4px 11px", borderRadius: 999, background: "rgba(232,208,152,0.14)", border: "1px solid rgba(232,208,152,0.35)", color: GOLD_B, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>{cargas.length} cargas listas</span>
+                <div style={{ marginTop: 7, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 12.5, fontWeight: 700, color: "rgba(232,208,152,0.85)", letterSpacing: "0.03em" }}>{cargas.map((c) => c.operation_code).join(" · ")}</div>
+              </div>
+            : <div style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 22, fontWeight: 700, color: GOLD_B, letterSpacing: "0.03em", textAlign: "right", lineHeight: 1 }}>{op.operation_code}</div>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <div><p style={lblStyle()}>Cliente</p><p style={{ fontSize: 17, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>{clientName}</p></div>
+          <div style={{ textAlign: "right" }}><p style={lblStyle()}>Canal</p><p style={{ fontSize: 17, fontWeight: 700, color: GOLD_B, letterSpacing: "-0.01em" }}>{canalTxt}</p></div>
+        </div>
+        <div style={{ height: 4, position: "absolute", left: 0, right: 0, bottom: 0, background: `linear-gradient(90deg,${GOLD_A},${GOLD_B},${GOLD_A})` }} />
+      </div>
+
+      <div style={{ padding: "22px 24px 26px", display: "flex", flexDirection: "column", gap: 16, background: CREAM, color: INK }}>
+        {paso===1&&<>
+        {modoRi&&<div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 15px", borderRadius: 11, background: "#eaf6ef", border: "1px solid rgba(30,125,79,.25)", color: "#1e5c3d", fontSize: 12.5, lineHeight: 1.5, fontWeight: 600 }}>
+          <span style={{ fontSize: 16 }}>📦</span><span>Tu carga {op.status === "entregada" ? "fue entregada" : "se entrega"} directamente en tu domicilio por el courier internacional — no hace falta coordinar nada. Acá tenés el detalle completo, la documentación y los datos para abonar.</span>
+        </div>}
+        {/* 01 — carga */}
+        {!multi&&<div style={stepStyle()}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>01</span><span style={stepTitleStyle()}>Tu carga</span></div>
+          {detalleOp}
+          {paso===1&&<button onClick={()=>setPaso(modoRi?3:2)} style={nextBtnStyle()}>Continuar →</button>}
         </div>}
 
+        {/* Link único (28/10/2026): varias cargas listas se coordinan como una sola visita. Todas se
+            ven iguales; la del link no se puede sacar, las demás sí (se apagan y no suman). */}
+        {multi&&<div style={stepStyle()}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 4 }}><span style={stepNStyle()}>01</span><span style={stepTitleStyle()}>Tus cargas</span></div>
+          <p style={{ fontSize: 12, color: MUTED, margin: "0 0 14px", lineHeight: 1.55 }}>Tenés <b style={{ color: INK }}>{cargas.length} cargas listas</b>. Las coordinamos juntas: una sola visita y un solo pago.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {cargas.map((c, i) => {
+              const on = c.main || selExtra.includes(c.id);
+              const abierta = verCarga === c.key;
+              const yaCoord = !c.main && !!c.delivery_confirmed_at && c.delivery_day;
+              const esMar = String(c.channel || "").startsWith("maritimo");
+              const medida = esMar ? (c.m3 > 0 ? `${fmtM3(c.m3)} m³` : null) : (c.peso_facturable > 0 ? `${Number(c.peso_facturable).toLocaleString("es-AR")} kg` : null);
+              return <div key={c.key} style={{ borderRadius: 13, border: `1.5px solid ${on ? "#ddc99a" : LINE}`, background: on ? "#fff" : "#fbfaf6", boxShadow: on ? "0 4px 14px rgba(184,149,106,0.12)" : "none", transition: "all .18s", overflow: "hidden" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "13px 14px" }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11.5, fontWeight: 800, background: on ? `linear-gradient(135deg,${GOLD_A},${GOLD_B})` : "#efe9dc", color: on ? NAVY : MUTED, transition: "all .18s" }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0, opacity: on ? 1 : 0.55, transition: "opacity .18s" }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: INK, lineHeight: 1.3, letterSpacing: "-0.005em" }}>{c.description || "Tu mercadería"}</div>
+                    <div style={{ marginTop: 3, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11, fontWeight: 700, color: GOLD_A, letterSpacing: "0.02em" }}>{c.operation_code}</div>
+                    <div style={{ marginTop: 3, fontSize: 11, color: MUTED, lineHeight: 1.45 }}>{c.bultos} {c.bultos === 1 ? "bulto" : "bultos"}{medida ? ` · ${medida}` : ""}{canales.length > 1 || cargas.some((x) => x.channel !== c.channel) ? ` · ${CHANNEL_NAME[c.channel] || c.channel}` : ""}</div>
+                    {yaCoord && <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#8b6f4a" }}>Ya coordinada para el {new Date(c.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })}{c.delivery_slot ? ` · ${c.delivery_slot}` : ""}</div>}
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: on ? INK : MUTED, fontVariantNumeric: "tabular-nums", textDecoration: on ? "none" : "line-through", whiteSpace: "nowrap" }}>{fmt(c.saldo)}</div>
+                    <button type="button" onClick={() => { if (!c.main) setSelExtra((p) => on ? p.filter((x) => x !== c.id) : [...p, c.id]); }} style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 9px 4px 6px", borderRadius: 999, border: `1px solid ${on ? "rgba(30,125,79,.3)" : LINE}`, background: on ? "#eaf6ef" : "#fff", color: on ? "#1e5c3d" : MUTED, fontSize: 10.5, fontWeight: 800, cursor: c.main ? "default" : "pointer", fontFamily: "inherit", transition: "all .18s" }}>
+                      <span style={{ width: 14, height: 14, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: on ? "#1e7d4f" : "transparent", border: on ? "none" : "1.5px solid #c9bb9c", color: "#fff", fontSize: 9 }}>{on ? "✓" : ""}</span>{on ? "Incluida" : "Sumar"}
+                    </button>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setVerCarga(abierta ? null : c.key)} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", border: "none", borderTop: `1px solid ${LINE}`, background: "transparent", color: GOLD_A, fontSize: 11, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                  <span>{abierta ? "Ocultar detalle" : "Ver detalle"}</span><span style={{ display: "inline-block", transform: abierta ? "rotate(180deg)" : "none", transition: "transform .18s" }}>▾</span>
+                </button>
+                {abierta && <div style={{ padding: "2px 14px 14px" }}>
+                  {c.main ? detalleOp : <>
+                    {c.tracking?.length > 0 && <>
+                      <p style={{ ...factLblStyle(), margin: "10px 0 6px" }}>Tracking</p>
+                      <div style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 12, color: INK, lineHeight: 1.9 }}>{c.tracking.map((t, k) => <div key={k}>– {t}</div>)}</div>
+                    </>}
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                      <div style={factStyle()}><div style={factLblStyle()}>Bultos</div><div style={factValStyle()}>{c.bultos}</div></div>
+                      {esMar && c.m3 > 0 && <div style={factStyle()}><div style={factLblStyle()}>Volumen</div><div style={factValStyle()}>{fmtM3(c.m3)} m³</div></div>}
+                      {!esMar && c.peso_facturable > 0 && <div style={factStyle()}><div style={factLblStyle()}>Peso factur.</div><div style={factValStyle()}>{Number(c.peso_facturable).toLocaleString("es-AR")} kg</div></div>}
+                    </div>
+                    <p style={{ fontSize: 11, color: MUTED, margin: "10px 0 0", lineHeight: 1.5 }}>El detalle completo de esta carga lo tenés en tu portal.</p>
+                  </>}
+                </div>}
+              </div>;
+            })}
+          </div>
+          <div style={{ marginTop: 14, padding: "14px 16px", borderRadius: 13, background: `radial-gradient(120% 140% at 100% 0%, rgba(232,208,152,0.22), transparent 60%), ${NAVY}`, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(232,208,152,0.8)" }}>Total de la visita</p>
+              <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "rgba(255,255,255,0.65)" }}>{1 + selExtra.length} de {cargas.length} cargas</p>
+            </div>
+            <p style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: "-0.02em", color: GOLD_B, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(total)}</p>
+          </div>
+          {paso===1&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>{selExtra.length ? `Coordinar las ${1 + selExtra.length} juntas →` : "Continuar →"}</button>}
+        </div>}
         </>}
 
         {paso===2&&<>
@@ -468,7 +528,7 @@ export default function EntregaPublica({ params }) {
           <div style={{ padding: "15px 17px", borderRadius: 11, background: `linear-gradient(135deg,${GOLD_A},${GOLD_B})`, color: NAVY, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 5px 16px rgba(184,149,106,0.25)" }}>
             <div>
               <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>Total a abonar</p>
-              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por transportista"}</p>
+              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{selExtra.length ? `${1 + selExtra.length} cargas` : (CHANNEL_NAME[op.channel] || op.channel)} · {modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por transportista"}</p>
             </div>
             {(() => {
               const todoEnPesos = payMethods.length === 1 && tcVenta > 0 && (payMethods[0] === "transferencia" || (payMethods[0] === "efectivo" && cashCurrencyMode === "ARS"));

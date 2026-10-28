@@ -323,7 +323,9 @@ export async function POST(req) {
       try {
         const { sendWaTemplate, waConfigured } = await import("../../../lib/wa");
         if (waConfigured() && (force || !op.sent_notifications?.wa_retiro)) {
-          const link = `${BASE_URL}/retiro/${op.delivery_public_token}`;
+          // Si el cliente ya tiene otra carga lista sin coordinar, va el mismo link (muestra las dos).
+          const { tokenRetiro } = await import("../../../lib/link-retiro");
+          const link = `${BASE_URL}/retiro/${(await tokenRetiro(op).catch(() => null)) || op.delivery_public_token}`;
           const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
           const r2 = await sendWaTemplate(client.whatsapp, "carga_lista", [client.first_name || "Hola", carga, link]);
           if (r2?.ok) newSent.wa_retiro = new Date().toISOString();
