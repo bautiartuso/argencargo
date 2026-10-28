@@ -432,7 +432,7 @@ export default function EntregaPublica({ params }) {
           </div>
           <div style={{ marginTop: 14, padding: "14px 16px", borderRadius: 13, background: `radial-gradient(120% 140% at 100% 0%, rgba(232,208,152,0.22), transparent 60%), ${NAVY}`, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
-              <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(232,208,152,0.8)" }}>Total de la visita</p>
+              <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(232,208,152,0.8)" }}>Total a pagar</p>
               <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "rgba(255,255,255,0.65)" }}>{1 + selExtra.length} de {cargas.length} cargas</p>
             </div>
             <p style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: "-0.02em", color: GOLD_B, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(total)}</p>
@@ -444,11 +444,24 @@ export default function EntregaPublica({ params }) {
         {paso===2&&<>
         {/* 02 — entrega */}
         <div style={stepStyle()}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
-          <OptRow selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} label="Retiro por oficina" meta={`${deliveryInfo.office_address || ""}${deliveryInfo.office_locality ? " · " + deliveryInfo.office_locality : ""}${deliveryInfo.office_hours ? " · " + deliveryInfo.office_hours : ""}`} />
-          {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
-          {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${cotEnvio?.zone || inferredZone}`} price={precioPropio != null ? "+ " + fmt(precioPropio) : "Fuera de zona"} />}
-          {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>{multi && selExtra.length ? "¿Cómo las recibís?" : "¿Cómo la recibís?"}</span></div>
+          {/* Rediseño 28/10/2026: primero se elige la modalidad (dos tarjetas parejas) y abajo, separado,
+              lo que pide esa modalidad (día y horario, dirección o datos del transportista). */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8 }}>
+            <ModoEntrega selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} icon="oficina" label="Retiro en oficina" meta={deliveryInfo.office_locality || "Buenos Aires"} price="Sin cargo" />
+            {hasPropio
+              ? <ModoEntrega selected={delivery === "propio"} onClick={() => setDelivery("propio")} icon="domicilio" label="Envío a domicilio" meta={cotEnvio?.zone || inferredZone || "A tu dirección"} price={precioPropio != null ? "+ " + fmt(precioPropio) : "Fuera de zona"} />
+              : <ModoEntrega selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} icon="transporte" label="Envío al interior" meta="Por Vía Cargo o Andreani" price="A coordinar" />}
+          </div>
+
+          {delivery === "oficina" && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}` }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 12, color: INK, lineHeight: 1.5 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={GOLD_A} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
+              <span><b>{deliveryInfo.office_address}</b>{deliveryInfo.office_locality ? `, ${deliveryInfo.office_locality}` : ""}{deliveryInfo.office_hours && <span style={{ display: "block", color: MUTED, fontSize: 11 }}>{deliveryInfo.office_hours}</span>}</span>
+            </div>
+            <DiaFranja modo="oficina" minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
+          </div>}
+          {hasPropio && delivery === "propio" && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}` }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8 }}>
               <input value={dirCalle} onChange={e => setDirCalle(e.target.value)} placeholder="Calle y número" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
@@ -460,22 +473,11 @@ export default function EntregaPublica({ params }) {
             <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos los datos registrados en tu cuenta — editá lo que necesites.</p>
             <DiaFranja modo="propio" minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
           </div>}
-          {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
-
-          {/* Próximamente: envío directo al Full de Mercado Libre (solo anuncio, sin flujo aún) */}
-          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, border: `1.5px dashed ${LINE}`, background: "#f7f4ec", marginBottom: 7, opacity: 0.75, cursor: "default" }}>
-            <span style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, border: "2px solid #d5c9ab", background: "transparent" }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>Envío a Full de Mercado Libre</div>
-              <div style={{ fontSize: 10.5, color: MUTED, marginTop: 1 }}>Muy pronto vas a poder mandar tu carga directo al depósito de Full</div>
-            </div>
-            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.08em", color: "#8b6f4a", background: "linear-gradient(135deg,#fdf6e8,#faedd0)", border: `1px solid ${GOLD_A}`, padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap" }}>PRÓXIMAMENTE</span>
-          </div>
 
           {/* Con transportista hay dos modalidades y piden datos distintos: a sucursal alcanza con
               quién retira; a domicilio se suma la dirección. */}
           {!hasPropio && delivery === "carrier" && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}` }}>
               <label style={fieldLblStyle()}>¿Cómo querés recibirlo?</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                 {[
@@ -513,6 +515,8 @@ export default function EntregaPublica({ params }) {
               )}
             </div>
           )}
+          {/* Próximamente: envío directo al Full de Mercado Libre (solo anuncio, sin flujo aún) */}
+          <p style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11, color: MUTED, margin: "14px 0 0" }}><span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.08em", color: "#8b6f4a", border: `1px solid ${GOLD_A}`, padding: "2px 6px", borderRadius: 999 }}>PRONTO</span>Envío directo a Full de Mercado Libre</p>
           {formError && <ErrorBanner msg={formError} />}
           {paso===2&&<div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button onClick={()=>setPaso(1)} style={backBtnStyle()}>← Volver</button>
@@ -525,21 +529,31 @@ export default function EntregaPublica({ params }) {
         {/* 03 — total y pago */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>03</span><span style={stepTitleStyle()}>Total y forma de pago</span></div>
-          <div style={{ padding: "15px 17px", borderRadius: 11, background: `linear-gradient(135deg,${GOLD_A},${GOLD_B})`, color: NAVY, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 5px 16px rgba(184,149,106,0.25)" }}>
-            <div>
-              <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>Total a abonar</p>
-              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{selExtra.length ? `${1 + selExtra.length} cargas` : (CHANNEL_NAME[op.channel] || op.channel)} · {modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por transportista"}</p>
-            </div>
-            {(() => {
-              const todoEnPesos = payMethods.length === 1 && tcVenta > 0 && (payMethods[0] === "transferencia" || (payMethods[0] === "efectivo" && cashCurrencyMode === "ARS"));
-              return todoEnPesos
-                ? <div style={{ textAlign: "right" }}>
-                    <p style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>ARS {Math.round(total * tcVenta).toLocaleString("es-AR")}</p>
-                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(10,22,40,0.6)" }}>USD {total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  </div>
-                : <p style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt(total)}</p>;
-            })()}
-          </div>
+          {/* Rediseño 28/10/2026: el total en el mismo bloque navy del paso 1, con qué incluye y cuándo. */}
+          {(() => {
+            const enPesos = payMethods[0] === "transferencia" && tcVenta > 0;
+            const modoTxt = modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro en oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por transportista";
+            const dE = diaEntrega ? new Date(diaEntrega + "T12:00:00") : null;
+            const cuando = dE ? `${["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][dE.getDay()]} ${dE.getDate()}/${dE.getMonth() + 1}${franjaEntrega ? ` · ${franjaEntrega} hs` : ""}` : "";
+            const incl = multi ? cargas.filter((c) => c.main || selExtra.includes(c.id)) : [];
+            return <div style={{ borderRadius: 14, overflow: "hidden", background: `radial-gradient(120% 140% at 100% 0%, rgba(232,208,152,0.22), transparent 60%), ${NAVY}`, color: "#fff" }}>
+              <div style={{ padding: "16px 18px 15px" }}>
+                <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(232,208,152,0.8)" }}>Total a pagar</p>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                  <p style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em", color: GOLD_B, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", lineHeight: 1.1 }}>{enPesos ? `ARS ${Math.round(total * tcVenta).toLocaleString("es-AR")}` : fmt(total)}</p>
+                  {enPesos && <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.55)", fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</p>}
+                </div>
+                <p style={{ margin: "8px 0 0", fontSize: 12, color: "rgba(255,255,255,0.72)", lineHeight: 1.45 }}>{modoTxt}{cuando ? ` · ${cuando}` : ""}</p>
+              </div>
+              {incl.length > 1 && <div style={{ padding: "9px 18px 11px", borderTop: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}>
+                {incl.map((c) => <div key={c.key} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5, color: "rgba(255,255,255,0.62)", padding: "2px 0" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", color: "rgba(232,208,152,0.75)" }}>{c.operation_code}</span> · {c.description || "Carga"}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(c.saldo)}</span>
+                </div>)}
+                {deliveryCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11.5, color: "rgba(255,255,255,0.62)", padding: "2px 0" }}><span>Envío a domicilio</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(deliveryCost)}</span></div>}
+              </div>}
+            </div>;
+          })()}
           {creditApp > 0.01 && <div style={adjustCardStyle(true)}><span>✓</span><span>Se descontaron <b>{fmt(creditApp)}</b> de tu saldo a favor</span></div>}
           {data.preferential && <div style={adjustCardStyle(true)}><span>⭐</span><span>Tenés <b>tarifa preferencial</b>: USD {data.preferential.usd_por_kg} por kilo, en vez de USD {data.preferential.lista_usd_por_kg}.</span></div>}
           {creditApp <= 0.01 && debtApp > 0.01 && <div style={adjustCardStyle(false)}><span>ⓘ</span><span>Se sumaron <b>{fmt(debtApp)}</b> por saldo pendiente anterior</span></div>}
@@ -547,39 +561,14 @@ export default function EntregaPublica({ params }) {
           {(()=>{
             const elegir = (m) => setPayMethods([m]);
             const soloRemoto = modoRi; // courier entrega: el pago es remoto (transferencia/cripto)
-            return <div style={{ marginTop: 12 }}>
-              <p style={{ fontSize: 11.5, fontWeight: 700, color: INK, margin: "0 0 9px" }}>¿Cómo querés pagar?</p>
-              {!soloRemoto && <OptRow selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && elegir("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En dólares o pesos, al retirar o recibir"} disabled={efectivoBlocked} />}
-              <OptRow selected={payMethods.includes("transferencia")} onClick={() => elegir("transferencia")} label="Transferencia en pesos" meta={payMethods.includes("transferencia") && tcVenta > 0 ? `Pagás ARS ${Math.round(total * tcVenta).toLocaleString("es-AR")}` : "El importe se pasa a pesos automáticamente"} />
-              <OptRow selected={payMethods.includes("crypto")} onClick={() => elegir("crypto")} label="Cripto (USDT)" meta="Red TRC-20 · te pasamos la billetera por WhatsApp" />
-
-              {payMethods.includes("efectivo") && <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 11, background: "#f4efe3", border: `1px solid ${LINE}` }}>
-                <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 8px" }}>💵 ¿Con qué vas a pagar?</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(90px,1fr))", gap: 6, marginBottom: 10 }}>
-                  {[["USD", "Dólares"], ["ARS", "Pesos"], ["mixto", "Un poco de cada"]].map(([k, l]) => <button key={k} type="button" onClick={() => setCashCurrencyMode(k)} style={{ padding: "9px 8px", fontSize: 11.5, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrencyMode === k ? GOLD_A : LINE}`, background: cashCurrencyMode === k ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrencyMode === k ? "#8b6f4a" : MUTED }}>{l}</button>)}
-                </div>
-                {cashCurrencyMode === "ARS" && tcVenta > 0 && <p style={{ fontSize: 11, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px", lineHeight: 1.5 }}>En pesos son <b>ARS {Math.round(total * tcVenta).toLocaleString("es-AR")}</b> (valor de hoy — se ajusta al día del pago).</p>}
-                {cashCurrencyMode === "mixto" && <div style={{ margin: "0 0 10px" }}>
-                  <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 7px", lineHeight: 1.5 }}>Si ya sabés cuánto vas a poner en cada moneda, anotalo (opcional):</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div style={{ position: "relative" }}>
-                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
-                      <input value={cashMixUsd} onChange={(e) => setCashMixUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), paddingLeft: 44, textAlign: "right" }} />
-                    </div>
-                    <div style={{ position: "relative" }}>
-                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>ARS</span>
-                      <input value={cashMixArs} onChange={(e) => setCashMixArs(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), paddingLeft: 44, textAlign: "right" }} />
-                    </div>
-                  </div>
-                </div>}
-                <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 7px", lineHeight: 1.5 }}>Si necesitás cambio, decinos con cuánto llegás así lo tenemos listo. (Opcional)</p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Ej: 600" style={{ ...contactInputStyle(), flex: 1 }} />
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {["USD", "ARS"].map((c) => <button key={c} type="button" onClick={() => setCashCurrency(c)} style={{ padding: "8px 13px", fontSize: 12, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrency === c ? GOLD_A : LINE}`, background: cashCurrency === c ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrency === c ? "#8b6f4a" : MUTED }}>{c}</button>)}
-                  </div>
-                </div>
-              </div>}
+            // Efectivo sin preguntas extra (28/10/2026): ni moneda ni con cuánto llega.
+            return <div style={{ marginTop: 16 }}>
+              <p style={{ ...fieldLblStyle(), marginBottom: 8 }}>¿Cómo querés pagar?</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {!soloRemoto && <ModoEntrega selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && elegir("efectivo")} disabled={efectivoBlocked} icon="efectivo" label="Efectivo" meta={efectivoBlocked ? "No disponible con transportista" : `Dólares o pesos, al ${delivery === "propio" ? "recibir" : "retirar"}`} />}
+                <ModoEntrega selected={payMethods.includes("transferencia")} onClick={() => elegir("transferencia")} icon="transferencia" label="Transferencia" meta="En pesos" price={tcVenta > 0 ? `ARS ${Math.round(total * tcVenta).toLocaleString("es-AR")}` : ""} />
+                <ModoEntrega selected={payMethods.includes("crypto")} onClick={() => elegir("crypto")} icon="cripto" label="Cripto (USDT)" meta="Red TRC-20 · te pasamos la billetera" />
+              </div>
             </div>;
           })()}
         </div>
@@ -644,7 +633,7 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia, feriados }) {
   return <div style={{ marginTop: 12 }}>
     {desde && desde > new Date() && <p style={{ fontSize: 11.5, color: MUTED, margin: "0 0 8px", lineHeight: 1.5 }}>Esta carga se puede coordinar a partir del <strong>{["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][desde.getDay()]} {desde.getDate()}/{desde.getMonth() + 1}</strong>.</p>}
     <label style={fieldLblStyle()}>{modo === "oficina" ? "¿Qué día pasás a retirar?" : "¿Qué día querés recibirla?"}</label>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(62px,1fr))", gap: 6, marginBottom: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${dias.length},minmax(0,1fr))`, gap: 6, marginBottom: 10 }}>
       {dias.map((x) => <div key={x.iso} onClick={() => { if (x.disabled) return; setDia(x.iso); if (franja && franjaPasada(x.iso, franja)) setFranja(""); }} style={chip(dia === x.iso, x.disabled)}>
         <div style={{ fontSize: 11.5, fontWeight: 800, color: INK }}>{x.label}</div>
         <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{x.fecha}</div>
@@ -680,6 +669,33 @@ function ErrorBanner({ msg }) {
   return <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 14px", borderRadius: 10, marginTop: 12, background: "#fdecea", border: "1.5px solid rgba(192,57,43,0.35)", color: "#8f2318", fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>
     <span style={{ fontSize: 14 }}>⚠️</span><span>{msg}</span>
   </div>;
+}
+
+// Modalidad de entrega: tarjeta pareja con ícono, nombre, dónde y precio (28/10/2026).
+const ICONOS_ENTREGA = {
+  oficina: ["M3 21h18", "M5 21V7l7-4 7 4v14", "M9 21v-6h6v6"],
+  domicilio: ["M1 7h13v10H1z", "M14 10h4l3 3v4h-7z", "M5.5 20.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z", "M17.5 20.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"],
+  transporte: ["M21 8 12 3 3 8v8l9 5 9-5z", "M3 8l9 5 9-5", "M12 13v8"],
+  efectivo: ["M2 6h20v12H2z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M6 12h.01", "M18 12h.01"],
+  transferencia: ["M3 10h18", "M5 10v8", "M10 10v8", "M14 10v8", "M19 10v8", "M2 21h20", "M12 3 2 8h20z"],
+  cripto: ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M8 9h8", "M12 9v8"],
+};
+function ModoEntrega({ selected, onClick, icon, label, meta, price, disabled }) {
+  return <button type="button" onClick={disabled ? undefined : onClick} style={{ opacity: disabled ? 0.45 : 1,
+    display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", borderRadius: 12, textAlign: "left", width: "100%",
+    border: `1.5px solid ${selected ? GOLD_A : LINE}`, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit",
+    background: selected ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff",
+    boxShadow: selected ? "0 4px 14px rgba(184,149,106,0.2)" : "none", transition: "all .15s",
+  }}>
+    <span style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: selected ? NAVY : "#f3eee3", color: selected ? GOLD_B : "#8b7d5f", transition: "all .15s" }}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{(ICONOS_ENTREGA[icon] || []).map((d, k) => <path key={k} d={d} />)}</svg>
+    </span>
+    <span style={{ flex: 1, minWidth: 0 }}>
+      <span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: INK }}>{label}</span>
+      <span style={{ display: "block", fontSize: 11, color: MUTED, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta}</span>
+    </span>
+    <span style={{ fontSize: 12, fontWeight: 800, color: selected ? "#8b6f4a" : MUTED, whiteSpace: "nowrap" }}>{price}</span>
+  </button>;
 }
 
 function OptRow({ selected, onClick, label, meta, price, disabled }) {
