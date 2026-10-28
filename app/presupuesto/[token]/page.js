@@ -25,21 +25,29 @@ const EXPLICA_CERT = {
   inal: "El INAL es el certificado que exige el Estado para importar productos que tocan alimentos, como utensilios de cocina. El certificado cuesta $850.000 y dura 5 años: mientras esté vigente, tus próximas importaciones no lo vuelven a pagar. Además, cada importación paga USD 1.200 fijos por la intervención. Ya está incluido en el total.",
   seg: "La certificación de seguridad eléctrica es obligatoria para importar productos que se enchufan o usan electricidad. Cuesta $1.500.000 por certificado. Ya está incluida en el total.",
 };
-function EtiquetaLinea({ l }) {
-  const [abierto, setAbierto] = useState(false);
+const textoCert = (l) => { const m = String(l || "").match(/^(.+?)\s*\((\d+)\s*certificados?\)\s*$/i); if (!m) return null; return /inal/i.test(m[1]) ? EXPLICA_CERT.inal : /el[eé]ctric/i.test(m[1]) ? EXPLICA_CERT.seg : null; };
+function EtiquetaLinea({ l, abierto, onToggle }) {
   const m = String(l || "").match(/^(.+?)\s*\((\d+)\s*certificados?\)\s*$/i);
   if (!m) return <span>{l}</span>;
   const n = Number(m[2]);
-  const texto = /inal/i.test(m[1]) ? EXPLICA_CERT.inal : /el[eé]ctric/i.test(m[1]) ? EXPLICA_CERT.seg : null;
+  const texto = textoCert(l);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "#1F3B2D", color: "#E8F5E9", fontSize: 10.5, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.5 }}>✓ Certificación</span>
       <span style={{ color: "rgba(26,26,26,0.35)" }}>·</span>
       <span style={{ fontWeight: 700, color: "#1a1a1a" }}>{m[1]}{n > 1 ? ` ×${n}` : ""}</span>
-      {texto && <button type="button" onClick={() => setAbierto((v) => !v)} aria-label="Qué es esta certificación" aria-expanded={abierto} style={{ width: 22, height: 22, borderRadius: 999, border: "1px solid rgba(26,26,26,0.25)", background: abierto ? "#0A1628" : "#fff", color: abierto ? "#E8D098" : "#1a1a1a", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>?</button>}
-      {texto && abierto && <span style={{ flexBasis: "100%", marginTop: 6, padding: "10px 12px", borderRadius: 10, background: "#fff", border: "1px solid #eae4d6", fontSize: 12.5, lineHeight: 1.55, color: "rgba(26,26,26,0.8)", fontWeight: 400 }}>{texto}</span>}
+      {texto && onToggle && <button type="button" onClick={onToggle} aria-label="Qué es esta certificación" aria-expanded={!!abierto} style={{ flex: "none", width: 22, height: 22, minWidth: 22, borderRadius: "50%", border: "1px solid rgba(26,26,26,0.25)", background: abierto ? "#0A1628" : "#fff", color: abierto ? "#E8D098" : "#1a1a1a", fontSize: 12, fontWeight: 800, lineHeight: "20px", cursor: "pointer", padding: 0, textAlign: "center", fontFamily: "inherit" }}>?</button>}
     </span>
   );
+}
+// Una línea del desglose con su explicación desplegable debajo, a todo el ancho.
+function FilaCert({ l, fila }) {
+  const [abierto, setAbierto] = useState(false);
+  const texto = textoCert(l);
+  return <>
+    {fila(<EtiquetaLinea l={l} abierto={abierto} onToggle={texto ? () => setAbierto((v) => !v) : null} />)}
+    {texto && abierto && <div style={{ display: "block", margin: "2px 0 8px", padding: "10px 12px", borderRadius: 10, background: "#fff", border: "1px solid #eae4d6", fontSize: 12.5, lineHeight: 1.55, color: "rgba(26,26,26,0.8)", fontWeight: 400 }}>{texto}</div>}
+  </>;
 }
 const fmtCbm = (n) => `${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })} m³`;
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" }) : "";
@@ -476,9 +484,9 @@ export default function PresupuestoPage({ params }) {
                       Number(elegidaFinal.seguro || 0) > 0 && ["Seguro", elegidaFinal.seguro],
                     ].filter(Boolean)
                 ).map(([l, v], k) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
-                    <span style={{ color: "rgba(26,26,26,0.6)" }}><EtiquetaLinea l={l} /></span><span style={{ fontWeight: 600 }}>USD {fmt(v)}</span>
-                  </div>
+                  <FilaCert key={k} l={l} fila={(etq) => <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}>{etq}</span><span style={{ fontWeight: 600 }}>USD {fmt(v)}</span>
+                  </div>} />
                 ))}
                 {Number(elegidaFinal.shipCost || 0) > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
@@ -545,7 +553,7 @@ export default function PresupuestoPage({ params }) {
                       )}
                       {abierta && comps.length > 0 && (
                         <div className="pz-desg">
-                          {comps.map(([l, v], k) => <div key={k}><span><EtiquetaLinea l={l} /></span><b>{v}</b></div>)}
+                          {comps.map(([l, v], k) => <FilaCert key={k} l={l} fila={(etq) => <div><span>{etq}</span><b>{v}</b></div>} />)}
                           {comps.length > 1 && <div className="t"><span>Total</span><b>{usd(a.totalAbonar)}</b></div>}
                           {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
                         </div>
