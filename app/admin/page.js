@@ -5245,7 +5245,7 @@ function StudioPanel({token}){
   const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:16,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
   const liOk=!!meta.linkedin?.connected&&!meta.linkedin?.vencido;
-  const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:pieces.filter(p=>p.status==="approved").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
+  const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:pieces.filter(p=>p.status==="approved").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:true}];
   const inp={width:"100%",boxSizing:"border-box",padding:"11px 13px",borderRadius:12,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.045)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
   const sel={padding:"9px 10px",borderRadius:11,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
   const box={background:"linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.012))",border:"1px solid rgba(255,255,255,0.09)",borderRadius:18,padding:18,boxShadow:"0 10px 30px rgba(0,0,0,0.22)"};
@@ -5280,27 +5280,19 @@ function StudioPanel({token}){
 
   const ICO_TAB={analisis:["M4 19V5","M4 19h16","M8 15l3-4 3 2 4-6"],calendario:["M4 6h16v14H4z","M4 10h16","M9 3v4","M15 3v4"],contenido:["M4 4h7v7H4z","M13 4h7v7h-7z","M4 13h7v7H4z","M13 13h7v7h-7z"],runner:["M12 3v3","M12 18v3","M3 12h3","M18 12h3","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"],chatbot:["M4 5h16v11H8l-4 4z"],marca:["M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"],knowledge:["M5 4h10l4 4v12H5z","M9 12h6","M9 16h6"],conexion:["M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1","M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"]};
   const macVivo=!!(meta.estado?.mac?.last_seen_at&&Date.now()-new Date(meta.estado.mac.last_seen_at).getTime()<10*60000);
+  // Conexión en verde solo si está todo (Instagram, radar, Telegram, la Mac y LinkedIn si se conectó); en rojo si falta algo.
+  const conexiones=[["Instagram",igOk],["Radar",!!meta.discovery?.connected],["Telegram",!!meta.telegram?.connected],["Mac",macVivo],["LinkedIn",(!meta.linkedin?.connected||!meta.linkedin?.vencido)]];
+  const conexOk=conexiones.every(([,ok])=>ok);
   const estadoPill=(ok,txt)=><span style={{display:"inline-flex",alignItems:"center",gap:7,padding:"6px 11px",borderRadius:99,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"}}><span style={{width:7,height:7,borderRadius:99,background:ok?"#4ade80":"#f87171",boxShadow:`0 0 0 3px ${ok?"rgba(74,222,128,0.18)":"rgba(248,113,113,0.18)"}`}}/>{txt}</span>;
 
   return <div>
     <style>{`.cs-card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,0.16)!important} .cs-tabs::-webkit-scrollbar{display:none}`}</style>
-    <div style={{display:"flex",alignItems:"flex-end",gap:12,flexWrap:"wrap",marginBottom:16}}>
-      <div>
-        <p style={{margin:0,fontSize:11,fontWeight:800,letterSpacing:"0.16em",textTransform:"uppercase",color:ACC}}>Argencargo</p>
-        <p style={{margin:"3px 0 0",fontSize:24,fontWeight:900,color:"#fff",letterSpacing:"-0.025em",lineHeight:1.1}}>Content Studio</p>
-      </div>
-      <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
-        {estadoPill(igOk,igOk?"Instagram conectado":"Instagram sin conectar")}
-        {estadoPill(macVivo,macVivo?"Mac en línea":"Mac sin señal")}
-        {generando>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 11px",borderRadius:99,background:`${ACC}1f`,border:`1px solid ${ACC}55`,fontSize:11.5,fontWeight:800,color:ACC}}>{generando} diseñándose</span>}
-      </div>
-    </div>
     <div className="cs-tabs" style={{display:"flex",gap:4,padding:5,marginBottom:18,borderRadius:16,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto",scrollbarWidth:"none"}}>
       {tabs.map(x=>{const on=tab===x.k;return <button key={x.k} onClick={()=>setTab(x.k)} style={{flex:isMobile?"0 0 auto":1,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,padding:"9px 13px",fontSize:12.5,fontWeight:800,borderRadius:12,cursor:"pointer",border:"none",whiteSpace:"nowrap",fontFamily:"inherit",background:on?`linear-gradient(135deg,${ACC}2e,${ACC}14)`:"transparent",boxShadow:on?`inset 0 0 0 1px ${ACC}66`:"none",color:on?ACC:"rgba(255,255,255,0.55)",transition:"all .15s"}}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{(ICO_TAB[x.k]||[]).map((d,k)=><path key={k} d={d}/>)}</svg>
         {x.l}
         {x.n>0&&<span style={{minWidth:18,height:18,padding:"0 5px",borderRadius:99,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{x.n}</span>}
-        {x.dot&&<span style={{width:7,height:7,borderRadius:99,background:x.dot}}/>}
+        {x.dot&&<span style={{width:7,height:7,borderRadius:99,background:conexOk?"#4ade80":"#f87171",boxShadow:`0 0 0 3px ${conexOk?"rgba(74,222,128,0.18)":"rgba(248,113,113,0.18)"}`}}/>}
       </button>;})}
     </div>
 
@@ -5651,6 +5643,7 @@ function StudioPanel({token}){
     </div>}
 
     {tab==="conexion"&&<div style={{maxWidth:720}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>{conexiones.map(([n,ok])=><span key={n}>{estadoPill(ok,ok?n:`${n} · falta`)}</span>)}</div>
       <div style={box}>
         <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Instagram {igOk?<span style={{color:"#4ade80"}}>· conectado{meta.instagram.username?` (@${meta.instagram.username})`:""}</span>:<span style={{color:"#f87171"}}>· sin conectar</span>}</p>
         <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Con la conexión, el vigilante revisa el calendario cada minuto y publica solo lo programado (posteos e historias). Sin conexión, descargás y subís a mano.</p>
