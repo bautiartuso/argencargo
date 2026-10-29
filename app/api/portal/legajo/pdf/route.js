@@ -32,7 +32,7 @@ export async function GET(req) {
   const saldo = saldoLegajo(l);
   const recibos = doc === "todo" ? l.pagos : l.pagos.filter((p) => doc === `recibo:${p.id}`);
   const facturas = doc === "todo" ? l.facturas : l.facturas.filter((f) => doc === `factura:${f.token}`);
-  const adjuntos = doc === "todo" ? ["factura_courier", "dsi", "dsi_ac", "guia_aerea"].map((t) => l.docs.find((d) => d.tipo === t)).filter(Boolean) : [];
+  const adjuntos = doc === "todo" ? ["factura_courier", "dsi", "dsi_ac", "guia_aerea", "factura_comercial"].map((t) => l.docs.find((d) => d.tipo === t)).filter(Boolean) : [];
   if (!recibos.length && !facturas.length && !adjuntos.length) return Response.json({ error: "sin_documentos" }, { status: 404 });
 
   const salida = await PDFDocument.create();

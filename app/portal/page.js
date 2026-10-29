@@ -218,6 +218,7 @@ function LegajoPortal({opId,token,t}){
     {adj("dsi","🛃",t("leg.dsi"))}
     {adj("dsi_ac","🛃",t("leg.dsi"))}
     {adj("guia_aerea","✈️",t("leg.awb"))}
+    {adj("factura_comercial","🧾",t("leg.commercialInvoice"))}
     {d.pagos.map(p=>fila(p.id,"✅",`${t("leg.receipt")}${p.receipt_number?` N.º ${String(p.receipt_number).padStart(5,"0")}`:""}`,`${fecha(p.payment_date)} · USD ${Number(p.amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,<>{ver({onClick:()=>verRecibo(p)})}{bajar({onClick:()=>bajarPdf(`recibo:${p.id}`,p.id)},p.id)}</>))}
   </div>;
 }
