@@ -14480,29 +14480,30 @@ function AgpPanel({token,allClients}){
 }
 
 // Nueva gestión / edición (30/10/2026). A la izquierda se cargan los datos; a la derecha queda la
-// cotización limpia, pensada para sacarle captura y mandársela al cliente: cuánto se gira, el costo y
-// el total a pagar en efectivo (USD) o por transferencia (pesos, al TC puesto, con el 2,5% de SolFin
-// ya incluido). Lo interno (lo que sale de la CC y lo que ganás) va debajo, fuera de la cotización.
+// cotización limpia, pensada para sacarle captura y mandársela al cliente. Se cobra la tarifa pública
+// (la misma de la calculadora del portal): 2,25% + USD 100, y si paga por transferencia un 2,5% más,
+// en pesos al TC puesto. Lo interno (lo que sale de la CC y lo que ganás) va fuera de la cotización.
 // Al anotarla, el giro con su costo sale solo de la CC de SolFin.
 function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
   const celu=useEsCelu();
   const [monto,setMonto]=useState(agpTxt(p?.giro_amount_usd));
   const [forma,setForma]=useState(p?(p.client_currency==="ARS"?"transf":"efvo"):"efvo");
   const [tc,setTc]=useState(agpTxt(p?.client_exchange_rate)||(tcRef?String(tcRef):""));
-  const [com,setCom]=useState(p?.margen_pct!=null?agpTxt(p.margen_pct):(()=>{try{return localStorage.getItem("agp_margen")||"2";}catch{return "2";}})());
   const [clientId,setClientId]=useState(p?.client_id||"");
   const [cliQ,setCliQ]=useState("");
   const [saving,setSaving]=useState(false);
   useEffect(()=>{if(!tc&&tcRef)setTc(String(tcRef));},[tcRef]);
   const viejaSinCc=!!p&&!agpConCc(p);
-  const m=parseMontoAr(monto),t=parseMontoAr(tc),cp=parseMontoAr(com);
+  const m=parseMontoAr(monto),t=parseMontoAr(tc);
   const transf=forma==="transf";
   const costoSolfin=viejaSinCc?Number(p.cost_comision_giro||0):agpCostoCable(m);
   const sale=agpR2(m+costoSolfin);
-  // Lo que paga el cliente: el giro + el costo de SolFin + tu comisión. En efectivo se redondea al
-  // dólar; por transferencia se pasa a pesos, se agranda por el 2,5% de SolFin y se redondea a $100.
-  const totalUsd=m>0?Math.ceil(m+costoSolfin+m*cp/100):0;
-  const totalArs=transf&&t>0&&m>0?Math.ceil((m+costoSolfin+m*cp/100)*t/(1-AGP_FIN_PCT/100)/100)*100:0;
+  // Lo que paga el cliente: el giro + 2,25% + USD 100; por transferencia, 2,5% más y en pesos.
+  const cargo=m>0?agpR2(m*0.0225+100):0;
+  const base=agpR2(m+cargo);
+  const recargo=transf?agpR2(base*AGP_FIN_PCT/100):0;
+  const totalUsd=agpR2(base+recargo);
+  const totalArs=transf&&t>0&&m>0?Math.round(totalUsd*t):0;
   const debeUsd=transf?(t>0?agpR2(totalArs/t):0):totalUsd; // lo que descuentan los pagos (bruto)
   const netoUsd=transf?(t>0?agpR2(totalArs*(1-AGP_FIN_PCT/100)/t):0):totalUsd;
   const gan=agpR2(netoUsd-sale);
@@ -14514,10 +14515,9 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
     if(!(m>0)){toast("Cargá cuánto hay que girar","error");return;}
     if(transf&&!(t>0)){toast("Cargá el tipo de cambio","error");return;}
     setSaving(true);
-    try{localStorage.setItem("agp_margen",com);}catch{}
     try{
       const cli=allClients.find(c=>c.id===clientId);
-      const body={client_id:clientId,giro_amount_usd:m,margen_pct:cp,client_amount_usd:debeUsd,client_currency:transf?"ARS":"USD",client_amount_ars:transf?totalArs:null,client_exchange_rate:transf?t:null};
+      const body={client_id:clientId,giro_amount_usd:m,margen_pct:null,client_amount_usd:debeUsd,client_currency:transf?"ARS":"USD",client_amount_ars:transf?totalArs:null,client_exchange_rate:transf?t:null};
       if(!viejaSinCc)Object.assign(body,{costo_cable_usd:costoSolfin,cost_comision_giro:costoSolfin,cable_pct:2.25,cable_fijo_usd:m<10000?40:0});
       const descCc=(code)=>`Cable China · ${code||""}${cli?.client_code?` · ${cli.client_code}`:""}`;
       if(p){
@@ -14545,7 +14545,6 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
       {sub&&<span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.42)",fontVariantNumeric:"tabular-nums",marginTop:2}}>{sub}</span>}
     </span>
   </div>;
-  const costoCli=transf?(totalArs-m*t):(totalUsd-m);
   const hoy=hoyAR().split("-").reverse().join("/");
 
   return <div style={{marginBottom:16,display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,0.9fr) minmax(0,1.1fr)",gap:celu?14:20,alignItems:"start"}}>
@@ -14569,10 +14568,7 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
       <div style={{marginBottom:14}}><label style={agpLbl}>Hay que girar (USD)</label><input type="text" inputMode="decimal" value={monto} autoFocus={!celu&&!!p} onChange={e=>agpNumOk(e.target.value)&&setMonto(e.target.value)} placeholder="0,00" style={{...agpInp(celu),height:48,fontSize:18}}/></div>
       <label style={agpLbl}>Cómo paga</label>
       {agpSeg([["efvo","Efectivo"],["transf","Transferencia"]],forma,setForma)}
-      <div style={{display:"grid",gridTemplateColumns:transf?"1fr 1fr":"1fr",gap:"0 12px"}}>
-        {transf&&<div style={{marginBottom:12}}><label style={agpLbl}>Tipo de cambio</label><input type="text" inputMode="decimal" value={tc} onChange={e=>agpNumOk(e.target.value)&&setTc(e.target.value)} style={agpInp(celu)}/></div>}
-        <div style={{marginBottom:12}}><label style={agpLbl}>Tu comisión %</label><input type="text" inputMode="decimal" value={com} onChange={e=>agpNumOk(e.target.value)&&setCom(e.target.value)} style={agpInp(celu)}/></div>
-      </div>
+      {transf&&<div style={{marginBottom:12}}><label style={agpLbl}>Tipo de cambio</label><input type="text" inputMode="decimal" value={tc} onChange={e=>agpNumOk(e.target.value)&&setTc(e.target.value)} style={agpInp(celu)}/></div>}
       {!esEmpleado()&&m>0&&<p style={{margin:"2px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)",lineHeight:1.6,fontVariantNumeric:"tabular-nums"}}>
         Sale de la CC <strong style={{color:"#fff"}}>{agpUsd(sale)}</strong> (costo SolFin {agpUsd(costoSolfin)}){transf&&t>0?<> · te quedan {agpUsd(netoUsd)} después del 2,5%</>:null} · ganás <strong style={{color:gan>=0?"#4ade80":"#f87171"}}>{agpUsd(gan)}</strong>
       </p>}
@@ -14587,9 +14583,10 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
         </div>
         <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:GOLD_LIGHT}}>Pago al exterior · {transf?"Transferencia":"Efectivo"}</p>
         {fila("Monto a girar",agpUsd(m),{sub:transf&&t>0&&m>0?agpArs(m*t):null})}
-        {fila("Costo del giro",transf?(t>0?agpArs(costoCli):"—"):agpUsd(costoCli))}
+        {fila("Costo del giro (2,25% + USD 100)",agpUsd(cargo))}
+        {transf&&fila("Recargo por transferencia (2,5%)",agpUsd(recargo))}
         {transf&&fila("Tipo de cambio",t>0?`$ ${agpTc(t)}`:"—")}
-        {fila(transf?"Total a transferir":"Total a pagar",transf?(t>0?agpArs(totalArs):"—"):agpUsd(totalUsd),{fuerte:true,sub:transf?"en pesos":"en efectivo, dólares"})}
+        {fila(transf?"Total a transferir":"Total a pagar",transf?(t>0?agpArs(totalArs):"—"):agpUsd(totalUsd),{fuerte:true,sub:transf?`en pesos · ${agpUsd(totalUsd)}`:"en efectivo, dólares"})}
       </div>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12,flexWrap:"wrap"}}>
         <Btn variant="secondary" onClick={onClose} fullWidth={celu}>Cancelar</Btn>
