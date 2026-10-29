@@ -1038,6 +1038,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const desSinIva=(v)=>Number(v)>0?String(Math.round(Number(v)/1.21*100)/100):"";
   const [desNeto,setDesNeto]=useState(()=>desSinIva(initOp.despacho_desaduanaje_usd));
   const [dsiDetalle,setDsiDetalle]=useState(false);
+  const [despAbierto,setDespAbierto]=useState(false); // Despacho con DSI: plegado por defecto (29/10/2026)
   const [savingDespacho,setSavingDespacho]=useState(false);
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
@@ -3133,6 +3134,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           {!cerrada&&<button type="button" onClick={quitarDsi} style={btnS("#f87171")}>Quitar</button>}
         </>}>
         {!dsi.cierra&&<p style={{margin:"0 0 12px",padding:"9px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12.5,color:"#fbbf24"}}>Los ítems suman {fmt(dsi.suma)} y la DSI dice {fmt(dsi.total)}. Revisá el PDF.</p>}
+        {/* Plegado (29/10/2026): la DSI se carga sola, así que de entrada se ve solo el total. */}
+        {(()=>{const desReal=Number(op.despacho_desaduanaje_usd||0);const desUsado=desReal>0?desReal:Number(td.desembolso||0)+Number(td.ivaDesembolso||0);const totDsi=tot.die+tot.te+tot.iva;
+          return <button type="button" onClick={()=>setDespAbierto(v=>!v)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"12px 16px",marginBottom:despAbierto?14:0,borderRadius:12,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>Derechos {fmt(tot.die)} · Estadística {fmt(tot.te)} · IVA {fmt(tot.iva)} · Desaduanaje {fmt(desUsado)}</span>
+            <span style={{display:"inline-flex",alignItems:"center",gap:12}}><span style={{fontSize:17,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{fmt(totDsi+desUsado)}</span><span style={{color:"rgba(255,255,255,0.5)",fontSize:12,transform:despAbierto?"rotate(180deg)":"none",transition:"transform 150ms"}}>▾</span></span>
+          </button>;})()}
+        {despAbierto&&<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:14}}>
           {tile("Derechos",tot.die)}{tile("Estadística",tot.te)}{tile("IVA",tot.iva)}{tile("Total DSI",tot.die+tot.te+tot.iva,"#4ade80")}
         </div>
@@ -3164,6 +3172,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               <p style={{margin:"3px 0 0",fontSize:20,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{fmt(totDsi+desUsado)}</p>
             </div>
           </div>;})()}
+        </>}
       </Card></div>;
     })()}
 
