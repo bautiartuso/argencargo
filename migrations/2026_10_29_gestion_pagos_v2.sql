@@ -48,3 +48,7 @@ where client_paid and coalesce(client_paid_amount_usd,client_amount_usd,0) > 0
 -- v3 (29/10/2026): los pesos que entran por transferencia se dolarizan días después a otro TC.
 -- La gestión no se cierra hasta cargar a qué TC se dolarizó cada pago; ahí se recalcula amount_usd.
 alter table payment_management_cobros add column if not exists dolar_rate numeric, add column if not exists dolar_date date;
+
+-- El giro de las gestiones nuevas es "cable" (Cable China por SolFin): el check no lo aceptaba.
+alter table payment_management drop constraint payment_management_giro_payment_method_check;
+alter table payment_management add constraint payment_management_giro_payment_method_check check (giro_payment_method = any (array['efectivo','transferencia','tarjeta_credito','cable']));
