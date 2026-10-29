@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { apodoDe } from "../../lib/apodos";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
-import { printRecibosEntrega, printRemitos } from "../../lib/print-entregas";
+import { printRecibosEntrega, printRemitos, fusionarDocs } from "../../lib/print-entregas";
 import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento, destinosLegajo } from "../../lib/legajo";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente, kgDeBultos } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
@@ -6152,7 +6152,7 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
 // Coordinar a mano: muchos clientes contestan por WhatsApp en vez de usar el link.
 // Este modal deja fijar entrega + dia + franja + metodo desde el panel, y marca la op
 // como coordinada (igual que si hubiera completado el link).
-function CoordinarModal({op,token,onClose,onSaved,onEntregada}){
+function CoordinarModal({op,otras=[],token,onClose,onSaved,onEntregada}){
   const celu=useEsCelu();
   const [entrega,setEntrega]=useState(op.delivery_choice||"oficina");
   const [dia,setDia]=useState(op.delivery_day||hoyAR());
@@ -6171,8 +6171,10 @@ function CoordinarModal({op,token,onClose,onSaved,onEntregada}){
       if(!op.delivery_ready_at)body.delivery_ready_at=new Date().toISOString();
       if(entrega!=="carrier"){body.delivery_day=dia;body.delivery_slot=franja;}
       if(entrega==="propio")body.delivery_address=direccion||null;
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
-      try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`📞 Entrega coordinada a mano desde el panel.\nEntrega: ${entrega==="oficina"?"Retiro por oficina":entrega==="propio"?"Envío a domicilio":"Transportista"}${entrega!=="carrier"?`\nDía y franja: ${dia} · ${franja}`:""}\nPago: ${metodo}`}});}catch{}
+      // Misma visita: el cambio va para todas las ops juntas, si no se separarían.
+      const todas=[op,...otras];
+      await dq("operations",{method:"PATCH",token,filters:`?id=in.(${todas.map(x=>x.id).join(",")})`,body});
+      for(const x of todas)try{await dq("op_communications",{method:"POST",token,body:{operation_id:x.id,type:"note",content:`📞 Entrega coordinada a mano desde el panel.\nEntrega: ${entrega==="oficina"?"Retiro por oficina":entrega==="propio"?"Envío a domicilio":"Transportista"}${entrega!=="carrier"?`\nDía y franja: ${dia} · ${franja}`:""}\nPago: ${metodo}`}});}catch{}
       onSaved();
     }catch(e){setErr("Error: "+e.message);setGuardando(false);}
   };
@@ -6186,7 +6188,7 @@ function CoordinarModal({op,token,onClose,onSaved,onEntregada}){
         <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>📞 Coordinar a mano</h3>
         <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
       </div>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}><strong style={{fontFamily:"monospace",color:"#E8C99B"}}>{op.operation_code}</strong> · {nombre} — para cuando el cliente arregló por WhatsApp y no usó el link.</p>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}><strong style={{fontFamily:"monospace",color:"#E8C99B"}}>{[op,...otras].map(x=>x.operation_code).join(" + ")}</strong> · {nombre} — para cuando el cliente arregló por WhatsApp y no usó el link.</p>
       <label style={lbl}>Forma de entrega</label>
       <div style={{display:"flex",gap:6,marginBottom:12}}>
         {[["oficina","📦 Retiro"],["propio","🚚 Envío"],["carrier","📮 Vía Cargo"]].map(([k,l])=><button key={k} type="button" onClick={()=>{setEntrega(k);setFranja("");}} style={segBtn(entrega===k)}>{l}</button>)}
@@ -6231,6 +6233,7 @@ function EntregasPanel({token,onOpenOp,vista}){
   const [tab,setTab]=useState(vista||"agenda"); // agenda | pendientes | entregadas
   useEffect(()=>{if(vista)setTab(vista);},[vista]);
   const [cobroModal,setCobroModal]=useState(null); // {op, soloCobro} — cobro/entrega desde cards
+  const [colaCobro,setColaCobro]=useState([]); // resto de las ops de una visita que faltan cobrar
   const [coordinarModal,setCoordinarModal]=useState(null); // op a coordinar a mano
   const [hechas,setHechas]=useState([]); // historial reciente: entregadas y cobradas
   const [docsFaltan,setDocsFaltan]=useState({}); // {opId:[tipos que faltan]} del legajo de las entregadas
@@ -6289,6 +6292,16 @@ function EntregasPanel({token,onOpenOp,vista}){
     if(!paga){setCobroModal({op:o});return;}
     try{const cerro=await entregarYCerrar(o,token);toast(`✓ ${o.operation_code} entregada${cerro?" y cerrada":""}`,"success");load();}
     catch(e){toast(`No se pudo: ${e.message}`,"error");}
+  };
+  // Entregar una visita con varias ops: las pagas se cierran juntas; las que deben, una tras otra en el cobro.
+  const entregarVisita=async(grupo)=>{
+    const paga=(o)=>!!o.is_collected||(!sinMontos&&saldoFor(o)<=0.005);
+    const pagas=grupo.filter(paga),deben=grupo.filter(o=>!paga(o));
+    const ok=[];
+    for(const o of pagas){try{await entregarYCerrar(o,token);ok.push(o.operation_code);}catch(e){toast(`${o.operation_code}: no se pudo · ${e.message}`,"error");}}
+    if(ok.length)toast(`✓ Entregada${ok.length>1?"s":""} ${ok.join(" y ")}`,"success");
+    if(deben.length){setColaCobro(deben.slice(1));setCobroModal({op:deben[0]});}
+    load();
   };
   const markDelivered=async(o)=>{
     const now=new Date().toISOString();
@@ -6569,13 +6582,32 @@ function EntregasPanel({token,onOpenOp,vista}){
     await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ops.map(o=>o.id).join(",")})`,body:{[campo]:now}}).catch(()=>{});
     setRows(p=>p.map(r=>ops.some(o=>o.id===r.id)?{...r,[campo]:now}:r));
   };
-  const imprimirRecibos=async(ops)=>{if(!ops.length)return;
+  // Misma visita (29/10/2026): mismo cliente, mismo día y misma forma de entrega (o coordinadas juntas
+  // desde el link) → un solo remito, un solo recibo y un solo "Entregar".
+  const claveVisita=(o)=>o.delivery_group_id||(o.client_id&&o.delivery_day&&o.delivery_choice!=="carrier"?`${o.client_id}|${o.delivery_day}|${o.delivery_choice||""}`:o.id);
+  const porVisita=(ops)=>{const m=new Map();for(const o of ops){const k=claveVisita(o);if(!m.has(k))m.set(k,[]);m.get(k).push(o);}return [...m.values()];};
+  // Al imprimir desde una op suelta se suman las otras de su visita que todavía no se entregaron.
+  const conSuVisita=(ops)=>{const ids=new Set(ops.map(o=>o.id));const extra=rows.filter(r=>!ids.has(r.id)&&!!r.delivery_completed_at===ops.some(o=>!!o.delivery_completed_at)&&ops.some(o=>claveVisita(o)===claveVisita(r)));return [...ops,...extra];};
+  const imprimirRecibos=async(ops0)=>{if(!ops0.length)return;const ops=conSuVisita(ops0);
     // Número de recibo: se asigna la primera vez que se imprime (misma secuencia que los recibos de pago) y queda fijo.
+    // Con varias ops en la visita va un solo número para todas.
     const nros={};
-    for(const o of ops){if(o.delivery_receipt_number){nros[o.id]=o.delivery_receipt_number;continue;}try{const r=await dq("rpc/next_delivery_receipt_number",{method:"POST",token,body:{p_op:o.id}});const n=typeof r==="number"?r:Number(r)||null;if(n){nros[o.id]=n;setRows(p=>p.map(x=>x.id===o.id?{...x,delivery_receipt_number:n}:x));}}catch(e){console.error("nro recibo",e);}}
-    const docs=(await cargarDocs(ops)).map(d=>({...d,receiptNumber:nros[d.op.id]||d.receiptNumber||null}));
-    if(!printRecibosEntrega(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");else marcarImpreso(ops,"recibo_printed_at");};
-  const imprimirRemitos=async(ops)=>{if(!ops.length)return;const docs=await cargarDocs(ops);if(!printRemitos(docs))toast("El navegador bloqueó la ventana de impresión — permití popups","error");else marcarImpreso(ops,"remito_printed_at");};
+    for(const g of porVisita(ops)){
+      let n=g.map(o=>o.delivery_receipt_number).find(Boolean)||null;
+      if(!n){try{const r=await dq("rpc/next_delivery_receipt_number",{method:"POST",token,body:{p_op:g[0].id}});n=typeof r==="number"?r:Number(r)||null;}catch(e){console.error("nro recibo",e);}}
+      if(!n)continue;
+      const sinNro=g.filter(o=>o.delivery_receipt_number!==n);
+      if(sinNro.length)await dq("operations",{method:"PATCH",token,filters:`?id=in.(${sinNro.map(o=>o.id).join(",")})`,body:{delivery_receipt_number:n}}).catch(()=>{});
+      g.forEach(o=>{nros[o.id]=n;});
+      setRows(p=>p.map(x=>g.some(o=>o.id===x.id)?{...x,delivery_receipt_number:n}:x));
+    }
+    const docs=await cargarDocs(ops);
+    const fusion=porVisita(ops).map(g=>fusionarDocs(g.map(o=>docs.find(d=>d.op.id===o.id))));
+    const final=fusion.map(d=>({...d,receiptNumber:nros[d.op.id]||d.receiptNumber||null}));
+    if(!printRecibosEntrega(final))toast("El navegador bloqueó la ventana de impresión — permití popups","error");else marcarImpreso(ops,"recibo_printed_at");};
+  const imprimirRemitos=async(ops0)=>{if(!ops0.length)return;const ops=conSuVisita(ops0);const docs=await cargarDocs(ops);
+    const fusion=porVisita(ops).map(g=>fusionarDocs(g.map(o=>docs.find(d=>d.op.id===o.id))));
+    if(!printRemitos(fusion))toast("El navegador bloqueó la ventana de impresión — permití popups","error");else marcarImpreso(ops,"remito_printed_at");};
   // Etiquetas de bultos (100×150, una por bulto): para TODAS las entregas, sea retiro, flete propio o transportista.
   const imprimirEtiquetasBultos=async(ops)=>{
     if(!ops.length)return;
@@ -6811,17 +6843,75 @@ function EntregasPanel({token,onOpenOp,vista}){
     </div>;
   };
 
-  // Ops coordinadas en la misma visita (delivery_group_id compartido, desde el link o el bot):
-  // se renderizan juntas en un marco, con el total de la visita. Cada op mantiene sus acciones.
+  // Una visita con varias ops del mismo cliente (29/10/2026): una sola fila con los códigos, los bultos
+  // y la plata sumados, y un solo remito, recibo y "Entregar" para todas. Tocar un código abre esa op.
+  const CardVisita=({grupo})=>{
+    const o=grupo[0];const c=o.clients||{};
+    const nombre=`${c.first_name||""} ${c.last_name||""}`.trim()||"—";
+    const saldo=grupo.reduce((a,x)=>a+saldoFor(x),0);const pagada=saldo<=0.005;
+    const bultos=grupo.reduce((a,x)=>a+(bultosByOp[x.id]||0),0);
+    const envio=o.delivery_choice==="propio";
+    const badge=metodoBadgeDe(o);
+    const todas=(k)=>grupo.every(x=>x[k]);
+    const editar=()=>setCoordinarModal({...o,_otras:grupo.slice(1)});
+    const acento=envio?"#60a5fa":"#B8956A";
+    const codigos=grupo.map((x,i)=><span key={x.id}>{i>0&&<span style={{color:"rgba(255,255,255,0.35)"}}> + </span>}<span onClick={e=>{e.stopPropagation();onOpenOp(x);}} style={{fontFamily:"monospace",color:"#E8C99B",fontWeight:700,cursor:"pointer"}}>{x.operation_code}</span></span>);
+    const montoTxt=pagada?"✓ PAGADO":usd(saldo);
+    if(celu){
+      const mb=(l,fn,prim)=><button key={l} type="button" onClick={fn} style={{flex:prim?1.3:1,minWidth:0,height:42,borderRadius:11,border:`1px solid ${prim?GOLD_DEEP:"rgba(255,255,255,0.14)"}`,background:prim?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:prim?"#0A1628":"rgba(255,255,255,0.88)",fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",padding:"0 8px"}}>{l}</button>;
+      return <div style={{padding:"13px 14px",borderRadius:14,background:envio?"rgba(96,165,250,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${envio?"rgba(96,165,250,0.3)":"rgba(255,255,255,0.08)"}`,borderLeft:`3px solid ${acento}`}}>
+        <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:15.5,fontWeight:700,color:"#fff",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nombre}</p>
+            <p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{codigos} · {bultos||"?"} bultos</p>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <p style={{fontSize:15,fontWeight:800,color:pagada?"#22c55e":"#fbbf24",margin:0,whiteSpace:"nowrap"}}>{pagada?"✓ Pagado":usd(saldo)}</p>
+            {badge&&<p style={{fontSize:11.5,fontWeight:700,color:badge.c,margin:"3px 0 0",whiteSpace:"nowrap"}}>{badge.l}</p>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>{diaBadge(o)}</div>
+        {envio&&o.delivery_address&&<p style={{fontSize:12.5,color:"rgba(147,197,253,0.95)",margin:"8px 0 0",lineHeight:1.4}}>📍 {o.delivery_address}</p>}
+        <div style={{display:"flex",gap:7,marginTop:12}}>{[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",editar),mb("✓ Entregar",()=>entregarVisita(grupo),true)]}</div>
+      </div>;
+    }
+    const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+    return <div style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:envio?"rgba(96,165,250,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${envio?"rgba(96,165,250,0.35)":"rgba(255,255,255,0.07)"}`,borderRadius:14,flexWrap:"wrap",borderLeft:`3px solid ${acento}`}}>
+      <div style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:envio?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${envio?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{envio?"🚚":"📦"}</div>
+      <div style={{flex:"1 1 210px",minWidth:0}}>
+        <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{c.client_code}</span>{diaBadge(o)}{envio&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"#60a5fa",color:"#0A1628",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>🚚 ENVÍO A DOMICILIO{o.delivery_zone?` · ${o.delivery_zone}`:""}</span>}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{codigos} · {bultos||"?"} bultos
+          {envio&&o.delivery_address&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"rgba(147,197,253,0.9)",marginTop:2}}>📍 {o.delivery_address}</span>}
+        </p>
+      </div>
+      <div style={{textAlign:"right",flexShrink:0}}>
+        {badge&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.05)",color:badge.c,border:"1px solid rgba(255,255,255,0.1)",whiteSpace:"nowrap"}}>{badge.l}</span>}
+        <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:pagada?"#22c55e":"#fbbf24"}}>{montoTxt}</span>
+      </div>
+      <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",alignItems:"center"}}>
+        {printBtn(`🏷 Etiquetas${todas("labels_printed_at")?" ✓":""}`,()=>imprimirEtiquetasBultos(grupo),"Etiquetas de los bultos de todas las operaciones")}
+        {printBtn(`📄 Remito${todas("remito_printed_at")?" ✓":""}`,()=>imprimirRemitos(grupo),"Un solo remito para todas las operaciones")}
+        {printBtn(`🧾 Recibo${todas("recibo_printed_at")?" ✓":""}`,()=>imprimirRecibos(grupo),"Un solo comprobante de entrega + recibo para todas")}
+        <Btn small variant="secondary" onClick={()=>waSimple(o)}>WA</Btn>
+        <Btn small variant="secondary" onClick={editar}>🖊</Btn>
+        <Btn small onClick={()=>entregarVisita(grupo)}>✓ Entregar</Btn>
+      </div>
+    </div>;
+  };
+
+  // Ops de la misma visita (delivery_group_id compartido desde el link o el bot, o mismo cliente,
+  // día y forma de entrega): por entregar van en una sola fila (CardVisita); Vía Cargo y el resto
+  // siguen en un marco con cada op y sus acciones.
   const renderConGrupos=(ops,contexto)=>{
     const out=[];const seen=new Set();
     for(const o of ops){
       if(seen.has(o.id))continue;
-      const grupo=o.delivery_group_id?ops.filter(x=>x.delivery_group_id===o.delivery_group_id):[o];
+      const grupo=ops.filter(x=>claveVisita(x)===claveVisita(o));
       grupo.forEach(x=>seen.add(x.id));
+      if(grupo.length>1&&contexto==="porentregar"&&o.delivery_choice!=="carrier"){out.push(<CardVisita key={"v"+claveVisita(o)} grupo={grupo}/>);continue;}
       if(grupo.length>1){
         const totGrupo=grupo.reduce((a,x)=>a+saldoFor(x),0);
-        out.push(<div key={"g"+o.delivery_group_id} style={{border:"1px dashed rgba(184,149,106,0.5)",borderRadius:13,padding:"9px 9px 5px",background:"rgba(184,149,106,0.05)"}}>
+        out.push(<div key={"g"+claveVisita(o)} style={{border:"1px dashed rgba(184,149,106,0.5)",borderRadius:13,padding:"9px 9px 5px",background:"rgba(184,149,106,0.05)"}}>
           <p style={{fontSize:10.5,fontWeight:800,color:GOLD_LIGHT,margin:"0 0 7px 4px",letterSpacing:"0.05em"}}>🔗 SE ENTREGAN JUNTAS · {grupo.length} OPS{!sinMontos&&totGrupo>0.005?` · ${usd(totGrupo)}`:""}</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>{grupo.map(x=><CardOp key={x.id} o={x} contexto={contexto}/>)}</div>
         </div>);
@@ -7007,8 +7097,8 @@ function EntregasPanel({token,onOpenOp,vista}){
         :hechasFiltradas.map(o=><CardOp key={o.id} o={o} contexto="hecha"/>)}
     </Bloque>}
 
-    {cobroModal&&<CobroEntregaModal op={cobroModal.op||cobroModal} saldo={saldoFor(cobroModal.op||cobroModal)} cobradoPrevio={Number(cobrosByOp[(cobroModal.op||cobroModal).id]||0)} token={token} sinMontos={sinMontos} soloCobro={!!cobroModal.soloCobro} onClose={()=>setCobroModal(null)} onSaved={()=>{setCobroModal(null);load();toast("✓ Registrado","success");}}/>}
-    {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} token={token} onClose={()=>setCoordinarModal(null)} onEntregada={()=>{const o=coordinarModal;setCoordinarModal(null);entregar(o);}} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
+    {cobroModal&&<CobroEntregaModal op={cobroModal.op||cobroModal} saldo={saldoFor(cobroModal.op||cobroModal)} cobradoPrevio={Number(cobrosByOp[(cobroModal.op||cobroModal).id]||0)} token={token} sinMontos={sinMontos} soloCobro={!!cobroModal.soloCobro} onClose={()=>{setCobroModal(null);setColaCobro([]);}} onSaved={()=>{const [sig,...resto]=colaCobro;setColaCobro(resto);setCobroModal(sig?{op:sig}:null);load();toast("✓ Registrado","success");}}/>}
+    {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} otras={coordinarModal._otras||[]} token={token} onClose={()=>setCoordinarModal(null)} onEntregada={()=>{const o=coordinarModal;setCoordinarModal(null);o._otras?.length?entregarVisita([o,...o._otras]):entregar(o);}} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
   </div>;
 }
 
