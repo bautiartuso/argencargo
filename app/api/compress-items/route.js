@@ -16,8 +16,10 @@ CONTEXTO: La factura de exportación tiene un límite máximo de items (RG 5608 
 PRINCIPIO CLAVE — CONSERVADOR, NO AGRESIVO:
 - La compresión debe ser MÍNIMA. Solo agrupar lo que sea CLARAMENTE la misma cosa con variantes obvias.
 - Si alcanzás el maxItems mergeando solo variantes obvias, listo, parar ahí.
-- Si todavía superás maxItems pero el resto son productos heterogéneos → ES PREFERIBLE devolver más de maxItems que mergear cosas distintas. El admin puede ajustar a mano.
-- ANTES era muy agresivo: por favor sé conservador. Mejor dejar 9-10 items que mergear "auriculares" con "fundas".
+- maxItems es el OBJETIVO, no una condición de todo o nada. Si no llegás a maxItems sin mezclar
+  productos distintos, igual hacé TODOS los merges de variantes obvias y bajá lo más que se pueda
+  (por ejemplo a 10, 11 o 12). Nunca devuelvas la lista sin comprimir solo porque no llegás a maxItems.
+- ANTES era muy agresivo: sé conservador. Mejor dejar 9-10 items que mergear "auriculares" con "fundas".
 
 QUÉ MERGEAR (variantes obvias):
 - Mismo producto + variante de color: "Camiseta roja", "Camiseta azul", "Camiseta negra" → "Cotton T-shirts (assorted colors)"
@@ -74,7 +76,7 @@ export async function POST(req) {
 
     const itemsList = items.map((it, i) => `[${i}] desc="${it.description}" qty=${it.quantity} price=${it.unit_price_usd} hs=${it.hs_code || "—"}`).join("\n");
     const totalFob = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
-    const userMsg = `Comprimí estos ${items.length} items a MÁXIMO ${maxItems} grupos. Total FOB original: USD ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (debe coincidir con la suma del output).\n\n${itemsList}`;
+    const userMsg = `Comprimí estos ${items.length} items: objetivo ${maxItems} grupos; si no se puede sin mezclar productos distintos, lo más cerca posible. Total FOB original: USD ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (debe coincidir con la suma del output).\n\n${itemsList}`;
 
     const JSON_SCHEMA = {
       type: "object",
@@ -88,11 +90,13 @@ export async function POST(req) {
               hs_code: { type: "string" },
               source_indices: { type: "array", items: { type: "integer" } },
             },
-            required: ["description", "source_indices"],
+            required: ["description", "hs_code", "source_indices"],
+            additionalProperties: false,
           },
         },
       },
       required: ["groups"],
+      additionalProperties: false,
     };
 
     // Forzamos structured output (json_schema) en vez de confiar en "devolvé SOLO JSON" por prompt —
@@ -111,12 +115,14 @@ export async function POST(req) {
       text = await callClaudeText({ model: HAIKU_MODEL, system: SYSTEM_PROMPT, user: userMsg, max_tokens: 4000 });
     }
 
+    // Si la IA rodeó el JSON con texto, se toma el bloque {...} (29/10/2026: "invalid JSON from model").
     let parsed;
     try {
       const cleaned = text.replace(/```json\s*|\s*```/g, "").trim();
-      parsed = JSON.parse(cleaned);
+      try { parsed = JSON.parse(cleaned); }
+      catch { const a = cleaned.indexOf("{"), b = cleaned.lastIndexOf("}"); parsed = JSON.parse(cleaned.slice(a, b + 1)); }
     } catch (e) {
-      return Response.json({ ok: false, error: "invalid JSON from model", raw: text.slice(0, 500) }, { status: 500 });
+      return Response.json({ ok: false, error: "La IA respondió algo que no se pudo leer. Tocá Reintentar; si vuelve a pasar, comprimí a mano.", raw: text.slice(0, 500) }, { status: 500 });
     }
 
     // CALCULAMOS quantity + unit_price_usd EN CÓDIGO desde los items originales
