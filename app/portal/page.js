@@ -15,7 +15,7 @@ import { hoyAR } from "../../lib/fecha-ar";
 import { reciboHtml, documentoHtml } from "../../lib/pdf-templates";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 import { filtrosSeguros } from "../../lib/columnas-seguras";
-instalarAuthFetch(["ac_s"]);
+instalarAuthFetch(["ac_s"],{refrescar:(t)=>ensureFreshToken(t)});
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -2974,6 +2974,8 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
   </>;
   return <div style={{minHeight:"100vh",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative"}}><div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}><WorldMap/></div>
     <style>{`
+      html,body{background:#0A1628;color-scheme:dark}
+      html{scrollbar-color:rgba(184,149,106,0.3) #0A1628}
       @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.85;transform:scale(1.05);}}
       .pc-hint::placeholder{color:rgba(232,208,152,0.85);font-weight:700;letter-spacing:0.08em;font-family:Inter,sans-serif;font-size:11px}
       @media(max-width:768px){
