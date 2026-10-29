@@ -32,7 +32,7 @@ export async function GET(req, { params }) {
   const events = await sb(`/rest/v1/tracking_events?operation_id=eq.${op.id}&select=title,description,location,occurred_at,source,status_code&order=occurred_at.desc&limit=50`);
   const filtered = (Array.isArray(events) ? events : []).filter(e => {
     if (e.source === "internal" && String(e.title || "").startsWith("Estado actualizado")) return false;
-    if (e.source === "dhl" && String(e.description || "").toLowerCase().includes("customs clearance status updated")) return false;
+    if (e.source === "dhl" && /customs clearance status updated|actualizaci.n del estado de (?:despacho|aduana)/i.test(`${e.description || ""} ${e.title || ""}`)) return false;
     if (e.source === "dhl" && String(e.title || "").trim() === "SD") return false;
     return true;
   });

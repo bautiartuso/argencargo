@@ -1006,7 +1006,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
   // Con el bloque del courier se muestran TODOS sus movimientos (hasta el "datos recibidos")
   if(conCourier&&e.source!=="internal")return true;
   // Filtrar eventos de pre-clearance aduanero de DHL: marcan location ARGENTINA aunque la carga esté en origen
-  if(e.source==="dhl"&&String(e.description||"").toLowerCase().includes("customs clearance status updated"))return false;
+  if(e.source==="dhl"&&/customs clearance status updated|actualizaci.n del estado de (?:despacho|aduana)/i.test(`${e.description||""} ${e.title||""}`))return false;
   // Filtrar eventos DHL con title "SD" (Shipment Data — meta-evento sin valor real)
   if(e.source==="dhl"&&String(e.title||"").trim()==="SD")return false;
   return true;

@@ -850,6 +850,8 @@ function NewOperation({token,clients,onBack,onCreated,initial}){
 // un array de eventos listos para insertar en tracking_events.
 // 100% JS local, sin API ni LLM — gratis e ilimitado.
 // ────────────────────────────────────────────────────────────────────
+// El cliente no ve el nombre del courier (28/10/2026).
+const sinUps=(t)=>t?String(t).replace(/\b(by|de|a|al|por|en|con|to|at)\s+UPS\b/gi,"").replace(/\bUPS\b/g,"").replace(/\s{2,}/g," ").trim()||null:t;
 function parseUpsTracking(text){
   if(!text||typeof text!=="string")return [];
   const lines=text.split(/\r?\n/).map(s=>s.trim());
@@ -1590,7 +1592,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const importUpsEvents=async()=>{
     if(upsParsed.length===0)return;
     setUpsImporting(true);
-    const toInsert=upsParsed.filter(p=>!upsExistingIds.has(p.external_id)).map(p=>({operation_id:op.id,title:p.title,description:p.description,location:p.location,occurred_at:p.occurred_at,is_visible_to_client:true,source:"ups_manual",carrier:"UPS",external_id:p.external_id,created_by:null}));
+    const toInsert=upsParsed.filter(p=>!upsExistingIds.has(p.external_id)).map(p=>({operation_id:op.id,title:sinUps(p.title),description:sinUps(p.description),location:sinUps(p.location),occurred_at:p.occurred_at,is_visible_to_client:true,source:"ups_manual",carrier:"UPS",external_id:p.external_id,created_by:null}));
     if(toInsert.length>0)await dq("tracking_events",{method:"POST",token,body:toInsert,filters:"?on_conflict=operation_id,source,external_id",headers:{"Prefer":"resolution=ignore-duplicates,return=minimal"}});
     await reloadEvents();
     setUpsImporting(false);
@@ -2965,49 +2967,32 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         </div>;
       })()}
     </Card>
-    <Card v2 title="Eventos" sub={events.length?`${events.length} movimiento${events.length!==1?"s":""}`:null} actions={<>{(op.international_carrier||"").toLowerCase().includes("ups")&&<Btn onClick={()=>setUpsPasteOpen(true)} small variant="secondary">📋 Pegar desde UPS</Btn>}<Btn onClick={()=>{addEvt();setEvAbierto("nuevo");}} small>+ Agregar evento</Btn></>}>
-      {/* Línea de tiempo (rediseño 22/10/2026): cada evento en una fila; ✎ lo abre para editar. */}
+    {(()=>{
+      // Eventos (28/10/2026): solo los del courier, tal cual los informa (con su nombre; al cliente le
+      // llega el mismo texto sin la marca). Ya no se cargan ni se editan a mano.
+      const evs=events.filter(e=>e.source!=="internal"||e.status_code==="retenida");
+      const horaAR=(t)=>t?new Date(t).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Argentina/Buenos_Aires"}):"";
+      return <Card v2 title="Eventos" sub={evs.length?`${evs.length} movimiento${evs.length!==1?"s":""} del courier`:null} actions={carrierKey(op.international_carrier)==="ups"?<Btn onClick={()=>setUpsPasteOpen(true)} small variant="secondary">📋 Pegar desde UPS</Btn>:null}>
       <div style={{position:"relative"}}>
-      {events.map((ev,i)=>{const abierto=evAbierto===ev.id||(evAbierto==="nuevo"&&ev.title==="Nuevo evento");const visible=ev.is_visible_to_client!==false;const interno=ev.source==="internal";const c=interno?(SM[ev.status_code]?.c||"#E8D098"):"#818cf8";
-        const fecha=ev.occurred_at?String(ev.occurred_at).slice(0,10):"";const hora=ev.occurred_at?String(ev.occurred_at).slice(11,16):"";
+      {evs.map((ev,i)=>{const interno=ev.source==="internal";const c=interno?"#ef4444":i===0?"#60a5fa":"#818cf8";
+        // API del courier: el texto original queda en description (title = mismo texto sin la marca).
+        // Pegado desde UPS: título y descripción tal cual se copiaron.
+        const manual=ev.source==="ups_manual";
+        const texto=interno||manual?ev.title:(ev.courier_text||(ev.description&&!/^[A-Z]{1,3}$/.test(String(ev.description).trim())?ev.description:ev.title));
         return <div key={ev.id} style={{display:"grid",gridTemplateColumns:"22px minmax(0,1fr)",gap:12}}>
         <div style={{position:"relative",display:"flex",justifyContent:"center"}}>
-          <div style={{position:"absolute",top:0,bottom:0,width:2,background:i===events.length-1?"linear-gradient(180deg,rgba(255,255,255,0.08),transparent)":"rgba(255,255,255,0.08)"}}/>
-          <span style={{position:"relative",marginTop:16,width:12,height:12,borderRadius:99,background:"#0F1E3D",border:`2px solid ${c}`,boxShadow:`0 0 0 4px ${c}22`}}/>
+          <div style={{position:"absolute",top:i===0?18:0,bottom:0,width:2,background:i===evs.length-1?"linear-gradient(180deg,rgba(255,255,255,0.08),transparent)":"rgba(255,255,255,0.08)"}}/>
+          <span style={{position:"relative",marginTop:14,width:12,height:12,borderRadius:99,background:i===0?c:"#0F1E3D",border:`2px solid ${c}`,boxShadow:`0 0 0 4px ${c}22`}}/>
         </div>
-        <div style={{padding:"10px 0",borderBottom:i===events.length-1?"none":"1px solid rgba(255,255,255,0.05)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <div style={{flex:"1 1 260px",minWidth:0}}>
-              <p style={{margin:0,fontSize:13.5,fontWeight:700,color:"#fff"}}>{ev.title||"Sin título"}</p>
-              <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{formatDate(ev.occurred_at)}{ev.location?` · ${ev.location}`:""}{ev.source&&!interno?` · ${String(ev.source).toUpperCase()}`:""}</p>
-            </div>
-            {!visible&&<span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,color:"rgba(255,255,255,0.55)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)"}}>Oculto al cliente</span>}
-            <button type="button" onClick={()=>setEvAbierto(abierto?null:ev.id)} aria-label="Editar evento" style={{height:30,padding:"0 11px",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:abierto?"rgba(232,208,152,0.12)":"rgba(255,255,255,0.04)",color:abierto?GOLD_LIGHT:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{abierto?"Cerrar":"✎ Editar"}</button>
-          </div>
-          {abierto&&<div style={{marginTop:12,padding:"14px 14px 2px",borderRadius:12,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-              <Inp label="Título" value={ev.title} onChange={v=>chEvt(i,"title",v)} small/>
-              <Inp label="Ubicación" value={ev.location} onChange={v=>chEvt(i,"location",v)} small/>
-            </div>
-            <Inp label="Descripción" value={ev.description} onChange={v=>chEvt(i,"description",v)} small/>
-            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 110px minmax(0,1.2fr)",gap:"0 12px",alignItems:"end"}}>
-              <Inp label="Fecha" type="date" value={fecha} onChange={v=>chEvt(i,"occurred_at",v?`${v}T${hora||"12:00"}:00`:null)} small/>
-              <Inp label="Hora" value={horaDraft[ev.id]??hora} placeholder="HH:MM" onChange={v=>{const h=String(v).replace(/[^\d:]/g,"").slice(0,5);setHoraDraft(p=>({...p,[ev.id]:h}));if(fecha&&/^\d{2}:\d{2}$/.test(h))chEvt(i,"occurred_at",`${fecha}T${h}:00`);}} small/>
-              <div onClick={()=>chEvt(i,"is_visible_to_client",!visible)} style={{marginBottom:12,height:38,display:"flex",alignItems:"center",gap:10,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",userSelect:"none"}}>
-                <span style={{width:36,height:20,borderRadius:999,position:"relative",flexShrink:0,background:visible?"#22c55e":"rgba(255,255,255,0.12)"}}><span style={{position:"absolute",top:2,left:visible?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 160ms"}}/></span>
-                <span style={{fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.75)"}}>Visible para el cliente</span>
-              </div>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0 12px"}}>
-              <button type="button" onClick={()=>delEvt(ev.id)} style={{height:32,padding:"0 12px",borderRadius:9,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Eliminar</button>
-              <button type="button" onClick={async()=>{await saveEvt(ev);setEvAbierto(null);}} style={{height:32,padding:"0 16px",borderRadius:9,border:"none",background:`linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`,color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Guardar evento</button>
-            </div>
-          </div>}
+        <div style={{padding:"9px 0",borderBottom:i===evs.length-1?"none":"1px solid rgba(255,255,255,0.05)",minWidth:0}}>
+          <p style={{margin:0,fontSize:13.5,fontWeight:i===0?700:600,color:i===0?"#fff":"rgba(255,255,255,0.82)",lineHeight:1.4}}>{texto||"Actualización del envío"}</p>
+          {manual&&ev.description&&<p style={{margin:"2px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.6)"}}>{ev.description}</p>}
+          <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{formatDate(ev.occurred_at)} · {horaAR(ev.occurred_at)} hs{ev.location?` · ${ev.location}`:""}</p>
         </div>
       </div>;})}
       </div>
-      {events.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>Todavía no hay eventos.</p>}
-    </Card>
+      {evs.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>{op.international_tracking?"El courier todavía no informó movimientos.":"Cargá el courier y el tracking para seguir el envío."}</p>}
+    </Card>;})()}
     {upsPasteOpen&&<div onClick={()=>!upsImporting&&setUpsPasteOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:780,maxHeight:"90vh",overflowY:"auto",background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -11996,10 +11981,10 @@ function AgentsPanel({token}){
       const ids=[...new Set((Array.isArray(flOps)?flOps:[]).filter(x=>activos.has(x.flight_id)&&x.operation_id).map(x=>x.operation_id))];
       const lib=new Set();
       for(let i=0;i<ids.length;i+=80){
-        const r=await dq("tracking_events",{token,filters:`?operation_id=in.(${ids.slice(i,i+80).join(",")})&or=(and(source.eq.fedex,status_code.eq.CC),description.ilike.*despacho%20aduanero%20completado*,description.ilike.*clearance%20processing%20complete*,description.ilike.*liberaci*n%20de%20env*importaci*,title.ilike.*liberaci*n%20de%20env*importaci*,description.ilike.*aduana%20finalizad*,title.ilike.*liberado%20por*)&select=operation_id,location,description`});
+        const r=await dq("tracking_events",{token,filters:`?operation_id=in.(${ids.slice(i,i+80).join(",")})&or=(and(source.eq.fedex,status_code.eq.CC),description.ilike.*despacho%20aduanero%20completado*,courier_text.ilike.*despacho*complet*,courier_text.ilike.*aduan*complet*,courier_text.ilike.*liberad*,description.ilike.*clearance%20processing%20complete*,description.ilike.*liberaci*n%20de%20env*importaci*,title.ilike.*liberaci*n%20de%20env*importaci*,description.ilike.*aduana%20finalizad*,title.ilike.*liberado%20por*)&select=operation_id,location,description,courier_text`});
         // Solo la aduana de Argentina: FedEx también marca CC cuando libera la exportación en China
         // (AC-0247, Guangzhou) y eso no es "liberado" para nosotros.
-        (Array.isArray(r)?r:[]).filter(x=>/argentin|ezeiza|buenos aires|,\s*AR\b/i.test(`${x.location||""} ${x.description||""}`)).forEach(x=>lib.add(x.operation_id));
+        (Array.isArray(r)?r:[]).filter(x=>/argentin|ezeiza|buenos aires|,\s*AR\b/i.test(`${x.location||""} ${x.description||""} ${x.courier_text||""}`)).forEach(x=>lib.add(x.operation_id));
       }
       setOpsLiberadas(lib);
     }catch(e){console.error("liberadas",e);}

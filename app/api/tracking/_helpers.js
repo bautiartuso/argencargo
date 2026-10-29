@@ -112,22 +112,39 @@ export function genericTitleFor(status_code, fallback) {
   return stripCourierRefs(fallback) || "Actualización del envío";
 }
 
+// Saca el nombre del courier de un texto en castellano (28/10/2026): el cliente ve el movimiento tal cual
+// lo informa el courier, pero sin la marca. "Envío arribado a una estación de DHL MIAMI GATEWAY - USA"
+// → "Envío arribado a una estación de MIAMI GATEWAY - USA".
+const MARCA = "(?:DHL\\s+Express|DHL|FedEx|FEDEX|Fed\\s?Ex|UPS|United\\s+Parcel\\s+Service)";
+export function sinMarca(text) {
+  if (!text) return null;
+  const t = String(text)
+    .replace(new RegExp(`\\b(?:a|al)\\s+${MARCA}(?=\\s*[.,;:]?\\s*$)`, "gi"), "al courier")
+    .replace(new RegExp(`\\b(?:de|del)\\s+${MARCA}(?=\\s*[.,;:]?\\s*$)`, "gi"), "del courier")
+    .replace(new RegExp(`\\bpor\\s+${MARCA}\\b`, "gi"), "por el courier")
+    .replace(new RegExp(`\\b(?:de|del)\\s+${MARCA}\\s+(?=\\S)`, "gi"), "de ")
+    .replace(new RegExp(`\\b${MARCA}\\b`, "gi"), "")
+    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return t || null;
+}
+
 // Normaliza eventos al shape de tracking_events.
-// Por defecto aplica sanitización de marca para NO exponer el courier al cliente.
+// Eventos del courier (28/10/2026): courier_text = el texto exacto (admin); title = ese texto sin la
+// marca (cliente). Los internos siguen con su título propio.
 export function normalizeEvent({ operation_id, source, external_id, title, description, location, occurred_at, status_code, carrier }) {
-  const cleanTitle = genericTitleFor(status_code, title);
-  const cleanDesc = stripCourierRefs(description);
-  const cleanLocation = stripCourierRefs(location);
+  const base = { operation_id, source, external_id: external_id || null, occurred_at: occurred_at || new Date().toISOString(), is_visible_to_client: true, carrier: carrier || null, status_code: status_code || null };
+  if (source === "internal") {
+    return { ...base, title: genericTitleFor(status_code, title), description: stripCourierRefs(description), location: stripCourierRefs(location) };
+  }
+  const raw = String(title || "").trim();
+  const texto = (/^[A-Z]{1,3}$/.test(raw) && description ? String(description).trim() : raw) || String(description || "").trim();
   return {
-    operation_id,
-    source,
-    external_id: external_id || null,
-    title: cleanTitle,
-    description: cleanDesc,
-    location: cleanLocation,
-    occurred_at: occurred_at || new Date().toISOString(),
-    is_visible_to_client: true,
-    carrier: carrier || null,
-    status_code: status_code || null
+    ...base,
+    title: sinMarca(texto) || genericTitleFor(status_code, texto),
+    description: null,
+    courier_text: texto || null,
+    location: sinMarca(location),
   };
 }

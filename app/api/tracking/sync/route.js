@@ -26,7 +26,7 @@ const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana"];
 // menciones al courier y queda cortado en "...agente externo a". Desde ahí la op y su vuelo quedan marcados, se avisa al cliente y el
 // tracking deja de seguirse: lo que pase después lo maneja Bautista a mano.
 const RETENCION_RE = /agente externo|retenid[oa] (?:en|por) (?:la )?aduana|excluid[oa] del r[eé]gimen courier/i;
-const esEventoRetencion = (ev) => RETENCION_RE.test(`${ev?.description || ""} ${ev?.title || ""}`);
+const esEventoRetencion = (ev) => RETENCION_RE.test(`${ev?.description || ""} ${ev?.title || ""} ${ev?.courier_text || ""}`);
 const sbHeaders = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" };
 
 async function marcarRetenida(op, ev) {
@@ -187,7 +187,7 @@ async function applyEventsToOp(op, route, d) {
         // Buscamos solo eventos posteriores a dispatched_at + 5 min (un pickup físico real
         // nunca ocurre tan rápido — si hay algo en <5 min es ruido/sintético).
         const minPickupTs = new Date(new Date(fl.dispatched_at).getTime() + 5 * 60 * 1000).toISOString();
-        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(minPickupTs)}&source=neq.internal&title=neq.SD&order=occurred_at.asc&limit=1&select=occurred_at,source,title`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(minPickupTs)}&source=neq.internal&title=neq.SD&or=(status_code.is.null,status_code.not.in.(unknown,pre-transit,OC,MP))&order=occurred_at.asc&limit=1&select=occurred_at,source,title`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
         const evs = await evRes.json();
         const first = Array.isArray(evs) && evs[0];
         if (first) {
