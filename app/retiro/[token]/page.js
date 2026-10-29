@@ -199,6 +199,11 @@ export default function EntregaPublica({ params }) {
 
   const { op, client, cargo, delivery: deliveryInfo } = data;
   const modoRi = !!data.modo_ri;
+  // Link bloqueado (29/10/2026): mientras la carga no está lista para retirar no se coordina nada
+  // (AC-0274 coordinó un retiro con la carga en viaje). Pasa también si ya había coordinado.
+  const PREVIA = ["pendiente", "en_deposito_origen", "en_preparacion", "en_transito", "cancelada"];
+  const bloqueada = !modoRi && !op.delivery_completed_at && (PREVIA.includes(op.status) || (["arribo_argentina", "en_aduana"].includes(op.status) && !op.delivery_ready_at));
+  if (bloqueada) return <CargaBloqueada op={op} nombre={client.first_name || ""} />;
   // Carga ya entregada: el link solo deja cambiar la forma de pago (el día y la entrega ya pasaron).
   const entregada = !!op.delivery_completed_at && !modoRi;
   const facturas = Array.isArray(data.facturas) ? data.facturas : [];
@@ -829,6 +834,88 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
     </div>
   </div>;
 }
+// Carga que todavía no está lista: candado que se cierra y la etapa en la que va. Pensado para el
+// celular (casi todos abren el link desde WhatsApp).
+const ETAPAS_LOCK = [
+  { k: "origen", l: "En origen", st: ["pendiente", "en_deposito_origen", "en_preparacion"] },
+  { k: "viaje", l: "En viaje", st: ["en_transito"] },
+  { k: "aduana", l: "En aduana", st: ["arribo_argentina", "en_aduana"] },
+  { k: "lista", l: "Lista", st: [] },
+];
+function CargaBloqueada({ op, nombre }) {
+  const cancelada = op.status === "cancelada";
+  const idx = ETAPAS_LOCK.findIndex((e) => e.st.includes(op.status));
+  const desde = op.origin ? ` desde ${op.origin}` : "";
+  const frase = cancelada ? "Esta operación fue cancelada."
+    : idx === 0 ? `Tu carga está en nuestro depósito de origen${desde ? ` (${op.origin})` : ""}, preparándose para viajar.`
+    : idx === 1 ? `Tu carga está viajando${desde}.`
+    : "Tu carga ya llegó a Argentina y está en gestión aduanera.";
+  return <div style={{ minHeight: "100dvh", background: `radial-gradient(120% 70% at 50% 0%, #16294a 0%, ${NAVY} 62%)`, display: "flex", justifyContent: "center", padding: "28px 18px 40px", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff", boxSizing: "border-box" }}>
+    <style>{`
+      @keyframes lk-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+      @keyframes lk-arco{0%{transform:translateY(-15px)}55%{transform:translateY(-15px)}78%{transform:translateY(2px)}100%{transform:translateY(0)}}
+      @keyframes lk-golpe{0%,70%{transform:rotate(0)}78%{transform:rotate(-7deg)}86%{transform:rotate(5deg)}93%{transform:rotate(-2deg)}100%{transform:rotate(0)}}
+      @keyframes lk-halo{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:.7;transform:scale(1.08)}}
+      @keyframes lk-pulso{0%,100%{box-shadow:0 0 0 0 rgba(232,208,152,.55)}60%{box-shadow:0 0 0 9px rgba(232,208,152,0)}}
+      .lk-in{animation:lk-in .6s cubic-bezier(.2,.8,.2,1) both}
+      .lk-arco{animation:lk-arco 1.4s cubic-bezier(.3,1.4,.5,1) .25s both}
+      .lk-cuerpo{transform-origin:50% 0;animation:lk-golpe 1.4s ease .25s both}
+      .lk-halo{animation:lk-halo 3.2s ease-in-out 1.6s infinite}
+      .lk-punto{animation:lk-pulso 2s ease-out infinite}
+      @media (prefers-reduced-motion: reduce){.lk-in,.lk-arco,.lk-cuerpo,.lk-halo,.lk-punto{animation:none}}
+    `}</style>
+    <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column" }}>
+      <div className="lk-in" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <img src={LOGO} alt="Argencargo" style={{ height: 34, width: "auto" }} />
+        <span style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 15, fontWeight: 700, color: GOLD_B, letterSpacing: "0.04em" }}>{op.operation_code}</span>
+      </div>
+
+      <div style={{ position: "relative", margin: "54px auto 26px", width: 132, height: 150 }}>
+        <div className="lk-halo" style={{ position: "absolute", inset: "18px 6px 0", borderRadius: "50%", background: "radial-gradient(circle, rgba(232,208,152,0.32), transparent 68%)", filter: "blur(6px)" }} />
+        <svg viewBox="0 0 132 150" width="132" height="150" style={{ position: "relative", overflow: "visible" }} aria-hidden="true">
+          <defs>
+            <linearGradient id="lkOro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F1DFB0" /><stop offset="1" stopColor="#B8956A" /></linearGradient>
+            <linearGradient id="lkCuerpo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1d3358" /><stop offset="1" stopColor="#0f1f3a" /></linearGradient>
+          </defs>
+          <g className="lk-arco"><path d="M38 70 V48 a28 28 0 0 1 56 0 V70" fill="none" stroke="url(#lkOro)" strokeWidth="11" strokeLinecap="round" /></g>
+          <g className="lk-cuerpo">
+            <rect x="18" y="64" width="96" height="78" rx="20" fill="url(#lkCuerpo)" stroke="url(#lkOro)" strokeWidth="2.5" />
+            <circle cx="66" cy="96" r="9" fill="url(#lkOro)" />
+            <rect x="62.5" y="100" width="7" height="20" rx="3.5" fill="url(#lkOro)" />
+          </g>
+        </svg>
+      </div>
+
+      <div className="lk-in" style={{ textAlign: "center", animationDelay: ".35s" }}>
+        <p style={{ margin: 0, fontSize: 14, color: "rgba(255,255,255,0.55)" }}>{nombre ? `${nombre}, ` : ""}{cancelada ? "este link ya no está activo" : "todavía no se puede coordinar"}</p>
+        <h1 style={{ margin: "8px 0 0", fontSize: 27, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.18 }}>{cancelada ? "Operación cancelada" : "Tu carga todavía no está lista para retirar"}</h1>
+        <p style={{ margin: "12px auto 0", maxWidth: 330, fontSize: 14.5, lineHeight: 1.55, color: "rgba(255,255,255,0.68)" }}>{frase}</p>
+      </div>
+
+      {!cancelada && <div className="lk-in" style={{ marginTop: 30, padding: "18px 16px 16px", borderRadius: 18, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", animationDelay: ".5s" }}>
+        <div style={{ display: "flex", position: "relative" }}>
+          <div style={{ position: "absolute", top: 7, left: "12.5%", right: "12.5%", height: 2, background: "rgba(255,255,255,0.1)", borderRadius: 2 }} />
+          <div style={{ position: "absolute", top: 7, left: "12.5%", width: `${Math.max(0, idx) * 25}%`, height: 2, background: `linear-gradient(90deg,${GOLD_A},${GOLD_B})`, borderRadius: 2 }} />
+          {ETAPAS_LOCK.map((e, i) => {
+            const hecho = i < idx, on = i === idx, lista = e.k === "lista";
+            return <div key={e.k} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 9, position: "relative" }}>
+              <span className={on ? "lk-punto" : ""} style={{ width: 16, height: 16, borderRadius: 99, boxSizing: "border-box", display: "grid", placeItems: "center", fontSize: 9, fontWeight: 900, color: NAVY, background: hecho || on ? GOLD_B : "#13233f", border: hecho || on ? "none" : "2px solid rgba(255,255,255,0.16)" }}>
+                {hecho ? "✓" : lista ? <svg width="8" height="9" viewBox="0 0 8 9" aria-hidden="true"><rect x="0.5" y="4" width="7" height="4.5" rx="1.2" fill="rgba(255,255,255,0.45)" /><path d="M2 4V2.8a2 2 0 0 1 4 0V4" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2" /></svg> : ""}
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, color: on ? GOLD_B : hecho ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.38)", textAlign: "center", lineHeight: 1.2 }}>{e.l}</span>
+            </div>;
+          })}
+        </div>
+      </div>}
+
+      <div className="lk-in" style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", padding: "14px 16px", borderRadius: 16, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.22)", animationDelay: ".65s" }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}><path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.4a.5.5 0 0 0 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.2 2.2 2.2 0 0 0 .1-1.2c0-.1-.2-.2-.5-.3Z" /></svg>
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: "rgba(255,255,255,0.8)" }}>{cancelada ? "Si tenés alguna duda, escribinos por WhatsApp." : "Te avisamos por WhatsApp apenas esté lista. Ahí vas a poder elegir el día y cómo la recibís."}</p>
+      </div>
+    </div>
+  </div>;
+}
+
 function pageStyle() { return { minHeight: "100vh", background: NAVY, padding: "32px 18px 60px", display: "flex", justifyContent: "center", alignItems: "flex-start", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function cardStyle() { return { maxWidth: 640, width: "100%", background: CREAM, borderRadius: 14, overflow: "hidden", boxShadow: "0 28px 80px rgba(0,0,0,0.5)" }; }
 function lblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }

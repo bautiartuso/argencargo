@@ -527,7 +527,7 @@ export async function POST(req, { params }) {
   if (op.delivery_completed_at) return Response.json({ error: "Esta carga ya fue entregada: solo podés cambiar la forma de pago" }, { status: 400 });
   // Una carga que todavía viaja no se coordina (29/10/2026: AC-0274 se coordinó desde un link que
   // quedó abierto después de que la op volvió a "en tránsito").
-  if (["pendiente", "en_deposito_origen", "en_preparacion", "en_transito", "cancelada"].includes(op.status)) {
+  if (["pendiente", "en_deposito_origen", "en_preparacion", "en_transito", "cancelada"].includes(op.status) || (["arribo_argentina", "en_aduana"].includes(op.status) && !op.delivery_ready_at)) {
     return Response.json({ error: "Esta carga todavía está en camino: te avisamos apenas esté lista para coordinar" }, { status: 400 });
   }
 
