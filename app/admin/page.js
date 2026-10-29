@@ -31,7 +31,7 @@ instalarAuthFetch(["ac_admin"]);
 
 // Cuenta para transferencias en pesos. Un solo lugar: antes estaba escrita a mano adentro del
 // mensaje de WhatsApp y quedo con los datos viejos sin que nadie lo viera.
-const CUENTA_ARS=["Titular: VANTUM SA","CBU: 0000151500030961716179","CUIT: 30719430488"].join("\n");
+const CUENTA_ARS=["Titular: SMART COLLECTION","CVU: 0000053600000045474387","Alias: TONO.LISA.CONVENTUAL"].join("\n");
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";

@@ -779,16 +779,21 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
         {transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.22)", borderRadius: 16, padding: "16px 16px 14px", marginBottom: 12 }}>
           <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#1e5c3d", margin: "0 0 10px" }}>Datos para transferir</p>
           {data.transfer.alias && (() => {
-            // El dato guardado puede traer "CBU xxxx · CUIT yyyy": se muestra y se copia el CBU solo (22/10/2026).
+            // El dato guardado trae "CVU xxxx · Alias yyyy" (antes "CBU xxxx · CUIT yyyy"): cada dato en su
+            // renglón y con su botón de copiar (29/10/2026, cuenta nueva).
             const raw = String(data.transfer.alias);
-            const cbu = raw.match(/\d{22}/)?.[0];
+            const nro = raw.match(/\d{22}/)?.[0];
+            const tipoNro = /cvu/i.test(raw) ? "CVU" : "CBU";
+            const alias = raw.match(/alias[:\s]+([A-Za-z0-9.\-]+)/i)?.[1] || (!nro ? raw : null);
             const cuit = raw.match(/CUIT\s*([\d-]{11,13})/i)?.[1];
+            const fila = (k, lbl, val, primera) => <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: primera ? "none" : "1px solid rgba(30,125,79,.15)" }}>
+              <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>{lbl}</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13.5, wordBreak: "break-all", color: INK }}>{val}</p></div>
+              {btnCopiar(k, val)}
+            </div>;
             return <>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-                <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>{cbu ? "CBU" : "Alias"}</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13.5, wordBreak: "break-all", color: INK }}>{cbu || raw}</p></div>
-                {btnCopiar("alias", cbu || raw)}
-              </div>
-              {cuit && <div style={{ padding: "8px 0", borderTop: "1px solid rgba(30,125,79,.15)" }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>CUIT</p><p style={{ margin: "2px 0 0", fontWeight: 700, fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 13, color: INK }}>{cuit}</p></div>}
+              {nro && fila("alias", tipoNro, nro, true)}
+              {alias && fila("alias2", "Alias", alias, !nro)}
+              {cuit && fila("cuit", "CUIT", cuit, false)}
             </>;
           })()}
           {data.transfer.titular && <div style={{ padding: "8px 0", borderTop: "1px solid rgba(30,125,79,.15)" }}><p style={{ margin: 0, fontSize: 11, color: "#3d6b52" }}>Titular</p><p style={{ margin: "2px 0 0", fontWeight: 800, fontSize: 13.5, color: INK }}>{data.transfer.titular}</p></div>}
