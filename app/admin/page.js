@@ -9225,7 +9225,10 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   const doc=(t)=>docs.find(d=>d.tipo===t);
   const ri=opClient?.tax_condition==="responsable_inscripto";
   const autoVisible=ri&&op.ri_entrega_directa!==false&&!op.ri_argencargo_collects_taxes;
-  const visible=ri&&(op.legajo_visible==null?autoVisible:!!op.legajo_visible);
+  // Marcado a mano (29/10/2026): Sí = ve todo (cualquier cliente), No = nada. Auto: el RI con entrega
+  // directa que paga los impuestos ve todo; monotributo y consumidor final, la guía y los recibos.
+  const visible=op.legajo_visible==null?autoVisible:!!op.legajo_visible;
+  const parcial=!ri&&op.legajo_visible==null;
   // Retenida por Aduana: salió del régimen courier, no se exige nada para cerrar.
   const faltan=op.retenida_at?[]:Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio&&!doc(t));
   const subir=async(tipo,file)=>{
@@ -9245,6 +9248,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     setOcupado(null);
   };
   const quitar=async(d)=>{if(!await confirmDialog(`¿Quitar ${TIPOS_LEGAJO[d.tipo].corto} del legajo?`,{danger:true}))return;await quitarLegajo(await ensureFreshToken(token),d.id);await cargar();};
+  const [mandandoMail,setMandandoMail]=useState(false);
   const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
   useEffect(()=>{
     const hp=(e)=>{if(!document.querySelector("[data-legajo-op]"))return;const f=[...(e.clipboardData?.files||[])][0];if(!f)return;e.preventDefault();
@@ -9292,10 +9296,23 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
       </div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:visible||!ri?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",fontSize:16}}>{visible||!ri?"👁":"🔒"}</span>
-          <div><p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fff"}}>{!ri?"El cliente ve parte en su portal":visible?"El cliente lo ve en su portal":"El cliente no lo ve"}</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>{!ri?"Monotributo o consumidor final: ve solo la guía aérea y los recibos de pago":op.legajo_visible==null?(autoVisible?"Automático: RI con entrega directa que paga los impuestos":"Automático"):"Marcado a mano"}{visible?" · ve solo los documentos que hay":""}</p></div>
+          <span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",background:visible||parcial?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",fontSize:16}}>{visible||parcial?"👁":"🔒"}</span>
+          <div><p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fff"}}>{parcial?"El cliente ve parte en su portal":visible?"El cliente lo ve en su portal":"El cliente no lo ve"}</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>{op.legajo_visible!=null?"Marcado a mano":parcial?"Automático: monotributo o consumidor final ve la guía aérea y los recibos":autoVisible?"Automático: RI con entrega directa que paga los impuestos":"Automático"}{visible?" · al cerrar le llegan los papeles por mail":""}{op.sent_notifications?.email_legajo&&op.sent_notifications.email_legajo!=="omitido"?` · mail enviado el ${formatDate(op.sent_notifications.email_legajo)}`:""}</p></div>
         </div>
-        {ri&&<div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)"}}>{[[null,"Auto"],[true,"Sí"],[false,"No"]].map(([v,l])=>{const on=(op.legajo_visible??null)===v;return <button key={l} type="button" onClick={()=>setVisible(v)} style={{height:30,padding:"0 13px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none"}}>{l}</button>;})}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        {visible&&<button type="button" disabled={mandandoMail} onClick={async()=>{
+          setMandandoMail(true);
+          try{
+            const r=await fetch("/api/admin/legajo-mail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({op_id:op.id})});const d=await r.json();
+            if(!r.ok){toast(d.error||"No se pudo armar el mail","error");return;}
+            if(!await confirmDialog(`Para: ${d.para}\nAsunto: ${d.asunto}\n\n${d.texto}\n\n(+ tu firma)`,{title:"¿Mandar los papeles por mail?",confirmText:"Mandar"}))return;
+            const r2=await fetch("/api/admin/legajo-mail",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({op_id:op.id,enviar:true})});const d2=await r2.json();
+            if(!r2.ok){toast(d2.error||"No salió el mail","error");return;}
+            setOp(p=>({...p,sent_notifications:{...(p.sent_notifications||{}),email_legajo:d2.enviado}}));toast(`Mail enviado a ${d2.para}`,"success");
+          }finally{setMandandoMail(false);}
+        }} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(232,208,152,0.1)",color:"#E8D098",fontSize:12.5,fontWeight:800,cursor:mandandoMail?"wait":"pointer",fontFamily:"inherit"}}>{mandandoMail?"Armando…":op.sent_notifications?.email_legajo&&op.sent_notifications.email_legajo!=="omitido"?"📧 Reenviar por mail":"📧 Mandar por mail"}</button>}
+        {<div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)"}}>{[[null,"Auto"],[true,"Sí"],[false,"No"]].map(([v,l])=>{const on=(op.legajo_visible??null)===v;return <button key={l} type="button" onClick={()=>setVisible(v)} style={{height:30,padding:"0 13px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none"}}>{l}</button>;})}</div>}
+        </div>
       </div>
     </Card>
   </div>;

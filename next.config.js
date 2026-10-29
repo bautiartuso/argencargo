@@ -8,6 +8,8 @@ const nextConfig = {
       '/api/admin/bot': ['./node_modules/@sparticuz/chromium/bin/**'],
       '/api/portal/legajo/pdf': ['./node_modules/@sparticuz/chromium/bin/**'],
       '/api/cotizacion/pdf': ['./node_modules/@sparticuz/chromium/bin/**'],
+      '/api/cron/legajo-mail': ['./node_modules/@sparticuz/chromium/bin/**'],
+      '/api/admin/legajo-mail': ['./node_modules/@sparticuz/chromium/bin/**'],
       '/api/portal/dsi': ['./node_modules/@sparticuz/chromium/bin/**', './node_modules/pdfjs-dist/legacy/build/**'],
       '/api/admin/studio': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],
       '/api/cron/studio-queue': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],

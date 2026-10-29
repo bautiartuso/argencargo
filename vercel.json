@@ -95,6 +95,10 @@
     {
       "path": "/api/cron/estados-ops",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/legajo-mail",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
