@@ -21,6 +21,7 @@ import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, pr
 import IntelligencePanel from "./components/IntelligencePanel";
 import { armarDatosAdmin, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import TicketsPanel from "./components/TicketsPanel";
+import FclContenedoresTab, { FclResumen } from "./components/FclContenedores";
 import HistoriasPanel from "./components/HistoriasPanel";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 const CARRIER_NOMBRE={dhl:"DHL",fedex:"FedEx",ups:"UPS"};
@@ -1622,6 +1623,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"packages",l:"Bultos"},
     // Maritimo (A y B) sin solapa Seguimiento: el tracking vive en el contenedor.
     ...(initOp.channel?.includes("maritimo")?[]:[{k:"tracking",l:"Seguimiento"}]),
+    // FCL (29/10/2026): contenedor entero del Marítimo A, con su BL, hitos y seguimiento.
+    ...(initOp.channel==="maritimo_blanco"?[{k:"contenedor",l:"Contenedor"}]:[]),
     {k:"entrega",l:"Entrega"},
     // Legajo (22/10/2026): papeles de la importación, solo aéreo courier comercial.
     ...(llevaLegajo(initOp)?[{k:"legajo",l:"Legajo"}]:[]),
@@ -4737,6 +4740,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
     {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onReload={reloadOp} onEntregarPaga={async()=>{try{const cerro=await entregarYCerrar(op,token);const ahora=new Date().toISOString();setOp(p=>({...p,delivery_completed_at:p.delivery_completed_at||ahora,...(cerro?{status:"operacion_cerrada",closed_at:p.closed_at||ahora}:{})}));if(cerro)setEstadoGuardado("operacion_cerrada");flash(cerro?"Entregada y cerrada":"Marcado como entregado");}catch(e){flash("No se pudo: "+e.message);}}} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
+    {tab==="contenedor"&&<FclContenedoresTab op={op} setOp={setOp} token={token}/>}
     {tab==="legajo"&&<LegajoOpTab op={op} setOp={setOp} opClient={opClient} token={token} clientPayments={clientPayments} setClientPayments={setClientPayments} flash={flash}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
@@ -18801,7 +18805,7 @@ const presuManualMaritimo=(ships,importeDe)=>{
 // tarjeta por operación con el riel de avance, la fecha que importa, la carga y la plata.
 function LclFclPanel({token,onSelectOp,onNew}){
   const celu=useEsCelu();
-  const [ops,setOps]=useState([]);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [eventos,setEventos]=useState([]);
+  const [ops,setOps]=useState([]);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [eventos,setEventos]=useState([]);const [conts,setConts]=useState([]);
   const [lo,setLo]=useState(true);const [filtro,setFiltro]=useState("curso");const [abierta,setAbierta]=useState(null);const [q,setQ]=useState("");
   const load=async(silencioso)=>{
     if(!silencioso)setLo(true);
@@ -18812,13 +18816,14 @@ function LclFclPanel({token,onSelectOp,onNew}){
     const todos=[...ids,...idsCerr];
     if(todos.length){
       const f=`?operation_id=in.(${todos.join(",")})`;
-      const [it,pk,ev]=await Promise.all([
+      const [it,pk,ev,ct]=await Promise.all([
         dq("operation_items",{token,filters:`${f}&select=id,operation_id,description,ncm_code,quantity,unit_price_usd,import_duty_rate,statistics_rate,iva_rate,iva_additional_rate,iigg_rate,iibb_rate&order=created_at.asc`}),
         dq("operation_packages",{token,filters:`${f}&select=id,operation_id,length_cm,width_cm,height_cm,gross_weight_kg,quantity`}),
         dq("tracking_events",{token,filters:`${f}&select=operation_id,title,description,occurred_at,source&order=occurred_at.desc&limit=400`}),
+        dq("operation_containers",{token,filters:`${f}&select=*&order=created_at.asc`}).catch(()=>[]),
       ]);
-      setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEventos(Array.isArray(ev)?ev:[]);
-    } else {setItems([]);setPkgs([]);setEventos([]);}
+      setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEventos(Array.isArray(ev)?ev:[]);setConts(Array.isArray(ct)?ct:[]);
+    } else {setItems([]);setPkgs([]);setEventos([]);setConts([]);}
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
@@ -18833,6 +18838,7 @@ function LclFclPanel({token,onSelectOp,onNew}){
   const COND={responsable_inscripto:"RI",monotributista:"Mono",monotributo:"Mono",consumidor_final:"CF",ninguna:"CF"};
   const itemsDe=id=>items.filter(i=>i.operation_id===id);
   const pkgsDe=id=>pkgs.filter(p=>p.operation_id===id);
+  const contsDe=id=>conts.filter(c=>c.operation_id===id);
   const cbmDe=(o)=>{const ps=pkgsDe(o.id);const c=ps.reduce((s,p)=>s+(p.length_cm&&p.width_cm&&p.height_cm?(p.length_cm*p.width_cm*p.height_cm/1e6)*Number(p.quantity||1):0),0);return c>0?c:Number(o.cbm||0);};
   const kgDe=(o)=>pkgsDe(o.id).reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
   const fobDe=(o)=>{const f=itemsDe(o.id).reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);return f>0?f:Number(o.declared_value_usd||o.merchandise_value_usd||0);};
@@ -18952,8 +18958,9 @@ function LclFclPanel({token,onSelectOp,onNew}){
     const cobro=o.is_collected?["Cobrada","#4ade80"]:Number(o.total_anticipos||0)>0?[`Anticipo ${usd0(o.total_anticipos)}`,"#8CC8F5"]:["A cobrar","rgba(255,255,255,0.5)"];
     const abrir=btn("Abrir →",()=>onSelectOp(o),{color:"#0A1628",bg:GOLD_GRADIENT,border:"transparent",h:32});
     const quien=<div style={{minWidth:0}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><Tx mono color={GOLD_LIGHT} size={13} w={800}>{o.operation_code}</Tx><Tx size={13.5} w={800}>{`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—"}</Tx>{COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.55)")}{o.lost_in_customs_at&&pill("Retenida","#f87171")}</div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><Tx mono color={GOLD_LIGHT} size={13} w={800}>{o.operation_code}</Tx><Tx size={13.5} w={800}>{`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—"}</Tx>{COND[c.tax_condition]&&pill(COND[c.tax_condition],"rgba(255,255,255,0.55)")}{o.maritime_mode==="fcl"&&pill("FCL","#8CC8F5")}{o.lost_in_customs_at&&pill("Retenida","#f87171")}</div>
       <Sub>{o.description||"Sin descripción"}{its.length?` · ${its.length} prod. · ${ncms.length} NCM`:""}</Sub>
+      {contsDe(o.id).length>0&&<div style={{marginTop:5}}><FclResumen conts={contsDe(o.id)}/></div>}
     </div>;
     const carga=<div><Tx color={cbm>0?"#fff":"#fbbf24"}>{cbm>0?m3(cbm):"sin medidas"}</Tx><Sub>{ps.length?`${ps.length} bulto${ps.length!==1?"s":""}${kgDe(o)>0?` · ${n0(kgDe(o))} kg`:""}`:"sin bultos"}</Sub></div>;
     const plata=<div><Tx color={tot>0?GOLD_LIGHT:"#f87171"}>{tot>0?usd0(tot):"sin presupuesto"}</Tx><Sub color={cobro[1]}>{cobro[0]}{!esEmpleado()&&real>0?<span style={{color:gan>=0?"#4ade80":"#f87171"}}> · {gan>=0?"+":""}{usd0(gan)}</span>:null}</Sub></div>;

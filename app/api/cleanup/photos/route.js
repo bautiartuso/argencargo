@@ -111,6 +111,7 @@ export async function GET(req) {
       ["operation_packages", "photo_url"], ["unassigned_packages", "photo_url"],
       ["gi_quote_products", "photo_url"], ["gi_quote_request_products", "photo_url"],
       ["flights", "dispatch_photo_url"],
+      ["operation_containers", "bl_url"], // BL de los contenedores FCL (fcl-bl/, 29/10/2026)
     ]) {
       const filas = await j(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}`);
       for (const f of filas) { const p = storagePath(f[col]); if (p) referencias.add(p); }

@@ -7,6 +7,8 @@
 //   - tracking_*    : último evento, buque, lista de eventos, hora de consulta y error si hubo.
 // GET  → Vercel cron (Bearer CRON_SECRET), todos los contenedores en viaje.
 // POST { container_id } → admin/empleado (JWT) o CRON_SECRET: uno solo, al toque.
+// FCL (29/10/2026): también los contenedores enteros de las ops de Marítimo A (operation_containers)
+// que todavía no llegaron. Se actualiza el contenedor y la ETA de la op. POST { fcl_id } para uno.
 import { rastrearContenedor, soportaTracking, resumenEvento } from "../../../../lib/tracking/maritimo";
 import { tgNotify } from "../../../../lib/telegram";
 import { payloadVerificado } from "../../../../lib/auth-server";
@@ -58,6 +60,41 @@ async function procesar(c) {
   return { code: c.code, ok: r.ok, error: r.error || null, ultimo: body.tracking_last || null, eta: r.eta || null, cambios: avisos };
 }
 
+// Contenedor FCL de una op: misma consulta; se guarda en operation_containers y la ETA va a la op.
+async function procesarFcl(c) {
+  const r = await rastrearContenedor({ shipping_line: c.shipping_line, code: c.container_number });
+  const body = { tracking_updated_at: new Date().toISOString(), tracking_error: r.ok ? (r.error || null) : (r.error || "error") };
+  const avisos = [];
+  const cod = c.operations?.operation_code || c.container_number;
+  if (r.ok) {
+    body.tracking_events = r.eventos || [];
+    body.tracking_last = resumenEvento(r.ultimo);
+    body.tracking_vessel = r.buque || c.tracking_vessel || null;
+    if (r.eta) {
+      body.eta_naviera = r.eta;
+      if (r.eta !== (c.eta || "").slice(0, 10)) { body.eta = r.eta; avisos.push(`📅 ETA ${cod} (${c.container_number}): ${dd(c.eta)} → ${dd(r.eta)}`); }
+    }
+    if (r.salida && !c.departed_at) { body.departed_at = r.salida; avisos.push(`🚢 ${cod} (${c.container_number}) zarpó el ${dd(r.salida)}`); }
+    if (r.llegada && !c.discharged_at) { body.discharged_at = r.llegada; avisos.push(`⚓ ${cod} (${c.container_number}) llegó a Buenos Aires (${dd(r.llegada)}). Corren los días libres del vacío.`); }
+  }
+  await sb(`/operation_containers?id=eq.${c.id}`, { method: "PATCH", body: JSON.stringify(body) });
+  const op = {};
+  if (body.eta) op.eta = body.eta;
+  if (body.departed_at && !c.operations?.dispatched_at) op.dispatched_at = body.departed_at;
+  if (body.discharged_at && !c.operations?.arrived_in_argentina_at) op.arrived_in_argentina_at = body.discharged_at;
+  if (Object.keys(op).length) await sb(`/operations?id=eq.${c.operation_id}`, { method: "PATCH", body: JSON.stringify(op) });
+  return { code: c.container_number, ok: r.ok, error: r.error || null, ultimo: body.tracking_last || null, eta: r.eta || null, cambios: avisos };
+}
+
+async function correrFcl(ids = null) {
+  const f = ids ? `id=in.(${ids.join(",")})` : `discharged_at=is.null&delivered_at=is.null`;
+  const q = await sb(`/operation_containers?${f}&select=*,operations(operation_code,status,dispatched_at,arrived_in_argentina_at)&order=created_at.desc`);
+  const lista = (Array.isArray(q.data) ? q.data : []).filter((c) => (ids || !["operacion_cerrada", "cancelada"].includes(c.operations?.status)) && soportaTracking({ shipping_line: c.shipping_line, code: c.container_number }));
+  const out = [];
+  for (let i = 0; i < lista.length; i++) { if (i) await pausa(2500); out.push(await procesarFcl(lista[i])); }
+  return out;
+}
+
 async function correr(ids = null) {
   const f = ids ? `id=in.(${ids.join(",")})` : `status=eq.en_transito&port_arrived_at=is.null`;
   const q = await sb(`/maritime_containers?${f}&select=*&order=created_at.desc`);
@@ -67,6 +104,7 @@ async function correr(ids = null) {
     if (i) await pausa(2500); // COSCO corta las ráfagas
     out.push(await procesar(lista[i]));
   }
+  if (!ids) out.push(...(await correrFcl()));
   const avisos = out.flatMap((o) => o.cambios || []);
   if (avisos.length) { try { await tgNotify(["🛰 Seguimiento marítimo", ...avisos].join("\n")); } catch {} }
   return { ok: true, consultados: out.length, resultados: out };
@@ -79,6 +117,14 @@ export async function GET(req) {
 export async function POST(req) {
   if (!esCron(req) && !(await esStaff(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
+  if (b.fcl_id) {
+    if (!/^[0-9a-f-]{36}$/i.test(String(b.fcl_id))) return Response.json({ error: "fcl_id" }, { status: 400 });
+    const out = await correrFcl([String(b.fcl_id)]);
+    if (!out.length) return Response.json({ ok: false, error: "Esa naviera no tiene seguimiento automático todavía (hoy: COSCO). Usá Rastrear en la naviera." });
+    const avisos = out[0].cambios || [];
+    if (avisos.length) { try { await tgNotify(["🛰 Seguimiento marítimo", ...avisos].join("\n")); } catch {} }
+    return Response.json({ ok: true, ...out[0] });
+  }
   const id = String(b.container_id || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: "container_id" }, { status: 400 });
   const r = await correr([id]);
