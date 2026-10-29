@@ -44,3 +44,7 @@ select id, coalesce(client_paid_date,date,created_at::date), coalesce(nullif(cli
 from payment_management p
 where client_paid and coalesce(client_paid_amount_usd,client_amount_usd,0) > 0
   and not exists (select 1 from payment_management_cobros c where c.payment_management_id=p.id);
+
+-- v3 (29/10/2026): los pesos que entran por transferencia se dolarizan días después a otro TC.
+-- La gestión no se cierra hasta cargar a qué TC se dolarizó cada pago; ahí se recalcula amount_usd.
+alter table payment_management_cobros add column if not exists dolar_rate numeric, add column if not exists dolar_date date;
