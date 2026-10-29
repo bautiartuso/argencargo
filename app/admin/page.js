@@ -23,6 +23,8 @@ import { armarDatosAdmin, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import TicketsPanel from "./components/TicketsPanel";
 import HistoriasPanel from "./components/HistoriasPanel";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
+const CARRIER_NOMBRE={dhl:"DHL",fedex:"FedEx",ups:"UPS"};
+const carrierKey=(c)=>{const x=String(c||"").toLowerCase().replace(/[^a-z]/g,"");return x.includes("fedex")?"fedex":x.includes("dhl")?"dhl":x.includes("ups")?"ups":null;};
 import { comprimirImagen } from "../../lib/img";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 instalarAuthFetch(["ac_admin"]);
@@ -1298,6 +1300,25 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const quitarRetencionOp=async()=>{if(!await confirmDialog("¿Quitar la marca de retenida por Aduana? Vuelve a seguirse por tracking y el legajo vuelve a ser obligatorio.",{danger:true}))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{retenida_at:null}});setOp(p=>({...p,retenida_at:null}));flash("Retención quitada");};
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
+  // Vuelo directo (28/10/2026): una op aérea que despachamos nosotros con el courier (sin agente)
+  // entra sola a Vuelos al guardar el courier y el tracking, para seguirla como cualquier vuelo.
+  const asegurarVueloDirecto=async()=>{
+    const k=carrierKey(op.international_carrier);const trk=String(op.international_tracking||"").trim();
+    if(!String(op.channel||"").startsWith("aereo")||!k||!trk||opFlights.length>0||["operacion_cerrada","cancelada"].includes(op.status))return;
+    const ya=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=id&limit=1`});
+    if(Array.isArray(ya)&&ya.length)return;
+    const ult=await dq("flights",{token,filters:"?select=flight_code&order=flight_code.desc&limit=1"});
+    const n=(parseInt(String(Array.isArray(ult)&&ult[0]?ult[0].flight_code:"").replace(/\D/g,""),10)||0)+1;
+    const code=`FL-${String(n).padStart(4,"0")}`;
+    const r=await dq("flights",{method:"POST",token,body:{flight_code:code,agent_id:null,status:"despachado",dispatched_at:new Date().toISOString(),international_carrier:CARRIER_NOMBRE[k],international_tracking:trk}});
+    const fl=Array.isArray(r)?r[0]:r;
+    if(!fl?.id){toast("No se pudo sumar a Vuelos","error");return;}
+    const pf=pkgs.reduce((t,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return t+Math.max(Number(p.gross_weight_kg||0)*q,l&&w&&h?((l*w*h)/agentVolDiv)*q:0);},0);
+    await dq("flight_operations",{method:"POST",token,body:{flight_id:fl.id,operation_id:op.id,weight_kg:pf}});
+    setOpFlights([{flights:{flight_code:code}}]);
+    flash(`✈️ Sumada a Vuelos como ${code} (directo)`);
+  };
+  const guardarCourier=async()=>{await saveOp();await asegurarVueloDirecto();};
   const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
     // Campos que NO viajan en el guardado general: los saldos aplicados los manejan los
     // disparadores de la base, y el presupuesto tiene su propio editor. Mandarlos desde aca
@@ -2905,7 +2926,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       {pkgs.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay bultos.</p>}
     </Card>}
 
-    {tab==="tracking"&&<><Card v2 title="Carrier y tracking" actions={<div style={{display:"flex",gap:8}}>
+    {tab==="tracking"&&<><Card v2 title="Courier" actions={<div style={{display:"flex",gap:8}}>
         <Btn small variant="secondary" onClick={async()=>{
           if(!op.international_tracking||!op.international_carrier){alertDialog("Cargá carrier y tracking primero");return;}
           const r=await fetch(`/api/tracking/sync?operation_id=${op.id}`,{headers:{Authorization:`Bearer ${token}`}});const d=await r.json();
@@ -2924,13 +2945,25 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 <Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
 </>;})()}
-        <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>
+        <Btn onClick={guardarCourier} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>
       </div>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-        <Inp label="Carrier Internacional" value={op.international_carrier} onChange={chOp("international_carrier")} placeholder="Ej: DHL, FedEx, UPS"/>
-        <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/>
-        <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
-      </div>
+      {(()=>{
+        // Courier (28/10/2026): solo DHL / FedEx / UPS (los que se siguen solos). Si la op viene de un
+        // vuelo del agente, el courier lo pone el vuelo y no se toca acá.
+        const k=carrierKey(op.international_carrier);const vuelo=opFlights[0]?.flights?.flight_code;const bloqueado=!!vuelo&&!!k;
+        const lbl={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
+        return <div style={{display:"flex",gap:"4px 18px",flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div style={{marginBottom:12,flex:"0 0 auto"}}>
+            <span style={lbl}>Courier{vuelo&&<span style={{textTransform:"none",letterSpacing:0,color:"rgba(255,255,255,0.35)",fontWeight:500}}> · del vuelo {vuelo}</span>}</span>
+            <div style={{display:"flex",gap:8}}>{["dhl","fedex","ups"].map(c=>{const lg=CARRIER_LOGOS[c];const on=k===c;return <button key={c} type="button" disabled={bloqueado&&!on} onClick={()=>!bloqueado&&setOp(p=>({...p,international_carrier:CARRIER_NOMBRE[c]}))} title={CARRIER_NOMBRE[c]}
+              style={{height:44,width:92,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:bloqueado?"default":"pointer",background:lg.bg,border:"none",outline:on?"2px solid #fff":"none",outlineOffset:2,boxShadow:on?`0 6px 18px ${lg.bg}44`:"none",opacity:on?1:0.32,filter:on?"none":"grayscale(0.7)",transition:"opacity .15s, filter .15s, outline-color .15s",padding:0}}>
+              <svg viewBox={lg.vb} style={{height:c==="ups"?30:c==="fedex"?20:14,width:"auto",display:"block"}} aria-hidden="true"><path d={lg.d} fill={lg.fill}/></svg>
+            </button>;})}</div>
+          </div>
+          <div style={{flex:"1 1 240px",minWidth:0}}><Inp label="Tracking" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/></div>
+          <div style={{flex:"0 1 220px",minWidth:180}}><Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/></div>
+        </div>;
+      })()}
     </Card>
     <Card v2 title="Eventos" sub={events.length?`${events.length} movimiento${events.length!==1?"s":""}`:null} actions={<>{(op.international_carrier||"").toLowerCase().includes("ups")&&<Btn onClick={()=>setUpsPasteOpen(true)} small variant="secondary">📋 Pegar desde UPS</Btn>}<Btn onClick={()=>{addEvt();setEvAbierto("nuevo");}} small>+ Agregar evento</Btn></>}>
       {/* Línea de tiempo (rediseño 22/10/2026): cada evento en una fila; ✎ lo abre para editar. */}
@@ -10722,8 +10755,8 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     // El status de las ops lo maneja el tracking automático (arribo_argentina, en_aduana, etc).
     // Acá solo marcamos el vuelo como recibido — no tocamos las ops.
     // Notification #3a: notify agent about flight received
-    try{await dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,body:null,link:"?tab=history"}});}catch(e){console.error("notif error",e);}
-    try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,url:"/agente?tab=history"})});}catch(e){}
+    if(flight.agent_id)try{await dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,body:null,link:"?tab=history"}});}catch(e){console.error("notif error",e);}
+    if(flight.agent_id)try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,url:"/agente?tab=history"})});}catch(e){}
     // Notification #3b: notify each client whose operation is in this flight
     try{
       const opIds=flightOps.map(fo=>fo.operation_id);
@@ -13137,14 +13170,14 @@ function AgentsPanel({token}){
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.
             const warns=[];
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
-            if(f.dispatched_at&&!Number(f.total_cost_usd))warns.push({t:"COSTO",c:"#f87171",title:"Despachado sin costo del agente cargado"});
+            if(f.dispatched_at&&!Number(f.total_cost_usd))warns.push({t:"COSTO",c:"#f87171",title:f.agent_id?"Despachado sin costo del agente cargado":"Vuelo directo sin el costo del courier cargado"});
             if(f.status==="recibido"&&ops.some(fo=>Number(fo.operations?.budget_taxes||0)>0&&!Number(fo.operations?.cost_impuestos_reales)))warns.push({t:"IMP",c:"#a78bfa",title:"Hay ops con impuestos presupuestados sin cargar el costo real de aduana"});
             // Desglose del courier subido y todavía no pasado a las ops (Extraer bultos con IA).
             if(dsiRespondidos.has(f.id))warns.push({t:"📬 DSI",c:"#60a5fa",title:"El courier respondió el pedido de DSI: abrí el vuelo para adjuntarla"});
             if(f.dispatch_photo_url&&f.status!=="recibido"&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             const bgFila=retenido?"rgba(239,68,68,0.10)":"transparent";
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:bgFila,boxShadow:retenido?"inset 4px 0 0 #ef4444":"none"}} onMouseEnter={e=>{e.currentTarget.style.background=retenido?"rgba(239,68,68,0.16)":"rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=bgFila;}}>
-            <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
+            <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}{!f.agent_id&&<span title="Lo despachamos nosotros directo con el courier (sin agente)" style={{display:"block",marginTop:3,fontSize:9,fontWeight:800,letterSpacing:"0.08em",color:"#5eead4",fontFamily:"inherit"}}>DIRECTO</span>}</td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}} title={`${stepInfo.l.replace("⚡ ","")} — paso ${stepIdx+1} de 6`}>
               <div style={{display:"flex",gap:3,justifyContent:"center",marginBottom:4}}>{[0,1,2,3,4,5].map(i=><span key={i} style={{width:7,height:7,borderRadius:99,background:retenido?(i<=stepIdx?"#ef4444":"rgba(239,68,68,0.25)"):i<stepIdx?GOLD:i===stepIdx?stepInfo.c:"rgba(255,255,255,0.14)",boxShadow:i===stepIdx?`0 0 9px ${stepInfo.c}99`:"none",transition:"all 200ms"}}/>)}</div>
               <span style={{fontSize:9,fontWeight:800,color:stepInfo.c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stepInfo.l}</span>
