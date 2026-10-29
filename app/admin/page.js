@@ -14303,7 +14303,7 @@ function OperationalAnalytics({token}){
   </div>;
 }
 
-// Gestión de pagos v3 (29/10/2026, rehecha). Todo en una pantalla, sin ventanas:
+// Gestión de pagos v3 (29/10/2026, rehecha; cotización para el cliente el 30/10). Todo en una pantalla:
 // 1) Se anota la gestión: cliente y cuánto girarle al proveedor. En ese momento sale de la CC de
 //    SolFin el egreso en USD con el costo ya sumado (2,25% + USD 40; desde USD 10.000 sin el fijo).
 // 2) Se anota el pago del cliente: efectivo, o transferencia en pesos con comprobante (entra a la CC
@@ -14353,6 +14353,7 @@ const agpEstado=(p,cs)=>{
   if(p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid)return "tarjeta";
   return "cerrada";
 };
+const agpCobra=(p)=>p.client_currency==="ARS"&&Number(p.client_amount_ars)>0?agpArs(p.client_amount_ars):agpUsd(p.client_amount_usd);
 const AGP_ESTADO={pago:"Falta el pago",dolar:"Falta dolarizar",giro:"Falta transferir",comprobante:"Falta el comprobante",tarjeta:"Tarjeta sin debitar",cerrada:"Cerrada"};
 const agpGanancia=(p)=>agpR2(Number(p.client_paid_amount_usd??p.client_amount_usd??0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0));
 async function agpSincronizar(token,p,cs){
@@ -14427,18 +14428,22 @@ function AgpPanel({token,allClients}){
   const chip=(e)=>{const ok=e==="cerrada";return <span style={{display:"inline-block",fontSize:11.5,fontWeight:800,padding:"4px 10px",borderRadius:999,whiteSpace:"nowrap",background:ok?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.12)",color:ok?"#4ade80":"#fbbf24"}}>{AGP_ESTADO[e]}</span>;};
 
   return <div>
-    <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",flex:celu?"1 1 100%":"0 0 auto"}}>
-        {[["curso",`En curso${enCurso.length?` · ${enCurso.length}`:""}`],["cerradas","Cerradas"]].map(([k,l])=><button key={k} onClick={()=>setVista(k)} style={{flex:1,padding:"8px 16px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:vista===k?"rgba(184,149,106,0.22)":"transparent",color:vista===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}
+    <div style={{display:"flex",alignItems:"center",gap:celu?12:20,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:celu?18:24,flex:celu?"1 1 100%":"0 0 auto",borderBottom:celu?"1px solid rgba(255,255,255,0.08)":"none"}}>
+        {[["curso","En curso",enCurso.length],["cerradas","Cerradas",null]].map(([k,l,n])=>{const on=vista===k;return <button key={k} onClick={()=>setVista(k)} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 0",border:"none",borderBottom:`2px solid ${on?GOLD_LIGHT:"transparent"}`,marginBottom:-1,background:"transparent",color:on?"#fff":"rgba(255,255,255,0.45)",fontSize:15,fontWeight:on?800:600,cursor:"pointer",fontFamily:"inherit"}}>
+          {l}{n>0&&<span style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,boxSizing:"border-box",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11.5,fontWeight:800,background:on?"rgba(232,208,152,0.18)":"rgba(255,255,255,0.08)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{n}</span>}
+        </button>;})}
       </div>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente, AGP o detalle" style={{flex:1,minWidth:celu?0:200,height:40,padding:"0 14px",fontSize:celu?16:13,border:"1px solid rgba(255,255,255,0.1)",borderRadius:11,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-      <div style={{display:"flex",gap:8,flex:celu?"1 1 100%":"0 0 auto"}}>
-        <Btn variant="secondary" onClick={()=>setForm(f=>f?.modo==="calc"?null:{modo:"calc"})} fullWidth={celu}>Calculadora</Btn>
-        <Btn variant="gold" onClick={()=>setForm({modo:"nueva"})} fullWidth={celu}>+ Nueva gestión</Btn>
+      <div style={{position:"relative",flex:1,minWidth:celu?0:220}}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.2" strokeLinecap="round" style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente o AGP" style={{width:"100%",height:42,padding:"0 14px 0 36px",fontSize:celu?16:13.5,border:"1px solid rgba(255,255,255,0.08)",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
       </div>
+      {!form&&<button onClick={()=>setForm({modo:"nueva"})} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,height:42,padding:"0 20px",borderRadius:999,border:"none",background:"linear-gradient(135deg,#C9A574 0%,#E8D098 100%)",color:"#0A1628",fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 6px 18px rgba(184,149,106,0.25)",whiteSpace:"nowrap"}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva gestión
+      </button>}
     </div>
 
-    {form&&<AgpForm key={form.p?.id||"nueva"} modo={form.modo} p={form.p} token={token} allClients={allClients} tcRef={tcRef} onModo={m=>setForm(f=>({...f,modo:m}))} onClose={()=>setForm(null)} onSaved={async(id)=>{setForm(null);await load();if(id){setVista("curso");setAbierta(id);}}}/>}
+    {form&&<AgpForm key={form.p?.id||"nueva"} p={form.p} token={token} allClients={allClients} tcRef={tcRef} onClose={()=>setForm(null)} onSaved={async(id)=>{setForm(null);await load();if(id){setVista("curso");setAbierta(id);}}}/>}
 
     {vista==="curso"&&enCurso.length>0&&<p style={{margin:"0 0 12px",fontSize:13,color:"rgba(255,255,255,0.55)",lineHeight:1.5}}>
       Te deben <strong style={{color:"#fff"}}>{agpUsd(deben)}</strong>{sinDolar>0&&<> · Sin dolarizar <strong style={{color:"#fff"}}>{agpArs(sinDolar)}</strong></>}
@@ -14461,11 +14466,11 @@ function AgpPanel({token,allClients}){
               </div>
               {celu?<div style={{textAlign:"right"}}>{chip(e)}</div>:<>
                 <span style={{textAlign:"right",fontSize:14,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{agpUsd(p.giro_amount_usd)}</span>
-                <span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{agpUsd(p.client_amount_usd)}</span>
+                <span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{agpCobra(p)}</span>
                 <span>{chip(e)}</span>
                 <svg width="14" height="14" viewBox="0 0 12 12" style={{transform:open?"rotate(180deg)":"none",transition:"transform 160ms",opacity:0.5}}><path d="M2.5 4.5 6 8l3.5-3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </>}
-              {celu&&<p style={{gridColumn:"1 / -1",margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)",fontVariantNumeric:"tabular-nums"}}>Se gira <strong style={{color:"#fff"}}>{agpUsd(p.giro_amount_usd)}</strong> · le cobrás <strong style={{color:"#fff"}}>{agpUsd(p.client_amount_usd)}</strong></p>}
+              {celu&&<p style={{gridColumn:"1 / -1",margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)",fontVariantNumeric:"tabular-nums"}}>Se gira <strong style={{color:"#fff"}}>{agpUsd(p.giro_amount_usd)}</strong> · le cobrás <strong style={{color:"#fff"}}>{agpCobra(p)}</strong></p>}
             </div>
             {open&&<AgpDetalle p={p} cobros={cobros[p.id]||[]} dolars={dolars} token={token} tcRef={tcRef} onChanged={load} onEditar={()=>{setForm({modo:"editar",p});window.scrollTo({top:0,behavior:"smooth"});}} onBorrada={()=>{setAbierta(null);load();}}/>}
           </div>;
@@ -14474,37 +14479,47 @@ function AgpPanel({token,allClients}){
   </div>;
 }
 
-// Calculadora / alta / edición. Con el monto a girar calcula el costo de SolFin en dólares y en
-// pesos. Al anotar la gestión, el giro con su costo sale solo de la CC de SolFin.
-function AgpForm({modo,p,token,allClients,tcRef,onModo,onClose,onSaved}){
+// Nueva gestión / edición (30/10/2026). A la izquierda se cargan los datos; a la derecha queda la
+// cotización limpia, pensada para sacarle captura y mandársela al cliente: cuánto se gira, el costo y
+// el total a pagar en efectivo (USD) o por transferencia (pesos, al TC puesto, con el 2,5% de SolFin
+// ya incluido). Lo interno (lo que sale de la CC y lo que ganás) va debajo, fuera de la cotización.
+// Al anotarla, el giro con su costo sale solo de la CC de SolFin.
+function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
   const celu=useEsCelu();
   const [monto,setMonto]=useState(agpTxt(p?.giro_amount_usd));
-  const [precio,setPrecio]=useState(agpTxt(p?.client_amount_usd));
-  const [tc,setTc]=useState(tcRef?String(tcRef):"");
+  const [forma,setForma]=useState(p?(p.client_currency==="ARS"?"transf":"efvo"):"efvo");
+  const [tc,setTc]=useState(agpTxt(p?.client_exchange_rate)||(tcRef?String(tcRef):""));
+  const [com,setCom]=useState(p?.margen_pct!=null?agpTxt(p.margen_pct):(()=>{try{return localStorage.getItem("agp_margen")||"2";}catch{return "2";}})());
   const [clientId,setClientId]=useState(p?.client_id||"");
-  const [detalle,setDetalle]=useState(p?.description||"");
   const [cliQ,setCliQ]=useState("");
   const [saving,setSaving]=useState(false);
   useEffect(()=>{if(!tc&&tcRef)setTc(String(tcRef));},[tcRef]);
-  const viejaSinCc=!!p&&!agpConCc(p); // gestiones de antes: el costo quedó como se cargó
-  const m=parseMontoAr(monto),t=parseMontoAr(tc),pr=parseMontoAr(precio);
-  const costo=viejaSinCc?Number(p.cost_comision_giro||0):agpCostoCable(m);
-  const sale=agpR2(m+costo);
-  const sug=sale>0?Math.ceil(sale*1.02):0;
-  const cobrar=pr>0?pr:sug;
-  const gan=agpR2(cobrar-sale);
+  const viejaSinCc=!!p&&!agpConCc(p);
+  const m=parseMontoAr(monto),t=parseMontoAr(tc),cp=parseMontoAr(com);
+  const transf=forma==="transf";
+  const costoSolfin=viejaSinCc?Number(p.cost_comision_giro||0):agpCostoCable(m);
+  const sale=agpR2(m+costoSolfin);
+  // Lo que paga el cliente: el giro + el costo de SolFin + tu comisión. En efectivo se redondea al
+  // dólar; por transferencia se pasa a pesos, se agranda por el 2,5% de SolFin y se redondea a $100.
+  const totalUsd=m>0?Math.ceil(m+costoSolfin+m*cp/100):0;
+  const totalArs=transf&&t>0&&m>0?Math.ceil((m+costoSolfin+m*cp/100)*t/(1-AGP_FIN_PCT/100)/100)*100:0;
+  const debeUsd=transf?(t>0?agpR2(totalArs/t):0):totalUsd; // lo que descuentan los pagos (bruto)
+  const netoUsd=transf?(t>0?agpR2(totalArs*(1-AGP_FIN_PCT/100)/t):0):totalUsd;
+  const gan=agpR2(netoUsd-sale);
   const cliente=allClients.find(c=>c.id===clientId);
   const resCli=cliQ.trim()?allClients.filter(c=>`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(cliQ.trim().toLowerCase())).slice(0,6):[];
 
   const guardar=async()=>{
     if(!clientId){toast("Elegí el cliente","error");return;}
     if(!(m>0)){toast("Cargá cuánto hay que girar","error");return;}
+    if(transf&&!(t>0)){toast("Cargá el tipo de cambio","error");return;}
     setSaving(true);
+    try{localStorage.setItem("agp_margen",com);}catch{}
     try{
       const cli=allClients.find(c=>c.id===clientId);
-      const body={client_id:clientId,description:detalle.trim()||null,giro_amount_usd:m,client_amount_usd:cobrar,client_currency:"USD",client_amount_ars:null,client_exchange_rate:null};
-      if(!viejaSinCc)Object.assign(body,{costo_cable_usd:costo,cost_comision_giro:costo,cable_pct:2.25,cable_fijo_usd:m<10000?40:0});
-      const descCc=(code)=>`Cable China · ${code||""}${cli?.client_code?` · ${cli.client_code}`:""}${body.description?` · ${body.description}`:""}`;
+      const body={client_id:clientId,giro_amount_usd:m,margen_pct:cp,client_amount_usd:debeUsd,client_currency:transf?"ARS":"USD",client_amount_ars:transf?totalArs:null,client_exchange_rate:transf?t:null};
+      if(!viejaSinCc)Object.assign(body,{costo_cable_usd:costoSolfin,cost_comision_giro:costoSolfin,cable_pct:2.25,cable_fijo_usd:m<10000?40:0});
+      const descCc=(code)=>`Cable China · ${code||""}${cli?.client_code?` · ${cli.client_code}`:""}`;
       if(p){
         await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body});
         if(agpConCc(p))await dq("cc_solfin_movements",{method:"PATCH",token,filters:`?payment_management_id=eq.${p.id}&pm_cobro_id=is.null`,body:{amount:sale,net_amount:sale,description:descCc(p.agp_code)}});
@@ -14523,15 +14538,19 @@ function AgpForm({modo,p,token,allClients,tcRef,onModo,onClose,onSaved}){
     }catch(e){toast("Error: "+e.message,"error");setSaving(false);}
   };
 
-  const conCliente=modo!=="calc";
-  const cifra=(l,usd,ars,color)=><div style={{minWidth:0}}>
-    <p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{l}</p>
-    <p style={{margin:"3px 0 0",fontSize:celu?16:18,fontWeight:900,color:color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{agpUsd(usd)}</p>
-    <p style={{margin:"1px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{t>0?agpArs(ars):"—"}</p>
+  const fila=(l,v,{fuerte,sub}={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,padding:fuerte?"16px 0 0":"9px 0",borderTop:fuerte?"1px solid rgba(232,208,152,0.25)":"none",marginTop:fuerte?8:0}}>
+    <span style={{fontSize:fuerte?15:14,fontWeight:fuerte?800:500,color:fuerte?"#fff":"rgba(255,255,255,0.6)"}}>{l}</span>
+    <span style={{textAlign:"right"}}>
+      <span style={{display:"block",fontSize:fuerte?(celu?24:28):15,fontWeight:fuerte?900:700,color:fuerte?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",letterSpacing:fuerte?"-0.01em":0}}>{v}</span>
+      {sub&&<span style={{display:"block",fontSize:12,color:"rgba(255,255,255,0.42)",fontVariantNumeric:"tabular-nums",marginTop:2}}>{sub}</span>}
+    </span>
   </div>;
-  return <div style={{marginBottom:14,padding:celu?14:18,borderRadius:14,background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.3)"}}>
-    {conCliente&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:"0 12px"}}>
-      <div style={{marginBottom:12,position:"relative"}}>
+  const costoCli=transf?(totalArs-m*t):(totalUsd-m);
+  const hoy=hoyAR().split("-").reverse().join("/");
+
+  return <div style={{marginBottom:16,display:"grid",gridTemplateColumns:celu?"1fr":"minmax(0,0.9fr) minmax(0,1.1fr)",gap:celu?14:20,alignItems:"start"}}>
+    <div style={{padding:celu?14:18,borderRadius:16,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
+      <div style={{marginBottom:14,position:"relative"}}>
         <label style={agpLbl}>Cliente</label>
         {cliente
           ?<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,height:42,padding:"0 12px",borderRadius:10,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.35)",boxSizing:"border-box"}}>
@@ -14539,7 +14558,7 @@ function AgpForm({modo,p,token,allClients,tcRef,onModo,onClose,onSaved}){
             {!p&&<button type="button" onClick={()=>{setClientId("");setCliQ("");}} style={agpLink}>Cambiar</button>}
           </div>
           :<>
-            <input autoFocus={!celu} value={cliQ} onChange={e=>setCliQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&resCli[0]){e.preventDefault();setClientId(resCli[0].id);}}} placeholder="Buscar por nombre o código" style={{...agpInp(celu),fontWeight:600}}/>
+            <input value={cliQ} onChange={e=>setCliQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&resCli[0]){e.preventDefault();setClientId(resCli[0].id);}}} placeholder="Buscar por nombre o código" style={{...agpInp(celu),fontWeight:600}}/>
             {resCli.length>0&&<div style={{position:"absolute",left:0,right:0,top:"100%",marginTop:4,zIndex:20,borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"#0f1d33",boxShadow:"0 12px 30px rgba(0,0,0,0.45)",overflow:"hidden"}}>
               {resCli.map(c=><button key={c.id} type="button" onClick={()=>setClientId(c.id)} style={{display:"flex",justifyContent:"space-between",gap:10,width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",background:"transparent",color:"#fff",fontSize:13.5,fontWeight:600,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
                 <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{`${c.first_name||""} ${c.last_name||""}`.trim()}</span><span style={{color:"rgba(255,255,255,0.4)",fontSize:12,flexShrink:0}}>{c.client_code}</span>
@@ -14547,25 +14566,35 @@ function AgpForm({modo,p,token,allClients,tcRef,onModo,onClose,onSaved}){
             </div>}
           </>}
       </div>
-      <div style={{marginBottom:12}}><label style={agpLbl}>Detalle</label><input value={detalle} onChange={e=>setDetalle(e.target.value)} placeholder="Ej: proveedor de válvulas" style={{...agpInp(celu),fontWeight:600}}/></div>
-    </div>}
-    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"1.3fr 1fr 1fr",gap:"0 12px"}}>
-      <div style={{marginBottom:12,gridColumn:celu?"1 / -1":"auto"}}><label style={agpLbl}>Hay que girar (USD)</label><input type="text" inputMode="decimal" value={monto} autoFocus={!conCliente&&!celu} onChange={e=>agpNumOk(e.target.value)&&setMonto(e.target.value)} placeholder="0,00" style={{...agpInp(celu),fontSize:celu?17:16}}/></div>
-      <div style={{marginBottom:12}}><label style={agpLbl}>Le cobrás (USD)</label><input type="text" inputMode="decimal" value={precio} onChange={e=>agpNumOk(e.target.value)&&setPrecio(e.target.value)} placeholder={sug?agpTxt(sug):"0"} className="agpPh" style={{...agpInp(celu),color:GOLD_LIGHT}}/></div>
-      <div style={{marginBottom:12}}><label style={agpLbl}>Tipo de cambio</label><input type="text" inputMode="decimal" value={tc} onChange={e=>agpNumOk(e.target.value)&&setTc(e.target.value)} style={agpInp(celu)}/></div>
-      <style>{".agpPh::placeholder{color:#E8D098;opacity:0.6}"}</style>
+      <div style={{marginBottom:14}}><label style={agpLbl}>Hay que girar (USD)</label><input type="text" inputMode="decimal" value={monto} autoFocus={!celu&&!!p} onChange={e=>agpNumOk(e.target.value)&&setMonto(e.target.value)} placeholder="0,00" style={{...agpInp(celu),height:48,fontSize:18}}/></div>
+      <label style={agpLbl}>Cómo paga</label>
+      {agpSeg([["efvo","Efectivo"],["transf","Transferencia"]],forma,setForma)}
+      <div style={{display:"grid",gridTemplateColumns:transf?"1fr 1fr":"1fr",gap:"0 12px"}}>
+        {transf&&<div style={{marginBottom:12}}><label style={agpLbl}>Tipo de cambio</label><input type="text" inputMode="decimal" value={tc} onChange={e=>agpNumOk(e.target.value)&&setTc(e.target.value)} style={agpInp(celu)}/></div>}
+        <div style={{marginBottom:12}}><label style={agpLbl}>Tu comisión %</label><input type="text" inputMode="decimal" value={com} onChange={e=>agpNumOk(e.target.value)&&setCom(e.target.value)} style={agpInp(celu)}/></div>
+      </div>
+      {!esEmpleado()&&m>0&&<p style={{margin:"2px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)",lineHeight:1.6,fontVariantNumeric:"tabular-nums"}}>
+        Sale de la CC <strong style={{color:"#fff"}}>{agpUsd(sale)}</strong> (costo SolFin {agpUsd(costoSolfin)}){transf&&t>0?<> · te quedan {agpUsd(netoUsd)} después del 2,5%</>:null} · ganás <strong style={{color:gan>=0?"#4ade80":"#f87171"}}>{agpUsd(gan)}</strong>
+      </p>}
     </div>
-    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:celu?"14px 12px":16,padding:"14px 0 4px",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-      {cifra(viejaSinCc?"Costo del giro":`Costo SolFin (2,25%${m>0&&m<10000?" + USD 40":""})`,costo,costo*t,"#fbbf24")}
-      {cifra("Sale de la CC",sale,sale*t)}
-      {cifra("Le cobrás",cobrar,cobrar*t,GOLD_LIGHT)}
-      {!esEmpleado()&&cifra("Ganás",gan,gan*t,gan>=0?"#4ade80":"#f87171")}
-    </div>
-    <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12,flexWrap:"wrap"}}>
-      <Btn variant="secondary" onClick={onClose} fullWidth={celu}>{modo==="calc"?"Cerrar":"Cancelar"}</Btn>
-      {modo==="calc"
-        ?<Btn variant="gold" onClick={()=>onModo("nueva")} disabled={!(m>0)} fullWidth={celu}>Anotar como gestión</Btn>
-        :<Btn variant="gold" onClick={guardar} disabled={saving} fullWidth={celu}>{saving?"Guardando…":p?"Guardar":"Anotar gestión"}</Btn>}
+
+    <div>
+      {/* Cotización para el cliente: se le saca captura tal cual. */}
+      <div style={{padding:celu?"20px 18px":"26px 28px",borderRadius:18,background:"linear-gradient(155deg,#16284a 0%,#0c1830 100%)",border:"1px solid rgba(232,208,152,0.28)",boxShadow:"0 18px 50px rgba(0,0,0,0.35)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:18}}>
+          <img src={LOGO} alt="Argencargo" style={{height:celu?26:30,width:"auto",display:"block"}}/>
+          <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>{hoy}</span>
+        </div>
+        <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:GOLD_LIGHT}}>Pago al exterior · {transf?"Transferencia":"Efectivo"}</p>
+        {fila("Monto a girar",agpUsd(m),{sub:transf&&t>0&&m>0?agpArs(m*t):null})}
+        {fila("Costo del giro",transf?(t>0?agpArs(costoCli):"—"):agpUsd(costoCli))}
+        {transf&&fila("Tipo de cambio",t>0?`$ ${agpTc(t)}`:"—")}
+        {fila(transf?"Total a transferir":"Total a pagar",transf?(t>0?agpArs(totalArs):"—"):agpUsd(totalUsd),{fuerte:true,sub:transf?"en pesos":"en efectivo, dólares"})}
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:12,flexWrap:"wrap"}}>
+        <Btn variant="secondary" onClick={onClose} fullWidth={celu}>Cancelar</Btn>
+        <Btn variant="gold" onClick={guardar} disabled={saving} fullWidth={celu}>{saving?"Guardando…":p?"Guardar":"Anotar gestión"}</Btn>
+      </div>
     </div>
   </div>;
 }
@@ -14580,14 +14609,15 @@ function AgpDetalle({p,cobros,dolars,token,tcRef,onChanged,onEditar,onBorrada}){
 
   // ── Pago del cliente ──
   const [verForm,setVerForm]=useState(!p.client_paid);
-  const [met,setMet]=useState("transf"); // transf | efvo_usd | efvo_ars
+  const [met,setMet]=useState(p.client_currency==="ARS"?"transf":"efvo_usd"); // transf | efvo_usd | efvo_ars
   const ars=met!=="efvo_usd";
-  const [pTc,setPTc]=useState(tcRef?String(tcRef):"");
+  const tcG=Number(p.client_exchange_rate||0)||tcRef;
+  const [pTc,setPTc]=useState(tcG?String(tcG):"");
   const saldoEn=(enArs,t)=>saldo>0?(enArs?(t>0?String(Math.round(saldo*t)):""):agpTxt(saldo.toFixed(2))):"";
-  const [pMonto,setPMonto]=useState(saldoEn(true,tcRef));
+  const [pMonto,setPMonto]=useState(saldoEn(p.client_currency==="ARS",tcG));
   const [pFecha,setPFecha]=useState(hoyAR());
   const [pComp,setPComp]=useState("");
-  useEffect(()=>{if(!pTc&&tcRef){setPTc(String(tcRef));if(!pMonto)setPMonto(saldoEn(ars,tcRef));}},[tcRef]);
+  useEffect(()=>{if(!pTc&&tcG){setPTc(String(tcG));if(!pMonto)setPMonto(saldoEn(ars,tcG));}},[tcG]);
   const nM=parseMontoAr(pMonto),nT=parseMontoAr(pTc);
   const cambiarMet=(v)=>{const a=v!=="efvo_usd";if(a!==ars)setPMonto(saldoEn(a,nT));setMet(v);};
   const anotarPago=async()=>{
