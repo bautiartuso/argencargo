@@ -16,7 +16,8 @@ language plpgsql security definer set search_path = public as $$
 declare v_pick timestamptz;
 begin
   if new.type = 'deduccion' and new.flight_id is not null and agente_cc_al_pickup(new.agent_id) then
-    select carrier_pickup_at into v_pick from flights where id = new.flight_id;
+    -- Un vuelo ya recibido cuenta como retirado aunque no tenga la fecha de pick-up guardada.
+    select coalesce(carrier_pickup_at, received_at) into v_pick from flights where id = new.flight_id;
     if v_pick is null then return null; end if;
     new.date := (v_pick at time zone 'America/Argentina/Buenos_Aires')::date;
   end if;
@@ -53,3 +54,9 @@ create trigger cc_agente_vuelo_pickup after update of carrier_pickup_at on publi
 delete from public.agent_account_movements m using public.flights f
  where m.flight_id = f.id and m.type = 'deduccion' and f.agent_id = '8d56aa2e-1112-4a2c-b63a-81699dc7526d'
    and f.carrier_pickup_at is null and f.payment_method = 'cuenta_corriente';
+
+-- Corrección (28/10/2026): el delete de arriba se llevó también FL-0005, FL-0009 y FL-0051 (viejos,
+-- recibidos, sin carrier_pickup_at porque el campo es posterior). Se les pone pick-up = despacho y el
+-- trigger vuelve a crear sus deducciones con la fecha original.
+update public.flights set carrier_pickup_at = dispatched_at, carrier_pickup_source = 'historico'
+ where agent_id = '8d56aa2e-1112-4a2c-b63a-81699dc7526d' and carrier_pickup_at is null and status = 'recibido' and dispatched_at is not null;
