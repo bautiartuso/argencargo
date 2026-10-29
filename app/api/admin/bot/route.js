@@ -10,7 +10,7 @@
 //
 // Todo con service role: bot_messages no tiene policies, así que el cliente nunca la toca.
 
-import { sendWaText, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
+import { sendWaText, sendWaTemplate, ensureWaTemplate, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
 import { igBotConfig, igTexts, igSaveTexts, igStats } from "../../../../lib/ig";
 import { payloadVerificado } from "../../../../lib/auth-server";
 
@@ -238,13 +238,29 @@ export async function POST(req) {
   if (body.action === "reply") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return Response.json({ error: "Texto vacío" }, { status: 400 });
-    const r = await sendWaText(phone, text);
+    let r = await sendWaText(phone, text);
+    let viaPlantilla = false;
     if (!r?.ok) {
       const msg = r?.skipped ? "WhatsApp no configurado" : (r?.error || "Meta rechazó el envío");
       const cerrada = /24|window|re-engagement|131047|131026/i.test(String(msg));
-      return Response.json({ error: cerrada ? "Ventana de 24 h cerrada: el cliente tiene que escribir primero (o mandale una plantilla desde Entregas)." : msg }, { status: 400 });
+      if (!cerrada) return Response.json({ error: msg }, { status: 400 });
+      // Sin ventana de 24 h (el cliente no escribió): sale igual con la plantilla mensaje_argencargo.
+      const estado = await ensureWaTemplate("mensaje_argencargo");
+      if (estado !== "APPROVED") {
+        return Response.json({ error: estado === "PENDING" || estado === "IN_APPEAL"
+          ? "El cliente no escribió en las últimas 24 h. La plantilla para escribirle igual está en revisión de Meta (suele tardar minutos): probá de nuevo en un rato."
+          : "El cliente no escribió en las últimas 24 h y la plantilla para escribirle no está disponible en Meta." }, { status: 400 });
+      }
+      const conv = await sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone }) });
+      const nombre = Array.isArray(conv.body) && conv.body[0]?.client_nombre ? conv.body[0].client_nombre.split(" ")[0] : "!";
+      r = await sendWaTemplate(phone, "mensaje_argencargo", [nombre, text]);
+      if (!r?.ok) return Response.json({ error: r?.error || "Meta rechazó la plantilla" }, { status: 400 });
+      viaPlantilla = true;
     }
-    await sb(`/bot_messages`, { method: "POST", body: JSON.stringify({ phone, role: "human", content: text, wamid: r.id || null }) });
+    if (viaPlantilla) {
+      // sendWaTemplate ya lo registró como mensaje del bot; se marca como escrito por un humano.
+      if (r.id) await sb(`/bot_messages?wamid=eq.${encodeURIComponent(r.id)}`, { method: "PATCH", body: JSON.stringify({ role: "human" }) });
+    } else await sb(`/bot_messages`, { method: "POST", body: JSON.stringify({ phone, role: "human", content: text, wamid: r.id || null }) });
     await sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString() }) });
     return Response.json({ ok: true });
   }
