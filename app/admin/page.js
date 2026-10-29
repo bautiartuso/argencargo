@@ -22,6 +22,7 @@ import IntelligencePanel from "./components/IntelligencePanel";
 import { armarDatosAdmin, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import TicketsPanel from "./components/TicketsPanel";
 import FclContenedoresTab, { FclResumen } from "./components/FclContenedores";
+import { fifoSolfin } from "../../lib/fifo-solfin";
 import HistoriasPanel from "./components/HistoriasPanel";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 const CARRIER_NOMBRE={dhl:"DHL",fedex:"FedEx",ups:"UPS"};
@@ -14374,7 +14375,23 @@ async function agpSincronizar(token,p,cs){
   }});
 }
 // TC de la primera dolarización de la CC desde el día del cobro (la sugerencia para ese pago).
-const agpDolarDesde=(dolars,fecha)=>(dolars||[]).find(d=>String(d.date)>=String(fecha||""));
+// Dolarización automática (30/10/2026): la dice la CC de SolFin por FIFO (lib/fifo-solfin.js). Un pago
+// por transferencia queda dolarizado cuando ya salieron de la cuenta todos los pesos que entraron antes;
+// su TC es el de esa dolarización (o el promedio si lo cubrieron varias). Lo que salió en pesos sin
+// dolarizar se toma al TC del cobro.
+const agpDolarFifo=(c,f)=>{
+  if(!f||f.pendiente>0.005)return {dolar_rate:null,dolar_date:null,amount_usd:agpNeto({...c,dolar_rate:null})};
+  const usd=agpR2(f.usd+(Number(c.exchange_rate)>0?f.arsEnPesos/Number(c.exchange_rate):0));
+  return {dolar_rate:usd>0?Math.round(f.neto/usd*10000)/10000:null,dolar_date:f.fecha,amount_usd:usd};
+};
+async function agpTodosArs(token){
+  const out=[];
+  for(let off=0;off<20000;off+=1000){
+    const r=await dq("cc_solfin_movements",{token,filters:`?currency=eq.ARS&select=id,date,created_at,type,net_amount,description,pm_cobro_id&order=date.asc,created_at.asc&limit=1000&offset=${off}`});
+    if(!Array.isArray(r))break;out.push(...r);if(r.length<1000)break;
+  }
+  return out;
+}
 
 const agpLbl={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.1em"};
 const agpInp=(celu)=>({width:"100%",height:42,padding:"0 12px",fontSize:celu?16:14,fontWeight:700,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"',fontFamily:"inherit"});
@@ -14431,21 +14448,43 @@ const COLS_AGP_EMP="minmax(240px,1.6fr) minmax(130px,1fr) minmax(170px,1.15fr) 1
 function AgpPanel({token,allClients}){
   const COLS_AGP=esEmpleado()?COLS_AGP_EMP:COLS_AGP_FULL;
   const celu=useEsCelu();
-  const [rows,setRows]=useState([]);const [cobros,setCobros]=useState({});const [dolars,setDolars]=useState([]);
+  const [rows,setRows]=useState([]);const [cobros,setCobros]=useState({});const [fifo,setFifo]=useState({}); // id de pago → estado FIFO
   const [lo,setLo]=useState(true);const [q,setQ]=useState("");
   const [vista,setVista]=useState("curso");
   const [abierta,setAbierta]=useState(null);
   const [form,setForm]=useState(null); // {modo:"calc"|"nueva"|"editar",p}
   const [tcRef,setTcRef]=useState(0);
   const load=async()=>{
-    const [r,c,d]=await Promise.all([
+    const [r,c0,ars]=await Promise.all([
       dq("payment_management",{token,filters:"?select=*,clients(client_code,first_name,last_name),operations(operation_code)&order=date.desc,created_at.desc"}),
       dq("payment_management_cobros",{token,filters:"?select=*&order=date.asc,created_at.asc"}),
-      dq("cc_solfin_movements",{token,filters:"?type=eq.ingreso&currency=eq.USD&description=like.*Dolarizaci*&select=date,description&order=date.asc,created_at.asc"}).catch(()=>[]),
+      agpTodosArs(token).catch(()=>null),
     ]);
-    setRows(Array.isArray(r)?r:[]);
-    const m={};(Array.isArray(c)?c:[]).forEach(x=>{(m[x.payment_management_id]=m[x.payment_management_id]||[]).push(x);});setCobros(m);
-    setDolars((Array.isArray(d)?d:[]).map(x=>({date:x.date,tc:parseMontoAr(String(x.description||"").match(/@\s*TC\s*([\d.,]+)/i)?.[1]||"")})).filter(x=>x.tc>0));
+    const filas=Array.isArray(r)?r:[];let c=Array.isArray(c0)?c0:[];
+    setRows(filas);
+    // FIFO de la CC: si cambió la dolarización de algún pago, se guarda y se resincroniza su gestión.
+    const fmap={};
+    if(Array.isArray(ars)){
+      const res=fifoSolfin(ars);
+      ars.forEach(mv=>{if(mv.pm_cobro_id&&res[mv.id])fmap[mv.pm_cobro_id]=res[mv.id];});
+      const cambios=[];
+      for(const x of c){
+        if(!agpADolarizar(x)||!fmap[x.id])continue;
+        const u=agpDolarFifo(x,fmap[x.id]);
+        const igual=(a,b)=>a==null&&b==null||(a!=null&&b!=null&&Math.abs(Number(a)-Number(b))<0.005);
+        if(!igual(u.dolar_rate,x.dolar_rate)||String(u.dolar_date||"")!==String(x.dolar_date||"")||!igual(u.amount_usd,x.amount_usd))cambios.push([x,u]);
+      }
+      if(cambios.length){
+        await Promise.all(cambios.map(([x,u])=>dq("payment_management_cobros",{method:"PATCH",token,filters:`?id=eq.${x.id}`,body:u})));
+        const nuevo=new Map(cambios.map(([x,u])=>[x.id,u]));
+        c=c.map(x=>nuevo.has(x.id)?{...x,...nuevo.get(x.id)}:x);
+        const pms=[...new Set(cambios.map(([x])=>x.payment_management_id))];
+        for(const id of pms){const pm=filas.find(f=>f.id===id);if(pm)await agpSincronizar(token,pm,c.filter(x=>x.payment_management_id===id));}
+        if(pms.length){const r2=await dq("payment_management",{token,filters:"?select=*,clients(client_code,first_name,last_name),operations(operation_code)&order=date.desc,created_at.desc"});if(Array.isArray(r2)){setRows(r2);}}
+      }
+    }
+    setFifo(fmap);
+    const m={};c.forEach(x=>{(m[x.payment_management_id]=m[x.payment_management_id]||[]).push(x);});setCobros(m);
     setLo(false);
   };
   useEffect(()=>{load();agpTcRef(token).then(setTcRef);},[token]);
@@ -14523,7 +14562,7 @@ function AgpPanel({token,allClients}){
                 <svg width="14" height="14" viewBox="0 0 12 12" style={{justifySelf:"end",transform:open?"rotate(180deg)":"none",transition:"transform 160ms",opacity:0.5}}><path d="M2.5 4.5 6 8l3.5-3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </>}
             </div>
-            {open&&<AgpDetalle p={p} cobros={cobros[p.id]||[]} dolars={dolars} token={token} tcRef={tcRef} onChanged={load} onEditar={()=>{setForm({modo:"editar",p});window.scrollTo({top:0,behavior:"smooth"});}} onBorrada={()=>{setAbierta(null);load();}}/>}
+            {open&&<AgpDetalle p={p} cobros={cobros[p.id]||[]} fifo={fifo} token={token} tcRef={tcRef} onChanged={load} onEditar={()=>{setForm({modo:"editar",p});window.scrollTo({top:0,behavior:"smooth"});}} onBorrada={()=>{setAbierta(null);load();}}/>}
           </div>;
         })}
       </div>}
@@ -14648,7 +14687,7 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
 }
 
 // Lo que se abre debajo de cada gestión: pago del cliente, dolarización y comprobante.
-function AgpDetalle({p,cobros,dolars,token,tcRef,onChanged,onEditar,onBorrada}){
+function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
   const celu=useEsCelu();
   const [ocupado,setOcupado]=useState(false);
   const pagado=cobros.reduce((s,c)=>s+agpAplica(c),0);
@@ -14705,26 +14744,8 @@ function AgpDetalle({p,cobros,dolars,token,tcRef,onChanged,onEditar,onBorrada}){
     setOcupado(false);
   };
 
-  // ── Dolarización ──
+  // ── Dolarización: automática por FIFO de la CC de SolFin ──
   const aDolar=cobros.filter(agpADolarizar);
-  const [tcs,setTcs]=useState(()=>Object.fromEntries(aDolar.filter(c=>!c.dolar_rate).map(c=>[c.id,agpTxt(agpDolarDesde(dolars,c.date)?.tc||"")])));
-  const dolarizar=async(c)=>{
-    const t=parseMontoAr(tcs[c.id]);if(!(t>0)){toast("Cargá el TC al que se dolarizó","error");return;}
-    setOcupado(true);
-    try{
-      const d=agpDolarDesde(dolars,c.date);
-      const upd={dolar_rate:t,dolar_date:d&&Math.abs(d.tc-t)<0.001?d.date:hoyAR(),amount_usd:agpNeto(c,t)};
-      await dq("payment_management_cobros",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:upd});
-      await agpSincronizar(token,p,cobros.map(x=>x.id===c.id?{...x,...upd}:x));await onChanged();
-    }catch(e){toast("Error: "+e.message,"error");}
-    setOcupado(false);
-  };
-  const deshacerDolar=async(c)=>{
-    setOcupado(true);
-    try{const upd={dolar_rate:null,dolar_date:null,amount_usd:agpNeto({...c,dolar_rate:null})};await dq("payment_management_cobros",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:upd});await agpSincronizar(token,p,cobros.map(x=>x.id===c.id?{...x,...upd}:x));await onChanged();}
-    catch(e){toast("Error: "+e.message,"error");}
-    setOcupado(false);
-  };
 
   // ── Comprobante de la transferencia al proveedor ──
   const ponerComprobante=async(url)=>{
@@ -14785,19 +14806,18 @@ function AgpDetalle({p,cobros,dolars,token,tcRef,onChanged,onEditar,onBorrada}){
       </>)}
 
       {col("Dolarización",aDolar.length>0&&!agpFaltaDolar(cobros).length,aDolar.length===0
-        ?<p style={txt}>{cobros.length?"No hace falta: no pagó por transferencia en pesos.":"Cuando pague por transferencia, acá cargás a qué TC se dolarizaron los pesos."}</p>
-        :<>{aDolar.map(c=>{const neto=agpR2(Number(c.amount)*(1-Number(c.commission_pct||0)/100));
-          if(c.dolar_rate){const dif=agpR2(agpNeto(c,c.exchange_rate)-agpNeto(c,c.dolar_rate));return <div key={c.id} style={{padding:"8px 10px",borderRadius:9,background:"rgba(0,0,0,0.2)",marginBottom:6,fontSize:12.5}}>
-            <div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{color:"rgba(255,255,255,0.6)"}}>{agpArs(neto)} · {agpTc(c.exchange_rate)} → <strong style={{color:"#fff"}}>{agpTc(c.dolar_rate)}</strong></span><button type="button" onClick={()=>deshacerDolar(c)} disabled={ocupado} style={{...agpLink,color:"rgba(255,255,255,0.4)",fontSize:11.5}}>Cambiar</button></div>
-            <p style={{margin:"3px 0 0",fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{agpUsd(c.amount_usd)}{Math.abs(dif)>=0.01&&<span style={{fontWeight:700,color:dif>0?"#f87171":"#4ade80"}}> · {dif>0?"merma":"a favor"} {agpUsd(Math.abs(dif))}</span>}</p>
+        ?<p style={txt}>{cobros.length?"No hace falta: no pagó por transferencia en pesos.":"Cuando pague por transferencia, se dolariza sola: la toma de la CC de SolFin por orden de llegada."}</p>
+        :<>{aDolar.map(c=>{const f=fifo?.[c.id];const neto=f?f.neto:agpR2(Number(c.amount)*(1-Number(c.commission_pct||0)/100));
+          if(c.dolar_rate){const dif=agpR2(agpNeto(c,c.exchange_rate)-Number(c.amount_usd||0));return <div key={c.id} style={{padding:"9px 11px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",marginBottom:6,fontSize:12.5}}>
+            <p style={{margin:0,color:"rgba(255,255,255,0.6)"}}>{agpArs(neto)} · dolarizado el {formatDateShort(c.dolar_date)} a <strong style={{color:"#fff"}}>{agpTc(c.dolar_rate)}</strong> <span style={{color:"rgba(255,255,255,0.4)"}}>(cobrado a {agpTc(c.exchange_rate)})</span></p>
+            <p style={{margin:"4px 0 0",fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{agpUsd(c.amount_usd)}{Math.abs(dif)>=0.01&&<span style={{fontWeight:700,color:dif>0?"#f87171":"#4ade80"}}> · {dif>0?"merma":"a favor"} {agpUsd(Math.abs(dif))}</span>}</p>
           </div>;}
-          const sug=agpDolarDesde(dolars,c.date);
-          return <div key={c.id} style={{marginBottom:10}}>
-            <p style={{...txt,margin:"0 0 6px"}}>{agpArs(neto)} netos, cobrados a {agpTc(c.exchange_rate)}{sug?<> · dolarización del {formatDateShort(sug.date)} a {agpTc(sug.tc)}</>:<> · todavía sin dolarizar en la CC</>}</p>
-            <div style={{display:"flex",gap:8}}>
-              <input type="text" inputMode="decimal" value={tcs[c.id]||""} onChange={e=>agpNumOk(e.target.value)&&setTcs(s=>({...s,[c.id]:e.target.value}))} placeholder="TC dolarizado" style={{...agpInp(celu),flex:1}}/>
-              <Btn variant="gold" onClick={()=>dolarizar(c)} disabled={ocupado}>Dolarizado</Btn>
-            </div>
+          const hecho=f?agpR2(f.neto-f.pendiente):0;
+          return <div key={c.id} style={{padding:"9px 11px",borderRadius:9,background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.18)",marginBottom:6,fontSize:12.5,lineHeight:1.55}}>
+            <p style={{margin:0,color:"rgba(255,255,255,0.7)"}}>{agpArs(neto)} en la CC de SolFin, cobrados a {agpTc(c.exchange_rate)}</p>
+            {!f?<p style={{margin:"3px 0 0",color:"#fbbf24"}}>No encuentro su ingreso en la CC de SolFin.</p>
+              :hecho>0?<p style={{margin:"3px 0 0",color:"#fbbf24",fontWeight:700}}>Se dolarizaron {agpArs(hecho)}; faltan {agpArs(f.pendiente)}</p>
+              :<p style={{margin:"3px 0 0",color:"#fbbf24",fontWeight:700}}>{f.delante>0.005?`Delante hay ${agpArs(f.delante)} que entraron antes: se dolariza cuando salgan esos y estos.`:"Es lo próximo que se dolariza en la CC."}</p>}
           </div>;})}</>)}
 
       {col("Comprobante de la transferencia",!agpConCc(p)||!!p.giro_receipt_url,agpConCc(p)

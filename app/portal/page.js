@@ -2812,8 +2812,12 @@ function InternationalPaymentsPage({client,token}){
   const [misAgp,setMisAgp]=useState([]);
   useEffect(()=>{(async()=>{
     if(!token||!client?.id)return;
-    const r=await dq("payment_management",{token,filters:`?client_id=eq.${client.id}&select=agp_code,date,description,client_amount_usd,client_paid,client_paid_amount_usd,client_paid_date,giro_status,operations(operation_code)&order=date.desc,created_at.desc`}).catch(()=>[]);
-    setMisAgp(Array.isArray(r)?r:[]);
+    const r=await dq("payment_management",{token,filters:`?client_id=eq.${client.id}&select=id,agp_code,date,description,client_amount_usd,client_currency,client_amount_ars,client_paid,client_paid_amount_usd,client_paid_date,giro_status,giro_payment_method,giro_receipt_url,operations(operation_code)&order=date.desc,created_at.desc`}).catch(()=>[]);
+    const lista=Array.isArray(r)?r:[];
+    // Comprobantes de lo que pagó (30/10/2026): los pagos de cada gestión con su comprobante.
+    const ids=lista.map(g=>g.id).filter(Boolean);
+    const cs=ids.length?await dq("payment_management_cobros",{token,filters:`?payment_management_id=in.(${ids.join(",")})&receipt_url=not.is.null&select=payment_management_id,date,receipt_url&order=date.asc`}).catch(()=>[]):[];
+    setMisAgp(lista.map(g=>({...g,comprobantes:(Array.isArray(cs)?cs:[]).filter(c=>c.payment_management_id===g.id)})));
   })();},[token,client?.id]);
   const {t}=useT();
   // WhatsApp de Argencargo para derivar pagos internacionales
@@ -2940,9 +2944,13 @@ function InternationalPaymentsPage({client,token}){
       <h3 style={{fontSize:17,fontWeight:800,color:"#fff",margin:"0 0 16px",letterSpacing:"0.12em",textTransform:"uppercase",textAlign:"center"}}>{t("pay.yourRequests")}</h3>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {misAgp.map((g,i)=>{
-          const monto=Number(g.client_paid_amount_usd??g.client_amount_usd??0);
+          // Lo que paga el cliente: en pesos (con centavos) si se le cobró por transferencia, si no en USD.
+          const enArs=g.client_currency==="ARS"&&Number(g.client_amount_ars)>0;
+          const monto=enArs?Number(g.client_amount_ars):Number(g.client_amount_usd??0);
           const pagado=!!g.client_paid;
-          const enviado=g.giro_status==="confirmado";
+          // Girado = la transferencia al proveedor ya tiene su comprobante (las gestiones viejas, con el giro confirmado).
+          const enviado=g.giro_status==="confirmado"&&(g.giro_payment_method!=="cable"||!!g.giro_receipt_url);
+          const docs=[...(g.comprobantes||[]).map((c,k,arr)=>({url:c.receipt_url,l:arr.length>1?`${t("pay.yourPayment")} ${k+1}`:t("pay.yourPayment")})),...(g.giro_receipt_url?[{url:g.giro_receipt_url,l:t("pay.supplierPayment")}]:[])];
           const chipG=(txt,c,on)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,whiteSpace:"nowrap",color:on?c:"rgba(255,255,255,0.45)",background:on?`${c}1f`:"rgba(255,255,255,0.06)",border:`1px solid ${on?`${c}59`:"rgba(255,255,255,0.12)"}`}}>{txt}</span>;
           return <div key={g.agp_code||i} style={{padding:"15px 18px",background:"linear-gradient(180deg, rgba(13,24,45,0.9), rgba(8,16,32,0.9))",border:HAIRP,borderRadius:14,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",boxShadow:"0 8px 22px rgba(0,0,0,0.2)"}}>
             <div style={{flex:1,minWidth:200}}>
@@ -2958,7 +2966,13 @@ function InternationalPaymentsPage({client,token}){
               {chipG(pagado?"Pagado":t("op.paymentPending"),pagado?"#4ade80":"#fbbf24",true)}
               {chipG(enviado?"Girado":t("pay.inProgress"),"#4ade80",enviado)}
             </span>
-            <span style={{fontSize:19,fontWeight:900,color:"#fff",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",marginRight:5}}>USD</span>{monto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            <span style={{fontSize:19,fontWeight:900,color:"#fff",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",marginRight:5}}>{enArs?"$":"USD"}</span>{monto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            {docs.length>0&&<div style={{flexBasis:"100%",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",paddingTop:12,marginTop:2,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+              <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",marginRight:4}}>{t("pay.receipts")}</span>
+              {docs.map((d,k)=><a key={k} href={d.url} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:7,height:34,padding:"0 13px",borderRadius:10,border:"1px solid rgba(140,200,245,0.3)",background:"rgba(140,200,245,0.08)",color:"#8CC8F5",fontSize:12.5,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>{d.l}
+              </a>)}
+            </div>}
           </div>;
         })}
       </div>

@@ -52,3 +52,10 @@ alter table payment_management_cobros add column if not exists dolar_rate numeri
 -- El giro de las gestiones nuevas es "cable" (Cable China por SolFin): el check no lo aceptaba.
 alter table payment_management drop constraint payment_management_giro_payment_method_check;
 alter table payment_management add constraint payment_management_giro_payment_method_check check (giro_payment_method = any (array['efectivo','transferencia','tarjeta_credito','cable']));
+
+-- Portal (30/10/2026): el cliente ve sus pagos de cada gestión (con el comprobante). Función
+-- SECURITY DEFINER para no anidar RLS (ver 2026_09_14_rls_performance_portal.sql).
+create or replace function current_client_pm_ids() returns setof uuid language sql stable security definer set search_path=public as $$
+  select id from payment_management where client_id = (select current_client_id());
+$$;
+create policy pm_cobros_client_select on payment_management_cobros for select using (payment_management_id in (select current_client_pm_ids()));
