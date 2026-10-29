@@ -14380,12 +14380,29 @@ const agpNumOk=(v)=>v===""||/^[\d.,]*$/.test(v);
 const agpSeg=(opciones,val,on)=><div style={{display:"flex",gap:3,padding:3,borderRadius:10,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",marginBottom:12}}>{opciones.map(([v,l])=><button key={v} type="button" onClick={()=>on(v)} style={{flex:"1 1 0",minWidth:0,padding:"8px 6px",fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:val===v?"rgba(184,149,106,0.24)":"transparent",color:val===v?GOLD_LIGHT:"rgba(255,255,255,0.6)",fontFamily:"inherit",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l}</button>)}</div>;
 const agpLink={border:"none",background:"transparent",padding:0,color:GOLD_LIGHT,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"};
 // Comprobante: se pega con ⌘V, se arrastra o se elige. Fotos o PDF.
+// Si hay más de un recuadro esperando (pago del cliente y transferencia al proveedor), el ⌘V va
+// solo al elegido: el último que se tocó o sobre el que está el mouse. Con uno solo, va a ese.
+const agpZonas=new Set();let agpZonaElegida=null;const agpAvisarZonas=new Set();
+const agpElegirZona=(id)=>{agpZonaElegida=id;agpAvisarZonas.forEach(f=>f());};
 function AgpComprobante({url,onUrl,token,prefijo,celu}){
   const [subiendo,setSubiendo]=useState(false);const [sobre,setSobre]=useState(false);
+  const idRef=useRef(null);if(!idRef.current)idRef.current=Math.random().toString(36).slice(2);
+  const id=idRef.current;
+  const [,refrescar]=useState(0);
   const subir=async(f)=>{if(!f||subiendo)return;setSubiendo(true);try{await onUrl(await agpSubir(f,token,prefijo));}catch(e){toast(e.message,"error");}setSubiendo(false);};
   useEffect(()=>{
     if(url)return;
-    const onPaste=(e)=>{const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/")||i.type==="application/pdf");const f=it?.getAsFile();if(f){e.preventDefault();subir(f);}};
+    const f=()=>refrescar(x=>x+1);
+    agpZonas.add(id);agpAvisarZonas.add(f);agpAvisarZonas.forEach(g=>g());
+    return()=>{agpZonas.delete(id);agpAvisarZonas.delete(f);if(agpZonaElegida===id)agpZonaElegida=null;agpAvisarZonas.forEach(g=>g());};
+  },[url]);
+  useEffect(()=>{
+    if(url)return;
+    const onPaste=(e)=>{
+      const mia=agpZonaElegida?agpZonaElegida===id:agpZonas.size===1;
+      if(!mia)return;
+      const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/")||i.type==="application/pdf");const f=it?.getAsFile();if(f){e.preventDefault();subir(f);}
+    };
     window.addEventListener("paste",onPaste);return()=>window.removeEventListener("paste",onPaste);
   });
   if(url){const pdf=/\.pdf($|\?)/i.test(url);return <div style={{display:"flex",alignItems:"center",gap:10,padding:8,borderRadius:10,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.35)",marginBottom:12}}>
@@ -14393,12 +14410,18 @@ function AgpComprobante({url,onUrl,token,prefijo,celu}){
     <a href={url} target="_blank" rel="noreferrer" style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#4ade80",textDecoration:"none"}}>Ver comprobante</a>
     <button type="button" onClick={()=>onUrl("")} style={{...agpLink,color:"#ff8a8a"}}>Quitar</button>
   </div>;}
-  return <label onDragOver={e=>{e.preventDefault();setSobre(true);}} onDragLeave={()=>setSobre(false)} onDrop={e=>{e.preventDefault();setSobre(false);subir(e.dataTransfer.files?.[0]);}}
-    style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,minHeight:52,padding:"10px 12px",borderRadius:10,border:`1.5px dashed ${sobre?GOLD:"rgba(255,255,255,0.18)"}`,background:sobre?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.02)",cursor:subiendo?"wait":"pointer",marginBottom:12,boxSizing:"border-box",textAlign:"center"}}>
+  const varias=agpZonas.size>1;
+  const activa=sobre||(varias&&agpZonaElegida===id);
+  const texto=subiendo?"Subiendo…":celu?"Subir comprobante":varias?(agpZonaElegida===id?"Listo: pegá con ⌘V acá":"Tocá acá para pegar con ⌘V"):"Subí el comprobante o pegalo con ⌘V";
+  return <div onMouseEnter={()=>varias&&agpElegirZona(id)} onClick={()=>agpElegirZona(id)}
+    onDragOver={e=>{e.preventDefault();setSobre(true);}} onDragLeave={()=>setSobre(false)} onDrop={e=>{e.preventDefault();setSobre(false);subir(e.dataTransfer.files?.[0]);}}
+    style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",minHeight:52,padding:"10px 12px",borderRadius:10,border:`1.5px ${activa?"solid":"dashed"} ${activa?GOLD:"rgba(255,255,255,0.18)"}`,background:activa?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.02)",cursor:subiendo?"wait":"pointer",marginBottom:12,boxSizing:"border-box",textAlign:"center",transition:"border-color 120ms, background 120ms"}}>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-    <span style={{fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.65)"}}>{subiendo?"Subiendo…":celu?"Subir comprobante":"Subí el comprobante o pegalo con ⌘V"}</span>
-    <input type="file" accept="image/*,application/pdf" style={{display:"none"}} disabled={subiendo} onChange={e=>{subir(e.target.files?.[0]);e.target.value="";}}/>
-  </label>;
+    <span style={{fontSize:12.5,fontWeight:activa?800:600,color:activa?GOLD_LIGHT:"rgba(255,255,255,0.65)"}}>{texto}</span>
+    <label onClick={e=>e.stopPropagation()} style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.5)",textDecoration:"underline",cursor:"pointer"}}>{celu?"Elegir":"o elegí un archivo"}
+      <input type="file" accept="image/*,application/pdf" style={{display:"none"}} disabled={subiendo} onChange={e=>{subir(e.target.files?.[0]);e.target.value="";}}/>
+    </label>
+  </div>;
 }
 
 function AgpPanel({token,allClients}){
