@@ -745,6 +745,9 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
   const copiar = (k, t) => { try { navigator.clipboard.writeText(String(t)); setCopiado(k); setTimeout(() => setCopiado(""), 1600); } catch {} };
   const btnCopiar = (k, t) => <button type="button" onClick={() => copiar(k, t)} style={{ flexShrink: 0, height: 30, padding: "0 11px", borderRadius: 8, border: "1px solid rgba(30,125,79,.3)", background: copiado === k ? "#1e7d4f" : "#fff", color: copiado === k ? "#fff" : "#1e5c3d", fontSize: 11.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", transition: "all .15s" }}>{copiado === k ? "Copiado ✓" : "Copiar"}</button>;
   const totalGrande = todoEnPesos ? `ARS ${Math.round(data.total * tc).toLocaleString("es-AR")}` : fmt(data.total);
+  // Saldo en cero (29/10/2026): ya está pago, así que no se muestran total ni datos para pagar; queda
+  // "Saldo abonado" con la entrega, el día y el horario.
+  const pagado = !(Number(data.total || 0) > 0.009);
   const fila = (l, v) => <div style={{ display: "flex", justifyContent: "space-between", gap: 14, padding: "11px 0", borderTop: `1px solid ${LINE}`, fontSize: 13.5 }}><span style={{ color: MUTED }}>{l}</span><span style={{ fontWeight: 700, textAlign: "right", color: INK }}>{v}</span></div>;
   return <div style={pageStyle()}>
     <div style={{ maxWidth: 480, width: "100%", background: CREAM, color: INK, borderRadius: 22, overflow: "hidden", boxShadow: "0 30px 90px rgba(0,0,0,0.55)" }}>
@@ -766,7 +769,18 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
       </div>
 
       <div style={{ padding: "20px 20px 22px" }}>
-        <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "18px 18px 8px", marginBottom: 12 }}>
+        {pagado ? <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "18px 18px 8px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ width: 30, height: 30, borderRadius: 99, background: "#e6f4ec", color: "#1e7d4f", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span>
+            <div><p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#1e7d4f", letterSpacing: "-0.01em" }}>Saldo abonado</p><p style={{ margin: "1px 0 0", fontSize: 12.5, color: MUTED }}>No tenés nada pendiente de pago</p></div>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            {fila("Entrega", entregaLabel)}
+            {data.delivery_day && fila("Día", diaTxt(data.delivery_day).replace(/^./, (c) => c.toUpperCase()))}
+            {data.delivery_slot && fila("Horario", `${data.delivery_slot} hs`)}
+          </div>
+        </div>
+        : <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 16, padding: "18px 18px 8px", marginBottom: 12 }}>
           <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED }}>Total a abonar</p>
           <p style={{ margin: "6px 0 0", fontSize: 30, fontWeight: 800, letterSpacing: "-0.025em", color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.05 }}>{totalGrande}</p>
           {todoEnPesos && <p style={{ margin: "4px 0 0", fontSize: 12.5, color: MUTED, fontVariantNumeric: "tabular-nums" }}>{fmt(data.total)} · dólar {tc.toLocaleString("es-AR")}</p>}
@@ -774,9 +788,9 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
             {fila("Entrega", entregaLabel)}
             {fila("Pago", payLabel)}
           </div>
-        </div>
+        </div>}
 
-        {transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.22)", borderRadius: 16, padding: "16px 16px 14px", marginBottom: 12 }}>
+        {!pagado && transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.22)", borderRadius: 16, padding: "16px 16px 14px", marginBottom: 12 }}>
           <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#1e5c3d", margin: "0 0 10px" }}>Datos para transferir</p>
           {data.transfer.alias && (() => {
             // El dato guardado trae "CVU xxxx · Alias yyyy" (antes "CBU xxxx · CUIT yyyy"): cada dato en su
@@ -804,7 +818,7 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
           <p style={{ fontSize: 11, color: "#3d6b52", margin: "10px 0 0", lineHeight: 1.5 }}>El monto en pesos se ajusta al dólar del día en que transferís. Mandanos el comprobante por WhatsApp.</p>
         </div>}
 
-        {data.crypto_wallet && <div style={{ background: "#f4efe3", border: `1px solid ${LINE}`, borderRadius: 16, padding: "16px", marginBottom: 12 }}>
+        {!pagado && data.crypto_wallet && <div style={{ background: "#f4efe3", border: `1px solid ${LINE}`, borderRadius: 16, padding: "16px", marginBottom: 12 }}>
           <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, margin: "0 0 8px" }}>Billetera USDT · TRC-20</p>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <p style={{ flex: 1, fontSize: 12, fontFamily: "'SF Mono','JetBrains Mono',monospace", wordBreak: "break-all", margin: 0, fontWeight: 700 }}>{data.crypto_wallet}</p>
@@ -833,7 +847,7 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
           </div>}
         </div>}
 
-        <button onClick={onEdit} style={{ width: "100%", height: 48, fontSize: 14, fontWeight: 800, borderRadius: 13, border: "none", background: NAVY, color: "#fff", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 10px 24px rgba(10,22,40,0.2)" }}>{entregada ? "Cambiar la forma de pago" : delivery === "ri" ? "Cambiar la forma de pago" : "Cambiar día, horario o forma de pago"}</button>
+        <button onClick={onEdit} style={{ width: "100%", height: 48, fontSize: 14, fontWeight: 800, borderRadius: 13, border: "none", background: NAVY, color: "#fff", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 10px 24px rgba(10,22,40,0.2)" }}>{entregada ? "Cambiar la forma de pago" : delivery === "ri" ? "Cambiar la forma de pago" : pagado ? "Cambiar día u horario" : "Cambiar día, horario o forma de pago"}</button>
         <p style={{ textAlign: "center", fontSize: 11.5, color: MUTED, margin: "10px 0 0", lineHeight: 1.5 }}>{entregada ? "La carga ya se entregó: solo podés cambiar cómo pagás." : "Podés cambiarlo las veces que quieras: vale la última confirmación."}</p>
       </div>
     </div>
