@@ -12490,6 +12490,22 @@ function AgentsPanel({token}){
         </div>
         {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
         {showRefundForm===a.auth_user_id&&<RefundForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowRefundForm(null);load();flash("Devolución cargada");}}/>}
+        {(()=>{
+          // Acuerdo del 28/10/2026 (agent_signups.cc_descuenta_al_pickup): el costo del vuelo se descuenta
+          // cuando el courier hace el pick-up (lo hace la base sola). Mientras tanto se muestra acá aparte.
+          if(!a.cc_descuenta_al_pickup)return null;
+          const esp=flights.filter(f=>f.agent_id===a.auth_user_id&&f.dispatched_at&&!f.carrier_pickup_at&&f.payment_method==="cuenta_corriente"&&Number(f.total_cost_usd||0)>0).sort((x,y)=>String(x.flight_code).localeCompare(String(y.flight_code)));
+          if(!esp.length)return null;
+          const tot=esp.reduce((t,f)=>t+Number(f.total_cost_usd||0),0);
+          return <div style={{marginBottom:12,padding:"12px 14px",borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.22)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <p style={{fontSize:12.5,fontWeight:700,color:"#fbbf24",margin:0}}>Esperando pick-up · se descuentan cuando el courier los retire</p>
+              <p style={{fontSize:14,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd(tot)}</p>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{esp.map(f=><span key={f.id} style={{fontSize:11.5,padding:"4px 9px",borderRadius:7,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}><span style={{fontFamily:"monospace",color:IC,fontWeight:700}}>{f.flight_code}</span> · {usd(f.total_cost_usd)}</span>)}</div>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"8px 0 0"}}>Si se descontaran hoy, la cuenta quedaría en <strong style={{color:bal-tot<0?"#f87171":"#4ade80"}}>{usd(bal-tot)}</strong>.</p>
+          </div>;
+        })()}
         {movs.length>0?<><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Fecha","Tipo","Monto","Descripción","Vuelo"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
