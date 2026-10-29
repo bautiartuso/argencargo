@@ -90,6 +90,7 @@ export default function Servicios() {
               <p className="bajada">{s.bajada}</p>
             </div>
             <a className="wa" href={waL(s.wa)} target="_blank" rel="noopener noreferrer">Consultar por WhatsApp →</a>
+            {s.k === "retenidos" && <a href="/liberacion-envios-courier-retenidos" style={{ display: "inline-block", marginTop: 12, fontSize: 14, fontWeight: 700, color: "#3B7DD8", textDecoration: "none" }}>Cómo liberamos un envío retenido →</a>}
           </div>
           <ul>{s.puntos.map((p) => <li key={p}><span><Ico d={CHECK} size={14} /></span>{p}</li>)}</ul>
         </section>)}
