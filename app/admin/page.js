@@ -3193,7 +3193,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           de las gestiones que salieron historicamente de esta op. */}
       {payments.length>0&&<Card title="Gestión de pagos vinculada">
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>
-          Esta operación tiene {payments.length} gestión{payments.length!==1?"es":""} de pago asociada{payments.length!==1?"s":""}. Se administran desde la solapa <strong style={{color:"rgba(255,255,255,0.8)"}}>Gestión de pagos</strong>, con su propio código AGP — el cobro de esta op es independiente.
+          Esta operación tiene {payments.length} gestión{payments.length!==1?"es":""} de pago asociada{payments.length!==1?"s":""}. Se administran desde la solapa <strong style={{color:"rgba(255,255,255,0.8)"}}>Pagos internacionales</strong>, con su propio código AGP — el cobro de esta op es independiente.
         </p>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <tbody>
@@ -14324,7 +14324,8 @@ const AGP_CABLE_PCT=2.5; // lo que cobra SolFin por cable (2,25% hasta el 29/10/
 const agpCostoCable=(m)=>m>0?Math.round((m*AGP_CABLE_PCT/100+(m<10000?40:0))*100)/100:0;
 const agpR2=(v)=>Math.round((Number(v)||0)*100)/100;
 const agpUsd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const agpArs=(v)=>`$ ${Math.round(Number(v||0)).toLocaleString("es-AR")}`;
+// Pesos con los centavos exactos (30/10/2026: no redondear lo que se le cobra al cliente).
+const agpArs=(v)=>`$ ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const agpTc=(v)=>Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:2});
 const agpTxt=(v)=>v==null||v===""?"":String(v).replace(".",",");
 // TC de referencia: el último que usó la financiera; si no hay, el blue del día.
@@ -14361,7 +14362,8 @@ const agpEstado=(p,cs)=>{
 };
 const agpCobra=(p)=>p.client_currency==="ARS"&&Number(p.client_amount_ars)>0?agpArs(p.client_amount_ars):agpUsd(p.client_amount_usd);
 const AGP_ESTADO={pago:"Falta el pago",dolar:"Falta dolarizar",giro:"Falta transferir",comprobante:"Falta el comprobante",tarjeta:"Tarjeta sin debitar",cerrada:"Cerrada"};
-const agpGanancia=(p)=>agpR2(Number(p.client_paid_amount_usd??p.client_amount_usd??0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0));
+// Ganancia: con pagos, lo que quedó en dólares; sin pagos, lo esperado (por transferencia, menos el 2,5% de SolFin).
+const agpGanancia=(p)=>{const cobrado=p.client_paid_amount_usd!=null?Number(p.client_paid_amount_usd):Number(p.client_amount_usd||0)*(p.client_currency==="ARS"?1-AGP_FIN_PCT/100:1);return agpR2(cobrado-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0));};
 async function agpSincronizar(token,p,cs){
   const ult=[...(cs||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
   const pagado=(cs||[]).reduce((s,c)=>s+agpAplica(c),0);
@@ -14424,7 +14426,10 @@ function AgpComprobante({url,onUrl,token,prefijo,celu}){
   </div>;
 }
 
+const COLS_AGP_FULL="minmax(240px,1.6fr) minmax(130px,1fr) minmax(170px,1.15fr) minmax(120px,0.9fr) 190px 20px";
+const COLS_AGP_EMP="minmax(240px,1.6fr) minmax(130px,1fr) minmax(170px,1.15fr) 190px 20px";
 function AgpPanel({token,allClients}){
+  const COLS_AGP=esEmpleado()?COLS_AGP_EMP:COLS_AGP_FULL;
   const celu=useEsCelu();
   const [rows,setRows]=useState([]);const [cobros,setCobros]=useState({});const [dolars,setDolars]=useState([]);
   const [lo,setLo]=useState(true);const [q,setQ]=useState("");
@@ -14480,26 +14485,43 @@ function AgpPanel({token,allClients}){
 
     {lista.length===0
       ?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2.5rem 0"}}>{q?"Sin resultados.":vista==="curso"?"No hay gestiones en curso.":"No hay gestiones cerradas."}</p>
-      :<div style={{borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
-        {!celu&&<div style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 130px 130px 170px 24px",gap:16,padding:"10px 18px",background:"rgba(255,255,255,0.03)",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>
-          <span>Gestión</span><span style={{textAlign:"right"}}>Se gira</span><span style={{textAlign:"right"}}>Le cobrás</span><span>Estado</span><span/>
+      :<div style={{borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",background:"rgba(255,255,255,0.015)"}}>
+        {!celu&&<div style={{display:"grid",gridTemplateColumns:COLS_AGP,gap:24,alignItems:"center",padding:"12px 22px",background:"rgba(255,255,255,0.035)",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.42)",textTransform:"uppercase",letterSpacing:"0.1em"}}>
+          <span>Gestión</span><span style={{textAlign:"right"}}>Se gira</span><span style={{textAlign:"right"}}>Le cobrás</span>{!esEmpleado()&&<span style={{textAlign:"right"}}>Ganancia</span>}<span style={{paddingLeft:8}}>Estado</span><span/>
         </div>}
-        {lista.map(p=>{
-          const e=est(p);const open=abierta===p.id;
-          return <div key={p.id} style={{borderTop:"1px solid rgba(255,255,255,0.06)",background:open?"rgba(184,149,106,0.04)":"transparent"}}>
+        {lista.map((p,ix)=>{
+          const e=est(p);const open=abierta===p.id;const cerr=e==="cerrada";
+          const gan=agpGanancia(p);const ars=p.client_currency==="ARS"&&Number(p.client_amount_ars)>0;
+          const nom=nombreDe(p);const ini=nom.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join("").toUpperCase();
+          const num=(v,{color="#fff",size=15,w=800}={})=><span style={{display:"block",fontSize:size,fontWeight:w,color,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>;
+          const sub=(v,color="rgba(255,255,255,0.42)")=><span style={{display:"block",marginTop:3,fontSize:11.5,fontWeight:600,color,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{v}</span>;
+          const seGira=<div style={{textAlign:celu?"left":"right",minWidth:0}}>{num(agpUsd(p.giro_amount_usd))}{sub(agpConCc(p)?`+ ${agpUsd(p.cost_comision_giro)} SolFin`:"giro")}</div>;
+          const cobra=<div style={{textAlign:celu?"left":"right",minWidth:0}}>{num(agpCobra(p),{color:GOLD_LIGHT})}{sub(ars?`Transferencia · TC ${agpTc(p.client_exchange_rate)}`:"Efectivo · dólares")}</div>;
+          const ganUI=!esEmpleado()&&<div style={{textAlign:celu?"left":"right",minWidth:0}}>{num(`${gan<0?"−":""}${agpUsd(Math.abs(gan))}`,{color:cerr?(gan>=0?"#4ade80":"#f87171"):gan>=0?"rgba(74,222,128,0.75)":"#f87171"})}{sub(cerr?"final":"estimada")}</div>;
+          const chipUI=<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12,fontWeight:800,padding:"6px 12px",borderRadius:999,whiteSpace:"nowrap",background:cerr?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:cerr?"#4ade80":"#fbbf24",border:`1px solid ${cerr?"rgba(34,197,94,0.25)":"rgba(251,191,36,0.22)"}`}}><span style={{width:6,height:6,borderRadius:"50%",background:"currentColor"}}/>{AGP_ESTADO[e]}</span>;
+          const quien=<div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+            <span style={{flexShrink:0,width:38,height:38,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:GOLD_LIGHT,background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.25)"}}>{ini||"—"}</span>
+            <div style={{minWidth:0}}>
+              <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nom}</p>
+              <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,fontWeight:700}}>{p.agp_code}</span> · {formatDateShort(p.date)}{p.clients?.client_code?` · ${p.clients.client_code}`:""}{p.operations?.operation_code?` · ${p.operations.operation_code}`:""}</p>
+            </div>
+          </div>;
+          return <div key={p.id} style={{borderTop:ix?"1px solid rgba(255,255,255,0.06)":"none",background:open?"rgba(184,149,106,0.045)":"transparent",boxShadow:open?`inset 3px 0 0 ${GOLD}`:"none",transition:"background 140ms"}}>
             <div role="button" tabIndex={0} onClick={()=>setAbierta(open?null:p.id)} onKeyDown={ev=>{if(ev.key==="Enter")setAbierta(open?null:p.id);}}
-              style={{cursor:"pointer",display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":"minmax(0,1.6fr) 130px 130px 170px 24px",gap:celu?"6px 12px":16,alignItems:"center",padding:celu?"12px 14px":"12px 18px"}}>
-              <div style={{minWidth:0}}>
-                <p style={{margin:0,fontSize:14.5,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombreDe(p)}</p>
-                <p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,fontWeight:700}}>{p.agp_code}</span> · {formatDateShort(p.date)}{p.description?` · ${p.description}`:""}{p.operations?.operation_code?` · ${p.operations.operation_code}`:""}</p>
-              </div>
-              {celu?<div style={{textAlign:"right"}}>{chip(e)}</div>:<>
-                <span style={{textAlign:"right",fontSize:14,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{agpUsd(p.giro_amount_usd)}</span>
-                <span style={{textAlign:"right",fontSize:14,fontWeight:700,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{agpCobra(p)}</span>
-                <span>{chip(e)}</span>
-                <svg width="14" height="14" viewBox="0 0 12 12" style={{transform:open?"rotate(180deg)":"none",transition:"transform 160ms",opacity:0.5}}><path d="M2.5 4.5 6 8l3.5-3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              onMouseEnter={ev=>{if(!open)ev.currentTarget.style.background="rgba(255,255,255,0.025)";}} onMouseLeave={ev=>{ev.currentTarget.style.background="transparent";}}
+              style={{cursor:"pointer",display:"grid",gridTemplateColumns:celu?"minmax(0,1fr) auto":COLS_AGP,gap:celu?"12px":24,alignItems:"center",padding:celu?"14px 14px":"16px 22px"}}>
+              {celu?<>
+                {quien}<div>{chipUI}</div>
+                <div style={{gridColumn:"1 / -1",display:"flex",flexDirection:"column",gap:10,paddingTop:12,borderTop:"1px dashed rgba(255,255,255,0.07)"}}>
+                  {[["Se gira",agpUsd(p.giro_amount_usd),agpConCc(p)?`+ ${agpUsd(p.cost_comision_giro)} SolFin`:null,"#fff"],["Le cobrás",agpCobra(p),ars?`Transferencia · TC ${agpTc(p.client_exchange_rate)}`:"Efectivo · dólares",GOLD_LIGHT],...(esEmpleado()?[]:[["Ganancia",`${gan<0?"−":""}${agpUsd(Math.abs(gan))}`,cerr?"final":"estimada",gan>=0?"#4ade80":"#f87171"]])].map(([l,v,s,c])=><div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                    <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",paddingTop:2}}>{l}</span>
+                    <span style={{textAlign:"right"}}>{num(v,{color:c,size:14.5})}{s&&sub(s)}</span>
+                  </div>)}
+                </div>
+              </>:<>
+                {quien}{seGira}{cobra}{ganUI}<div style={{paddingLeft:8}}>{chipUI}</div>
+                <svg width="14" height="14" viewBox="0 0 12 12" style={{justifySelf:"end",transform:open?"rotate(180deg)":"none",transition:"transform 160ms",opacity:0.5}}><path d="M2.5 4.5 6 8l3.5-3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </>}
-              {celu&&<p style={{gridColumn:"1 / -1",margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)",fontVariantNumeric:"tabular-nums"}}>Se gira <strong style={{color:"#fff"}}>{agpUsd(p.giro_amount_usd)}</strong> · le cobrás <strong style={{color:"#fff"}}>{agpCobra(p)}</strong></p>}
             </div>
             {open&&<AgpDetalle p={p} cobros={cobros[p.id]||[]} dolars={dolars} token={token} tcRef={tcRef} onChanged={load} onEditar={()=>{setForm({modo:"editar",p});window.scrollTo({top:0,behavior:"smooth"});}} onBorrada={()=>{setAbierta(null);load();}}/>}
           </div>;
@@ -14532,7 +14554,7 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
   const base=agpR2(m+cargo);
   const recargo=transf?agpR2(base*AGP_FIN_PCT/100):0;
   const totalUsd=agpR2(base+recargo);
-  const totalArs=transf&&t>0&&m>0?Math.round(totalUsd*t):0;
+  const totalArs=transf&&t>0&&m>0?agpR2(totalUsd*t):0;
   const debeUsd=transf?(t>0?agpR2(totalArs/t):0):totalUsd; // lo que descuentan los pagos (bruto)
   const netoUsd=transf?(t>0?agpR2(totalArs*(1-AGP_FIN_PCT/100)/t):0):totalUsd;
   const gan=agpR2(netoUsd-sale);
@@ -14639,7 +14661,7 @@ function AgpDetalle({p,cobros,dolars,token,tcRef,onChanged,onEditar,onBorrada}){
   const ars=met!=="efvo_usd";
   const tcG=Number(p.client_exchange_rate||0)||tcRef;
   const [pTc,setPTc]=useState(tcG?String(tcG):"");
-  const saldoEn=(enArs,t)=>saldo>0?(enArs?(t>0?String(Math.round(saldo*t)):""):agpTxt(saldo.toFixed(2))):"";
+  const saldoEn=(enArs,t)=>saldo>0?(enArs?(t>0?agpTxt(agpR2(saldo*t).toFixed(2)):""):agpTxt(saldo.toFixed(2))):"";
   const [pMonto,setPMonto]=useState(saldoEn(p.client_currency==="ARS",tcG));
   const [pFecha,setPFecha]=useState(hoyAR());
   const [pComp,setPComp]=useState("");
@@ -18490,7 +18512,7 @@ function AdminDashboard({session,onLogout}){
       {key:"agents",label:"Aéreos",p:["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"lclfcl",label:"Marítimo LCL/FCL",p:["M3 7h18v10H3z","M7 7v10","M12 7v10","M17 7v10","M1 19h22"]},
-      {key:"agp",label:"Gestión de pagos",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
+      {key:"agp",label:"Pagos internacionales",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
     {section:"Comercial",items:[
