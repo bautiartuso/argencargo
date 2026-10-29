@@ -24,6 +24,10 @@ REGLAS:
   · Si está en chino, traducila al inglés: "无线耳机" → "Wireless earphones".
   · Si está en español u otro idioma, traducila al inglés: "Auriculares inalámbricos" → "Wireless earphones".
   · Usá terminología comercial estándar (la que aparecería en una commercial invoice).
+- FOTOS (29/10/2026): muchas facturas traen la foto de cada producto en la fila. Si la descripción
+  está cortada, es solo un código de modelo ("AKG27", "SH9") o no dice qué es, MIRÁ LA FOTO de esa
+  fila y armá una descripción en inglés de lo que se ve, conservando el código y lo que sí diga el
+  texto (ej. "AKG27 headphone ear pads, black velvet"). No inventes marcas ni datos que no estén.
 - Cantidad debe ser un número entero. Precio unitario debe ser número decimal.
 - HS Code: extraé el código tal cual aparece. Suele ser 6, 8 o 10 dígitos (ej: "8517.62", "8517.62.00", "85176200"). Si no aparece HS code para ese item, omitilo (no inventes).
 - Devolvé SOLO el JSON, sin texto adicional ni markdown.
