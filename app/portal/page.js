@@ -78,6 +78,17 @@ const ensureFreshToken=async(token)=>{
   }
   return token;
 };
+// Por qué no se pudo leer la factura, en palabras del cliente (no el código del servidor).
+const motivoFactura=(status,j,t)=>{
+  const e=String(j?.error||"");
+  if(status===401||e==="no_auth")return t("pdf.errSesion");
+  if(status===413)return t("pdf.errPesada");
+  if(status===429||e==="rate_limited")return t("pdf.errMuchos");
+  if(/max 10 pages/i.test(e))return t("pdf.errPaginas");
+  if(/missing images/i.test(e))return t("pdf.errFile");
+  if(/invalid JSON/i.test(e))return t("pdf.errIlegible");
+  return t("pdf.errServidor");
+};
 // Avisa al admin de un evento del cliente: deja la notificacion in-app (la campanita del panel)
 // y dispara el push. Antes ninguno de estos eventos notificaba nada, asi que el admin se enteraba
 // solo si entraba a mirar. Es best-effort: si falla el aviso, la accion del cliente ya se guardo.
@@ -663,10 +674,11 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
       }
       setStage("extracting");
       const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
-      const j=await r.json();
-      if(!j.ok){setError(j.error||t("pdf.readError"));setStage("error");return null;}
+      const j=await r.json().catch(()=>({}));
+      // Motivo claro del rechazo (29/10/2026): antes se mostraba el código crudo ("no_auth").
+      if(!r.ok||!j.ok){setError(motivoFactura(r.status,j,t));setStage("error");return null;}
       return Array.isArray(j.items)?j.items:[];
-    }catch(e){console.error(e);setError(e.message||t("pdf.procError"));setStage("error");return null;}
+    }catch(e){console.error(e);setError(/pdf|password|invalid/i.test(String(e?.message||e))?t("pdf.errFile"):t("pdf.errRed"));setStage("error");return null;}
   };
 
   const updateItem=(i,f,v)=>setItems(p=>p.map((it,j)=>j===i?{...it,[f]:v}:it));
