@@ -376,15 +376,15 @@ export default function EntregaPublica({ params }) {
       </div>
 
       <div style={{ padding: "22px 24px 26px", display: "flex", flexDirection: "column", gap: 16, background: CREAM, color: INK }}>
-        {paso===1&&<>
-        {modoRi&&<div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 15px", borderRadius: 11, background: "#eaf6ef", border: "1px solid rgba(30,125,79,.25)", color: "#1e5c3d", fontSize: 12.5, lineHeight: 1.5, fontWeight: 600 }}>
-          <span style={{ fontSize: 16 }}>📦</span><span>Tu carga {op.status === "entregada" ? "fue entregada" : "se entrega"} directamente en tu domicilio por el courier internacional — no hace falta coordinar nada. Acá tenés el detalle completo, la documentación y los datos para abonar.</span>
-        </div>}
+        {(paso===1||modoRi)&&<>
+        {/* RI con entrega directa (29/10/2026): no es un link de retiro sino "tu importación" — dónde está,
+            el detalle y el pago, todo en una sola página. El courier la entrega en el domicilio. */}
+        {modoRi&&<SeguimientoRi op={op} />}
         {/* 01 — carga */}
         {!multi&&<div style={stepStyle()}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>01</span><span style={stepTitleStyle()}>Tu carga</span></div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}>{!modoRi&&<span style={stepNStyle()}>01</span>}<span style={stepTitleStyle()}>Tu carga</span></div>
           {detalleOp}
-          {paso===1&&<button onClick={()=>setPaso(modoRi?3:2)} style={nextBtnStyle()}>Continuar →</button>}
+          {paso===1&&!modoRi&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
         </div>}
 
         {/* Link único (28/10/2026): varias cargas listas se coordinan como una sola visita. Todas se
@@ -530,10 +530,10 @@ export default function EntregaPublica({ params }) {
         </div>
         </>}
 
-        {paso===3&&<>
+        {(paso===3||modoRi)&&<>
         {/* 03 — total y pago */}
         <div style={stepStyle()}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>03</span><span style={stepTitleStyle()}>Total y forma de pago</span></div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}>{!modoRi&&<span style={stepNStyle()}>03</span>}<span style={stepTitleStyle()}>{modoRi ? "Pago" : "Total y forma de pago"}</span></div>
           {/* Rediseño 28/10/2026: el total en el mismo bloque navy del paso 1, con qué incluye y cuándo. */}
           {(() => {
             const enPesos = payMethods[0] === "transferencia" && tcVenta > 0;
@@ -581,9 +581,9 @@ export default function EntregaPublica({ params }) {
         {formError && <ErrorBanner msg={formError} />}
         {entregada
           ? <button onClick={()=>window.location.reload()} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver sin cambiar</button>
-          : <button onClick={()=>setPaso(modoRi?1:2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver{modoRi?"":" a la forma de entrega"}</button>}
-        <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : entregada ? "Guardar forma de pago" : "Confirmar y avisar a Argencargo"}</button>
-        <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>{entregada ? "Guardamos tu nueva forma de pago — cualquier duda te respondemos por WhatsApp." : modoRi ? "Al confirmar registramos tu forma de pago — cualquier duda te respondemos por WhatsApp." : "Al confirmar, un asesor coordina el retiro o el envío por WhatsApp."}</p>
+          : !modoRi && <button onClick={()=>setPaso(2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver a la forma de entrega</button>}
+        <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : entregada ? "Guardar forma de pago" : modoRi ? "Ver los datos para pagar" : "Confirmar y avisar a Argencargo"}</button>
+        <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>{entregada ? "Guardamos tu nueva forma de pago — cualquier duda te respondemos por WhatsApp." : modoRi ? "Te mostramos los datos y el monto exacto. Cualquier duda te respondemos por WhatsApp." : "Al confirmar, un asesor coordina el retiro o el envío por WhatsApp."}</p>
         </>}
       </div>
 
@@ -834,6 +834,40 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
     </div>
   </div>;
 }
+// Seguimiento de una importación RI con entrega directa: dónde está la carga, en una línea de 4 pasos.
+function SeguimientoRi({ op }) {
+  const ETAPAS = [
+    { l: "En origen", st: ["pendiente", "en_deposito_origen", "en_preparacion"] },
+    { l: "En viaje", st: ["en_transito"] },
+    { l: "En aduana", st: ["arribo_argentina", "en_aduana"] },
+    { l: "Entregada", st: ["entregada", "operacion_cerrada"] },
+  ];
+  let idx = ETAPAS.findIndex((e) => e.st.includes(op.status));
+  if (op.delivery_completed_at) idx = 3;
+  const entregada = idx === 3;
+  const frase = entregada ? "El courier ya la entregó en tu domicilio."
+    : idx === 2 ? "Llegó a Argentina y está en gestión aduanera. Después el courier la lleva directo a tu domicilio."
+    : idx === 1 ? `Está viajando${op.origin ? ` desde ${op.origin}` : ""}. El courier la entrega directo en tu domicilio.`
+    : "Está en nuestro depósito de origen, preparándose para viajar.";
+  return <div style={{ ...stepStyle(), padding: "18px 18px 16px" }}>
+    <style>{`@keyframes ri-pulso{0%,100%{box-shadow:0 0 0 0 rgba(184,149,106,.5)}60%{box-shadow:0 0 0 8px rgba(184,149,106,0)}}@media (prefers-reduced-motion: reduce){.ri-punto{animation:none!important}}`}</style>
+    <p style={{ margin: 0, fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTED }}>Tu importación</p>
+    <p style={{ margin: "5px 0 0", fontSize: 19, fontWeight: 800, color: INK, letterSpacing: "-0.015em" }}>{entregada ? "Entregada en tu domicilio" : ETAPAS[Math.max(0, idx)].l}</p>
+    <p style={{ margin: "4px 0 16px", fontSize: 13, color: MUTED, lineHeight: 1.5 }}>{frase}</p>
+    <div style={{ display: "flex", position: "relative" }}>
+      <div style={{ position: "absolute", top: 7, left: "12.5%", right: "12.5%", height: 2, background: "#e9e3d6", borderRadius: 2 }} />
+      <div style={{ position: "absolute", top: 7, left: "12.5%", width: `${Math.max(0, idx) * 25}%`, height: 2, background: entregada ? "#1e7d4f" : GOLD_A, borderRadius: 2 }} />
+      {ETAPAS.map((e, i) => {
+        const hecho = i < idx || entregada, on = i === idx && !entregada;
+        return <div key={e.l} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, position: "relative" }}>
+          <span className={on ? "ri-punto" : ""} style={{ width: 16, height: 16, borderRadius: 99, boxSizing: "border-box", display: "grid", placeItems: "center", fontSize: 9, fontWeight: 900, color: "#fff", background: hecho ? (entregada ? "#1e7d4f" : GOLD_A) : on ? GOLD_A : "#fff", border: hecho || on ? "none" : "2px solid #ddd5c4", animation: on ? "ri-pulso 2s ease-out infinite" : "none" }}>{hecho ? "✓" : ""}</span>
+          <span style={{ fontSize: 11, fontWeight: on || (entregada && i === 3) ? 800 : 600, color: on ? INK : hecho ? "#5c5647" : "#b3ab99", textAlign: "center", lineHeight: 1.2 }}>{e.l}</span>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 // Carga que todavía no está lista: candado que se cierra y la etapa en la que va. Pensado para el
 // celular (casi todos abren el link desde WhatsApp).
 const ETAPAS_LOCK = [
