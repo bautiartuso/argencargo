@@ -14405,7 +14405,7 @@ function AgpModal({celu,onClose,children,ancho=620}){
 const agpCerrarBtn=(onClose)=><button onClick={onClose} aria-label="Cerrar" style={{flexShrink:0,width:36,height:36,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:18,cursor:"pointer",lineHeight:1}}>×</button>;
 const agpLinea=(l,v,{color,fuerte,sub}={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:fuerte?"12px 0 2px":"5px 0",marginTop:fuerte?6:0,borderTop:fuerte?"1px solid rgba(255,255,255,0.1)":"none"}}>
   <span style={{fontSize:fuerte?14:13,fontWeight:fuerte?800:500,color:fuerte?"#fff":"rgba(255,255,255,0.6)"}}>{l}</span>
-  <span style={{textAlign:"right"}}><span style={{display:"block",fontSize:fuerte?20:13.5,fontWeight:fuerte?900:700,color:color||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span>{sub&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.42)",fontVariantNumeric:"tabular-nums",marginTop:1}}>{sub}</span>}</span>
+  <span style={{textAlign:"right"}}><span style={{display:"block",fontSize:fuerte?20:13.5,fontWeight:fuerte?900:700,color:color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span>{sub&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.42)",fontVariantNumeric:"tabular-nums",marginTop:1}}>{sub}</span>}</span>
 </div>;
 
 function AgpPanel({token,allClients}){
@@ -14450,7 +14450,7 @@ function AgpPanel({token,allClients}){
     const m=agpMoneda(p);const pag=agpPagado(p,cobros[p.id]);
     const pagoTxt=p.client_paid?"Pagó":pag>0?`Pagó ${agpFmt(m,pag)} de ${agpFmt(m,agpTotal(p))}`:"Falta el pago";
     const giroTxt=!agpGiroHecho(p)?"Falta transferir":p.giro_payment_method==="cable"&&!p.giro_receipt_url?"Sin comprobante":agpTarjetaPend(p)?"Tarjeta sin debitar":"Transferido";
-    return <div style={{display:"flex",gap:celu?10:14,flexWrap:"wrap",alignItems:"center"}}>
+    return <div style={{display:"flex",gap:celu?"6px 12px":14,flexWrap:"wrap",alignItems:"center",flex:1,minWidth:0}}>
       {punto(!!p.client_paid,pagoTxt,!p.client_paid&&pag>0)}
       {punto(agpGiroHecho(p)&&giroTxt==="Transferido",giroTxt,agpGiroHecho(p)&&giroTxt!=="Transferido")}
     </div>;
@@ -14621,7 +14621,7 @@ function AgpCalculadora({modo:modo0,p,cobros,token,allClients,tcRef,onClose,onSa
           </div>
         </>}
       <label style={agpLbl}>Cómo te paga el cliente</label>
-      {agpSeg([["usd","Dólares"],["pesos_transf","Pesos · transferencia"],["pesos_efvo","Pesos · efectivo"]],paga,v=>{setPaga(v);setPrecio("");})}
+      {agpSeg([["usd","Dólares"],["pesos_transf",celu?"$ Transferencia":"Pesos · transferencia"],["pesos_efvo",celu?"$ Efectivo":"Pesos · efectivo"]],paga,v=>{setPaga(v);setPrecio("");})}
       {enPesos&&<div style={transf?tres:dos}>
         <AgpCampo label="Tipo de cambio" value={tc} onChange={v=>{setTc(v);setPrecio("");}} celu={celu}/>
         {transf&&<AgpCampo label="Comisión SolFin %" value={finPct} onChange={v=>{setFinPct(v);setPrecio("");}} celu={celu}/>}
@@ -14632,12 +14632,13 @@ function AgpCalculadora({modo:modo0,p,cobros,token,allClients,tcRef,onClose,onSa
     <div style={{padding:"14px 16px",borderRadius:14,background:"rgba(184,149,106,0.07)",border:"1px solid rgba(184,149,106,0.28)",marginBottom:14}}>
       {agpLinea("Transferencia al proveedor",agpUsd(m),{sub:t>0&&m>0?agpArs(m*t):null})}
       {agpLinea(`Costo del cable (${agpPct(cp)}% + USD ${agpPct(cf)})`,agpUsd(costoCable),{color:"#fbbf24",sub:t>0&&costoCable>0?agpArs(costoCable*t):null})}
-      {transf&&agpLinea(`Comisión SolFin ${agpPct(fp)}%${finCliente?" (la paga el cliente)":""}`,agpArs(comFinArs),{color:"#fbbf24",sub:t>0&&comFinArs>0?agpUsd(comFinArs/t):null})}
-      {agpLinea("Costo total del pago",agpUsd(m+costoCable+(transf&&t>0?comFinArs/t:0)),{sub:t>0&&m>0?agpArs((m+costoCable)*t+comFinArs):null})}
+      {transf&&agpLinea(`Comisión SolFin ${agpPct(fp)}%${finCliente?" · la paga el cliente":""}`,agpArs(comFinArs),{color:"#fbbf24",sub:t>0&&comFinArs>0?agpUsd(comFinArs/t):null})}
+      {agpLinea("Te cuesta",agpUsd(m+costoCable+(transf&&!finCliente&&t>0?comFinArs/t:0)),{sub:t>0&&m>0?agpArs((m+costoCable)*t+(transf&&!finCliente?comFinArs:0)):null})}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,marginTop:10,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.1)",flexWrap:"wrap"}}>
         <div style={{flex:"1 1 200px",minWidth:0}}>
-          <label style={agpLbl}>Le cobrás {enPesos?"(pesos)":"(USD)"}</label>
-          <input type="text" inputMode="decimal" value={precio} onChange={e=>{const v=e.target.value;if(v===""||/^[\d.,]*$/.test(v))setPrecio(v);}} placeholder={enPesos?(sugArs?sugArs.toLocaleString("es-AR"):"0"):(sugUsd?agpTxt(sugUsd.toFixed(2)):"0,00")} style={{...agpInp(celu),height:52,fontSize:22,fontWeight:900,color:GOLD_LIGHT}}/>
+          <label style={agpLbl}>Le cobrás {enPesos?"(pesos)":"(USD)"}{precioN>0?"":" · sugerido"}</label>
+          <input type="text" inputMode="decimal" value={precio} onChange={e=>{const v=e.target.value;if(v===""||/^[\d.,]*$/.test(v))setPrecio(v);}} placeholder={enPesos?(sugArs?sugArs.toLocaleString("es-AR"):"0"):(sugUsd?agpTxt(sugUsd.toFixed(2)):"0,00")} className="agpPrecio" style={{...agpInp(celu),height:52,fontSize:22,fontWeight:900,color:GOLD_LIGHT}}/>
+          <style>{".agpPrecio::placeholder{color:#E8D098;opacity:0.85}"}</style>
         </div>
         <div style={{textAlign:"right",flex:"0 0 auto",paddingBottom:4}}>
           <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{enPesos?(cobrarUsdEq>0?`≈ ${agpUsd(cobrarUsdEq)}`:""):(t>0&&cobrar>0?`≈ ${agpArs(cobrar*t)}`:"")}</p>
@@ -14883,7 +14884,7 @@ function AgpDetalle({p,cobros,paso,token,tcRef,onClose,onChanged,onEditar}){
       </>
       :<>
         {!p.client_paid&&<p style={{margin:"0 0 12px",fontSize:12.5,color:"#fbbf24"}}>El cliente todavía no terminó de pagar.</p>}
-        {agpSeg([["cable","Cable China (SolFin)"],["efectivo","Efectivo"],["tarjeta_credito","Tarjeta"]],gMedio,setGMedio)}
+        {agpSeg([["cable",celu?"Cable SolFin":"Cable China (SolFin)"],["efectivo","Efectivo"],["tarjeta_credito","Tarjeta"]],gMedio,setGMedio)}
         <div style={dos}>
           <AgpCampo label="Monto transferido (USD)" value={gMonto} onChange={setGMonto} celu={celu}/>
           <div style={{marginBottom:14}}><label style={agpLbl}>Fecha</label><DatePicker value={gFecha} onChange={v=>setGFecha(v||hoyAR())}/></div>
