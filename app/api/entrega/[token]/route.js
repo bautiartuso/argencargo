@@ -525,6 +525,11 @@ export async function POST(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
   if (op.delivery_completed_at) return Response.json({ error: "Esta carga ya fue entregada: solo podés cambiar la forma de pago" }, { status: 400 });
+  // Una carga que todavía viaja no se coordina (29/10/2026: AC-0274 se coordinó desde un link que
+  // quedó abierto después de que la op volvió a "en tránsito").
+  if (["pendiente", "en_deposito_origen", "en_preparacion", "en_transito", "cancelada"].includes(op.status)) {
+    return Response.json({ error: "Esta carga todavía está en camino: te avisamos apenas esté lista para coordinar" }, { status: 400 });
+  }
 
   if ((delivery_choice === "oficina" || delivery_choice === "propio") && delivery_day) {
     const minDia = await entregaDesdeDe([op.id, ...(Array.isArray(body.extra_ops) ? body.extra_ops.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x)) : [])]).catch(() => null);

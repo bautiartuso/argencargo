@@ -2100,7 +2100,7 @@ function NotifBell({token,t}){
   const [notifs,setNotifs]=useState([]);
   const [unread,setUnread]=useState(0);
   const load=async()=>{
-    const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});
+    const r=await dq("notifications",{token,filters:"?portal=eq.agente&select=*&order=created_at.desc&limit=20"});
     const arr=Array.isArray(r)?r:[];setNotifs(arr);setUnread(arr.filter(n=>!n.read).length);
   };
   useEffect(()=>{load();const iv=setInterval(()=>{if(!document.hidden)load();},120000);return()=>clearInterval(iv);},[token]);

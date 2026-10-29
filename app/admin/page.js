@@ -2002,7 +2002,28 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {tab==="general"&&<>
       {/* GI: Asignación de socio + comisión por op (override del cliente) — visible apenas entra al detalle */}
       {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
-      <Card v2 title="Estado" sub={op.status!==estadoGuardado?<span style={{color:"#fbbf24",fontWeight:700}}>Cambio sin guardar · tocá Guardar</span>:null} actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&op.docs_confirmed_at&&<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog("¿Destrabar la mercadería? El cliente va a poder editarla y tendrá que volver a confirmarla."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{docs_confirmed_at:null}});setOp(p=>({...p,docs_confirmed_at:null}));flash("✅ Mercadería destrabada — el cliente puede editar");}}>↻ Destrabar mercadería</Btn>}
+      {/* General (rediseño 29/10/2026): una sola tarjeta sin títulos — qué es, en qué etapa está y sus números. */}
+      {(()=>{
+        const flujo=STATUSES.filter(k=>k!=="cancelada"&&!(isGI&&k==="en_preparacion"));const idx=flujo.indexOf(op.status);const cap=(t)=>t.charAt(0)+t.slice(1).toLowerCase();
+        const cur=SM[op.status]||{l:op.status,c:"#94a3b8"};const sinGuardar=op.status!==estadoGuardado;
+        const fob=items.reduce((s2,it)=>s2+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+        const kgB=pkgs.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
+        const m3=pkgs.reduce((s2,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s2+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);
+        const nB=pkgs.reduce((s2,p)=>s2+Number(p.quantity||1),0);
+        const chip=(txt,c)=><span style={{display:"inline-flex",alignItems:"center",gap:6,height:26,padding:"0 11px",borderRadius:999,fontSize:12,fontWeight:700,color:c||"rgba(255,255,255,0.8)",background:c?`${c}14`:"rgba(255,255,255,0.05)",border:`1px solid ${c?`${c}40`:"rgba(255,255,255,0.1)"}`,whiteSpace:"nowrap"}}>{txt}</span>;
+        const dato=(l,v)=><div style={{padding:"12px 18px",minWidth:0}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)"}}>{l}</p><p style={{margin:"5px 0 0",fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"-0.01em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p></div>;
+        return <section className="ac-glass ac-in" style={{padding:"22px 24px",marginBottom:16,position:"relative"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"12px 18px",flexWrap:"wrap"}}>
+            <div style={{flex:"1 1 340px",minWidth:0}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                {chip(isGI?"Gestión integral":(CM[op.channel]||op.channel||"—"),GOLD_LIGHT)}
+                {op.origin&&chip(`${banderaOrigen(op.origin)} ${op.origin}`)}
+              </div>
+              <input data-campo value={op.description??items.map(it=>it.description).filter(Boolean).join(", ")} onChange={e=>chOp("description")(e.target.value)} placeholder="Qué trae (descripción)"
+                style={{width:"100%",boxSizing:"border-box",background:"transparent",border:"none",borderBottom:"1px solid transparent",outline:"none",padding:"2px 0 4px",fontSize:24,fontWeight:800,letterSpacing:"-0.02em",color:"#fff",fontFamily:"inherit",transition:"border-color 150ms"}}
+                onFocus={e=>{e.target.style.borderBottomColor="rgba(232,208,152,0.5)";}} onBlur={e=>{e.target.style.borderBottomColor="transparent";}}/>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",justifyContent:"flex-end"}}><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&op.docs_confirmed_at&&<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog("¿Destrabar la mercadería? El cliente va a poder editarla y tendrá que volver a confirmarla."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{docs_confirmed_at:null}});setOp(p=>({...p,docs_confirmed_at:null}));flash("✅ Mercadería destrabada — el cliente puede editar");}}>↻ Destrabar mercadería</Btn>}
 {op.status==="operacion_cerrada"&&<Btn small variant="secondary" onClick={async()=>{
   // Ajustar saldo: recalcula el excedente del cliente según el presupuesto actual.
   // Lógica: total_recibido = collected_amount + overpayments_actuales (lo que pagó el cliente en total)
@@ -2037,54 +2058,52 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 }}>🔄 Ajustar saldo al presupuesto actual</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
 <Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
-</>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
-        {/* Etapas como línea de progreso (rediseño 22/10/2026): tocar una cambia el estado; se guarda con Guardar. */}
-        {(()=>{const flujo=STATUSES.filter(k=>k!=="cancelada"&&!(isGI&&k==="en_preparacion"));const idx=flujo.indexOf(op.status);const cap=(t)=>t.charAt(0)+t.slice(1).toLowerCase();
-          return <div style={{marginBottom:18}}>
-            <div className="ac-editor-tabs" style={{overflowX:"auto",paddingBottom:4}}>
-              <div style={{display:"flex",minWidth:720}}>
-                {flujo.map((k,i)=>{const on=k===op.status;const hecho=idx>=0&&i<idx;const c=SM[k].c;return <button key={k} type="button" onClick={()=>chOp("status")(k)} style={{flex:"1 1 0",minWidth:0,background:"none",border:"none",cursor:"pointer",padding:0,display:"flex",flexDirection:"column",alignItems:"center",gap:9,fontFamily:"inherit"}}>
-                  <div style={{display:"flex",alignItems:"center",width:"100%"}}>
-                    <div style={{flex:1,height:3,borderRadius:3,background:i===0?"transparent":hecho||on?c:"rgba(255,255,255,0.08)"}}/>
-                    <span style={{width:on?24:16,height:on?24:16,borderRadius:999,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:900,color:"#0A1628",background:hecho||on?c:"rgba(255,255,255,0.1)",boxShadow:on?`0 0 0 6px ${c}2e`:"none",border:hecho||on?"none":"1px solid rgba(255,255,255,0.16)",transition:"all 160ms"}}>{hecho?"✓":""}</span>
-                    <div style={{flex:1,height:3,borderRadius:3,background:i===flujo.length-1?"transparent":hecho?c:"rgba(255,255,255,0.08)"}}/>
-                  </div>
-                  <span style={{fontSize:11.5,fontWeight:on?800:600,color:on?c:hecho?"rgba(255,255,255,0.7)":"rgba(255,255,255,0.4)",textAlign:"center",lineHeight:1.25,padding:"0 4px"}}>{cap(SM[k].l)}</span>
+</>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div></div>
+          </div>
+
+          <div style={{marginTop:22}}>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{width:9,height:9,borderRadius:99,background:cur.c,boxShadow:`0 0 0 5px ${cur.c}26`}}/>
+                <span style={{fontSize:15,fontWeight:800,color:cur.c,letterSpacing:"0.02em"}}>{op.status==="cancelada"?"Cancelada":cap(cur.l)}</span>
+                {idx>=0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>paso {idx+1} de {flujo.length}</span>}
+                {sinGuardar&&<span style={{fontSize:11.5,fontWeight:700,color:"#fbbf24"}}>· sin guardar</span>}
+              </div>
+              {op.status!=="cancelada"&&<button type="button" onClick={()=>chOp("status")("cancelada")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.32)",fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:0}}>Marcar cancelada</button>}
+            </div>
+            <div className="ac-editor-tabs" style={{overflowX:"auto",paddingBottom:2}}>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${flujo.length},minmax(84px,1fr))`,gap:6}}>
+                {flujo.map((k,i)=>{const on=k===op.status;const hecho=idx>=0&&i<idx;const c=SM[k].c;return <button key={k} type="button" onClick={()=>chOp("status")(k)} title={cap(SM[k].l)}
+                  style={{background:"none",border:"none",cursor:"pointer",padding:"0 0 2px",display:"flex",flexDirection:"column",gap:8,fontFamily:"inherit",textAlign:"left",minWidth:0}}>
+                  <span style={{display:"block",width:"100%",height:on?8:6,marginTop:on?0:1,borderRadius:99,background:hecho||on?c:"rgba(255,255,255,0.08)",opacity:hecho?0.55:1,boxShadow:on?`0 0 14px ${c}66`:"none",transition:"all 160ms"}}/>
+                  <span style={{fontSize:11,fontWeight:on?800:600,color:on?c:hecho?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.32)",lineHeight:1.25}}>{cap(SM[k].l)}</span>
                 </button>;})}
               </div>
             </div>
-            {op.status==="cancelada"
-              ?<div style={{marginTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",borderRadius:10,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)"}}><span style={{fontSize:13,fontWeight:700,color:"#f87171"}}>Operación cancelada</span></div>
-              :<div style={{marginTop:10,textAlign:"right"}}><button type="button" onClick={()=>chOp("status")("cancelada")} style={{background:"none",border:"none",color:"rgba(255,255,255,0.35)",fontSize:11.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Marcar cancelada</button></div>}
-          </div>;})()}
-        <div style={{display:"grid",gridTemplateColumns:!(op.channel==="aereo_blanco"&&!isGI)?"minmax(0,2fr) minmax(0,1fr)":"1fr",gap:"0 16px"}}>
-          <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
-          {/* Aereo A: la ETA se edita en la solapa Seguimiento y las notas se sacaron (pedido 02/08). */}
-          {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
-        </div>
-        {!(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(op.channel)&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
-        <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",marginTop:4,marginBottom:8,borderRadius:12,background:"rgba(0,0,0,0.18)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.35)":"rgba(255,255,255,0.07)"}`,cursor:"pointer",userSelect:"none"}}>
-          <div style={{flex:1,minWidth:0}}><p style={{margin:0,fontSize:13,fontWeight:700,color:"#fff"}}>No pedir reseña al cerrar</p>{op.skip_review_request&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>No se le manda el pedido de reseña a este cliente</p>}</div>
-          <span style={{width:40,height:22,borderRadius:999,position:"relative",flexShrink:0,background:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.12)",transition:"background 160ms"}}><span style={{position:"absolute",top:3,left:op.skip_review_request?21:3,width:16,height:16,borderRadius:"50%",background:op.skip_review_request?"#0A1628":"#fff",transition:"left 180ms cubic-bezier(0.34,1.56,0.64,1)"}}/></span>
-        </div>
-        {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          </div>
+
+          {!isGI&&<div style={{marginTop:20,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",borderRadius:14,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+            {[["Valor FOB",`USD ${fob.toLocaleString("es-AR",{maximumFractionDigits:2})}`],["Productos",items.length],["Bultos",nB],["Peso bruto",`${kgB.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`],["Volumen",`${m3.toLocaleString("es-AR",{maximumFractionDigits:3})} m³`]].map(([l,v],i)=><div key={l} style={{borderLeft:i?"1px solid rgba(255,255,255,0.06)":"none"}}>{dato(l,v)}</div>)}
+          </div>}
+
+          {(!(op.channel==="aereo_blanco"&&!isGI)||!(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(op.channel)&&!isGI))&&<div style={{marginTop:18,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"0 16px"}}>
+            {/* Aéreo A: la ETA se edita en Seguimiento y no lleva notas (pedido 02/08). */}
+            {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
+            {!(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(op.channel)&&!isGI)&&<Inp label="Notas internas" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
+          </div>}
+
+          <div style={{marginTop:16,display:"flex",justifyContent:"flex-start"}}>
+            <button type="button" onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{display:"inline-flex",alignItems:"center",gap:10,height:34,padding:"0 14px 0 10px",borderRadius:999,cursor:"pointer",fontFamily:"inherit",background:op.skip_review_request?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.4)":"rgba(255,255,255,0.08)"}`}}>
+              <span style={{width:30,height:17,borderRadius:999,position:"relative",flexShrink:0,background:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.14)",transition:"background 160ms"}}><span style={{position:"absolute",top:2,left:op.skip_review_request?15:2,width:13,height:13,borderRadius:"50%",background:op.skip_review_request?"#0A1628":"#fff",transition:"left 180ms cubic-bezier(0.34,1.56,0.64,1)"}}/></span>
+              <span style={{fontSize:12.5,fontWeight:700,color:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.7)"}}>No pedir reseña al cerrar</span>
+            </button>
+          </div>
+        {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginTop:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
           {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
         </div>}
-      </Card>
-      {!isGI&&(()=>{const fob=items.reduce((s2,it)=>s2+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const kgB=pkgs.reduce((s2,p)=>s2+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const m3=pkgs.reduce((s2,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s2+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);const nB=pkgs.reduce((s2,p)=>s2+Number(p.quantity||1),0);
-        const tile=(l,v,c)=><div style={{padding:"14px 16px",borderRadius:14,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)",minWidth:0}}><p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.42)"}}>{l}</p><p style={{margin:"6px 0 0",fontSize:19,fontWeight:800,color:c||"#fff",letterSpacing:"-0.01em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p></div>;
-        return <Card v2 title="Resumen">
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
-            {tile("Canal",CM[op.channel]||op.channel,"#E8D098")}
-            {tile("Origen",`${banderaOrigen(op.origin)} ${op.origin||"—"}`)}
-            {tile("Valor FOB",`USD ${fob.toLocaleString("es-AR",{maximumFractionDigits:2})}`)}
-            {tile("Productos",items.length)}
-            {tile("Bultos",nB)}
-            {tile("Peso bruto",`${kgB.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`)}
-            {tile("Volumen",`${m3.toLocaleString("es-AR",{maximumFractionDigits:3})} m³`)}
-          </div>
-        </Card>;})()}
+        </section>;
+      })()}
       {(()=>{
         // Timeline enriquecido: status changes + emails enviados + eventos del courier
         const fmtDt=d=>{try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}catch{return d;}};
