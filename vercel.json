@@ -99,6 +99,14 @@
     {
       "path": "/api/cron/legajo-mail",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/crm-ads",
+      "schedule": "20 4 * * *"
+    },
+    {
+      "path": "/api/cron/crm-resumen",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

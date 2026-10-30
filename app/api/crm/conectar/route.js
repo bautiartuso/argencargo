@@ -14,6 +14,7 @@
 // WA_APP_SECRET / META_APP_SECRET / IG_APP_SECRET (se prueban en orden) · WA_VERIFY_TOKEN · PUBLIC_BASE_URL
 import { usuarioConRol } from "../../../../lib/auth-server";
 import { GRAPH_CRM } from "../../../../lib/crm-wa";
+import { adsConfigured, probarCuenta } from "../../../../lib/meta-ads";
 
 export const maxDuration = 60;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -75,6 +76,12 @@ export async function POST(req) {
   const pasos = [];
   const ahora = new Date().toISOString();
 
+  // Encender / apagar el envío desde el sistema (tope mensual en crm_numbers.send_cap).
+  if (b.accion === "envio") {
+    const r = await fetch(`${SB_URL}/rest/v1/crm_numbers?phone_number_id=eq.${encodeURIComponent(b.phone_number_id || "")}`, { method: "PATCH", headers: { ...sbh(), Prefer: "return=minimal" }, body: JSON.stringify({ send_enabled: !!b.enabled, updated_at: ahora }) });
+    return Response.json({ ok: r.ok });
+  }
+  if (b.accion === "probar_ads") return Response.json(await probarCuenta());
   if (b.accion === "reintentar") {
     const n = await numeroGuardado(b.phone_number_id);
     if (!n?.token) return Response.json({ error: "Ese número no está guardado" }, { status: 404 });
@@ -117,7 +124,7 @@ export async function GET(req) {
   const u = await usuarioConRol(req, ["admin", "empleado"]);
   if (!u) return Response.json({ error: "No autorizado" }, { status: 401 });
   const [numeros, contactos, mensajes] = await Promise.all([
-    fetch(`${SB_URL}/rest/v1/crm_numbers?select=phone_number_id,waba_id,business_id,display_phone,status,disconnect_reason,connected_at,disconnected_at,sync_contacts_at,sync_history_at,history_progress,is_on_biz_app,updated_at&order=connected_at.desc`, { headers: sbh(), cache: "no-store" }).then((r) => r.json()).catch(() => []),
+    fetch(`${SB_URL}/rest/v1/crm_numbers?select=phone_number_id,waba_id,business_id,display_phone,status,disconnect_reason,connected_at,disconnected_at,sync_contacts_at,sync_history_at,history_progress,is_on_biz_app,send_enabled,send_month,send_count,send_cap,updated_at&order=connected_at.desc`, { headers: sbh(), cache: "no-store" }).then((r) => r.json()).catch(() => []),
     contar("crm_contacts"), contar("crm_messages"),
   ]);
   let campos = null;
@@ -125,5 +132,5 @@ export async function GET(req) {
     try { const d = await graph(`${APP_ID()}/subscriptions?access_token=${APP_ID()}|${SECRETOS()[0]}`); const wa = (d?.data || []).find((s) => s.object === "whatsapp_business_account"); campos = { callback: wa?.callback_url || null, fields: (wa?.fields || []).map((f) => (typeof f === "string" ? f : f.name)), faltan: CAMPOS.filter((c) => !(wa?.fields || []).map((f) => (typeof f === "string" ? f : f.name)).includes(c)) }; }
     catch (e) { campos = { error: e.message }; }
   }
-  return Response.json({ numeros: Array.isArray(numeros) ? numeros : [], contactos, mensajes, campos, env: { app_id: !!APP_ID(), config_id: !!process.env.NEXT_PUBLIC_META_ES_CONFIG_ID, secreto: SECRETOS().length > 0 } });
+  return Response.json({ numeros: Array.isArray(numeros) ? numeros : [], contactos, mensajes, campos, env: { app_id: !!APP_ID(), config_id: !!process.env.NEXT_PUBLIC_META_ES_CONFIG_ID, secreto: SECRETOS().length > 0, ads: adsConfigured(), anthropic: !!process.env.ANTHROPIC_API_KEY } });
 }

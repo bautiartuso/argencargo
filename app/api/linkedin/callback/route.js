@@ -8,7 +8,8 @@ export async function GET(req) {
   const code = u.searchParams.get("code");
   const state = u.searchParams.get("state") || "";
   const err = u.searchParams.get("error_description") || u.searchParams.get("error");
-  const back = (ok, msg) => Response.redirect(`${BASE_URL}/admin?page=studio&li=${ok ? "ok" : "error"}${msg ? `&msg=${encodeURIComponent(String(msg).slice(0, 200))}` : ""}`, 302);
+  // Content Studio vive en el CRM desde el 30/10/2026 (StudioPanel lee ?li= y ?msg= al montarse).
+  const back = (ok, msg) => Response.redirect(`${BASE_URL}/crm?p=studio&li=${ok ? "ok" : "error"}${msg ? `&msg=${encodeURIComponent(String(msg).slice(0, 200))}` : ""}`, 302);
   if (err || !code) return back(false, err || "LinkedIn no devolvió el código");
   try { const cfg = await liCallback({ code, state }); return back(true, cfg.name || ""); }
   catch (e) { return back(false, e.message); }
