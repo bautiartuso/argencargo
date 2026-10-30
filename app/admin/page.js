@@ -19739,6 +19739,11 @@ function MaritimePanel({token,allClients=[]}){
   const btnMini=(color,extra)=>({padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${color}55`,background:`${color}14`,color,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",...extra});
   const btnGhost={padding:"5px 9px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"};
   const COLS="26px 64px minmax(200px,2.4fr) 96px 48px 72px 168px 92px 150px";
+  // Columnas por etapa (30/10/2026): en Esperando proveedor solo cliente, mercadería, foto y proveedor;
+  // valor, bultos y m³ desde Esperando confirmación; el tipo (negra/blanca) recién En depósito.
+  const COLS_ESP="26px 64px minmax(200px,2.4fr) minmax(140px,1fr) 92px 150px";
+  const COLS_CAM="26px 64px minmax(200px,2.4fr) 96px 48px 72px 92px 150px";
+  const colsDe=(etapa)=>etapa==="esperando"?COLS_ESP:etapa==="camino"?COLS_CAM:COLS;
   const COLS_CONT="26px 56px minmax(150px,1fr) minmax(170px,1.5fr) 150px auto 118px";
   // Selector blanca/negra de un clic, en cualquier etapa (lo puede cambiar Bautista o el depósito).
   // Segmentado oscuro (26/10/2026): el negro/blanco puro desentonaba con el panel. La elegida va en
@@ -19750,8 +19755,10 @@ function MaritimePanel({token,allClients=[]}){
     ?<span style={{fontSize:10.5,fontWeight:700,color:"#fb923c",display:"inline-flex",gap:6,alignItems:"center"}}>✎ El depósito lo corrigió <button onClick={e=>{e.stopPropagation();okCorreccion(sh);}} title="Visto: sacar el aviso" style={btnMini("#fb923c",{padding:"1px 7px",fontSize:10})}>OK</button></span>
     :!sh.mercaderia_tipo?<span style={{fontSize:10.5,fontWeight:700,color:"#fbbf24"}}>Sin tipo</span>:null;
 
-  const encabezado=(etapa)=><div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:COLS}}>
-    <div/><div>Foto</div><div>Cliente · Tracking · Mercadería</div><div>Valor</div><div>Bultos</div><div>m³</div><div>Tipo</div>
+  const encabezado=(etapa)=><div className="mt-v-grid mt-v-head" style={{gridTemplateColumns:colsDe(etapa)}}>
+    <div/><div>Foto</div><div>{etapa==="esperando"?"Cliente · Mercadería":"Cliente · Tracking · Mercadería"}</div>
+    {etapa==="esperando"?<div>Proveedor</div>:<><div>Valor</div><div>Bultos</div><div>m³</div></>}
+    {etapa!=="esperando"&&etapa!=="camino"&&<div>Tipo</div>}
     <div>{etapa==="esperando"?"Cargado":"Llegó"}</div><div style={{textAlign:"right"}}>Acciones</div>
   </div>;
 
@@ -19790,11 +19797,12 @@ function MaritimePanel({token,allClients=[]}){
             {sh.is_repack&&<span style={pill({fontSize:9.5,padding:"1px 7px",color:"#fb923c",background:"rgba(251,146,60,0.14)"})}>REENVÍO</span>}
             {sh.status==="en_camino_ar"&&!sh.container_id&&<span style={pill({fontSize:9.5,padding:"1px 7px",color:"#60a5fa",background:"rgba(96,165,250,0.14)"})}>DESPACHADA SIN CONTENEDOR</span>}
           </div>
-          <div style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:esPlaceholder(sh)?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.62)",marginTop:3,wordBreak:"break-all"}}>{esPlaceholder(sh)?"sin tracking todavía":(sh.tracking_number||"—")}</div>
+          {etapa!=="esperando"&&<div style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:esPlaceholder(sh)?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.62)",marginTop:3,wordBreak:"break-all"}}>{esPlaceholder(sh)?"sin tracking todavía":(sh.tracking_number||"—")}{sh.supplier_name&&<span style={{fontFamily:"inherit",color:"rgba(255,255,255,0.42)"}}> · {sh.supplier_name}</span>}</div>}
           <div style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginTop:4,lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
         </div>;
     const cValor=<div className="mt-v-num" style={{color:"#4ade80"}}>{val>0?fusd(val):<span title="Esta carga no tiene valor de mercadería cargado" style={pill({fontSize:10.5,padding:"2px 8px",color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor</span>}</div>;
     const cBul=<div className="mt-v-num">{bul||"—"}</div>;
+    const cProv=<div style={{fontSize:13,fontWeight:700,color:sh.supplier_name?"#fff":"rgba(255,255,255,0.3)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{sh.supplier_name||"sin proveedor"}</div>;
     const cCbm=<div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>;
     const cTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
           {tipoSel(sh)}{tipoEstado(sh,etapa)}
@@ -19831,25 +19839,25 @@ function MaritimePanel({token,allClients=[]}){
         <div className="mt-cel-foto">{cFoto}</div>
         <div style={{flex:1,minWidth:0}}>{cInfo}</div>
       </div>
-      <div className="mt-cel-stats" onClick={toggleExp}>
-        <div><span>Valor</span>{cValor}</div>
-        <div><span>Bultos</span>{cBul}</div>
-        <div><span>m³</span>{cCbm}</div>
+      <div className="mt-cel-stats" onClick={toggleExp} style={etapa==="esperando"?{gridTemplateColumns:"2fr 1fr"}:undefined}>
+        {etapa==="esperando"?<div><span>Proveedor</span>{cProv}</div>:<>
+          <div><span>Valor</span>{cValor}</div>
+          <div><span>Bultos</span>{cBul}</div>
+          <div><span>m³</span>{cCbm}</div>
+        </>}
         <div><span>{etapa==="esperando"?"Cargado":"Llegó"}</span>{cFecha}</div>
       </div>
-      <div className="mt-cel-tipo">{cTipo}</div>
+      {etapa!=="esperando"&&etapa!=="camino"&&<div className="mt-cel-tipo">{cTipo}</div>}
       <div className="mt-cel-acc">{cAcc}</div>
       {isExp&&detalleDe(sh,imp,fotos,bul,shPkgs,shItems)}
     </div>;
     return <div key={sh.id} className="mt-v-fila" style={rowBg}>
-      <div className="mt-v-grid" style={{gridTemplateColumns:COLS,cursor:"pointer"}} onClick={toggleExp}>
+      <div className="mt-v-grid" style={{gridTemplateColumns:colsDe(etapa),cursor:"pointer"}} onClick={toggleExp}>
         {cCheck}
         {cFoto}
         {cInfo}
-        {cValor}
-        {cBul}
-        {cCbm}
-        {cTipo}
+        {etapa==="esperando"?cProv:<>{cValor}{cBul}{cCbm}</>}
+        {etapa!=="esperando"&&etapa!=="camino"&&cTipo}
         {cFecha}
         {cAcc}
       </div>
@@ -20338,7 +20346,7 @@ const mtToggleSet=(set,id)=>{const n=new Set(set);if(n.has(id))n.delete(id);else
 const mtErr=(r,fallback)=>(r&&!Array.isArray(r)&&(r.message||r.hint||r.details))||fallback||"Error guardando";
 // Lista blanca de columnas de maritime_shipments para el EMPLEADO (sin plata: ni revenue_manual ni cost_*).
 // La usan el tablero (load/refetch/PATCH) y el hook del Historial cuando !verPlata. El admin pide "*".
-const MT_SH_COLS="id,shipment_code,tracking_number,product_description,origin,warehouse,warehouse_id,client_id,client_name_snapshot,is_fragile,is_repack,in_warehouse,notes,status,created_at,updated_at,received_at,shipped_to_ar_at,operation_id,container_id,awaiting_supplier";
+const MT_SH_COLS="id,shipment_code,tracking_number,product_description,origin,warehouse,warehouse_id,client_id,client_name_snapshot,is_fragile,is_repack,in_warehouse,notes,status,created_at,updated_at,received_at,shipped_to_ar_at,operation_id,container_id,awaiting_supplier,supplier_name";
 // Paleta (misma del admin)
 const MT_AZ="#60a5fa",MT_VE="#22c55e",MT_AM="#fbbf24",MT_RO="#f87171",MT_VI="#a78bfa",MT_GR="#94a3b8",MT_NA="#fb923c";
 const mtChipS=(col,extra)=>({fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${col}22`,color:col,whiteSpace:"nowrap",display:"inline-block",lineHeight:1.5,...extra});
@@ -22372,6 +22380,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const defaultWh=editing?warehouses.find(w=>(editing.warehouse_id&&w.id===editing.warehouse_id)||(editing.warehouse&&w.name===editing.warehouse)):null;
   const [warehouseId,setWarehouseId]=useState(defaultWh?.id||"");
   const [awaiting,setAwaiting]=useState(!!editing?.awaiting_supplier);
+  const [supplierName,setSupplierName]=useState(editing?.supplier_name||"");
   // El "SEA…" inventado es una clave interna: nunca se muestra en el input (spec MUELLE).
   const trackingEsPlaceholder=/^SEA[A-Z]*$/i.test((editing?.tracking_number||"").trim());
   const [trackingNumber,setTrackingNumber]=useState(editing?.awaiting_supplier&&trackingEsPlaceholder?"":(editing?.tracking_number||""));
@@ -22484,6 +22493,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       client_name_snapshot:clientName.trim()||null,
       container_id:newCont,
       awaiting_supplier:awaiting,
+      supplier_name:supplierName.trim()||null,
       is_fragile:fragile,
       is_repack:repack,
       notes:notes.trim()||null,
@@ -22624,6 +22634,10 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
           <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13.5,fontWeight:800}}>El proveedor todavía no despachó</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.55)",marginTop:1}}>{awaiting?"Queda en Esperando proveedor. El tracking lo sumás cuando despache.":"Prendelo si todavía no hay tracking."}</span></span>
           <span style={{width:44,height:26,borderRadius:999,background:awaiting?"#a78bfa":"rgba(255,255,255,0.15)",position:"relative",flexShrink:0,transition:"background .15s"}}><span style={{position:"absolute",top:3,left:awaiting?21:3,width:20,height:20,borderRadius:999,background:"#fff",transition:"left .15s"}}/></span>
         </button>}
+        {(awaiting||supplierName)&&<div style={CARD}>
+          {tit("Proveedor","El que tiene que despachar")}
+          <input value={supplierName} onChange={e=>setSupplierName(e.target.value)} placeholder="Nombre del proveedor" style={{...inS,height:42}}/>
+        </div>}
 
         {!awaiting&&<div style={CARD}>
           {tit("Seguimiento y tipo","El depósito lo identifica por el tracking y confirma el tipo al recibirlo")}
