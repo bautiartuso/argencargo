@@ -23,6 +23,7 @@ import { CLAUDE_MODEL } from "../../../../lib/anthropic";
 import { tgNotify, logUso, costoClaude } from "../../../../lib/telegram";
 import { waitUntil } from "@vercel/functions";
 import crypto from "crypto";
+import { esCambioCrm, procesarCambiosCrm } from "../../../../lib/crm-wa";
 // Firma estricta: se activa sola con el primer webhook real cuya firma coincide (queda marcado en
 // calc_config.wa_firma_verificada). Hasta entonces solo se registra, para no cortar el bot si la
 // clave secreta de Meta no está cargada en Vercel. Si la firma no coincide se avisa por Telegram.
@@ -481,6 +482,20 @@ export async function POST(req) {
     const { reply, newHistory } = await runAgent(phone, text, history);
     await saveHistory(phone, newHistory);
     return Response.json({ reply });
+  }
+
+  // CRM (30/10/2026): el número comercial (coexistencia) comparte este webhook con el bot. Todo lo
+  // que no es del número del bot (otro phone_number_id, ecos/agenda/historial, eventos de cuenta de
+  // otra WABA) va a lib/crm-wa.js y se saca del body antes de que lo mire el bot.
+  if (Array.isArray(body?.entry)) {
+    const crm = [];
+    body.entry = body.entry.map((e) => {
+      const cambios = Array.isArray(e?.changes) ? e.changes : [];
+      for (const c of cambios) if (esCambioCrm(c, e?.id)) crm.push({ ...c, entry_id: e?.id });
+      return { ...e, changes: cambios.filter((c) => !esCambioCrm(c, e?.id)) };
+    }).filter((e) => e.changes.length);
+    if (crm.length) { try { await procesarCambiosCrm(crm); } catch (e) { console.error("[crm-wa]", e.message); } }
+    if (!body.entry.length) return Response.json({ ok: true, crm: crm.length });
   }
 
   // Webhook de Meta.
