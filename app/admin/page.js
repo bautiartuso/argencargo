@@ -17732,7 +17732,7 @@ function AdminDashboard({session,onLogout}){
     <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"100%",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
-      <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
+      <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={{maxWidth:page==="mail"?"none":1400,margin:"0 auto",padding:page==="mail"?0:"28px 32px"}}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)} onOpenEntrega={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}

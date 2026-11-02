@@ -143,7 +143,8 @@ export default function MailPanel({ token }) {
     <button disabled={!estado.configurado} onClick={async () => { try { const d = await api({ accion: "conectar" }); window.location.href = d.url; } catch (e) { toast(e.message, "error"); } }} style={{ height: 46, padding: "0 24px", borderRadius: 12, border: "none", background: estado.configurado ? `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})` : "rgba(255,255,255,0.08)", color: estado.configurado ? "#0A1628" : "rgba(255,255,255,0.4)", fontWeight: 800, fontSize: 14, cursor: estado.configurado ? "pointer" : "not-allowed" }}>Conectar Gmail</button>
   </div>;
 
-  // ── Rediseño 23/10/2026: tres columnas a pantalla completa, cada una con su scroll ──
+  // ── Rediseño 23/10/2026: tres columnas a pantalla completa, cada una con su scroll. Desde el
+  // 02/11/2026 sin tarjeta: ocupa todo el ancho y alto del admin, como parte del sistema. ──
   const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }];
   const elegir = (k) => { setCarpeta(k); if (celu) setVista("lista"); };
   const marca = (l) => { const x = String(l || "").toLowerCase(); return x === "dhl" ? "dhl" : x === "fedex" ? "fedex" : x === "ups" ? "ups" : null; };
@@ -166,7 +167,7 @@ export default function MailPanel({ token }) {
   };
   const seccion = (t) => <p style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.12em", margin: "18px 12px 6px" }}>{t}</p>;
 
-  const panelCarpetas = <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: celu ? 0 : "16px 12px" }}>
+  const panelCarpetas = <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: celu ? 0 : "14px 10px" }}>
     <button onClick={() => setRedactar({ para: "", asunto: "", texto: "" })} style={{ height: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", fontWeight: 800, fontSize: 14, cursor: "pointer", boxShadow: "0 8px 22px rgba(184,149,106,0.22)", fontFamily: "inherit" }}><Ico d={I.borradores} s={16} />Redactar</button>
     {seccion("Correo")}
     {NAV.map((x) => fila(x.k, x.l, <Ico d={x.ic} />, x.n))}
@@ -268,7 +269,7 @@ export default function MailPanel({ token }) {
     <style>{`.mp-fila[data-on="0"]:hover{background:rgba(255,255,255,0.05)!important}.mp-mail[data-on="0"]:hover{background:rgba(255,255,255,0.035)!important}`}</style>
     {celu
       ? (vista === "carpetas" ? panelCarpetas : vista === "mensaje" && abierto ? panelMensaje : panelLista)
-      : <div style={{ display: "grid", gridTemplateColumns: "232px minmax(320px,400px) minmax(0,1fr)", height: "calc(var(--vh100) - 96px)", minHeight: 560, borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)", background: "linear-gradient(180deg,rgba(13,24,45,0.92),rgba(8,16,32,0.96))", boxShadow: "0 20px 50px rgba(0,0,0,0.3)", overflow: "hidden" }}>
+      : <div style={{ display: "grid", gridTemplateColumns: "196px minmax(290px,330px) minmax(0,1fr)", height: "var(--vh100)", minHeight: 560, overflow: "hidden" }}>
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", overflowY: "auto", background: "rgba(0,0,0,0.12)" }}>{panelCarpetas}</div>
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", minHeight: 0, overflow: "hidden" }}>{panelLista}</div>
         <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>{panelMensaje}</div>
@@ -291,9 +292,18 @@ function Avatar({ nombre, tam = 34 }) {
 // (sin scroll interno). Sigue el alto cuando cargan las imágenes.
 function CuerpoMail({ html }) {
   const ref = useRef(null);
-  const medir = () => { try { const doc = ref.current?.contentDocument; if (!doc?.body) return; const h = Math.ceil(doc.body.getBoundingClientRect().height); if (h > 0) ref.current.style.height = `${Math.max(160, h + 4)}px`; } catch {} };
-  useEffect(() => { let ro; const el = ref.current; const al = () => { medir(); try { const doc = el.contentDocument; ro = new ResizeObserver(medir); ro.observe(doc.body); doc.querySelectorAll("img").forEach((i) => i.addEventListener("load", medir)); } catch {} }; el?.addEventListener("load", al); try { if (el?.contentDocument?.readyState === "complete" && el.contentDocument.body?.childElementCount) al(); } catch {} return () => { el?.removeEventListener("load", al); ro?.disconnect(); }; }, [html]);
-  return <iframe ref={ref} title="mail" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcDoc={`<!doctype html><meta charset="utf-8"><base target="_blank"><style>html,body{overflow:hidden}body{margin:0;font-family:Arial,sans-serif;font-size:14px;color:#111;background:#fff;padding:16px;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style>${html}`} style={{ width: "100%", height: 600, border: "none", borderRadius: 12, background: "#fff", display: "block" }} />;
+  // Los mails más anchos que la columna (FedEx, DHL) se achican con zoom para verse enteros
+  // (02/11/2026); si aun así no entran, queda el scroll lateral.
+  const medir = () => { try {
+    const el = ref.current; const doc = el?.contentDocument; const body = doc?.body; if (!body) return;
+    body.style.zoom = "1";
+    const ancho = el.clientWidth; const natural = body.scrollWidth;
+    const z = ancho > 0 && natural > ancho ? Math.max(0.55, ancho / natural) : 1;
+    if (z < 1) body.style.zoom = String(z);
+    const h = Math.ceil(body.getBoundingClientRect().height); if (h > 0) el.style.height = `${Math.max(160, h + 4)}px`;
+  } catch {} };
+  useEffect(() => { let ro; const el = ref.current; const al = () => { medir(); try { const doc = el.contentDocument; ro = new ResizeObserver(medir); ro.observe(doc.body); ro.observe(el); doc.querySelectorAll("img").forEach((i) => i.addEventListener("load", medir)); } catch {} }; el?.addEventListener("load", al); try { if (el?.contentDocument?.readyState === "complete" && el.contentDocument.body?.childElementCount) al(); } catch {} return () => { el?.removeEventListener("load", al); ro?.disconnect(); }; }, [html]);
+  return <iframe ref={ref} title="mail" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcDoc={`<!doctype html><meta charset="utf-8"><base target="_blank"><style>html{overflow:hidden}body{overflow-x:auto;overflow-y:hidden;margin:0;font-family:Arial,sans-serif;font-size:14px;color:#111;background:#fff;padding:16px;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style>${html}`} style={{ width: "100%", height: 600, border: "none", borderRadius: 12, background: "#fff", display: "block" }} />;
 }
 
 const btnIco = { width: 36, height: 36, flexShrink: 0, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.8)", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 };
