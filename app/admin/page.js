@@ -16433,6 +16433,7 @@ const parsearListaCalc=(texto)=>{
 };
 function PegarListaModal({onCerrar,onAplicar,hayCargados,token}){
   const [txt,setTxt]=useState("");
+  const celu=useEsCelu();
   // Lectura con IA (28/10/2026): el parser local responde al toque; a los 700 ms se manda el texto a
   // /api/pegar-lista y, si vuelve, manda lo de la IA (entiende cualquier formato).
   const [ia,setIa]=useState(null);const [iaLo,setIaLo]=useState(false);const [iaErr,setIaErr]=useState("");
@@ -16441,28 +16442,82 @@ function PegarListaModal({onCerrar,onAplicar,hayCargados,token}){
     return()=>{vivo=false;clearTimeout(h);};},[txt,token]);
   const local=parsearListaCalc(txt);
   const r=ia&&(ia.productos.length||ia.bultos.length)?ia:local;
-  const fm=(n)=>Number(n).toLocaleString("es-AR",{maximumFractionDigits:2});
-  const box={background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"10px 12px"};
-  return <div onClick={onCerrar} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 16px",overflowY:"auto"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:"linear-gradient(160deg,#142038,#0e1a2c)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:18,padding:"20px 22px",boxSizing:"border-box"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <p style={{margin:0,fontSize:17,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",gap:10}}>Pegar productos y bultos{txt.trim()&&<span style={{fontSize:11,fontWeight:800,padding:"3px 10px",borderRadius:999,background:iaLo?"rgba(167,139,250,0.12)":ia?"rgba(34,197,94,0.12)":"rgba(255,255,255,0.06)",color:iaLo?"#c4b5fd":ia?"#4ade80":"rgba(255,255,255,0.5)",border:`1px solid ${iaLo?"rgba(167,139,250,0.4)":ia?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.12)"}`}}>{iaLo?"✨ Leyendo con IA…":ia?"✨ Leído con IA":iaErr?"Lectura rápida (IA no disponible)":"Lectura rápida"}</span>}</p>
-        <button onClick={onCerrar} aria-label="Cerrar" style={{width:34,height:34,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"#fff",cursor:"pointer",fontSize:16}}>×</button>
-      </div>
-      <textarea autoFocus value={txt} onChange={e=>setTxt(e.target.value)} placeholder={"Pegá acá las tablas (productos, bultos o las dos juntas)"} style={{width:"100%",height:190,boxSizing:"border-box",padding:12,borderRadius:12,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,lineHeight:1.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",resize:"vertical",outline:"none"}}/>
-      {txt.trim()&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10,marginTop:12}}>
-        <div style={box}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>Productos · {r.productos.length}</p>
-          {r.productos.length===0?<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ninguno</p>:r.productos.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12.5,color:"#fff",padding:"4px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description}</span><span style={{flexShrink:0,color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{fm(p.quantity)} × USD {fm(p.unit_price)}</span></div>)}
+  const fm=(n,d=2)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:d});
+  // Totales para chequear la lista antes de cargarla (02/11/2026): FOB, unidades, bultos, kg y m³.
+  const fob=r.productos.reduce((a,p)=>a+Number(p.quantity||0)*Number(p.unit_price||0),0);
+  const unidades=r.productos.reduce((a,p)=>a+Number(p.quantity||0),0);
+  const sinPrecio=r.productos.filter(p=>!(Number(p.unit_price)>0)).length;
+  const nBultos=r.bultos.reduce((a,b)=>a+Number(b.qty||0),0);
+  const conPeso=(b)=>b.weight!==""&&b.weight!=null;
+  const kg=r.bultos.reduce((a,b)=>a+(conPeso(b)?Number(b.qty)*Number(b.weight):0),0);
+  const sinPeso=r.bultos.filter(b=>!conPeso(b)).reduce((a,b)=>a+Number(b.qty||0),0);
+  const m3=(b)=>Number(b.qty)*Number(b.length)*Number(b.width)*Number(b.height)/1e6;
+  const cbm=r.bultos.reduce((a,b)=>a+m3(b),0);
+  const hay=r.productos.length>0||r.bultos.length>0;
+  const estado=iaLo?["Leyendo con IA…","#c4b5fd","rgba(167,139,250,0.4)","rgba(167,139,250,0.12)"]:ia?["Leído con IA","#4ade80","rgba(34,197,94,0.35)","rgba(34,197,94,0.12)"]:[iaErr?"Lectura rápida · IA no disponible":"Lectura rápida","rgba(255,255,255,0.55)","rgba(255,255,255,0.12)","rgba(255,255,255,0.06)"];
+  const card={background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"};
+  const cab={display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)"};
+  const lbl={fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"};
+  const pill={fontSize:11.5,fontWeight:800,padding:"2px 9px",borderRadius:999,background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.35)",fontVariantNumeric:"tabular-nums"};
+  const th={fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)",padding:"7px 8px",textAlign:"left",whiteSpace:"nowrap",position:"sticky",top:0,background:"#121e33",zIndex:1};
+  const td={fontSize:12.5,color:"#fff",padding:"7px 8px",borderTop:"1px solid rgba(255,255,255,0.05)",verticalAlign:"top",lineHeight:1.35};
+  const num={textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"};
+  const pie={display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 14px",borderTop:"1px solid rgba(184,149,106,0.25)",background:"rgba(184,149,106,0.07)",flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"};
+  const big={fontSize:15,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"};
+  const vacio=<p style={{margin:0,padding:"18px 14px",fontSize:12.5,color:"rgba(255,255,255,0.35)"}}>Ninguno</p>;
+  const amber="#fbbf24";
+  return <div onClick={onCerrar} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",display:"flex",alignItems:celu?"stretch":"flex-start",justifyContent:"center",padding:celu?0:"32px 16px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:celu?"none":940,background:"linear-gradient(160deg,#142038,#0e1a2c)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:20,padding:celu?"16px":"20px 24px 22px",boxSizing:"border-box",margin:celu?0:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",minWidth:0}}>
+          <p style={{margin:0,fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"-0.01em"}}>Pegar productos y bultos</p>
+          {txt.trim()&&<span style={{fontSize:11,fontWeight:800,padding:"3px 10px",borderRadius:999,background:estado[3],color:estado[1],border:`1px solid ${estado[2]}`}}>✨ {estado[0]}</span>}
         </div>
-        <div style={box}>
-          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>Bultos · {r.bultos.reduce((a,b)=>a+b.qty,0)}</p>
-          {r.bultos.length===0?<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ninguno</p>:r.bultos.map((b,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12.5,color:"#fff",padding:"4px 0",borderTop:i?"1px solid rgba(255,255,255,0.05)":"none",fontVariantNumeric:"tabular-nums"}}><span>{b.qty} × {fm(b.length)}×{fm(b.width)}×{fm(b.height)} cm</span><span style={{color:"rgba(255,255,255,0.7)"}}>{b.weight===""?"sin peso":`${fm(b.weight)} kg`}</span></div>)}
+        <button onClick={onCerrar} aria-label="Cerrar" style={{width:36,height:36,flexShrink:0,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",fontSize:18,lineHeight:1}}>×</button>
+      </div>
+      <textarea autoFocus value={txt} onChange={e=>setTxt(e.target.value)} placeholder={"Pegá acá las tablas (productos, bultos o las dos juntas)"} style={{width:"100%",height:celu?150:170,boxSizing:"border-box",padding:"12px 14px",borderRadius:14,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.28)",color:"#fff",fontSize:12.5,lineHeight:1.55,fontFamily:"'JetBrains Mono','SF Mono',monospace",resize:"vertical",outline:"none"}}/>
+      {txt.trim()&&<div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr)":"minmax(0,1.4fr) minmax(0,1fr)",gap:12,marginTop:14,alignItems:"start"}}>
+        <div style={card}>
+          <div style={cab}><span style={lbl}>Productos</span><span style={pill}>{r.productos.length}</span></div>
+          <div style={{maxHeight:celu?260:340,overflowY:"auto"}}>
+            {r.productos.length===0?vacio:<table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr><th style={{...th,width:26,paddingLeft:14}}>#</th><th style={th}>Producto</th><th style={{...th,...num}}>Cant</th><th style={{...th,...num}}>USD c/u</th><th style={{...th,...num,paddingRight:14}}>Total</th></tr></thead>
+              <tbody>{r.productos.map((p,i)=><tr key={i}>
+                <td style={{...td,paddingLeft:14,color:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{i+1}</td>
+                <td style={td} title={p.description}><span style={{display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{p.description}</span></td>
+                <td style={{...td,...num}}>{fm(p.quantity)}</td>
+                <td style={{...td,...num,color:Number(p.unit_price)>0?"rgba(255,255,255,0.75)":amber}}>{Number(p.unit_price)>0?fm(p.unit_price):"sin precio"}</td>
+                <td style={{...td,...num,paddingRight:14,fontWeight:700}}>{fm(Number(p.quantity||0)*Number(p.unit_price||0))}</td>
+              </tr>)}</tbody>
+            </table>}
+          </div>
+          <div style={pie}>
+            <span>{fm(unidades)} unidad{unidades===1?"":"es"}{sinPrecio?<span style={{color:amber}}> · {sinPrecio} sin precio</span>:null}</span>
+            <span>Total FOB <b style={{...big,marginLeft:6}}>USD {fm(fob)}</b></span>
+          </div>
+        </div>
+        <div style={card}>
+          <div style={cab}><span style={lbl}>Bultos</span><span style={pill}>{nBultos}</span></div>
+          <div style={{maxHeight:celu?260:340,overflowY:"auto"}}>
+            {r.bultos.length===0?vacio:<table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr><th style={{...th,...num,paddingLeft:14}}>Cant</th><th style={th}>Medidas (cm)</th><th style={{...th,...num}}>kg c/u</th><th style={{...th,...num,paddingRight:14}}>m³</th></tr></thead>
+              <tbody>{r.bultos.map((b,i)=><tr key={i}>
+                <td style={{...td,...num,paddingLeft:14,fontWeight:700}}>{fm(b.qty)}</td>
+                <td style={{...td,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fm(b.length)} × {fm(b.width)} × {fm(b.height)}</td>
+                <td style={{...td,...num,color:conPeso(b)?"rgba(255,255,255,0.75)":amber}}>{conPeso(b)?fm(b.weight):"sin peso"}</td>
+                <td style={{...td,...num,paddingRight:14,color:"rgba(255,255,255,0.75)"}}>{fm(m3(b),3)}</td>
+              </tr>)}</tbody>
+            </table>}
+          </div>
+          <div style={pie}>
+            <span>{fm(nBultos)} bulto{nBultos===1?"":"s"}{sinPeso?<span style={{color:amber}}> · {sinPeso} sin peso</span>:null}</span>
+            <span style={{display:"flex",gap:14,alignItems:"baseline"}}><span>Total <b style={{...big,marginLeft:4}}>{fm(kg)} kg</b></span><b style={big}>{fm(cbm,3)} m³</b></span>
+          </div>
         </div>
       </div>}
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14,flexWrap:"wrap"}}>
-        {hayCargados&&<button disabled={!r.productos.length&&!r.bultos.length} onClick={()=>onAplicar(r,"agregar")} style={{height:40,padding:"0 16px",borderRadius:11,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Agregar a lo que hay</button>}
-        <button disabled={!r.productos.length&&!r.bultos.length} onClick={()=>onAplicar(r,"reemplazar")} style={{height:40,padding:"0 18px",borderRadius:11,border:"none",background:GOLD_GRADIENT,color:"#0A1628",fontWeight:800,fontSize:13,cursor:"pointer",opacity:(!r.productos.length&&!r.bultos.length)?0.5:1}}>{hayCargados?"Reemplazar":"Cargar"}</button>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16,flexWrap:"wrap"}}>
+        {hayCargados&&<button disabled={!hay} onClick={()=>onAplicar(r,"agregar")} style={{height:42,padding:"0 16px",borderRadius:11,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#fff",fontWeight:700,fontSize:13,cursor:hay?"pointer":"not-allowed",opacity:hay?1:0.5}}>Agregar a lo que hay</button>}
+        <button disabled={!hay} onClick={()=>onAplicar(r,"reemplazar")} style={{height:42,padding:"0 20px",borderRadius:11,border:"none",background:GOLD_GRADIENT,color:"#0A1628",fontWeight:800,fontSize:13,cursor:hay?"pointer":"not-allowed",opacity:hay?1:0.5}}>{hayCargados?"Reemplazar":"Cargar"}</button>
       </div>
     </div>
   </div>;
