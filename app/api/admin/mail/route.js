@@ -163,6 +163,18 @@ export async function GET(req) {
       const h = m.payload?.headers || [];
       return json({ ...resumen(m), cc: hdr(h, "Cc"), responderA: hdr(h, "Reply-To"), messageId: hdr(h, "Message-ID"), referencias: hdr(h, "References"), html: out.html, texto: out.texto, adjuntos: out.adjuntos });
     }
+    // La cadena entera (02/11/2026): se muestra al lado del redactor al responder o reenviar.
+    // Del más nuevo al más viejo, sin borradores; no toca el estado de leído.
+    if (accion === "hilo") {
+      const t = await gm(`/threads/${u.searchParams.get("id")}?format=full`);
+      const mensajes = (t.messages || []).filter((m) => !(m.labelIds || []).includes("DRAFT")).map((m) => {
+        const out = { html: "", texto: "", adjuntos: [] };
+        recorrer(m.payload, out);
+        const h = m.payload?.headers || [];
+        return { ...resumen(m), cc: hdr(h, "Cc"), html: out.html, texto: out.texto, adjuntos: out.adjuntos };
+      }).sort((a, b) => b.fecha - a.fecha);
+      return json({ mensajes });
+    }
     if (accion === "adjunto") {
       const d = await gm(`/messages/${u.searchParams.get("id")}/attachments/${u.searchParams.get("adj")}`);
       const nombre = u.searchParams.get("nombre") || "adjunto";

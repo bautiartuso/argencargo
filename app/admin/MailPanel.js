@@ -34,6 +34,8 @@ const separar = (s) => (String(s || "").match(/(?:"[^"]*"|[^,])+/g) || []).map((
 const direccion = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim().toLowerCase();
 const WA = <svg width="22" height="22" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.2-.2.3-.8 1-.9 1.1-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.4-.5c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3M12 21.8a9.9 9.9 0 0 1-5-1.4l-.4-.2-3.7 1 1-3.7-.2-.4A9.9 9.9 0 1 1 12 21.8M20.5 3.5A11.8 11.8 0 0 0 12 0C5.5 0 .2 5.3.2 11.9c0 2.1.5 4.1 1.6 5.9L0 24l6.3-1.7a11.9 11.9 0 0 0 5.7 1.4c6.6 0 11.9-5.3 11.9-11.9 0-3.2-1.2-6.2-3.4-8.4z" /></svg>;
 const pesoTxt = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+const tipoArchivo = (a) => { const n = String(a.nombre || "").toLowerCase(); return /\.pdf$/.test(n) ? ["PDF", "#ef4444"] : /\.(png|jpe?g|gif|webp|heic)$/.test(n) ? ["IMG", "#a78bfa"] : /\.(xlsx?|csv)$/.test(n) ? ["XLS", "#22c55e"] : /\.(docx?)$/.test(n) ? ["DOC", "#3b82f6"] : ["ARCH", "#94a3b8"]; };
+const fechaTxt = (f) => f ? new Date(f).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
 
 export default function MailPanel({ token }) {
   const celu = useCelu();
@@ -128,9 +130,9 @@ export default function MailPanel({ token }) {
     const unicos = (l) => l.filter((x) => { const d = direccion(x); if (!d || vistos.has(d)) return false; vistos.add(d); return true; });
     const para = unicos([...separar(m.responderA || m.de), ...separar(m.para)]);
     const cc = unicos(separar(m.cc));
-    setRedactar({ para: para.join(", "), cc: cc.join(", "), asunto: /^re:/i.test(m.asunto) ? m.asunto : `Re: ${m.asunto}`, texto: plantilla ? aplicarPlantilla(plantilla.texto, nombreDe(m.de)) : "", nombreDestino: nombreDe(m.de), hilo: m.hilo, enRespuestaA: m.messageId, referencias: [m.referencias, m.messageId].filter(Boolean).join(" ") });
+    setRedactar({ para: para.join(", "), cc: cc.join(", "), asunto: /^re:/i.test(m.asunto) ? m.asunto : `Re: ${m.asunto}`, texto: plantilla ? aplicarPlantilla(plantilla.texto, nombreDe(m.de)) : "", nombreDestino: nombreDe(m.de), hilo: m.hilo, enRespuestaA: m.messageId, referencias: [m.referencias, m.messageId].filter(Boolean).join(" "), origen: m });
   };
-  const reenviar = (m) => setRedactar({ para: "", asunto: /^(fwd?|rv):/i.test(m.asunto) ? m.asunto : `Fwd: ${m.asunto}`, texto: "", reenviar: m.id, adjOrig: m.adjuntos || [] });
+  const reenviar = (m) => setRedactar({ para: "", asunto: /^(fwd?|rv):/i.test(m.asunto) ? m.asunto : `Fwd: ${m.asunto}`, texto: "", reenviar: m.id, adjOrig: m.adjuntos || [], origen: m });
 
   // ── Sin conectar ──
   if (!estado) return <p style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", padding: "3rem 0" }}>Cargando…</p>;
@@ -224,7 +226,6 @@ export default function MailPanel({ token }) {
   </div>;
 
   const noLeido = async (m) => { try { await api(null, { accion: "leido", id: m.id, leido: false }); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: true } : x)); cargarCarpetas(); toast("Marcado como no leído", "success"); setAbierto(null); if (celu) setVista("lista"); } catch (e) { toast(e.message, "error"); } };
-  const tipoArchivo = (a) => { const n = String(a.nombre || "").toLowerCase(); return /\.pdf$/.test(n) ? ["PDF", "#ef4444"] : /\.(png|jpe?g|gif|webp|heic)$/.test(n) ? ["IMG", "#a78bfa"] : /\.(xlsx?|csv)$/.test(n) ? ["XLS", "#22c55e"] : /\.(docx?)$/.test(n) ? ["DOC", "#3b82f6"] : ["ARCH", "#94a3b8"]; };
   const panelMensaje = abierto ? <div style={{ minWidth: 0, height: celu ? "auto" : "100%", display: "flex", flexDirection: "column" }}>
     <div style={{ display: "flex", gap: 8, alignItems: "center", padding: celu ? "0 0 12px" : "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, flexWrap: "wrap" }}>
       {celu && <button onClick={() => { setVista("lista"); setAbierto(null); }} style={btnIco} aria-label="Volver"><Ico d={I.volver} /></button>}
@@ -252,16 +253,7 @@ export default function MailPanel({ token }) {
         <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", whiteSpace: "nowrap" }}>{abierto.fecha ? new Date(abierto.fecha).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</span>
       </div>
       {abierto.cargando ? <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Cargando…</p> : <>
-        {abierto.adjuntos?.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 8, marginBottom: 16 }}>
-          {abierto.adjuntos.map((a) => { const [t, c] = tipoArchivo(a); return <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 8px 10px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)", minWidth: 0 }}>
-            <span style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `${c}22`, color: c, fontSize: 9.5, fontWeight: 900, letterSpacing: "0.04em" }}>{t}</span>
-            <button onClick={() => verAdjunto(abierto, a)} title={a.nombre} style={{ flex: 1, minWidth: 0, textAlign: "left", border: "none", background: "transparent", color: "#fff", cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
-              <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span>
-              <span style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{pesoTxt(a.tamano)}</span>
-            </button>
-            <button onClick={() => bajar(abierto, a)} aria-label="Descargar" title="Descargar" style={{ ...btnIco, width: 30, height: 30 }}><Ico d={I.bajar} s={14} /></button>
-          </div>; })}
-        </div>}
+        <Adjuntos m={abierto} verAdjunto={verAdjunto} bajar={bajar} />
         {abierto.html ? <CuerpoMail key={abierto.id} html={abierto.html} />
           : <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, color: "rgba(255,255,255,0.85)", margin: 0, lineHeight: 1.6 }}>{abierto.texto}</pre>}
       </>}
@@ -281,7 +273,7 @@ export default function MailPanel({ token }) {
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", minHeight: 0, overflow: "hidden" }}>{panelLista}</div>
         <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>{panelMensaje}</div>
       </div>}
-    {redactar && <Redactar inicial={redactar} celu={celu} api={api} prefs={prefs} onCerrar={(enviado) => { setRedactar(null); if (enviado && (carpeta === "enviados" || carpeta === "borradores")) cargarLista(false); }} />}
+    {redactar && <Redactar inicial={redactar} celu={celu} api={api} prefs={prefs} verAdjunto={verAdjunto} bajar={bajar} onCerrar={(enviado) => { setRedactar(null); if (enviado && (carpeta === "enviados" || carpeta === "borradores")) cargarLista(false); }} />}
     {filtrosAbierto && <Filtros api={api} celu={celu} onCerrar={() => { setFiltrosAbierto(false); cargarCarpetas(); }} />}
     {prefsAbierto && <Preferencias api={api} celu={celu} prefs={prefs} onCerrar={(nuevas) => { setPrefsAbierto(false); if (nuevas) setPrefs(nuevas); }} />}
   </div>;
@@ -314,7 +306,42 @@ function Modal({ celu, onCerrar, children, ancho = 640 }) {
   </div>;
 }
 
-function Redactar({ inicial, celu, api, prefs, onCerrar }) {
+// Adjuntos de un mail recibido (ver / bajar): en el mensaje abierto y en cada mail de la cadena.
+function Adjuntos({ m, verAdjunto, bajar }) {
+  if (!m.adjuntos?.length) return null;
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 8, marginBottom: 16 }}>
+    {m.adjuntos.map((a) => { const [t, c] = tipoArchivo(a); return <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 8px 10px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.09)", background: "rgba(255,255,255,0.03)", minWidth: 0 }}>
+      <span style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `${c}22`, color: c, fontSize: 9.5, fontWeight: 900, letterSpacing: "0.04em" }}>{t}</span>
+      <button onClick={() => verAdjunto(m, a)} title={a.nombre} style={{ flex: 1, minWidth: 0, textAlign: "left", border: "none", background: "transparent", color: "#fff", cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
+        <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span>
+        <span style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{pesoTxt(a.tamano)}</span>
+      </button>
+      <button onClick={() => bajar(m, a)} aria-label="Descargar" title="Descargar" style={{ ...btnIco, width: 30, height: 30 }}><Ico d={I.bajar} s={14} /></button>
+    </div>; })}
+  </div>;
+}
+
+// Un mail de la cadena, al lado del redactor.
+function MensajeCadena({ m, verAdjunto, bajar, primero }) {
+  return <div style={{ padding: "18px 0 20px", borderTop: primero ? "none" : "1px solid rgba(255,255,255,0.07)" }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+      <Avatar nombre={nombreDe(m.de)} tam={36} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13.5, color: "#fff", margin: 0, fontWeight: 800, wordBreak: "break-word" }}>{nombreDe(m.de)} <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 500, fontSize: 12 }}>{String(m.de).match(/<([^>]+)>/)?.[1] || ""}</span></p>
+        <p style={{ fontSize: 11.5, color: "rgba(255,255,255,0.45)", margin: "2px 0 0", wordBreak: "break-word" }}>Para {m.para}{m.cc ? ` · Cc ${m.cc}` : ""}</p>
+      </div>
+      <span style={{ fontSize: 11.5, color: primero ? GOLD_LIGHT : "rgba(255,255,255,0.45)", fontWeight: primero ? 800 : 500, whiteSpace: "nowrap" }}>{fechaTxt(m.fecha)}</span>
+    </div>
+    <Adjuntos m={m} verAdjunto={verAdjunto} bajar={bajar} />
+    {m.html ? <CuerpoMail key={m.id} html={m.html} />
+      : <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, color: "rgba(255,255,255,0.85)", margin: 0, lineHeight: 1.6 }}>{m.texto || m.extracto || ""}</pre>}
+  </div>;
+}
+
+// Redactor a pantalla entera (02/11/2026). Al responder o reenviar, la cadena completa queda a la
+// izquierda (del más nuevo al más viejo) y el mail se escribe a la derecha, sin cerrar nada para
+// releer lo que se habló. En el celu: Respuesta / Cadena con un selector arriba.
+function Redactar({ inicial, celu, api, prefs, verAdjunto, bajar, onCerrar }) {
   const [f, setF] = useState({ para: inicial.para || "", cc: inicial.cc || "", asunto: inicial.asunto || "", texto: inicial.texto || "" });
   const [conFirma, setConFirma] = useState(true);
   const firmaOn = prefs?.firma?.activa !== false;
@@ -325,6 +352,15 @@ function Redactar({ inicial, celu, api, prefs, onCerrar }) {
   const [enviando, setEnviando] = useState(false);
   const input = useRef(null);
   const total = adj.reduce((a, x) => a + x.tamano, 0);
+  const origen = inicial.origen || null;
+  const [cadena, setCadena] = useState(null);
+  const [solapa, setSolapa] = useState("escribir");
+  useEffect(() => {
+    if (!origen?.hilo) return;
+    let vivo = true;
+    api({ accion: "hilo", id: origen.hilo }).then((d) => { if (vivo) setCadena(d.mensajes?.length ? d.mensajes : [origen]); }).catch(() => { if (vivo) setCadena([origen]); });
+    return () => { vivo = false; };
+  }, [api, origen]);
   const agregar = async (files) => {
     const nuevos = await Promise.all([...files].map((file) => new Promise((res) => { const r = new FileReader(); r.onload = () => res({ nombre: file.name, tipo: file.type || "application/octet-stream", tamano: file.size, datos: String(r.result).split(",")[1] || "" }); r.onerror = () => res(null); r.readAsDataURL(file); })));
     setAdj((p) => [...p, ...nuevos.filter(Boolean)]);
@@ -335,45 +371,63 @@ function Redactar({ inicial, celu, api, prefs, onCerrar }) {
     try { await api(null, { accion, ...f, sinFirma: !conFirma, adjuntos: adj, hilo: inicial.hilo, enRespuestaA: inicial.enRespuestaA, referencias: inicial.referencias, borrador: inicial.borrador, reenviar: inicial.reenviar }); toast(accion === "enviar" ? "Mail enviado" : "Borrador guardado", "success"); onCerrar(true); }
     catch (e) { toast(e.message, "error"); setEnviando(false); }
   };
-  return <Modal celu={celu} onCerrar={() => !enviando && onCerrar(false)}>
-    <div onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }} onDragLeave={() => setArrastrando(false)} onDrop={(e) => { e.preventDefault(); setArrastrando(false); agregar(e.dataTransfer.files); }} style={{ position: "relative" }}>
-      {arrastrando && <div style={{ position: "absolute", inset: -8, zIndex: 5, borderRadius: 14, border: `2px dashed ${GOLD}`, background: "rgba(184,149,106,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: GOLD_LIGHT, fontWeight: 800, fontSize: 15, pointerEvents: "none" }}>Soltá los archivos acá</div>}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#fff" }}>{inicial.reenviar ? "Reenviar" : inicial.hilo ? "Responder a todos" : "Nuevo mail"}</p>
-        <button onClick={() => onCerrar(false)} style={btnIco} aria-label="Cerrar"><Ico d={I.x} s={15} /></button>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <input value={f.para} onChange={(e) => setF((p) => ({ ...p, para: e.target.value }))} placeholder="Para" style={campo} />
-        {!verCc && <button onClick={() => setVerCc(true)} style={{ ...btnTxt, height: 42 }}>Cc</button>}
-      </div>
-      {verCc && <input value={f.cc} onChange={(e) => setF((p) => ({ ...p, cc: e.target.value }))} placeholder="Cc" style={{ ...campo, marginBottom: 8 }} />}
-      <input value={f.asunto} onChange={(e) => setF((p) => ({ ...p, asunto: e.target.value }))} placeholder="Asunto" style={{ ...campo, marginBottom: 8 }} />
-      {prefs?.plantillas?.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 2 }}>Plantillas</span>
-        {prefs.plantillas.map((pl) => <button key={pl.id} onClick={() => usarPlantilla(pl)} style={{ height: 28, padding: "0 11px", borderRadius: 999, border: "1px solid rgba(184,149,106,0.4)", background: "rgba(184,149,106,0.1)", color: GOLD_LIGHT, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{pl.titulo}</button>)}
-      </div>}
-      <textarea data-enter-libre="1" value={f.texto} onChange={(e) => setF((p) => ({ ...p, texto: e.target.value }))} placeholder="Escribí el mail o arrastrá archivos acá" style={{ ...campo, height: celu ? 260 : 240, padding: 12, resize: "vertical", lineHeight: 1.55 }} />
-      {firmaOn && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: conFirma ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.35)", textDecoration: conFirma ? "none" : "line-through", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✍ Firma: {[prefs.firma.nombre, prefs.firma.cargo].filter(Boolean).join(" · ")}</span>
-        <button onClick={() => setConFirma((v) => !v)} style={{ height: 26, padding: "0 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.14)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{conFirma ? "Sin firma en este mail" : "Poner firma"}</button>
-      </div>}
-      {inicial.reenviar && <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 12.5, color: "rgba(255,255,255,0.65)" }}>Va el mail original abajo{inicial.adjOrig?.length ? <> con {inicial.adjOrig.length} adjunto{inicial.adjOrig.length > 1 ? "s" : ""}: <b style={{ color: "#fff" }}>{inicial.adjOrig.map((a) => a.nombre).join(", ")}</b></> : null}</div>}
-      {adj.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-        {adj.map((a, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 6px 6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", fontSize: 12, color: "#fff", maxWidth: "100%" }}>
-          <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span><span style={{ color: "rgba(255,255,255,0.45)" }}>{pesoTxt(a.tamano)}</span>
-          <button onClick={() => setAdj((p) => p.filter((_, j) => j !== i))} aria-label="Quitar" style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Ico d={I.x} s={11} /></button>
-        </span>)}
-        {total > MAX_ADJ && <span style={{ fontSize: 12, color: "#f87171", fontWeight: 700, alignSelf: "center" }}>Máximo {pesoTxt(MAX_ADJ)} en total</span>}
-      </div>}
-      <input ref={input} type="file" multiple style={{ display: "none" }} onChange={(e) => { agregar(e.target.files); e.target.value = ""; }} />
-      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-        <button onClick={() => input.current?.click()} style={btnTxt}><Ico d={I.clip} s={15} />Adjuntar</button>
-        <span style={{ flex: 1 }} />
-        {!inicial.reenviar && <button onClick={() => ir("borrador")} disabled={enviando} style={btnTxt}>Guardar borrador</button>}
-        <button onClick={() => ir("enviar")} disabled={enviando} style={{ ...btnTxt, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", padding: "0 20px" }}>{enviando ? "Enviando…" : "Enviar"}</button>
-      </div>
+  const titulo = inicial.reenviar ? "Reenviar" : inicial.hilo ? "Responder a todos" : "Nuevo mail";
+  const fijo = { ...campo, flexShrink: 0 };
+  const seg = (k, l) => <button onClick={() => setSolapa(k)} style={{ height: 30, padding: "0 12px", borderRadius: 999, border: "none", background: solapa === k ? `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})` : "transparent", color: solapa === k ? "#0A1628" : "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>;
+
+  const lista = cadena || (origen ? [origen] : []);
+  const panelCadena = origen && <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: celu ? "4px 16px 24px" : "16px 28px 28px" }}>
+    <p style={{ fontSize: 19, fontWeight: 800, color: "#fff", margin: "0 0 2px", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{origen.asunto || "(sin asunto)"}</p>
+    <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "0 0 6px" }}>{cadena ? `${cadena.length} mensaje${cadena.length === 1 ? "" : "s"}` : "Cargando la cadena…"}</p>
+    {lista.map((m, i) => <MensajeCadena key={m.id} m={m} verAdjunto={verAdjunto} bajar={bajar} primero={i === 0} />)}
+  </div>;
+
+  const solo = !origen && !celu;
+  const panelEscribir = <div onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }} onDragLeave={() => setArrastrando(false)} onDrop={(e) => { e.preventDefault(); setArrastrando(false); agregar(e.dataTransfer.files); }}
+    style={{ position: "relative", display: "flex", flexDirection: "column", minHeight: 0, boxSizing: "border-box", overflowY: "auto", flex: celu || solo ? 1 : "0 0 560px", width: celu || solo ? "100%" : 560, maxWidth: solo ? 820 : "none", margin: solo ? "0 auto" : 0, padding: celu ? "12px 16px 16px" : "18px 22px 20px", borderLeft: origen && !celu ? "1px solid rgba(255,255,255,0.07)" : "none", background: origen && !celu ? "rgba(0,0,0,0.14)" : "transparent" }}>
+    {arrastrando && <div style={{ position: "absolute", inset: 8, zIndex: 5, borderRadius: 14, border: `2px dashed ${GOLD}`, background: "rgba(184,149,106,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: GOLD_LIGHT, fontWeight: 800, fontSize: 15, pointerEvents: "none" }}>Soltá los archivos acá</div>}
+    <div style={{ display: "flex", gap: 8, marginBottom: 8, flexShrink: 0 }}>
+      <input value={f.para} onChange={(e) => setF((p) => ({ ...p, para: e.target.value }))} placeholder="Para" style={campo} />
+      {!verCc && <button onClick={() => setVerCc(true)} style={{ ...btnTxt, height: 42 }}>Cc</button>}
     </div>
-  </Modal>;
+    {verCc && <input value={f.cc} onChange={(e) => setF((p) => ({ ...p, cc: e.target.value }))} placeholder="Cc" style={{ ...fijo, marginBottom: 8 }} />}
+    <input value={f.asunto} onChange={(e) => setF((p) => ({ ...p, asunto: e.target.value }))} placeholder="Asunto" style={{ ...fijo, marginBottom: 8 }} />
+    {prefs?.plantillas?.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, flexShrink: 0 }}>
+      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 2 }}>Plantillas</span>
+      {prefs.plantillas.map((pl) => <button key={pl.id} onClick={() => usarPlantilla(pl)} style={{ height: 28, padding: "0 11px", borderRadius: 999, border: "1px solid rgba(184,149,106,0.4)", background: "rgba(184,149,106,0.1)", color: GOLD_LIGHT, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{pl.titulo}</button>)}
+    </div>}
+    <textarea data-enter-libre="1" value={f.texto} onChange={(e) => setF((p) => ({ ...p, texto: e.target.value }))} placeholder="Escribí el mail o arrastrá archivos acá" style={{ ...campo, flex: "1 1 220px", minHeight: celu ? 260 : 220, height: "auto", padding: 12, resize: "none", lineHeight: 1.55 }} />
+    {firmaOn && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", flexShrink: 0 }}>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: conFirma ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.35)", textDecoration: conFirma ? "none" : "line-through", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✍ Firma: {[prefs.firma.nombre, prefs.firma.cargo].filter(Boolean).join(" · ")}</span>
+      <button onClick={() => setConFirma((v) => !v)} style={{ height: 26, padding: "0 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.14)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{conFirma ? "Sin firma en este mail" : "Poner firma"}</button>
+    </div>}
+    {inicial.reenviar && <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 12.5, color: "rgba(255,255,255,0.65)", flexShrink: 0 }}>Va el mail original abajo{inicial.adjOrig?.length ? <> con {inicial.adjOrig.length} adjunto{inicial.adjOrig.length > 1 ? "s" : ""}: <b style={{ color: "#fff" }}>{inicial.adjOrig.map((a) => a.nombre).join(", ")}</b></> : null}</div>}
+    {adj.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, flexShrink: 0 }}>
+      {adj.map((a, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 6px 6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", fontSize: 12, color: "#fff", maxWidth: "100%" }}>
+        <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nombre}</span><span style={{ color: "rgba(255,255,255,0.45)" }}>{pesoTxt(a.tamano)}</span>
+        <button onClick={() => setAdj((p) => p.filter((_, j) => j !== i))} aria-label="Quitar" style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Ico d={I.x} s={11} /></button>
+      </span>)}
+      {total > MAX_ADJ && <span style={{ fontSize: 12, color: "#f87171", fontWeight: 700, alignSelf: "center" }}>Máximo {pesoTxt(MAX_ADJ)} en total</span>}
+    </div>}
+    <input ref={input} type="file" multiple style={{ display: "none" }} onChange={(e) => { agregar(e.target.files); e.target.value = ""; }} />
+    <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", flexShrink: 0 }}>
+      <button onClick={() => input.current?.click()} style={btnTxt}><Ico d={I.clip} s={15} />Adjuntar</button>
+      <span style={{ flex: 1 }} />
+      {!inicial.reenviar && <button onClick={() => ir("borrador")} disabled={enviando} style={btnTxt}>Guardar borrador</button>}
+      <button onClick={() => ir("enviar")} disabled={enviando} style={{ ...btnTxt, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD})`, color: "#0A1628", padding: "0 20px" }}>{enviando ? "Enviando…" : "Enviar"}</button>
+    </div>
+  </div>;
+
+  return <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "linear-gradient(160deg,#142038,#0e1a2c)", display: "flex", flexDirection: "column" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: celu ? "10px 12px" : "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0, background: "rgba(0,0,0,0.18)" }}>
+      <button onClick={() => !enviando && onCerrar(false)} style={btnIco} aria-label="Cerrar"><Ico d={celu ? I.volver : I.x} s={15} /></button>
+      <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#fff", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}{!celu && origen ? <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 600 }}> · {origen.asunto}</span> : null}</p>
+      {celu && origen && <div style={{ display: "inline-flex", padding: 3, borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", flexShrink: 0 }}>{seg("escribir", "Respuesta")}{seg("cadena", cadena ? `Cadena · ${cadena.length}` : "Cadena")}</div>}
+    </div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+      {celu ? (origen && solapa === "cadena" ? panelCadena : panelEscribir) : <>{panelCadena}{panelEscribir}</>}
+    </div>
+  </div>;
 }
 
 function Filtros({ api, celu, onCerrar }) {
