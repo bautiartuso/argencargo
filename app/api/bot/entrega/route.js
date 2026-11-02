@@ -349,6 +349,14 @@ export async function POST(req) {
     // Hoy en Argentina (UTC-3) — un día anterior no sirve para coordinar.
     const hoyAr = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
     if (dia < hoyAr) return Response.json({ error: "El día ya pasó" }, { status: 400 });
+    // Mismo día (02/11/2026, regla de Bautista): se puede, siempre que la franja todavía no haya empezado.
+    if (dia === hoyAr) {
+      const ahora = new Date(Date.now() - 3 * 3600 * 1000);
+      const minAhora = ahora.getUTCHours() * 60 + ahora.getUTCMinutes();
+      const ini = String(franja).match(/(\d{1,2}):(\d{2})/);
+      const minIni = ini ? Number(ini[1]) * 60 + Number(ini[2]) : 0;
+      if (minIni <= minAhora) return Response.json({ error: `La franja ${franja} de hoy ya empezó: ofrecé una franja de hoy que todavía no empezó o el próximo día hábil` }, { status: 400 });
+    }
     // Excepción por contenedor (maritime_containers.entrega_desde): no se coordina antes de esa fecha.
     const cont = await sb(`/maritime_shipments?operation_id=eq.${op.id}&select=maritime_containers(entrega_desde)`);
     const minDia = (Array.isArray(cont.body) ? cont.body : []).map((x) => x.maritime_containers?.entrega_desde).filter(Boolean).sort().pop();
