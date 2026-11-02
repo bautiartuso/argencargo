@@ -409,10 +409,17 @@ async function aprender(description, ncm_code) {
 export async function POST(req) {
   const frenado = limitar(req, { clave: "ncm", limite: 40 }); if (frenado) return frenado;
   try {
-    const { description, image, image_mime, check_ncm_only, hint, action, ncm_code } = await req.json();
+    const { description, image, image_mime, check_ncm_only, hint, action, ncm_code, lookup } = await req.json();
     if (action === "aprender") {
       if (!(await esAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
       return Response.json(await aprender(description, ncm_code));
+    }
+    // Posición escrita a mano (02/11/2026, calculadora del admin): sin IA, devuelve esa misma
+    // posición con las alícuotas de la base (o 35/3/21 si no está), la intervención y el antidumping.
+    if (lookup) {
+      const code = String(lookup).trim();
+      if (!/^\d{4}\.\d{2}\.\d{2}$/.test(code)) return Response.json({ error: "NCM inválida" }, { status: 400 });
+      return Response.json(await respuestaDeNcm(code, null, {}, "manual"));
     }
     const hintDigits = String(hint || "").replace(/\D/g, "").slice(0, 8);
     const hintCode = hintDigits.length >= 4 ? hintDigits.replace(/^(\d{4})(\d{0,2})(\d{0,2})$/, (m, a, b, c) => [a, b, c].filter(Boolean).join(".")) : null;

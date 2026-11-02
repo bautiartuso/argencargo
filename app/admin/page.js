@@ -16624,8 +16624,26 @@ function AdminCalculator({token}){
     const p=products[i];if(!p.description?.trim())return;
     setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:true}:x));
     try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});const d=await r.json();
-      setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null}:null}:x));
+      setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null,antidumping:d.antidumping||null}:null}:x));
     }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));}
+  };
+  // NCM editable a mano (02/11/2026): se escribe la posición y al salir del campo se buscan las
+  // alícuotas, la intervención y el antidumping de esa posición (sin IA). Si el admin la cambió,
+  // el sistema la aprende para esa descripción, igual que en la op.
+  const fmtNcm=(v)=>{const d=String(v||"").replace(/\D/g,"").slice(0,8);return d.replace(/^(\d{4})(\d{0,2})(\d{0,2})$/,(m,a,b,c)=>[a,b,c].filter(Boolean).join("."));};
+  const chNcmCode=(i,v)=>setProducts(arr=>arr.map((x,j)=>j===i&&x.ncm?{...x,ncm:{...x.ncm,ncm_code:fmtNcm(v)}}:x));
+  const buscarNcm=async(i,antes)=>{
+    const p=products[i];const code=String(p?.ncm?.ncm_code||"").trim();
+    if(!p?.ncm||code===antes)return;
+    if(!/^\d{4}\.\d{2}\.\d{2}$/.test(code)){setProducts(arr=>arr.map((x,j)=>j===i&&x.ncm?{...x,ncm:{...x.ncm,ncm_code:antes}}:x));toast("La NCM tiene 8 dígitos (0000.00.00)","warn");return;}
+    setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:true}:x));
+    try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lookup:code})});const d=await r.json();
+      if(!d?.ncm_code)throw new Error(d?.error||"sin respuesta");
+      setProducts(arr=>arr.map((x,j)=>j===i&&x.ncm?{...x,classifying:false,ncm:{...x.ncm,ncm_code:d.ncm_code,ncm_description:d.ncm_description||x.ncm.ncm_description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null,antidumping:d.antidumping||null}}:x));
+      if(!d.ncm_description)toast(`${code} no está en la nomenclatura cargada: quedaron 35 / 3 / 21, corregilas si hace falta`,"warn");
+      const desc=String(p.description||"").trim();
+      if(desc&&token)fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({action:"aprender",description:desc,ncm_code:code})}).then(r=>r.json()).then(j=>{if(j?.ok&&d.ncm_description)toast(`Aprendido: "${desc.slice(0,40)}…" → ${code}`,"success");}).catch(()=>{});
+    }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));toast("No se pudo buscar esa NCM","error");}
   };
   // NCM de todos los que faltan de una (06/10/2026, pensado para después de "Pegar lista"): una
   // consulta por descripción distinta, de a 4 a la vez; las repetidas comparten el resultado.
@@ -16936,7 +16954,9 @@ function AdminCalculator({token}){
 .qc-x{width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:rgba(255,255,255,0.4);font-size:17px;cursor:pointer;justify-self:end;font-family:inherit;line-height:1;padding:0}
 .qc-x:hover{color:#f87171;border-color:rgba(248,113,113,0.35)}
 .qc-ncmline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.07)}
-.qc-code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:${IC};margin-right:4px}
+.qc-code{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;color:${IC};margin-right:4px;width:118px;height:32px;padding:0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);outline:none;letter-spacing:.3px}
+.qc-code:focus{box-shadow:0 0 0 1px rgba(232,208,152,0.55)}
+.qc-code::placeholder{color:rgba(255,255,255,0.25);font-weight:600}
 .qc-pct{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 8px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:11px;font-weight:700;color:rgba(255,255,255,0.45)}
 .qc-pct input{width:46px;height:26px;border:none;background:transparent;border-radius:6px;color:#fff;text-align:right;font-size:13px;font-weight:700;padding:0 6px;outline:none;font-family:inherit}
 .qc-pct input:focus{box-shadow:0 0 0 1px rgba(232,208,152,0.55)}
@@ -17108,7 +17128,7 @@ function AdminCalculator({token}){
           <button type="button" className="qc-x" style={{gridArea:"x",visibility:products.length>1?"visible":"hidden"}} onClick={()=>rmProduct(i)} aria-label="Quitar producto">×</button>
         </div>
         {p.ncm&&<div className="qc-ncmline">
-          <span className="qc-code">{p.ncm.ncm_code}</span>
+          <input className="qc-code" value={p.ncm.ncm_code||""} inputMode="numeric" placeholder="0000.00.00" spellCheck={false} onChange={e=>chNcmCode(i,e.target.value)} onFocus={e=>{e.target.dataset.antes=p.ncm.ncm_code||"";}} onBlur={e=>buscarNcm(i,e.target.dataset.antes)}/>
           {[["import_duty_rate","DIE"],["statistics_rate","TE"],["iva_rate","IVA"]].map(([f,l])=><label key={f} className="qc-pct"><span>{l}</span><input inputMode="decimal" value={p.ncm[f]??""} onChange={e=>chNcm(i,f,e.target.value)}/><span>%</span></label>)}
           {p.ncm?.antidumping&&<span className="qc-ad" title={p.ncm.antidumping.nota||""}>⚠ ANTIDUMPING · {p.ncm.antidumping.producto}</span>}
         </div>}
