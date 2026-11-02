@@ -30,7 +30,7 @@ export default function Ficha({ ctx, c, onChange, compacta }) {
     await patch({ stage: k, stage_manual: true, stage_at: new Date().toISOString() }); setEligiendo(false);
   };
   const automatica = async () => { await patch({ stage_manual: false }); const r = await dq("rpc/crm_sync_etapas", { token, method: "POST", body: {} }); if (r && !r.code) { const n = await dq("crm_contacts", { token, filters: `?id=eq.${c.id}&select=stage,stage_at` }); const x = arr(n)[0]; if (x) onChange?.(x); } setEligiendo(false); };
-  const resumir = async () => { setResumiendo(true); const r = await api("/api/crm/resumen", { contact_id: c.id }); setResumiendo(false); if (r.ok) onChange?.({ summary: r.summary, pending: r.pending, summary_at: r.summary_at }); else toast(r.error || "No se pudo resumir", "error"); };
+  const resumir = async () => { setResumiendo(true); const r = await api("/api/cron/crm-resumen", { contact_id: c.id }); setResumiendo(false); if (r.ok) onChange?.({ summary: r.summary, pending: r.pending, summary_at: r.summary_at }); else toast(r.error || "No se pudo resumir", "error"); };
   const buscarClientes = async (q) => { setBuscar(q); if (q.trim().length < 2) { setClientes(null); return; } const s = q.trim().replace(/[,.()]/g, " "); const r = await dq("clients", { token, filters: `?select=id,first_name,last_name,client_code,company_name,whatsapp&or=(first_name.ilike.*${s}*,last_name.ilike.*${s}*,company_name.ilike.*${s}*,client_code.ilike.*${s}*)&limit=8` }); setClientes(arr(r)); };
   const vincular = async (cl) => { await patch({ client_id: cl.id, name: c.name || [cl.first_name, cl.last_name].filter(Boolean).join(" ") || cl.company_name }); setBuscar(""); setClientes(null); cargar(); };
 
