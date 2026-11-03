@@ -291,7 +291,10 @@ const I18N={
     fwd_copied:"Copiado",
     fwd_sent:"Enviado",
     fwd_cant:"No se puede",
-    fwd_tracking_ph:"Tracking del envío (opcional)",
+    fwd_tracking_ph:"Tracking del envío",
+    fwd_cost_ph:"Costo del envío (USD)",
+    fwd_need_tracking:"Cargá el tracking del envío",
+    fwd_need_cost:"Cargá el costo del envío en USD",
     fwd_reason_ph:"¿Por qué no se puede? (opcional)",
     fwd_confirm:"Confirmar",
     fwd_done_ok:"Avisamos que lo enviaste",
@@ -672,7 +675,10 @@ const I18N={
     fwd_copied:"已复制",
     fwd_sent:"已寄出",
     fwd_cant:"无法寄出",
-    fwd_tracking_ph:"转寄单号（可选）",
+    fwd_tracking_ph:"转寄单号",
+    fwd_cost_ph:"运费（美元）",
+    fwd_need_tracking:"请填写转寄单号",
+    fwd_need_cost:"请填写运费（美元）",
     fwd_reason_ph:"为什么无法寄出？（可选）",
     fwd_confirm:"确认",
     fwd_done_ok:"已通知我们您已寄出",
@@ -1067,6 +1073,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [reenvios,setReenvios]=useState([]); // reenvíos a otro depósito pedidos por Argencargo (forward_requests)
   const [fwdAccion,setFwdAccion]=useState(null); // {id, tipo:"ok"|"no"}
   const [fwdTexto,setFwdTexto]=useState("");
+  const [fwdCosto,setFwdCosto]=useState(""); // costo del envío local (USD): se descuenta de la CC del agente
   const [claimReg,setClaimReg]=useState(null); // reclamo que se está registrando con "Llegó"
   const [showForm,setShowForm]=useState(false);
   const [editPkg,setEditPkg]=useState(null);
@@ -1144,16 +1151,31 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const misReclamos=claims.filter(c=>esAdmin||(c.agent_id?c.agent_id===userId:origenAgente==="China"));
   // Reenvío a otro depósito (15/10/2026): el agente avisa si lo mandó (con tracking) o si no se puede.
   // Al enviarse, los bultos salen de su depósito (reenviado_at) y le llega aviso al admin.
-  const responderGrupo=async(grupo,tipo)=>{for(const r of grupo)await responderReenvio(r,tipo,true);setFwdAccion(null);setFwdTexto("");await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);};
-  const responderReenvio=async(r,tipo,enGrupo=false)=>{
+  // Desde el 03/11/2026 el "Enviado" exige tracking y costo del envío local (USD); el costo se descuenta
+  // de la cuenta corriente del agente por trigger (cc_agente_reenvio). Si el grupo junta varios pedidos
+  // en un mismo envío, el costo se reparte entre ellos según los bultos de cada uno.
+  const responderGrupo=async(grupo,tipo)=>{
+    let costos=grupo.map(()=>null);
+    if(tipo==="ok"){
+      const trk=fwdTexto.trim();const total=Number(String(fwdCosto).replace(",","."));
+      if(!trk){flash(t.fwd_need_tracking||"Cargá el tracking del envío");return;}
+      if(!(total>0)){flash(t.fwd_need_cost||"Cargá el costo del envío");return;}
+      const nb=grupo.map(x=>(x.package_ids||[]).length||1);const tot=nb.reduce((a,b)=>a+b,0);
+      costos=nb.map(n=>Math.round(total*n/tot*100)/100);
+      costos[0]=Math.round((costos[0]+(total-costos.reduce((a,b)=>a+b,0)))*100)/100;
+    }
+    for(let i=0;i<grupo.length;i++)await responderReenvio(grupo[i],tipo,true,costos[i]);
+    setFwdAccion(null);setFwdTexto("");setFwdCosto("");await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);
+  };
+  const responderReenvio=async(r,tipo,enGrupo=false,costo=null)=>{
     const txt=fwdTexto.trim();const ahora=new Date().toISOString();
-    const body=tipo==="ok"?{status:"enviado",tracking_envio:txt||null,resolved_at:ahora,resolved_by:userId}:{status:"no_se_puede",agent_notes:txt||null,resolved_at:ahora,resolved_by:userId};
+    const body=tipo==="ok"?{status:"enviado",tracking_envio:txt||null,costo_usd:costo>0?costo:null,resolved_at:ahora,resolved_by:userId}:{status:"no_se_puede",agent_notes:txt||null,resolved_at:ahora,resolved_by:userId};
     await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body});
     const ids=(r.package_ids||[]).filter(Boolean);
     if(tipo==="ok"&&ids.length)await dq("operation_packages",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{reenviado_at:ahora,reenvio_id:r.id}});
     try{
       const cod=r.clients?.client_code||"";
-      const texto=tipo==="ok"?`↪ El agente reenvió ${ids.length} bulto${ids.length!==1?"s":""}${cod?` de ${cod}`:""} a ${r.destino_nombre} (mark ${r.shipping_mark})${txt?` · tracking ${txt}`:""}.`:`↪ El agente avisó que no puede reenviar a ${r.destino_nombre}${txt?`: ${txt}`:""}.`;
+      const texto=tipo==="ok"?`↪ El agente reenvió ${ids.length} bulto${ids.length!==1?"s":""}${cod?` de ${cod}`:""} a ${r.destino_nombre} (mark ${r.shipping_mark})${txt?` · tracking ${txt}`:""}${costo>0?` · costo USD ${Number(costo).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:""}.`:`↪ El agente avisó que no puede reenviar a ${r.destino_nombre}${txt?`: ${txt}`:""}.`;
       if(r.operation_id)await dq("op_communications",{method:"POST",token,body:{operation_id:r.operation_id,type:"note",direction:"in",content:texto}});
       const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
       const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
@@ -1387,8 +1409,9 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           </div>
           <div style={{flex:"0 0 auto",display:"flex",gap:6,alignItems:"center",alignSelf:"center"}}>
             {acc?<>
-              <input autoFocus value={fwdTexto} onChange={e=>setFwdTexto(e.target.value)} placeholder={t.fwd_tracking_ph} style={{width:200,padding:"8px 10px",fontSize:13,borderRadius:9,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
-              <button onClick={()=>{setFwdAccion(null);setFwdTexto("");}} style={{...btnS,padding:"8px 10px"}}>✕</button>
+              <input autoFocus value={fwdTexto} onChange={e=>setFwdTexto(e.target.value)} placeholder={t.fwd_tracking_ph} style={{width:190,padding:"8px 10px",fontSize:13,borderRadius:9,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
+              <input value={fwdCosto} onChange={e=>setFwdCosto(e.target.value)} inputMode="decimal" placeholder={t.fwd_cost_ph} style={{width:125,padding:"8px 10px",fontSize:13,borderRadius:9,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
+              <button onClick={()=>{setFwdAccion(null);setFwdTexto("");setFwdCosto("");}} style={{...btnS,padding:"8px 10px"}}>✕</button>
               <button onClick={()=>responderGrupo(grupo,"ok")} style={{padding:"8px 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_confirm}</button>
             </>:<button onClick={()=>{setFwdAccion({id:r.id,tipo:"ok"});setFwdTexto("");}} style={{padding:"8px 16px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>✓ {t.fwd_sent}</button>}
           </div>

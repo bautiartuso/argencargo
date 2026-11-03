@@ -12073,6 +12073,9 @@ function AgentsPanel({token}){
         }catch(e){alertDialog("No se pudo crear: "+e.message);}
       };
       const reenviosAbiertos=reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede");
+      // Reenvíos ya hechos (03/11/2026): tracking del envío local y costo (descontado de la CC del agente).
+      const reenviosHechos=reenvios.filter(r=>r.status==="enviado").sort((a,b)=>String(b.resolved_at||"").localeCompare(String(a.resolved_at||""))).slice(0,8);
+      const copiarTxt=async(txt,aviso)=>{try{await navigator.clipboard.writeText(txt);toast(aviso,"success");}catch{await promptDialog("Copialo de acá",{defaultValue:txt});}};
       const cancelarReenvio=async(r)=>{if(!await confirmDialog(`¿Cancelar el reenvío a ${r.destino_nombre}?`))return;await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"cancelado",resolved_at:new Date().toISOString()}});toast("Reenvío cancelado","success");load();};
       // Detalle de una op del depósito (productos, bultos, reempaque): lo usan la fila de la tabla y la
       // tarjeta del celu.
@@ -12299,6 +12302,19 @@ function AgentsPanel({token}){
               <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${new Date(r.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}, esperando al agente`}</p>
             </div>
             <button onClick={()=>cancelarReenvio(r)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
+          </div>;})}
+        </div>}
+        {reenviosHechos.length>0&&<div style={{marginBottom:14,borderRadius:12,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.05)",overflow:"hidden"}}>
+          <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(34,197,94,0.2)"}}>↪ Reenvíos hechos · {reenviosHechos.length}</p>
+          {reenviosHechos.map(r=>{const ag=approvedAgents.find(a=>a.auth_user_id===r.agent_id);const n=(r.package_ids||[]).length;const costo=Number(r.costo_usd||0);return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{flex:"1 1 280px",minWidth:0}}>
+              <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={{fontFamily:"monospace"}}>{r.shipping_mark}</span></p>
+              <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · enviado {r.resolved_at?new Date(r.resolved_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}{costo>0?<> · costo <b style={{color:"#fff"}}>USD {costo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> descontado de su cuenta corriente</>:<span style={{color:"#fbbf24"}}> · sin costo cargado</span>}</p>
+            </div>
+            {r.tracking_envio?<div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,fontWeight:700,color:"#fff",padding:"5px 10px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>{r.tracking_envio}</span>
+              <button onClick={()=>copiarTxt(r.tracking_envio,"Tracking copiado")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>Copiar</button>
+            </div>:<span style={{fontSize:11.5,color:"#fbbf24",fontWeight:700}}>sin tracking</span>}
           </div>;})}
         </div>}
         {selectedOps.length>0&&(()=>{
