@@ -18877,7 +18877,8 @@ function MaritimePanel({token,allClients=[]}){
     const dias=diasDesde(fechaRef);
     const alerta=(etapa==="esperando"&&dias>14)||(etapa==="camino"&&dias>20)||(etapa==="deposito"&&dias>30);
     const whRow=whByName[sh.warehouse];
-    const usaTipo=!!(whRow&&(Number(whRow.cost_cbm_blanca)>0||Number(whRow.cost_cbm_negra)>0));
+    // Blanca/negra existe solo en los depósitos con usa_tipo (Luna 1 y 2, 03/11/2026); en Chuse y Phoenix no se muestra.
+    const usaTipo=!!whRow?.usa_tipo;
     const shPkgs=packages.filter(p=>p.shipment_id===sh.id),shItems=items.filter(it=>it.shipment_id===sh.id);
     const cCheck=<div onClick={e=>e.stopPropagation()}>{etapa!=="esperando"&&<input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC,width:15,height:15}}/>}</div>;
     const cFoto=<div onClick={e=>{e.stopPropagation();if(todasF.length)setFotoGrande({fotos:todasF,i:0});else{setPegarEn({id:sh.id,kind:"bulto"});setExpanded(prev=>new Set(prev).add(sh.id));}}}>
@@ -18908,7 +18909,7 @@ function MaritimePanel({token,allClients=[]}){
     const cProv=<div style={{fontSize:13,fontWeight:700,color:sh.supplier_name?"#fff":"rgba(255,255,255,0.3)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{sh.supplier_name||"sin proveedor"}</div>;
     const cCbm=<div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>;
     const cTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
-          {tipoSel(sh)}{tipoEstado(sh,etapa)}
+          {usaTipo?<>{tipoSel(sh)}{tipoEstado(sh,etapa)}</>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.3)"}}>—</span>}
         </div>;
     const cFecha=<div style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
           {etapa==="camino"&&!fechaRef?<span style={{color:"rgba(255,255,255,0.4)",fontSize:11}}>en viaje<br/><span style={{fontSize:10}}>cargado {dd(sh.created_at)}</span></span>:<span style={{color:"rgba(255,255,255,0.8)",fontWeight:700}}>{dd(fechaRef)}</span>}
@@ -19219,7 +19220,7 @@ function MaritimePanel({token,allClients=[]}){
               <div style={{fontSize:13,color:"#fff",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{sh.product_description||"—"}</div>
               {!(valorOf(sh.id)>0)&&<span style={pill({fontSize:10,padding:"1px 7px",marginTop:4,color:"#fecaca",background:"rgba(239,68,68,0.22)",border:"1px solid rgba(239,68,68,0.55)"})}>⚠ Sin valor cargado</span>}
             </div>;
-        const kTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</div>;
+        const kTipo=<div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>{whByName[sh.warehouse]?.usa_tipo?<>{tipoSel(sh)}{tipoEstado(sh,"contenedores")}</>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.3)"}}>—</span>}</div>;
         const kBul=<div className="mt-v-num">{bul||"—"}</div>;
         const kCbm=<div className="mt-v-num" style={{color:cbm>0?GOLD_LIGHT:"#fbbf24"}}>{cbm>0?fm3(cbm):"s/medidas"}</div>;
         // Misma ficha que la cabecera del contenedor: Bultos | Volumen | Costo, y la ganancia aparte.
@@ -21553,7 +21554,8 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const selectedWh=warehouses.find(w=>w.id===warehouseId);
   // Sin tipo elegido = tarifa general del depósito (el tipo no es obligatorio).
   const tarifaTipo=(w,t)=>(t==="blanca"?Number(w?.cost_cbm_blanca):t==="negra"?Number(w?.cost_cbm_negra):0)||Number(w?.default_cost_per_cbm)||0;
-  const usaTipo=!!(selectedWh&&tarifaTipo(selectedWh,"blanca")!==tarifaTipo(selectedWh,"negra"));
+  // Blanca/negra solo en los depósitos con usa_tipo (Luna 1 y 2, 03/11/2026).
+  const usaTipo=!!selectedWh?.usa_tipo;
   const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?((l*w*h)/1000000)*q:0;};
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
 
@@ -21702,7 +21704,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
       {whOrden.map(w=>{const on=w.id===warehouseId;const tb=tarifaTipo(w,"blanca"),tn=tarifaTipo(w,"negra");return <button key={w.id} type="button" onClick={()=>elegirWh(w.id)} style={{flex:"1 1 180px",textAlign:"left",padding:"10px 14px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.1)",background:on?"linear-gradient(135deg,rgba(184,149,106,0.2),rgba(184,149,106,0.06))":"rgba(255,255,255,0.03)",color:"#fff",boxShadow:on?"0 6px 18px rgba(184,149,106,0.15)":"none"}}>
         <span style={{display:"flex",alignItems:"center",gap:7,fontSize:13.5,fontWeight:800}}>{w.origin==="usa"?"🇺🇸":"🇨🇳"} <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{w.name}</span>{on&&<span style={{marginLeft:"auto",color:IC}}>✓</span>}</span>
-        {verCostos&&(tb||tn)>0&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3}}>{tb!==tn?`Negra ${fmtT(tn)} · Blanca ${fmtT(tb)}`:fmtT(tn)} /m³</span>}
+        {verCostos&&(tb||tn)>0&&<span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3}}>{w.usa_tipo&&tb!==tn?`Negra ${fmtT(tn)} · Blanca ${fmtT(tb)}`:fmtT(Number(w.default_cost_per_cbm)||tn)} /m³</span>}
       </button>;})}
     </div>
 
@@ -21743,20 +21745,20 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
         </div>}
 
         {!awaiting&&<div style={CARD}>
-          {tit("Seguimiento y tipo","El depósito lo identifica por el tracking y confirma el tipo al recibirlo")}
-          <div style={{display:"grid",gridTemplateColumns:celuF?"1fr":"minmax(0,1.2fr) minmax(0,1fr)",gap:10,alignItems:"start"}}>
+          {tit(usaTipo?"Seguimiento y tipo":"Seguimiento",usaTipo?"El depósito lo identifica por el tracking y confirma el tipo al recibirlo":"El depósito lo identifica por el tracking")}
+          <div style={{display:"grid",gridTemplateColumns:celuF||!usaTipo?"1fr":"minmax(0,1.2fr) minmax(0,1fr)",gap:10,alignItems:"start"}}>
             <div>
               <input value={trackingNumber} onChange={e=>setTrackingNumber(e.target.value)} placeholder="Código de seguimiento (SF… / KY… / YT…)" style={{...inS,height:44,fontFamily:"'JetBrains Mono',monospace",letterSpacing:".02em"}}/>
               {!trackingNumber.trim()&&<p style={{fontSize:11,color:"#fbbf24",margin:"6px 2px 0"}}>Sin tracking el depósito no puede identificar la carga.</p>}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {usaTipo&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {[["negra","◼ Negra"],["blanca","◻ Blanca"]].map(([k,l])=>{const on=tipo===k;const tar=tarifaTipo(selectedWh,k);return <button key={k} type="button" onClick={()=>setTipo(on?"":k)} style={{height:44,padding:"0 12px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",textAlign:"left",border:on?`2px solid ${IC}`:"1px solid rgba(255,255,255,0.12)",background:k==="negra"?(on?"#05080f":"rgba(0,0,0,0.3)"):(on?"#f8fafc":"rgba(255,255,255,0.06)"),color:k==="blanca"&&on?"#0A1628":"#fff",display:"flex",flexDirection:"column",justifyContent:"center"}}>
                 <span style={{fontSize:13,fontWeight:800}}>{l}</span>
                 {verCostos&&tar>0&&<span style={{fontSize:10.5,opacity:0.65}}>{fmtT(tar)} /m³</span>}
               </button>;})}
-            </div>
+            </div>}
           </div>
-          {editing?.tipo_confirmado_at&&<p style={{fontSize:11,color:editing?.tipo_corregido?"#fb923c":"#4ade80",margin:"8px 0 0"}}>{editing?.tipo_corregido?"✎ El depósito lo corrigió":"✓ El depósito lo confirmó"}{(editing?.mercaderia_tipo||"")!==tipo?" · si lo cambiás vuelve a quedar sin confirmar":""}</p>}
+          {usaTipo&&editing?.tipo_confirmado_at&&<p style={{fontSize:11,color:editing?.tipo_corregido?"#fb923c":"#4ade80",margin:"8px 0 0"}}>{editing?.tipo_corregido?"✎ El depósito lo corrigió":"✓ El depósito lo confirmó"}{(editing?.mercaderia_tipo||"")!==tipo?" · si lo cambiás vuelve a quedar sin confirmar":""}</p>}
         </div>}
 
         <div style={CARD}>
@@ -21855,6 +21857,8 @@ function WarehouseForm({token,editing,onSave,onCancel,archiveBlocked=false}){
   const [costCbm,setCostCbm]=useState(editing?.default_cost_per_cbm!=null?String(editing.default_cost_per_cbm):"");
   const [sortOrder,setSortOrder]=useState(editing?.sort_order!=null?String(editing.sort_order):"");
   const [archived,setArchived]=useState(!!editing?.archived);
+  // Blanca/negra existe solo en los depósitos que lo usan (Luna 1 y 2, 03/11/2026): bandera usa_tipo.
+  const [usaTipo,setUsaTipo]=useState(!!editing?.usa_tipo);
   // Tarifas del depósito por tipo de mercadería + descuento por volumen (28/09/2026).
   const numStr=(v)=>v!=null?String(v):"";
   const [tarNegra,setTarNegra]=useState(numStr(editing?.cost_cbm_negra));
@@ -21876,7 +21880,7 @@ function WarehouseForm({token,editing,onSave,onCancel,archiveBlocked=false}){
   const save=async()=>{
     if(!name.trim()){setErr("Cargá el nombre del depósito");return;}
     setSaving(true);setErr("");
-    const body={name:name.trim(),rotulo:rotulo.trim()||null,origin,archived};
+    const body={name:name.trim(),rotulo:rotulo.trim()||null,origin,archived,usa_tipo:usaTipo};
     // Orden vacío = no se manda (conserva el actual / default de la tabla).
     if(sortOrder.trim()!=="")body.sort_order=Number(sortOrder);
     // La tarifa es plata: el empleado no la ve ni la manda (si la mandara vacía pisaría con null la
@@ -21917,15 +21921,19 @@ function WarehouseForm({token,editing,onSave,onCancel,archiveBlocked=false}){
       </div>}
       <Inp label="Orden en el tablero" type="number" value={sortOrder} onChange={setSortOrder} placeholder="1, 2, 3… (menor = más arriba)"/>
     </div>
+    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"9px 12px",marginBottom:12,borderRadius:8,fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)",background:usaTipo?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${usaTipo?"rgba(184,149,106,0.35)":"rgba(255,255,255,0.08)"}`}}>
+      <input type="checkbox" checked={usaTipo} onChange={e=>setUsaTipo(e.target.checked)} style={{accentColor:IC,width:16,height:16,cursor:"pointer",flexShrink:0}}/>
+      <span>◼◻ Mercadería blanca / negra <span style={{fontSize:10.5,fontWeight:500,color:"rgba(255,255,255,0.45)"}}>· cada carga lleva tipo y el depósito lo ve en su planilla</span></span>
+    </label>
     {!esEmpleado()&&<div style={{padding:"12px 14px",marginBottom:12,borderRadius:10,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
-      <p style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Lo que cobra el depósito por tipo de mercadería</p>
+      <p style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{usaTipo?"Lo que cobra el depósito por tipo de mercadería":"Descuento por volumen"}</p>
       <div className="mt-wf-grid2">
-        <Inp label="◼ Negra (USD / m³)" type="number" step="0.01" value={tarNegra} onChange={setTarNegra} placeholder="Ej: 1900"/>
-        <Inp label="◻ Blanca (USD / m³)" type="number" step="0.01" value={tarBlanca} onChange={setTarBlanca} placeholder="Ej: 1600"/>
+        {usaTipo&&<Inp label="◼ Negra (USD / m³)" type="number" step="0.01" value={tarNegra} onChange={setTarNegra} placeholder="Ej: 1900"/>}
+        {usaTipo&&<Inp label="◻ Blanca (USD / m³)" type="number" step="0.01" value={tarBlanca} onChange={setTarBlanca} placeholder="Ej: 1600"/>}
         <Inp label="Descuento (%)" type="number" value={descPct} onChange={setDescPct} placeholder="Ej: 10"/>
         <Inp label="Si la carga supera (m³)" type="number" step="0.01" value={descMin} onChange={setDescMin} placeholder="Ej: 1"/>
       </div>
-      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"-4px 0 0",fontStyle:"italic"}}>Con tarifas por tipo, cada pedido pide elegir blanca o negra y el costo sale de acá. Las cargas sin tipo siguen con la tarifa general.</p>
+      {usaTipo&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"-4px 0 0",fontStyle:"italic"}}>Cada pedido pide elegir blanca o negra y el costo sale de acá. Las cargas sin tipo siguen con la tarifa general.</p>}
     </div>}
     {isEdit&&<div style={{padding:"12px 14px",marginBottom:12,borderRadius:10,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.25)"}}>
       <p style={{fontSize:10.5,fontWeight:800,color:"#93c5fd",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🔗 Link de la planilla para el depósito</p>

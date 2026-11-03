@@ -25,7 +25,7 @@ const sbFetch = async (path, init = {}) => {
   return { status: r.status, body: parsed };
 };
 
-const WH_SEL = "id,name,rotulo,origin,default_cost_per_cbm,cost_cbm_blanca,cost_cbm_negra,descuento_pct,descuento_min_cbm";
+const WH_SEL = "id,name,rotulo,origin,usa_tipo,default_cost_per_cbm,cost_cbm_blanca,cost_cbm_negra,descuento_pct,descuento_min_cbm";
 const SH_SEL = "id,shipment_code,tracking_number,product_description,status,awaiting_supplier,received_at,shipped_to_ar_at,container_id,created_at,mercaderia_tipo,tipo_confirmado_at,tipo_corregido,fotos,fotos_mercaderia,is_fragile,is_repack,llegada_marcada_por,operation_id,clients(client_code)";
 
 async function depositoDe(token) {
@@ -112,6 +112,9 @@ export async function GET(req, { params }) {
     deposito: {
       nombre: wh.name,
       rotulo: wh.rotulo || null,
+      // El tipo blanca/negra existe solo en los depósitos con usa_tipo (Luna 1 y 2, 03/11/2026).
+      usa_tipo: !!wh.usa_tipo,
+      tarifa: Number(wh.default_cost_per_cbm) || 0,
       tarifa_blanca: Number(wh.cost_cbm_blanca) || Number(wh.default_cost_per_cbm) || 0,
       tarifa_negra: Number(wh.cost_cbm_negra) || Number(wh.default_cost_per_cbm) || 0,
       descuento_pct: Number(wh.descuento_pct) || 0,
@@ -141,7 +144,9 @@ export async function POST(req, { params }) {
   const sh = Array.isArray(r.body) ? r.body[0] : null;
   if (!sh) return Response.json({ error: "carga_invalida" }, { status: 404 });
 
-  const tipoNuevo = body.tipo === "blanca" || body.tipo === "negra" ? body.tipo : null;
+  // Sin usa_tipo el depósito no elige tipo: se ignora lo que mande.
+  const usaTipo = !!wh.usa_tipo;
+  const tipoNuevo = usaTipo && (body.tipo === "blanca" || body.tipo === "negra") ? body.tipo : null;
   const ahora = new Date().toISOString();
   let patch = null;
 
@@ -150,12 +155,14 @@ export async function POST(req, { params }) {
     const fecha = String(body.fecha || "");
     // China va 11 h adelante de Argentina: se acepta hasta mañana (UTC) y hasta 60 días atrás.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > sumarDias(hoyUtc(), 1) || fecha < sumarDias(hoyUtc(), -60)) return Response.json({ error: "fecha" }, { status: 400 });
-    if (!tipoNuevo) return Response.json({ error: "tipo" }, { status: 400 });
+    if (usaTipo && !tipoNuevo) return Response.json({ error: "tipo" }, { status: 400 });
     patch = {
       status: "en_deposito", received_at: fecha, shipped_to_ar_at: null,
       llegada_marcada_por: "deposito", llegada_marcada_at: ahora,
-      mercaderia_tipo: tipoNuevo, tipo_confirmado_at: ahora,
-      tipo_corregido: sh.tipo_corregido || (!!sh.mercaderia_tipo && sh.mercaderia_tipo !== tipoNuevo),
+      ...(usaTipo ? {
+        mercaderia_tipo: tipoNuevo, tipo_confirmado_at: ahora,
+        tipo_corregido: sh.tipo_corregido || (!!sh.mercaderia_tipo && sh.mercaderia_tipo !== tipoNuevo),
+      } : {}),
       updated_at: ahora,
     };
   } else if (accion === "tipo") {

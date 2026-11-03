@@ -175,12 +175,12 @@ export default function DepositoPage({ params }) {
     const XLSX = await import("xlsx");
     const conts = Object.fromEntries((data?.contenedores || []).map((c) => [c.id, c.codigo]));
     const lista = tab === "contenedores" ? filtrar(porEtapa.contenedor, false) : filtrar(porEtapa[tab] || []);
-    const cols = [...(tab === "contenedores" ? [t.contenedor] : []), t.rotulo, t.mercaderia, t.tracking, t.bultos, t.cbm, `${t.valor} (USD)`, `${t.costo} (USD)`, t.tipo, ...(tab === "camino" ? [] : [t.ingreso])];
+    const cols = [...(tab === "contenedores" ? [t.contenedor] : []), t.rotulo, t.mercaderia, t.tracking, t.bultos, t.cbm, `${t.valor} (USD)`, `${t.costo} (USD)`, ...(usaTipo ? [t.tipo] : []), ...(tab === "camino" ? [] : [t.ingreso])];
     const filas = lista.map((c) => [
       ...(tab === "contenedores" ? [conts[c.contenedor] || ""] : []),
       `${rotuloPre} ${c.cliente || ""}`.trim(), c.mercaderia || "", c.tracking || "",
       Number(c.bultos) || 0, Math.round(c.cbm * 1000) / 1000, Math.round(c.valor * 100) / 100, Math.round((c.costo?.total || 0) * 100) / 100,
-      tipoTxt(c.tipo), ...(tab === "camino" ? [] : [c.llego ? ddmm(c.llego) : ""]),
+      ...(usaTipo ? [tipoTxt(c.tipo)] : []), ...(tab === "camino" ? [] : [c.llego ? ddmm(c.llego) : ""]),
     ]);
     const s = totales(lista);
     const off = tab === "contenedores" ? 1 : 0;
@@ -199,6 +199,9 @@ export default function DepositoPage({ params }) {
   if (!data) return <Centro><p style={{ color: INK, fontSize: 14, margin: 0 }}>{err ? t.error : t.cargando}</p></Centro>;
 
   const dep = data.deposito;
+  // El tipo blanca/negra existe solo en los depósitos con usa_tipo (Luna 1 y 2, 03/11/2026): en los
+  // otros no hay columna, filtro, tarifas por tipo ni pregunta al confirmar.
+  const usaTipo = !!dep.usa_tipo;
   const nom = partirNombre(dep.nombre);
   const tabs = [
     { k: "camino", l: t.camino, ic: "🚚", lista: porEtapa.camino },
@@ -250,9 +253,9 @@ export default function DepositoPage({ params }) {
           <b>{costo.total > 0 ? fmtUsd(costo.total) : "—"}</b>
           {costo.total > 0 && <small>{fmtN(costo.rate)} {t.por_m3}{costo.descuento > 0 ? ` · −${dep.descuento_pct}%` : ""}</small>}
         </div>
-        <div className="dp-c-tipo" data-l={t.tipo}>
+        {usaTipo && <div className="dp-c-tipo" data-l={t.tipo}>
           {tipoChip(c)}
-        </div>
+        </div>}
         <div className="dp-c-acc">
           {etapa === "deposito" && <div className="dp-llego-ok">
             <span className="dp-est" style={{ color: GREEN_TX, background: GREEN_BG }}>✓ {t.llego_el} {ddmm(c.llego)}</span>
@@ -284,7 +287,7 @@ export default function DepositoPage({ params }) {
   };
 
   const encabezado = (etapa) => <div className="dp-grid dp-head">
-    <div>{t.foto}</div><div>{t.rotulo}</div><div>{t.mercaderia}</div><div>{t.tracking}</div><div>{t.bultos}</div><div>{t.cbm}</div><div>{t.valor}</div><div>{t.costo}</div><div>{t.tipo}</div><div style={{ textAlign: "right" }}>{etapa === "camino" ? "" : t.estado}</div>
+    <div>{t.foto}</div><div>{t.rotulo}</div><div>{t.mercaderia}</div><div>{t.tracking}</div><div>{t.bultos}</div><div>{t.cbm}</div><div>{t.valor}</div><div>{t.costo}</div>{usaTipo && <div>{t.tipo}</div>}<div style={{ textAlign: "right" }}>{etapa === "camino" ? "" : t.estado}</div>
   </div>;
 
   const totalesBar = (lista) => { const s = totales(lista); if (!s.n) return null; return <div className="dp-totales">
@@ -298,7 +301,7 @@ export default function DepositoPage({ params }) {
   const vacio = (txt) => <div className="dp-vacio">{txt}</div>;
   const listaTab = tab === "contenedores" ? null : filtrar(porEtapa[tab]);
 
-  return <div style={{ minHeight: "100vh", background: CREAM, color: INK, fontFamily: "'Inter','PingFang SC','Microsoft YaHei',system-ui,-apple-system,sans-serif" }}>
+  return <div className={usaTipo ? undefined : "dp-sin-tipo"} style={{ minHeight: "100vh", background: CREAM, color: INK, fontFamily: "'Inter','PingFang SC','Microsoft YaHei',system-ui,-apple-system,sans-serif" }}>
     <style>{CSS}</style>
 
     {/* Encabezado */}
@@ -323,8 +326,10 @@ export default function DepositoPage({ params }) {
       <div className="dp-wrap" style={{ paddingBottom: 16 }}>
         <div className="dp-tarifas">
           <span className="dp-tar-t">{t.tarifas}</span>
-          <span className="dp-tar-i"><span className="dp-tipo dp-tipo-n dp-tipo-s">◼ {t.negra}</span><b>{fmtUsd0(dep.tarifa_negra)}</b> {t.por_m3}</span>
-          <span className="dp-tar-i"><span className="dp-tipo dp-tipo-b dp-tipo-s">◻ {t.blanca}</span><b>{fmtUsd0(dep.tarifa_blanca)}</b> {t.por_m3}</span>
+          {usaTipo ? <>
+            <span className="dp-tar-i"><span className="dp-tipo dp-tipo-n dp-tipo-s">◼ {t.negra}</span><b>{fmtUsd0(dep.tarifa_negra)}</b> {t.por_m3}</span>
+            <span className="dp-tar-i"><span className="dp-tipo dp-tipo-b dp-tipo-s">◻ {t.blanca}</span><b>{fmtUsd0(dep.tarifa_blanca)}</b> {t.por_m3}</span>
+          </> : <span className="dp-tar-i"><b>{fmtUsd0(dep.tarifa)}</b> {t.por_m3}</span>}
           {dep.descuento_pct > 0 && <span className="dp-tar-i dp-tar-desc">★ {t.desc_regla(dep.descuento_pct, fmtN(dep.descuento_min_cbm))}</span>}
         </div>
       </div>
@@ -348,7 +353,7 @@ export default function DepositoPage({ params }) {
           <span style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: INK, fontSize: 14 }}>⌕</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.buscar} style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px 11px 34px", fontSize: 14, borderRadius: 12, border: `1px solid ${LINE}`, background: CARD, color: INK, outline: "none", fontFamily: "inherit" }} />
         </div>
-        {tab !== "contenedores" && <div style={{ display: "flex", background: CARD, border: `1px solid ${LINE}`, borderRadius: 12, padding: 3 }}>
+        {tab !== "contenedores" && usaTipo && <div style={{ display: "flex", background: CARD, border: `1px solid ${LINE}`, borderRadius: 12, padding: 3 }}>
           {[["todas", t.todas], ["negra", t.negra], ["blanca", t.blanca]].map(([k, l]) => <button key={k} onClick={() => setTipoF(k)} style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", background: tipoF === k ? NAVY : "transparent", color: tipoF === k ? "#fff" : INK }}>{l}</button>)}
         </div>}
       </div>
@@ -384,12 +389,12 @@ export default function DepositoPage({ params }) {
                 <span className="dp-chev">{abierto ? "▴" : "▾"}</span>
               </div>
             </div>
-            <div className="dp-cont-tipos">
+            {usaTipo && <div className="dp-cont-tipos">
               {porTipo.map((x) => <span key={x.tp || "x"} className="dp-cont-tipo">
                 <span className={`dp-tipo dp-tipo-s ${x.tp === "blanca" ? "dp-tipo-b" : x.tp === "negra" ? "dp-tipo-n" : "dp-tipo-x"}`}>{x.tp === "blanca" ? "◻" : x.tp === "negra" ? "◼" : "?"} {tipoTxt(x.tp)}</span>
                 <span>{x.n} {x.n === 1 ? t.carga : t.cargas} · {fmtN(x.bultos)} {t.bultos.toLowerCase()} · <b>{fmtM3(x.cbm)} {t.cbm}</b> · <b>{fmtUsd(x.costo)}</b></span>
               </span>)}
-            </div>
+            </div>}
             {abierto && <>
               {lista.length > 0 && encabezado("contenedor")}
               {lista.length === 0 ? vacio(todas.length ? t.vacio_busqueda : "—") : lista.map((c) => fila(c, "contenedor"))}
@@ -398,7 +403,7 @@ export default function DepositoPage({ params }) {
         }))}
     </main>
 
-    {llegada && <ModalLlegada c={llegada} t={t} lang={lang} dep={dep} fmtUsd={fmtUsd} fmtM3={fmtM3} tipoTxt={tipoTxt} rotulo={rotuloPre} onCancel={() => setLlegada(null)}
+    {llegada && <ModalLlegada c={llegada} t={t} lang={lang} dep={dep} usaTipo={usaTipo} fmtUsd={fmtUsd} fmtM3={fmtM3} tipoTxt={tipoTxt} rotulo={rotuloPre} onCancel={() => setLlegada(null)}
       onOk={async (fecha, tipo) => { const ok = await accion({ accion: "llego", id: llegada.id, fecha, tipo }); if (ok) setLlegada(null); return ok; }} />}
 
     {tipoModal && <ModalTipo c={tipoModal} t={t} tipoTxt={tipoTxt} onCancel={() => setTipoModal(null)}
@@ -461,7 +466,7 @@ function EleccionTipo({ t, valor, onChange }) {
   </div>;
 }
 
-function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCancel, onOk }) {
+function ModalLlegada({ c, t, lang, dep, usaTipo, fmtUsd, fmtM3, tipoTxt, rotulo, onCancel, onOk }) {
   const hoy = hoyLocal();
   const base = Array.from({ length: 7 }, (_, i) => menosDias(hoy, i));
   const marcada = c.marcado_argencargo ? String(c.marcado_argencargo).slice(0, 10) : null;
@@ -471,11 +476,11 @@ function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCance
   const [tipo, setTipo] = useState(c.tipo || null);
   const [falta, setFalta] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const rate = tipo === "blanca" ? dep.tarifa_blanca : tipo === "negra" ? dep.tarifa_negra : 0;
+  const rate = !usaTipo ? dep.tarifa : tipo === "blanca" ? dep.tarifa_blanca : tipo === "negra" ? dep.tarifa_negra : 0;
   const bruto = c.cbm * rate;
-  const desc = tipo && dep.descuento_pct > 0 && c.cbm > dep.descuento_min_cbm ? bruto * dep.descuento_pct / 100 : 0;
+  const desc = rate > 0 && dep.descuento_pct > 0 && c.cbm > dep.descuento_min_cbm ? bruto * dep.descuento_pct / 100 : 0;
   const nombreDia = (iso, i) => iso === hoy ? t.hoy : iso === menosDias(hoy, 1) ? t.ayer : new Date(iso + "T12:00:00").toLocaleDateString(lang === "zh" ? "zh-CN" : "es-AR", { weekday: "short" });
-  const confirmar = async () => { if (!tipo) { setFalta(true); return; } setEnviando(true); await onOk(fecha, tipo); setEnviando(false); };
+  const confirmar = async () => { if (usaTipo && !tipo) { setFalta(true); return; } setEnviando(true); await onOk(fecha, tipo); setEnviando(false); };
   return <Capa onClose={onCancel}>
     <div style={{ padding: "18px 20px", background: `linear-gradient(135deg, ${NAVY}, ${NAVY_2})`, color: "#fff", display: "flex", gap: 14, alignItems: "center" }}>
       {(c.fotos[0] || (c.fotos_merc || [])[0]) ? <div style={{ width: 64, height: 64, borderRadius: 12, backgroundImage: `url(${c.fotos[0] || c.fotos_merc[0]})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.2)" }} /> : <div style={{ width: 64, height: 64, borderRadius: 12, background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>📦</div>}
@@ -499,10 +504,12 @@ function ModalLlegada({ c, t, lang, dep, fmtUsd, fmtM3, tipoTxt, rotulo, onCance
         </button>
       </div>
       {cal && <Calendario t={t} valor={fecha} min={menosDias(hoy, 60)} max={hoy} onElegir={(d) => { setFecha(d); setCal(false); }} />}
-      <p className="dp-m-t" style={{ marginTop: 18 }}>{t.tipo_q}</p>
-      {c.tipo && <p style={{ margin: "-2px 0 10px", fontSize: 13.5, color: INK }}>{t.tipo_cargado} <b>{tipoTxt(c.tipo)}</b>. {t.tipo_otro}</p>}
-      <EleccionTipo t={t} valor={tipo} onChange={(v) => { setTipo(v); setFalta(false); }} />
-      {falta && <p style={{ margin: "8px 0 0", fontSize: 13, color: "#991b1b", fontWeight: 700 }}>{t.tipo_elegi}</p>}
+      {usaTipo && <>
+        <p className="dp-m-t" style={{ marginTop: 18 }}>{t.tipo_q}</p>
+        {c.tipo && <p style={{ margin: "-2px 0 10px", fontSize: 13.5, color: INK }}>{t.tipo_cargado} <b>{tipoTxt(c.tipo)}</b>. {t.tipo_otro}</p>}
+        <EleccionTipo t={t} valor={tipo} onChange={(v) => { setTipo(v); setFalta(false); }} />
+        {falta && <p style={{ margin: "8px 0 0", fontSize: 13, color: "#991b1b", fontWeight: 700 }}>{t.tipo_elegi}</p>}
+      </>}
       {rate > 0 && c.cbm > 0 && <div style={{ marginTop: 16, padding: "11px 14px", borderRadius: 12, background: GREEN_BG, fontSize: 13.5, color: GREEN_TX, display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <span>{t.costo}: {fmtM3(c.cbm)} × {fmtUsd(rate)}{desc > 0 ? ` − ${dep.descuento_pct}%` : ""}</span>
         <b>{fmtUsd(bruto - desc)}</b>
@@ -587,6 +594,7 @@ const CSS = `
 .dp-tab.on .dp-tab-s{color:#fff}
 .dp-card{background:${CARD};border:1px solid ${LINE};border-radius:18px;overflow:hidden;box-shadow:0 1px 2px rgba(10,22,40,.04)}
 .dp-grid{display:grid;grid-template-columns:88px minmax(110px,.9fr) minmax(150px,1.4fr) minmax(130px,1fr) 56px 74px 108px 124px 158px 138px;gap:12px;align-items:center;padding:12px 18px}
+.dp-sin-tipo .dp-grid{grid-template-columns:88px minmax(110px,.9fr) minmax(150px,1.4fr) minmax(130px,1fr) 56px 74px 108px 124px 138px}
 .dp-head{padding:10px 18px;background:#f3f0e8;border-bottom:1px solid ${LINE};font-size:11px;font-weight:800;color:${INK};text-transform:uppercase;letter-spacing:.06em}
 .dp-fila{border-bottom:1px solid ${LINE}}
 .dp-alerta-nar{background:#FFF4E5;box-shadow:inset 5px 0 0 #F97316}
@@ -652,6 +660,7 @@ const CSS = `
 @media(max-width:1180px){
   .dp-head{display:none}
   .dp-grid{grid-template-columns:88px repeat(4,minmax(0,1fr));grid-template-areas:"f r r a a" "f m m m m" "f k k k k" "b c v o t";row-gap:10px}
+  .dp-sin-tipo .dp-grid{grid-template-areas:"f r r a a" "f m m m m" "f k k k k" "b c v o o"}
   .dp-c-foto{grid-area:f;align-self:start}.dp-c-rot{grid-area:r}.dp-c-acc{grid-area:a;align-self:start}.dp-c-merc{grid-area:m}.dp-c-track{grid-area:k}
   .dp-c-bul{grid-area:b}.dp-c-cbm{grid-area:c}.dp-c-val{grid-area:v}.dp-c-cost{grid-area:o}.dp-c-tipo{grid-area:t}
   .dp-c-num::before,.dp-c-tipo::before,.dp-c-track::before{content:attr(data-l);display:block;font-family:'Inter','PingFang SC',system-ui,sans-serif;font-size:10.5px;font-weight:800;color:${INK};text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
@@ -674,6 +683,7 @@ const CSS = `
   .dp-tab-s{font-size:10.5px}
   .dp-buscar{flex:1 1 100% !important}
   .dp-grid{grid-template-columns:72px repeat(3,minmax(0,1fr));grid-template-areas:"f r r r" "f m m m" "k k k k" "b c v v" "o o t t" "a a a a";gap:10px 12px;padding:14px}
+  .dp-sin-tipo .dp-grid{grid-template-areas:"f r r r" "f m m m" "k k k k" "b c v v" "o o o o" "a a a a"}
   .dp-foto{width:72px;height:72px}
   .dp-c-acc{flex-direction:row;justify-content:space-between;align-items:center}
   .dp-btn-llego{flex:1}
