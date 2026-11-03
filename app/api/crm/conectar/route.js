@@ -91,13 +91,26 @@ export async function POST(req) {
     return Response.json({ ok: pasos.every((p) => p.ok), pasos });
   }
 
-  const { code, phone_number_id, waba_id, business_id } = b;
-  if (!code || !phone_number_id || !waba_id) return Response.json({ error: "Faltan code, phone_number_id o waba_id" }, { status: 400 });
+  const { code, waba_id, business_id } = b;
+  let phone_number_id = b.phone_number_id || null;
+  if (!code || !waba_id) return Response.json({ error: "Faltan code o waba_id" }, { status: 400 });
   if (!APP_ID()) return Response.json({ error: "Falta NEXT_PUBLIC_META_APP_ID en Vercel" }, { status: 500 });
 
   let token, secret;
   try { ({ token, secret } = await canjear(code)); pasos.push({ k: "token", ok: true, t: "Token de negocio obtenido" }); }
   catch (e) { return Response.json({ ok: false, pasos: [{ k: "token", ok: false, t: `Meta no entregó el token: ${e.message}` }] }); }
+
+  // En coexistencia el FINISH de Meta puede traer solo la cuenta (waba_id): el número se busca en ella.
+  if (!phone_number_id) {
+    try {
+      const d = await graph(`${waba_id}/phone_numbers?fields=id,display_phone_number,is_on_biz_app`, { token });
+      const lista = d?.data || [];
+      const n = lista.find((p) => p.is_on_biz_app) || lista[0];
+      if (!n?.id) throw new Error("la cuenta no tiene números");
+      phone_number_id = n.id;
+      pasos.push({ k: "numero_id", ok: true, t: `Número encontrado en la cuenta: ${n.display_phone_number || n.id}${lista.length > 1 ? ` (hay ${lista.length}; se tomó el que está en la app del celu)` : ""}` });
+    } catch (e) { pasos.push({ k: "numero_id", ok: false, t: `No se pudo encontrar el número en la cuenta: ${e.message}` }); return Response.json({ ok: false, pasos }); }
+  }
 
   const info = await pasosComunes(token, secret, waba_id, phone_number_id, pasos);
 

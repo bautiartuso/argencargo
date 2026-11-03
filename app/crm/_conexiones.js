@@ -38,7 +38,10 @@ export default function Conexiones() {
       let d; try { d = JSON.parse(e.data); } catch { return; }
       if (d?.type !== "WA_EMBEDDED_SIGNUP") return;
       agregar(`Meta: ${d.event || "?"}${d.data?.current_step ? ` · paso ${d.data.current_step}` : ""}${d.data?.error_message ? ` · ${d.data.error_message}` : ""}${d.data?.error_id ? ` (${d.data.error_id})` : ""}`);
-      if (d.data?.phone_number_id || d.data?.waba_id) datos.current = { ...datos.current, phone_number_id: d.data.phone_number_id, waba_id: d.data.waba_id, business_id: d.data.business_id };
+      // En coexistencia el FINISH puede traer solo waba_id (el servidor busca el número después).
+      // En v5 la cuenta viene como messaging_account_ids en vez de waba_id.
+      const dd = d.data || {};
+      if (dd.phone_number_id || dd.waba_id || dd.messaging_account_ids?.length) datos.current = { ...datos.current, phone_number_id: dd.phone_number_id || datos.current.phone_number_id, waba_id: dd.waba_id || dd.messaging_account_ids?.[0] || datos.current.waba_id, business_id: dd.business_id || datos.current.business_id };
     };
     window.addEventListener("message", onMsg); return () => window.removeEventListener("message", onMsg);
   }, []);
@@ -51,8 +54,8 @@ export default function Conexiones() {
     FB.login(async (resp) => {
       const code = resp?.authResponse?.code;
       if (!code) { agregar("Alta cancelada o sin permiso: Meta no devolvió el código."); setBusy(false); return; }
-      for (let i = 0; i < 25 && !datos.current.phone_number_id; i++) await new Promise((r) => setTimeout(r, 200));
-      if (!datos.current.phone_number_id) { agregar("Meta devolvió el código pero no el id del número. ¿Se completó el alta hasta el final?"); setBusy(false); return; }
+      for (let i = 0; i < 25 && !datos.current.phone_number_id && !datos.current.waba_id; i++) await new Promise((r) => setTimeout(r, 200));
+      if (!datos.current.phone_number_id && !datos.current.waba_id) { agregar("Meta devolvió el código pero no el id del número ni de la cuenta. ¿Se completó el alta hasta Finalizar?"); setBusy(false); return; }
       agregar("Terminando la conexión…");
       mostrar(await api("/api/crm/conectar", { code, ...datos.current }));
       setBusy(false); cargar();
