@@ -150,9 +150,19 @@ export async function GET(req) {
       if (base) params.set("q", `${base}${q ? ` ${q}` : ""}`);
       else { params.append("labelIds", carpeta); if (q) params.set("q", q); }
       if (pagina) params.set("pageToken", pagina);
-      const d = await gm(`/messages?${params}`);
-      const full = await Promise.all((d.messages || []).map((m) => gm(`/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`).catch(() => null)));
-      return json({ mensajes: full.filter(Boolean).map(resumen), siguiente: d.nextPageToken || null });
+      // Por conversación (03/11/2026): una fila por cadena, como Gmail. La fila es el último mensaje
+      // de la cadena (sin borradores; en Papelera solo lo tirado, afuera lo que no está tirado), con
+      // la cantidad de mensajes, cuántos están sin leer y quiénes escribieron.
+      const d = await gm(`/threads?${params}`);
+      const hilos = await Promise.all((d.threads || []).map((t) => gm(`/threads/${t.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`).catch(() => null)));
+      const tiene = (m, l) => (m.labelIds || []).includes(l);
+      const mensajes = hilos.filter(Boolean).map((t) => {
+        const msgs = (t.messages || []).filter((m) => !tiene(m, "DRAFT") && (carpeta === "papelera" ? tiene(m, "TRASH") : !tiene(m, "TRASH"))).sort((a, b) => Number(a.internalDate) - Number(b.internalDate));
+        if (!msgs.length) return null;
+        const r = resumen(msgs[msgs.length - 1]);
+        return { ...r, hilo: t.id, n: msgs.length, nNoLeidos: msgs.filter((m) => tiene(m, "UNREAD")).length, noLeido: msgs.some((m) => tiene(m, "UNREAD")), spam: msgs.some((m) => tiene(m, "SPAM")), adjuntos: msgs.some((m) => /multipart\/mixed/i.test(hdr(m.payload?.headers, "Content-Type"))), remitentes: [...new Set(msgs.map((m) => hdr(m.payload?.headers, "From")))] };
+      }).filter(Boolean).sort((a, b) => b.fecha - a.fecha);
+      return json({ mensajes, siguiente: d.nextPageToken || null });
     }
     if (accion === "mensaje") {
       const id = u.searchParams.get("id");
@@ -163,16 +173,21 @@ export async function GET(req) {
       const h = m.payload?.headers || [];
       return json({ ...resumen(m), cc: hdr(h, "Cc"), responderA: hdr(h, "Reply-To"), messageId: hdr(h, "Message-ID"), referencias: hdr(h, "References"), html: out.html, texto: out.texto, adjuntos: out.adjuntos });
     }
-    // La cadena entera (02/11/2026): se muestra al lado del redactor al responder o reenviar.
-    // Del más nuevo al más viejo, sin borradores; no toca el estado de leído.
+    // La cadena entera (02/11/2026): al lado del redactor y, desde el 03/11, también al leer un mail.
+    // Del más nuevo al más viejo, sin borradores (en Papelera solo lo tirado). Con leer=1 queda toda
+    // leída, como en Gmail.
     if (accion === "hilo") {
-      const t = await gm(`/threads/${u.searchParams.get("id")}?format=full`);
-      const mensajes = (t.messages || []).filter((m) => !(m.labelIds || []).includes("DRAFT")).map((m) => {
+      const id = u.searchParams.get("id");
+      const enPapelera = u.searchParams.get("carpeta") === "papelera";
+      const t = await gm(`/threads/${id}?format=full`);
+      const tiene = (m, l) => (m.labelIds || []).includes(l);
+      const mensajes = (t.messages || []).filter((m) => !tiene(m, "DRAFT") && (enPapelera ? tiene(m, "TRASH") : !tiene(m, "TRASH"))).map((m) => {
         const out = { html: "", texto: "", adjuntos: [] };
         recorrer(m.payload, out);
         const h = m.payload?.headers || [];
-        return { ...resumen(m), cc: hdr(h, "Cc"), html: out.html, texto: out.texto, adjuntos: out.adjuntos };
+        return { ...resumen(m), cc: hdr(h, "Cc"), responderA: hdr(h, "Reply-To"), messageId: hdr(h, "Message-ID"), referencias: hdr(h, "References"), html: out.html, texto: out.texto, adjuntos: out.adjuntos };
       }).sort((a, b) => b.fecha - a.fecha);
+      if (u.searchParams.get("leer") === "1" && (t.messages || []).some((m) => tiene(m, "UNREAD"))) gm(`/threads/${id}/modify`, { method: "POST", body: JSON.stringify({ removeLabelIds: ["UNREAD"] }) }).catch(() => {});
       return json({ mensajes });
     }
     if (accion === "adjunto") {
@@ -287,7 +302,8 @@ export async function POST(req) {
       await gm(`/messages/${b.id}/modify`, { method: "POST", body: JSON.stringify(b.leido ? { removeLabelIds: ["UNREAD"] } : { addLabelIds: ["UNREAD"] }) });
       return json({ ok: true });
     }
-    if (b.accion === "papelera") { await gm(`/messages/${b.id}/trash`, { method: "POST" }); return json({ ok: true }); }
+    // Con hilo (03/11/2026) va la conversación entera a la papelera, como en Gmail.
+    if (b.accion === "papelera") { await gm(b.hilo ? `/threads/${b.hilo}/trash` : `/messages/${b.id}/trash`, { method: "POST" }); return json({ ok: true }); }
     if (b.accion === "mover") {
       await gm(`/messages/${b.id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: b.carpeta ? [b.carpeta] : ["INBOX"], removeLabelIds: b.carpeta ? ["INBOX", "SPAM"] : ["SPAM"] }) });
       return json({ ok: true });

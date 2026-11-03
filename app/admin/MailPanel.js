@@ -50,6 +50,7 @@ export default function MailPanel({ token }) {
   const [q, setQ] = useState("");
   const [busq, setBusq] = useState("");
   const [abierto, setAbierto] = useState(null);
+  const [verTodos, setVerTodos] = useState(false); // cadena abierta: mostrar también los mensajes viejos
   const [redactar, setRedactar] = useState(null);
   const [vista, setVista] = useState("lista"); // celu: carpetas | lista | mensaje
   const [filtrosAbierto, setFiltrosAbierto] = useState(false);
@@ -86,13 +87,18 @@ export default function MailPanel({ token }) {
 
   const abrir = async (m) => {
     if (m.borrador) { setRedactar({ para: nombreDe(m.para) === m.para ? m.para : m.para, asunto: m.asunto, texto: "", borrador: m.borrador }); return; }
-    setAbierto({ ...m, cargando: true }); if (celu) setVista("mensaje");
+    setAbierto({ ...m, cargando: true }); setVerTodos(false); if (celu) setVista("mensaje");
     try {
-      const d = await api({ accion: "mensaje", id: m.id }); setAbierto(d); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: false } : x));
+      // La cadena entera (03/11/2026): lo abierto es el último mensaje (de ahí salen Responder y
+      // Reenviar) y abajo vienen los anteriores. Abrirla la deja leída completa.
+      const d = await api({ accion: "hilo", id: m.hilo || m.id, carpeta, leer: "1" });
+      const msgs = d.mensajes?.length ? d.mensajes : [];
+      setAbierto({ ...m, ...(msgs[0] || {}), mensajes: msgs, cargando: false }); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: false, nNoLeidos: 0 } : x));
       if (m.noLeido) {
-        if (carpeta === "bandeja") setNoLeidos((n) => Math.max(0, n - 1)); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - 1) } : c));
+        const k = m.nNoLeidos || 1;
+        if (carpeta === "bandeja") setNoLeidos((n) => Math.max(0, n - k)); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - k) } : c));
         const nombre = carpeta === "bandeja" ? "bandeja" : String(carpetas.find((c) => c.id === carpeta)?.nombre || "").toLowerCase();
-        if (["bandeja", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - 1)));
+        if (["bandeja", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - k)));
       }
     }
     catch (e) { toast(e.message, "error"); setAbierto(null); }
@@ -114,7 +120,7 @@ export default function MailPanel({ token }) {
   // Al borrar se abre el mail de abajo (o el de arriba si era el último).
   const papelera = async (m) => {
     try {
-      await api(null, { accion: "papelera", id: m.id });
+      await api(null, { accion: "papelera", id: m.id, hilo: m.hilo });
       const i = lista.findIndex((x) => x.id === m.id);
       const resto = lista.filter((x) => x.id !== m.id);
       setLista(resto);
@@ -210,6 +216,7 @@ export default function MailPanel({ token }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: m.noLeido ? 800 : 600, color: m.noLeido ? "#fff" : "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{carpeta === "enviados" || m.borrador ? `Para: ${quien}` : quien}</span>
+            {m.n > 1 && <span title={`${m.n} mensajes en la conversación`} style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)", flexShrink: 0 }}>{m.n}</span>}
             {m.spam && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
             {m.adjuntos && <span style={{ color: "rgba(255,255,255,0.4)", display: "inline-flex" }}><Ico d={I.clip} s={13} /></span>}
             <span style={{ fontSize: 11.5, color: m.noLeido ? GOLD_LIGHT : "rgba(255,255,255,0.4)", fontWeight: m.noLeido ? 700 : 500, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
@@ -244,20 +251,27 @@ export default function MailPanel({ token }) {
       <button onClick={() => papelera(abierto)} style={{ ...btnIco, color: "#fca5a5" }} aria-label="Papelera" title="Mover a la papelera"><Ico d={I.papelera} s={15} /></button>
     </div>
     <div style={{ flex: 1, overflowY: celu ? "visible" : "auto", minHeight: 0, padding: celu ? "14px 0" : "20px 24px 28px" }}>
-      <p style={{ fontSize: 21, fontWeight: 800, color: "#fff", margin: "0 0 16px", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{abierto.asunto || "(sin asunto)"}</p>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
-        <Avatar nombre={nombreDe(abierto.de)} tam={40} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 14, color: "#fff", margin: 0, fontWeight: 800, wordBreak: "break-word" }}>{nombreDe(abierto.de)} <span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 500, fontSize: 12.5 }}>{String(abierto.de).match(/<([^>]+)>/)?.[1] || ""}</span></p>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "2px 0 0", wordBreak: "break-word" }}>Para {abierto.para}{abierto.cc ? ` · Cc ${abierto.cc}` : ""}</p>
+      <p style={{ fontSize: 21, fontWeight: 800, color: "#fff", margin: "0 0 4px", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{abierto.asunto || "(sin asunto)"}</p>
+      {(abierto.mensajes?.length || 0) > 1 && <p style={{ margin: 0, fontSize: 12.5, color: "rgba(255,255,255,0.45)", fontWeight: 600 }}>{abierto.mensajes.length} mensajes</p>}
+      {abierto.cargando ? <>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, margin: "14px 0 16px" }}>
+          <Avatar nombre={nombreDe(abierto.de)} tam={40} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, color: "#fff", margin: 0, fontWeight: 800, wordBreak: "break-word" }}>{nombreDe(abierto.de)}</p>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "2px 0 0", wordBreak: "break-word" }}>Para {abierto.para}</p>
+          </div>
         </div>
-        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", whiteSpace: "nowrap" }}>{abierto.fecha ? new Date(abierto.fecha).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</span>
-      </div>
-      {abierto.cargando ? <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Cargando…</p> : <>
-        <Adjuntos m={abierto} verAdjunto={verAdjunto} bajar={bajar} />
-        {abierto.html ? <CuerpoMail key={abierto.id} html={abierto.html} />
-          : <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, color: "rgba(255,255,255,0.85)", margin: 0, lineHeight: 1.6 }}>{abierto.texto}</pre>}
-      </>}
+        <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Cargando…</p>
+      </> : (() => {
+        // Toda la conversación (03/11/2026), del más nuevo al más viejo; con más de 4 mensajes los
+        // viejos quedan plegados en un botón.
+        const todos = abierto.mensajes || [];
+        const visibles = verTodos || todos.length <= 4 ? todos : todos.slice(0, 3);
+        return <>
+          {visibles.map((m, i) => <MensajeCadena key={m.id} m={m} verAdjunto={verAdjunto} bajar={bajar} primero={i === 0} />)}
+          {visibles.length < todos.length && <button onClick={() => setVerTodos(true)} style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px dashed rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.03)", color: GOLD_LIGHT, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Ver los {todos.length - visibles.length} mensajes anteriores</button>}
+        </>;
+      })()}
     </div>
   </div> : !celu && <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "rgba(255,255,255,0.35)" }}>
     <span style={{ width: 64, height: 64, borderRadius: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(184,149,106,0.1)", color: GOLD_LIGHT }}><Ico d={I.bandeja} s={28} /></span>
@@ -274,7 +288,7 @@ export default function MailPanel({ token }) {
         <div style={{ borderRight: "1px solid rgba(255,255,255,0.06)", minHeight: 0, overflow: "hidden" }}>{panelLista}</div>
         <div style={{ minWidth: 0, minHeight: 0, overflow: "hidden" }}>{panelMensaje}</div>
       </div>}
-    {redactar && <Redactar inicial={redactar} celu={celu} api={api} prefs={prefs} verAdjunto={verAdjunto} bajar={bajar} onCerrar={(enviado) => { setRedactar(null); if (enviado && (carpeta === "enviados" || carpeta === "borradores")) cargarLista(false); }} />}
+    {redactar && <Redactar inicial={redactar} celu={celu} api={api} prefs={prefs} verAdjunto={verAdjunto} bajar={bajar} onCerrar={(enviado) => { setRedactar(null); if (enviado) { cargarLista(false); if (abierto && !abierto.cargando && !abierto.borrador) abrir(abierto); } }} />}
     {filtrosAbierto && <Filtros api={api} celu={celu} onCerrar={() => { setFiltrosAbierto(false); cargarCarpetas(); }} />}
     {prefsAbierto && <Preferencias api={api} celu={celu} prefs={prefs} onCerrar={(nuevas) => { setPrefsAbierto(false); if (nuevas) setPrefs(nuevas); }} />}
   </div>;
