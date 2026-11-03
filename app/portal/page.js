@@ -1068,12 +1068,15 @@ function OperationDetail({op:opProp,token,client,onBack}){
   let est=null;try{if(!isGI&&items.length>0&&calcCtx)est=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);}catch(e){est=null;}
   // Reembalaje (22/10/2026): cartel con la plata ahorrada bien grande; se muestra en Resumen y en Bultos.
   const repackBanner=()=>{if(!repackInfo)return null;const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;if(!(delta>0.01))return null;
-          // Ahorro en plata: flete con los bultos de antes menos el flete actual (respeta el cambio de
-          // tramo de tarifa y el mínimo de kilos). Sin presupuesto calculable: kilos × valor por kilo.
+          // Ahorro en plata: flete + recargo por sobrepeso con los bultos de antes, menos los de ahora
+          // (respeta el cambio de tramo de tarifa y el mínimo de kilos). El sobrepeso se sumó el
+          // 03/11/2026: AC-0356 bajó 8,5 kg pero pasó del tramo +100 kg (USD 14) al de 25-100 (USD 15)
+          // y el cartel decía USD 25,78 ignorando los USD 80 de las dos cajas grandes.
+          // Sin presupuesto calculable: kilos × valor por kilo.
           let ahorroUsd=null;
           try{
             const snap=Array.isArray(repackInfo.original_packages_snapshot)?repackInfo.original_packages_snapshot:null;
-            if(est&&snap&&snap.length&&calcCtx){const estAntes=calcOpBudget(op,items,snap,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);const d=Number(estAntes?.flete||0)-Number(est.flete||0);if(d>0.005)ahorroUsd=d;}
+            if(est&&snap&&snap.length&&calcCtx){const estAntes=calcOpBudget(op,items,snap,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);const d=(Number(estAntes?.flete||0)+Number(estAntes?.overweightSurcharge||0))-(Number(est.flete||0)+Number(est.overweightSurcharge||0));if(d>0.005)ahorroUsd=d;}
             if(ahorroUsd==null){const rate=Number(est?.fleteRate||0)||(Number(op.budget_flete||0)>0&&after>0?Number(op.budget_flete)/after:0);if(rate>0)ahorroUsd=delta*rate;}
           }catch{ahorroUsd=null;}
           return <div style={{marginBottom:12,padding:"11px 14px",borderRadius:14,border:"1px solid rgba(74,222,128,0.5)",background:"linear-gradient(135deg,rgba(34,197,94,0.2),rgba(34,197,94,0.05))",color:"#fff",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
