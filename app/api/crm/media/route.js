@@ -3,13 +3,14 @@
 // cuando alguien abre el adjunto y se devuelven en el momento. La URL de Meta vence a los 5 minutos,
 // por eso se resuelve siempre de nuevo.
 import { usuarioConRol } from "../../../../lib/auth-server";
-import { GRAPH_CRM } from "../../../../lib/crm-wa";
+import { GRAPH_CRM, tokenVigente } from "../../../../lib/crm-wa";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
+// El token que anda hoy para el número conectado: el permanente del usuario del sistema o el del alta.
 async function tokenCrm() {
   const k = process.env.SUPABASE_SERVICE_ROLE;
-  const r = await fetch(`${SB_URL}/rest/v1/crm_numbers?select=token&status=eq.conectado&token=not.is.null&order=connected_at.desc&limit=1`, { headers: { apikey: k, Authorization: `Bearer ${k}` }, cache: "no-store" }).then((x) => x.json()).catch(() => []);
-  return Array.isArray(r) && r[0]?.token ? r[0].token : null;
+  const r = await fetch(`${SB_URL}/rest/v1/crm_numbers?select=phone_number_id,token&status=eq.conectado&order=connected_at.desc&limit=1`, { headers: { apikey: k, Authorization: `Bearer ${k}` }, cache: "no-store" }).then((x) => x.json()).catch(() => []);
+  return Array.isArray(r) && r[0] ? tokenVigente(r[0]) : null;
 }
 
 export async function GET(req) {

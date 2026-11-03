@@ -13,7 +13,7 @@
 // Env: NEXT_PUBLIC_META_APP_ID (id de la app de Meta) · la clave secreta de esa app es alguna de
 // WA_APP_SECRET / META_APP_SECRET / IG_APP_SECRET (se prueban en orden) · WA_VERIFY_TOKEN · PUBLIC_BASE_URL
 import { usuarioConRol } from "../../../../lib/auth-server";
-import { GRAPH_CRM } from "../../../../lib/crm-wa";
+import { GRAPH_CRM, tokenVigente, tokenPermanenteSirve } from "../../../../lib/crm-wa";
 import { adsConfigured, probarCuenta } from "../../../../lib/meta-ads";
 
 export const maxDuration = 60;
@@ -84,9 +84,12 @@ export async function POST(req) {
   if (b.accion === "probar_ads") return Response.json(await probarCuenta());
   if (b.accion === "reintentar") {
     const n = await numeroGuardado(b.phone_number_id);
-    if (!n?.token) return Response.json({ error: "Ese número no está guardado" }, { status: 404 });
+    if (!n) return Response.json({ error: "Ese número no está guardado" }, { status: 404 });
+    const token = await tokenVigente(n);
+    if (!token) return Response.json({ ok: false, pasos: [{ k: "token", ok: false, t: "Ningún token sirve para este número: venció el del alta y el usuario del sistema todavía no tiene asignada esta cuenta de WhatsApp" }] });
+    pasos.push({ k: "token", ok: true, t: token === process.env.WA_TOKEN ? "Usando el token permanente del usuario del sistema" : "Usando el token del alta (vence a los 60 días)" });
     const secret = SECRETOS()[0] || null;
-    const info = await pasosComunes(n.token, secret, n.waba_id, n.phone_number_id, pasos);
+    const info = await pasosComunes(token, secret, n.waba_id, n.phone_number_id, pasos);
     await fetch(`${SB_URL}/rest/v1/crm_numbers?phone_number_id=eq.${encodeURIComponent(n.phone_number_id)}`, { method: "PATCH", headers: { ...sbh(), Prefer: "return=minimal" }, body: JSON.stringify({ display_phone: info?.display_phone_number || n.display_phone, is_on_biz_app: info?.is_on_biz_app ?? n.is_on_biz_app, updated_at: ahora }) });
     return Response.json({ ok: pasos.every((p) => p.ok), pasos });
   }
@@ -140,10 +143,12 @@ export async function GET(req) {
     fetch(`${SB_URL}/rest/v1/crm_numbers?select=phone_number_id,waba_id,business_id,display_phone,status,disconnect_reason,connected_at,disconnected_at,sync_contacts_at,sync_history_at,history_progress,is_on_biz_app,send_enabled,send_month,send_count,send_cap,updated_at&order=connected_at.desc`, { headers: sbh(), cache: "no-store" }).then((r) => r.json()).catch(() => []),
     contar("crm_contacts"), contar("crm_messages"),
   ]);
+  // Por número: ¿el token permanente del usuario del sistema ya le sirve? (si no, cuando venza el del alta se corta la API)
+  const nums = Array.isArray(numeros) ? await Promise.all(numeros.map(async (n) => ({ ...n, token_permanente: await tokenPermanenteSirve(n) }))) : [];
   let campos = null;
   if (u.role === "admin" && APP_ID() && SECRETOS().length) {
     try { const d = await graph(`${APP_ID()}/subscriptions?access_token=${APP_ID()}|${SECRETOS()[0]}`); const wa = (d?.data || []).find((s) => s.object === "whatsapp_business_account"); campos = { callback: wa?.callback_url || null, fields: (wa?.fields || []).map((f) => (typeof f === "string" ? f : f.name)), faltan: CAMPOS.filter((c) => !(wa?.fields || []).map((f) => (typeof f === "string" ? f : f.name)).includes(c)) }; }
     catch (e) { campos = { error: e.message }; }
   }
-  return Response.json({ numeros: Array.isArray(numeros) ? numeros : [], contactos, mensajes, campos, env: { app_id: !!APP_ID(), config_id: !!process.env.NEXT_PUBLIC_META_ES_CONFIG_ID, secreto: SECRETOS().length > 0, ads: adsConfigured(), anthropic: !!process.env.ANTHROPIC_API_KEY } });
+  return Response.json({ numeros: nums, contactos, mensajes, campos, env: { app_id: !!APP_ID(), config_id: !!process.env.NEXT_PUBLIC_META_ES_CONFIG_ID, secreto: SECRETOS().length > 0, wa_token: !!process.env.WA_TOKEN, ads: adsConfigured(), anthropic: !!process.env.ANTHROPIC_API_KEY } });
 }

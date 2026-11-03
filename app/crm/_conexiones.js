@@ -83,6 +83,7 @@ export default function Conexiones() {
             <Pill c={e[1]}>{e[0]}</Pill>
             <span style={{ fontSize: 12, color: C.sub }}>desde {hace(n.connected_at)}</span>
             {n.is_on_biz_app === false && <Pill c={C.red}>Ya no está en la app del celu</Pill>}
+            {n.token_permanente ? <Pill c="#22c55e">Token permanente</Pill> : <Pill c="#E8D098">Token del alta · falta el permanente</Pill>}
             {n.disconnect_reason && <span style={{ fontSize: 12, color: C.red }}>{n.disconnect_reason}</span>}
             <span style={{ fontSize: 12, color: C.sub }}>Historial: {n.history_progress == null ? (n.sync_history_at ? "pedido, esperando" : "no pedido") : n.history_progress < 0 ? "el celu no lo compartió" : `${n.history_progress}%`}</span>
             <Btn small onClick={() => accion({ accion: "reintentar", phone_number_id: n.phone_number_id }, `Revisando la conexión de ${n.display_phone || n.phone_number_id}…`)} disabled={busy}>Revisar conexión</Btn>

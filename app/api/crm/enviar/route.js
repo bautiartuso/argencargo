@@ -4,7 +4,7 @@
 //   · tope mensual (send_cap, 950) para no pasar las 1.000 respuestas gratis por número
 // Devuelve {ok} o {error, motivo: "apagado" | "ventana" | "tope"} para que la pantalla ofrezca el celu.
 import { usuarioConRol } from "../../../../lib/auth-server";
-import { GRAPH_CRM } from "../../../../lib/crm-wa";
+import { GRAPH_CRM, tokenVigente } from "../../../../lib/crm-wa";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const sbh = (extra = {}) => { const k = process.env.SUPABASE_SERVICE_ROLE; return { apikey: k, Authorization: `Bearer ${k}`, "Content-Type": "application/json", ...extra }; };
@@ -18,7 +18,7 @@ export async function POST(req) {
   if (!b.contact_id || !text) return Response.json({ error: "Faltan contact_id o text" }, { status: 400 });
 
   const [num, con] = await Promise.all([
-    sb(`/crm_numbers?select=phone_number_id,token,send_enabled,send_month,send_count,send_cap&status=eq.conectado&token=not.is.null&order=connected_at.desc&limit=1`).then((r) => r.json()).then((r) => r?.[0] || null),
+    sb(`/crm_numbers?select=phone_number_id,token,send_enabled,send_month,send_count,send_cap&status=eq.conectado&order=connected_at.desc&limit=1`).then((r) => r.json()).then((r) => r?.[0] || null),
     sb(`/crm_contacts?id=eq.${encodeURIComponent(b.contact_id)}&select=id,phone,last_in_at,stage,stage_manual`).then((r) => r.json()).then((r) => r?.[0] || null),
   ]);
   if (!num) return Response.json({ error: "El número no está conectado", motivo: "apagado" }, { status: 409 });
@@ -29,7 +29,9 @@ export async function POST(req) {
   const usados = num.send_month === mes ? num.send_count : 0;
   if (usados >= num.send_cap) return Response.json({ error: `Se llegó al tope de ${num.send_cap} mensajes de este mes`, motivo: "tope" }, { status: 409 });
 
-  const r = await fetch(`${GRAPH_CRM}/${num.phone_number_id}/messages`, { method: "POST", headers: { Authorization: `Bearer ${num.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", to: con.phone, type: "text", text: { body: text } }) });
+  const token = await tokenVigente(num);
+  if (!token) return Response.json({ error: "Ningún token sirve para el número (venció el del alta y falta asignar la cuenta al usuario del sistema)", motivo: "apagado" }, { status: 409 });
+  const r = await fetch(`${GRAPH_CRM}/${num.phone_number_id}/messages`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", to: con.phone, type: "text", text: { body: text } }) });
   const d = await r.json().catch(() => null);
   if (!r.ok) return Response.json({ error: d?.error?.message || `Meta devolvió ${r.status}` }, { status: 502 });
   const ts = new Date().toISOString();
