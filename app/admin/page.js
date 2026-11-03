@@ -14186,10 +14186,14 @@ function FacturasPanel({token}){
   const [opCode,setOpCode]=useState("");const [opInfo,setOpInfo]=useState(null);
   const [docTipo,setDocTipo]=useState(96);const [docNro,setDocNro]=useState("");const [nombre,setNombre]=useState("");
   const [domicilio,setDomicilio]=useState("");const [condIva,setCondIva]=useState(5);
-  // Con op: conceptos del presupuesto (USD) convertidos por el TC. Sin op: importe ARS directo.
-  const [lineas,setLineas]=useState([]); // [{key,label,usd,on}]
+  // Ítems (03/11/2026): detalle, cantidad y precio unitario en ARS. Con op vienen del presupuesto en
+  // USD (usd) y el unitario sale del TC; si se edita el unitario a mano, deja de seguir al TC.
+  const ITEM_NUEVO=()=>({key:`i${Date.now()}${Math.random().toString(36).slice(2,6)}`,label:"",cantidad:"1",unitario:"",usd:"",on:true});
+  const [items,setItems]=useState(()=>[{...ITEM_NUEVO(),label:"Servicios logísticos"}]);
   const [tc,setTc]=useState("");
-  const [importe,setImporte]=useState("");const [detalle,setDetalle]=useState("Servicios logísticos");
+  // Qué servicio se factura: las actividades del emisor en ARCA (Bautista tiene tres), cargadas al abrir.
+  const [actividades,setActividades]=useState([]);const [actividadId,setActividadId]=useState(null);
+  useEffect(()=>{if(!modal||actividades.length)return;let vivo=true;fetch("/api/facturas?action=actividades",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json()).then(j=>{if(!vivo||!Array.isArray(j?.actividades)||!j.actividades.length)return;setActividades(j.actividades);setActividadId(j.actividades[0].id);}).catch(()=>{});return()=>{vivo=false;};},[modal]); // eslint-disable-line react-hooks/exhaustive-deps
   const [buscandoPadron,setBuscandoPadron]=useState(false);
   // Filtros de la lista
   const [q,setQ]=useState("");const [filtro,setFiltro]=useState("todas");const [mes,setMes]=useState(()=>hoyAR().slice(0,7));const [verTodoPorFacturar,setVerTodoPorFacturar]=useState(false);
@@ -14225,8 +14229,13 @@ function FacturasPanel({token}){
   },[]);
   const nTc=Number(String(tc||"").replace(",","."))||0;
   const r2=(v)=>Math.round(v*100)/100;
-  const lineasOn=lineas.filter(l=>l.on&&Number(l.usd)>0);
-  const totalArs=r2(lineasOn.reduce((s,l)=>s+Number(l.usd)*nTc,0));
+  const numAr=(v)=>Number(String(v??"").replace(",","."))||0;
+  const sigueTc=(it)=>it.usd!==""&&it.usd!=null;
+  const unitEff=(it)=>sigueTc(it)?(nTc>0?r2(Number(it.usd)*nTc):0):numAr(it.unitario);
+  const subEff=(it)=>r2(numAr(it.cantidad)*unitEff(it));
+  const itemsOn=items.filter(it=>it.on&&subEff(it)>0);
+  const totalArs=r2(itemsOn.reduce((s,it)=>s+subEff(it),0));
+  const chItem=(i,patch)=>setItems(p=>p.map((x,j)=>j===i?{...x,...patch}:x));
   const buscarPadron=async(nroOverride)=>{
     const nro=String(nroOverride||docNro).replace(/\D/g,"");
     if(nro.length!==11)return;
@@ -14263,35 +14272,28 @@ function FacturasPanel({token}){
     const otros=r2(Math.max(0,Number(op.budget_total||0)-fl-seg-tax));
     const taxBilled=op.channel!=="aereo_blanco"||!(c.tax_condition==="responsable_inscripto")||!!op.ri_argencargo_collects_taxes;
     const ls=[];
-    if(fl>0)ls.push({key:"flete",label:"Flete internacional",usd:String(fl),on:true});
-    if(seg>0)ls.push({key:"seguro",label:"Seguro de carga",usd:String(seg),on:true});
-    if(tax>0)ls.push({key:"taxes",label:"Impuestos y gestión aduanera",usd:String(tax),on:taxBilled});
+    if(fl>0)ls.push({...ITEM_NUEVO(),label:"Flete internacional",usd:String(fl)});
+    if(seg>0)ls.push({...ITEM_NUEVO(),label:"Seguro de carga",usd:String(seg)});
+    if(tax>0)ls.push({...ITEM_NUEVO(),label:"Impuestos y gestión aduanera",usd:String(tax),on:taxBilled});
     // El envío a domicilio (flete local elegido en el link) va como concepto propio; lo que
     // sobre después de eso queda como "Otros cargos del servicio". Las etiquetas se pueden editar.
     const envio=r2(Math.min(otros,Number(op.delivery_cost_usd||0)));
-    if(envio>0.01)ls.push({key:"envio",label:"Envío a domicilio",usd:String(envio),on:true});
+    if(envio>0.01)ls.push({...ITEM_NUEVO(),label:"Envío a domicilio",usd:String(envio)});
     const resto=r2(otros-envio);
-    if(resto>0.01)ls.push({key:"otros",label:"Otros cargos del servicio",usd:String(resto),on:true});
-    setLineas(ls);
+    if(resto>0.01)ls.push({...ITEM_NUEVO(),label:"Otros cargos del servicio",usd:String(resto)});
+    setItems(ls.length?ls:[{...ITEM_NUEVO(),label:"Servicios logísticos"}]);
     // TC del último cobro registrado en la op (el real al que se cobró); si no hay, queda el blue.
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&exchange_rate=not.is.null&select=exchange_rate&order=payment_date.desc&limit=1`});
     const rate=Array.isArray(cp)&&cp[0]?Number(cp[0].exchange_rate):0;
     if(rate>0)setTc(String(rate));
   };
-  const cerrar=()=>{setModal(false);setOpCode("");setOpInfo(null);setLineas([]);setImporte("");setErr("");};
+  const cerrar=()=>{setModal(false);setOpCode("");setOpInfo(null);setItems([{...ITEM_NUEVO(),label:"Servicios logísticos"}]);setTc("");setErr("");};
   const emitir=async()=>{
     setErr("");
-    let body;
-    if(opInfo&&lineas.length>0){
-      if(!(nTc>0)){setErr("Cargá el tipo de cambio.");return;}
-      if(lineasOn.length===0){setErr("Marcá al menos un concepto.");return;}
-      const items=lineasOn.map(l=>({label:l.label,usd:r2(Number(l.usd)),ars:r2(Number(l.usd)*nTc)}));
-      body={operation_id:opInfo.id,client_id:opInfo.client_id,items,tc:nTc,importe:r2(items.reduce((s,i)=>s+i.ars,0)),detalle:items.map(i=>i.label).join(" + ")};
-    }else{
-      const imp=Number(String(importe).replace(/\./g,"").replace(",","."));
-      if(!(imp>0)){setErr("Cargá el importe en pesos.");return;}
-      body={operation_id:opInfo?.id||null,client_id:opInfo?.client_id||null,importe:imp,detalle};
-    }
+    if(items.some(it=>it.on&&sigueTc(it))&&!(nTc>0)){setErr("Cargá el tipo de cambio.");return;}
+    if(itemsOn.length===0){setErr("Cargá al menos un ítem con cantidad y precio.");return;}
+    const its=itemsOn.map(it=>({label:String(it.label||"").trim()||"Servicios logísticos",cantidad:numAr(it.cantidad)||1,unitario:unitEff(it),ars:subEff(it),usd:sigueTc(it)?r2(Number(it.usd)):0}));
+    const body={operation_id:opInfo?.id||null,client_id:opInfo?.client_id||null,items:its,tc:nTc>0?nTc:null,importe:r2(its.reduce((s,i)=>s+i.ars,0)),detalle:its.map(i=>i.label).join(" + "),actividad_id:actividadId||null,actividad_desc:actividades.find(a=>a.id===actividadId)?.desc||null};
     Object.assign(body,{doc_tipo:docTipo,doc_nro:docNro,receptor_nombre:nombre,receptor_domicilio:domicilio,receptor_cond_iva:condIva});
     setEmitiendo(true);
     try{
@@ -14491,7 +14493,7 @@ function FacturasPanel({token}){
           <button onClick={cerrar} aria-label="Cerrar" style={{width:36,height:36,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:18,cursor:"pointer"}}>×</button>
         </div>
 
-        {paso(1,"Operación")}
+        {paso(1,"Operación (opcional)")}
         <div style={{display:"flex",gap:8}}>
           <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"'JetBrains Mono',monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
           <Btn variant="secondary" onClick={()=>traerOp()}>Traer</Btn>
@@ -14512,31 +14514,40 @@ function FacturasPanel({token}){
         <input value={domicilio} onChange={e=>setDomicilio(e.target.value)} style={inp}/>
         <div style={{marginTop:12}}><Sel label="Condición frente al IVA" value={String(condIva)} onChange={v=>setCondIva(Number(v))} options={Object.entries(COND).map(([k,v])=>({value:k,label:v}))}/></div>
 
-        {paso(3,"Importe")}
-        {opInfo&&lineas.length>0?<>
+        {paso(3,"Qué se factura")}
+        {actividades.length>0&&<>
+          <label style={lb}>Servicio (actividad en ARCA)</label>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {actividades.map(a=>{const on=actividadId===a.id;return <button key={a.id} type="button" onClick={()=>setActividadId(a.id)} style={{textAlign:"left",padding:"9px 12px",borderRadius:10,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.03)",color:on?"#fff":"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",gap:10,alignItems:"center"}}><span style={{width:16,height:16,borderRadius:"50%",border:`2px solid ${on?GOLD:"rgba(255,255,255,0.3)"}`,background:on?GOLD:"transparent",flexShrink:0}}/><span style={{flex:1,minWidth:0}}>{a.desc}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>{a.id}</span></button>;})}
+          </div>
+        </>}
+        {items.some(sigueTc)&&<>
           <label style={lb}>Tipo de cambio (ARS por USD)</label>
           <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={{...inp,maxWidth:180,fontWeight:700}}/>
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:12}}>
-            {lineas.map((l,i)=><div key={l.key} style={{display:"grid",gridTemplateColumns:celu?"34px 1fr":"34px 1fr 120px 130px",gap:8,alignItems:"center",padding:"8px 10px",background:l.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${l.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:11}}>
-              <button type="button" onClick={()=>setLineas(p=>p.map((x,j)=>j===i?{...x,on:!x.on}:x))} aria-label={l.on?"Quitar":"Incluir"} style={{width:26,height:26,borderRadius:8,border:`1.5px solid ${l.on?GOLD:"rgba(255,255,255,0.25)"}`,background:l.on?GOLD:"transparent",color:"#0A1628",fontWeight:900,fontSize:14,cursor:"pointer",lineHeight:1}}>{l.on?"✓":""}</button>
-              <input value={l.label} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,label:e.target.value}:x))} disabled={!l.on} style={{...inp,height:36,fontSize:13,fontWeight:600,background:"transparent",border:"1px solid transparent",color:l.on?"#fff":"rgba(255,255,255,0.4)"}}/>
-              <div style={{position:"relative",gridColumn:celu?"2":"auto"}}>
-                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>USD</span>
-                <input value={l.usd} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,usd:e.target.value.replace(/[^0-9.,]/g,"").replace(",",".")}:x))} inputMode="decimal" disabled={!l.on} style={{...inp,height:36,paddingLeft:42,fontSize:13,textAlign:"right"}}/>
-              </div>
-              <span style={{gridColumn:celu?"2":"auto",fontSize:13,fontWeight:800,textAlign:"right",color:l.on?GOLD_LIGHT:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums"}}>$ {arsF(Number(l.usd||0)*nTc)}</span>
-            </div>)}
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,padding:"14px 16px",background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:12}}>
-            <span style={{fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>Total</span>
-            <span style={{fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>$ {arsF(totalArs)}</span>
-          </div>
-        </>:<>
-          <label style={lb}>Importe en pesos</label>
-          <input value={importe} onChange={e=>setImporte(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" placeholder="1500000" style={{...inp,fontSize:16,fontWeight:700}}/>
-          <label style={lb}>Detalle</label>
-          <input value={detalle} onChange={e=>setDetalle(e.target.value)} style={inp}/>
         </>}
+        <label style={lb}>Ítems</label>
+        {!celu&&<div style={{display:"grid",gridTemplateColumns:"28px minmax(0,1fr) 72px 130px 120px 28px",gap:8,padding:"0 10px 2px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}><span/><span>Detalle</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span><span/></div>}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {items.map((it,i)=>{const u=unitEff(it);const sub=subEff(it);const tcRow=sigueTc(it);return <div key={it.key} style={{display:"grid",gridTemplateColumns:celu?"28px minmax(0,1fr) 28px":"28px minmax(0,1fr) 72px 130px 120px 28px",gap:8,alignItems:"center",padding:"8px 10px",background:it.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${it.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:11}}>
+            <button type="button" onClick={()=>chItem(i,{on:!it.on})} aria-label={it.on?"Quitar":"Incluir"} style={{width:26,height:26,borderRadius:8,border:`1.5px solid ${it.on?GOLD:"rgba(255,255,255,0.25)"}`,background:it.on?GOLD:"transparent",color:"#0A1628",fontWeight:900,fontSize:14,cursor:"pointer",lineHeight:1}}>{it.on?"✓":""}</button>
+            <input value={it.label} onChange={e=>chItem(i,{label:e.target.value})} placeholder="Detalle del ítem" disabled={!it.on} style={{...inp,height:36,fontSize:13,fontWeight:600,background:"transparent",border:"1px solid transparent",color:it.on?"#fff":"rgba(255,255,255,0.4)"}}/>
+            {celu&&<button type="button" onClick={()=>setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p)} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
+            <div style={celu?{gridColumn:"2",display:"grid",gridTemplateColumns:"64px 1fr 1fr",gap:6,alignItems:"center"}:{display:"contents"}}>
+              <input value={it.cantidad} onChange={e=>chItem(i,{cantidad:e.target.value.replace(/[^0-9.,]/g,"")})} inputMode="decimal" placeholder="Cant." disabled={!it.on} style={{...inp,height:36,fontSize:13,textAlign:"right"}}/>
+              <div style={{position:"relative"}} title={tcRow?`USD ${it.usd} × ${nTc||"TC"}`:undefined}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>$</span>
+                <input value={tcRow?(u?String(u):""):it.unitario} onChange={e=>chItem(i,{unitario:e.target.value.replace(/[^0-9.,]/g,""),usd:""})} inputMode="decimal" placeholder="Precio unit." disabled={!it.on} style={{...inp,height:36,paddingLeft:22,fontSize:13,textAlign:"right",color:tcRow?GOLD_LIGHT:"#fff"}}/>
+              </div>
+              <span style={{fontSize:13,fontWeight:800,textAlign:"right",color:it.on?GOLD_LIGHT:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>$ {arsF(sub)}</span>
+            </div>
+            {!celu&&<button type="button" onClick={()=>setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p)} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
+          </div>;})}
+        </div>
+        <button type="button" onClick={()=>setItems(p=>[...p,ITEM_NUEVO()])} style={{marginTop:8,width:"100%",padding:"10px",borderRadius:10,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar ítem</button>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,padding:"14px 16px",background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:12}}>
+          <span style={{fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>Total</span>
+          <span style={{fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>$ {arsF(totalArs)}</span>
+        </div>
         {err&&<p style={{fontSize:12.5,color:"#f87171",margin:"10px 0 0",lineHeight:1.5}}>{err}</p>}
         <div style={{display:"flex",gap:8,marginTop:18}}>
           <Btn variant="secondary" onClick={cerrar} fullWidth={celu}>Cancelar</Btn>

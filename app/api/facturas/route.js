@@ -11,7 +11,7 @@
 //
 // El flujo es de una sola vía: se llama a ARCA únicamente acá, al emitir.
 
-import { arcaReady, arcaConfig, emitirFacturaC } from "../../../lib/arca";
+import { arcaReady, arcaConfig, emitirFacturaC, listarActividades } from "../../../lib/arca";
 import { payloadVerificado } from "../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -51,6 +51,12 @@ async function guardarOmitidas(lista) {
 export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
+  // Actividades del emisor en ARCA (03/11/2026): para elegir qué servicio se factura.
+  if (url.searchParams.get("action") === "actividades") {
+    if (!arcaReady()) return Response.json({ actividades: [] });
+    try { const cfg = await arcaConfig(); return Response.json({ actividades: await listarActividades(cfg?.environment === "produccion" ? "produccion" : "homologacion") }); }
+    catch (e) { return Response.json({ actividades: [], error: String(e.message) }); }
+  }
   const opId = url.searchParams.get("operation_id");
   const limit = Math.min(Number(url.searchParams.get("limit") || 300), 500);
   const filt = opId ? `operation_id=eq.${opId}&` : "";
@@ -111,7 +117,11 @@ export async function POST(req) {
   if (!arcaReady()) return Response.json({ error: "ARCA sin configurar: faltan ARCA_CUIT / ARCA_CERT / ARCA_KEY en Vercel" }, { status: 500 });
   if (body?.action === "nota_credito") return notaCredito(body);
   const docTipo = Number(body?.doc_tipo);
-  const importe = Math.round(Number(body?.importe) * 100) / 100;
+  // Ítems (03/11/2026): detalle, cantidad y precio unitario en ARS (usd/tc solo si vinieron de una op).
+  // El total fiscal es la suma de los ítems; sin ítems, el importe directo.
+  const itemsIn = Array.isArray(body?.items) && body.items.length > 0 ? body.items.slice(0, 20).map((i) => ({ label: String(i.label || "").slice(0, 120), cantidad: Number(i.cantidad) > 0 ? Number(i.cantidad) : 1, unitario: Number(i.unitario) || 0, usd: Number(i.usd) || 0, ars: Math.round((Number(i.ars) || 0) * 100) / 100 })).filter((i) => i.ars > 0) : null;
+  const importe = itemsIn ? Math.round(itemsIn.reduce((s, i) => s + i.ars, 0) * 100) / 100 : Math.round(Number(body?.importe) * 100) / 100;
+  const actividadId = Number(body?.actividad_id) > 0 ? Number(body.actividad_id) : null;
   const condIva = Number(body?.receptor_cond_iva);
   if (![80, 96, 99].includes(docTipo)) return Response.json({ error: "doc_tipo inválido (80 CUIT / 96 DNI / 99 consumidor final)" }, { status: 400 });
   if (!(importe > 0)) return Response.json({ error: "Importe inválido" }, { status: 400 });
@@ -141,8 +151,10 @@ export async function POST(req) {
       detalle: String(body.detalle || "Servicios logísticos").slice(0, 500),
       importe,
       // Conceptos con su USD y el TC aplicado — solo presentación del PDF (el total fiscal es importe).
-      items: Array.isArray(body.items) && body.items.length > 0 ? body.items.slice(0, 12).map((i) => ({ label: String(i.label || "").slice(0, 120), usd: Number(i.usd) || 0, ars: Number(i.ars) || 0 })) : null,
+      items: itemsIn,
       tc: Number(body.tc) > 0 ? Number(body.tc) : null,
+      actividad_id: actividadId,
+      actividad_desc: String(body.actividad_desc || "").slice(0, 200) || null,
       status: "pendiente",
     }),
   });
@@ -150,7 +162,7 @@ export async function POST(req) {
   if (!inv?.id) return Response.json({ error: "No se pudo registrar la factura" }, { status: 500 });
 
   try {
-    const r = await emitirFacturaC({ docTipo, docNro: docTipo === 99 ? 0 : docNro, condIvaReceptor: condIva, importe, fecha }, env);
+    const r = await emitirFacturaC({ docTipo, docNro: docTipo === 99 ? 0 : docNro, condIvaReceptor: condIva, importe, fecha, actividadId }, env);
     await sb(`/invoices?id=eq.${inv.id}`, { method: "PATCH", body: JSON.stringify({ numero: r.numero, cae: r.cae, cae_vto: r.caeVto, status: "emitida" }) });
     return Response.json({ ok: true, id: inv.id, numero: r.numero, cae: r.cae, cae_vto: r.caeVto, environment: env, public_token: inv.public_token });
   } catch (e) {

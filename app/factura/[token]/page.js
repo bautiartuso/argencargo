@@ -151,10 +151,11 @@ export default async function FacturaPublica({ params }) {
             </div>
             {items.map((it, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "12px 0", borderBottom: "1px solid #eef2f6", fontSize: 13.5, alignItems: "baseline" }}>
-                <span style={{ fontWeight: 600 }}>{it.label}</span>
+                <span style={{ fontWeight: 600 }}>{it.label}{Number(it.cantidad) > 0 && Number(it.unitario) > 0 && <span style={{ display: "block", fontSize: 11, color: "#64748b", fontWeight: 500, marginTop: 2 }}>{fmt(it.cantidad).replace(/,00$/, "")} × $ {fmt(it.unitario)}</span>}</span>
                 <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", fontSize: 14 }}>$ {fmt(it.ars)}</b>
               </div>
             ))}
+            {inv.actividad_desc && <p style={{ fontSize: 10.5, color: "#64748b", margin: "8px 0 0" }}>Actividad: {inv.actividad_desc}</p>}
             {mercaderias.length > 0 && <div style={{ marginTop: 12, padding: "10px 14px", background: "#f7f8fa", border: "1px solid #e2e8f0", borderRadius: 10, WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
               <p style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8", margin: "0 0 5px" }}>Detalle de mercaderías</p>
               {mercaderias.slice(0, 8).map((m, i) => <p key={i} title={m} style={{ fontSize: 11, color: "#334155", margin: "2px 0", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i + 1} - {m}</p>)}
