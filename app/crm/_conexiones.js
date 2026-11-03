@@ -8,12 +8,21 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { C, MONO, Btn, Pill, Caja, Titulo, Cargando, hace } from "../gi/_base";
 import { api, hora } from "./_comun";
 
+// El SDK de Meta se carga al abrir la pantalla (no al tocar el botón): si se carga recién en el clic,
+// Chrome pierde el "gesto del usuario" y bloquea la ventana emergente del alta. Si un bloqueador frena
+// connect.facebook.net, acá se avisa en vez de quedarse colgado.
+let sdkPromesa = null;
 function cargarFb(appId) {
-  return new Promise((res) => {
-    if (window.FB) return res(window.FB);
-    window.fbAsyncInit = () => { window.FB.init({ appId, autoLogAppEvents: false, xfbml: false, version: "v26.0" }); res(window.FB); };
-    const s = document.createElement("script"); s.src = "https://connect.facebook.net/es_LA/sdk.js"; s.async = true; s.defer = true; s.crossOrigin = "anonymous"; document.body.appendChild(s);
+  if (window.FB) return Promise.resolve(window.FB);
+  if (sdkPromesa) return sdkPromesa;
+  sdkPromesa = new Promise((res, rej) => {
+    const timer = setTimeout(() => { sdkPromesa = null; rej(new Error("El script de Meta (connect.facebook.net) tardó demasiado en cargar. ¿Un bloqueador de anuncios o una extensión lo frena?")); }, 15000);
+    window.fbAsyncInit = () => { clearTimeout(timer); window.FB.init({ appId, autoLogAppEvents: false, xfbml: false, version: "v26.0" }); res(window.FB); };
+    const s = document.createElement("script"); s.src = "https://connect.facebook.net/es_LA/sdk.js"; s.async = true; s.defer = true; s.crossOrigin = "anonymous";
+    s.onerror = () => { clearTimeout(timer); sdkPromesa = null; rej(new Error("No se pudo cargar el script de Meta (connect.facebook.net). ¿Un bloqueador de anuncios o una extensión lo frena?")); };
+    document.body.appendChild(s);
   });
+  return sdkPromesa;
 }
 const APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || "";
 const CONFIG_ID = process.env.NEXT_PUBLIC_META_ES_CONFIG_ID || "";
@@ -31,6 +40,7 @@ export default function Conexiones() {
   const agregar = (t) => setLog((l) => [...l, `${hora(new Date())} · ${t}`]);
   const cargar = useCallback(async () => setSt(await api("/api/crm/conectar")), []);
   useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { if (APP_ID) cargarFb(APP_ID).catch(() => {}); }, []);
   // Los ids del número llegan por postMessage mientras el usuario está en la ventana de Meta.
   useEffect(() => {
     const onMsg = (e) => {
@@ -49,11 +59,13 @@ export default function Conexiones() {
 
   const conectar = async () => {
     if (!APP_ID || !CONFIG_ID) { agregar("Faltan en Vercel NEXT_PUBLIC_META_APP_ID y/o NEXT_PUBLIC_META_ES_CONFIG_ID."); return; }
-    setBusy(true); datos.current = {}; agregar("Abriendo el alta de Meta…");
-    const FB = await cargarFb(APP_ID);
+    setBusy(true); datos.current = {};
+    let FB;
+    try { FB = await cargarFb(APP_ID); } catch (e) { agregar(`✗ ${e.message}`); setBusy(false); return; }
+    agregar("Abriendo la ventana de Meta… Si no aparece, Chrome la bloqueó: permití las ventanas emergentes de argencargo.com.ar (ícono a la derecha de la barra de dirección) y volvé a tocar.");
     FB.login(async (resp) => {
       const code = resp?.authResponse?.code;
-      if (!code) { agregar("Alta cancelada o sin permiso: Meta no devolvió el código."); setBusy(false); return; }
+      if (!code) { agregar(`Alta cancelada o sin permiso: Meta no devolvió el código${resp?.status ? ` (estado: ${resp.status})` : ""}.`); setBusy(false); return; }
       for (let i = 0; i < 25 && !datos.current.phone_number_id && !datos.current.waba_id; i++) await new Promise((r) => setTimeout(r, 200));
       if (!datos.current.phone_number_id && !datos.current.waba_id) { agregar("Meta devolvió el código pero no el id del número ni de la cuenta. ¿Se completó el alta hasta Finalizar?"); setBusy(false); return; }
       agregar("Terminando la conexión…");
