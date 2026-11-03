@@ -71,6 +71,10 @@ function usePegarFoto(activo,onFile){
     window.addEventListener("paste",h);return()=>window.removeEventListener("paste",h);
   },[activo]);
 }
+// Varias fotos por bulto (03/11/2026): photo_urls es la lista completa y photo_url sigue siendo la
+// primera, así todo lo que muestra una sola foto no cambia.
+const fotosDe=(p)=>Array.isArray(p?.photo_urls)&&p.photo_urls.length?p.photo_urls.filter(Boolean):(p?.photo_url?[p.photo_url]:[]);
+const cuerpoFotos=(urls)=>({photo_urls:urls.length?urls:null,photo_url:urls[0]||null});
 const uploadPackagePhoto=async(file,token)=>{
   if(!file)return null;
   // Se comprime antes de subir: las fotos salen del celular en 4032px y 2 MB, y para verificar
@@ -387,6 +391,7 @@ const I18N={
     photo_pending_msg:"Recordá subir la foto cuando puedas. Se mostrará al admin y al cliente.",
     photos_pending_count:"paquete(s) pendiente(s) de foto",
     add_photo:"Agregar foto",
+    add_more_photos:"Agregar otra foto",
     photo_help:"Sacá una foto clara o subí una desde la galería (JPG/PNG, máx 5MB).",
     paste_photo:"o pegala con ⌘V",
     paste_now:"Pegá la foto con ⌘V o elegí un archivo",
@@ -767,6 +772,7 @@ const I18N={
     photo_pending_msg:"请尽快上传照片。管理员和客户都会看到。",
     photos_pending_count:"个包裹待上传照片",
     add_photo:"添加照片",
+    add_more_photos:"再加一张照片",
     photo_help:"拍照或从相册选择清晰的货物照片（JPG/PNG，最大 5MB）。",
     paste_photo:"或按 ⌘V 粘贴",
     paste_now:"按 ⌘V 粘贴照片，或选择文件",
@@ -2482,21 +2488,14 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
   const [length,setLength]=useState(pkg.length_cm!=null?String(pkg.length_cm):"");
   const [width,setWidth]=useState(pkg.width_cm!=null?String(pkg.width_cm):"");
   const [height,setHeight]=useState(pkg.height_cm!=null?String(pkg.height_cm):"");
-  const [photoFile,setPhotoFile]=useState(null);
-  const [photoPreview,setPhotoPreview]=useState(null);
-  const [removePhoto,setRemovePhoto]=useState(false);
+  // Varias fotos (03/11/2026): las guardadas ({url}) y las nuevas ({file,preview}); ✕ saca cualquiera.
+  const [fotos,setFotos]=useState(()=>fotosDe(pkg).map(u=>({url:u})));
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
   const table=pkg._tabla||"operation_packages";
-  usePegarFoto(true,(f)=>onPhotoChange(f));
-  const onPhotoChange=(file)=>{
-    setRemovePhoto(false);
-    if(!file){setPhotoFile(null);setPhotoPreview(null);return;}
-    setPhotoFile(file);
-    const reader=new FileReader();
-    reader.onload=ev=>setPhotoPreview(ev.target.result);
-    reader.readAsDataURL(file);
-  };
+  usePegarFoto(true,(f)=>agregar([f]));
+  const agregar=(files)=>{[...files].filter(f=>f&&(!f.type||f.type.startsWith("image/"))).forEach(file=>{const reader=new FileReader();reader.onload=ev=>setFotos(p=>[...p,{file,preview:ev.target.result}]);reader.readAsDataURL(file);});};
+  const quitar=(k)=>setFotos(p=>p.filter((_,x)=>x!==k));
   const save=async()=>{
     setSaving(true);setErr("");
     try{
@@ -2506,20 +2505,20 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
       body.length_cm=length?Number(length):null;
       body.width_cm=width?Number(width):null;
       body.height_cm=height?Number(height):null;
-      if(removePhoto){
-        body.photo_url=null;
-        body.photo_uploaded_at=null;
-      } else if(photoFile){
-        const url=await uploadPackagePhoto(photoFile,token);
-        if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}
-        else {setErr(t.upload_failed||"Error al subir foto");setSaving(false);return;}
+      const urls=[];let nuevas=0;
+      for(const x of fotos){
+        if(x.url){urls.push(x.url);continue;}
+        const url=await uploadPackagePhoto(x.file,token);
+        if(!url){setErr(t.upload_failed||"Error al subir foto");setSaving(false);return;}
+        urls.push(url);nuevas++;
       }
+      Object.assign(body,cuerpoFotos(urls));
+      if(nuevas)body.photo_uploaded_at=new Date().toISOString();else if(!urls.length)body.photo_uploaded_at=null;
       await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body});
       onSaved&&onSaved();
     }catch(e){setErr(e.message||"Error");}
     setSaving(false);
   };
-  const currentPhoto=removePhoto?null:(photoPreview||pkg.photo_url);
   return <div onClick={()=>!saving&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
@@ -2550,22 +2549,19 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
         </div>
       </div>
       <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(var(--ink),0.04)",border:"1px solid rgba(var(--ink),0.08)",borderRadius:10}}>
-        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo}</label>
-        {currentPhoto?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-          <img src={currentPhoto} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
-          <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
-            <p style={{fontSize:12,fontWeight:600,color:"var(--green)",margin:0}}>{photoFile?t.new_photo_ready:t.current_photo}</p>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
-              <label htmlFor={`edit-photo-${pkg.id}`} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"var(--blue)",cursor:"pointer"}}>📷 {t.replace}</label>
-              <button type="button" onClick={()=>{setPhotoFile(null);setPhotoPreview(null);setRemovePhoto(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"var(--red)",cursor:"pointer"}}>{t.remove_photo}</button>
-            </div>
-          </div>
-        </div>:<div>
-          <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
-          <label htmlFor={`edit-photo-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:"var(--gold)",cursor:"pointer"}}>📷 {t.add_photo}</label><span style={{marginLeft:10,fontSize:11.5,fontWeight:700,color:"rgba(var(--ink),0.55)"}}>{t.paste_photo||"o pegala con ⌘V"}</span>
-          {removePhoto&&<p style={{fontSize:11,color:"rgba(255,80,80,0.7)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_will_remove}</p>}
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo}{fotos.length>1?` · ${fotos.length}`:""}</label>
+        {fotos.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          {fotos.map((x,k)=><div key={k} style={{position:"relative"}}>
+            <img src={x.url||x.preview} alt="" style={{width:76,height:76,objectFit:"cover",borderRadius:8,border:`2px solid ${x.url?"rgba(34,197,94,0.4)":"rgba(96,165,250,0.7)"}`,display:"block"}}/>
+            <button type="button" onClick={()=>quitar(k)} aria-label={t.remove_photo} style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+          </div>)}
         </div>}
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" multiple onChange={e=>{agregar(e.target.files||[]);e.target.value="";}} style={{display:"none"}}/>
+          <label htmlFor={`edit-photo-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:"var(--gold)",cursor:"pointer"}}>📷 {fotos.length?(t.add_more_photos||"Agregar otra foto"):t.add_photo}</label>
+          <span style={{fontSize:11.5,fontWeight:700,color:"rgba(var(--ink),0.55)"}}>{t.paste_photo||"o pegala con ⌘V"}</span>
+        </div>
+        {!fotos.length&&fotosDe(pkg).length>0&&<p style={{fontSize:11,color:"rgba(255,80,80,0.7)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_will_remove}</p>}
       </div>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <button onClick={()=>!saving&&onClose()} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(var(--ink),0.12)",background:"transparent",color:"rgba(var(--ink),0.65)",cursor:saving?"not-allowed":"pointer"}}>{t.cancel}</button>
@@ -2587,7 +2583,7 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
       // Los bultos del depósito (con o sin operación) están en operation_packages. Antes, sin operación
       // se guardaba en unassigned_packages (tabla vieja) y la foto se perdía sin avisar (21/10/2026).
       const table=pkg._tabla||"operation_packages";
-      const r=await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{photo_url:url,photo_uploaded_at:new Date().toISOString()},prefer:"return=representation"});
+      const r=await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{...cuerpoFotos([url]),photo_uploaded_at:new Date().toISOString()},prefer:"return=representation"});
       if(!Array.isArray(r)||r.length===0){toast(t.upload_failed,"error");setUploading(false);return;}
       toast("✓","success");
       onUpdated&&onUpdated();
@@ -2596,11 +2592,18 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
     }
     setUploading(false);
   };
-  if(pkg.photo_url){
+  const fotos=fotosDe(pkg);
+  if(fotos.length){
+    // Miniatura de la primera con la cantidad; en grande, tocar la foto pasa a la siguiente.
+    const i=Math.min(typeof lightbox==="number"?lightbox:0,fotos.length-1);
     return <>
-      <img src={pkg.photo_url} alt="" onClick={()=>setLightbox(true)} style={{width:42,height:42,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"pointer"}}/>
-      {lightbox&&<div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
-        <img src={pkg.photo_url} alt="" style={{maxWidth:"95vw",maxHeight:"95vh",objectFit:"contain",borderRadius:8}}/>
+      <span style={{position:"relative",display:"inline-block"}}>
+        <img src={fotos[0]} alt="" onClick={()=>setLightbox(0)} style={{width:42,height:42,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"pointer",display:"block"}}/>
+        {fotos.length>1&&<span style={{position:"absolute",right:-6,top:-6,fontSize:9.5,fontWeight:800,padding:"1px 5px",borderRadius:999,background:"var(--gold)",color:"#0A1628",lineHeight:1.4}}>{fotos.length}</span>}
+      </span>
+      {lightbox!==false&&<div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
+        <img src={fotos[i]} alt="" onClick={e=>{if(fotos.length>1){e.stopPropagation();setLightbox((i+1)%fotos.length);}}} style={{maxWidth:"95vw",maxHeight:"95vh",objectFit:"contain",borderRadius:8,cursor:fotos.length>1?"pointer":"zoom-out"}}/>
+        {fotos.length>1&&<span style={{position:"absolute",bottom:22,left:"50%",transform:"translateX(-50%)",color:"#fff",fontSize:13,fontWeight:700,background:"rgba(0,0,0,0.55)",padding:"4px 12px",borderRadius:999}}>{i+1} / {fotos.length}</span>}
       </div>}
     </>;
   }
@@ -2633,7 +2636,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
   const [showDrop,setShowDrop]=useState(false);
   const [existingOp,setExistingOp]=useState(null);
   const [tracking,setTracking]=useState(claim?.tracking||"");
-  const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
+  const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:"",photos:[]}]);
   // Reclamo que corresponde a este paquete: el elegido con "Llegó" o uno cuyo tracking coincide.
   const reclamo=claim||(tracking.trim()?claims.find(c=>trkCoincide(c.tracking,tracking)):null)||null;
   useEffect(()=>{if(reclamo&&(clientId===""||clientId==="unregistered"))setClientId(reclamo.client_id);},[reclamo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2670,18 +2673,17 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
   // (mientras no haya despachado, podemos seguir sumando paquetes).
   // Desde el 13/09/2026 el bulto no se ata a ninguna operación: queda en el depósito del cliente
   // (client_id, sin operation_id) y el cliente arma la importación desde su portal.
-  const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
+  const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photos:[]}]);
   const rmBulto=(i)=>setBultos(p=>p.filter((_,j)=>j!==i));
   const chBulto=(i,f,v)=>setBultos(p=>p.map((b,j)=>j===i?{...b,[f]:v}:b));
   // ⌘V pega la foto en el bulto que se tocó último; si no se tocó ninguno, en el primero sin foto.
   const [bultoFoco,setBultoFoco]=useState(null);
-  usePegarFoto(true,(f)=>{const i=bultoFoco!=null&&bultos[bultoFoco]?bultoFoco:Math.max(0,bultos.findIndex(b=>!b.photoPreview));setPhoto(i,f);});
-  const setPhoto=(i,file)=>{
-    if(!file){setBultos(p=>p.map((b,j)=>j===i?{...b,photo:null,photoPreview:null}:b));return;}
-    const reader=new FileReader();
-    reader.onload=ev=>setBultos(p=>p.map((b,j)=>j===i?{...b,photo:file,photoPreview:ev.target.result}:b));
-    reader.readAsDataURL(file);
-  };
+  usePegarFoto(true,(f)=>{const i=bultoFoco!=null&&bultos[bultoFoco]?bultoFoco:Math.max(0,bultos.findIndex(b=>!b.photos.length));addFotos(i,[f]);});
+  // Varias fotos por bulto (03/11/2026): cada una con su vista previa; se suben todas al guardar.
+  const addFotos=(i,files)=>{[...files].filter(f=>f&&(!f.type||f.type.startsWith("image/"))).forEach(file=>{const reader=new FileReader();reader.onload=ev=>setBultos(p=>p.map((b,j)=>j===i?{...b,photos:[...b.photos,{file,preview:ev.target.result}]}:b));reader.readAsDataURL(file);});};
+  const rmFoto=(i,k)=>setBultos(p=>p.map((b,j)=>j===i?{...b,photos:b.photos.filter((_,x)=>x!==k)}:b));
+  // Una foto que falla no voltea el alta: el bulto entra con las que subieron y el agente reintenta después.
+  const subirFotosBulto=async(b)=>{const urls=[];for(const x of b.photos){try{const u=await uploadPackagePhoto(x.file,token);if(u)urls.push(u);}catch(e){console.error("foto bulto",e);}}return urls;};
 
   const save=async()=>{
     if(!clientId){setErr(t.err_client);return;}
@@ -2708,7 +2710,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
           if(b.length)body.length_cm=Number(b.length);
           if(b.width)body.width_cm=Number(b.width);
           if(b.height)body.height_cm=Number(b.height);
-          await enqueuePackage({table,body,photoBlob:b.photo||null,photoFileName:b.photo?.name||null});
+          await enqueuePackage({table,body,photoBlobs:b.photos.map(x=>x.file),photoFileNames:b.photos.map(x=>x.file?.name||null)});
         }
         flash&&flash("Sin conexión — guardado localmente, se sincroniza al volver online");
         if(typeof window!=="undefined"){window.dispatchEvent(new Event("ac-queue-changed"));}
@@ -2717,7 +2719,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
       if(clientId==="unregistered"){
         for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
-          if(b.photo){try{const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}catch(e){console.error("foto huerfano",e);}}
+          {const urls=await subirFotosBulto(b);if(urls.length){Object.assign(body,cuerpoFotos(urls));body.photo_uploaded_at=new Date().toISOString();}}
           await dq("unassigned_packages",{method:"POST",token,body});
         }
         // Notificar al admin: paquete huérfano recibido
@@ -2740,7 +2742,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
           // La foto NO puede voltear el alta del bulto: si falla la subida (conexion del deposito),
           // el bulto entra sin foto y el agente la puede reintentar despues.
-          if(b.photo){try{const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}catch(e){console.error("foto bulto",e);}}
+          {const urls=await subirFotosBulto(b);if(urls.length){Object.assign(body,cuerpoFotos(urls));body.photo_uploaded_at=new Date().toISOString();}}
           await dq("operation_packages",{method:"POST",token,body});
           bultosInsertados++;
         }
@@ -2811,7 +2813,7 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
 
     <div style={{marginTop:8,marginBottom:14}}>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
-      {bultos.map((b,i)=><div key={i} onClick={()=>setBultoFoco(i)} onFocusCapture={()=>setBultoFoco(i)} style={{background:"rgba(var(--ink),0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:`1px solid ${bultoFoco===i&&!b.photoPreview?"rgba(184,149,106,0.55)":"rgba(var(--ink),0.08)"}`}}>
+      {bultos.map((b,i)=><div key={i} onClick={()=>setBultoFoco(i)} onFocusCapture={()=>setBultoFoco(i)} style={{background:"rgba(var(--ink),0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:`1px solid ${bultoFoco===i&&!b.photos.length?"rgba(184,149,106,0.55)":"rgba(var(--ink),0.08)"}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <span style={{fontSize:11,fontWeight:700,color:"var(--gold)"}}>{t.bulto_n} {i+1}</span>
           {bultos.length>1&&<button type="button" onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"var(--red)",cursor:"pointer",fontWeight:600}}>{t.remove}</button>}
@@ -2825,19 +2827,18 @@ function NewPackageForm({token,lang,t,agentId,origin:originAgente="China",claim=
         {/* Foto del bulto */}
         <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(var(--ink),0.06)"}}>
           <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(var(--ink),0.55)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo_required}</label>
-          {b.photoPreview?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-            <img src={b.photoPreview} alt="preview" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
-            <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
-              <p style={{fontSize:12,fontWeight:700,color:"var(--green)",margin:0}}>{t.photo_uploaded}</p>
-              <p style={{fontSize:11,color:"rgba(var(--ink),0.5)",margin:0,wordBreak:"break-all"}}>{b.photo?.name||""}</p>
-              <button type="button" onClick={()=>setPhoto(i,null)} style={{alignSelf:"flex-start",fontSize:10,padding:"4px 9px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"var(--red)",cursor:"pointer",fontWeight:600,marginTop:4}}>{t.remove}</button>
-            </div>
-          </div>:<div>
-            <input id={`photo-${i}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setPhoto(i,f);}} style={{display:"none"}}/>
-            <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:"var(--gold)",cursor:"pointer"}}>📷 {t.add_photo}</label>
-            <span style={{marginLeft:10,fontSize:11.5,fontWeight:700,color:"var(--gold)"}}>{t.paste_photo||"o pegala con ⌘V"}</span>
-            <p style={{fontSize:10,color:"rgba(var(--ink),0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>
+          {b.photos.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            {b.photos.map((x,k)=><div key={k} style={{position:"relative"}}>
+              <img src={x.preview} alt="" style={{width:72,height:72,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)",display:"block"}}/>
+              <button type="button" onClick={()=>rmFoto(i,k)} aria-label={t.remove} style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:999,border:"none",background:"#ef4444",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+            </div>)}
           </div>}
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <input id={`photo-${i}`} type="file" accept="image/*" multiple onChange={e=>{addFotos(i,e.target.files||[]);e.target.value="";}} style={{display:"none"}}/>
+            <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:b.photos.length?"7px 12px":"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:"var(--gold)",cursor:"pointer"}}>📷 {b.photos.length?(t.add_more_photos||"Agregar otra foto"):t.add_photo}</label>
+            <span style={{fontSize:11.5,fontWeight:700,color:"var(--gold)"}}>{t.paste_photo||"o pegala con ⌘V"}</span>
+          </div>
+          {!b.photos.length&&<p style={{fontSize:10,color:"rgba(var(--ink),0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>}
         </div>
       </div>)}
       <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:"var(--gold)",cursor:"pointer"}}>{t.add_bulto}</button>

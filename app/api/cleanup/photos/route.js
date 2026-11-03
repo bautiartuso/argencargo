@@ -29,6 +29,22 @@ const sb = (path, opts = {}) =>
 
 const j = async (path) => { const r = await sb(path); return r.ok ? r.json() : []; };
 
+// Todas las filas, de a 1000 (PostgREST corta ahí). Si una página falla, lanza: antes se usaba j()
+// y un error se leía como "sin referencias", con riesgo de borrar fotos vivas como huérfanas.
+async function todas(path, que) {
+  const out = [];
+  for (let desde = 0; ; desde += 1000) {
+    const r = await sb(path, { headers: { "Range-Unit": "items", Range: `${desde}-${desde + 999}` } });
+    if (!r.ok) throw new Error(`no se pudieron leer ${que}: no se borra nada`);
+    const filas = await r.json();
+    out.push(...filas);
+    if (filas.length < 1000) break;
+  }
+  return out;
+}
+// Varias fotos por bulto (03/11/2026): photo_urls es la lista completa y photo_url la primera.
+const fotosFila = (f) => [...new Set([f.photo_url, ...(Array.isArray(f.photo_urls) ? f.photo_urls : [])].filter(Boolean))];
+
 // .../storage/v1/object/public/package-photos/<PATH> → <PATH>
 function storagePath(url) {
   if (!url) return null;
@@ -59,7 +75,7 @@ async function limpiarColumna(tabla, ids) {
   await sb(`/rest/v1/${tabla}?id=in.(${ids.join(",")})`, {
     method: "PATCH",
     // photo_uploaded_at queda: así el admin muestra "Foto eliminada" y no "Foto pendiente" (22/10/2026).
-    body: JSON.stringify({ photo_url: null }),
+    body: JSON.stringify({ photo_url: null, photo_urls: null }),
   });
 }
 
@@ -86,8 +102,8 @@ export async function GET(req) {
 
     // ── A) Fotos subidas hace más de N días
     for (const tabla of ["operation_packages", "unassigned_packages"]) {
-      const filas = await j(`/rest/v1/${tabla}?photo_url=not.is.null&photo_uploaded_at=lt.${corte(diasSubida)}&select=id,photo_url`);
-      for (const f of filas) { aBorrar.push(storagePath(f.photo_url)); porTabla[tabla].push(f.id); }
+      const filas = await j(`/rest/v1/${tabla}?photo_url=not.is.null&photo_uploaded_at=lt.${corte(diasSubida)}&select=id,photo_url,photo_urls`);
+      for (const f of filas) { for (const u of fotosFila(f)) aBorrar.push(storagePath(u)); porTabla[tabla].push(f.id); }
     }
 
     // ── B) Operaciones cerradas hace más de M días
@@ -97,8 +113,8 @@ export async function GET(req) {
       // de a 200 ids por URL, que si no se pasa de largo
       for (let i = 0; i < opIds.length; i += 200) {
         const lote = opIds.slice(i, i + 200);
-        const filas = await j(`/rest/v1/operation_packages?operation_id=in.(${lote.join(",")})&photo_url=not.is.null&select=id,photo_url`);
-        for (const f of filas) { aBorrar.push(storagePath(f.photo_url)); porTabla.operation_packages.push(f.id); }
+        const filas = await j(`/rest/v1/operation_packages?operation_id=in.(${lote.join(",")})&photo_url=not.is.null&select=id,photo_url,photo_urls`);
+        for (const f of filas) { for (const u of fotosFila(f)) aBorrar.push(storagePath(u)); porTabla.operation_packages.push(f.id); }
       }
     }
 
@@ -113,8 +129,13 @@ export async function GET(req) {
       ["flights", "dispatch_photo_url"],
       ["operation_containers", "bl_url"], // BL de los contenedores FCL (fcl-bl/, 29/10/2026)
     ]) {
-      const filas = await j(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}`);
+      const filas = await todas(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}&order=id.asc`, `${tabla}.${col}`);
       for (const f of filas) { const p = storagePath(f[col]); if (p) referencias.add(p); }
+    }
+    // Fotos múltiples de los bultos (operation_packages/unassigned_packages.photo_urls, 03/11/2026).
+    for (const tabla of ["operation_packages", "unassigned_packages"]) {
+      const filas = await todas(`/rest/v1/${tabla}?photo_urls=not.is.null&select=photo_urls&order=id.asc`, `${tabla}.photo_urls`);
+      for (const f of filas) for (const u of (f.photo_urls || [])) { const p = storagePath(u); if (p) referencias.add(p); }
     }
     // Fotos múltiples de los productos de las cotizaciones GI (gi_quote_products.photo_urls, 20/10/2026).
     {

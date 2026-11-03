@@ -42,6 +42,9 @@ const DARK_BG="radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.10),
 // Dorado secundario (accent metálico)
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
 const IC=GOLD_LIGHT; // Accent color alias al oro claro (unificado)
+// Varias fotos por bulto (03/11/2026): photo_urls es la lista completa y photo_url la primera.
+const fotosBulto=(p)=>Array.isArray(p?.photo_urls)&&p.photo_urls.length?p.photo_urls.filter(Boolean):(p?.photo_url?[p.photo_url]:[]);
+const BADGE_FOTOS={position:"absolute",right:-6,top:-6,fontSize:9.5,fontWeight:800,padding:"1px 5px",borderRadius:999,background:GOLD_LIGHT,color:"#0A1628",lineHeight:1.4};
 // Tier system
 const TIERS={
   standard:{label:"Standard",min:0,next:100,color:"#94a3b8",light:"rgba(148,163,184,0.9)",gradient:"linear-gradient(135deg,#475569,#64748b,#475569)",glow:"0 0 14px rgba(100,116,139,0.2)",bonus:0,discount:0,icon:"○"},
@@ -2930,9 +2933,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const C2={ok:["rgba(34,197,94,0.06)","rgba(34,197,94,0.18)"],del:["rgba(255,255,255,0.03)","rgba(255,255,255,0.1)"],sin:["rgba(255,255,255,0.03)","rgba(255,255,255,0.1)"],pend:["rgba(251,191,36,0.06)","rgba(251,191,36,0.2)"]}[est];
           return <div style={{marginTop:12,padding:"10px 12px",background:C2[0],border:`1px solid ${C2[1]}`,borderRadius:10,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           {pk.photo_url?<>
-            <a href={pk.photo_url} target="_blank" rel="noopener noreferrer"><img src={pk.photo_url} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{fotosBulto(pk).map(u=><a key={u} href={u} target="_blank" rel="noopener noreferrer"><img src={u} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in",display:"block"}}/></a>)}</div>
             <div style={{flex:1,minWidth:160}}>
-              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>📷 Foto del agente</p>
+              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>📷 {fotosBulto(pk).length>1?`${fotosBulto(pk).length} fotos del agente`:"Foto del agente"}</p>
               <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Subida {pk.photo_uploaded_at?new Date(pk.photo_uploaded_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p>
             </div>
             <a href={pk.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:GOLD_LIGHT,fontWeight:600,textDecoration:"none"}}>Ver completa →</a>
@@ -11296,7 +11299,7 @@ function HuerfanosPanel({token,unassigned,setUnassigned,signups,onFlash}){
       for(const p of elegidos){
         num++;
         const body={client_id:cli.id,registered_by_agent_id:p.registered_by_agent_id||null,origin:p.origin||"China",package_number:num,quantity:p.quantity||1,national_tracking:p.national_tracking||null,created_at:p.created_at};
-        ["gross_weight_kg","length_cm","width_cm","height_cm","photo_url","photo_uploaded_at"].forEach(k=>{if(p[k]!=null)body[k]=p[k];});
+        ["gross_weight_kg","length_cm","width_cm","height_cm","photo_url","photo_urls","photo_uploaded_at"].forEach(k=>{if(p[k]!=null)body[k]=p[k];});
         const r=await dq("operation_packages",{method:"POST",token,body});
         if(!Array.isArray(r)){toast(`No se pudo pasar ${p.national_tracking||"un bulto"}: ${r?.message||"error"}`,"error");continue;}
         await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
@@ -11324,7 +11327,7 @@ function HuerfanosPanel({token,unassigned,setUnassigned,signups,onFlash}){
       </div>
       {g.pkgs.map(p=>{const on=sel.has(p.id);const dias=p.created_at?Math.floor((Date.now()-new Date(p.created_at).getTime())/864e5):null;return <div key={p.id} onClick={()=>toggle(p.id)} style={{display:"grid",gridTemplateColumns:"24px 48px 190px 44px 86px 110px minmax(0,1fr) 150px 84px",gap:12,alignItems:"center",padding:"10px 16px",borderTop:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:on?"rgba(184,149,106,0.08)":"transparent"}}>
         {check(on)}
-        {p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}><img src={p.photo_url} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",display:"block"}}/></a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}
+        {p.photo_url?<span style={{position:"relative",display:"inline-block"}}><a href={p.photo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}><img src={p.photo_url} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",display:"block"}}/></a>{fotosBulto(p).length>1&&<span style={BADGE_FOTOS}>{fotosBulto(p).length}</span>}</span>:<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}
         <span style={{fontSize:12,color:"#fff",minWidth:0}}><TrackingChips value={p.national_tracking}/></span>
         <span style={{color:"rgba(255,255,255,0.5)",fontSize:12.5}}>#{p.package_number}</span>
         <span style={{color:"#fff",fontSize:13,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{kg(p.gross_weight_kg)}</span>
@@ -11910,6 +11913,7 @@ function AgentsPanel({token}){
     if(pkg.width_cm)body.width_cm=pkg.width_cm;
     if(pkg.height_cm)body.height_cm=pkg.height_cm;
     if(pkg.photo_url)body.photo_url=pkg.photo_url;
+    if(Array.isArray(pkg.photo_urls)&&pkg.photo_urls.length)body.photo_urls=pkg.photo_urls;
     const r=await dq("operation_packages",{method:"POST",token,body});
     const row=Array.isArray(r)?r[0]:null;
     if(!row?.id){flash(`❌ No se pudo asignar el bulto: ${r?.message||"falló el alta"}`);load();return;}
@@ -12182,7 +12186,7 @@ function AgentsPanel({token}){
                             </tr></thead>
                             <tbody>{pkgsOfOp.map(p=>{const opAg=signups.find(s=>s.auth_user_id===o.created_by_agent_id);const opVD=Number(opAg?.volumetric_divisor)||5000;const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wi=Number(p.width_cm||0),h=Number(p.height_cm||0);const bruto=gw*q;const vol=l&&wi&&h?((l*wi*h)/opVD)*q:0;const fact=Math.max(bruto,vol);return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontWeight:600}}>{p.package_number}</td>
-                              <td style={{padding:"6px 10px"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>:<span title="Sin foto" style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",fontWeight:700}}>📷 Pendiente</span>}</td>
+                              <td style={{padding:"6px 10px"}}>{p.photo_url?<span style={{position:"relative",display:"inline-block"}}><a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in",display:"block"}}/></a>{fotosBulto(p).length>1&&<span style={BADGE_FOTOS}>{fotosBulto(p).length}</span>}</span>:<span title="Sin foto" style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",fontWeight:700}}>📷 Pendiente</span>}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{q}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{l&&wi&&h?`${l}×${wi}×${h}`:"—"}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
@@ -12277,7 +12281,7 @@ function AgentsPanel({token}){
                 </div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6,paddingLeft:26,alignItems:"center"}}>
                   {chipDep(l2&&w2&&h2?`${l2}×${w2}×${h2}${q>1?` ×${q}`:""}`:"sin medidas")}{chipDep(`Bruto ${kgT(br)}`)}{vo>0&&chipDep(`Vol. ${kgT(vo)}`,vo>br?GOLD_LIGHT:null)}
-                  {p.photo_url&&<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Foto</a>}
+                  {fotosBulto(p).map((u,k,arr)=><a key={u} href={u} target="_blank" rel="noopener noreferrer" style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Foto{arr.length>1?` ${k+1}`:""}</a>)}
                   <button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>↪ Mover</button>
                   <button onClick={e=>{e.stopPropagation();eliminarBultoDeposito(p);}} title="Eliminar este bulto" style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)",color:"#ff8a8a",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>🗑 Eliminar</button>
                 </div>
@@ -12485,7 +12489,7 @@ function AgentsPanel({token}){
                       <span style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{l2&&w2&&h2?`${l2}×${w2}×${h2}${q>1?` ×${q}`:""}`:"—"}</span>
                       <span style={{fontSize:11.5,color:"rgba(255,255,255,0.8)",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{br>0?`${br.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                       <span style={{fontSize:11.5,color:vo>br?GOLD_LIGHT:"rgba(255,255,255,0.45)",fontWeight:vo>br?700:400,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{vo>0?`${vo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
-                      <span style={{textAlign:"center"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10.5,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>Ver</a>:<span style={{fontSize:10.5,color:"rgba(255,255,255,0.22)"}}>—</span>}</span>
+                      <span style={{textAlign:"center"}}>{p.photo_url?<span style={{display:"inline-flex",gap:4,flexWrap:"wrap",justifyContent:"center"}}>{fotosBulto(p).map((u,k,arr)=><a key={u} href={u} target="_blank" rel="noopener noreferrer" style={{fontSize:10.5,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(140,200,245,0.14)",color:"#8CC8F5",border:"1px solid rgba(140,200,245,0.3)",textDecoration:"none"}}>{arr.length>1?`Ver ${k+1}`:"Ver"}</a>)}</span>:<span style={{fontSize:10.5,color:"rgba(255,255,255,0.22)"}}>—</span>}</span>
                       <span style={{textAlign:"center"}}><button onClick={e=>{e.stopPropagation();openMoveModal(p,null);}} title="Reasignar este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button><button onClick={e=>{e.stopPropagation();eliminarBultoDeposito(p);}} title="Eliminar este bulto de todo el sistema" style={{marginLeft:6,fontSize:10,padding:"3px 7px",borderRadius:4,border:"1px solid rgba(255,107,107,0.35)",background:"rgba(255,107,107,0.08)",color:"#ff8a8a",cursor:"pointer",fontWeight:600}}>🗑</button></span>
                     </div>;
                   })}

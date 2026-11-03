@@ -171,6 +171,14 @@ const CN=CN_SECTIONS.flatMap(s=>s.items);
 // Notas de un cobro que ve el cliente: las internas de la acreditación automática (Argy) no.
 const notaCliente=(n)=>/acreditado autom[aá]ticamente|argy/i.test(String(n||""))?"":String(n||"").trim();
 const fotoCaducada=(p)=>!p?.photo_url&&(!!p?.photo_uploaded_at||(p?.created_at&&(Date.now()-new Date(p.created_at).getTime())/86400000>=90));
+// Varias fotos por bulto (03/11/2026): photo_urls es la lista completa y photo_url la primera.
+const fotosBulto=(p)=>Array.isArray(p?.photo_urls)&&p.photo_urls.length?p.photo_urls.filter(Boolean):(p?.photo_url?[p.photo_url]:[]);
+const NAV_FOTO={width:34,height:34,borderRadius:999,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:18,cursor:"pointer",lineHeight:1,padding:0};
+const NavFotos=({k,n,ir})=>n>1?<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginTop:10}}>
+  <button onClick={()=>ir((k-1+n)%n)} aria-label="‹" style={NAV_FOTO}>‹</button>
+  <span style={{fontSize:12,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{k+1} / {n}</span>
+  <button onClick={()=>ir((k+1)%n)} aria-label="›" style={NAV_FOTO}>›</button>
+</div>:null;
 
 // Legajo de la importación (22/10/2026): lo que existe — facturas de Argencargo, factura del courier,
 // DSI y los recibos de cada pago. Visibilidad y links firmados los resuelve /api/portal/legajo.
@@ -440,18 +448,19 @@ function DepositoView({pkgs,token,client,onCreated}){
           <span style={{fontSize:13,fontWeight:700,color:!hot&&x.bruto>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.bruto>0?`${f2(x.bruto)} kg`:"—"}</span>
           <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{x.vol>0?`${f2(x.vol)} kg`:"—"}</span>
           <span style={{textAlign:"center"}}>{p.photo_url
-            ?<button onClick={e=>{e.stopPropagation();setOpen(p.id);}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>
+            ?<button onClick={e=>{e.stopPropagation();setOpen({id:p.id,i:0});}} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>
             :<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t(fotoCaducada(p)?"dep.photoExpired":"dep.noPhoto")}</span>}</span>
         </div>
       </div>;})}
-    {open&&(()=>{const p=pkgs.find(x=>x.id===open);if(!p?.photo_url)return null;const idx=pkgs.indexOf(p);
+    {open&&(()=>{const p=pkgs.find(x=>x.id===open.id);const fotos=fotosBulto(p);if(!fotos.length)return null;const idx=pkgs.indexOf(p);const k=Math.min(open.i||0,fotos.length-1);
       return <div onClick={()=>setOpen(null)} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(4,9,20,0.82)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg, #16243E, #101B31)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:16,padding:14,maxWidth:"min(560px, 92vw)",boxShadow:"0 30px 70px rgba(0,0,0,0.6)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:10}}>
             <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#fff"}}>Escaneo · Bulto {idx+1}<span style={{marginLeft:10,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:SKY,textTransform:"none",letterSpacing:0}}>{p.national_tracking||""}</span></span>
             <button onClick={()=>setOpen(null)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)",color:"#fff",cursor:"pointer"}}>Cerrar</button>
           </div>
-          <img src={p.photo_url} alt={t("dep.scanTitle")} style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+          <img src={fotos[k]} alt={t("dep.scanTitle")} style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+          <NavFotos k={k} n={fotos.length} ir={(i)=>setOpen({id:p.id,i})}/>
         </div>
       </div>;})()}
     <div style={{display:"flex",alignItems:"stretch",gap:10,flexWrap:"wrap",marginTop:16,paddingTop:16,borderTop:HAIR}}>
@@ -1351,7 +1360,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
                 <span style={{fontSize:13,fontWeight:700,color:!hot&&p.gw>0?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.gw>0?`${f2(p.gw)} kg`:"—"}</span>
                 <span style={{fontSize:13,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{p.vw>0?`${f2(p.vw)} kg`:"—"}</span>
                 <span style={{fontSize:12.5,color:"#fff",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{p.cbm>0?p.cbm.toFixed(3):"—"}</span>
-                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({url:p.photo_url,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t(fotoCaducada(p)||op?.status==="operacion_cerrada"?"dep.photoExpired":"dep.noPhoto")}</span>}</span>
+                <span style={{textAlign:"center"}}>{p.photo_url?<button onClick={()=>setLightboxPhoto({urls:fotosBulto(p),i:0,n:i+1,trk:p.national_tracking})} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{t("dep.viewScan")}</button>:<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{t(fotoCaducada(p)||op?.status==="operacion_cerrada"?"dep.photoExpired":"dep.noPhoto")}</span>}</span>
               </div>
               {canAsig&&(()=>{const open=pkOpenDet===p.id;const label=enEste.length===0?t("op.variousUnassigned"):enEste.map(it=>it.description||t("calc.product")).join(", ");
                 return <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 11px",flexWrap:"wrap"}}>
@@ -1435,7 +1444,10 @@ function OperationDetail({op:opProp,token,client,onBack}){
           <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#fff"}}>Escaneo{lightboxPhoto.n?` · Bulto ${lightboxPhoto.n}`:""}{lightboxPhoto.trk&&<span style={{marginLeft:10,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:SKY,textTransform:"none",letterSpacing:0}}>{lightboxPhoto.trk}</span>}</span>
           <button onClick={()=>setLightboxPhoto(null)} style={{height:30,padding:"0 12px",fontSize:12,fontWeight:700,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)",color:"#fff",cursor:"pointer"}}>Cerrar</button>
         </div>
-        <img src={lightboxPhoto.url||lightboxPhoto} alt={t("dep.scanTitle")} style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+        {(()=>{const fotos=Array.isArray(lightboxPhoto.urls)&&lightboxPhoto.urls.length?lightboxPhoto.urls:[lightboxPhoto.url||lightboxPhoto];const k=Math.min(lightboxPhoto.i||0,fotos.length-1);return <>
+          <img src={fotos[k]} alt={t("dep.scanTitle")} style={{display:"block",maxWidth:"100%",maxHeight:"62vh",borderRadius:10,border:HAIR,objectFit:"contain"}}/>
+          <NavFotos k={k} n={fotos.length} ir={(i)=>setLightboxPhoto({...lightboxPhoto,i})}/>
+        </>;})()}
       </div>
     </div>}
   </div>;
