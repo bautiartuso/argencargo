@@ -11218,10 +11218,14 @@ function ReclamosDeposito({token,signups=[],onCount}){
 // la importación). Se pueden tildar varios y asignarlos todos juntos.
 // Reenvío a otro depósito (15/10/2026): Bautista elige bultos del depósito de un agente y le pide
 // que los mande a otro depósito con otro shipping mark. El agente lo ve en su panel y contesta.
-function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,historial=[],onClose,onSaved}){
+// tipo (03/11/2026): "china" = otro depósito en China; "miami" = DDP Miami (el proveedor lo manda a Miami).
+// Para Miami el destino viene fijo y la dirección se recuerda del último pedido a Miami.
+function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,historial=[],tipo="china",onClose,onSaved}){
+  const esMiami=tipo==="miami";
+  historial=historial.filter(r=>(r.destino_tipo||"china")===tipo);
   const [sel,setSel]=useState(()=>new Set(packages.map(p=>p.id)));
-  const [destino,setDestino]=useState("");
-  const [datos,setDatos]=useState("");
+  const [destino,setDestino]=useState(esMiami?"DDP Miami":"");
+  const [datos,setDatos]=useState(()=>esMiami?(historial.find(r=>r.destino_datos)?.destino_datos||""):"");
   const [mark,setMark]=useState(cliente?.client_code||"");
   const [nota,setNota]=useState("");
   const [g,setG]=useState(false);
@@ -11230,10 +11234,11 @@ function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,hist
   const toggle=(id)=>setSel(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
   const guardar=async()=>{
     if(!sel.size){toast("Elegí al menos un bulto","error");return;}
-    if(!destino.trim()){toast("Poné a qué depósito va","error");return;}
+    if(!destino.trim()){toast(esMiami?"Poné el nombre del destino en Miami":"Poné a qué depósito va","error");return;}
+    if(esMiami&&!datos.trim()){toast("Poné la dirección de Miami","error");return;}
     if(!mark.trim()){toast("Poné el shipping mark","error");return;}
     setG(true);
-    const r=await dq("forward_requests",{method:"POST",token,headers:{Prefer:"return=representation"},body:{agent_id:agentId||null,package_ids:[...sel],client_id:cliente?.id||null,operation_id:operationId||null,destino_nombre:destino.trim(),destino_datos:datos.trim()||null,shipping_mark:mark.trim(),note:nota.trim()||null}});
+    const r=await dq("forward_requests",{method:"POST",token,headers:{Prefer:"return=representation"},body:{agent_id:agentId||null,package_ids:[...sel],client_id:cliente?.id||null,operation_id:operationId||null,destino_nombre:destino.trim(),destino_datos:datos.trim()||null,shipping_mark:mark.trim(),note:nota.trim()||null,destino_tipo:tipo}});
     setG(false);
     const fila=Array.isArray(r)?r[0]:r;
     if(!fila?.id){alertDialog(String(r?.message||"").includes("forward_requests")?"Falta correr el SQL de reenvíos en Supabase (migrations/2026_10_15_reenvios.sql).":"No se pudo pedir el reenvío: "+(r?.message||"error"));return;}
@@ -11244,7 +11249,7 @@ function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,hist
   return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"30px 12px",overflowY:"auto"}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"18px 20px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>↪ Reenviar a otro depósito</h3>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>{esMiami?"✈ DDP Miami · enviar a Miami":"↪ Reenviar a otro depósito en China"}</h3>
         <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
       </div>
       <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}>{agentName||"Agente"} · <span style={{fontFamily:"monospace",color:GOLD_LIGHT,fontWeight:700}}>{cliente?.client_code||"—"}</span></p>
@@ -11256,21 +11261,21 @@ function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,hist
           <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>{dim}{Number(p.gross_weight_kg)>0?` · ${Number(p.gross_weight_kg).toLocaleString("es-AR")} kg`:""}{Number(p.quantity)>1?` ×${p.quantity}`:""}</span>
         </button>;})}
       </div>
-      <p style={lbl}>Depósito destino</p>
+      <p style={lbl}>{esMiami?"Destino en Miami":"Depósito destino"}</p>
       {destinos.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
         {destinos.slice(0,8).map(d=><button key={d.id} type="button" onClick={()=>{setDestino(d.destino_nombre);setDatos(d.destino_datos||"");
           // El mark de ese depósito se reusa; si llevaba el código del cliente anterior, va el de este cliente.
           const viejo=d.clients?.client_code;let mk=String(d.shipping_mark||"");if(viejo&&cliente?.client_code&&mk.includes(viejo))mk=mk.split(viejo).join(cliente.client_code);if(mk)setMark(mk);}} style={{padding:"6px 11px",fontSize:12,fontWeight:700,borderRadius:99,border:`1px solid ${destino===d.destino_nombre?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.14)"}`,background:destino===d.destino_nombre?"rgba(96,165,250,0.14)":"transparent",color:destino===d.destino_nombre?"#93c5fd":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"}}>{d.destino_nombre}</button>)}
       </div>}
-      <input value={destino} onChange={e=>setDestino(e.target.value)} placeholder="Nombre del depósito (ej: Luna · Depo 1)" style={{...inp,marginBottom:8}}/>
-      <textarea value={datos} onChange={e=>setDatos(e.target.value)} rows={3} placeholder="Dirección, contacto y teléfono del depósito" style={{...inp,resize:"vertical",marginBottom:14}}/>
+      <input value={destino} onChange={e=>setDestino(e.target.value)} placeholder={esMiami?"Nombre del destino (ej: DDP Miami)":"Nombre del depósito (ej: Luna · Depo 1)"} style={{...inp,marginBottom:8}}/>
+      <textarea value={datos} onChange={e=>setDatos(e.target.value)} rows={3} placeholder={esMiami?"Dirección, contacto y teléfono en Miami":"Dirección, contacto y teléfono del depósito"} style={{...inp,resize:"vertical",marginBottom:14}}/>
       <p style={lbl}>Shipping mark</p>
       <input value={mark} onChange={e=>setMark(e.target.value)} placeholder="Lo que tiene que escribir en la caja" style={{...inp,fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:16,marginBottom:14}}/>
       <p style={lbl}>Nota para el agente (opcional)</p>
       <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: mandar por camión, no por courier" style={{...inp,marginBottom:16}}/>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="secondary" small onClick={onClose}>Cancelar</Btn>
-        <Btn small onClick={guardar} disabled={g}>{g?"Pidiendo…":`Pedir reenvío (${sel.size} bulto${sel.size!==1?"s":""})`}</Btn>
+        <Btn small onClick={guardar} disabled={g}>{g?"Pidiendo…":`${esMiami?"Pedir envío a Miami":"Pedir reenvío"} (${sel.size} bulto${sel.size!==1?"s":""})`}</Btn>
       </div>
     </div>
   </div>;
@@ -12097,7 +12102,7 @@ function AgentsPanel({token}){
                           {hasSnap&&<button onClick={(e)=>{e.stopPropagation();setExpandedRepack(isOpen?null:o.id);}} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>{isOpen?"Ocultar detalle":"Ver bultos antes/después"}</button>}
                         </>;})()}
                         {canRepack&&<button onClick={(e)=>{e.stopPropagation();requestRepackForOp(o);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🔄 Pedir reempaque</button>}
-                        {pkgsOfOp.length>0&&<button onClick={(e)=>{e.stopPropagation();const ag=approvedAgents.find(a=>a.auth_user_id===o.created_by_agent_id);setReenvioModal({agentId:o.created_by_agent_id||pkgsOfOp[0]?.registered_by_agent_id,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:o.client_id,client_code:o.clients?.client_code},operationId:o.id,packages:pkgsOfOp});}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito</button>}
+                        {pkgsOfOp.length>0&&<button onClick={(e)=>{e.stopPropagation();const ag=approvedAgents.find(a=>a.auth_user_id===o.created_by_agent_id);setReenvioModal({tipo:"china",agentId:o.created_by_agent_id||pkgsOfOp[0]?.registered_by_agent_id,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:o.client_id,client_code:o.clients?.client_code},operationId:o.id,packages:pkgsOfOp});}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito en China</button><button onClick={(e)=>{e.stopPropagation();const ag=approvedAgents.find(a=>a.auth_user_id===o.created_by_agent_id);setReenvioModal({tipo:"miami",agentId:o.created_by_agent_id||pkgsOfOp[0]?.registered_by_agent_id,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:o.client_id,client_code:o.clients?.client_code},operationId:o.id,packages:pkgsOfOp});}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>✈ DDP Miami</button>}
                       </div>
                     </div>
                     {rpk?.status==="done"&&expandedRepack===o.id&&(()=>{const oSnap=Array.isArray(rpk.original_packages_snapshot)?rpk.original_packages_snapshot:null;const nSnap=Array.isArray(rpk.new_packages_snapshot)?rpk.new_packages_snapshot:null;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
@@ -12274,7 +12279,7 @@ function AgentsPanel({token}){
             </div>
           </div>
           {open&&<div style={{borderTop:"1px solid rgba(184,149,106,0.2)",padding:"6px 14px 12px"}}>
-            <div style={{display:"flex",justifyContent:"flex-end",padding:"6px 0"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{height:30,padding:"0 11px",borderRadius:8,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↪ Reenviar a otro depósito</button></div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"6px 0"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({tipo:"china",agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{height:30,padding:"0 11px",borderRadius:8,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>↪ Reenviar a otro depósito en China</button><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({tipo:"miami",agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{height:30,padding:"0 11px",borderRadius:8,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✈ DDP Miami</button></div>
             {g.pk.map((p,k)=>{const q=Number(p.quantity||1),l2=Number(p.length_cm||0),w2=Number(p.width_cm||0),h2=Number(p.height_cm||0);const br=Number(p.gross_weight_kg||0)*q,vo=l2&&w2&&h2?((l2*w2*h2)/5000)*q:0;const trk=p.national_tracking||p.consolidated_from_trackings||null;
               return <div key={p.id} style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
@@ -12488,7 +12493,7 @@ function AgentsPanel({token}){
                   <span style={{textAlign:"right"}}><button onClick={e=>{e.stopPropagation();crearPorCliente(cid,g.pk);}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,cursor:"pointer",whiteSpace:"nowrap"}}>Crear importación por él</button></span>
                 </div>
                 {open&&<div style={{padding:"0 14px 12px 40px"}}>
-                  <div style={{display:"flex",justifyContent:"flex-end",padding:"4px 0 8px"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito</button></div>
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"4px 0 8px"}}><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({tipo:"china",agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito en China</button><button onClick={()=>{const agId=g.pk[0]?.registered_by_agent_id;const ag=approvedAgents.find(a=>a.auth_user_id===agId);setReenvioModal({tipo:"miami",agentId:agId,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:cid,client_code:g.cl.client_code},operationId:null,packages:g.pk});}} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>✈ DDP Miami</button></div>
                   <div style={{display:"grid",gridTemplateColumns:"30px minmax(150px,1fr) 100px 130px 96px 96px 80px 130px",gap:10,padding:"6px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
                     <span>#</span><span>Tracking</span><span style={{textAlign:"center"}}>Llegó</span><span style={{textAlign:"center"}}>Medidas (cm)</span><span style={{textAlign:"right"}}>Bruto</span><span style={{textAlign:"right"}}>Volumétrico</span><span style={{textAlign:"center"}}>Escaneo</span>
                   <span style={{textAlign:"center"}}>Acciones</span></div>

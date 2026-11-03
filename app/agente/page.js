@@ -280,7 +280,9 @@ const I18N={
     push_android_step2:"Tocá «Instalar app» o «Agregar a pantalla principal»",
     push_android_step3:"Abrí Argencargo desde el ícono que apareció — NO desde Chrome",
     push_android_step4:"Volvé acá y se activarán las notificaciones automáticamente",
-    fwd_title:"Bultos a enviar a otro depósito",
+    fwd_title:"Bultos a enviar a otro depósito en China",
+    fwd_title_miami:"Paquetes a enviar a Miami (DDP)",
+    fwd_sub_miami:"Mandá estos paquetes a la dirección de Miami, respetando el shipping mark.",
     fwd_check:"Por favor chequeá que el shipping mark esté escrito exactamente igual en cada caja.",
     fwd_sub:"Mandá estos bultos al depósito indicado, respetando el shipping mark.",
     fwd_mark:"Shipping mark",
@@ -664,7 +666,9 @@ const I18N={
     push_android_step2:"点击「安装应用」或「添加到主屏幕」",
     push_android_step3:"从主屏幕图标打开 Argencargo（不要从 Chrome 打开）",
     push_android_step4:"回到这里，通知会自动开启",
-    fwd_title:"需要寄往其他仓库的包裹",
+    fwd_title:"需要寄往中国其他仓库的包裹",
+    fwd_title_miami:"需要寄往迈阿密（DDP）的包裹",
+    fwd_sub_miami:"请把这些包裹寄到迈阿密地址，并严格按照唛头标注。",
     fwd_check:"请确认每个箱子上的唛头与上面完全一致。",
     fwd_sub:"请把这些包裹寄到指定仓库，并严格按照唛头标注。",
     fwd_mark:"唛头",
@@ -1380,15 +1384,17 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     </div>}
     {/* Bultos a enviar a otro depósito (15/10/2026). Los pedidos con la misma dirección y el mismo
         shipping mark van juntos: se mandan en el mismo envío. */}
-    {reenvios.length>0&&(()=>{
-      const grupos={};reenvios.forEach(r=>{const k=`${String(r.destino_datos||r.destino_nombre||"").trim()}|${String(r.shipping_mark||"").trim()}`;(grupos[k]=grupos[k]||[]).push(r);});
+    {/* Dos bloques (03/11/2026): a otro depósito en China y DDP Miami; mismo flujo (tracking + costo + Enviado). */}
+    {[["china",reenvios.filter(r=>r.destino_tipo!=="miami")],["miami",reenvios.filter(r=>r.destino_tipo==="miami")]].map(([tipoDest,reenviosT])=>reenviosT.length>0&&(()=>{
+      const esMiami=tipoDest==="miami";
+      const grupos={};reenviosT.forEach(r=>{const k=`${String(r.destino_datos||r.destino_nombre||"").trim()}|${String(r.shipping_mark||"").trim()}`;(grupos[k]=grupos[k]||[]).push(r);});
       const lista=Object.values(grupos);
       const lbl={fontSize:9.5,fontWeight:800,color:"rgba(var(--ink),0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 3px"};
       const btnS={padding:"3px 9px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(var(--ink),0.18)",background:"transparent",color:"rgba(var(--ink),0.75)",cursor:"pointer",fontFamily:"inherit"};
-      return <div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(96,165,250,0.5)",background:"rgba(96,165,250,0.07)",overflow:"hidden"}}>
-        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(96,165,250,0.25)"}}>
-          <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>↪ {t.fwd_title} <span style={{color:"#60a5fa"}}>· {reenvios.reduce((a2,r)=>a2+(r.package_ids||[]).length,0)}</span></p>
-          <p style={{fontSize:11.5,color:"rgba(var(--ink),0.65)",margin:"2px 0 6px"}}>{t.fwd_sub}</p>
+      return <div key={tipoDest} style={{marginTop:12,borderRadius:14,border:`1.5px solid ${esMiami?"rgba(251,191,36,0.5)":"rgba(96,165,250,0.5)"}`,background:esMiami?"rgba(251,191,36,0.06)":"rgba(96,165,250,0.07)",overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:`1px solid ${esMiami?"rgba(251,191,36,0.3)":"rgba(96,165,250,0.25)"}`}}>
+          <p style={{fontSize:14,fontWeight:800,color:"var(--tx)",margin:0}}>{esMiami?"✈":"↪"} {esMiami?(t.fwd_title_miami||"Paquetes a enviar a Miami (DDP)"):t.fwd_title} <span style={{color:esMiami?"#fbbf24":"#60a5fa"}}>· {reenviosT.reduce((a2,r)=>a2+(r.package_ids||[]).length,0)}</span></p>
+          <p style={{fontSize:11.5,color:"rgba(var(--ink),0.65)",margin:"2px 0 6px"}}>{esMiami?(t.fwd_sub_miami||t.fwd_sub):t.fwd_sub}</p>
           <p style={{fontSize:11.5,fontWeight:700,color:"var(--amber)",margin:0,padding:"5px 9px",borderRadius:8,background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.35)",display:"inline-block"}}>⚠ {t.fwd_check}</p>
         </div>
         {lista.map((grupo,i)=>{const r=grupo[0];const ids=grupo.flatMap(x=>x.package_ids||[]);const pk=packages.filter(p=>ids.includes(p.id));const acc=fwdAccion?.id===r.id?fwdAccion.tipo:null;const notas=[...new Set(grupo.map(x=>x.note).filter(Boolean))];return <div key={r.id} style={{padding:"10px 14px",borderTop:i?"1px solid rgba(var(--ink),0.08)":"none",display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
@@ -1417,7 +1423,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           </div>
         </div>;})}
       </div>;
-    })()}
+    })())}
     {/* Reclamos de depósito (09/10/2026): paquetes que el cliente dice que llegaron y no están registrados. */}
     {misReclamos.length>0&&<div style={{marginTop:12,borderRadius:14,border:"1.5px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.07)",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(251,191,36,0.25)"}}>
