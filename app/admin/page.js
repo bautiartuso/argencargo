@@ -6896,10 +6896,63 @@ function RegistrarPagoCC({token,cl,onDone}){
   </Card>;
 }
 
+// Contraseña del portal (03/11/2026): el admin la pone desde la ficha. Si el cliente no tiene cuenta,
+// se crea con el email de la ficha y queda atada. Después muestra la clave para copiarla o mandar el mensaje.
+const CLAVE_CHARS="ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+const claveAlAzar=()=>Array.from({length:10},()=>CLAVE_CHARS[Math.floor(Math.random()*CLAVE_CHARS.length)]).join("");
+function ClaveModal({cl,token,onCerrar,onCreada}){
+  const [pw,setPw]=useState(claveAlAzar);
+  const [lo,setLo]=useState(false);
+  const [listo,setListo]=useState(null); // {email,password,creada}
+  const tieneCuenta=!!cl.auth_user_id;
+  const nombre=`${cl.first_name||""} ${cl.last_name||""}`.trim();
+  const mono={fontFamily:"'JetBrains Mono','SF Mono',monospace"};
+  const copiar=async(txt,aviso)=>{try{await navigator.clipboard.writeText(txt);toast(aviso,"success");}catch{await promptDialog("Copialo de acá",{defaultValue:txt});}};
+  const mensaje=(r)=>`Hola ${cl.first_name||""}! Te dejamos el acceso al portal de Argencargo:\nhttps://argencargo.com.ar/portal\nEmail: ${r.email}\nContraseña: ${r.password}\n\nDesde el portal la podés cambiar cuando quieras.`;
+  const guardar=async()=>{
+    if(pw.trim().length<6){toast("La contraseña tiene que tener al menos 6 caracteres","warn");return;}
+    setLo(true);
+    try{
+      const r=await fetch("/api/admin/clientes",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"clave",client_id:cl.id,password:pw.trim()})}).then(x=>x.json());
+      if(r.error){toast(r.error,"error");setLo(false);return;}
+      if(r.creada&&r.auth_user_id)onCreada(r.auth_user_id);
+      setListo(r);
+    }catch(e){toast("No se pudo cambiar la contraseña","error");}
+    setLo(false);
+  };
+  return <div onClick={lo?undefined:onCerrar} style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(5px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440,background:"#0F1F3A",border:"1px solid rgba(184,149,106,0.35)",borderRadius:16,padding:"20px 22px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+      <p style={{margin:0,fontSize:11.5,fontWeight:800,color:IC,letterSpacing:".08em",textTransform:"uppercase"}}>{tieneCuenta?"Restablecer contraseña":"Crear acceso al portal"}</p>
+      <p style={{margin:"4px 0 2px",fontSize:17,fontWeight:900,color:"#fff"}}><span style={mono}>{cl.client_code}</span> <span style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>{nombre}</span></p>
+      <p style={{margin:"0 0 16px",fontSize:12,color:"rgba(255,255,255,0.5)",...mono}}>{listo?.email||cl.email||"sin email"}</p>
+      {!listo?<>
+        <div style={{display:"flex",gap:8}}>
+          <input value={pw} onChange={e=>setPw(e.target.value)} spellCheck={false} autoFocus onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();guardar();}}} style={{flex:1,minWidth:0,height:42,padding:"0 12px",fontSize:15,...mono,letterSpacing:".04em",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",boxSizing:"border-box"}}/>
+          <button type="button" onClick={()=>setPw(claveAlAzar())} title="Otra al azar" style={{height:42,padding:"0 13px",borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontSize:16,fontWeight:700,fontFamily:"inherit"}}>↻</button>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+          <Btn small variant="secondary" onClick={onCerrar} disabled={lo}>Cancelar</Btn>
+          <Btn small onClick={guardar} disabled={lo}>{lo?"Guardando…":tieneCuenta?"Restablecer":"Crear acceso"}</Btn>
+        </div>
+      </>:<>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)"}}>
+          <p style={{margin:0,fontSize:11,fontWeight:800,color:"#4ade80",letterSpacing:".06em",textTransform:"uppercase"}}>{listo.creada?"Cuenta creada":"Contraseña cambiada"}</p>
+          <p style={{margin:"6px 0 0",fontSize:20,fontWeight:800,color:"#fff",...mono,letterSpacing:".06em",wordBreak:"break-all"}}>{listo.password}</p>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16,flexWrap:"wrap"}}>
+          <Btn small variant="secondary" onClick={()=>copiar(listo.password,"Contraseña copiada")}>Copiar clave</Btn>
+          <Btn small variant="secondary" onClick={()=>copiar(mensaje(listo),"Mensaje copiado")}>Copiar mensaje</Btn>
+          <Btn small onClick={onCerrar}>Listo</Btn>
+        </div>
+      </>}
+    </div>
+  </div>;
+}
 function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
   const [giPartners,setGiPartners]=useState([]);
   useEffect(()=>{(async()=>{const r=await dq("profiles",{token,filters:"?is_gi_partner=eq.true&select=id,email&order=email.asc"});setGiPartners(Array.isArray(r)?r:[]);})();},[token]);
+  const [claveModal,setClaveModal]=useState(false);
   // Cuenta corriente
   const [accMovs,setAccMovs]=useState([]);
   const [cliPmtsCC,setCliPmtsCC]=useState([]); // pagos GI (operation_client_payments)
@@ -7000,9 +7053,11 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Btn onClick={()=>{if(typeof window!=="undefined")window.open(`/portal?admin_preview=${cl.id}`,"_blank");}} variant="secondary" small>👁 Ver como cliente</Btn>
+        <Btn onClick={()=>setClaveModal(true)} variant="secondary" small>{cl.auth_user_id?"Restablecer contraseña":"Crear acceso al portal"}</Btn>
         <Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn>
       </div>
     </div>
+    {claveModal&&<ClaveModal cl={cl} token={token} onCerrar={()=>setClaveModal(false)} onCreada={uid=>setCl(p=>({...p,auth_user_id:uid}))}/>}
     <div className="ac-editor-tabs" style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",paddingBottom:0}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} data-on={active?"1":"0"} onClick={()=>setTab(t.k)} style={{padding:"10px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.l}</button>;})}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>

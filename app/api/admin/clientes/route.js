@@ -1,5 +1,8 @@
-import { payloadVerificado } from "../../../../lib/auth-server";
-// POST /api/admin/clientes {action:"eliminar", client_id, forzar?} → borra un cliente de la base.
+import { payloadVerificado, usuarioConRol } from "../../../../lib/auth-server";
+// POST /api/admin/clientes
+//   {action:"clave", client_id, password?} → nueva contraseña del portal (03/11/2026). Admin y empleado.
+//     Si la ficha no tiene cuenta y tiene email, la crea y la ata. Devuelve {ok, email, password, creada}.
+//   {action:"eliminar", client_id} → borra un cliente de la base. Solo admin.
 //
 // Un cliente con operaciones NO se borra (las ops son historia contable): la respuesta dice cuántas
 // tiene y el admin lo desactiva en vez de borrarlo. Sin ops, se limpian primero sus dependencias
@@ -36,9 +39,54 @@ const DEPENDIENTES = [
   "tier_rewards", "client_tariff_overrides", "deposit_claims", "forward_requests", "gi_quote_requests", "notifications",
 ];
 
+const UUID = /^[0-9a-f-]{36}$/i;
+const SIN_AMBIGUAS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+const claveNueva = () => Array.from({ length: 10 }, () => SIN_AMBIGUAS[Math.floor(Math.random() * SIN_AMBIGUAS.length)]).join("");
+
+async function clave(req, body) {
+  const quien = await usuarioConRol(req);
+  if (!quien) return Response.json({ error: "unauthorized" }, { status: 401 });
+  const id = String(body.client_id || "");
+  if (!UUID.test(id)) return Response.json({ error: "Cliente inválido" }, { status: 400 });
+  const password = body.password ? String(body.password) : claveNueva();
+  if (password.length < 6) return Response.json({ error: "La contraseña tiene que tener al menos 6 caracteres" }, { status: 400 });
+
+  const cl = await sb(`/rest/v1/clients?id=eq.${id}&select=id,client_code,first_name,last_name,email,auth_user_id`);
+  const c = Array.isArray(cl.body) ? cl.body[0] : null;
+  if (!c) return Response.json({ error: "No encontramos ese cliente" }, { status: 404 });
+
+  if (c.auth_user_id) {
+    const r = await sb(`/auth/v1/admin/users/${c.auth_user_id}`, { method: "PUT", body: JSON.stringify({ password }) });
+    if (!r.ok) return Response.json({ error: r.body?.msg || r.body?.message || "Supabase no dejó cambiar la contraseña" }, { status: 400 });
+    return Response.json({ ok: true, email: r.body?.email || c.email || null, password, creada: false, client_code: c.client_code });
+  }
+
+  // Sin cuenta todavía: se crea con el email de la ficha (mismo armado que la cuenta desde la cotización GI).
+  const email = String(c.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Response.json({ error: `${c.client_code} no tiene cuenta en el portal ni un email válido para crearla. Cargá el email en la ficha, guardá y volvé a intentar.` }, { status: 400 });
+  const u = await sb(`/auth/v1/admin/users`, {
+    method: "POST",
+    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { role: "cliente", first_name: c.first_name || "", last_name: c.last_name || "" } }),
+  });
+  if (!u.ok || !u.body?.id) {
+    const ya = /already|registered|exists/i.test(JSON.stringify(u.body || ""));
+    return Response.json({ error: ya ? `${email} ya tiene una cuenta (de otro cliente o usuario). Cambiá el email de la ficha o atá esa cuenta a mano.` : "No se pudo crear la cuenta" }, { status: ya ? 409 : 500 });
+  }
+  const uid = u.body.id;
+  const link = await sb(`/rest/v1/clients?id=eq.${id}&auth_user_id=is.null`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ auth_user_id: uid }) });
+  if (!Array.isArray(link.body) || !link.body.length) {
+    await sb(`/auth/v1/admin/users/${uid}`, { method: "DELETE" });
+    return Response.json({ error: "El cliente ya tenía cuenta: volvé a abrir la ficha" }, { status: 409 });
+  }
+  const p = await sb(`/rest/v1/profiles?id=eq.${uid}&select=id`);
+  if (!Array.isArray(p.body) || !p.body.length) await sb(`/rest/v1/profiles`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ id: uid, role: "cliente", email }) });
+  return Response.json({ ok: true, email, password, creada: true, auth_user_id: uid, client_code: c.client_code });
+}
+
 export async function POST(req) {
-  if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   let body = null; try { body = await req.json(); } catch {}
+  if (body?.action === "clave") return clave(req, body);
+  if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (body?.action !== "eliminar") return Response.json({ error: "acción desconocida" }, { status: 400 });
   const id = String(body.client_id || "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: "Cliente inválido" }, { status: 400 });
