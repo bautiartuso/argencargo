@@ -12574,6 +12574,12 @@ function AgentsPanel({token}){
             // Vuelos en operación agrupados (29/09/2026): primero los que faltan despachar, después
             // por carrier (DHL, FedEx, UPS) y dentro de cada uno CF/monotributo y responsable inscripto.
             // Recibidos quedan como antes (por fecha de recepción).
+            // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
+            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.status!=="recibido"&&f.retenido_at)return -1;if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
+            const carrierKey=(f)=>{const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
+            // Pendiente de recolectar (03/11/2026): el agente lo despachó con DHL/FedEx/UPS pero el courier
+            // todavía no lo retiró (sin pickup y sin ningún evento posterior: aduana, liberado, entregado).
+            const pendRecoleccion=(f)=>f.status==="despachado"&&!!f.dispatched_at&&!f.carrier_pickup_at&&["dhl","fedex","ups"].includes(carrierKey(f))&&rangoEstado(f)===3;
             const filaVuelo=(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
             // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
@@ -12581,6 +12587,8 @@ function AgentsPanel({token}){
               if(!f.dispatched_at)return {txt:"",color:"rgba(255,255,255,0.3)"};
               if(!f.carrier_pickup_at){
                 const car=(f.international_carrier||"").toLowerCase();
+                // Pendiente de recolectar: días desde el despacho sin que el courier lo retire.
+                if(pendRecoleccion(f)){const d=(Date.now()-new Date(f.dispatched_at))/86400000;return {txt:`${d.toFixed(1)} d`,color:d<=1?"#fbbf24":"#f87171",title:`Despachado hace ${d.toFixed(1)} días y el courier todavía no lo retiró${car==="ups"?" · UPS: cargar la fecha de pickup a mano desde el detalle del vuelo":""}`};}
                 // UPS sin cargar → ? que invita a completar manualmente
                 if(car==="ups")return {txt:"?",color:"#a78bfa",title:"UPS · cargar fecha de pickup manual desde el detalle del vuelo"};
                 // DHL/FedEx esperando primer evento del carrier → celda vacía (sin "—" ni "0.0")
@@ -12624,7 +12632,7 @@ function AgentsPanel({token}){
             // para agente externo a FedEx"). Fila en rojo; a "recibido" lo pasa Bautista a mano.
             const retenido=f.status!=="recibido"&&!!f.retenido_at;
             const stepIdx=retenido?3:f.status==="recibido"||entregadoCourier?5:liberado?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
-            const stepInfo=retenido?{l:"🛑 Retenido por Aduana",c:"#ef4444"}:[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Liberado",c:"#2dd4bf"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
+            const stepInfo=retenido?{l:"🛑 Retenido por Aduana",c:"#ef4444"}:[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},pendRecoleccion(f)?{l:"🚚 Sin retirar",c:"#fb923c"}:{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Liberado",c:"#2dd4bf"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.
             const warns=[];
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
@@ -12664,15 +12672,15 @@ function AgentsPanel({token}){
           </tr>;});
             if(flightsSubTab==="received")return shownFlights.map(filaVuelo);
             const esRIv=(f)=>flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.clients?.tax_condition==="responsable_inscripto");
-            const carrierDe=(f)=>{if(f.status==="preparando")return f.invoice_presented_at?"listo":"preparando";const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
-            const GR=[{k:"preparando",l:"🛠 Preparando",c:"#fbbf24"},{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
+            const carrierDe=(f)=>{if(f.status==="preparando")return f.invoice_presented_at?"listo":"preparando";if(pendRecoleccion(f))return "recolectar";return carrierKey(f);};
+            const GR=[{k:"preparando",l:"🛠 Preparando",c:"#fbbf24"},{k:"listo",l:"⚡ Listos para despachar",c:"#f472b6"},{k:"recolectar",l:"🚚 Pendientes de recolectar",c:"#fb923c"},{k:"dhl",l:"DHL",c:"#facc15"},{k:"fedex",l:"FedEx",c:"#a78bfa"},{k:"ups",l:"UPS",c:"#b45309"},{k:"otro",l:"Otro carrier",c:"rgba(255,255,255,0.6)"}];
             const porNum=(x,y)=>String(y.flight_code||"").localeCompare(String(x.flight_code||""),undefined,{numeric:true});
-            // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
-            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.status!=="recibido"&&f.retenido_at)return -1;if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
             const porEstado=(x,y)=>rangoEstado(x)-rangoEstado(y)||porNum(x,y);
+            // Pendientes de recolectar: el despachado hace más tiempo primero (es el que hay que reclamar).
+            const porDespacho=(x,y)=>String(x.dispatched_at||"").localeCompare(String(y.dispatched_at||""))||porNum(x,y);
             const out=[];
             GR.forEach(g=>{
-              const del=shownFlights.filter(f=>carrierDe(f)===g.k).sort(porEstado);
+              const del=shownFlights.filter(f=>carrierDe(f)===g.k).sort(g.k==="recolectar"?porDespacho:porEstado);
               if(!del.length)return;
               const kgG=del.reduce((acc,f)=>acc+Number(f.total_weight_kg||0),0);
               const plegado=vuelosPlegados.has(g.k);const logo=CARRIER_LOGOS[g.k];
