@@ -14487,13 +14487,13 @@ function FacturasPanel({token}){
 
     {/* Modal: nueva factura */}
     {modal&&<div onClick={cerrar} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:celu?"stretch":"flex-start",justifyContent:"center",padding:celu?0:"34px 16px",overflowY:"auto"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:celu?"none":1180,minHeight:celu?"100%":undefined,boxSizing:"border-box",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:18,padding:celu?"18px 16px 24px":"22px 28px 26px",margin:celu?0:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:celu?"none":1900,minHeight:celu?"100%":undefined,boxSizing:"border-box",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:18,padding:celu?"18px 16px 24px":"22px 28px 26px",margin:celu?0:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <h3 style={{fontSize:18,fontWeight:800,color:"#fff",margin:0}}>Nueva factura C</h3>
           <button onClick={cerrar} aria-label="Cerrar" style={{width:36,height:36,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:18,cursor:"pointer"}}>×</button>
         </div>
         {/* A dos columnas en compu (03/11/2026): operación y receptor a la izquierda, qué se factura a la derecha. */}
-        <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr)":"minmax(0,1fr) minmax(0,1.2fr)",gap:celu?0:32,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr)":"minmax(300px,380px) minmax(0,1fr)",gap:celu?0:32,alignItems:"start"}}>
         <div style={{minWidth:0}}>
         {paso(1,"Operación (opcional)")}
         <div style={{display:"flex",gap:8}}>
@@ -14530,9 +14530,9 @@ function FacturasPanel({token}){
           <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={{...inp,maxWidth:180,fontWeight:700}}/>
         </>}
         <label style={lb}>Ítems</label>
-        {!celu&&<div style={{display:"grid",gridTemplateColumns:"28px minmax(0,1fr) 72px 130px 120px 28px",gap:8,padding:"0 10px 2px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}><span/><span>Detalle</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span><span/></div>}
+        {!celu&&<div style={{display:"grid",gridTemplateColumns:"28px minmax(0,1fr) 84px 160px 150px 28px",gap:10,padding:"0 10px 2px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.35)"}}><span/><span>Detalle</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span><span/></div>}
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {items.map((it,i)=>{const u=unitEff(it);const sub=subEff(it);const tcRow=sigueTc(it);return <div key={it.key} style={{display:"grid",gridTemplateColumns:celu?"28px minmax(0,1fr) 28px":"28px minmax(0,1fr) 72px 130px 120px 28px",gap:8,alignItems:"center",padding:"8px 10px",background:it.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${it.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:11}}>
+          {items.map((it,i)=>{const u=unitEff(it);const sub=subEff(it);const tcRow=sigueTc(it);return <div key={it.key} style={{display:"grid",gridTemplateColumns:celu?"28px minmax(0,1fr) 28px":"28px minmax(0,1fr) 84px 160px 150px 28px",gap:10,alignItems:"center",padding:"8px 10px",background:it.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${it.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:11}}>
             <button type="button" onClick={()=>chItem(i,{on:!it.on})} aria-label={it.on?"Quitar":"Incluir"} style={{width:26,height:26,borderRadius:8,border:`1.5px solid ${it.on?GOLD:"rgba(255,255,255,0.25)"}`,background:it.on?GOLD:"transparent",color:"#0A1628",fontWeight:900,fontSize:14,cursor:"pointer",lineHeight:1}}>{it.on?"✓":""}</button>
             <input value={it.label} onChange={e=>chItem(i,{label:e.target.value})} placeholder="Detalle del ítem" disabled={!it.on} style={{...inp,height:36,fontSize:13,fontWeight:600,background:"transparent",border:"1px solid transparent",color:it.on?"#fff":"rgba(255,255,255,0.4)"}}/>
             {celu&&<button type="button" onClick={()=>setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p)} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
