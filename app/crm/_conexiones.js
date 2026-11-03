@@ -79,17 +79,20 @@ export default function Conexiones() {
       else agregar(`✗ El script de Meta no abrió ninguna ventana.${errores.length ? ` Errores: ${errores.join(" · ")}` : " Sin errores en consola."} Versión del SDK: ${window.FB?.version || "?"}.`);
       setBusy(false);
     }, 6000);
+    // El SDK de Meta exige una función común como callback (rechaza las async: "Expression is of
+    // type asyncfunction, not function"), por eso el trabajo real va en alTerminar.
+    const alTerminar = async (resp) => {
+      contesto = true; restaurar();
+      const code = resp?.authResponse?.code;
+      if (!code) { agregar(`Alta cancelada o sin permiso: Meta no devolvió el código${resp?.status ? ` (estado: ${resp.status})` : ""}.`); setBusy(false); return; }
+      for (let i = 0; i < 25 && !datos.current.phone_number_id && !datos.current.waba_id; i++) await new Promise((r) => setTimeout(r, 200));
+      if (!datos.current.phone_number_id && !datos.current.waba_id) { agregar("Meta devolvió el código pero no el id del número ni de la cuenta. ¿Se completó el alta hasta Finalizar?"); setBusy(false); return; }
+      agregar("Terminando la conexión…");
+      mostrar(await api("/api/crm/conectar", { code, ...datos.current }));
+      setBusy(false); cargar();
+    };
     try {
-      FB.login(async (resp) => {
-        contesto = true; restaurar();
-        const code = resp?.authResponse?.code;
-        if (!code) { agregar(`Alta cancelada o sin permiso: Meta no devolvió el código${resp?.status ? ` (estado: ${resp.status})` : ""}.`); setBusy(false); return; }
-        for (let i = 0; i < 25 && !datos.current.phone_number_id && !datos.current.waba_id; i++) await new Promise((r) => setTimeout(r, 200));
-        if (!datos.current.phone_number_id && !datos.current.waba_id) { agregar("Meta devolvió el código pero no el id del número ni de la cuenta. ¿Se completó el alta hasta Finalizar?"); setBusy(false); return; }
-        agregar("Terminando la conexión…");
-        mostrar(await api("/api/crm/conectar", { code, ...datos.current }));
-        setBusy(false); cargar();
-      }, { config_id: CONFIG_ID, response_type: "code", override_default_response_type: true, extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" } });
+      FB.login(function (resp) { alTerminar(resp); }, { config_id: CONFIG_ID, response_type: "code", override_default_response_type: true, extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" } });
     } catch (e) { restaurar(); agregar(`✗ El script de Meta falló al abrir la ventana: ${e?.message || e}`); setBusy(false); }
   };
   const accion = async (body, antes) => { setBusy(true); if (antes) agregar(antes); mostrar(await api("/api/crm/conectar", body)); setBusy(false); cargar(); };
