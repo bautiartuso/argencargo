@@ -62,16 +62,35 @@ export default function Conexiones() {
     setBusy(true); datos.current = {};
     let FB;
     try { FB = await cargarFb(APP_ID); } catch (e) { agregar(`✗ ${e.message}`); setBusy(false); return; }
-    agregar("Abriendo la ventana de Meta… Si no aparece, Chrome la bloqueó: permití las ventanas emergentes de argencargo.com.ar (ícono a la derecha de la barra de dirección) y volvé a tocar.");
-    FB.login(async (resp) => {
-      const code = resp?.authResponse?.code;
-      if (!code) { agregar(`Alta cancelada o sin permiso: Meta no devolvió el código${resp?.status ? ` (estado: ${resp.status})` : ""}.`); setBusy(false); return; }
-      for (let i = 0; i < 25 && !datos.current.phone_number_id && !datos.current.waba_id; i++) await new Promise((r) => setTimeout(r, 200));
-      if (!datos.current.phone_number_id && !datos.current.waba_id) { agregar("Meta devolvió el código pero no el id del número ni de la cuenta. ¿Se completó el alta hasta Finalizar?"); setBusy(false); return; }
-      agregar("Terminando la conexión…");
-      mostrar(await api("/api/crm/conectar", { code, ...datos.current }));
-      setBusy(false); cargar();
-    }, { config_id: CONFIG_ID, response_type: "code", override_default_response_type: true, extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" } });
+    agregar("Abriendo la ventana de Meta…");
+    // Diagnóstico (03/11/2026, la ventana no aparecía): se mira si el script de Meta intentó abrir la
+    // ventana y si Chrome la dejó, y cualquier error de consola de esos segundos va al Registro.
+    const origOpen = window.open, origErr = console.error, errores = [];
+    let ventana = null, contesto = false;
+    window.open = function (...a) { const w = origOpen.apply(window, a); ventana = w ? "ok" : "bloqueada"; if (w) agregar("Ventana de Meta abierta. Seguí ahí y en el celu."); return w; };
+    console.error = (...a) => { errores.push(a.map((x) => x?.message || String(x)).join(" ").slice(0, 300)); origErr(...a); };
+    const onErr = (e) => errores.push(String(e?.message || e?.error || e).slice(0, 300));
+    window.addEventListener("error", onErr);
+    const restaurar = () => { window.open = origOpen; console.error = origErr; window.removeEventListener("error", onErr); };
+    setTimeout(() => {
+      restaurar();
+      if (contesto || ventana === "ok") return;
+      if (ventana === "bloqueada") agregar("✗ Chrome bloqueó la ventana emergente. Permití las ventanas emergentes de argencargo.com.ar (ícono a la derecha de la barra de dirección, o Configuración → Privacidad → Ventanas emergentes) y volvé a tocar.");
+      else agregar(`✗ El script de Meta no abrió ninguna ventana.${errores.length ? ` Errores: ${errores.join(" · ")}` : " Sin errores en consola."} Versión del SDK: ${window.FB?.version || "?"}.`);
+      setBusy(false);
+    }, 6000);
+    try {
+      FB.login(async (resp) => {
+        contesto = true; restaurar();
+        const code = resp?.authResponse?.code;
+        if (!code) { agregar(`Alta cancelada o sin permiso: Meta no devolvió el código${resp?.status ? ` (estado: ${resp.status})` : ""}.`); setBusy(false); return; }
+        for (let i = 0; i < 25 && !datos.current.phone_number_id && !datos.current.waba_id; i++) await new Promise((r) => setTimeout(r, 200));
+        if (!datos.current.phone_number_id && !datos.current.waba_id) { agregar("Meta devolvió el código pero no el id del número ni de la cuenta. ¿Se completó el alta hasta Finalizar?"); setBusy(false); return; }
+        agregar("Terminando la conexión…");
+        mostrar(await api("/api/crm/conectar", { code, ...datos.current }));
+        setBusy(false); cargar();
+      }, { config_id: CONFIG_ID, response_type: "code", override_default_response_type: true, extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" } });
+    } catch (e) { restaurar(); agregar(`✗ El script de Meta falló al abrir la ventana: ${e?.message || e}`); setBusy(false); }
   };
   const accion = async (body, antes) => { setBusy(true); if (antes) agregar(antes); mostrar(await api("/api/crm/conectar", body)); setBusy(false); cargar(); };
   const probarAds = async () => { setBusy(true); const r = await api("/api/crm/conectar", { accion: "probar_ads" }); setAds(r); agregar(r.ok ? `✓ Meta Ads: cuenta "${r.nombre}" en ${r.moneda}` : `✗ Meta Ads: ${r.error}`); setBusy(false); };
