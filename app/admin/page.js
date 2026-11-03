@@ -14487,12 +14487,14 @@ function FacturasPanel({token}){
 
     {/* Modal: nueva factura */}
     {modal&&<div onClick={cerrar} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:celu?"stretch":"flex-start",justifyContent:"center",padding:celu?0:"34px 16px",overflowY:"auto"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:celu?"none":580,minHeight:celu?"100%":undefined,boxSizing:"border-box",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:18,padding:celu?"18px 16px 24px":"22px 24px",margin:celu?0:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:celu?"none":1180,minHeight:celu?"100%":undefined,boxSizing:"border-box",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:celu?"none":"1px solid rgba(255,255,255,0.1)",borderRadius:celu?0:18,padding:celu?"18px 16px 24px":"22px 28px 26px",margin:celu?0:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <h3 style={{fontSize:18,fontWeight:800,color:"#fff",margin:0}}>Nueva factura C</h3>
           <button onClick={cerrar} aria-label="Cerrar" style={{width:36,height:36,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:18,cursor:"pointer"}}>×</button>
         </div>
-
+        {/* A dos columnas en compu (03/11/2026): operación y receptor a la izquierda, qué se factura a la derecha. */}
+        <div style={{display:"grid",gridTemplateColumns:celu?"minmax(0,1fr)":"minmax(0,1fr) minmax(0,1.2fr)",gap:celu?0:32,alignItems:"start"}}>
+        <div style={{minWidth:0}}>
         {paso(1,"Operación (opcional)")}
         <div style={{display:"flex",gap:8}}>
           <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"'JetBrains Mono',monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
@@ -14514,6 +14516,8 @@ function FacturasPanel({token}){
         <input value={domicilio} onChange={e=>setDomicilio(e.target.value)} style={inp}/>
         <div style={{marginTop:12}}><Sel label="Condición frente al IVA" value={String(condIva)} onChange={v=>setCondIva(Number(v))} options={Object.entries(COND).map(([k,v])=>({value:k,label:v}))}/></div>
 
+        </div>
+        <div style={{minWidth:0,paddingLeft:celu?0:32,borderLeft:celu?"none":"1px solid rgba(255,255,255,0.07)"}}>
         {paso(3,"Qué se factura")}
         {actividades.length>0&&<>
           <label style={lb}>Servicio (actividad en ARCA)</label>
@@ -14549,9 +14553,11 @@ function FacturasPanel({token}){
           <span style={{fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>$ {arsF(totalArs)}</span>
         </div>
         {err&&<p style={{fontSize:12.5,color:"#f87171",margin:"10px 0 0",lineHeight:1.5}}>{err}</p>}
-        <div style={{display:"flex",gap:8,marginTop:18}}>
+        <div style={{display:"flex",gap:8,marginTop:18,justifyContent:celu?"stretch":"flex-end"}}>
           <Btn variant="secondary" onClick={cerrar} fullWidth={celu}>Cancelar</Btn>
           <Btn variant="gold" onClick={emitir} disabled={emitiendo} fullWidth={celu}>{emitiendo?"Emitiendo en ARCA…":"Emitir factura"}</Btn>
+        </div>
+        </div>
         </div>
       </div>
     </div>}
