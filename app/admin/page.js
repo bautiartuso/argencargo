@@ -13652,8 +13652,8 @@ function OperationalAnalytics({token}){
 
 // Gestión de pagos v3 (29/10/2026, rehecha; cotización para el cliente el 30/10). Todo en una pantalla:
 // 1) Se anota la gestión: cliente y cuánto girarle al proveedor. En ese momento sale de la CC de
-//    SolFin el egreso en USD con el costo ya sumado (2,5% + USD 40 desde el 29/10/2026, antes 2,25%;
-//    desde USD 10.000 sin el fijo).
+//    SolFin el egreso en USD con el costo ya sumado (3% + USD 40 desde el 04/11/2026; 2,5% desde el
+//    29/10/2026, antes 2,25%; desde USD 10.000 sin el fijo).
 // 2) Se anota el pago del cliente: efectivo, o transferencia en pesos con comprobante (entra a la CC
 //    de SolFin como ingreso, atado a la gestión y nunca a una operación).
 // 3) Los pesos de una transferencia se dolarizan días después y a otro TC: hasta cargar ese TC la
@@ -13663,7 +13663,7 @@ function OperationalAnalytics({token}){
 // comisión y al TC dolarizado). En payment_management se sincronizan client_paid,
 // client_paid_amount_usd y cost_comision_giro, que leen Finanzas, el libro diario y la CC del cliente.
 const AGP_FIN_PCT=2.5;
-const AGP_CABLE_PCT=2.5; // lo que cobra SolFin por cable (2,25% hasta el 29/10/2026)
+const AGP_CABLE_PCT=3; // lo que cobra SolFin por cable (2,25% hasta el 29/10/2026; 2,5% hasta el 03/11/2026; 3% desde el 04/11/2026)
 const agpCostoCable=(m)=>m>0?Math.round((m*AGP_CABLE_PCT/100+(m<10000?40:0))*100)/100:0;
 const agpR2=(v)=>Math.round((Number(v)||0)*100)/100;
 const agpUsd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
