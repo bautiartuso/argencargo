@@ -36,15 +36,15 @@ const cacheBuscar  = (desc) => rpcCache("ncm_cache_buscar", { p_desc: desc });
 const cacheGuardar = (desc, ncm, src) => rpcCache("ncm_cache_guardar", { p_desc: desc, p_ncm: ncm, p_source: src || "claude" });
 
 async function searchDB(ncmCode) {
-  let r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=eq.${ncmCode}&select=ncm_code,description,die,te,iva&limit=5`, { headers: { apikey: SB_KEY } });
+  let r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=eq.${ncmCode}&select=ncm_code,description,die,te,iva,iva_nota&limit=5`, { headers: { apikey: SB_KEY } });
   let d = await r.json();
   if (Array.isArray(d) && d.length > 0) return d;
   const prefix6 = ncmCode.substring(0, 7);
-  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix6}*&select=ncm_code,description,die,te,iva&limit=10`, { headers: { apikey: SB_KEY } });
+  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix6}*&select=ncm_code,description,die,te,iva,iva_nota&limit=10`, { headers: { apikey: SB_KEY } });
   d = await r.json();
   if (Array.isArray(d) && d.length > 0) return d;
   const prefix4 = ncmCode.substring(0, 4);
-  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix4}*&select=ncm_code,description,die,te,iva&limit=10`, { headers: { apikey: SB_KEY } });
+  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix4}*&select=ncm_code,description,die,te,iva,iva_nota&limit=10`, { headers: { apikey: SB_KEY } });
   d = await r.json();
   return Array.isArray(d) ? d : [];
 }
@@ -62,6 +62,7 @@ function pickBest(results, fallbackIntervention = null) {
     import_duty_rate: best.die,
     statistics_rate: Math.min(best.te, 3),
     iva_rate: best.iva ?? 21,
+    iva_nota: best.iva_nota || null, // excepción de la planilla de bienes de capital ("excepto sus partes"...)
     intervention: fallbackIntervention || { required: false, types: [], reason: null },
     source: "database",
   };
