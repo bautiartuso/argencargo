@@ -39,10 +39,13 @@ export async function POST(req) {
   if (body.client_id && (isAdmin || body.client_id === ownClientId)) clientId = body.client_id;
   if (!clientId) return Response.json({ error: "sin_cliente" }, { status: 403 });
 
-  const o = await svc(`/rest/v1/operations?id=eq.${opId}&client_id=eq.${clientId}&select=id,operation_code,status,budget_total,docs_confirmed_at,service_type,channel&limit=1`);
+  const o = await svc(`/rest/v1/operations?id=eq.${opId}&client_id=eq.${clientId}&select=id,operation_code,status,budget_total,budget_mode,docs_confirmed_at,service_type,channel&limit=1`);
   const op = Array.isArray(o.data) ? o.data[0] : null;
   if (!op) return Response.json({ error: "op_no_encontrada" }, { status: 404 });
-  if (!["en_deposito_origen", "en_preparacion"].includes(op.status) || op.docs_confirmed_at || Number(op.budget_total || 0) > 0 || op.service_type === "gestion_integral")
+  // El presupuesto "auto" lo calcula el sistema solo con el peso de los bultos (flete + seguro): no es un
+  // presupuesto enviado por Argencargo y no impide deshacer (AC-0365 de Fernando Roldan, 03/11/2026).
+  const presupuestoReal = Number(op.budget_total || 0) > 0 && op.budget_mode !== "auto";
+  if (!["en_deposito_origen", "en_preparacion"].includes(op.status) || op.docs_confirmed_at || presupuestoReal || op.service_type === "gestion_integral")
     return Response.json({ error: "no_se_puede", motivo: "etapa" }, { status: 409 });
   const [items, flights] = await Promise.all([
     svc(`/rest/v1/operation_items?operation_id=eq.${opId}&select=id&limit=1`),

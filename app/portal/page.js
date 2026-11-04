@@ -1312,8 +1312,9 @@ function OperationDetail({op:opProp,token,client,onBack}){
           ?<>
             <MercaderiaEditor key={op.id} op={op} pkgs={pkgs} items={items} token={token} client={client} onSaved={loadAll}/>
             {/* Deshacer la importación (18/10/2026): mientras no hay mercadería ni presupuesto, el
-                cliente puede desarmarla y los bultos vuelven a su depósito (se equivocó al armarla). */}
-            {items.length===0&&!hasBudget&&<div style={{marginTop:18,paddingTop:14,borderTop:HAIR,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                cliente puede desarmarla y los bultos vuelven a su depósito (se equivocó al armarla).
+                El presupuesto "auto" (flete estimado por peso) no cuenta como presupuesto (03/11/2026). */}
+            {items.length===0&&(!hasBudget||op.budget_mode==="auto")&&<div style={{marginTop:18,paddingTop:14,borderTop:HAIR,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
               <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)",lineHeight:1.5,flex:"1 1 260px"}}>{t("op.undoImportDesc")}</p>
               <button disabled={deshaciendo} onClick={deshacerImportacion} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(248,113,113,0.45)",background:"rgba(248,113,113,0.08)",color:"#fca5a5",cursor:deshaciendo?"wait":"pointer",whiteSpace:"nowrap"}}>{deshaciendo?"…":t("op.undoImport")}</button>
             </div>}
