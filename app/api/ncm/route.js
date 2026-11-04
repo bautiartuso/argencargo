@@ -244,11 +244,18 @@ const OVERRIDES = [
   { keywords: ["vibrador", "vibrator", "masajeador", "massager", "massage gun", "sex toy", "sextoy", "juguete sexual", "dildo", "love egg", "anal plug", "plug anal", "butt plug", "succionador", "sucking toy", "bomba peneana", "penis pump", "penis sleeve", "masturbador", "masturbator", "clitoral", "clitoris", "g-spot", "rabbit vibrat"], ncm: "9019.10.00", desc: "Aparatos de masaje", die: 12.6, te: 0, iva: 10.5, intervention: { required: false, types: [], reason: null } },
 ];
 
-function checkOverride(description) {
+// IVA real de una posición según ncm_database (10,5 % en 374 posiciones, p. ej. 9019.10.00 masajeadores).
+// Los overrides no lo traen escrito: antes salía 21 fijo y los masajeadores quedaban con IVA 21 (04/11/2026).
+async function ivaDeBase(ncm) {
+  try { const r = await searchDB(ncm); const ex = r.find((x) => x.ncm_code === ncm) || r[0]; if (ex && ex.iva != null) return Number(ex.iva); } catch {}
+  return 21;
+}
+
+async function checkOverride(description) {
   const lower = description.toLowerCase();
   for (const ov of OVERRIDES) {
     if (ov.keywords.some(k => lower.includes(k)) && !(ov.exclude || []).some(k => lower.includes(k))) {
-      return { ncm_code: ov.ncm, ncm_description: ov.desc, import_duty_rate: ov.die, statistics_rate: ov.te, iva_rate: ov.iva ?? 21, intervention: ov.intervention, source: "override" };
+      return { ncm_code: ov.ncm, ncm_description: ov.desc, import_duty_rate: ov.die, statistics_rate: ov.te, iva_rate: ov.iva ?? (await ivaDeBase(ov.ncm)), intervention: ov.intervention, source: "override" };
     }
   }
   return null;
@@ -467,7 +474,7 @@ export async function POST(req) {
       // Lo que el admin ya corrigió manda sobre todo lo demás (misma mercadería, otra variante).
       const mem = await memoriaAdmin(description);
       if (mem) return Response.json(withHint(await respuestaDeNcm(mem.ncm, null, {}, "memoria-admin")));
-      const override = checkOverride(description);
+      const override = await checkOverride(description);
       if (override) return Response.json(withHint(await addAntidumping(override)));
       // Memoria: si esta descripción ya se clasificó, no se vuelve a llamar a la IA. Con una NCM
       // sugerida por el cliente NO se usa la memoria: hay que evaluar su sugerencia (11/10/2026: con
@@ -480,7 +487,7 @@ export async function POST(req) {
 
     // Con foto también mandan los overrides si la descripción los nombra (intercomunicadores, auriculares…).
     if (image && description) {
-      const ov = checkOverride(description);
+      const ov = await checkOverride(description);
       if (ov) return Response.json(withHint(await addAntidumping(ov)));
     }
     // Clasificar: con imagen → vision, sin imagen → texto
