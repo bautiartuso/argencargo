@@ -312,12 +312,12 @@ function CourierModal({ token, onClose, onSaved }) {
 }
 
 // Cable China (30/09/2026): transferencia en dólares a China. Se carga el monto a transferir, la
-// comisión (% sobre la transferencia, 2,5 por defecto desde el 29/10/2026; antes 2,25) y el gasto fijo (USD 40 por defecto),
+// comisión (% sobre la transferencia, 3 por defecto desde el 04/11/2026; 2,5 desde el 29/10/2026; antes 2,25) y el gasto fijo (USD 40 por defecto),
 // ambos editables. En la CC queda un solo egreso en USD por el total resultante.
 function CableChinaModal({ token, onClose, onSaved }) {
   const [date, setDate] = useState(todayStr());
   const [monto, setMonto] = useState("");
-  const [pct, setPct] = useState("2,5");
+  const [pct, setPct] = useState("3");
   const [fijo, setFijo] = useState("40");
   const [nota, setNota] = useState("");
   const [saving, setSaving] = useState(false);
@@ -349,7 +349,7 @@ function CableChinaModal({ token, onClose, onSaved }) {
           <input type="text" inputMode="decimal" value={monto} onChange={soloNum(setMonto)} placeholder="0,00" style={{ ...campoCable, fontWeight: 800 }} autoFocus />
         </Field>
         <Field label="Comisión (%)">
-          <input type="text" inputMode="decimal" value={pct} onChange={soloNum(setPct)} placeholder="2,5" style={campoCable} />
+          <input type="text" inputMode="decimal" value={pct} onChange={soloNum(setPct)} placeholder="3" style={campoCable} />
         </Field>
         <Field label="Gasto fijo (USD)">
           <input type="text" inputMode="decimal" value={fijo} onChange={soloNum(setFijo)} placeholder="40" style={campoCable} />
