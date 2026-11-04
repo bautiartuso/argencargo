@@ -1302,8 +1302,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
     setOp(p=>({...p,...body}));setSaving(false);flash("Marca de perdida quitada — revisá el status manualmente");
   };
-  // Retenida por Aduana (26/10/2026): la marca el sync por el tracking; se puede quitar a mano.
-  const quitarRetencionOp=async()=>{if(!await confirmDialog("¿Quitar la marca de retenida por Aduana? Vuelve a seguirse por tracking y el legajo vuelve a ser obligatorio.",{danger:true}))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{retenida_at:null}});setOp(p=>({...p,retenida_at:null}));flash("Retención quitada");};
+  // Retenida por Aduana (26/10/2026): la marca el sync por el tracking. Desde el 04/11/2026 una retenida
+  // termina de una de dos formas: liberada vía régimen general (el courier la despachó por régimen general
+  // y la entregó: no hay DSI, factura del courier ni legajo; el tracking sigue) o perdida en aduana.
+  const liberarRgOp=async()=>{if(!await confirmDialog(`¿Marcar ${op.operation_code} como liberada vía régimen general? No va a pedir DSI, factura del courier ni legajo. El tracking sigue.`))return;const ahora=new Date().toISOString();const body={liberada_rg_at:ahora,...(op.retenida_at?{}:{retenida_at:ahora})};await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));flash("Liberada vía régimen general");};
+  const deshacerLiberacionRg=async()=>{if(!await confirmDialog("¿Deshacer la liberación por régimen general? Vuelve a figurar como retenida por Aduana.",{danger:true}))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{liberada_rg_at:null}});setOp(p=>({...p,liberada_rg_at:null}));flash("Liberación deshecha");};
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
   // Vuelo directo (28/10/2026): una op aérea que despachamos nosotros con el courier (sin agente)
@@ -1889,12 +1892,22 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",fontStyle:"italic"}}>El cliente no abona — esta op se trata como pérdida operativa, no aparece en cobros pendientes.</p>
       </div>
     </div>}
-    {op.retenida_at&&!op.lost_in_customs_at&&<div style={{marginBottom:16,padding:"14px 18px",background:"linear-gradient(135deg,rgba(239,68,68,0.18),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.45)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+    {op.retenida_at&&!op.lost_in_customs_at&&!op.liberada_rg_at&&<div style={{marginBottom:16,padding:"14px 18px",background:"linear-gradient(135deg,rgba(239,68,68,0.18),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.45)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:220}}>
         <p style={{fontSize:13,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🛑 Retenida por Aduana</p>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Excluida del régimen courier desde el <strong style={{color:"#fff"}}>{formatDate(op.retenida_at)}</strong>, según el tracking. El tracking dejó de seguirse y para cerrar no hace falta DSI ni factura del courier.</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Excluida del régimen courier desde el <strong style={{color:"#fff"}}>{formatDate(op.retenida_at)}</strong>, según el tracking. El tracking sigue. Termina de una de dos formas: el courier la despacha por régimen general y la entrega (liberada: sin DSI, factura del courier ni legajo), o se abandona (perdida en aduana).</p>
       </div>
-      <button type="button" onClick={quitarRetencionOp} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Quitar retención</button>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" onClick={liberarRgOp} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(74,222,128,0.45)",background:"rgba(74,222,128,0.1)",color:"#86efac",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✅ Liberada vía régimen general</button>
+        <button type="button" onClick={()=>setCustomsLossModal({reason:""})} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(239,68,68,0.45)",background:"rgba(239,68,68,0.1)",color:"#fca5a5",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🚨 Perdida en aduana</button>
+      </div>
+    </div>}
+    {op.liberada_rg_at&&!op.lost_in_customs_at&&<div style={{marginBottom:16,padding:"14px 18px",background:"linear-gradient(135deg,rgba(74,222,128,0.14),rgba(74,222,128,0.04))",border:"1.5px solid rgba(74,222,128,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:220}}>
+        <p style={{fontSize:13,fontWeight:800,color:"#86efac",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>✅ Liberada vía régimen general</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Retenida por Aduana el <strong style={{color:"#fff"}}>{formatDate(op.retenida_at)}</strong> y liberada el <strong style={{color:"#fff"}}>{formatDate(op.liberada_rg_at)}</strong>. Salió del régimen courier: no hay DSI, factura del courier ni legajo. Sigue por tracking.</p>
+      </div>
+      <button type="button" onClick={deshacerLiberacionRg} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Deshacer</button>
     </div>}
     {/* Modal: marcar perdida en aduana */}
     {customsLossModal&&<div onClick={()=>!saving&&setCustomsLossModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -8644,8 +8657,9 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
   // directa que paga los impuestos ve todo; monotributo y consumidor final, la guía y los recibos.
   const visible=op.legajo_visible==null?autoVisible:!!op.legajo_visible;
   const parcial=!ri&&op.legajo_visible==null;
-  // Retenida por Aduana: salió del régimen courier, no se exige nada para cerrar.
-  const faltan=op.retenida_at?[]:Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio&&!doc(t));
+  // Retenida por Aduana o liberada vía régimen general: salió del régimen courier, no hay DSI ni factura
+  // del courier y no se exige nada para cerrar.
+  const faltan=(op.retenida_at||op.liberada_rg_at)?[]:Object.keys(TIPOS_LEGAJO).filter(t=>TIPOS_LEGAJO[t].obligatorio&&!doc(t));
   const subir=async(tipo,file)=>{
     if(!file)return;if(sinTabla){flash("Falta correr el SQL del legajo");return;}
     setOcupado(tipo);
@@ -9098,7 +9112,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     :<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px dashed rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.4)",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>Sin {TIPOS_LEGAJO[t].corto.toLowerCase()}</span>;
   const recibido=flight.status==="recibido";
   // Retenido por Aduana: se puede marcar recibido sin DSI ni factura del courier.
-  const retenido=!recibido&&!!flight.retenido_at;const puedeRecibir=recibible||sinTabla||retenido;
+  const liberadoRg=!!flight.liberado_rg_at;const retenido=!recibido&&!!flight.retenido_at&&!liberadoRg;const puedeRecibir=recibible||sinTabla||retenido||liberadoRg;
   // Estado del cuadro: cargado cuando todas las ops del vuelo ya tienen ese documento.
   const zona=(tipo,marca,icono,txt)=>{const elegida=pegarEn===tipo,t=marca?.tinte||"#E8D098";
     const conDoc=opsLeg.filter(o=>doc(o.id,tipo)),faltanZ=opsLeg.filter(o=>!doc(o.id,tipo));
@@ -9134,7 +9148,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
       {chip(doc(o.id,"dsi"),"dsi",o)}{chip(doc(o.id,"factura_courier"),"factura_courier",o)}{chip(doc(o.id,"guia_aerea"),"guia_aerea",o)}{chip(doc(o.id,"factura_comercial"),"factura_comercial",o)}
     </div>)}
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-      <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":completo?"✓ Documentación completa":recibible?`Factura del courier cargada · falta la DSI de ${faltan.map(o=>o.operation_code).join(", ")} para cerrar`:`Falta la factura del courier de ${faltanFactura.map(o=>o.operation_code).join(", ")}`}</span>
+      <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":liberadoRg?"Liberado vía régimen general: sin DSI ni factura del courier":completo?"✓ Documentación completa":recibible?`Factura del courier cargada · falta la DSI de ${faltan.map(o=>o.operation_code).join(", ")} para cerrar`:`Falta la factura del courier de ${faltanFactura.map(o=>o.operation_code).join(", ")}`}</span>
       {recibido
         ?<span style={{height:40,padding:"0 16px",borderRadius:11,display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",fontSize:13,fontWeight:800}}>✓ Recibido en Buenos Aires{flight.received_at?` · ${new Date(flight.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}`:""}</span>
         :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!puedeRecibir} title={!puedeRecibir?"Primero subí la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${puedeRecibir?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:puedeRecibir?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:puedeRecibir?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:puedeRecibir?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
@@ -10254,18 +10268,20 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);
   };
   // Retenido por Aduana (26/10/2026): banner. El aviso al cliente lo manda solo el sync.
-  const retenidoFl=flight.status!=="recibido"&&!!flight.retenido_at;
+  const retenidoFl=flight.status!=="recibido"&&!!flight.retenido_at&&!flight.liberado_rg_at;
   const opIdsVuelo=flightOps.map(fo=>fo.operation_id).filter(Boolean);
-  const quitarRetencion=async()=>{if(!await confirmDialog("¿Quitar la marca de retenido? El vuelo vuelve a seguirse por tracking y el legajo vuelve a ser obligatorio.",{danger:true}))return;await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{retenido_at:null}});if(opIdsVuelo.length)await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIdsVuelo.join(",")})`,body:{retenida_at:null}});onFlash?.("Retención quitada");onReload?.();};
+  // Liberado vía régimen general (04/11/2026): el courier despachó el vuelo por régimen general y lo
+  // entregó. Las ops dejan de pedir DSI, factura del courier y legajo; el tracking sigue.
+  const liberarRg=async()=>{if(!await confirmDialog("¿Marcar el vuelo como liberado vía régimen general? Sus operaciones dejan de pedir DSI, factura del courier y legajo. El tracking sigue."))return;const ahora=new Date().toISOString();await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{liberado_rg_at:ahora}});if(opIdsVuelo.length){await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIdsVuelo.join(",")})`,body:{liberada_rg_at:ahora}});await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIdsVuelo.join(",")})&retenida_at=is.null`,body:{retenida_at:flight.retenido_at||ahora}});}onFlash?.("Liberado vía régimen general");onReload?.();};
   return <div>
     {retenidoFl&&<div style={{marginBottom:14,padding:"14px 18px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.2),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.5)",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       <span style={{fontSize:22}}>🛑</span>
       <div style={{flex:"1 1 260px",minWidth:0}}>
         <p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fca5a5",letterSpacing:"0.04em",textTransform:"uppercase"}}>Retenido por Aduana · excluido del régimen courier</p>
-        <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.5}}>Desde el {formatDate(flight.retenido_at)}, según el tracking de {flight.international_carrier||"el courier"}. El cliente ya fue avisado por mail. El tracking dejó de seguirse: cuando la carga llegue, marcá el vuelo recibido. No hace falta DSI ni factura del courier.</p>
+        <p style={{margin:"4px 0 0",fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.5}}>Desde el {formatDate(flight.retenido_at)}, según el tracking de {flight.international_carrier||"el courier"}. El cliente ya fue avisado por mail. El tracking sigue. Si el courier lo despacha por régimen general y lo entrega, marcalo liberado: no hay DSI, factura del courier ni legajo. Si se abandona, marcá las ops perdidas en aduana.</p>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button type="button" onClick={quitarRetencion} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Quitar retención</button>
+        <button type="button" onClick={liberarRg} style={{height:36,padding:"0 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.45)",background:"rgba(74,222,128,0.1)",color:"#86efac",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✅ Liberado vía régimen general</button>
       </div>
     </div>}
     <div className="ac-fe-sticky" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:10,flexWrap:"wrap",padding:"10px 12px",background:"rgba(10,22,40,0.92)",backdropFilter:"blur(8px)",borderBottom:"1px solid rgba(184,149,106,0.25)",borderRadius:"0 0 12px 12px",margin:"0 -4px 14px"}}>
@@ -10291,7 +10307,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       </div>
     </div>
     {(()=>{
-      const ready=flight.status==="preparando"&&flight.invoice_presented_at;const retenidoFe=flight.status!=="recibido"&&!!flight.retenido_at;const c=retenidoFe?"#ef4444":ready?"#22c55e":stColors[flight.status];const label=retenidoFe?"retenido por Aduana":ready?"listo para enviar":flight.status==="despachado"?"en tránsito":flight.status;
+      const ready=flight.status==="preparando"&&flight.invoice_presented_at;const retenidoFe=flight.status!=="recibido"&&!!flight.retenido_at&&!flight.liberado_rg_at;const c=retenidoFe?"#ef4444":ready?"#22c55e":stColors[flight.status];const label=retenidoFe?"retenido por Aduana":ready?"listo para enviar":flight.status==="despachado"?"en tránsito":flight.status;
       const kg=v=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
       const n2=v=>v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
       // Totales del vuelo con la misma cuenta que cada fila (divisor del agente que creó la op)
@@ -12575,7 +12591,7 @@ function AgentsPanel({token}){
             // por carrier (DHL, FedEx, UPS) y dentro de cada uno CF/monotributo y responsable inscripto.
             // Recibidos quedan como antes (por fecha de recepción).
             // Dentro de cada carrier: primero lo que el courier ya entregó, después aduana, al final tránsito.
-            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.status!=="recibido"&&f.retenido_at)return -1;if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
+            const rangoEstado=(f)=>{const fos=flightOps.filter(fo=>fo.flight_id===f.id);if(f.status!=="recibido"&&f.retenido_at&&!f.liberado_rg_at)return -1;if(f.carrier_delivered_at||(fos.length&&fos.every(fo=>["entregada","operacion_cerrada","cancelada"].includes(fo.operations?.status))))return 0;if(f.status==="despachado"&&fos.some(fo=>opsLiberadas.has(fo.operation_id)))return 1;if(f.status==="despachado"&&flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.status==="en_aduana"))return 2;return 3;};
             const carrierKey=(f)=>{const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"dhl":c.includes("fedex")?"fedex":c.includes("ups")?"ups":"otro";};
             // Pendiente de recolectar (03/11/2026): el agente lo despachó con DHL/FedEx/UPS pero el courier
             // todavía no lo retiró (sin pickup y sin ningún evento posterior: aduana, liberado, entregado).
@@ -12630,7 +12646,7 @@ function AgentsPanel({token}){
             const liberado=f.status==="despachado"&&ops.some(fo=>opsLiberadas.has(fo.operation_id));
             // Retenido por Aduana (26/10/2026): lo marca el sync por el tracking ("Documentación disponible
             // para agente externo a FedEx"). Fila en rojo; a "recibido" lo pasa Bautista a mano.
-            const retenido=f.status!=="recibido"&&!!f.retenido_at;
+            const retenido=f.status!=="recibido"&&!!f.retenido_at&&!f.liberado_rg_at;
             const stepIdx=retenido?3:f.status==="recibido"||entregadoCourier?5:liberado?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
             const stepInfo=retenido?{l:"🛑 Retenido por Aduana",c:"#ef4444"}:[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},pendRecoleccion(f)?{l:"🚚 Sin retirar",c:"#fb923c"}:{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Liberado",c:"#2dd4bf"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.

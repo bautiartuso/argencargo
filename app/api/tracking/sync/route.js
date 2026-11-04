@@ -88,8 +88,8 @@ async function avisarRetenidasPendientes() {
 }
 
 async function fetchActiveOps(operationId, conRetencion = true) {
-  // Las retenidas no se siguen más (retenida_at). Si la columna todavía no existe (falta el SQL), se
-  // reintenta sin ese filtro para que el sync no se caiga.
+  // Las retenidas se siguen igual (04/11/2026): muchas veces el courier las libera por régimen general y
+  // las entrega con el mismo tracking. Si la columna retenida_at no existe (falta el SQL), se reintenta sin pedirla.
   const sel = `id,operation_code,international_tracking,international_carrier,status,created_at${conRetencion ? ",retenida_at" : ""}`;
   let url;
   if (operationId) {
@@ -97,7 +97,7 @@ async function fetchActiveOps(operationId, conRetencion = true) {
   } else {
     const statuses = ACTIVE_STATUSES.map(s => `"${s}"`).join(",");
     // Más nuevas primero: lo que está viajando ahora se sincroniza siempre, aunque el tiempo no alcance para todo.
-    url = `${SB_URL}/rest/v1/operations?select=${sel}&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null${conRetencion ? "&retenida_at=is.null" : ""}&order=created_at.desc`;
+    url = `${SB_URL}/rest/v1/operations?select=${sel}&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null&order=created_at.desc`;
   }
   const r = await fetch(url, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
   const d = await r.json();
@@ -159,7 +159,7 @@ async function applyEventsToOp(op, route, d) {
   }
   if (skippedOld > 0) console.log(`[sync] ${op.operation_code}: skipped ${skippedOld} eventos pre-creación (tracking reusado)`);
 
-  // Retenida por Aduana: se marca una sola vez y acá termina el seguimiento de esta op.
+  // Retenida por Aduana: se marca una sola vez; el seguimiento sigue (puede liberarse por régimen general).
   let retencion = null;
   const evRet = (d.events || []).find((ev) => esEventoRetencion(ev) && !(cutoffMs && ev.occurred_at && new Date(ev.occurred_at).getTime() < cutoffMs));
   if (evRet && !op.retenida_at && op.retenida_at !== undefined) {
