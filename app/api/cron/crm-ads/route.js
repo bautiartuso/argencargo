@@ -3,7 +3,7 @@
 //   · a los leads que llegaron desde un anuncio y todavía no tienen nombre de campaña, se lo pone
 // POST {dias} con token de admin → trae más días hacia atrás (para rellenar al conectar la cuenta).
 import { esCronValido, usuarioConRol } from "../../../../lib/auth-server";
-import { adsConfigured, insightsPorAnuncio, datosAnuncio } from "../../../../lib/meta-ads";
+import { adsConfigured, insightsPorAnuncio, datosAnuncio, enDolares } from "../../../../lib/meta-ads";
 
 export const maxDuration = 120;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -13,7 +13,8 @@ const fecha = (d) => new Date(d).toISOString().slice(0, 10);
 async function correr(dias) {
   if (!adsConfigured()) return { skipped: true, motivo: "Meta Ads sin conectar" };
   const until = fecha(Date.now()), since = fecha(Date.now() - dias * 864e5);
-  const filas = await insightsPorAnuncio(since, until);
+  // Meta informa el gasto en la moneda de la cuenta (ARS); el tablero es en USD → blue venta del día (03/11/2026).
+  const filas = await enDolares(await insightsPorAnuncio(since, until));
   for (let i = 0; i < filas.length; i += 200) {
     await fetch(`${SB_URL}/rest/v1/crm_ad_spend?on_conflict=date,ad_id`, { method: "POST", headers: sbh({ Prefer: "resolution=merge-duplicates,return=minimal" }), body: JSON.stringify(filas.slice(i, i + 200).map((f) => ({ ...f, updated_at: new Date().toISOString() }))) });
   }
