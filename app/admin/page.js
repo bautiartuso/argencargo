@@ -8842,11 +8842,12 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   const traer=(m,a)=>traerAdjuntoDsi(m,a,token);
   // La pestaña lleva el nombre del PDF (si no, el navegador muestra el título interno del PDF).
   const ver=async(m,a)=>{const w=window.open("about:blank","_blank");try{const b=await traer(m,a);if(!w)return;const u=URL.createObjectURL(b);const esc=String(a.nombre||"Adjunto").replace(/[<&"]/g,"");w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc}</title><style>html,body{margin:0;height:100%;background:#525659}</style></head><body><iframe src="${u}" style="border:0;width:100%;height:100%"></iframe></body></html>`);w.document.close();}catch(e){w?.close();toast(e.message,"error");}};
-  // Cada adjunto se marca como DSI o guía aérea (23/10/2026); lo que no se elige queda descartado.
+  // Cada adjunto se marca como DSI, guía aérea o factura del courier (23/10 y 05/11/2026: el mail también
+  // pide la factura, así no hay que subirla a mano); lo que no se elige queda descartado.
   const esLaDsi=async(m,a,tipo="dsi")=>{
     setUsando(`${a.id}:${tipo}`);
     try{const b=await traer(m,a);const guiasEnPdf=enPdf[a.id]||null;
-      const ok=await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo,{mensaje:m,adjunto:a,guiasEnPdf});
+      const ok=await onAdjuntar(new File([b],a.nombre||(tipo==="dsi"?"DSI.pdf":tipo==="factura_courier"?"Factura courier.pdf":"Guia aerea.pdf"),{type:a.tipo||b.type||"application/pdf"}),tipo,{mensaje:m,adjunto:a,guiasEnPdf});
       if(ok!==false)setUsados(u=>({...u,[a.id]:tipo}));}
     catch(e){toast(e.message,"error");}
     setUsando(null);
@@ -8903,9 +8904,10 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
           {compartida&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(196,181,253,0.14)",color:"#c4b5fd",border:"1px solid rgba(196,181,253,0.4)"}}>guía aérea compartida · también en {a.usadoEn.vuelo}</span>}
           {!otra&&!compartida&&!a.guia&&(enPdf[a.id]||[]).includes(d.guia)&&<span style={{marginLeft:8,fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(196,181,253,0.14)",color:"#c4b5fd",border:"1px solid rgba(196,181,253,0.4)"}}>guía aérea de esta guía</span>}</span>
         {btnC("Ver",()=>ver(m,a),"#93c5fd")}
-        {!otra&&(()=>{const u=usados[a.id]||Object.keys(cargados||{}).find(t=>(cargados[t]||[]).includes(a.nombre));return u?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>✓ {u==="dsi"?"DSI":"Guía aérea"}</span>:<>
+        {!otra&&(()=>{const u=usados[a.id]||Object.keys(cargados||{}).find(t=>(cargados[t]||[]).includes(a.nombre));return u?<span style={{height:28,padding:"0 10px",borderRadius:8,display:"inline-flex",alignItems:"center",border:"1px solid rgba(74,222,128,0.45)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:11.5,fontWeight:800,whiteSpace:"nowrap"}}>✓ {u==="dsi"?"DSI":u==="factura_courier"?"Factura courier":"Guía aérea"}</span>:<>
           {!compartida&&btnC(usando===`${a.id}:dsi`?"…":"DSI",()=>esLaDsi(m,a,"dsi"),"#E8D098",{disabled:!!usando})}
           {btnC(usando===`${a.id}:guia_aerea`?"…":"Guía aérea",()=>esLaDsi(m,a,"guia_aerea"),"#c4b5fd",{disabled:!!usando})}
+          {!compartida&&btnC(usando===`${a.id}:factura_courier`?"…":"Factura courier",()=>esLaDsi(m,a,"factura_courier"),"#fbbf24",{disabled:!!usando})}
         </>;})()}
       </div>;})}</div>:<p style={{margin:"6px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Sin adjuntos</p>}
     </div>)}
@@ -8983,7 +8985,7 @@ function AereosEmpleado({token}){
     const pedDe={};(Array.isArray(peds)?peds:[]).forEach(x=>{if(!pedDe[x.flight_id])pedDe[x.flight_id]=x;});
     // Vigente: alguna op sin cerrar o llegado hace 14 días o menos (misma regla que la pelotita naranja).
     const llego=(f)=>new Date(f.received_at||f.carrier_delivered_at||f.dispatched_at).getTime();
-    setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];const ds=leg.docs.filter(d=>ops.some(o=>o.id===d.operation_id));return {...f,ops,llego:llego(f),cargados:{dsi:ds.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:ds.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name)},pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
+    setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];const ds=leg.docs.filter(d=>ops.some(o=>o.id===d.operation_id));return {...f,ops,llego:llego(f),cargados:{dsi:ds.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:ds.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name),factura_courier:ds.filter(d=>d.tipo==="factura_courier").map(d=>d.file_name)},pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
   },[token]);
   useEffect(()=>{cargar();},[cargar]);
   // Precarga el mail y los adjuntos de los que ya respondieron.
@@ -9132,7 +9134,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   </div>;};
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
-    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo,ctx)=>{if(tipo==="dsi"&&ctx?.adjunto?.guia&&ctx.adjunto.guia!==flight.international_tracking){toast(`Esa DSI es de la guía ${ctx.adjunto.guia}: cargala desde ese vuelo`,"info");return false;}if(tipo==="guia_aerea"&&ctx?.guiasEnPdf?.length&&!ctx.guiasEnPdf.includes(flight.international_tracking)){toast(`Esa guía aérea es de la guía ${ctx.guiasEnPdf.join(", ")}: cargala desde ese vuelo`,"info");return false;}return procesar([f],tipo||"dsi");}} cargados={{dsi:docs.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name)}}/>
+    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo,ctx)=>{if(tipo==="dsi"&&ctx?.adjunto?.guia&&ctx.adjunto.guia!==flight.international_tracking){toast(`Esa DSI es de la guía ${ctx.adjunto.guia}: cargala desde ese vuelo`,"info");return false;}if(tipo==="guia_aerea"&&ctx?.guiasEnPdf?.length&&!ctx.guiasEnPdf.includes(flight.international_tracking)){toast(`Esa guía aérea es de la guía ${ctx.guiasEnPdf.join(", ")}: cargala desde ese vuelo`,"info");return false;}return procesar([f],tipo||"dsi");}} cargados={{dsi:docs.filter(d=>d.tipo==="dsi").map(d=>d.file_name),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea").map(d=>d.file_name),factura_courier:docs.filter(d=>d.tipo==="factura_courier").map(d=>d.file_name)}}/>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}{zona("guia_aerea",marcaCourier(flight.international_carrier),"✈️","Subir guía aérea")}{zona("factura_comercial",null,"🧾","Subir factura comercial")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>

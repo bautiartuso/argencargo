@@ -46,12 +46,14 @@ async function staffSinCache(tok) {
 
 const asuntoDe = (guia) => `Solicitud DSI ${guia}`;
 const claveCarrier = (c) => String(c || "otro").toLowerCase().replace(/[^a-z]/g, "") || "otro";
-const textoBase = (f) => `Buenas tardes,\n\nLes pedimos la DSI (Destinación Simplificada de Importación) de la guía ${f.international_tracking}${f.dest_name ? `, destinatario ${f.dest_name}${f.dest_tax_id ? ` (CUIT ${f.dest_tax_id})` : ""}` : ""}.\n\nMuchas gracias.\nArgencargo`;
+// Desde el 05/11/2026 el pedido también incluye la factura del courier (impuestos y gastos), así llega en el
+// mismo mail y se carga al legajo desde ahí (botón "Factura courier" en cada adjunto) en vez de subirla a mano.
+const textoBase = (f) => `Buenas tardes,\n\nLes pedimos la DSI (Destinación Simplificada de Importación) de la guía ${f.international_tracking}${f.dest_name ? `, destinatario ${f.dest_name}${f.dest_tax_id ? ` (CUIT ${f.dest_tax_id})` : ""}` : ""}.\nTambién la factura del courier con los impuestos y gastos de cada guía, para tener todo en el mismo mail.\n\nMuchas gracias.\nArgencargo`;
 
 // Mail para varias guías juntas (FedEx, 23/10/2026): la plantilla dice "la destinación simplificada de
 // la guía {guia}"; con varias pasa a plural y las guías van una por renglón.
 function textoVarias(plantilla, guias) {
-  const t = plantilla || "Buenas tardes,\n\nLes pedimos la DSI de la guía {guia}.\n\nMuchas gracias.\nArgencargo";
+  const t = plantilla || "Buenas tardes,\n\nLes pedimos la DSI de la guía {guia}.\nTambién la factura del courier con los impuestos y gastos de cada guía, para tener todo en el mismo mail.\n\nMuchas gracias.\nArgencargo";
   if (guias.length === 1) return t.replace(/\{guia\}/g, guias[0]);
   const lista = guias.map((g) => `- ${g}`).join("\n");
   return t.replace(/la destinaci[oó]n simplificada/gi, "las destinaciones simplificadas").replace(/la DSI/g, "las DSI")
