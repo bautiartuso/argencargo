@@ -404,6 +404,8 @@ const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSO
 // retirar" y los avisos de retiro (y el de arribo si vuelve a antes de arribar), así cuando llegue de
 // verdad el aviso sale de nuevo.
 const PRE_ARRIBO=["pendiente","en_deposito_origen","en_preparacion","en_transito"];
+// Estados en los que la op todavía no llegó al cliente: al marcarla entregada pasa a "entregada" (05/11/2026).
+const EN_CAMINO=[...PRE_ARRIBO,"arribo_argentina","en_aduana"];
 const limpiarAlRetroceder=(status,sentNotif)=>{
   if(!PRE_ARRIBO.includes(status)&&status!=="arribo_argentina"&&status!=="en_aduana")return null;
   const sn={...(sentNotif||{})};delete sn.wa_retiro;delete sn.email_retiro;
@@ -5335,7 +5337,7 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
         // Cobró todo: si además se entrega (o ya estaba entregada), la operación se cierra ya.
         if(upd.is_collected&&(!soloCobro||op.delivery_completed_at)){await entregarYCerrar(op,token,{yaEntregada:soloCobro});onSaved();return;}
       }
-      if(!soloCobro)await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});
+      if(!soloCobro){const ahoraE=new Date().toISOString();await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:ahoraE,...(EN_CAMINO.includes(op.status)?{status:"entregada",delivered_at:op.delivered_at||ahoraE}:{})}});}
       onSaved();
     }catch(e){setErr("Error: "+e.message);setGuardando(false);return;}
   };
@@ -5579,7 +5581,9 @@ function EntregasPanel({token,onOpenOp,vista}){
   };
   const markDelivered=async(o)=>{
     const now=new Date().toISOString();
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:now}});
+    // Entregada al cliente = status entregada (05/11/2026): AC-0352 quedó "en_aduana" con la entrega hecha y
+    // no aparecía entre las entregadas con saldo pendiente.
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:now,...(EN_CAMINO.includes(o.status)?{status:"entregada",delivered_at:o.delivered_at||now}:{})}});
     // Si quedó saldo, pasa a "entregadas pendientes de cobro" en vez de desaparecer.
     setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:now}:r).filter(r=>r.id!==o.id||!r.is_collected));
   };
