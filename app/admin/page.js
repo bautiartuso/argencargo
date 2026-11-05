@@ -9163,8 +9163,10 @@ function CarrierPickupBlock({flight,token,onReload}){
   const [localPickup,setLocalPickup]=useState(flight.carrier_pickup_at?String(flight.carrier_pickup_at).slice(0,10):"");
   useEffect(()=>{setLocalPickup(flight.carrier_pickup_at?String(flight.carrier_pickup_at).slice(0,10):"");},[flight.carrier_pickup_at]);
   const [saving,setSaving]=useState(false);
-  const demora=localPickup?((new Date(localPickup+"T12:00:00")-new Date(flight.dispatched_at))/86400000):null;
-  const color=demora==null?"rgba(255,255,255,0.4)":demora<=1?"#22c55e":demora<=2?"#fbbf24":"#f87171";
+  // Demora = presentación de la factura → retiro del courier (05/11/2026), igual que la columna de la tabla.
+  const desdeDemora=flight.invoice_presented_at||flight.dispatched_at;
+  const demora=localPickup&&desdeDemora?((new Date(localPickup+"T12:00:00")-new Date(desdeDemora))/86400000):null;
+  const color=demora==null?"rgba(255,255,255,0.4)":demora<=2?"#22c55e":demora<=4?"#fbbf24":"#f87171";
   const savePickup=async(v)=>{
     setLocalPickup(v||"");
     setSaving(true);
@@ -12662,23 +12664,24 @@ function AgentsPanel({token}){
             // todavía no lo retiró (sin pickup y sin ningún evento posterior: aduana, liberado, entregado).
             const pendRecoleccion=(f)=>f.status==="despachado"&&!!f.dispatched_at&&!f.carrier_pickup_at&&["dhl","fedex","ups"].includes(carrierKey(f))&&rangoEstado(f)===3;
             const filaVuelo=(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
-            // Demora del agente: días entre dispatched_at y carrier_pickup_at.
-            // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
+            // Demora (05/11/2026, Bautista): días desde que se presentó la factura hasta que el courier lo
+            // retiró (carrier_pickup_at; auto para DHL/FedEx vía API, manual para UPS). Mientras no lo
+            // retiró no se sabe → "—" (antes contaba los días desde el despacho hasta hoy).
             const demoraInfo=(()=>{
-              if(!f.dispatched_at)return {txt:"",color:"rgba(255,255,255,0.3)"};
+              const desde=f.invoice_presented_at||f.dispatched_at;
+              if(!desde)return {txt:"",color:"rgba(255,255,255,0.3)"};
               if(!f.carrier_pickup_at){
                 const car=(f.international_carrier||"").toLowerCase();
-                // Pendiente de recolectar: días desde el despacho sin que el courier lo retire.
-                if(pendRecoleccion(f)){const d=(Date.now()-new Date(f.dispatched_at))/86400000;return {txt:`${d.toFixed(1)} d`,color:d<=1?"#fbbf24":"#f87171",title:`Despachado hace ${d.toFixed(1)} días y el courier todavía no lo retiró${car==="ups"?" · UPS: cargar la fecha de pickup a mano desde el detalle del vuelo":""}`};}
+                const espera=(Date.now()-new Date(desde))/86400000;
+                if(pendRecoleccion(f))return {txt:"—",color:"rgba(255,255,255,0.3)",title:`El courier todavía no lo retiró · presentado hace ${espera.toFixed(1)} días${car==="ups"?" · UPS: cargar la fecha de pickup a mano desde el detalle del vuelo":""}`};
                 // UPS sin cargar → ? que invita a completar manualmente
                 if(car==="ups")return {txt:"?",color:"#a78bfa",title:"UPS · cargar fecha de pickup manual desde el detalle del vuelo"};
                 // DHL/FedEx esperando primer evento del carrier → celda vacía (sin "—" ni "0.0")
                 return {txt:"",color:"rgba(255,255,255,0.3)",title:"Esperando primer evento del carrier"};
               }
-              const ms=new Date(f.carrier_pickup_at)-new Date(f.dispatched_at);
-              const days=ms/86400000;
-              const color=days<=1?"#22c55e":days<=2?"#fbbf24":"#f87171";
-              return {txt:`${days.toFixed(1)} d`,color};
+              const days=(new Date(f.carrier_pickup_at)-new Date(desde))/86400000;
+              const color=days<=2?"#22c55e":days<=4?"#fbbf24":"#f87171";
+              return {txt:`${days.toFixed(1)} d`,color,title:`Presentado ${formatDate(desde)} · retirado ${formatDate(f.carrier_pickup_at)}`};
             })();
             // Códigos de cliente para mostrar en la columna Clientes (deduplicados)
             const clientCodes=Array.from(new Set(ops.map(fo=>fo.operations?.clients?.client_code).filter(Boolean)));
