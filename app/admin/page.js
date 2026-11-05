@@ -9001,7 +9001,7 @@ function AereosEmpleado({token}){
       const ids=(info.tipo==="dsi"&&emparejarDocumento(info,f.ops))||f.ops.map(o=>o.id);
       await subirLegajo(await ensureFreshToken(token),{file,opIds:ids,flightId:f.id,tipo,datos:info.dsi||null});
       if(info.dsi&&ids.length===1){try{await aplicarDsiAOp(token,ids[0],info.dsi);}catch(e){console.error("dsi→op",e);}}
-      toast(`DSI cargada en ${f.flight_code} · ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
+      toast(`${tipo==="factura_courier"?"Factura del courier":"DSI"} cargada en ${f.flight_code} · ${f.ops.filter(o=>ids.includes(o.id)).map(o=>o.operation_code).join(", ")}`,"success");
     }
     dsiVueloCache.clear();
     await cargar();refrescarDsiEstado(token);
