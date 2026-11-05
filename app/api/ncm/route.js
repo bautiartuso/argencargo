@@ -105,6 +105,7 @@ El usuario importa productos desde China/USA para reventa en Argentina. Tu traba
 
 5. Reglas de clasificación específicas (overrides):
    - auriculares (bluetooth, TWS, inalámbricos, headphones, earbuds) → 8518.30.00 (NO 8517)
+   - almohadillas / earpads / ear tips / cushions / repuestos o partes de auriculares → 8518.90.90 (partes, DIE 16 %), NUNCA 8518.30.00 aunque la descripción nombre el modelo del auricular
    - parlantes/altavoces → 8518.22.00
    - fundas de celular silicona/TPU → 3926.90.90 (NO clasificar como telecom)
    - smartwatch → 8517.62.72
@@ -234,6 +235,10 @@ const OVERRIDES = [
   // La IA los repartía entre 8517.62.59/.72/.99 (DIE 0) y hasta 8518 auriculares (AC-0085/0214/0321).
   // Los porteros / timbres con video no son esto.
   { keywords: ["intercomunicador", "intercom", "interphone"], exclude: ["doorbell", "portero", "timbre", "video door"], ncm: "8517.62.56", desc: "Intercomunicadores", die: 20, te: 3, intervention: { required: true, types: ["ENACOM"], reason: "Equipo Bluetooth — homologación ENACOM" } },
+  // Almohadillas / earpads / ear tips / repuestos de auriculares (05/11/2026, Bautista): 8518.90.90 "Partes"
+  // (DIE 16, TE 3), NUNCA 8518.30.00 auriculares (35 %). La IA repartía la misma lista entre las dos
+  // (AC-0256, AC-0283, AC-0369). Va antes que "auriculares" porque "headphone pad" también lo nombra. Sin ENACOM.
+  { keywords: ["earpad", "ear pad", "ear-pad", "ear cushion", "earcushion", "ear tip", "eartip", "headphone pad", "headphone cushion", "headband pad", "headband cushion", "almohadilla de auricular", "almohadillas de auricular", "almohadilla para auricular", "almohadillas para auricular", "almohadilla auricular", "almohadillas auricular", "repuesto de auricular", "repuesto auricular"], ncm: "8518.90.90", desc: "Partes de auriculares (almohadillas)", die: 16, te: 3, intervention: { required: false, types: [], reason: null } },
   { keywords: ["auricular", "headphone", "earphone", "earbuds", "earbud", "tws", "headset", "auriculares"], ncm: "8518.30.00", desc: "Auriculares", die: 35, te: 3, intervention: { required: true, types: ["ENACOM"], reason: "Inalámbrico o bluetooth — homologación ENACOM" } },
   { keywords: ["parlante", "altavoz", "speaker", "bocina", "boombox"], ncm: "8518.22.00", desc: "Altavoces/Parlantes", die: 35, te: 3, intervention: { required: false, types: [], reason: null } },
   // Sets de poker, fichas de casino y sus tapetes: todo 9504.90.90 "Juegos de casino" (19/10/2026: la IA
