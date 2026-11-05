@@ -11129,6 +11129,7 @@ const trkCoincideA=(a,b)=>{a=normTrkA(a);b=normTrkA(b);if(!a||!b)return false;if
 // tracking) se ven como una sola fila.
 function ReenviosPanel({token,signups=[],onChanged}){
   const [lista,setLista]=useState(null);const [busca,setBusca]=useState("");const [verCancelados,setVerCancelados]=useState(false);
+  const [abiertos,setAbiertos]=useState(()=>new Set());const [bultos,setBultos]=useState({}); // detalle desplegado por fila → sus bultos
   const cargar=async()=>{const r=await dq("forward_requests",{token,filters:"?select=*,clients(client_code,first_name,last_name,company_name)&order=created_at.desc&limit=500"}).catch(()=>[]);setLista(Array.isArray(r)?r:[]);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const agente=(id)=>{const a=signups.find(x=>x.auth_user_id===id);return a?`${a.first_name||""} ${a.last_name||""}`.trim()||a.email||"Agente":"Agente";};
@@ -11151,29 +11152,52 @@ function ReenviosPanel({token,signups=[],onChanged}){
   const btn={padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"};
   const bloque=(titulo,color,n,children)=><div style={{marginBottom:14,borderRadius:12,border:`1px solid ${color}55`,background:`${color}0d`,overflow:"hidden"}}>
     <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:`1px solid ${color}33`}}>↪ {titulo} · {n}</p>{children}</div>;
+  // Detalle de una fila (05/11/2026, Bautista): los bultos del reenvío con foto del escaneo, medidas, peso y
+  // tracking, más el destino y las notas. Se cargan recién al abrir la fila.
+  const abrir=async(clave,ids)=>{setAbiertos(sx=>{const nx=new Set(sx);if(nx.has(clave))nx.delete(clave);else nx.add(clave);return nx;});if(bultos[clave]||!ids.length)return;const r=await dq("operation_packages",{token,filters:`?id=in.(${ids.join(",")})&select=id,package_number,quantity,length_cm,width_cm,height_cm,gross_weight_kg,national_tracking,photo_url,photo_urls,created_at,reenviado_at,consolidated_from_trackings&order=package_number.asc`}).catch(()=>[]);setBultos(b=>({...b,[clave]:Array.isArray(r)?r:[]}));};
+  const n2=(x)=>Number(x||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const lbl={fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginRight:4};
+  const chev=(clave)=><span style={{width:12,fontSize:11,color:"rgba(255,255,255,0.4)",flex:"0 0 auto"}}>{abiertos.has(clave)?"▾":"▸"}</span>;
+  const detalle=(clave,rs)=>{const lb=bultos[clave];const r0=rs[0];const notas=rs.map(r=>r.note).filter(Boolean);const notasAg=rs.map(r=>r.agent_notes).filter(Boolean);return <div onClick={e=>e.stopPropagation()} style={{flexBasis:"100%",padding:"8px 0 4px 24px",cursor:"default"}}>
+    <div style={{display:"flex",gap:18,flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.65)",marginBottom:10}}>
+      {r0.destino_datos&&<span><span style={lbl}>Destino</span>{r0.destino_datos}</span>}
+      {notas.length>0&&<span><span style={lbl}>Nota</span>{notas.join(" · ")}</span>}
+      {notasAg.length>0&&<span><span style={lbl}>Agente</span>{notasAg.join(" · ")}</span>}
+    </div>
+    {!lb?<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando bultos…</p>:lb.length===0?<p style={{margin:0,fontSize:12,color:"#fbbf24"}}>No se encontraron los bultos de este reenvío.</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>{lb.map(p=>{const fs=fotosBulto(p);const vol=p.length_cm&&p.width_cm&&p.height_cm?(Number(p.length_cm)*Number(p.width_cm)*Number(p.height_cm))/5000:0;return <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"6px 8px",borderRadius:9,background:"rgba(255,255,255,0.03)"}}>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{fs.length?fs.map(u=><a key={u} href={u} target="_blank" rel="noopener noreferrer"><img src={u} alt="" style={{width:64,height:64,objectFit:"cover",borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in",display:"block"}}/></a>):<span style={{width:64,height:64,borderRadius:7,background:"rgba(251,191,36,0.1)",color:"#fbbf24",fontSize:10,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>Sin foto</span>}</div>
+      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12.5,color:"#fff"}}>
+        <p style={{margin:0,fontWeight:700}}>#{p.package_number}{p.quantity>1?` ×${p.quantity}`:""} · <span style={mono}>{p.national_tracking||"sin tracking"}</span></p>
+        <p style={{margin:"3px 0 0",color:"rgba(255,255,255,0.6)"}}>{p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm} × ${p.width_cm} × ${p.height_cm} cm`:"sin medidas"} · bruto <b style={{color:"#fff"}}>{p.gross_weight_kg?`${n2(p.gross_weight_kg)} kg`:"—"}</b>{vol>0&&<> · vol ÷5000 <b style={{color:"#fff"}}>{n2(vol)} kg</b></>}{Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<> · consolidado de {p.consolidated_from_trackings.join(", ")}</>}</p>
+        <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>registrado {fecha(p.created_at)}{p.reenviado_at?` · reenviado ${fecha(p.reenviado_at)}`:""}</p>
+      </div>
+    </div>;})}</div>}
+  </div>;};
   if(lista===null)return <div style={{padding:"1rem 0"}}><Skeleton w="100%" h={44} style={{marginBottom:10}}/><Skeleton w="100%" h={44}/></div>;
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
       <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Cliente, mark, tracking o destino" data-enter-libre style={{height:38,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.22)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none",flex:"1 1 260px",maxWidth:420}}/>
       <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{todos.length} reenvío{todos.length!==1?"s":""} en total</span>
     </div>
-    {pedidos.length>0&&bloque("Pedidos al agente","#93c5fd",pedidos.length,pedidos.map(r=>{const n=(r.package_ids||[]).length;return <div key={r.id} style={fila}>
+    {pedidos.length>0&&bloque("Pedidos al agente","#93c5fd",pedidos.length,pedidos.map(r=>{const n=(r.package_ids||[]).length;return <div key={r.id} style={{...fila,cursor:"pointer"}} onClick={()=>abrir(r.id,r.package_ids||[])}>{chev(r.id)}
       <div style={{flex:"1 1 280px",minWidth:0}}>
         <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{...mono,color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={mono}>{r.shipping_mark}</span></p>
         <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{agente(r.agent_id)} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${fecha(r.created_at)}, esperando al agente`}</p>
       </div>
-      <button onClick={()=>cancelar(r)} style={btn}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
+      <button onClick={e=>{e.stopPropagation();cancelar(r);}} style={btn}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
+      {abiertos.has(r.id)&&detalle(r.id,[r])}
     </div>;}))}
-    {grupos.length>0&&bloque("Hechos","#4ade80",grupos.length,grupos.map(g=>{const rs=g.pedidos;const r0=rs[0];const n=bultosDe(rs);const costo=rs.reduce((s,r)=>s+Number(r.costo_usd||0),0);const sinCosto=rs.some(r=>!(Number(r.costo_usd)>0));return <div key={g.clave} style={fila}>
+    {grupos.length>0&&bloque("Hechos","#4ade80",grupos.length,grupos.map(g=>{const rs=g.pedidos;const r0=rs[0];const n=bultosDe(rs);const costo=rs.reduce((s,r)=>s+Number(r.costo_usd||0),0);const sinCosto=rs.some(r=>!(Number(r.costo_usd)>0));return <div key={g.clave} style={{...fila,cursor:"pointer"}} onClick={()=>abrir(g.clave,rs.flatMap(r=>r.package_ids||[]))}>{chev(g.clave)}
       <div style={{flex:"1 1 280px",minWidth:0}}>
         <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{...mono,color:GOLD_LIGHT}}>{codigos(rs).join(" + ")}</span> · {n} bulto{n!==1?"s":""} → {r0.destino_nombre} · mark <span style={mono}>{marks(rs).join(" / ")||"—"}</span>{rs.length>1&&<span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginLeft:8}}>{rs.length} pedidos en un envío</span>}</p>
         <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{agente(r0.agent_id)} · pedido {fecha(r0.created_at)} · enviado {fecha(r0.resolved_at)}{costo>0?<> · costo <b style={{color:"#fff"}}>{usdFmt(costo)}</b> descontado de su cuenta corriente</>:null}{sinCosto&&<span style={{color:"#fbbf24"}}> · sin costo cargado</span>}</p>
       </div>
-      {r0.tracking_envio?<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{...mono,fontSize:12.5,fontWeight:700,color:"#fff",padding:"5px 10px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>{r0.tracking_envio}</span><button onClick={()=>copiar(r0.tracking_envio)} style={btn}>Copiar</button></div>:<span style={{fontSize:11.5,color:"#fbbf24",fontWeight:700}}>sin tracking</span>}
+      {r0.tracking_envio?<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{...mono,fontSize:12.5,fontWeight:700,color:"#fff",padding:"5px 10px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>{r0.tracking_envio}</span><button onClick={e=>{e.stopPropagation();copiar(r0.tracking_envio);}} style={btn}>Copiar</button></div>:<span style={{fontSize:11.5,color:"#fbbf24",fontWeight:700}}>sin tracking</span>}
+      {abiertos.has(g.clave)&&detalle(g.clave,rs)}
     </div>;}))}
     {cancelados.length>0&&<div style={{marginBottom:14}}>
       <button type="button" onClick={()=>setVerCancelados(v=>!v)} style={{...btn,color:"rgba(255,255,255,0.5)"}}>{verCancelados?"▾":"▸"} Cancelados · {cancelados.length}</button>
-      {verCancelados&&<div style={{marginTop:8,borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",opacity:0.75}}>{cancelados.map(r=>{const n=(r.package_ids||[]).length;return <div key={r.id} style={fila}><p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.7)"}}><span style={{...mono,color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={mono}>{r.shipping_mark}</span> · {agente(r.agent_id)} · pedido {fecha(r.created_at)} · cancelado {fecha(r.resolved_at)}{r.agent_notes?` · ${r.agent_notes}`:""}</p></div>;})}</div>}
+      {verCancelados&&<div style={{marginTop:8,borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",opacity:0.75}}>{cancelados.map(r=>{const n=(r.package_ids||[]).length;return <div key={r.id} style={{...fila,cursor:"pointer"}} onClick={()=>abrir(r.id,r.package_ids||[])}>{chev(r.id)}<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.7)"}}><span style={{...mono,color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={mono}>{r.shipping_mark}</span> · {agente(r.agent_id)} · pedido {fecha(r.created_at)} · cancelado {fecha(r.resolved_at)}{r.agent_notes?` · ${r.agent_notes}`:""}</p>{abiertos.has(r.id)&&detalle(r.id,[r])}</div>;})}</div>}
     </div>}
     {todos.length>0&&pedidos.length===0&&grupos.length===0&&cancelados.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Nada coincide con la búsqueda.</p>}
     {todos.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Todavía no hay reenvíos.</p>}
