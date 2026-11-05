@@ -16,6 +16,13 @@ import {
 export const maxDuration = 300;
 // Presupuesto de tiempo propio: si se agota, lo que falta queda para la próxima corrida (cada hora).
 const TIME_BUDGET_MS = 240000;
+// Cadencia (05/11/2026, Bautista: FL-0148 entregado y una hora sin marcarse). El cron corre cada 10 min:
+//  · minuto 00  → "completo": todas las guías (FedEx, UPS y DHL).
+//  · minuto 30  → "medio": FedEx y UPS todas; DHL solo las que ya están en Argentina (arribo / aduana).
+//  · el resto   → "rapido": FedEx y UPS todas; DHL nada.
+// DHL va con cuentagotas porque su API gratuita tiene cupo diario chico; FedEx y UPS aguantan el ritmo.
+const EN_ARGENTINA = ["arribo_argentina", "en_aduana"];
+const modoDeCorrida = () => { const m = new Date().getUTCMinutes(); return m < 5 ? "completo" : (m >= 25 && m < 35) ? "medio" : "rapido"; };
 
 // Solo ops que todavía viajan. Las "entregada" ya no tienen nada que sincronizar.
 const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana"];
@@ -358,8 +365,9 @@ async function runSync(req) {
 
   const startedAt = Date.now();
   const operationId = new URL(req.url).searchParams.get("operation_id");
+  const modo = operationId ? "uno" : modoDeCorrida();
   let avisosRetenidas = [];
-  if (!operationId) { try { avisosRetenidas = await avisarRetenidasPendientes(); } catch (e) { console.error("[sync] avisos retenidas", e.message); } }
+  if (modo === "completo") { try { avisosRetenidas = await avisarRetenidasPendientes(); } catch (e) { console.error("[sync] avisos retenidas", e.message); } }
   const ops = await fetchActiveOps(operationId);
   if (!Array.isArray(ops)) return Response.json({ error: "failed to fetch ops", detail: ops }, { status: 500 });
 
@@ -394,6 +402,10 @@ async function runSync(req) {
     if (g.route === "dhl") dhlGroups.push(g);
     else otherGroups.push(g);
   }
+  // Corridas intermedias: DHL solo lo que está en Argentina (minuto 30) o nada (el resto). Ver cadencia arriba.
+  let dhlOmitidos = 0;
+  if (modo === "rapido") { dhlOmitidos = dhlGroups.length; dhlGroups.length = 0; }
+  else if (modo === "medio") { const antes = dhlGroups.length; const enAr = dhlGroups.filter(g => g.ops.some(o => EN_ARGENTINA.includes(o.status))); dhlGroups.length = 0; dhlGroups.push(...enAr); dhlOmitidos = antes - enAr.length; }
 
   // Carriers permisivos en paralelo
   const otherSettled = await Promise.allSettled(otherGroups.map(processGroup));
@@ -436,7 +448,7 @@ async function runSync(req) {
   const results = [...grouped, ...orphanRes];
   // Marca de corrida exitosa (el cron de salud avisa por Telegram si pasa mucho tiempo sin una).
   try { await fetch(`${SB_URL}/rest/v1/cs_settings?on_conflict=key`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "tracking_sync_last_ok", value: { at: new Date().toISOString(), synced: results.length }, updated_at: new Date().toISOString() }) }); } catch {}
-  return Response.json({ synced: results.length, groups: groups.size, avisos_retenidas: avisosRetenidas, results });
+  return Response.json({ modo, synced: results.length, groups: groups.size, dhl_omitidos: dhlOmitidos, avisos_retenidas: avisosRetenidas, results });
 }
 
 // GET y POST → mismo comportamiento. Vercel Cron usa GET por defecto.

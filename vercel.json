@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/tracking/sync",
-      "schedule": "0 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/reminders",
