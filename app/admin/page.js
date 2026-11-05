@@ -11123,6 +11123,63 @@ function AgentesTab({signups,ST,lo,token,approve,reject,ccDe,saldoDe,volDe}){
 // ese tracking por el camino normal, el cliente queda asignado solo y el reclamo se cierra.
 const normTrkA=(x)=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 const trkCoincideA=(a,b)=>{a=normTrkA(a);b=normTrkA(b);if(!a||!b)return false;if(a===b)return true;return Math.min(a.length,b.length)>=8&&(a.endsWith(b)||b.endsWith(a));};
+// ── Reenvíos (05/11/2026, Bautista): solapa con el historial completo de reenvíos a otro depósito
+// (forward_requests). Antes los hechos quedaban para siempre en un bloque de Depósito (los últimos 8)
+// y no había dónde buscar uno viejo. Los pedidos que el agente juntó en un mismo envío (mismo
+// tracking) se ven como una sola fila.
+function ReenviosPanel({token,signups=[],onChanged}){
+  const [lista,setLista]=useState(null);const [busca,setBusca]=useState("");const [verCancelados,setVerCancelados]=useState(false);
+  const cargar=async()=>{const r=await dq("forward_requests",{token,filters:"?select=*,clients(client_code,first_name,last_name,company_name)&order=created_at.desc&limit=500"}).catch(()=>[]);setLista(Array.isArray(r)?r:[]);};
+  useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
+  const agente=(id)=>{const a=signups.find(x=>x.auth_user_id===id);return a?`${a.first_name||""} ${a.last_name||""}`.trim()||a.email||"Agente":"Agente";};
+  const fecha=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—";
+  const usdFmt=(n)=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const copiar=async(txt)=>{try{await navigator.clipboard.writeText(txt);toast("Tracking copiado","success");}catch{await promptDialog("Copialo de acá",{defaultValue:txt});}};
+  const cancelar=async(r)=>{if(!await confirmDialog(r.status==="no_se_puede"?`¿Archivar el reenvío a ${r.destino_nombre}?`:`¿Cancelar el reenvío a ${r.destino_nombre}?`))return;await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"cancelado",resolved_at:new Date().toISOString()}});toast(r.status==="no_se_puede"?"Archivado":"Reenvío cancelado","success");cargar();onChanged?.();};
+  const todos=lista||[];const q=busca.trim().toLowerCase();
+  const coincide=(r)=>!q||[r.clients?.client_code,r.clients?.company_name,r.clients?.last_name,r.destino_nombre,r.shipping_mark,r.tracking_envio,r.note,r.agent_notes].some(x=>String(x||"").toLowerCase().includes(q));
+  const pedidos=todos.filter(r=>(r.status==="pendiente"||r.status==="no_se_puede")&&coincide(r));
+  const hechos=todos.filter(r=>r.status==="enviado"&&coincide(r)).sort((a,b)=>String(b.resolved_at||b.created_at||"").localeCompare(String(a.resolved_at||a.created_at||"")));
+  const grupos=[];const porClave={};
+  for(const r of hechos){const k=r.tracking_envio?`${r.agent_id}|${r.tracking_envio}`:r.id;if(!porClave[k]){porClave[k]={clave:k,pedidos:[]};grupos.push(porClave[k]);}porClave[k].pedidos.push(r);}
+  const cancelados=todos.filter(r=>r.status==="cancelado"&&coincide(r));
+  const bultosDe=(rs)=>rs.reduce((s,r)=>s+(r.package_ids||[]).length,0);
+  const codigos=(rs)=>Array.from(new Set(rs.map(r=>r.clients?.client_code||"—")));
+  const marks=(rs)=>Array.from(new Set(rs.map(r=>r.shipping_mark).filter(Boolean)));
+  const mono={fontFamily:"'JetBrains Mono',monospace"};
+  const fila={display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"};
+  const btn={padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"};
+  const bloque=(titulo,color,n,children)=><div style={{marginBottom:14,borderRadius:12,border:`1px solid ${color}55`,background:`${color}0d`,overflow:"hidden"}}>
+    <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color,textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:`1px solid ${color}33`}}>↪ {titulo} · {n}</p>{children}</div>;
+  if(lista===null)return <div style={{padding:"1rem 0"}}><Skeleton w="100%" h={44} style={{marginBottom:10}}/><Skeleton w="100%" h={44}/></div>;
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+      <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Cliente, mark, tracking o destino" data-enter-libre style={{height:38,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.22)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none",flex:"1 1 260px",maxWidth:420}}/>
+      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{todos.length} reenvío{todos.length!==1?"s":""} en total</span>
+    </div>
+    {pedidos.length>0&&bloque("Pedidos al agente","#93c5fd",pedidos.length,pedidos.map(r=>{const n=(r.package_ids||[]).length;return <div key={r.id} style={fila}>
+      <div style={{flex:"1 1 280px",minWidth:0}}>
+        <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{...mono,color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={mono}>{r.shipping_mark}</span></p>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{agente(r.agent_id)} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${fecha(r.created_at)}, esperando al agente`}</p>
+      </div>
+      <button onClick={()=>cancelar(r)} style={btn}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
+    </div>;}))}
+    {grupos.length>0&&bloque("Hechos","#4ade80",grupos.length,grupos.map(g=>{const rs=g.pedidos;const r0=rs[0];const n=bultosDe(rs);const costo=rs.reduce((s,r)=>s+Number(r.costo_usd||0),0);const sinCosto=rs.some(r=>!(Number(r.costo_usd)>0));return <div key={g.clave} style={fila}>
+      <div style={{flex:"1 1 280px",minWidth:0}}>
+        <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{...mono,color:GOLD_LIGHT}}>{codigos(rs).join(" + ")}</span> · {n} bulto{n!==1?"s":""} → {r0.destino_nombre} · mark <span style={mono}>{marks(rs).join(" / ")||"—"}</span>{rs.length>1&&<span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginLeft:8}}>{rs.length} pedidos en un envío</span>}</p>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{agente(r0.agent_id)} · pedido {fecha(r0.created_at)} · enviado {fecha(r0.resolved_at)}{costo>0?<> · costo <b style={{color:"#fff"}}>{usdFmt(costo)}</b> descontado de su cuenta corriente</>:null}{sinCosto&&<span style={{color:"#fbbf24"}}> · sin costo cargado</span>}</p>
+      </div>
+      {r0.tracking_envio?<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{...mono,fontSize:12.5,fontWeight:700,color:"#fff",padding:"5px 10px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>{r0.tracking_envio}</span><button onClick={()=>copiar(r0.tracking_envio)} style={btn}>Copiar</button></div>:<span style={{fontSize:11.5,color:"#fbbf24",fontWeight:700}}>sin tracking</span>}
+    </div>;}))}
+    {cancelados.length>0&&<div style={{marginBottom:14}}>
+      <button type="button" onClick={()=>setVerCancelados(v=>!v)} style={{...btn,color:"rgba(255,255,255,0.5)"}}>{verCancelados?"▾":"▸"} Cancelados · {cancelados.length}</button>
+      {verCancelados&&<div style={{marginTop:8,borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",opacity:0.75}}>{cancelados.map(r=>{const n=(r.package_ids||[]).length;return <div key={r.id} style={fila}><p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.7)"}}><span style={{...mono,color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={mono}>{r.shipping_mark}</span> · {agente(r.agent_id)} · pedido {fecha(r.created_at)} · cancelado {fecha(r.resolved_at)}{r.agent_notes?` · ${r.agent_notes}`:""}</p></div>;})}</div>}
+    </div>}
+    {todos.length>0&&pedidos.length===0&&grupos.length===0&&cancelados.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Nada coincide con la búsqueda.</p>}
+    {todos.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Todavía no hay reenvíos.</p>}
+  </div>;
+}
+
 function ReclamosDeposito({token,signups=[],onCount}){
   const [clientes,setClientes]=useState([]);
   const [lista,setLista]=useState(null);
@@ -11484,7 +11541,7 @@ function AgentsPanel({token}){
     // allOps (ops sin consolidar, para asignar huérfanos) sale de depOps: era una query casi duplicada.
     setAllOps((Array.isArray(depOps)?depOps:[]).filter(o=>!o.consolidation_confirmed));
     // Los bultos ya reenviados a otro depósito salieron del depósito de este agente.
-    // Con reenvío pedido (todavía pendiente) tampoco: se van del depósito y se ven en "Reenvíos pedidos".
+    // Con reenvío pedido (todavía pendiente) tampoco: se van del depósito y se ven en la solapa Reenvíos.
     const enReenvio=new Set((Array.isArray(reenv)?reenv:[]).filter(r=>r.status==="pendiente").flatMap(r=>r.package_ids||[]));
     const pkgsDep=(Array.isArray(depPkgs)?depPkgs:[]).filter(p=>!p.reenviado_at&&!enReenvio.has(p.id));
     const opsConPkgs=new Set(pkgsDep.map(p=>p.operation_id));
@@ -12053,7 +12110,7 @@ function AgentsPanel({token}){
         <div className="ag-izq">{izq}</div>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
-        {[{k:"deposito",l:"Depósito",n:bultosEnDeposito},{k:"flights",l:"Vuelos",n:flights.filter(f=>f.status!=="recibido").length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length},{k:"reclamos",l:"Reclamos",n:reclamosN}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+        {[{k:"deposito",l:"Depósito",n:bultosEnDeposito},{k:"flights",l:"Vuelos",n:flights.filter(f=>f.status!=="recibido").length},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length},{k:"reclamos",l:"Reclamos",n:reclamosN},{k:"reenvios",l:"Reenvíos",n:reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede").length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
             </div>
         <div className="ag-der">{der}</div>
@@ -12101,11 +12158,9 @@ function AgentsPanel({token}){
           toast(`${code} creada`,"success");load();
         }catch(e){alertDialog("No se pudo crear: "+e.message);}
       };
+      // Con reenvío pedido los bultos salen del depósito: acá solo queda el aviso; la lista completa (pedidos,
+      // hechos con tracking y costo, cancelados) vive en la solapa Reenvíos (05/11/2026).
       const reenviosAbiertos=reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede");
-      // Reenvíos ya hechos (03/11/2026): tracking del envío local y costo (descontado de la CC del agente).
-      const reenviosHechos=reenvios.filter(r=>r.status==="enviado").sort((a,b)=>String(b.resolved_at||"").localeCompare(String(a.resolved_at||""))).slice(0,8);
-      const copiarTxt=async(txt,aviso)=>{try{await navigator.clipboard.writeText(txt);toast(aviso,"success");}catch{await promptDialog("Copialo de acá",{defaultValue:txt});}};
-      const cancelarReenvio=async(r)=>{if(!await confirmDialog(`¿Cancelar el reenvío a ${r.destino_nombre}?`))return;await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"cancelado",resolved_at:new Date().toISOString()}});toast("Reenvío cancelado","success");load();};
       // Detalle de una op del depósito (productos, bultos, reempaque): lo usan la fila de la tabla y la
       // tarjeta del celu.
       const detalleDe=(o)=>{
@@ -12323,29 +12378,7 @@ function AgentsPanel({token}){
       });
       return <div>
         {reenvioModal&&<ReenvioModal token={token} {...reenvioModal} historial={reenvios} onClose={()=>setReenvioModal(null)} onSaved={()=>{setReenvioModal(null);load();}}/>}
-        {reenviosAbiertos.length>0&&<div style={{marginBottom:14,borderRadius:12,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.06)",overflow:"hidden"}}>
-          <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(96,165,250,0.2)"}}>↪ Reenvíos pedidos · {reenviosAbiertos.length}</p>
-          {reenviosAbiertos.map(r=>{const ag=approvedAgents.find(a=>a.auth_user_id===r.agent_id);const n=(r.package_ids||[]).length;return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-            <div style={{flex:"1 1 280px",minWidth:0}}>
-              <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={{fontFamily:"monospace"}}>{r.shipping_mark}</span></p>
-              <p style={{margin:"2px 0 0",fontSize:11.5,color:r.status==="no_se_puede"?"#f87171":"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · {r.status==="no_se_puede"?`No se puede${r.agent_notes?`: ${r.agent_notes}`:""}`:`pedido ${new Date(r.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}, esperando al agente`}</p>
-            </div>
-            <button onClick={()=>cancelarReenvio(r)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{r.status==="no_se_puede"?"Archivar":"Cancelar"}</button>
-          </div>;})}
-        </div>}
-        {reenviosHechos.length>0&&<div style={{marginBottom:14,borderRadius:12,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.05)",overflow:"hidden"}}>
-          <p style={{margin:0,padding:"10px 14px",fontSize:12,fontWeight:800,color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(34,197,94,0.2)"}}>↪ Reenvíos hechos · {reenviosHechos.length}</p>
-          {reenviosHechos.map(r=>{const ag=approvedAgents.find(a=>a.auth_user_id===r.agent_id);const n=(r.package_ids||[]).length;const costo=Number(r.costo_usd||0);return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"10px 14px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-            <div style={{flex:"1 1 280px",minWidth:0}}>
-              <p style={{margin:0,fontSize:13,color:"#fff",fontWeight:700}}><span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{r.clients?.client_code||"—"}</span> · {n} bulto{n!==1?"s":""} → {r.destino_nombre} · mark <span style={{fontFamily:"monospace"}}>{r.shipping_mark}</span></p>
-              <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"Agente"} · enviado {r.resolved_at?new Date(r.resolved_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—"}{costo>0?<> · costo <b style={{color:"#fff"}}>USD {costo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> descontado de su cuenta corriente</>:<span style={{color:"#fbbf24"}}> · sin costo cargado</span>}</p>
-            </div>
-            {r.tracking_envio?<div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12.5,fontWeight:700,color:"#fff",padding:"5px 10px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>{r.tracking_envio}</span>
-              <button onClick={()=>copiarTxt(r.tracking_envio,"Tracking copiado")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>Copiar</button>
-            </div>:<span style={{fontSize:11.5,color:"#fbbf24",fontWeight:700}}>sin tracking</span>}
-          </div>;})}
-        </div>}
+        {reenviosAbiertos.length>0&&<button type="button" onClick={()=>setTab("reenvios")} style={{marginBottom:14,padding:"8px 14px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#93c5fd",cursor:"pointer",fontFamily:"inherit"}}>↪ {reenviosAbiertos.length} reenvío{reenviosAbiertos.length!==1?"s":""} pedido{reenviosAbiertos.length!==1?"s":""} al agente · ver en Reenvíos</button>}
         {selectedOps.length>0&&(()=>{
           const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
           const riOps=selObjs.filter(o=>o.clients?.tax_condition==="responsable_inscripto");
@@ -12747,6 +12780,7 @@ function AgentsPanel({token}){
     {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} finRate={finRateOf(flight.agent_id)} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
     {tab==="reclamos"&&<ReclamosDeposito token={token} signups={signups} onCount={setReclamosN}/>}
+    {tab==="reenvios"&&<ReenviosPanel token={token} signups={signups} onChanged={load}/>}
     {tab==="orphans"&&<HuerfanosPanel token={token} unassigned={unassigned} setUnassigned={setUnassigned} signups={signups} onFlash={flash}/>}
     {/* Agentes (03/10/2026, ex Solicitudes): una tarjeta por agente con sus datos y sus tarifas por
         servicio (las carga cada agente desde su panel → Tarifas). Las solicitudes nuevas se aprueban acá. */}
