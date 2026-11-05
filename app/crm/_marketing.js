@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { toast, confirmDialog } from "../../lib/ui";
 import { isoAR } from "../../lib/fecha-ar";
 import { Inp, Btn } from "./_compat";
+import { ensureFresh } from "../gi/_base";
 export { default as HistoriasPanel } from "../admin/components/HistoriasPanel";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -44,7 +45,7 @@ export function StudioPanel({token}){
   const [sched,setSched]=useState(null); // {p, date, hour}
   const [dictando,setDictando]=useState("");
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
-  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
+  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${await ensureFresh(token)}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
   const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null,telegram:b.telegram||{},linkedin:b.linkedin||{}});}catch(e){toast(e.message,"error");}};
   const loadAn=async()=>{setAnLo(true);try{const b=await api("?view=analisis");setAn(b);}catch(e){toast(e.message,"error");}finally{setAnLo(false);}};
@@ -700,7 +701,7 @@ export function StudioPanel({token}){
 export function BlogPanel({token}){
   const [data,setData]=useState({settings:{modo:"relevantes",por_dia:1},notas:[],candidatos:null});
   const [lo,setLo]=useState(true);const [busy,setBusy]=useState("");const [tema,setTema]=useState("");const [cfg,setCfg]=useState(null);
-  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
+  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFresh(token)}`}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async(cands)=>{setLo(true);try{const b=await api(`?view=blog${cands?"&candidatos=1":""}`);setData(d=>({...b,candidatos:b.candidatos??d.candidatos}));}catch(e){toast(e.message,"error");}finally{setLo(false);}};
   useEffect(()=>{load(false);},[token]);
   const act=async(action,extra={},msg)=>{setBusy(action);try{const b=await api("",{method:"POST",body:JSON.stringify({action,...extra})});if(msg)toast(msg,"success");await load(false);return b;}catch(e){toast(e.message,"error");}finally{setBusy("");}};

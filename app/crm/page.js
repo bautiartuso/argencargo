@@ -9,7 +9,7 @@
 // Sesión y piezas de UI: las mismas de GI (app/gi/_base.js). Los paneles mudados usan app/crm/_compat.js.
 import { useState, useEffect, useCallback } from "react";
 import { ToastStack, DialogHost } from "../../lib/ui";
-import { C, BG, LOGO, GOLD_GRADIENT, dq, arr, ac, sesionInicial, saveSession, clearSession, usarSesionPropia, useMovil, Btn, Campo, inp } from "../gi/_base";
+import { C, BG, LOGO, GOLD_GRADIENT, dq, arr, ac, sesionInicial, saveSession, clearSession, usarSesionPropia, ensureFresh, useMovil, Btn, Campo, inp } from "../gi/_base";
 import { setRolCrm } from "./_compat";
 import Chats from "./_chats";
 import Contactos from "./_contactos";
@@ -40,6 +40,16 @@ export default function CrmPage() {
     if (s?.access_token && s.user?.id) { const r = await validar(s); if (r.prof) { setSesion(s); setPerfil(r.prof); } else { clearSession(); usarSesionPropia(); } }
     setCargando(false);
   })(); }, []);
+  // El token vence a la hora. dq lo renueva solo, pero las rutas /api (Content Studio, Blog…) mandan el que
+  // tiene la pantalla y a la hora respondían "Sin autorización" (05/11/2026): acá se mantiene al día.
+  useEffect(() => {
+    if (!sesion?.access_token) return;
+    let vivo = true;
+    const alDia = async () => { const t = await ensureFresh(sesion.access_token).catch(() => null); if (vivo && t && t !== sesion.access_token) setSesion((s) => (s ? { ...s, access_token: t } : s)); };
+    const id = setInterval(alDia, 60e3);
+    document.addEventListener("visibilitychange", alDia); window.addEventListener("focus", alDia);
+    return () => { vivo = false; clearInterval(id); document.removeEventListener("visibilitychange", alDia); window.removeEventListener("focus", alDia); };
+  }, [sesion?.access_token]);
   if (cargando) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.mute, fontFamily: "'Inter','Segoe UI',sans-serif" }}>Cargando…</div>;
   if (!sesion) return <Login err0={err} onLogin={async (s) => { usarSesionPropia(); saveSession(s); const r = await validar(s); if (!r.prof) { clearSession(); setErr(r.error); return r.error; } setSesion(s); setPerfil(r.prof); return null; }} />;
   return <><style>{CSS}</style><Shell sesion={sesion} perfil={perfil} onLogout={() => { clearSession(); setSesion(null); setPerfil(null); }} /><ToastStack /><DialogHost /></>;
