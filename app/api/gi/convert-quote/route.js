@@ -3,6 +3,8 @@
 // Solo lo dispara el admin desde el panel GI después de revisar la cotización.
 // Body: { quote_id: uuid }
 
+import { crearClienteDesdeProspecto } from "../../../../lib/gi-prospecto";
+
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -32,7 +34,7 @@ export async function POST(req) {
   let body = null; try { body = await req.json(); } catch {}
   if (!body?.quote_id || !/^[0-9a-f-]{36}$/i.test(String(body.quote_id))) return Response.json({ error: "quote_id requerido" }, { status: 400 });
 
-  const qRes = await sbFetch(`/gi_quotes?id=eq.${body.quote_id}&select=*,gi_quote_requests(client_id,assigned_partner_id,origin,clients(gi_partner_id,gi_commission_pct)),gi_quote_products(*),gi_quote_packages(*)`);
+  const qRes = await sbFetch(`/gi_quotes?id=eq.${body.quote_id}&select=*,gi_quote_requests(client_id,assigned_partner_id,origin,prospect_first_name,prospect_last_name,prospect_whatsapp,clients(gi_partner_id,gi_commission_pct)),gi_quote_products(*),gi_quote_packages(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
@@ -59,7 +61,9 @@ export async function POST(req) {
   const deliveryCost = Number(quote.selected_delivery_cost_usd || 0);
   const finalTotal = channelTotal + deliveryCost;
 
-  const clientId = req0.client_id;
+  // Pedido sin ficha (06/11/2026): la ficha del cliente se crea recién acá, cuando pasa a operación.
+  let clientId = req0.client_id;
+  if (!clientId) { const nuevo = await crearClienteDesdeProspecto(SB, { ...req0, id: quote.request_id }); clientId = nuevo?.id || null; }
   if (!clientId) return Response.json({ error: "Cliente no asociado a la cotización" }, { status: 500 });
 
   // Traba: pasa a "converting" solo si sigue "accepted". Un doble toque no crea dos operaciones.

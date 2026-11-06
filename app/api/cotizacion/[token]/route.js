@@ -7,6 +7,7 @@
 // proveedor, ni costos reales, ni honorarios. A cada producto se le manda solo su "peso" (parte
 // del FOB total) para prorratear el precio final.
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd } from "../../../../lib/delivery";
+import { clienteDe } from "../../../../lib/gi-prospecto";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
@@ -32,7 +33,7 @@ const CHANNEL_KEYS = {
 };
 
 const cargarCotizacion = async (token) => {
-  const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,clients(id,auth_user_id,first_name,last_name,email,city,province,postal_code,gi_partner_id)),gi_quote_products(*),gi_quote_packages(*)`);
+  const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,prospect_first_name,prospect_last_name,prospect_whatsapp,clients(id,auth_user_id,first_name,last_name,email,city,province,postal_code,gi_partner_id)),gi_quote_products(*),gi_quote_packages(*)`);
   return Array.isArray(q.body) && q.body[0] ? q.body[0] : null;
 };
 
@@ -43,7 +44,7 @@ const quienMira = async (req, quote) => {
   if (!tok) return { user: null, rol: null };
   const user = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (!user?.id) return { user: null, rol: null };
-  const cl = quote.gi_quote_requests?.clients || {};
+  const cl = clienteDe(quote.gi_quote_requests) || {};
   if (cl.auth_user_id && cl.auth_user_id === user.id) return { user, rol: "cliente" };
   const p = await sbFetch(`/profiles?id=eq.${user.id}&select=role,is_gi_partner&limit=1`);
   const prof = Array.isArray(p.body) ? p.body[0] : null;
@@ -109,7 +110,7 @@ export async function GET(req, { params }) {
   const { token } = await params;
   const quote = token ? await cargarCotizacion(token) : null;
   if (!quote) return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
-  const cl = quote.gi_quote_requests?.clients || {};
+  const cl = clienteDe(quote.gi_quote_requests) || {};
 
   const { user, rol } = await quienMira(req, quote);
   if (!user) {
@@ -223,7 +224,7 @@ export async function POST(req, { params }) {
   // Aviso al admin (campana + push), sin bloquear la respuesta.
   try {
     const admins = await sbFetch(`/profiles?role=eq.admin&select=id`);
-    const cl = quote.gi_quote_requests?.clients || {};
+    const cl = clienteDe(quote.gi_quote_requests) || {};
     const title = `✅ Cotización ${quote.gi_quote_requests?.request_code || ""} aceptada`;
     const bodyTxt = `${`${cl.first_name || ""} ${cl.last_name || ""}`.trim()} · USD ${finalTotal.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
     for (const a of (Array.isArray(admins.body) ? admins.body : [])) {

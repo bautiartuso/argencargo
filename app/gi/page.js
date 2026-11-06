@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { ToastStack, DialogHost, toast, confirmDialog, promptDialog } from "../../lib/ui";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
+import { clienteDe } from "../../lib/gi-prospecto";
 import { GI_CANALES, GI_ESTADOS, GI_FLUJO, resumenGI, totalAceptado, canalMasBarato, totalCanal, costosProveedor, socioDeOp, TIPOS_COSTO, tipoCosto } from "../../lib/gi";
 import {
   C, BG, LOGO, MONO, GOLD_GRADIENT, dq, dqTodos, arr, ok, ac, ensureFresh, sesionInicial, saveSession, clearSession, usarSesionPropia,
@@ -108,7 +109,8 @@ function useDatos(token, rol) {
       plata ? dq("clients", { token, filters: "?gi_partner_id=not.is.null&select=id,first_name,last_name,client_code,gi_partner_id,gi_commission_pct&order=first_name.asc" }) : [],
     ]);
     setD({
-      reqs: arr(reqs), comms: arr(comms), ops: arr(ops), cobros: arr(cobros), pagos: arr(pagos),
+      // Pedidos sin ficha (06/11/2026): el nombre sale de prospect_* y se muestra como si fuera el cliente.
+      reqs: arr(reqs).map((r) => ({ ...r, clients: clienteDe(r) })), comms: arr(comms), ops: arr(ops), cobros: arr(cobros), pagos: arr(pagos),
       earnings: arr(earnings), socios: arr(socios), fx: Number(arr(settings)[0]?.default_fx_rate || 0), clientesSocio: arr(clientesSocio),
     });
   }, [token, rol]);
@@ -443,33 +445,23 @@ function NuevaCotizacion({ ctx, onClose }) {
   const encontrados = (clientes || []).filter((c) => s.length >= 2 && `${c.first_name || ""} ${c.last_name || ""} ${c.client_code || ""} ${c.whatsapp || ""}`.toLowerCase().includes(s)).slice(0, 8);
   const elegir = (c) => { setCli(c); setBusca(""); setSocio(c.gi_partner_id || (rol === "socio" ? perfil.id : "")); };
 
-  const crearCliente = async () => {
-    const first = nuevo.first_name.trim(), last = nuevo.last_name.trim() || "—";
-    const norm = (x) => (x || "").normalize("NFD").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    const base = (norm(first).slice(0, 3) + norm(last === "—" ? first : last).slice(0, 3)).padEnd(6, "X");
-    for (const code of [base, ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => base.slice(0, 5) + n)]) {
-      const r = await dq("clients", { method: "POST", token, body: { first_name: first, last_name: last, client_code: code, gi_partner_id: socio || null, whatsapp: nuevo.whatsapp.trim() || "—", email: "—", street: "—", postal_code: "—", city: "—", province: "—", tax_condition: "ninguna" } });
-      const row = arr(r)[0];
-      if (row?.id) return row;
-      if (!String(r?.message || "").includes("duplicate")) break;
-    }
-    return null;
-  };
-
+  // "Nuevo cliente" ya NO crea la ficha en clients (06/11/2026, Bautista: "hasta que la operación no se
+  // hace, no es cliente"). El pedido guarda nombre, apellido y WhatsApp (prospect_*); la ficha nace cuando
+  // la persona crea su cuenta desde el link o cuando la cotización pasa a operación.
   const crear = async () => {
     if (guardando) return;
     if (modo === "existente" && !cli) { toast.error("Elegí el cliente"); return; }
     if (modo === "nuevo" && !nuevo.first_name.trim()) { toast.error("Poné al menos el nombre"); return; }
     setGuardando(true);
     try {
-      const c = modo === "nuevo" ? await crearCliente() : cli;
-      if (!c?.id) throw new Error("No se pudo crear el cliente");
+      const c = modo === "nuevo" ? null : cli;
+      if (modo === "existente" && !c?.id) throw new Error("Elegí el cliente");
       if (modo === "existente" && staff && (socio || null) !== (cli.gi_partner_id || null)) {
         await dq("clients", { method: "PATCH", token, filters: `?id=eq.${c.id}`, body: { gi_partner_id: socio || null } });
       }
       const code = await dq("rpc/gi_next_request_code", { method: "POST", token, body: {} });
       if (typeof code !== "string" || !code.startsWith("GI-")) throw new Error("No se pudo generar el código");
-      const cuerpo = { request_code: code, client_id: c.id, assigned_partner_id: socio || null, origin: origen, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) };
+      const cuerpo = { request_code: code, client_id: c?.id || null, ...(modo === "nuevo" ? { prospect_first_name: nuevo.first_name.trim(), prospect_last_name: nuevo.last_name.trim() || null, prospect_whatsapp: nuevo.whatsapp.trim() || null } : {}), assigned_partner_id: socio || null, origin: origen, notes: notas.trim() || null, status: "quoting", expires_at: new Date(Date.now() + Number(dias) * 86400000).toISOString().slice(0, 10) };
       let ins = await dq("gi_quote_requests", { method: "POST", token, body: cuerpo });
       // Hasta que se corra el SQL del 20/10 la columna origin no existe: se crea igual, sin origen.
       if (!Array.isArray(ins) && /origin/.test(String(ins?.message || ""))) { delete cuerpo.origin; ins = await dq("gi_quote_requests", { method: "POST", token, body: cuerpo }); }
@@ -662,7 +654,7 @@ function CotDetalle({ ctx, id }) {
               </div>
               <p style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 2px", letterSpacing: "-0.01em", color: P.txt }}>{nombre(r.clients)}</p>
               <p style={{ fontSize: 12.5, color: P.mute, margin: 0 }}>
-                <span style={{ fontFamily: MONO }}>{r.clients?.client_code}</span>{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""}{socio ? ` · Socio ${socio.email.split("@")[0]}` : " · Argencargo"}
+                <span style={{ fontFamily: MONO }}>{r.clients?.client_code || (r.clients?.prospecto ? "Todavía no es cliente" : "")}</span>{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""}{socio ? ` · Socio ${socio.email.split("@")[0]}` : " · Argencargo"}
               </p>
             </div>
             {baseCliente > 0 && <div style={{ textAlign: "right", padding: "10px 14px", borderRadius: 12, background: P.goldBg }}>

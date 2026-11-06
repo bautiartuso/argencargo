@@ -2,6 +2,8 @@
 // Los clientes de GI los crea el socio sin cuenta (email "—"). Como el link de la cotización pide
 // iniciar sesión, desde acá el cliente crea SU cuenta y queda atada a la ficha que ya existe (si se
 // registrara por el portal se duplicaría la ficha). Solo funciona si la ficha todavía no tiene cuenta.
+import { prospectoDe, crearClienteDesdeProspecto } from "../../../../../lib/gi-prospecto";
+
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -20,9 +22,12 @@ export async function POST(req, { params }) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return Response.json({ error: "Email inválido" }, { status: 400 });
   if (password.length < 6) return Response.json({ error: "La contraseña tiene que tener al menos 6 caracteres" }, { status: 400 });
 
-  const q = await sb(`/rest/v1/gi_quotes?public_token=eq.${encodeURIComponent(token || "")}&select=id,request_id,gi_quote_requests(client_id,clients(id,auth_user_id,first_name,last_name,email))`);
+  const q = await sb(`/rest/v1/gi_quotes?public_token=eq.${encodeURIComponent(token || "")}&select=id,request_id,gi_quote_requests(id,client_id,assigned_partner_id,prospect_first_name,prospect_last_name,prospect_whatsapp,clients(id,auth_user_id,first_name,last_name,email))`);
   const quote = Array.isArray(q.body) ? q.body[0] : null;
-  const cl = quote?.gi_quote_requests?.clients;
+  const req0 = quote?.gi_quote_requests || null;
+  // Pedido sin ficha (06/11/2026): la ficha se crea acá, con la cuenta, a partir de prospect_*.
+  const pros = req0 && !req0.clients ? prospectoDe(req0) : null;
+  const cl = req0?.clients || pros;
   if (!cl) return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   if (cl.auth_user_id) return Response.json({ error: "Ya tenés cuenta. Iniciá sesión.", tiene_cuenta: true }, { status: 409 });
 
@@ -36,8 +41,15 @@ export async function POST(req, { params }) {
   }
   const uid = u.body.id;
 
+  if (pros) {
+    const nuevo = await crearClienteDesdeProspecto(SB, req0, { auth_user_id: uid, email });
+    if (!nuevo?.id) {
+      await sb(`/auth/v1/admin/users/${uid}`, { method: "DELETE" });
+      return Response.json({ error: "No se pudo crear tu ficha de cliente" }, { status: 500 });
+    }
+  }
   // Ata la cuenta a la ficha (solo si sigue sin cuenta: evita pisar si dos lo hacen a la vez).
-  const link = await sb(`/rest/v1/clients?id=eq.${cl.id}&auth_user_id=is.null`, {
+  const link = pros ? { body: [{ id: 1 }] } : await sb(`/rest/v1/clients?id=eq.${cl.id}&auth_user_id=is.null`, {
     method: "PATCH", headers: { Prefer: "return=representation" },
     body: JSON.stringify({ auth_user_id: uid, ...((!cl.email || cl.email === "—") ? { email } : {}) }),
   });

@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, tablaDesaduanaje } from "../../lib/calc";
 import { alertDialog, toast } from "../../lib/ui";
+import { clienteDe } from "../../lib/gi-prospecto";
 import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT, P, Papel, DatoP, PillP, inpP, BtnP } from "./_base";
 
 export const CHANNEL_DEFS=[
@@ -89,7 +90,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=in.(draft,sent,accepted)&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
     const r=Array.isArray(reqRes)&&reqRes[0]?reqRes[0]:null;
-    if(r){setRequest(r);setClient(r.clients);}
+    if(r){setRequest(r);setClient(clienteDe(r));}
     const draft=Array.isArray(draftRes)&&draftRes[0]?draftRes[0]:null;
     let origen=r?.origin||"";
     if(draft){
