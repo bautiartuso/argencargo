@@ -4714,9 +4714,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             </div>}
             {cabecera}
             {/* LCL/FCL: flete e impuestos son un solo pago al forwarder → una sola línea (si no, el flete
-                figura a pérdida y los impuestos con una ganancia que no existe). */}
+                figura a pérdida y los impuestos con una ganancia que no existe). El seguro va aparte. */}
             {op.channel==="maritimo_blanco"&&!riPagaImpuestos
-              ? block("Flete e impuestos",bFlete+bTax+bSeg,costFlete+costImp+costDoc+costSeg)
+              ? block("Flete e impuestos",bFlete+bTax,costFlete+costImp+costDoc)
               : block("Flete",bFlete,costFlete)}
             {/* Impuestos: una sola línea unificada que incluye el gasto documental.
                 Presupuestado = bTax (que ya incluye el desembolso/gasto doc cuando es modo auto;
@@ -4728,8 +4728,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Impuestos · fuera de la rentabilidad</p>
                   <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:0,fontStyle:"italic"}}>El RI abonó USD {Number(op.budget_taxes||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de impuestos directo a la aduana. No se presupuestó ni se cobró, así que no entra en el cálculo.</p>
                 </div>)
-              : op.channel!=="maritimo_blanco"&&(bTax>0||bSeg>0||costImp>0||costDoc>0||costSeg>0)&&block("Impuestos",bTax+bSeg,costImp+costDoc+costSeg)}
-            {riPagaImpuestos&&(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
+              : op.channel!=="maritimo_blanco"&&(bTax>0||costImp>0||costDoc>0)&&block("Impuestos",bTax,costImp+costDoc)}
+            {/* Seguro: fila propia (05/11/2026, AC-0351). Antes se sumaba a Impuestos y el seguro
+                cobrado aparecía como ganancia de los impuestos. No se paga (cost_seguro siempre 0),
+                así que lo cobrado es margen, pero del seguro, no de los impuestos. */}
+            {(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
             {bSurch>0&&block("Recargo por valor",bSurch,0)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}
             {(bOtros>0||costOtros>0)&&block("Otros",bOtros,costOtros)}
