@@ -142,7 +142,8 @@ const entregadaDirecta=(op,client)=>!!op.delivery_completed_at||(op.channel==="a
 // Seguimiento del courier en el portal (19/10/2026): de prueba, solo para DIEMAG en ops creadas desde
 // hoy (más AC-0293 explícita). El resto sigue viendo las novedades mezcladas como hasta ahora.
 const SEG_COURIER={desde:"2026-10-19",clientes:["DIEMAG"],ops:["AC-0293"]};
-const muestraCourier=(op,client)=>!!op?.international_tracking&&!!op?.international_carrier&&(SEG_COURIER.ops.includes(op.operation_code)||(SEG_COURIER.clientes.includes(client?.client_code)&&String(op.created_at||"").slice(0,10)>=SEG_COURIER.desde));
+// portal_hide_tracking (06/11/2026): el admin esconde el seguimiento del courier de una op (FL-0165, guía compartida).
+const muestraCourier=(op,client)=>!op?.portal_hide_tracking&&!!op?.international_tracking&&!!op?.international_carrier&&(SEG_COURIER.ops.includes(op.operation_code)||(SEG_COURIER.clientes.includes(client?.client_code)&&String(op.created_at||"").slice(0,10)>=SEG_COURIER.desde));
 const courierKey=(c)=>{const x=String(c||"").toLowerCase();return x.includes("dhl")?"dhl":x.includes("fedex")?"fedex":x.includes("ups")?"ups":null;};
 const courierUrl=(c,n)=>({dhl:`https://www.dhl.com/ar-es/home/tracking/tracking-express.html?submit=1&tracking-id=${encodeURIComponent(n)}`,fedex:`https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(n)}`,ups:`https://www.ups.com/track?tracknum=${encodeURIComponent(n)}`})[courierKey(c)]||null;
 const courierNombre=(c)=>({dhl:"DHL",fedex:"FedEx",ups:"UPS"})[courierKey(c)]||String(c||"");
@@ -1030,6 +1031,8 @@ function OperationDetail({op:opProp,token,client,onBack,vuelo=null}){
   setInFlight(Array.isArray(fl)&&fl.length>0);
   const conCourier=muestraCourier(op,client);
   setRepackInfo(Array.isArray(rk)&&rk[0]?rk[0]:null);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
+  // Seguimiento oculto por el admin (06/11/2026): ningún movimiento del courier, solo lo interno.
+  if(op?.portal_hide_tracking&&e.source!=="internal")return false;
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
   if(e.source==="internal"&&String(e.title||"").startsWith("Estado actualizado"))return false;
   // Con el bloque del courier se muestran TODOS sus movimientos (hasta el "datos recibidos")
@@ -2591,7 +2594,7 @@ function AccountPage({token,client,onRestartTutorial,onOpenOp}){
   const [loading,setLoading]=useState(true);
   const [abierto,setAbierto]=useState({});
   const [ayuda,setAyuda]=useState(false);
-  const OPSEL="id,operation_code,description,channel,service_type,status,delivery_completed_at,ri_entrega_directa,budget_total,budget_flete,budget_seguro,budget_taxes,budget_surcharge,shipping_to_door,shipping_cost,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd";
+  const OPSEL="id,operation_code,description,channel,service_type,status,delivery_completed_at,ri_entrega_directa,portal_hide_tracking,budget_total,budget_flete,budget_seguro,budget_taxes,budget_surcharge,shipping_to_door,shipping_cost,total_anticipos,debt_applied_usd,credit_applied_usd,discount_applied_usd";
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
     const arr=(x)=>Array.isArray(x)?x:[];
     const [m,cl,giOps,giItems,entregadaOps]=await Promise.all([

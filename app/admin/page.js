@@ -3004,6 +3004,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>
           <div style={{flex:"1 1 240px",minWidth:0}}><Inp label="Tracking" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/></div>
           <div style={{flex:"0 1 220px",minWidth:180}}><Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/></div>
+          {/* Seguimiento oculto al cliente (06/11/2026, FL-0165): el portal no muestra la guía ni los movimientos del courier. Se guarda al toque. */}
+          {!!op.international_tracking&&<div style={{marginBottom:12,flex:"0 0 auto"}}>
+            <span style={lbl}>Portal</span>
+            <button type="button" onClick={async()=>{const v=!op.portal_hide_tracking;setOp(p=>({...p,portal_hide_tracking:v}));const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{portal_hide_tracking:v}});if(Array.isArray(r))toast(v?"El cliente no ve el seguimiento":"El cliente vuelve a ver el seguimiento","success");else{setOp(p=>({...p,portal_hide_tracking:!v}));toast("No se pudo guardar","error");}}}
+              style={{height:44,padding:"0 14px",borderRadius:12,border:`1px solid ${op.portal_hide_tracking?"rgba(248,113,113,0.55)":"rgba(255,255,255,0.14)"}`,background:op.portal_hide_tracking?"rgba(239,68,68,0.12)":"rgba(255,255,255,0.04)",color:op.portal_hide_tracking?"#f87171":"rgba(255,255,255,0.7)",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{op.portal_hide_tracking?"Seguimiento oculto al cliente":"Seguimiento visible al cliente"}</button>
+          </div>}
         </div>;
       })()}
     </Card>
