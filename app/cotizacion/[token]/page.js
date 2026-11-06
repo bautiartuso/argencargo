@@ -141,10 +141,11 @@ export default function CotizacionPublica({ params }) {
     setErrAccion("");
     setAccepting(true);
     const tk = await tokenVigente();
-    if (!tk) { setAccepting(false); setTick(x => x + 1); return null; }
+    // Interesado sin ficha (06/11/2026): responde sin cuenta, el server lo deja pasar por el token del link.
+    if (!tk && !data?.sin_cuenta) { setAccepting(false); setTick(x => x + 1); return null; }
     const r = await fetch(`/api/cotizacion/${token}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tk}` },
+      headers: { "Content-Type": "application/json", ...(tk ? { Authorization: `Bearer ${tk}` } : {}) },
       body: JSON.stringify(payload),
     });
     const d = await r.json().catch(() => ({}));

@@ -112,8 +112,12 @@ export async function GET(req, { params }) {
   if (!quote) return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   const cl = clienteDe(quote.gi_quote_requests) || {};
 
-  const { user, rol } = await quienMira(req, quote);
-  if (!user) {
+  // Pedido sin ficha (06/11/2026, Bautista): el interesado entra directo con el link, sin crear cuenta.
+  // La cuenta se le pide recién cuando ya es cliente (la ficha existe).
+  const sinCuenta = !quote.gi_quote_requests?.client_id && !!cl.prospecto;
+  let { user, rol } = await quienMira(req, quote);
+  if (sinCuenta && (!user || !rol)) { user = null; rol = "cliente"; }
+  if (!user && !sinCuenta) {
     // Sin sesión: solo lo mínimo para armar la pantalla de ingreso.
     return Response.json({
       login: true,
@@ -134,7 +138,7 @@ export async function GET(req, { params }) {
       const recent = await sbFetch(`/gi_quote_communications?quote_id=eq.${quote.id}&type=eq.link_viewed&select=created_at&order=created_at.desc&limit=1`);
       const last = Array.isArray(recent.body) && recent.body[0] ? new Date(recent.body[0].created_at) : null;
       if (!last || (Date.now() - last.getTime()) / 60000 > 30) {
-        await registrar(quote, "link_viewed", { user_id: user.id, email: user.email || null, ua: req.headers.get("user-agent") || null });
+        await registrar(quote, "link_viewed", { user_id: user?.id || null, email: user?.email || null, sin_cuenta: sinCuenta || undefined, ua: req.headers.get("user-agent") || null });
       }
     } catch {}
   }
@@ -153,6 +157,7 @@ export async function GET(req, { params }) {
 
   return Response.json({
     rol,
+    sin_cuenta: sinCuenta,
     vencida: vencida(quote),
     quote: {
       id: quote.id, status: quote.status, expires_at: quote.expires_at, sent_at: quote.sent_at, created_at: quote.created_at,
@@ -179,18 +184,20 @@ export async function POST(req, { params }) {
   const quote = token ? await cargarCotizacion(token) : null;
   if (!quote) return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
 
-  const { user, rol } = await quienMira(req, quote);
-  if (!user) return Response.json({ error: "Iniciá sesión para responder la cotización" }, { status: 401 });
+  const sinCuenta = !quote.gi_quote_requests?.client_id && !!(clienteDe(quote.gi_quote_requests) || {}).prospecto;
+  let { user, rol } = await quienMira(req, quote);
+  if (sinCuenta && (!user || !rol)) { user = null; rol = "cliente"; }
+  if (!user && !sinCuenta) return Response.json({ error: "Iniciá sesión para responder la cotización" }, { status: 401 });
   if (rol !== "cliente") return Response.json({ error: "Solo el cliente puede responder la cotización" }, { status: 403 });
   if (["accepted", "converted"].includes(quote.status)) return Response.json({ error: "Esta cotización ya fue aceptada", already: true }, { status: 409 });
   if (quote.status === "rejected") return Response.json({ error: "Esta cotización ya fue rechazada" }, { status: 409 });
   if (vencida(quote)) return Response.json({ error: "La cotización está vencida. Pedinos una actualizada." }, { status: 410 });
 
-  const quien = { user_id: user.id, email: user.email || null };
+  const quien = { user_id: user?.id || null, email: user?.email || null, ...(sinCuenta ? { sin_cuenta: true } : {}) };
 
   if (body?.action === "reject") {
     const reason = String(body.reason || "").trim().slice(0, 500) || null;
-    const r = await patchQuote(`id=eq.${quote.id}`, { status: "rejected", rejected_at: new Date().toISOString(), reject_reason: reason, responded_by: user.id });
+    const r = await patchQuote(`id=eq.${quote.id}`, { status: "rejected", rejected_at: new Date().toISOString(), reject_reason: reason, responded_by: user?.id || null });
     if (r.status >= 400) return Response.json({ error: "No se pudo registrar la respuesta" }, { status: 500 });
     await sbFetch(`/gi_quote_requests?id=eq.${quote.request_id}`, { method: "PATCH", body: JSON.stringify({ status: "rejected" }) });
     await registrar(quote, "rejected", { ...quien, reason });
@@ -214,7 +221,7 @@ export async function POST(req, { params }) {
   // Se acepta con un PATCH condicionado al estado: si se toca dos veces, el segundo no hace nada.
   const r = await patchQuote(`id=eq.${quote.id}&status=in.(draft,sent)`, {
     status: "accepted", selected_channel: body.channel, selected_delivery_zone: zone,
-    selected_delivery_cost_usd: deliveryCost, accepted_at: new Date().toISOString(), responded_by: user.id,
+    selected_delivery_cost_usd: deliveryCost, accepted_at: new Date().toISOString(), responded_by: user?.id || null,
   });
   if (r.status >= 400) return Response.json({ error: "No se pudo registrar la aceptación" }, { status: 500 });
   if (!Array.isArray(r.body) || !r.body.length) return Response.json({ error: "Esta cotización ya fue respondida", already: true }, { status: 409 });
