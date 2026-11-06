@@ -9,6 +9,7 @@
 // GET  ?accion=adjunto&msg=…&adj=…&nombre=…&tipo=…  → el archivo
 // POST { accion:"pedir", flight_id, para, cc, texto } | { accion:"revisado", pedido_id }
 import { leerConfig, gm, hdr, b64dec, b64url, recorrer, armarMime, BUCKET } from "../../../../lib/gmail";
+import { docEsAdjunto } from "../../../../lib/legajo";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
@@ -171,12 +172,13 @@ export async function GET(req) {
           const guias = pedidosGuia.filter((x) => todo.includes(x.guia)).map((x) => ({ guia: x.guia, flight_id: x.flight_id, pedido_id: x.id }));
           return { id: m.id, de, asunto: hdr(h, "Subject"), mio: !!cfg.email && de.toLowerCase().includes(String(cfg.email).toLowerCase()), fecha: Number(m.internalDate) || 0, texto: texto.slice(0, 4000), adjuntos, guias };
         }).sort((a, b) => a.fecha - b.fecha);
-        // Adjuntos que ya se cargaron en el legajo de otro vuelo (23/10/2026): se muestran tachados.
+        // Adjuntos que ya se cargaron en el legajo de otro vuelo (23/10/2026): se muestran tachados. Cuenta solo si
+        // el documento salió de ese mismo mail (gmail_msg, 06/11/2026), no por el nombre del archivo.
         const nombres = [...new Set(mensajes.flatMap((m) => m.adjuntos.map((x) => x.nombre)).filter(Boolean))];
         if (nombres.length) {
           const lst = nombres.map((n) => `"${String(n).replace(/"/g, '\\"')}"`).join(",");
-          const usados = lista(await sb(`/rest/v1/legajo_docs?file_name=in.(${encodeURIComponent(lst)})&borrado_at=is.null&flight_id=not.is.null&flight_id=neq.${fid}&select=file_name,tipo,flights(flight_code)`));
-          for (const m of mensajes) for (const x of m.adjuntos) { const u = usados.find((y) => y.file_name === x.nombre); if (u) x.usadoEn = { vuelo: u.flights?.flight_code || "otro vuelo", tipo: u.tipo }; }
+          const usados = lista(await sb(`/rest/v1/legajo_docs?file_name=in.(${encodeURIComponent(lst)})&borrado_at=is.null&flight_id=not.is.null&flight_id=neq.${fid}&select=file_name,tipo,gmail_msg,uploaded_at,flights(flight_code)`));
+          for (const m of mensajes) for (const x of m.adjuntos) { const u = usados.find((y) => docEsAdjunto(y, m.id, m.fecha, x.nombre)); if (u) x.usadoEn = { vuelo: u.flights?.flight_code || "otro vuelo", tipo: u.tipo }; }
         }
         if (!pedido.respuesta_at && mensajes.some((m) => !m.mio)) { const pr2 = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${pedido.id}&select=*`))[0]; if (pr2) Object.assign(pedido, pr2); }
       }
