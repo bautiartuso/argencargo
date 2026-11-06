@@ -129,6 +129,12 @@ const stageKeyOf=(status,showDoc,docsConfirmed,lost)=>{if(lost)return "aduana";c
 // "Confirmar la mercadería" (la cargó Argencargo, o el vuelo se armó antes). Sin esto el portal le
 // seguía pidiendo confirmar algo que el servidor ya rechaza (21/09/2026).
 const docsCerradas=(op,inFlight)=>!!op.docs_confirmed_at||!!inFlight||Number(op.budget_total||0)>0;
+// Vuelo de la op (05/11/2026, vía /api/portal/vuelos): mientras la base la tiene "en_preparacion", el
+// cliente la ve EN TRÁNSITO apenas el vuelo está listo para despachar (factura presentada) o ya
+// despachado y pendiente de recolección. "Documentación" queda solo para la op que sigue en el
+// depósito, sin vuelo; con vuelo armado pero sin factura es "En preparación".
+const vueloEnCamino=(v)=>!!v&&(v.status==="despachado"||v.status==="recibido"||!!v.dispatched_at||!!v.invoice_presented_at);
+const estadoVisible=(op,v)=>op?.status==="en_preparacion"&&vueloEnCamino(v)?"en_transito":op?.status;
 // Op que no se retira en la oficina: ya se entregó (delivery_completed_at) o es un RI con entrega
 // directa a domicilio (misma regla que esRiDir del admin). En "entregada" no corresponde decir
 // "Lista para retirar": ya la tiene; lo que queda es el pago (19/10/2026).
@@ -140,7 +146,7 @@ const muestraCourier=(op,client)=>!!op?.international_tracking&&!!op?.internatio
 const courierKey=(c)=>{const x=String(c||"").toLowerCase();return x.includes("dhl")?"dhl":x.includes("fedex")?"fedex":x.includes("ups")?"ups":null;};
 const courierUrl=(c,n)=>({dhl:`https://www.dhl.com/ar-es/home/tracking/tracking-express.html?submit=1&tracking-id=${encodeURIComponent(n)}`,fedex:`https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(n)}`,ups:`https://www.ups.com/track?tracknum=${encodeURIComponent(n)}`})[courierKey(c)]||null;
 const courierNombre=(c)=>({dhl:"DHL",fedex:"FedEx",ups:"UPS"})[courierKey(c)]||String(c||"");
-const stLabelOf=(op,t,client)=>op.status==="en_preparacion"&&op.docs_confirmed_at?t("opStatus.prep_confirmed"):op.status==="entregada"&&entregadaDirecta(op,client)?t("ol.delivered"):(SM[op.status]?t(SM[op.status].tk):op.status);
+const stLabelOf=(op,t,client,vuelo)=>{const s=estadoVisible(op,vuelo);return s==="en_preparacion"&&(op.docs_confirmed_at||vuelo)?t("opStatus.prep_confirmed"):s==="entregada"&&entregadaDirecta(op,client)?t("ol.delivered"):(SM[s]?t(SM[s].tk):s);};
 const banderaOrigen=(o)=>({USA:"🇺🇸","España":"🇪🇸","Pakistán":"🇵🇰",Bangladesh:"🇧🇩"})[o]||"🇨🇳";
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{tk:"opStatus.pendiente",c:"#94a3b8"},en_deposito_origen:{tk:"opStatus.warehouse_ac",c:"#fbbf24"},en_preparacion:{tk:"opStatus.en_preparacion",c:"#a78bfa"},en_transito:{tk:"opStatus.en_transito",c:"#60a5fa"},arribo_argentina:{tk:"opStatus.arribo_argentina",c:"#818cf8"},en_aduana:{tk:"opStatus.en_aduana",c:"#fb923c"},entregada:{tk:"opStatus.entregada",c:"#22c55e"},operacion_cerrada:{tk:"opStatus.operacion_cerrada",c:"#10b981"},cancelada:{tk:"opStatus.cancelada",c:"#f87171"}};
@@ -471,7 +477,7 @@ function DepositoView({pkgs,token,client,onCreated}){
   </div>;
 }
 
-function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},ccOps=new Set(),mCargo=[],mCargoLoading=false}){
+function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},ccOps=new Set(),mCargo=[],mCargoLoading=false,vuelos={}}){
   const {t}=useT();
   // Orden: más cerca de la entrega primero. ETA asc como desempate (antes = más urgente).
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
@@ -499,19 +505,20 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     return{txt:usd(saldo),tone:"due",l:"Falta abonar"};};
   const accionDe=(op)=>{const isGI=op.service_type==="gestion_integral";const hasItems=(itemsByOp[op.id]||0)>0;
     if(op.lost_in_customs_at)return{c:"#f87171",t:t("ol.heldCustoms")};
-    if(!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&!docsCerradas(op))return{c:GOLD_LIGHT,t:hasItems?t("opq.confirmGoodsShort"):t("opq.loadGoodsShort"),strong:true};
-    if(op.status==="en_preparacion"&&Number(op.budget_total||0)<=0)return{c:SKY,t:t("ol.inPreparation")};
+    const sv=estadoVisible(op,vuelos[op.id]);
+    if(!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(sv)&&!docsCerradas(op,!!vuelos[op.id]))return{c:GOLD_LIGHT,t:hasItems?t("opq.confirmGoodsShort"):t("opq.loadGoodsShort"),strong:true};
+    if(sv==="en_preparacion"&&Number(op.budget_total||0)<=0)return{c:SKY,t:t("ol.inPreparation")};
     if(op.status==="entregada"){if(entregadaDirecta(op,client)){const s=saldoDe(op);return s.tone==="due"?{c:GOLD_LIGHT,t:t("ol.deliveredPending")}:{c:"#4ade80",t:t("ol.delivered")};}return{c:"#4ade80",t:t("ol.readyPickup")};}
     // Mientras la carga viaja el chip dice DONDE esta, no "saldo pendiente" (16/09/2026): estos
     // tres estados no tenian caso propio y caian al fallback del saldo, asi que una op que recien
     // habia despegado aparecia como si el cliente estuviera atrasado con un pago. El saldo se sigue
     // viendo en la columna A ABONAR; el chip queda para el estado operativo.
-    if(SM[op.status]&&["en_transito","arribo_argentina","en_aduana"].includes(op.status))return{c:SM[op.status].c,t:t(SM[op.status].tk)};
+    if(SM[sv]&&["en_transito","arribo_argentina","en_aduana"].includes(sv))return{c:SM[sv].c,t:t(SM[sv].tk)};
     const s=saldoDe(op);if(s.tone==="due"&&!["operacion_cerrada","cancelada"].includes(op.status))return{c:GOLD_LIGHT,t:"Saldo pendiente"};
     return null;};
   const COLS="150px minmax(0,1.5fr) 200px 88px 150px 34px";
   const head=<div className="ol-head" style={{display:"grid",gridTemplateColumns:COLS,gap:12,padding:"0 16px 8px"}}>{[t("ol.import"),t("ol.colGoods"),t("ol.colStage"),"ETA",t("ol.colDue"),""].map((h,i)=><p key={i} style={{...LBL,textAlign:i>=2?"center":"left"}}>{h}</p>)}</div>;
-  const renderRow=(op)=>{const isGI=op.service_type==="gestion_integral";const showDoc=!isGI&&op.channel==="aereo_blanco";const steps=stageSteps(showDoc);const key=stageKeyOf(op.status,showDoc,docsCerradas(op),!!op.lost_in_customs_at);const si=Math.max(0,steps.findIndex(s=>s.k===key));const cur=steps[si]||steps[0];
+  const renderRow=(op)=>{const isGI=op.service_type==="gestion_integral";const showDoc=!isGI&&op.channel==="aereo_blanco";const steps=stageSteps(showDoc);const key=stageKeyOf(estadoVisible(op,vuelos[op.id]),showDoc,docsCerradas(op,!!vuelos[op.id]),!!op.lost_in_customs_at);const si=Math.max(0,steps.findIndex(s=>s.k===key));const cur=steps[si]||steps[0];
     const done=["operacion_cerrada","cancelada"].includes(op.status);const s=saldoDe(op);const ac=accionDe(op);
     return <div key={op.id} onClick={()=>onSelect(op)} className="ol-row" style={{display:"grid",gridTemplateColumns:COLS,gap:12,alignItems:"center",padding:"14px 16px",marginBottom:8,borderRadius:13,border:ac?.strong?"1px solid rgba(232,208,152,0.5)":HAIR,background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",boxShadow:"0 10px 26px rgba(0,0,0,0.25)",cursor:"pointer",opacity:done?0.75:1,transition:"border-color 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(140,200,245,0.55)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=ac?.strong?"rgba(232,208,152,0.5)":"rgba(255,255,255,0.13)";}}>
       <div style={{minWidth:0}}>
@@ -977,7 +984,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
   </div>;
 }
 
-function OperationDetail({op:opProp,token,client,onBack}){
+function OperationDetail({op:opProp,token,client,onBack,vuelo=null}){
   const {t}=useT();
   // La op se refresca sola después de cada guardado (descripción, baterías, confirmación).
   const [opFresh,setOpFresh]=useState(null);const op=opFresh||opProp;
@@ -992,7 +999,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
   const [calcCtx,setCalcCtx]=useState(null);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
-  const [inFlight,setInFlight]=useState(false);
+  const [inFlightDb,setInFlight]=useState(false);const inFlight=inFlightDb||!!vuelo;
   // El panel de documentación se desbloquea recién cuando el cliente confirma que llegaron TODOS los bultos
   // (consolidation_confirmed) o cuando lo hizo en esta sesión (localConfirmed). Antes de eso no se puede
   // cargar la factura para evitar declaraciones por partes.
@@ -1035,7 +1042,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
 }));setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setCliPmts(Array.isArray(cp)?cp:[]);setLoading(false);};
   useEffect(()=>{if(legajoVisible(op,client))precargarLegajo(op.id,token);},[op.id,op.legajo_visible,client?.tax_condition]);
   useEffect(()=>{loadAll();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();loadAll();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id,token]);
-  const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");
+  const sv=estadoVisible(op,vuelo);const st=SM[sv]||{l:sv,c:"#999"};const isA=op.channel?.includes("aereo");
   const isGI=op.service_type==="gestion_integral";
   // Al cliente RI le mostramos la declaración del despacho, salvo que en esta op se le cobre
   // sobre el valor que declaró él: ahí ve su propia mercadería y no dos totales distintos.
@@ -1101,10 +1108,10 @@ function OperationDetail({op:opProp,token,client,onBack}){
     if(op.lost_in_customs_at||["operacion_cerrada","cancelada"].includes(op.status))return null;
     if(isEditable&&items.length===0)return{c:GOLD_LIGHT,t:t("opq.loadTitle"),s:t("opq.loadDesc")};
     if(isEditable&&items.length>0)return{c:GOLD_LIGHT,t:t("opq.confirmTitle"),s:t("opq.confirmDesc")};
-    if(docsCerradas(op,inFlight)&&op.status==="en_preparacion"&&!hasBudget)return{c:SKY,t:t("opq.quotingTitle"),s:t("opq.quotingDesc")};
+    if(docsCerradas(op,inFlight)&&sv==="en_preparacion"&&!hasBudget)return{c:SKY,t:t("opq.quotingTitle"),s:t("opq.quotingDesc")};
     if(hasBudget&&saldoReal>0.01&&op.status!=="entregada")return{c:GOLD_LIGHT,t:`${t("opq.balanceDue")}: ${usd(saldoReal)}`,s:t("opq.payDesc")};
     if(op.status==="entregada")return{c:"#4ade80",t:t("opq.readyTitle"),s:t("opq.readyDesc")};
-    if(op.status==="en_transito")return{c:SKY,t:t("opq.transitTitle"),s:op.eta?`${t("opq.eta")}: ${fd(op.eta)}.`:t("opq.transitDesc")};
+    if(sv==="en_transito")return{c:SKY,t:t("opq.transitTitle"),s:op.eta?`${t("opq.eta")}: ${fd(op.eta)}.`:t("opq.transitDesc")};
     if(op.status==="arribo_argentina"||op.status==="en_aduana")return{c:SKY,t:t("opq.customsTitle"),s:t("opq.customsDesc")};
     return null;})();
   const fila=(l,v,opts={})=><div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"8px 0",borderBottom:opts.last?"none":"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:13,color:opts.muted?"rgba(255,255,255,0.55)":"#fff",opacity:0.94}}>{l}</span><span style={{fontSize:13.5,fontWeight:opts.bold?800:600,color:opts.color||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span></div>;
@@ -1193,11 +1200,11 @@ function OperationDetail({op:opProp,token,client,onBack}){
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <span style={{fontSize:20,fontWeight:800,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.05em"}}>{op.operation_code}</span>
         {isGI&&<span className="ac-gi-pulse" style={{fontSize:10.5,fontWeight:800,padding:"5px 12px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>{t("op.gi")}</span>}
-        {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?t("ol.heldCustoms"):stLabelOf(op,t,client)}</span>;})()}
+        {(()=>{const active=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"5px 12px",borderRadius:999,color,border:`1px solid ${color}66`,background:`${color}1f`,display:"inline-flex",alignItems:"center",gap:7}}>{active&&<span className="ac-live-dot" style={{width:6,height:6,borderRadius:"50%",background:color,display:"inline-block"}}/>}{op.lost_in_customs_at?t("ol.heldCustoms"):stLabelOf(op,t,client,vuelo)}</span>;})()}
         <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,0.6)",fontWeight:600}}>{banderaOrigen(op.origin)} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}{op.channel?<> · {t("channel."+op.channel)}</>:null}{op.eta?<> · <span style={{color:SKY}}>{["entregada","operacion_cerrada"].includes(op.status)?t("op.arrived"):"ETA"} {fd(op.eta)}</span></>:null}</span>
       </div>
       <h2 style={{fontSize:19,fontWeight:700,color:op.description?"#fff":"rgba(255,255,255,0.4)",margin:"12px 0 4px",fontStyle:op.description?"normal":"italic"}}>{op.description||(items.length?items.map(i=>i.description).filter(Boolean).slice(0,3).join(", "):t("op.noGoods"))}</h2>
-      <OpProgress status={op.status} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={docsCerradas(op,inFlight)}/>
+      <OpProgress status={sv} isAereo={isAer} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at} docsConfirmed={docsCerradas(op,inFlight)}/>
       {op.lost_in_customs_at&&<div style={{marginBottom:6,padding:"12px 16px",background:"rgba(248,113,113,0.08)",border:"1.5px solid rgba(248,113,113,0.4)",borderRadius:12}}>
         <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>{t("op.heldTitle")}</p>
         <p style={{fontSize:12.5,color:"rgba(255,255,255,0.75)",margin:"4px 0 0",lineHeight:1.5}}>{t("op.heldDesc")}</p>
@@ -1319,7 +1326,7 @@ function OperationDetail({op:opProp,token,client,onBack}){
               <button disabled={deshaciendo} onClick={deshacerImportacion} style={{padding:"9px 14px",fontSize:12.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(248,113,113,0.45)",background:"rgba(248,113,113,0.08)",color:"#fca5a5",cursor:deshaciendo?"wait":"pointer",whiteSpace:"nowrap"}}>{deshaciendo?"…":t("op.undoImport")}</button>
             </div>}
           </>
-          :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>{t("op.goodsConfirmed")}</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
+          :<>{op.docs_confirmed_at&&!isGI&&op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(sv)&&<p style={{margin:"0 0 12px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.08)",fontSize:12.5,color:"#fff",lineHeight:1.5}}><b style={{color:"#4ade80"}}>{t("op.goodsConfirmed")}</b> el {formatDate(op.docs_confirmed_at)}. Si necesitás cambiar algo, escribinos por WhatsApp y la destrabamos.</p>}
           {items.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:0}}>{t("op.noGoodsYet")}</p>}
           {items.length>0&&!muestraAduana&&<div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
             <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM",...(isGI?[]:["Derechos","Tasa est.","IVA"])].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
@@ -3226,7 +3233,7 @@ function ReferralsPage({token,client}){
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const {t}=useT();
-  const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ccOps,setCcOps]=useState(()=>new Set());const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);const [mCargoLoading,setMCargoLoading]=useState(false);
+  const [page,setPage]=useState("imports");const [calcPreset,setCalcPreset]=useState(null);const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ccOps,setCcOps]=useState(()=>new Set());const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [vuelosByOp,setVuelosByOp]=useState({});const [depPkgs,setDepPkgs]=useState([]);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);const [mCargoLoading,setMCargoLoading]=useState(false);
   const loadOps=async()=>{setLo(true);
     // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
     // pero en admin preview mode el token es de admin (ve TODO) y necesitamos filtrar acá.
@@ -3241,6 +3248,8 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     const mCargoP=ensureFreshToken(token).then(tk=>fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.ok?r.json():null).then(d=>Array.isArray(d?.cargo)?d.cargo:null).catch(()=>null);
     mCargoP.then(c=>{setMCargoLoading(false);if(!c)return;setMCargo(c);try{localStorage.setItem(mKey,JSON.stringify(c));}catch{}});
     dq("operation_packages",{token,filters:`?client_id=eq.${cId}&operation_id=is.null&select=*&order=created_at.asc`}).then(d=>setDepPkgs(Array.isArray(d)?d:[])).catch(()=>setDepPkgs([]));
+    // Vuelo de cada op aérea (05/11/2026): define si el cliente la ve en tránsito o en documentación.
+    ensureFreshToken(token).then(tk=>fetch(`/api/portal/vuelos?client_id=${cId}`,{headers:{Authorization:`Bearer ${tk}`}})).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.vuelos)setVuelosByOp(d.vuelos);}).catch(()=>{});
     const [r,it,pm,cp,tv,ccm]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
       dq("operation_items",{token,filters:`?select=operation_id,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
@@ -3263,8 +3272,8 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
     <NuevasTarifas t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/>
-    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} ccOps={ccOps} mCargo={mCargo} mCargoLoading={mCargoLoading}/>}</>}
-    {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>{setSelOp(null);loadOps();}}/>}
+    {page==="imports"&&!selOp&&<><NuevasTarifas soloBanner t={t} client={client} onVerTarifas={()=>{setPage("rates");setSelOp(null);}}/><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp} ccOps={ccOps} mCargo={mCargo} mCargoLoading={mCargoLoading} vuelos={vuelosByOp}/>}</>}
+    {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} vuelo={vuelosByOp[selOp.id]||null} onBack={()=>{setSelOp(null);loadOps();}}/>}
     {page==="deposito"&&<>
       <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("nav.deposito")}</h2>
       <DepositoView pkgs={depPkgs} token={token} client={client} onCreated={op=>{setOps(p=>[op,...p]);setDepPkgs([]);setPage("imports");setSelOp(op);loadOps();}}/>
