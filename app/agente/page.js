@@ -297,6 +297,9 @@ const I18N={
     fwd_cost_ph:"Costo del envío (USD)",
     fwd_need_tracking:"Cargá el tracking del envío",
     fwd_need_cost:"Cargá el costo del envío en USD",
+    fwd_label:"Foto de la etiqueta",
+    fwd_label_hint:"adjuntá o pegá con Ctrl+V",
+    fwd_need_label:"Adjuntá la foto de la etiqueta del envío",
     fwd_reason_ph:"¿Por qué no se puede? (opcional)",
     fwd_confirm:"Confirmar",
     fwd_done_ok:"Avisamos que lo enviaste",
@@ -683,6 +686,9 @@ const I18N={
     fwd_cost_ph:"运费（美元）",
     fwd_need_tracking:"请填写转寄单号",
     fwd_need_cost:"请填写运费（美元）",
+    fwd_label:"面单照片",
+    fwd_label_hint:"上传或 Ctrl+V 粘贴",
+    fwd_need_label:"请上传转寄面单照片",
     fwd_reason_ph:"为什么无法寄出？（可选）",
     fwd_confirm:"确认",
     fwd_done_ok:"已通知我们您已寄出",
@@ -1078,6 +1084,10 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [fwdAccion,setFwdAccion]=useState(null); // {id, tipo:"ok"|"no"}
   const [fwdTexto,setFwdTexto]=useState("");
   const [fwdCosto,setFwdCosto]=useState(""); // costo del envío local (USD): se descuenta de la CC del agente
+  const [fwdFoto,setFwdFoto]=useState(null); // foto de la etiqueta del envío {file,url}: obligatoria al marcar Enviado (07/11/2026)
+  const tomarFotoEtiqueta=(f)=>{if(!f||!f.type?.startsWith("image/"))return;setFwdFoto(prev=>{if(prev?.url)try{URL.revokeObjectURL(prev.url);}catch(_){}return {file:f,url:URL.createObjectURL(f)};});};
+  usePegarFoto(fwdAccion?.tipo==="ok",tomarFotoEtiqueta);
+  const limpiarFwd=()=>{setFwdAccion(null);setFwdTexto("");setFwdCosto("");setFwdFoto(prev=>{if(prev?.url)try{URL.revokeObjectURL(prev.url);}catch(_){}return null;});};
   const [claimReg,setClaimReg]=useState(null); // reclamo que se está registrando con "Llegó"
   const [showForm,setShowForm]=useState(false);
   const [editPkg,setEditPkg]=useState(null);
@@ -1159,21 +1169,25 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   // de la cuenta corriente del agente por trigger (cc_agente_reenvio). Si el grupo junta varios pedidos
   // en un mismo envío, el costo se reparte entre ellos según los bultos de cada uno.
   const responderGrupo=async(grupo,tipo)=>{
-    let costos=grupo.map(()=>null);
+    let costos=grupo.map(()=>null);let etiqueta=null;
     if(tipo==="ok"){
       const trk=fwdTexto.trim();const total=Number(String(fwdCosto).replace(",","."));
       if(!trk){flash(t.fwd_need_tracking||"Cargá el tracking del envío");return;}
       if(!(total>0)){flash(t.fwd_need_cost||"Cargá el costo del envío");return;}
+      if(!fwdFoto?.file){flash(t.fwd_need_label||"Adjuntá la foto de la etiqueta del envío");return;}
       const nb=grupo.map(x=>(x.package_ids||[]).length||1);const tot=nb.reduce((a,b)=>a+b,0);
       costos=nb.map(n=>Math.round(total*n/tot*100)/100);
       costos[0]=Math.round((costos[0]+(total-costos.reduce((a,b)=>a+b,0)))*100)/100;
+      // La misma foto de etiqueta vale para todos los pedidos que van en el mismo envío.
+      etiqueta=await uploadPackagePhoto(fwdFoto.file,token);
+      if(!etiqueta){flash(t.upload_failed||"No se pudo subir la foto");return;}
     }
-    for(let i=0;i<grupo.length;i++)await responderReenvio(grupo[i],tipo,true,costos[i]);
-    setFwdAccion(null);setFwdTexto("");setFwdCosto("");await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);
+    for(let i=0;i<grupo.length;i++)await responderReenvio(grupo[i],tipo,true,costos[i],etiqueta);
+    limpiarFwd();await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);
   };
-  const responderReenvio=async(r,tipo,enGrupo=false,costo=null)=>{
+  const responderReenvio=async(r,tipo,enGrupo=false,costo=null,etiqueta=null)=>{
     const txt=fwdTexto.trim();const ahora=new Date().toISOString();
-    const body=tipo==="ok"?{status:"enviado",tracking_envio:txt||null,costo_usd:costo>0?costo:null,resolved_at:ahora,resolved_by:userId}:{status:"no_se_puede",agent_notes:txt||null,resolved_at:ahora,resolved_by:userId};
+    const body=tipo==="ok"?{status:"enviado",tracking_envio:txt||null,costo_usd:costo>0?costo:null,etiqueta_url:etiqueta||null,resolved_at:ahora,resolved_by:userId}:{status:"no_se_puede",agent_notes:txt||null,resolved_at:ahora,resolved_by:userId};
     await dq("forward_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body});
     const ids=(r.package_ids||[]).filter(Boolean);
     if(tipo==="ok"&&ids.length)await dq("operation_packages",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{reenviado_at:ahora,reenvio_id:r.id}});
@@ -1186,7 +1200,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       if(adminId)await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:tipo==="ok"?`↪ Reenvío hecho · ${cod}`:`↪ Reenvío no posible · ${cod}`,body:texto,link:null}});
     }catch(e){console.error("reenvio aviso",e);}
     if(enGrupo)return;
-    setFwdAccion(null);setFwdTexto("");
+    limpiarFwd();
     await reloadAll();flash(tipo==="ok"?t.fwd_done_ok:t.fwd_done_no);
   };
   const copiar=async(v)=>{try{await navigator.clipboard.writeText(v);flash(t.fwd_copied||"Copiado");}catch(e){}};
@@ -1417,7 +1431,9 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
             {acc?<>
               <input autoFocus value={fwdTexto} onChange={e=>setFwdTexto(e.target.value)} placeholder={t.fwd_tracking_ph} style={{width:190,padding:"8px 10px",fontSize:13,borderRadius:9,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
               <input value={fwdCosto} onChange={e=>setFwdCosto(e.target.value)} inputMode="decimal" placeholder={t.fwd_cost_ph} style={{width:125,padding:"8px 10px",fontSize:13,borderRadius:9,border:"1px solid rgba(var(--ink),0.18)",background:"rgba(var(--ink),0.04)",color:"var(--tx)",outline:"none",fontFamily:"inherit"}}/>
-              <button onClick={()=>{setFwdAccion(null);setFwdTexto("");setFwdCosto("");}} style={{...btnS,padding:"8px 10px"}}>✕</button>
+              {fwdFoto?<span style={{position:"relative",display:"inline-flex",flexShrink:0}} title={t.fwd_label}><img src={fwdFoto.url} alt="" style={{width:38,height:38,objectFit:"cover",borderRadius:9,border:`1.5px solid ${GOLD_DEEP}`,display:"block"}}/><button type="button" onClick={()=>setFwdFoto(prev=>{if(prev?.url)try{URL.revokeObjectURL(prev.url);}catch(_){}return null;})} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:99,border:"none",background:"var(--red)",color:"#fff",fontSize:10,fontWeight:900,cursor:"pointer",lineHeight:"18px",padding:0}}>✕</button></span>
+              :<label title={t.fwd_label_hint} style={{display:"inline-flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,padding:"5px 10px",minHeight:36,borderRadius:9,border:"1.5px dashed rgba(var(--ink),0.3)",background:"rgba(var(--ink),0.03)",color:"var(--tx)",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}><span style={{fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>📎 {t.fwd_label}</span><span style={{fontSize:10,color:"rgba(var(--ink),0.5)",whiteSpace:"nowrap"}}>{t.fwd_label_hint}</span><input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{tomarFotoEtiqueta(e.target.files?.[0]);e.target.value="";}}/></label>}
+              <button onClick={limpiarFwd} style={{...btnS,padding:"8px 10px"}}>✕</button>
               <button onClick={()=>responderGrupo(grupo,"ok")} style={{padding:"8px 14px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{t.fwd_confirm}</button>
             </>:<button onClick={()=>{setFwdAccion({id:r.id,tipo:"ok"});setFwdTexto("");}} style={{padding:"8px 16px",fontSize:12.5,fontWeight:800,borderRadius:9,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>✓ {t.fwd_sent}</button>}
           </div>

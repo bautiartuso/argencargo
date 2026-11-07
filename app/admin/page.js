@@ -11170,6 +11170,8 @@ const trkCoincideA=(a,b)=>{a=normTrkA(a);b=normTrkA(b);if(!a||!b)return false;if
 function ReenviosPanel({token,signups=[],onChanged}){
   const [lista,setLista]=useState(null);const [busca,setBusca]=useState("");const [verCancelados,setVerCancelados]=useState(false);
   const [abiertos,setAbiertos]=useState(()=>new Set());const [bultos,setBultos]=useState({}); // detalle desplegado por fila → sus bultos
+  const [etiqueta,setEtiqueta]=useState(null); // foto de la etiqueta del envío ampliada (07/11/2026)
+  useEffect(()=>{if(!etiqueta)return;const k=(e)=>{if(e.key==="Escape")setEtiqueta(null);};window.addEventListener("keydown",k);return()=>window.removeEventListener("keydown",k);},[etiqueta]);
   const cargar=async()=>{const r=await dq("forward_requests",{token,filters:"?select=*,clients(client_code,first_name,last_name,company_name)&order=created_at.desc&limit=500"}).catch(()=>[]);setLista(Array.isArray(r)?r:[]);};
   useEffect(()=>{cargar();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const agente=(id)=>{const a=signups.find(x=>x.auth_user_id===id);return a?`${a.first_name||""} ${a.last_name||""}`.trim()||a.email||"Agente":"Agente";};
@@ -11233,6 +11235,7 @@ function ReenviosPanel({token,signups=[],onChanged}){
         <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{agente(r0.agent_id)} · pedido {fecha(r0.created_at)} · enviado {fecha(r0.resolved_at)}{costo>0?<> · costo <b style={{color:"#fff"}}>{usdFmt(costo)}</b> descontado de su cuenta corriente</>:null}{sinCosto&&<span style={{color:"#fbbf24"}}> · sin costo cargado</span>}</p>
       </div>
       {r0.tracking_envio?<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{...mono,fontSize:12.5,fontWeight:700,color:"#fff",padding:"5px 10px",borderRadius:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>{r0.tracking_envio}</span><button onClick={e=>{e.stopPropagation();copiar(r0.tracking_envio);}} style={btn}>Copiar</button></div>:<span style={{fontSize:11.5,color:"#fbbf24",fontWeight:700}}>sin tracking</span>}
+      {(()=>{const u=rs.map(r=>r.etiqueta_url).find(Boolean);return u?<img src={u} alt="Etiqueta del envío" title="Etiqueta del envío" loading="lazy" onClick={e=>{e.stopPropagation();setEtiqueta(u);}} style={{width:44,height:44,objectFit:"cover",borderRadius:9,border:"1.5px solid rgba(96,165,250,0.5)",cursor:"zoom-in",flexShrink:0,background:"#000"}}/>:<span style={{fontSize:11.5,color:"rgba(255,255,255,0.35)",fontWeight:700}}>sin etiqueta</span>;})()}
       {abiertos.has(g.clave)&&detalle(g.clave,rs)}
     </div>;}))}
     {cancelados.length>0&&<div style={{marginBottom:14}}>
@@ -11241,6 +11244,10 @@ function ReenviosPanel({token,signups=[],onChanged}){
     </div>}
     {todos.length>0&&pedidos.length===0&&grupos.length===0&&cancelados.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Nada coincide con la búsqueda.</p>}
     {todos.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Todavía no hay reenvíos.</p>}
+    {etiqueta&&<div onClick={()=>setEtiqueta(null)} style={{position:"fixed",inset:0,zIndex:1300,background:"rgba(2,6,16,0.88)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,cursor:"zoom-out"}}>
+      <img src={etiqueta} alt="Etiqueta del envío" style={{maxWidth:"min(96vw,1100px)",maxHeight:"92vh",borderRadius:14,boxShadow:"0 30px 80px rgba(0,0,0,0.7)",background:"#000"}}/>
+      <a href={etiqueta} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{position:"fixed",bottom:22,right:22,padding:"9px 14px",borderRadius:10,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",color:"#fff",fontSize:12.5,fontWeight:800,textDecoration:"none"}}>Abrir original ↗</a>
+    </div>}
   </div>;
 }
 
