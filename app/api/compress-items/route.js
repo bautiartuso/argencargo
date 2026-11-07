@@ -25,7 +25,10 @@ QUÉ MERGEAR (variantes obvias):
 - Mismo producto + variante de color: "Camiseta roja", "Camiseta azul", "Camiseta negra" → "Cotton T-shirts (assorted colors)"
 - Mismo producto + variante de talle: "Zapatilla 38", "Zapatilla 39" → "Sport sneakers (assorted sizes)"
 - Mismo producto + variante de material similar: "Funda silicona iPhone 13", "Funda silicona iPhone 14" → "Silicone phone cases"
-- Items con MISMO HS code Y descripción muy similar (>70% de palabras en común)
+- Items de la MISMA PARTIDA (4 primeros dígitos del HS) y descripción muy similar. La subpartida
+  (dígitos 5 a 8) suele cambiar solo por el material (6204.42 algodón, 6204.43 sintético, 6204.44
+  artificial, 6204.49 otros): eso NO impide juntar. "Lace dress 6204.49" y "Pleated dress 6204.43" son
+  los mismos vestidos de mujer 6204. Para el grupo usá el hs_code del item con más cantidad.
 
 QUÉ NO MERGEAR — JAMÁS:
 - HS code de partidas distintas (primeros 4 dígitos diferentes). El código lo verifica y separa.
@@ -67,6 +70,9 @@ MODO EXIGIDO — EL ADMIN LO PIDIÓ EXPLÍCITAMENTE:
   todos los vestidos de mujer → "Women's dresses, assorted styles"; todos los shorts → "Women's shorts, assorted styles";
   todas las fundas → "Phone cases, assorted models".
 - Lo único que sigue prohibido es mezclar partidas HS de 4 dígitos distintas (el código las separa igual).
+  Los códigos que solo difieren después del 4.º dígito son LA MISMA partida y SÍ se juntan:
+  6204.42 / 6204.43 / 6204.44 / 6204.49 = un solo grupo "Women's dresses, assorted styles" con el hs_code
+  del item de mayor cantidad. Nunca devuelvas dos grupos con la misma descripción y la misma partida.
   Si para llegar al objetivo tenés que elegir, juntá primero lo que comparte partida.
 - La descripción sigue siendo de la familia, específica y en inglés: nunca "various items" ni listas de cosas sueltas.
 - Si aun juntando por familia dentro de cada partida no llegás, devolvé lo mínimo posible.`;
@@ -180,19 +186,23 @@ export async function POST(req) {
     }
     // GUARDIA (26/10/2026): un grupo que mezcla partidas distintas (4 primeros dígitos del HS)
     // se parte por partida. La IA ya no lo hace, pero una factura forzada retiene el vuelo.
-    const split = [];
-    for (const g of groups) {
+    const partirPorPartida = (gs) => {
+      const out = [];
+    for (const g of gs) {
       const porPartida = {};
       for (const i of g.source_indices) { const k = String(items[i].hs_code || "").replace(/[^0-9]/g, "").slice(0, 4) || "sin"; (porPartida[k] = porPartida[k] || []).push(i); }
       const ks = Object.keys(porPartida);
-      if (ks.length <= 1) { split.push(g); continue; }
+      if (ks.length <= 1) { out.push(g); continue; }
       for (const k of ks) {
         const idx = porPartida[k]; const gi = idx.map(i => items[i]);
         const q = gi.reduce((s, it) => s + Number(it.quantity || 0), 0);
         const amt = gi.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
-        split.push({ description: idx.length === 1 ? (gi[0].description || g.description) : g.description, quantity: q, unit_price_usd: q > 0 ? Number((amt / q).toFixed(4)) : 0, hs_code: gi[0].hs_code || null, source_indices: idx });
+        out.push({ description: idx.length === 1 ? (gi[0].description || g.description) : g.description, quantity: q, unit_price_usd: q > 0 ? Number((amt / q).toFixed(4)) : 0, hs_code: gi[0].hs_code || null, source_indices: idx });
       }
     }
+      return out;
+    };
+    const split = partirPorPartida(groups);
     const partidasSeparadas = split.length - groups.length;
     groups.length = 0; groups.push(...split);
     // RESCATE: items que la IA dejó afuera → los agregamos como grupos singleton
@@ -213,6 +223,41 @@ export async function POST(req) {
       rescued.push(i);
     }
 
+    // SEGUNDA PASADA EXIGIDA (07/11/2026): si la IA se quedó corta aun en modo exigido (AC-0373: cuatro
+    // grupos "Women's dresses" separados por subpartida), se le vuelven a dar los grupos y tiene que
+    // juntar por partida hasta el objetivo. Los índices del resultado apuntan a grupos, no a items.
+    let segundaPasada = false;
+    if (forzar && groups.length > maxItems) {
+      const lista2 = groups.map((g, i) => `[${i}] desc="${g.description}" qty=${g.quantity} hs=${g.hs_code || "—"} partida=${String(g.hs_code || "").replace(/\D/g, "").slice(0, 4) || "?"}`).join("\n");
+      const msg2 = `SEGUNDA PASADA EXIGIDA. Estos ${groups.length} grupos tienen que quedar en como máximo ${maxItems}. Juntá en UN solo grupo todo lo que comparte partida (4 dígitos) y es la misma familia de prenda o producto, con nombre de familia en inglés (ej. "Women's dresses, assorted styles", "Women's knit shorts and skirts", "Women's two-piece sets") y el hs_code del grupo con más cantidad. Si juntando así quedan menos de ${maxItems}, podés dejar separadas familias claramente distintas dentro de una partida mientras no pases de ${maxItems}. Cada índice en exactamente un grupo.\n\n${lista2}`;
+      let t2 = null;
+      try { t2 = await callClaudeText({ model: HAIKU_MODEL, system, user: msg2, max_tokens: 3000, json_schema: JSON_SCHEMA }); }
+      catch { try { t2 = await callClaudeText({ model: HAIKU_MODEL, system, user: msg2, max_tokens: 3000 }); } catch {} }
+      let p2 = null;
+      try { const c2 = String(t2 || "").replace(/```json\s*|\s*```/g, "").trim(); try { p2 = JSON.parse(c2); } catch { const a = c2.indexOf("{"), b = c2.lastIndexOf("}"); p2 = JSON.parse(c2.slice(a, b + 1)); } } catch {}
+      const raw2 = Array.isArray(p2?.groups) ? p2.groups : [];
+      const usados = new Set(); const nuevos = [];
+      for (const g2 of raw2) {
+        if (!g2 || typeof g2.description !== "string" || !Array.isArray(g2.source_indices)) continue;
+        const idx = g2.source_indices.filter((x) => Number.isInteger(x) && x >= 0 && x < groups.length && !usados.has(x));
+        if (!idx.length) continue;
+        idx.forEach((x) => usados.add(x));
+        const src = idx.flatMap((x) => groups[x].source_indices);
+        const gi = src.map((i) => items[i]);
+        const q = gi.reduce((a, it) => a + Number(it.quantity || 0), 0);
+        const amt = gi.reduce((a, it) => a + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
+        const mayor = idx.map((x) => groups[x]).sort((a, b) => b.quantity - a.quantity)[0];
+        const hsRaw2 = typeof g2.hs_code === "string" ? g2.hs_code.trim() : "";
+        nuevos.push({ description: g2.description.trim() || mayor.description, quantity: q, unit_price_usd: q > 0 ? Number((amt / q).toFixed(4)) : 0, hs_code: /^\d{4}(\.?\d{2}){0,2}$/.test(hsRaw2) ? hsRaw2 : (mayor.hs_code || null), source_indices: src });
+      }
+      for (let x = 0; x < groups.length; x++) if (!usados.has(x)) nuevos.push(groups[x]);
+      if (nuevos.length && nuevos.length < groups.length) {
+        const s2 = partirPorPartida(nuevos);
+        groups.length = 0; groups.push(...s2);
+        segundaPasada = true;
+      }
+    }
+
     // Nota: NO rechazamos si groups.length > maxItems — el prompt conservador puede dejar
     // más grupos que el ideal cuando los items son muy heterogéneos. Lo marcamos en warnings.
 
@@ -231,7 +276,7 @@ export async function POST(req) {
       ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (probable redondeo)`] : []),
       ...(partidasSeparadas > 0 ? [`Separé ${partidasSeparadas} grupo${partidasSeparadas > 1 ? "s" : ""} que mezclaban partidas distintas (HS de 4 dígitos).`] : []),
       ...(groups.length > maxItems ? [forzar
-        ? `Ni exigiendo bajó de ${groups.length} grupos (objetivo ${maxItems}): lo que queda son partidas HS distintas, que no se mezclan. El exceso se le cobra al cliente (USD 5 por ítem de más de 8).`
+        ? `Ni exigiendo (${segundaPasada ? "dos pasadas" : "una pasada"}) bajó de ${groups.length} grupos (objetivo ${maxItems}): lo que queda son partidas HS distintas, que no se mezclan. El exceso se le cobra al cliente (USD 5 por ítem de más de 8).`
         : `Quedaron ${groups.length} grupos (objetivo ${maxItems}): no se pudo bajar más sin forzar. El exceso se le cobra al cliente (USD 5 por ítem de más de 8). Si querés que junte productos distintos de la misma familia, tocá Exigir.`] : []),
     ];
 
@@ -247,6 +292,7 @@ export async function POST(req) {
       warnings,
       can_apply: criticalErrors.length === 0,
       forzado: !!forzar,
+      segunda_pasada: segundaPasada,
     });
   } catch (e) {
     console.error("compress-items error:", e);
