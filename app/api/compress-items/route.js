@@ -57,13 +57,28 @@ FORMATO:
   ]
 }`;
 
+// Modo exigido (07/11/2026, Bautista): el admin decide forzar la compresión hasta el objetivo. Se agrega
+// al prompt conservador, que sigue siendo el modo por defecto.
+const FORZAR_ADDENDUM = `
+
+MODO EXIGIDO — EL ADMIN LO PIDIÓ EXPLÍCITAMENTE:
+- Esta vez SÍ tenés que devolver como máximo maxItems grupos. No pares en "variantes obvias".
+- Agrupá por FAMILIA de producto aunque cambien estilo, modelo, color, talle o material:
+  todos los vestidos de mujer → "Women's dresses, assorted styles"; todos los shorts → "Women's shorts, assorted styles";
+  todas las fundas → "Phone cases, assorted models".
+- Lo único que sigue prohibido es mezclar partidas HS de 4 dígitos distintas (el código las separa igual).
+  Si para llegar al objetivo tenés que elegir, juntá primero lo que comparte partida.
+- La descripción sigue siendo de la familia, específica y en inglés: nunca "various items" ni listas de cosas sueltas.
+- Si aun juntando por familia dentro de cada partida no llegás, devolvé lo mínimo posible.`;
+
 export async function POST(req) {
   // 28/10/2026: gasta IA; antes estaba abierta a cualquiera.
   if (!(await quienLlama(req))) return Response.json({ ok: false, error: "no_auth" }, { status: 401 });
   const frenado = limitar(req, { clave: "compress", limite: 20, ventanaMs: 60_000 });
   if (frenado) return frenado;
   try {
-    const { items, maxItems = 8 } = await req.json();
+    const { items, maxItems = 8, forzar = false } = await req.json();
+    const system = forzar ? SYSTEM_PROMPT + FORZAR_ADDENDUM : SYSTEM_PROMPT;
     if (!Array.isArray(items) || items.length === 0) {
       return Response.json({ ok: false, error: "missing items" }, { status: 400 });
     }
@@ -76,7 +91,7 @@ export async function POST(req) {
 
     const itemsList = items.map((it, i) => `[${i}] desc="${it.description}" qty=${it.quantity} price=${it.unit_price_usd} hs=${it.hs_code || "—"}`).join("\n");
     const totalFob = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
-    const userMsg = `Comprimí estos ${items.length} items: objetivo ${maxItems} grupos; si no se puede sin mezclar productos distintos, lo más cerca posible. Total FOB original: USD ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (debe coincidir con la suma del output).\n\n${itemsList}`;
+    const userMsg = `Comprimí estos ${items.length} items: ${forzar ? `OBJETIVO EXIGIDO: como máximo ${maxItems} grupos, agrupando por familia de producto dentro de cada partida HS.` : `objetivo ${maxItems} grupos; si no se puede sin mezclar productos distintos, lo más cerca posible.`} Total FOB original: USD ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (debe coincidir con la suma del output).\n\n${itemsList}`;
 
     const JSON_SCHEMA = {
       type: "object",
@@ -105,14 +120,14 @@ export async function POST(req) {
     let text;
     try {
       text = await callClaudeText({ model: HAIKU_MODEL,
-        system: SYSTEM_PROMPT,
+        system,
         user: userMsg,
         max_tokens: 4000,
         json_schema: JSON_SCHEMA,
       });
     } catch (e) {
       // Si el fallback a OpenAI entra en juego, json_schema no aplica ahí — reintentamos una vez sin schema.
-      text = await callClaudeText({ model: HAIKU_MODEL, system: SYSTEM_PROMPT, user: userMsg, max_tokens: 4000 });
+      text = await callClaudeText({ model: HAIKU_MODEL, system, user: userMsg, max_tokens: 4000 });
     }
 
     // Si la IA rodeó el JSON con texto, se toma el bloque {...} (29/10/2026: "invalid JSON from model").
@@ -215,7 +230,9 @@ export async function POST(req) {
       ...(aiDuplicates.length > 0 ? [`La IA duplicó ${aiDuplicates.length} índices (los descarté de la 2da ocurrencia).`] : []),
       ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (probable redondeo)`] : []),
       ...(partidasSeparadas > 0 ? [`Separé ${partidasSeparadas} grupo${partidasSeparadas > 1 ? "s" : ""} que mezclaban partidas distintas (HS de 4 dígitos).`] : []),
-      ...(groups.length > maxItems ? [`Quedaron ${groups.length} grupos (objetivo ${maxItems}): no se pudo bajar más sin forzar. El exceso se le cobra al cliente (USD 5 por ítem de más de 8); no fuerces la compresión.`] : []),
+      ...(groups.length > maxItems ? [forzar
+        ? `Ni exigiendo bajó de ${groups.length} grupos (objetivo ${maxItems}): lo que queda son partidas HS distintas, que no se mezclan. El exceso se le cobra al cliente (USD 5 por ítem de más de 8).`
+        : `Quedaron ${groups.length} grupos (objetivo ${maxItems}): no se pudo bajar más sin forzar. El exceso se le cobra al cliente (USD 5 por ítem de más de 8). Si querés que junte productos distintos de la misma familia, tocá Exigir.`] : []),
     ];
 
     return Response.json({
@@ -229,6 +246,7 @@ export async function POST(req) {
       critical_errors: criticalErrors,
       warnings,
       can_apply: criticalErrors.length === 0,
+      forzado: !!forzar,
     });
   } catch (e) {
     console.error("compress-items error:", e);

@@ -9923,15 +9923,15 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   // compresión por op no encuentra duplicados, pero entre ops sí. Solo reescribe
   // flight_invoice_items (la declaración a Aduana). Cada op del cliente queda
   // intacta — el admin después va y clasifica los productos manualmente.
-  const openCompressForFlight=async(target)=>{
+  const openCompressForFlight=async(target,opts={})=>{
     const allItems=[...items];
     if(allItems.length===0)return;
     const targetMax=Math.max(1,Math.min(target||MAX_INVOICE_ITEMS,MAX_INVOICE_ITEMS));
-    setCompressState({scope:"flight",opCode:`${flight.flight_code} (vuelo entero)`,target:targetMax,maxTarget:MAX_INVOICE_ITEMS,original:allItems,proposed:null,loading:true,error:null,applying:false});
+    setCompressState({scope:"flight",opCode:`${flight.flight_code} (vuelo entero)`,target:targetMax,maxTarget:MAX_INVOICE_ITEMS,original:allItems,proposed:null,loading:true,error:null,applying:false,forzar:!!opts.forzar});
     try{
       const r=await fetch("/api/compress-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         items:allItems.map(it=>({description:it.description,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||null})),
-        maxItems:targetMax,
+        maxItems:targetMax,forzar:!!opts.forzar,
       })});
       const d=await r.json();
       if(!d.ok){setCompressState(s=>({...s,loading:false,error:d.error||"Error desconocido"}));return;}
@@ -9941,7 +9941,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   // target = a cuántos ítems comprimir esta op (lo que el admin elige, puede ser < techo RG).
   // maxTarget = techo permitido por RG 5608 para esta op (8 − ítems de otras ops). El admin
   // arranca en el techo y puede bajar de ahí; nunca subir por encima (violaría el límite legal).
-  const openCompressFor=async(opId,target,maxTarget)=>{
+  const openCompressFor=async(opId,target,maxTarget,opts={})=>{
     const opItems=itemsByOp[opId]||[];
     const op=opsUnique.find(o=>o.id===opId);
     const ceiling=Math.max(1,maxTarget||target||MAX_INVOICE_ITEMS);
@@ -9951,11 +9951,11 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     const origRaw=await dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=id,description,quantity,unit_price_usd,ncm_code`});
     const origItems=Array.isArray(origRaw)?origRaw:[];
     const origMap={};origItems.forEach(o=>{origMap[o.id]=o;});
-    setCompressState({opId,opCode:op?.operation_code||"?",target:targetMax,maxTarget:ceiling,original:opItems,origItems,origMap,proposed:null,loading:true,error:null,applying:false});
+    setCompressState({opId,opCode:op?.operation_code||"?",target:targetMax,maxTarget:ceiling,original:opItems,origItems,origMap,proposed:null,loading:true,error:null,applying:false,forzar:!!opts.forzar});
     try{
       const r=await fetch("/api/compress-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         items:opItems.map(it=>({description:it.description,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||null})),
-        maxItems:targetMax,
+        maxItems:targetMax,forzar:!!opts.forzar,
       })});
       const d=await r.json();
       if(!d.ok){setCompressState(s=>({...s,loading:false,error:d.error||"Error desconocido"}));return;}
@@ -10936,64 +10936,86 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </div>
       </>}
     </FeCard>}
-    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const isFlightScope=compressState.scope==="flight";const targetMax=target||MAX_INVOICE_ITEMS;const ceiling=Math.max(1,compressState.maxTarget||targetMax);const busy=loading||applying;const reopen=(t)=>isFlightScope?openCompressForFlight(t):openCompressFor(compressState.opId,t,ceiling);const stepBtn=(disabled)=>({width:28,height:28,borderRadius:7,border:`1px solid ${disabled?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.4)"}`,background:disabled?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.12)",color:disabled?"rgba(255,255,255,0.25)":"#fb923c",fontSize:16,fontWeight:800,cursor:disabled?"not-allowed":"pointer",lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,146,60,0.35)",borderRadius:14,padding:"20px 22px",maxWidth:920,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
-          <div>
-            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🗜 Comprimir items de {opCode}</h3>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>{isFlightScope?<>De {original.length} items → objetivo {targetMax} para el <strong>vuelo entero</strong>. La IA agrupa repeticiones <strong>cross-ops</strong> (mismo producto en varias ops del cliente). <strong>No toca</strong> los items en las ops del cliente — quedan como están y los clasificás manualmente después.</>:<>De {original.length} items → objetivo {targetMax} para esta op (factura tiene {totalInvoiceItems} items, límite RG 5608: {MAX_INVOICE_ITEMS}). La IA agrupa variantes (color, talle, etc.) — conservador, no fuerza si los productos son distintos.</>}</p>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
-              <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Comprimir a</span>
-              <button disabled={busy||targetMax<=1} onClick={()=>reopen(targetMax-1)} style={stepBtn(busy||targetMax<=1)}>−</button>
-              <span style={{fontSize:15,fontWeight:800,color:"#fb923c",minWidth:22,textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{targetMax}</span>
-              <button disabled={busy||targetMax>=ceiling} onClick={()=>reopen(targetMax+1)} style={stepBtn(busy||targetMax>=ceiling)}>+</button>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>ítem{targetMax>1?"s":""} · {isFlightScope?`techo RG ${ceiling}`:`podés bajar de ${ceiling} (techo RG) si querés menos líneas`}</span>
+    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const isFlightScope=compressState.scope==="flight";const targetMax=target||MAX_INVOICE_ITEMS;const ceiling=Math.max(1,compressState.maxTarget||targetMax);const busy=loading||applying;const forzado=!!compressState.forzar;
+      // Modo exigido (07/11/2026): "Exigir N" vuelve a pedir la compresión obligando a la IA a llegar al objetivo. Por defecto sigue el conservador.
+      const reopen=(t,f=forzado)=>isFlightScope?openCompressForFlight(t,{forzar:f}):openCompressFor(compressState.opId,t,ceiling,{forzar:f});
+      const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const step=(dis)=>({width:32,height:32,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:dis?"rgba(255,255,255,0.03)":"rgba(255,255,255,0.08)",color:dis?"rgba(255,255,255,0.25)":"#fff",fontSize:17,fontWeight:800,cursor:dis?"not-allowed":"pointer",lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit"});
+      const btn=(txt,fn,o={})=><button type="button" onClick={fn} disabled={o.dis} title={o.title} style={{height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:11,border:`1px solid ${o.bd||"rgba(255,255,255,0.14)"}`,background:o.bg||"transparent",color:o.c||"rgba(255,255,255,0.75)",cursor:o.dis?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",opacity:o.dis?0.5:1}}>{txt}</button>;
+      const chip=(t,mono)=><span style={{fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.75)",fontFamily:mono?"'JetBrains Mono',monospace":"inherit"}}>{t}</span>;
+      const sobran=!!proposed&&proposed.groups.length>targetMax;
+      const cabecera=(txt,n,total,c)=><div style={{padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:c}}>{txt} · {n}</span><span style={{fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{usd(total)}</span></div>;
+      return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(2,6,16,0.72)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#132035,#0D172A)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,maxWidth:980,width:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 30px 80px rgba(0,0,0,0.65)",overflow:"hidden"}}>
+        <div style={{padding:"18px 22px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",gap:14,alignItems:"flex-start"}}>
+          <span style={{width:42,height:42,borderRadius:13,background:"rgba(251,146,60,0.14)",border:"1px solid rgba(251,146,60,0.35)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🗜</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <h3 style={{fontSize:17,fontWeight:900,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>Comprimir items · {opCode}</h3>
+              {forzado&&<span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,191,36,0.14)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.45)"}}>⚡ Modo exigido</span>}
             </div>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0",lineHeight:1.45}}>{isFlightScope?<>Vuelo entero: la IA agrupa repeticiones entre las ops del cliente y no toca los items de cada op.</>:<>{original.length} items en la factura · tope RG 5608: {ceiling}. {forzado?"Exigido: la IA tiene que llegar al objetivo aunque junte productos distintos de la misma familia (nunca partidas HS distintas).":"Conservador: solo junta variantes de color, talle o modelo y no fuerza si los productos son distintos."}</>}</p>
           </div>
-          <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:applying?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+          <button type="button" onClick={()=>!applying&&setCompressState(null)} disabled={applying} aria-label="Cerrar" style={{width:32,height:32,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",fontSize:16,cursor:applying?"not-allowed":"pointer",lineHeight:1,fontFamily:"inherit"}}>✕</button>
         </div>
-        {loading&&<p style={{padding:"30px",textAlign:"center",fontSize:13,color:"#a78bfa"}}>⏳ La IA está agrupando los {original.length} items…</p>}
-        {error&&<div style={{padding:"12px 14px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,marginBottom:12}}>
-          <p style={{fontSize:12,color:"#ff6b6b",margin:0,fontWeight:700}}>❌ {error}</p>
-          <button onClick={()=>reopen(targetMax)} style={{marginTop:8,fontSize:11,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer"}}>🔄 Reintentar</button>
-        </div>}
-        {proposed&&<>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-            <div>
-              <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase"}}>📋 Original ({proposed.original_count}) · USD {proposed.original_fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-              <div style={{maxHeight:340,overflowY:"auto",background:"rgba(0,0,0,0.2)",borderRadius:6,padding:"6px 8px"}}>
-                {original.map((it,i)=><div key={it.id} style={{padding:"4px 0",fontSize:11,color:"rgba(255,255,255,0.7)",borderBottom:i<original.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}>
-                  <span style={{color:"rgba(255,255,255,0.4)",marginRight:6}}>[{i}]</span>{it.description} · {it.quantity}u × USD {Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{it.hs_code?` · ${it.hs_code}`:""}
-                </div>)}
+        <div style={{padding:"12px 22px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.07)",background:"rgba(255,255,255,0.02)"}}>
+          <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>Objetivo</span>
+          <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:4,borderRadius:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)"}}>
+            <button type="button" disabled={busy||targetMax<=1} onClick={()=>reopen(targetMax-1)} style={step(busy||targetMax<=1)}>−</button>
+            <span style={{fontSize:20,fontWeight:900,color:"#fb923c",minWidth:30,textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{targetMax}</span>
+            <button type="button" disabled={busy||targetMax>=ceiling} onClick={()=>reopen(targetMax+1)} style={step(busy||targetMax>=ceiling)}>+</button>
+          </span>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>ítem{targetMax>1?"s":""} · techo RG {ceiling}</span>
+          {proposed&&<span style={{marginLeft:"auto",fontSize:12.5,fontWeight:800,color:sobran?"#fbbf24":"#4ade80",fontVariantNumeric:"tabular-nums"}}>{original.length} → {proposed.compressed_count}{sobran?` · ${proposed.compressed_count-targetMax} de más`:" ✓"}</span>}
+        </div>
+        <div style={{padding:"16px 22px",overflowY:"auto",flex:1,minHeight:0}}>
+          {loading&&<div style={{padding:"44px 0",textAlign:"center"}}><p style={{fontSize:13.5,color:forzado?"#fbbf24":"#a78bfa",margin:0,fontWeight:800}}>{forzado?`⚡ La IA está agrupando, exigida a ${targetMax}…`:`⏳ La IA está agrupando los ${original.length} items…`}</p></div>}
+          {error&&<div style={{padding:"12px 14px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:12,marginBottom:12}}>
+            <p style={{fontSize:12.5,color:"#ff6b6b",margin:0,fontWeight:800}}>✕ {error}</p>
+            <div style={{marginTop:8}}>{btn("↻ Reintentar",()=>reopen(targetMax),{c:"#c4b5fd",bd:"rgba(167,139,250,0.4)",bg:"rgba(167,139,250,0.1)"})}</div>
+          </div>}
+          {proposed&&<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              <div style={{borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.2)",overflow:"hidden"}}>
+                {cabecera("Original",proposed.original_count,proposed.original_fob,"rgba(255,255,255,0.5)")}
+                <div style={{maxHeight:340,overflowY:"auto",padding:"4px 12px"}}>
+                  {original.map((it,i)=><div key={it.id||i} style={{padding:"7px 0",fontSize:11.5,color:"rgba(255,255,255,0.72)",borderBottom:i<original.length-1?"1px solid rgba(255,255,255,0.05)":"none",lineHeight:1.4}}>
+                    <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10.5,color:"rgba(255,255,255,0.35)",marginRight:7}}>{i}</span>{it.description}<span style={{color:"rgba(255,255,255,0.45)"}}> · {it.quantity}u × {usd(it.unit_price_declared_usd)}{it.hs_code?` · ${it.hs_code}`:""}</span>
+                  </div>)}
+                </div>
+              </div>
+              <div style={{borderRadius:14,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.05)",overflow:"hidden"}}>
+                {cabecera("Comprimido",proposed.compressed_count,proposed.compressed_fob,"#4ade80")}
+                <div style={{maxHeight:340,overflowY:"auto",padding:"4px 12px"}}>
+                  {proposed.groups.map((g,i)=><div key={i} style={{padding:"8px 0",borderBottom:i<proposed.groups.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
+                    <p style={{margin:0,fontSize:12.5,fontWeight:800,color:"#fff",lineHeight:1.35}}>{g.description}</p>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:5,alignItems:"center"}}>
+                      {chip(`${g.quantity}u × ${usd(g.unit_price_usd)}`)}
+                      {g.hs_code&&chip(g.hs_code,true)}
+                      <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{g.source_indices.length>1?`junta ${g.source_indices.length} · [${g.source_indices.join(", ")}]`:`solo [${g.source_indices[0]}]`}</span>
+                    </div>
+                  </div>)}
+                </div>
               </div>
             </div>
-            <div>
-              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 8px",textTransform:"uppercase"}}>✨ Comprimido ({proposed.compressed_count}) · USD {proposed.compressed_fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-              <div style={{maxHeight:340,overflowY:"auto",background:"rgba(34,197,94,0.06)",borderRadius:6,padding:"6px 8px",border:"1px solid rgba(34,197,94,0.2)"}}>
-                {proposed.groups.map((g,i)=><div key={i} style={{padding:"6px 0",fontSize:11,color:"#fff",borderBottom:i<proposed.groups.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
-                  <p style={{margin:"0 0 2px",fontWeight:700}}>{g.description}</p>
-                  <p style={{margin:0,color:"rgba(255,255,255,0.55)",fontSize:10}}>{g.quantity}u × USD {g.unit_price_usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{g.hs_code?` · ${g.hs_code}`:""} · merge de [{g.source_indices.join(",")}]</p>
-                </div>)}
-              </div>
-            </div>
-          </div>
-          {proposed.critical_errors?.length>0&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:8,marginBottom:12}}>
-            <p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 6px",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>⛔ La IA falló — no se puede aplicar</p>
-            {proposed.critical_errors.map((e,i)=><p key={i} style={{fontSize:11,color:"rgba(255,255,255,0.9)",margin:i>0?"4px 0 0":0}}>{e}</p>)}
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"6px 0 0",fontStyle:"italic"}}>Tocá <strong>Re-comprimir</strong> para que la IA intente de nuevo. Si vuelve a fallar varias veces, ajustá la lista de items a mano (eliminá variantes muy parecidas).</p>
-          </div>}
-          {proposed.warnings?.length>0&&<div style={{padding:"8px 12px",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,marginBottom:12}}>
-            {proposed.warnings.map((w,i)=><p key={i} style={{fontSize:11,color:"#fbbf24",margin:i>0?"4px 0 0":0}}>⚠ {w}</p>)}
-          </div>}
-          <div style={{padding:"10px 12px",background:isFlightScope?"rgba(167,139,250,0.08)":"rgba(251,146,60,0.06)",border:`1px solid ${isFlightScope?"rgba(167,139,250,0.3)":"rgba(251,146,60,0.25)"}`,borderRadius:6,marginBottom:12}}>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:0}}>{isFlightScope?<>Al aplicar: se reemplazan los items en la <strong>factura del vuelo</strong>. Los productos en las <strong>ops del cliente</strong> quedan como están (sin backup, sin tocar) — después tenés que entrar a cada op y clasificarlos manualmente. Cada grupo se asigna a la op del cliente que más aporta por cantidad.</>:<>Al aplicar: se reemplazan los items en la <strong>factura del vuelo</strong> Y en la <strong>operación del cliente</strong>. Los originales se guardan como backup en <code>operations.items_backup_json</code> y el cliente los ve en una sección secundaria "Detalle original".</>}</p>
-          </div>
-          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-            <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:applying?"not-allowed":"pointer"}}>Cancelar</button>
-            <button onClick={()=>reopen(targetMax)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
-            <button onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer")}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":(isFlightScope?"✓ Aplicar al vuelo":"✓ Aplicar y sincronizar"))}</button>
-          </div>
-        </>}
+            {proposed.critical_errors?.length>0&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:12,marginTop:12}}>
+              <p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 6px",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>⛔ La IA falló — no se puede aplicar</p>
+              {proposed.critical_errors.map((e,i)=><p key={i} style={{fontSize:11.5,color:"rgba(255,255,255,0.9)",margin:i>0?"4px 0 0":0}}>{e}</p>)}
+              <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>Tocá Re-comprimir para que la IA intente de nuevo.</p>
+            </div>}
+            {proposed.warnings?.length>0&&<div style={{padding:"9px 12px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:12,marginTop:12,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 320px"}}>{proposed.warnings.map((w,i)=><p key={i} style={{fontSize:11.5,color:"#fbbf24",margin:i>0?"4px 0 0":0,lineHeight:1.4}}>{w}</p>)}</div>
+              {sobran&&!forzado&&btn(`⚡ Exigir ${targetMax}`,()=>reopen(targetMax,true),{c:"#0A1628",bd:"rgba(251,191,36,0.6)",bg:"#fbbf24",dis:busy,title:"La IA tiene que llegar al objetivo aunque junte productos distintos de la misma familia"})}
+            </div>}
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"12px 0 0",lineHeight:1.45}}>{isFlightScope?<>Al aplicar se reemplazan los items de la factura del vuelo. Los productos de las ops del cliente quedan como están; cada grupo se asigna a la op que más aporta por cantidad.</>:<>Al aplicar se reemplazan los items en la factura del vuelo y en la operación del cliente. Los originales quedan como respaldo y el cliente los ve en "Detalle original".</>}</p>
+          </>}
+        </div>
+        <div style={{padding:"12px 22px",borderTop:"1px solid rgba(255,255,255,0.07)",display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap",background:"rgba(0,0,0,0.15)"}}>
+          {btn("Cancelar",()=>!applying&&setCompressState(null),{dis:applying})}
+          {btn("↻ Re-comprimir",()=>reopen(targetMax,false),{c:"#c4b5fd",bd:"rgba(167,139,250,0.4)",bg:"rgba(167,139,250,0.1)",dis:busy,title:"Conservador: solo variantes"})}
+          {btn(forzado?"⚡ Exigir de nuevo":`⚡ Exigir ${targetMax}`,()=>reopen(targetMax,true),{c:"#fbbf24",bd:"rgba(251,191,36,0.45)",bg:"rgba(251,191,36,0.1)",dis:busy,title:"La IA tiene que llegar al objetivo aunque junte productos distintos de la misma familia"})}
+          {proposed&&<button type="button" onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{height:38,padding:"0 18px",fontSize:12.5,fontWeight:900,borderRadius:11,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer"),fontFamily:"inherit",whiteSpace:"nowrap"}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":(isFlightScope?"✓ Aplicar al vuelo":"✓ Aplicar y sincronizar"))}</button>}
+        </div>
       </div>
     </div>;})()}
     {confirmCostModal&&(()=>{const {newCost,newWeight}=confirmCostModal;const oldCost=Number(flight.total_cost_usd||0);const oldWeight=Number(flight.total_weight_kg||0);const costDelta=newCost-oldCost;const weightDelta=newWeight-oldWeight;return <div onClick={()=>!savingCost&&setConfirmCostModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
