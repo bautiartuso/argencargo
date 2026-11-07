@@ -11389,38 +11389,57 @@ function ReenvioModal({token,agentId,agentName,cliente,operationId,packages,hist
     if(!fila?.id){alertDialog(String(r?.message||"").includes("forward_requests")?"Falta correr el SQL de reenvíos en Supabase (migrations/2026_10_15_reenvios.sql).":"No se pudo pedir el reenvío: "+(r?.message||"error"));return;}
     toast(`Reenvío pedido a ${agentName||"el agente"}`,"success");onSaved();
   };
-  const inp={width:"100%",padding:"10px 12px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.14)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"};
-  const lbl={display:"block",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 6px"};
-  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"30px 12px",overflowY:"auto"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"18px 20px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>{esMiami?"✈ DDP Miami · enviar a Miami":"↪ Reenviar a otro depósito en China"}</h3>
-        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
+  const [foco,setFoco]=useState("");
+  const ac=esMiami?{c:"#fbbf24",bg:"rgba(251,191,36,0.14)",bd:"rgba(251,191,36,0.4)",soft:"rgba(251,191,36,0.08)"}:{c:"#60a5fa",bg:"rgba(96,165,250,0.14)",bd:"rgba(96,165,250,0.45)",soft:"rgba(96,165,250,0.08)"};
+  const inp=(k)=>({width:"100%",padding:"11px 13px",fontSize:14,boxSizing:"border-box",border:`1px solid ${foco===k?ac.bd:"rgba(255,255,255,0.1)"}`,borderRadius:11,background:foco===k?"rgba(0,0,0,0.3)":"rgba(0,0,0,0.22)",color:"#fff",outline:"none",fontFamily:"inherit",transition:"border-color .15s, background .15s",boxShadow:foco===k?`0 0 0 3px ${ac.soft}`:"none"});
+  const foc=(k)=>({onFocus:()=>setFoco(k),onBlur:()=>setFoco("")});
+  const lbl=(t,extra)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",margin:"0 0 8px"}}><span style={{fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.09em"}}>{t}</span>{extra}</div>;
+  const seccion={padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)"};
+  const todos=sel.size===packages.length;
+  const kgSel=packages.filter(p=>sel.has(p.id)).reduce((a,p)=>a+(Number(p.gross_weight_kg)||0),0);
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(2,6,16,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:600,maxHeight:"92vh",display:"flex",flexDirection:"column",background:"linear-gradient(180deg,#132035,#0D172A)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,boxShadow:"0 30px 80px rgba(0,0,0,0.65)",overflow:"hidden"}}>
+      <div style={{padding:"18px 22px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",gap:14,alignItems:"flex-start"}}>
+        <span style={{width:42,height:42,borderRadius:13,background:ac.bg,border:`1px solid ${ac.bd}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,color:ac.c}}>{esMiami?"✈":"↪"}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <h3 style={{fontSize:17,fontWeight:900,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>{esMiami?"Enviar a Miami · DDP":"Reenviar a otro depósito"}</h3>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0",lineHeight:1.45}}>{agentName||"Agente"} lo manda{esMiami?" a Miami":" dentro de China"} · cliente <span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:800}}>{cliente?.client_code||"—"}</span></p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Cerrar" style={{width:32,height:32,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",fontSize:16,cursor:"pointer",lineHeight:1,fontFamily:"inherit"}}>✕</button>
       </div>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}>{agentName||"Agente"} · <span style={{fontFamily:"monospace",color:GOLD_LIGHT,fontWeight:700}}>{cliente?.client_code||"—"}</span></p>
-      <p style={lbl}>Bultos</p>
-      <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:14,maxHeight:220,overflowY:"auto"}}>
-        {packages.map(p=>{const on=sel.has(p.id);const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"";return <button key={p.id} type="button" onClick={()=>toggle(p.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,border:`1.5px solid ${on?"rgba(96,165,250,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(96,165,250,0.1)":"transparent",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
-          <span style={{width:18,height:18,borderRadius:5,border:`2px solid ${on?"#60a5fa":"rgba(255,255,255,0.3)"}`,background:on?"#60a5fa":"transparent",color:"#0A1628",fontSize:12,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{on?"✓":""}</span>
-          <span style={{flex:1,minWidth:0,fontFamily:"monospace",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.package_number?`#${p.package_number} · `:""}{String(p.national_tracking||"sin tracking").split(/[\s,;|]+/)[0]}</span>
-          <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>{dim}{Number(p.gross_weight_kg)>0?` · ${Number(p.gross_weight_kg).toLocaleString("es-AR")} kg`:""}{Number(p.quantity)>1?` ×${p.quantity}`:""}</span>
-        </button>;})}
+      <div style={{padding:"16px 22px",overflowY:"auto",flex:1,minHeight:0,display:"flex",flexDirection:"column",gap:12}}>
+        <div style={seccion}>
+          {lbl(`Bultos · ${sel.size} de ${packages.length}`,<span style={{display:"flex",gap:10,alignItems:"baseline"}}>{kgSel>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{kgSel.toLocaleString("es-AR",{maximumFractionDigits:2})} kg</span>}{packages.length>1&&<button type="button" onClick={()=>setSel(todos?new Set():new Set(packages.map(p=>p.id)))} style={{background:"transparent",border:"none",padding:0,fontSize:11.5,fontWeight:800,color:ac.c,cursor:"pointer",fontFamily:"inherit"}}>{todos?"Ninguno":"Todos"}</button>}</span>)}
+          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto"}}>
+            {packages.map(p=>{const on=sel.has(p.id);const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"";return <button key={p.id} type="button" onClick={()=>toggle(p.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:11,border:`1px solid ${on?ac.bd:"rgba(255,255,255,0.08)"}`,background:on?ac.soft:"rgba(0,0,0,0.18)",color:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all .12s"}}>
+              <span style={{width:20,height:20,borderRadius:6,border:`2px solid ${on?ac.c:"rgba(255,255,255,0.25)"}`,background:on?ac.c:"transparent",color:"#0A1628",fontSize:12,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{on?"✓":""}</span>
+              <span style={{flex:1,minWidth:0,display:"flex",alignItems:"baseline",gap:8,overflow:"hidden"}}>
+                {p.package_number&&<span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.4)",flexShrink:0}}>#{p.package_number}</span>}
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:on?"#fff":"rgba(255,255,255,0.75)"}}>{String(p.national_tracking||"sin tracking").split(/[\s,;|]+/)[0]}</span>
+              </span>
+              <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{dim}{Number(p.gross_weight_kg)>0?`${dim?" · ":""}${Number(p.gross_weight_kg).toLocaleString("es-AR")} kg`:""}{Number(p.quantity)>1?` ×${p.quantity}`:""}</span>
+            </button>;})}
+          </div>
+        </div>
+        <div style={seccion}>
+          {lbl(esMiami?"Destino en Miami":"Depósito destino")}
+          {destinos.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {destinos.slice(0,8).map(d=>{const on=destino===d.destino_nombre;return <button key={d.id} type="button" onClick={()=>{setDestino(d.destino_nombre);setDatos(d.destino_datos||"");
+              // El mark de ese depósito se reusa; si llevaba el código del cliente anterior, va el de este cliente.
+              const viejo=d.clients?.client_code;let mk=String(d.shipping_mark||"");if(viejo&&cliente?.client_code&&mk.includes(viejo))mk=mk.split(viejo).join(cliente.client_code);if(mk)setMark(mk);}} style={{padding:"6px 12px",fontSize:12,fontWeight:700,borderRadius:99,border:`1px solid ${on?ac.bd:"rgba(255,255,255,0.12)"}`,background:on?ac.bg:"rgba(255,255,255,0.03)",color:on?ac.c:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit",transition:"all .12s"}}>{on?"✓ ":""}{d.destino_nombre}</button>;})}
+          </div>}
+          <input value={destino} onChange={e=>setDestino(e.target.value)} {...foc("destino")} placeholder={esMiami?"Nombre del destino (ej: DDP Miami)":"Nombre del depósito (ej: Luna · Depo 1)"} style={{...inp("destino"),fontWeight:700,marginBottom:8}}/>
+          <textarea value={datos} onChange={e=>setDatos(e.target.value)} {...foc("datos")} rows={Math.min(6,Math.max(3,String(datos).split("\n").length))} placeholder={esMiami?"Dirección, contacto y teléfono en Miami":"Dirección, contacto y teléfono del depósito"} style={{...inp("datos"),resize:"none",lineHeight:1.5,fontSize:13}}/>
+        </div>
+        <div style={seccion}>
+          {lbl("Shipping mark",<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>lo que escribe en la caja</span>)}
+          <input value={mark} onChange={e=>setMark(e.target.value)} {...foc("mark")} placeholder="1607 BAUART" style={{...inp("mark"),fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:18,letterSpacing:"0.04em",color:GOLD_LIGHT,marginBottom:10}}/>
+          <input value={nota} onChange={e=>setNota(e.target.value)} {...foc("nota")} placeholder="Nota para el agente · ej: mandar por camión, no por courier" style={{...inp("nota"),fontSize:13}}/>
+        </div>
       </div>
-      <p style={lbl}>{esMiami?"Destino en Miami":"Depósito destino"}</p>
-      {destinos.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-        {destinos.slice(0,8).map(d=><button key={d.id} type="button" onClick={()=>{setDestino(d.destino_nombre);setDatos(d.destino_datos||"");
-          // El mark de ese depósito se reusa; si llevaba el código del cliente anterior, va el de este cliente.
-          const viejo=d.clients?.client_code;let mk=String(d.shipping_mark||"");if(viejo&&cliente?.client_code&&mk.includes(viejo))mk=mk.split(viejo).join(cliente.client_code);if(mk)setMark(mk);}} style={{padding:"6px 11px",fontSize:12,fontWeight:700,borderRadius:99,border:`1px solid ${destino===d.destino_nombre?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.14)"}`,background:destino===d.destino_nombre?"rgba(96,165,250,0.14)":"transparent",color:destino===d.destino_nombre?"#93c5fd":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"}}>{d.destino_nombre}</button>)}
-      </div>}
-      <input value={destino} onChange={e=>setDestino(e.target.value)} placeholder={esMiami?"Nombre del destino (ej: DDP Miami)":"Nombre del depósito (ej: Luna · Depo 1)"} style={{...inp,marginBottom:8}}/>
-      <textarea value={datos} onChange={e=>setDatos(e.target.value)} rows={3} placeholder={esMiami?"Dirección, contacto y teléfono en Miami":"Dirección, contacto y teléfono del depósito"} style={{...inp,resize:"vertical",marginBottom:14}}/>
-      <p style={lbl}>Shipping mark</p>
-      <input value={mark} onChange={e=>setMark(e.target.value)} placeholder="Lo que tiene que escribir en la caja" style={{...inp,fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:16,marginBottom:14}}/>
-      <p style={lbl}>Nota para el agente (opcional)</p>
-      <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: mandar por camión, no por courier" style={{...inp,marginBottom:16}}/>
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+      <div style={{padding:"12px 22px 16px",borderTop:"1px solid rgba(255,255,255,0.07)",display:"flex",gap:8,justifyContent:"flex-end",alignItems:"center",background:"rgba(255,255,255,0.02)"}}>
         <Btn variant="secondary" small onClick={onClose}>Cancelar</Btn>
-        <Btn small onClick={guardar} disabled={g}>{g?"Pidiendo…":`${esMiami?"Pedir envío a Miami":"Pedir reenvío"} (${sel.size} bulto${sel.size!==1?"s":""})`}</Btn>
+        <Btn small onClick={guardar} disabled={g||!sel.size}>{g?"Pidiendo…":`${esMiami?"Pedir envío a Miami":"Pedir reenvío"} · ${sel.size} bulto${sel.size!==1?"s":""}`}</Btn>
       </div>
     </div>
   </div>;
