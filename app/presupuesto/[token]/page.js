@@ -121,17 +121,34 @@ const CSS = `
 .pz-landbox{margin-top:13px;padding-top:11px;border-top:1px dashed #eae4d6}
 .pz-landbox>p.t{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(26,26,26,.55);margin:0 0 7px}
 .pz-landbox>p.t>small{font-weight:600;letter-spacing:.04em;color:rgba(26,26,26,.42)}
-.pz-landhd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px}
-.pz-landhd>p.t{margin:0}
-.pz-landver{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid rgba(26,61,110,.35);border-radius:8px;background:rgba(26,61,110,.06);color:#1A3D6E;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer}
-.pz-landver:hover{background:rgba(26,61,110,.12)}
-.pz-landver span{font-size:8px;line-height:1}
-.pz-landver:focus{outline:none}
-.pz-landver:focus-visible{outline:2px solid #1A3D6E;outline-offset:2px}
-.pz-landtot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:9px;padding-top:9px;border-top:1.5px solid rgba(26,26,26,.18)}
-.pz-landtot>span{font-size:12.5px;font-weight:800}
-.pz-landtot>span>small{display:block;font-size:11px;font-weight:500;color:rgba(26,26,26,.5);margin-top:2px}
-.pz-landtot>b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:#8a6a3f}
+/* Costo por producto: fila-botón que abre la tabla (plegada por defecto) */
+.pz-landtg{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:12px 14px;border:1.5px solid #eae4d6;border-radius:10px;background:#fff;font:inherit;color:inherit;cursor:pointer;text-align:left;transition:border-color .16s,background .16s}
+.pz-landtg:hover{border-color:rgba(184,149,106,.55);background:#fdfbf6}
+.pz-landtg.on{border-color:rgba(184,149,106,.5);background:#f7efe0}
+.pz-landtg:focus{outline:none}
+.pz-landtg:focus-visible{outline:2px solid #B8956A;outline-offset:2px}
+.pz-landtg>span.l{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(26,26,26,.62)}
+.pz-landtg>span.r{flex-shrink:0;display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:8px;background:#1A3D6E;color:#fff;font-size:12px;font-weight:800;white-space:nowrap}
+.pz-landtg.on>span.r{background:rgba(26,61,110,.1);color:#1A3D6E}
+.pz-landtg>span.r>i{font-style:normal;font-size:8.5px;line-height:1}
+.pz-landtbl{margin-top:12px}
+/* Cierre: mercadería e importación una arriba de la otra, el total al costado */
+.pz-landsum{display:flex;align-items:stretch;gap:16px;margin-top:12px;padding:14px 16px;border-radius:12px;background:#f7efe0;border:1.5px solid rgba(184,149,106,.45)}
+.pz-ls-l{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:9px}
+.pz-ls-l>div{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pz-ls-l>div>span{font-size:12.5px;font-weight:700;color:#1a1a1a}
+.pz-ls-l>div>span>small{display:block;font-size:10.5px;font-weight:500;color:rgba(26,26,26,.5);margin-top:1px}
+.pz-ls-l>div>b{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pz-ls-r{flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;text-align:right;padding-left:16px;border-left:1.5px solid rgba(184,149,106,.4);min-width:168px}
+.pz-ls-r>span{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:rgba(26,26,26,.55);line-height:1.35}
+.pz-ls-r>b{font-size:22px;font-weight:800;letter-spacing:-.03em;color:#8a6a3f;white-space:nowrap;margin-top:5px;font-variant-numeric:tabular-nums}
+.pz-ls-r>b>i{font-style:normal;font-size:11.5px;font-weight:700;color:rgba(26,26,26,.5);margin-right:4px;letter-spacing:0}
+@media(max-width:620px){
+  .pz-landsum{flex-direction:column;gap:10px}
+  .pz-ls-r{flex-direction:row;justify-content:space-between;align-items:baseline;min-width:0;padding:10px 0 0;border-left:none;border-top:1.5px solid rgba(184,149,106,.4)}
+  .pz-ls-r>b{margin-top:0;font-size:19px}
+  .pz-landtg{flex-wrap:wrap}
+}
 @media(max-width:620px){
   .pz-land>span:not(:first-child){white-space:normal}
   .pz-bul.c5,.pz-bul.c6,.pz-bul.c6n,.pz-bul.c7,.pz-land.sin-imp{grid-template-columns:1fr auto}
@@ -223,13 +240,12 @@ function CostoPorProducto({ alt, abierto, onToggle }) {
   const cls = `pz-row pz-land${conImp ? "" : " sin-imp"}`;
   return (
     <div className="pz-landbox">
-      <div className="pz-landhd">
-        <p className="t">Costo por producto <small>· en dólares</small></p>
-        <button type="button" className="pz-landver" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
-          {abierto ? "Ocultar desglose" : "Ver desglose"}<span aria-hidden="true">{abierto ? "▲" : "▼"}</span>
-        </button>
-      </div>
-      {abierto && <>
+      <button type="button" className={`pz-landtg ${abierto ? "on" : ""}`} aria-expanded={abierto}
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+        <span className="l">Desglose de costo por producto</span>
+        <span className="r">{abierto ? "Ocultar desglose" : "Ver desglose"}<i aria-hidden="true">{abierto ? "▲" : "▼"}</i></span>
+      </button>
+      {abierto && <div className="pz-landtbl">
       <div className={`${cls} head`}>
         <span>Producto</span><span>Cant.</span><span>Mercadería</span>
         {conImp && <span>Impuestos</span>}
@@ -249,14 +265,20 @@ function CostoPorProducto({ alt, abierto, onToggle }) {
       ))}
       {/* Cierre en una línea y no como fila de la tabla: las celdas son unitarias y el total es
           absoluto, ponerlos en la misma columna hacía que no cerrara a la vista. */}
-      <div className="pz-landtot">
+      <div className="pz-landsum">
         {/* La parte de importación se DERIVA del total menos la mercadería, no se suma aparte:
             cada producto va redondeado a dos decimales y sumando las columnas por separado la
             línea se iba un par de centavos de su propio total. */}
-        <span>Toda la carga puesta en Argentina<small>Mercadería (lo que le pagás al proveedor) {usd(tot("fob"))} + Importación (lo que abonás a Argencargo) {usd(tot("total") - tot("fob"))}</small></span>
-        <b>{usd(tot("total"))}</b>
+        <div className="pz-ls-l">
+          <div><span>Mercadería<small>Lo que le pagás al proveedor</small></span><b>{usd(tot("fob"))}</b></div>
+          <div><span>Costo de importación<small>Lo que abonás a Argencargo</small></span><b>{usd(tot("total") - tot("fob"))}</b></div>
+        </div>
+        <div className="pz-ls-r">
+          <span>Toda la carga<br/>puesta en Argentina</span>
+          <b><i>USD</i>{fmt(tot("total"))}</b>
+        </div>
       </div>
-      </>}
+      </div>}
     </div>
   );
 }
