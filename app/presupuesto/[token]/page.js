@@ -121,6 +121,13 @@ const CSS = `
 .pz-landbox{margin-top:13px;padding-top:11px;border-top:1px dashed #eae4d6}
 .pz-landbox>p.t{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(26,26,26,.55);margin:0 0 7px}
 .pz-landbox>p.t>small{font-weight:600;letter-spacing:.04em;color:rgba(26,26,26,.42)}
+.pz-landhd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px}
+.pz-landhd>p.t{margin:0}
+.pz-landver{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid rgba(26,61,110,.35);border-radius:8px;background:rgba(26,61,110,.06);color:#1A3D6E;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer}
+.pz-landver:hover{background:rgba(26,61,110,.12)}
+.pz-landver span{font-size:8px;line-height:1}
+.pz-landver:focus{outline:none}
+.pz-landver:focus-visible{outline:2px solid #1A3D6E;outline-offset:2px}
 .pz-landtot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:9px;padding-top:9px;border-top:1.5px solid rgba(26,26,26,.18)}
 .pz-landtot>span{font-size:12.5px;font-weight:800}
 .pz-landtot>span>small{display:block;font-size:11px;font-weight:500;color:rgba(26,26,26,.5);margin-top:2px}
@@ -174,8 +181,9 @@ const CSS = `
 .pz-desg>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;font-size:12.5px}
 .pz-desg>div>span{color:rgba(26,26,26,.6)}
 .pz-desg>div>b{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
-.pz-desg>div.t{margin-top:7px;padding-top:8px;border-top:1px solid #eae4d6;font-size:13px}
-.pz-desg>div.t>span{color:#1a1a1a;font-weight:800}
+.pz-desg>div.t{margin-top:10px;padding:10px 12px;border-top:none;border-radius:9px;background:#f7efe0;border:1.5px solid rgba(184,149,106,.45);font-size:13px}
+.pz-desg>div.t>span{color:#1a1a1a;font-weight:800;letter-spacing:.04em;text-transform:uppercase;font-size:11.5px}
+.pz-desg>div.t>b{font-size:15px;color:#8a6a3f}
 .pz-nota{font-size:11.5px;color:rgba(26,26,26,.55);margin:9px 0 0;line-height:1.5;font-style:italic}
 
 .pz-cta{width:100%;padding:16px;font-size:15.5px;font-weight:800;border-radius:12px;border:none;letter-spacing:-.015em;cursor:pointer;color:#0A1628;background:linear-gradient(135deg,#E8D098,#B8956A);box-shadow:0 8px 22px rgba(184,149,106,.32)}
@@ -205,7 +213,9 @@ const CSS = `
 //
 // En el Integral los impuestos van adentro del precio del servicio, así que no hay columna de
 // impuestos que mostrar: se cae a 5 columnas en vez de 6.
-function CostoPorProducto({ alt }) {
+// Viene plegado: hay gente que leía el total de "toda la carga puesta en Argentina" como si fuera
+// el costo de la importación. Se abre con el botón de la derecha (09/11/2026).
+function CostoPorProducto({ alt, abierto, onToggle }) {
   const filas = Array.isArray(alt.landed) ? alt.landed.filter((r) => num(r.fob) > 0) : [];
   if (filas.length === 0) return null;
   const conImp = filas.some((r) => num(r.tax) > 0.005);
@@ -213,7 +223,13 @@ function CostoPorProducto({ alt }) {
   const cls = `pz-row pz-land${conImp ? "" : " sin-imp"}`;
   return (
     <div className="pz-landbox">
-      <p className="t">Costo unitario por producto <small>· en dólares</small></p>
+      <div className="pz-landhd">
+        <p className="t">Costo por producto <small>· en dólares</small></p>
+        <button type="button" className="pz-landver" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+          {abierto ? "Ocultar desglose" : "Ver desglose"}<span aria-hidden="true">{abierto ? "▲" : "▼"}</span>
+        </button>
+      </div>
+      {abierto && <>
       <div className={`${cls} head`}>
         <span>Producto</span><span>Cant.</span><span>Mercadería</span>
         {conImp && <span>Impuestos</span>}
@@ -237,9 +253,10 @@ function CostoPorProducto({ alt }) {
         {/* La parte de importación se DERIVA del total menos la mercadería, no se suma aparte:
             cada producto va redondeado a dos decimales y sumando las columnas por separado la
             línea se iba un par de centavos de su propio total. */}
-        <span>Toda la carga puesta en Argentina<small>Mercadería {usd(tot("fob"))} + importación {usd(tot("total") - tot("fob"))}</small></span>
+        <span>Toda la carga puesta en Argentina<small>Mercadería (lo que le pagás al proveedor) {usd(tot("fob"))} + Importación (lo que abonás a Argencargo) {usd(tot("total") - tot("fob"))}</small></span>
         <b>{usd(tot("total"))}</b>
       </div>
+      </>}
     </div>
   );
 }
@@ -251,6 +268,7 @@ export default function PresupuestoPage({ params }) {
   // Qué desglose está abierto. Va aparte de `elegido` para que el cliente pueda comparar
   // los desgloses sin comprometerse con una opción.
   const [abierto, setAbierto] = useState("");
+  const [prodAbierto, setProdAbierto] = useState(""); // key de la opción con el costo por producto desplegado
   const [enviando, setEnviando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [listo, setListo] = useState(null);
@@ -558,7 +576,7 @@ export default function PresupuestoPage({ params }) {
                           {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
                         </div>
                       )}
-                      {abierta && <CostoPorProducto alt={a} />}
+                      {abierta && <CostoPorProducto alt={a} abierto={prodAbierto === a.key} onToggle={() => setProdAbierto(prodAbierto === a.key ? "" : a.key)} />}
                     </div>
                   </div>
                 );
