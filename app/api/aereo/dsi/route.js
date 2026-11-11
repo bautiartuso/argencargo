@@ -135,7 +135,21 @@ export async function GET(req) {
       if (cfg?.refresh_token) await revisar().catch(() => {});
       const [r, porPedir] = await Promise.all([sb(`/rest/v1/dsi_pedidos?respuesta_at=not.is.null&revisado_at=is.null&select=flight_id`), contarPorPedir()]);
       if (!r.ok) return json({ respondidos: 0, vuelos: [], porPedir, sinTabla: r.status === 404 || r.status === 400 });
-      return json({ respondidos: lista(r).length, vuelos: lista(r).map((x) => x.flight_id), porPedir });
+      // DSI ya cargada en todas las ops del vuelo (11/11/2026): no hay nada que adjuntar, el pedido se da por
+      // revisado solo y el cartel 📬 DSI desaparece (antes quedaba hasta abrir la respuesta del courier).
+      let abiertos = [...new Set(lista(r).map((x) => x.flight_id).filter(Boolean))];
+      if (abiertos.length) {
+        const fos = lista(await sb(`/rest/v1/flight_operations?flight_id=in.(${abiertos.join(",")})&select=flight_id,operation_id`));
+        const opIds = [...new Set(fos.map((x) => x.operation_id))];
+        const docs = opIds.length ? lista(await sb(`/rest/v1/legajo_docs?operation_id=in.(${opIds.join(",")})&tipo=eq.dsi&borrado_at=is.null&select=operation_id`)) : [];
+        const conDsi = new Set(docs.map((d) => d.operation_id));
+        const listos = abiertos.filter((fid) => { const o = fos.filter((x) => x.flight_id === fid); return o.length && o.every((x) => conDsi.has(x.operation_id)); });
+        if (listos.length) {
+          await sb(`/rest/v1/dsi_pedidos?flight_id=in.(${listos.join(",")})&revisado_at=is.null`, { method: "PATCH", body: JSON.stringify({ revisado_at: new Date().toISOString(), revisado_por: uid }) });
+          abiertos = abiertos.filter((fid) => !listos.includes(fid));
+        }
+      }
+      return json({ respondidos: abiertos.length, vuelos: abiertos, porPedir });
     }
     if (accion === "vuelo") {
       const fid = u.searchParams.get("flight_id") || "";

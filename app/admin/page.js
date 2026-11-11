@@ -12882,9 +12882,10 @@ function AgentsPanel({token}){
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
             if(f.dispatched_at&&!Number(f.total_cost_usd))warns.push({t:"COSTO",c:"#f87171",title:f.agent_id?"Despachado sin costo del agente cargado":"Vuelo directo sin el costo del courier cargado"});
             if(f.status==="recibido"&&ops.some(fo=>Number(fo.operations?.budget_taxes||0)>0&&!Number(fo.operations?.cost_impuestos_reales)))warns.push({t:"IMP",c:"#a78bfa",title:"Hay ops con impuestos presupuestados sin cargar el costo real de aduana"});
-            // Desglose del courier subido y todavía no pasado a las ops (Extraer bultos con IA).
+            // Desglose del courier subido y todavía no pasado a las ops. Se apaga al extraerlos con IA o cuando el equipo
+            // ya editó los bultos a mano (flights.bultos_revisados_at, 11/11/2026). El de DSI se apaga al cargar la DSI.
             if(dsiRespondidos.has(f.id))warns.push({t:"📬 DSI",c:"#60a5fa",title:"El courier respondió el pedido de DSI: abrí el vuelo para adjuntarla"});
-            if(f.dispatch_photo_url&&f.status!=="recibido"&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
+            if(f.dispatch_photo_url&&f.status!=="recibido"&&!f.bultos_revisados_at&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             const bgFila=retenido?"rgba(239,68,68,0.10)":"transparent";
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:bgFila,boxShadow:retenido?"inset 4px 0 0 #ef4444":"none"}} onMouseEnter={e=>{e.currentTarget.style.background=retenido?"rgba(239,68,68,0.16)":"rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=bgFila;}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}{!f.agent_id&&<span title="Lo despachamos nosotros directo con el courier (sin agente)" style={{display:"block",marginTop:3,fontSize:9,fontWeight:800,letterSpacing:"0.08em",color:"#5eead4",fontFamily:"inherit"}}>DIRECTO</span>}</td>
