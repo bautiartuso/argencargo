@@ -2468,7 +2468,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {op.channel==="aereo_blanco"&&(()=>{
           const cobra=!!op.ri_argencargo_collects_taxes;const dir=op.ri_entrega_directa!==false;
           const setCobra=async()=>{const v=!cobra;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo a la aduana");setSaving(false);};
-          const setDir=async(v)=>{if(saving||v===dir)return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_entrega_directa:v}});setOp(p=>({...p,ri_entrega_directa:v}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
+          // Pasar a oficina (11/11/2026, AC-0297): si el courier ya había entregado y el flujo directo la dejó como
+          // entregada al cliente (delivery_completed_at), esa marca se borra: la carga está en la oficina y falta el retiro.
+          const setDir=async(v)=>{if(saving||v===dir)return;setSaving(true);const body={ri_entrega_directa:v};if(!v&&op.delivery_completed_at&&!op.delivery_confirmed_at&&!op.is_collected)body.delivery_completed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
           const setBat=async()=>{const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?`Recargo por baterías activado (USD ${bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now())}/kg)`:"Recargo por baterías quitado");setSaving(false);};
           const usdKg=bateriaUsdKg(opClient?.tax_condition==="responsable_inscripto",op.created_at?Date.parse(op.created_at):Date.now());
           // Tres ajustes en una fila (22/10/2026): Impuestos Cliente/Argencargo · Entrega Domicilio/Oficina · Baterías Sí/No.
@@ -17861,11 +17863,11 @@ function AdminDashboard({session,onLogout}){
       {key:"mail",label:"Email",p:["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z","M22 6l-10 7L2 6"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
+      {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
     ]},
     {section:"Finanzas",items:[
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
       {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
-      {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
       {key:"facturas",label:"Facturación",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M9 13h6","M9 17h4"]},
       {key:"ccfin",label:"CC Financiera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
     ]},
@@ -17888,7 +17890,8 @@ function AdminDashboard({session,onLogout}){
     contar();const iv=setInterval(()=>{if(!document.hidden)contar();},120000);window.addEventListener("mt_vistos",contar);
     return()=>{vivo=false;clearInterval(iv);window.removeEventListener("mt_vistos",contar);};
   },[token]);
-  const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)):navSectionsAll;
+  // Tarifas pasó a Comercial (11/11/2026) pero muestra costos y márgenes: el empleado no la ve.
+  const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)).map(s=>({...s,items:s.items.filter(i=>i.key!=="tariffs")})):navSectionsAll;
   // Backward-compat: si en algún lado se referencia 'nav' como flat list
   const nav=navSections.flatMap(s=>s.items);
   const [pendingTasks,setPendingTasks]=useState(0);
