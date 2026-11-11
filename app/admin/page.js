@@ -4994,7 +4994,8 @@ function BotPanel({token}){
   const IG="__instagram__";
   const [ig,setIg]=useState(null);           // {dm_text, comment_text, configured, source, username, app_secret, verify_token, stats}
   const [igSaving,setIgSaving]=useState(false);
-  const loadIg=async()=>{try{setIg(await api("?instagram=1"));}catch(e){toast(e.message,"error");}};
+  const loadIg=async(silencio)=>{try{setIg(await api("?instagram=1"));}catch(e){if(!silencio)toast(e.message,"error");}};
+  useEffect(()=>{loadIg(true);},[]);
   const saveIg=async()=>{if(!ig)return;setIgSaving(true);try{const b=await api("",{method:"POST",body:JSON.stringify({action:"instagram_settings",dm_text:ig.dm_text,comment_text:ig.comment_text})});setIg(p=>({...p,dm_text:b.dm_text,comment_text:b.comment_text}));toast("Textos de Instagram guardados","success");}catch(e){toast(e.message,"error");}finally{setIgSaving(false);}};
   // Adjuntar un archivo (PDF, imagen…): sale por el número del bot con el texto escrito como pie.
   const sendFile=async(file)=>{
@@ -5075,10 +5076,13 @@ function BotPanel({token}){
   const estadoTicks=(m)=>m.role==="user"?null:m.failed_at?<span title={m.error||"No entregado"} style={{color:"#f87171",fontWeight:800}}>⚠</span>:m.read_at?<span title={`Leído ${hora(m.read_at)}`} style={{color:"#53bdeb",fontWeight:800}}>✓✓</span>:m.delivered_at?<span title={`Entregado ${hora(m.delivered_at)}`} style={{color:"rgba(255,255,255,0.55)",fontWeight:800}}>✓✓</span>:m.wamid?<span title="Enviado" style={{color:"rgba(255,255,255,0.45)"}}>✓</span>:null;
   const msgs=thread?.messages||[];
   const fin=ventanaFin(thread);
-  const PANEL={background:"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,overflow:"hidden",display:"flex",flexDirection:"column"};
-  return <div style={{display:"flex",gap:14,height:"calc(var(--vh100) - 120px)",minHeight:480}}>
+  // Pantalla completa en la compu (11/11/2026, como Email): sin tarjeta flotando, lista a la izquierda con
+  // su borde y el chat ocupando el resto. En el celu sigue como estaba.
+  const full=!isMobile;
+  const PANEL=full?{overflow:"hidden",display:"flex",flexDirection:"column"}:{background:"linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:18,overflow:"hidden",display:"flex",flexDirection:"column"};
+  return <div style={full?{display:"flex",height:"var(--vh100)",minHeight:480,overflow:"hidden"}:{display:"flex",gap:14,height:"calc(var(--vh100) - 120px)",minHeight:480}}>
     <style>{`.bt-conv{transition:background .12s}.bt-conv:hover{background:rgba(255,255,255,0.05)!important}.bt-scroll::-webkit-scrollbar{width:6px}.bt-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:6px}@keyframes btSk{0%{opacity:.4}50%{opacity:.9}100%{opacity:.4}}.bt-sk{background:rgba(255,255,255,0.08);border-radius:10px;animation:btSk 1.2s ease-in-out infinite}`}</style>
-    {showList&&<div style={{...PANEL,width:isMobile?"100%":340,flexShrink:0}}>
+    {showList&&<div style={{...PANEL,width:isMobile?"100%":360,flexShrink:0,...(full?{borderRight:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.16)"}:{})}}>
       <div style={{padding:"14px 14px 10px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
           <span style={{width:34,height:34,borderRadius:11,background:"linear-gradient(135deg,#25D366,#128C7E)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg></span>
@@ -5097,10 +5101,6 @@ function BotPanel({token}){
         </div>
       </div>
       <div className="bt-scroll" style={{flex:1,overflowY:"auto",padding:"6px 8px"}}>
-        <button onClick={()=>setSel(IG)} className="bt-conv" style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:12,cursor:"pointer",border:"none",background:sel===IG?"rgba(225,48,108,0.12)":"transparent",color:"#fff",fontFamily:"inherit",textAlign:"left",marginBottom:4}}>
-          <span style={{width:40,height:40,borderRadius:"50%",flexShrink:0,background:"linear-gradient(135deg,#f58529,#dd2a7b 50%,#8134af)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#fff" stroke="none"/></svg></span>
-          <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700}}>Instagram → WhatsApp</span><span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)"}}>Textos con los que deriva al WhatsApp</span></span>
-        </button>
         {lo&&convs.length===0&&[0,1,2,3,4].map(i=><div key={i} style={{display:"flex",gap:10,padding:"10px",alignItems:"center"}}><div className="bt-sk" style={{width:40,height:40,borderRadius:"50%"}}/><div style={{flex:1}}><div className="bt-sk" style={{height:12,width:"60%",marginBottom:7}}/><div className="bt-sk" style={{height:10,width:"85%"}}/></div></div>)}
         {!lo&&filtered.length===0&&<p style={{padding:14,fontSize:12.5,color:"rgba(255,255,255,0.4)",textAlign:"center"}}>{q||filtro!=="todas"?"Nada con ese filtro.":"Todavía no escribió nadie."}</p>}
         {filtered.map(c=>{const on=sel===c.phone;const prev=c.last?(c.last.role==="user"?"":c.last.role==="human"?"Vos: ":"Argy: ")+(c.last.media_type?(c.last.media_type==="image"?"📷 Foto":"📎 Archivo"):(c.last.content||"")):"";
@@ -5119,6 +5119,17 @@ function BotPanel({token}){
             </div>
           </div>;})}
       </div>
+      {/* Instagram (11/11/2026): estaba fijado arriba como si fuera un chat y no se entendía. Es la
+          respuesta automática que manda a la gente de Instagram al WhatsApp: va aparte, al pie, con su estado. */}
+      {(()=>{const n=Number(ig?.stats?.dms||0)+Number(ig?.stats?.comentarios||0);const on=sel===IG;
+        return <button onClick={()=>setSel(on?null:IG)} className="bt-conv" style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",cursor:"pointer",border:"none",borderTop:"1px solid rgba(255,255,255,0.07)",background:on?"rgba(225,48,108,0.12)":"rgba(0,0,0,0.12)",color:"#fff",fontFamily:"inherit",textAlign:"left",flexShrink:0}}>
+          <span style={{width:32,height:32,borderRadius:10,flexShrink:0,background:"linear-gradient(135deg,#f58529,#dd2a7b 50%,#8134af)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#fff" stroke="none"/></svg></span>
+          <span style={{flex:1,minWidth:0}}>
+            <span style={{display:"block",fontSize:12.5,fontWeight:800}}>Respuesta automática de Instagram</span>
+            <span style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:1}}>{ig?<><span style={{width:7,height:7,borderRadius:999,background:ig.configured?"#4ade80":"#f87171"}}/>{ig.configured?`Activa${n?` · mandó ${n} ${n===1?"persona":"personas"} al WhatsApp`:""}`:"Sin conectar"}</>:"Manda a WhatsApp a quien escribe por Instagram"}</span>
+          </span>
+          <span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.55)",flexShrink:0}}>{on?"Cerrar":"Editar texto"}</span>
+        </button>;})()}
     </div>}
 
     {showThread&&<div style={{...PANEL,flex:1,minWidth:0}}>
@@ -5131,8 +5142,8 @@ function BotPanel({token}){
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
           {isMobile&&<button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",padding:0}}>‹</button>}
           <div style={{flex:1,minWidth:0}}>
-            <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>Instagram → WhatsApp</p>
-            <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Por Instagram no se conversa: cada mensaje y cada comentario recibe una sola respuesta que manda al WhatsApp.</p>
+            <p style={{margin:0,fontSize:15,fontWeight:800,color:"#fff"}}>Respuesta automática de Instagram</p>
+            <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Acá no hay chats. A quien te escribe o te comenta en Instagram se le contesta una sola vez con estos textos, que lo mandan a tu WhatsApp. La charla sigue en la lista de la izquierda.</p>
           </div>
         </div>
         {!ig&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
@@ -5144,10 +5155,10 @@ function BotPanel({token}){
               {ok:ig.verify_token,t:ig.verify_token?"Webhook verificable":"Falta IG_VERIFY_TOKEN en Vercel"},
             ].map((x,i)=><span key={i} style={{fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:7,background:x.ok?"rgba(74,222,128,0.12)":"rgba(248,113,113,0.12)",color:x.ok?"#4ade80":"#f87171"}}>{x.ok?"✓":"✕"} {x.t}</span>)}
           </div>
-          <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Mensaje privado (DM y privado por comentario)</p>
+          <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Lo que recibe por privado</p>
           <textarea value={ig.dm_text||""} onChange={e=>setIg(p=>({...p,dm_text:e.target.value}))} rows={4} maxLength={900} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
           <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Se manda una sola vez por persona; si vuelve a escribir, recién se le repite pasados 7 días. Tiene que incluir el link de WhatsApp.</p>
-          <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Respuesta pública debajo del comentario</p>
+          <p style={{margin:"0 0 6px",fontSize:11.5,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em",textTransform:"uppercase"}}>Lo que se le contesta debajo de su comentario</p>
           <textarea value={ig.comment_text||""} onChange={e=>setIg(p=>({...p,comment_text:e.target.value}))} rows={2} maxLength={300} style={{width:"100%",boxSizing:"border-box",resize:"vertical",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
           <p style={{margin:"4px 0 14px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Solo en comentarios de primer nivel de otras cuentas; el autor además recibe el mensaje privado de arriba.</p>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -18058,7 +18069,7 @@ function AdminDashboard({session,onLogout}){
     <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.28))",borderRight:"1px solid rgba(255,255,255,0.08)",boxShadow:"inset -1px 0 0 rgba(255,255,255,0.03)",display:"flex",flexDirection:"column",height:"100%",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
-      <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={{maxWidth:page==="mail"?"none":1400,margin:"0 auto",padding:page==="mail"?0:"28px 32px"}}>
+      <div key={page+(selOp?":op":"")+(selClient?":cl":"")} className="ac-admin-main-inner" style={(()=>{const full=page==="mail"||(page==="bot"&&typeof window!=="undefined"&&window.innerWidth>=760);return {maxWidth:full?"none":1400,margin:"0 auto",padding:full?0:"28px 32px"};})()}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)} onOpenEntrega={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
