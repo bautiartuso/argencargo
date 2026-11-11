@@ -13907,8 +13907,30 @@ function OperationalAnalytics({token}){
 // comisión y al TC dolarizado). En payment_management se sincronizan client_paid,
 // client_paid_amount_usd y cost_comision_giro, que leen Finanzas, el libro diario y la CC del cliente.
 const AGP_FIN_PCT=2.5;
-const AGP_CABLE_PCT=3; // lo que cobra SolFin por cable (2,25% hasta el 29/10/2026; 2,5% hasta el 03/11/2026; 3% desde el 04/11/2026)
-const agpCostoCable=(m)=>m>0?Math.round((m*AGP_CABLE_PCT/100+(m<10000?40:0))*100)/100:0;
+// Lo que cobra SolFin por cable (2,25% hasta el 29/10/2026; 2,5% hasta el 03/11; 3% desde el 04/11; 3,25% desde el
+// 11/11/2026). Desde el 11/11/2026 lo cambia Bautista desde la pantalla (calc_config: solfin_cable_pct y
+// solfin_cable_fijo_usd); esto es solo el valor de arranque. Cada gestión guarda el % con el que se anotó
+// (cable_pct), así que cambiarlo no toca las ya anotadas.
+const AGP_CABLE_DEF={pct:3.25,fijo:40};
+const agpCostoCable=(m,c=AGP_CABLE_DEF)=>m>0?Math.round((m*c.pct/100+(m<10000?c.fijo:0))*100)/100:0;
+const agpPct=(v)=>String(Number(v||0)).replace(".",",");
+// Costo del cable a la vista y editable (solo el dueño): "Cable SolFin 3,25 % + USD 40".
+function AgpCable({cable,onSave,celu}){
+  const [ed,setEd]=useState(false);const [pct,setPct]=useState("");const [fijo,setFijo]=useState("");const [g,setG]=useState(false);
+  const abrir=()=>{setPct(agpPct(cable.pct));setFijo(agpPct(cable.fijo));setEd(true);};
+  const nu=(v)=>{const x=String(v).trim();return /^\d+[.,]\d{1,2}$/.test(x)?Number(x.replace(",",".")):parseMontoAr(x);}; // "3,25" o "3.25"
+  const guardar=async()=>{const a=nu(pct),b=nu(fijo);if(!(a>0)||a>20||!(b>=0)){toast("Revisá los valores","error");return;}setG(true);const ok=await onSave({pct:a,fijo:b});setG(false);if(ok)setEd(false);};
+  const caja={height:42,boxSizing:"border-box",borderRadius:999,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",display:"inline-flex",alignItems:"center",gap:8,padding:"0 14px",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.7)",fontFamily:"inherit",whiteSpace:"nowrap"};
+  const inp={width:62,height:30,padding:"0 8px",borderRadius:8,border:"1px solid rgba(232,208,152,0.4)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:celu?16:13.5,fontWeight:800,textAlign:"right",outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  if(!ed)return <button type="button" onClick={abrir} style={{...caja,cursor:"pointer"}}>Cable SolFin <strong style={{color:GOLD_LIGHT}}>{agpPct(cable.pct)} % + USD {agpPct(cable.fijo)}</strong>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>;
+  return <div style={{...caja,padding:"0 6px 0 14px",borderColor:"rgba(232,208,152,0.45)"}}>Cable SolFin
+    <input value={pct} onChange={e=>setPct(e.target.value)} inputMode="decimal" onKeyDown={e=>{if(e.key==="Enter")guardar();if(e.key==="Escape")setEd(false);}} autoFocus style={inp}/>%
+    <span>+ USD</span><input value={fijo} onChange={e=>setFijo(e.target.value)} inputMode="decimal" onKeyDown={e=>{if(e.key==="Enter")guardar();if(e.key==="Escape")setEd(false);}} style={inp}/>
+    <button type="button" disabled={g} onClick={guardar} style={{height:30,padding:"0 14px",borderRadius:999,border:"none",background:"linear-gradient(135deg,#C9A574 0%,#E8D098 100%)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:g?"wait":"pointer",fontFamily:"inherit"}}>{g?"…":"Guardar"}</button>
+    <button type="button" onClick={()=>setEd(false)} aria-label="Cancelar" style={{width:30,height:30,borderRadius:999,border:"none",background:"transparent",color:"rgba(255,255,255,0.5)",fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>×</button>
+  </div>;
+}
 const agpR2=(v)=>Math.round((Number(v)||0)*100)/100;
 const agpUsd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 // Pesos con los centavos exactos (30/10/2026: no redondear lo que se le cobra al cliente).
@@ -14040,6 +14062,15 @@ function AgpPanel({token,allClients}){
   const [abierta,setAbierta]=useState(null);
   const [form,setForm]=useState(null); // {modo:"calc"|"nueva"|"editar",p}
   const [tcRef,setTcRef]=useState(0);
+  const [cable,setCable]=useState(AGP_CABLE_DEF);
+  useEffect(()=>{(async()=>{const r=await dq("calc_config",{token,filters:"?key=in.(solfin_cable_pct,solfin_cable_fijo_usd)&select=key,value"});if(!Array.isArray(r))return;const v=Object.fromEntries(r.map(x=>[x.key,Number(x.value)]));setCable({pct:v.solfin_cable_pct>0?v.solfin_cable_pct:AGP_CABLE_DEF.pct,fijo:v.solfin_cable_fijo_usd>=0?v.solfin_cable_fijo_usd:AGP_CABLE_DEF.fijo});})();},[token]);
+  const guardarCable=async(n)=>{
+    for(const [key,value,label] of [["solfin_cable_pct",n.pct,"Cable SolFin (%)"],["solfin_cable_fijo_usd",n.fijo,"Cable SolFin · fijo en USD (giros menores a 10.000)"]]){
+      const r=await dq("calc_config",{method:"PATCH",token,filters:`?key=eq.${key}`,body:{value}});
+      if(!Array.isArray(r)||!r.length){const i=await dq("calc_config",{method:"POST",token,body:{key,value,label}});if(i?.code||i?.message){toast("No se pudo guardar","error");return false;}}
+    }
+    setCable(n);toast(`Cable SolFin: ${agpPct(n.pct)} % + USD ${agpPct(n.fijo)}`,"success");return true;
+  };
   const load=async()=>{
     const [r,c0,ars]=await Promise.all([
       dq("payment_management",{token,filters:"?select=*,clients(client_code,first_name,last_name),operations(operation_code)&order=date.desc,created_at.desc"}),
@@ -14097,12 +14128,13 @@ function AgpPanel({token,allClients}){
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.2" strokeLinecap="round" style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente o AGP" style={{width:"100%",height:42,padding:"0 14px 0 36px",fontSize:celu?16:13.5,border:"1px solid rgba(255,255,255,0.08)",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
       </div>
+      {!esEmpleado()&&<AgpCable cable={cable} onSave={guardarCable} celu={celu}/>}
       {!form&&<button onClick={()=>setForm({modo:"nueva"})} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,height:42,padding:"0 20px",borderRadius:999,border:"none",background:"linear-gradient(135deg,#C9A574 0%,#E8D098 100%)",color:"#0A1628",fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 6px 18px rgba(184,149,106,0.25)",whiteSpace:"nowrap"}}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>Nueva gestión
       </button>}
     </div>
 
-    {form&&<AgpForm key={form.p?.id||"nueva"} p={form.p} token={token} allClients={allClients} tcRef={tcRef} onClose={()=>setForm(null)} onSaved={async(id)=>{setForm(null);await load();if(id){setVista("curso");setAbierta(id);}}}/>}
+    {form&&<AgpForm key={form.p?.id||"nueva"} p={form.p} token={token} allClients={allClients} tcRef={tcRef} cable={cable} onClose={()=>setForm(null)} onSaved={async(id)=>{setForm(null);await load();if(id){setVista("curso");setAbierta(id);}}}/>}
 
     {vista==="curso"&&enCurso.length>0&&<p style={{margin:"0 0 12px",fontSize:13,color:"rgba(255,255,255,0.55)",lineHeight:1.5}}>
       Te deben <strong style={{color:"#fff"}}>{agpUsd(deben)}</strong>{sinDolar>0&&<> · Sin dolarizar <strong style={{color:"#fff"}}>{agpArs(sinDolar)}</strong></>}
@@ -14160,7 +14192,7 @@ function AgpPanel({token,allClients}){
 // (la misma de la calculadora del portal): 2,25% + USD 100, y si paga por transferencia un 2,5% más,
 // en pesos al TC puesto. Lo interno (lo que sale de la CC y lo que ganás) va fuera de la cotización.
 // Al anotarla, el giro con su costo sale solo de la CC de SolFin.
-function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
+function AgpForm({p,token,allClients,tcRef,cable=AGP_CABLE_DEF,onClose,onSaved}){
   const celu=useEsCelu();
   const [monto,setMonto]=useState(agpTxt(p?.giro_amount_usd));
   const [forma,setForma]=useState(p?(p.client_currency==="ARS"?"transf":"efvo"):"efvo");
@@ -14172,7 +14204,9 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
   const viejaSinCc=!!p&&!agpConCc(p);
   const m=parseMontoAr(monto),t=parseMontoAr(tc);
   const transf=forma==="transf";
-  const costoSolfin=viejaSinCc?Number(p.cost_comision_giro||0):agpCostoCable(m);
+  // Una gestión ya anotada conserva el % con el que se anotó; las nuevas toman el vigente.
+  const cab=p&&p.cable_pct!=null?{pct:Number(p.cable_pct),fijo:cable.fijo}:cable;
+  const costoSolfin=viejaSinCc?Number(p.cost_comision_giro||0):agpCostoCable(m,cab);
   const sale=agpR2(m+costoSolfin);
   // Lo que paga el cliente: el giro + 2,25% + USD 100; por transferencia, 2,5% más y en pesos.
   const cargo=m>0?agpR2(m*0.0225+100):0;
@@ -14194,7 +14228,7 @@ function AgpForm({p,token,allClients,tcRef,onClose,onSaved}){
     try{
       const cli=allClients.find(c=>c.id===clientId);
       const body={client_id:clientId,giro_amount_usd:m,margen_pct:null,client_amount_usd:debeUsd,client_currency:transf?"ARS":"USD",client_amount_ars:transf?totalArs:null,client_exchange_rate:transf?t:null};
-      if(!viejaSinCc)Object.assign(body,{costo_cable_usd:costoSolfin,cost_comision_giro:costoSolfin,cable_pct:AGP_CABLE_PCT,cable_fijo_usd:m<10000?40:0});
+      if(!viejaSinCc)Object.assign(body,{costo_cable_usd:costoSolfin,cost_comision_giro:costoSolfin,cable_pct:cab.pct,cable_fijo_usd:m<10000?cab.fijo:0});
       const descCc=(code)=>`Cable China · ${code||""}${cli?.client_code?` · ${cli.client_code}`:""}`;
       if(p){
         await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body});
