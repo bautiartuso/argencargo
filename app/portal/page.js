@@ -15,7 +15,8 @@ import { hoyAR } from "../../lib/fecha-ar";
 import { reciboHtml, documentoHtml } from "../../lib/pdf-templates";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 import { filtrosSeguros } from "../../lib/columnas-seguras";
-instalarAuthFetch(["ac_s"],{refrescar:(t)=>ensureFreshToken(t)});
+// Portal abierto desde el admin (?admin_preview=…): la sesión es la del admin (ac_admin), no la del cliente.
+instalarAuthFetch(typeof window!=="undefined"&&/[?&]admin_preview=/.test(window.location.search)?["ac_admin","ac_s"]:["ac_s"],{refrescar:(t)=>ensureFreshToken(t)});
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -588,7 +589,7 @@ function loadPdfJs(){
   return _pdfjsPromise;
 }
 
-function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
+function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={},token}){
   const {t}=useT();
   const L={
     upload_pdf:labels.upload_pdf||"Subir PDF",
@@ -704,7 +705,10 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
         }
       }
       setStage("extracting");
-      const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
+      // La sesión va explícita (10/11/2026): el fetch global solo conoce la del cliente (ac_s) y desde el
+      // portal abierto por el admin (admin_preview) no hay ninguna → el servidor respondía "sesión vencida".
+      const auth=token?{Authorization:`Bearer ${await ensureFreshToken(token)}`}:{};
+      const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json",...auth},body:JSON.stringify({images})});
       const j=await r.json().catch(()=>({}));
       // Motivo claro del rechazo (29/10/2026): antes se mostraba el código crudo ("no_auth").
       if(!r.ok||!j.ok){setError(motivoFactura(r.status,j,t));setStage("error");return null;}
@@ -951,7 +955,7 @@ function MercaderiaEditor({op,pkgs,items,token,client,onSaved}){
       </div>
     </div>}
     {mode===null&&<InputModeSelector mode={mode} onChange={setMode} labels={{pdf_title:t("merc.readInvoice"),pdf_desc:t("merc.readInvoiceSub"),manual_title:"✍️ Cargar a mano",manual_desc:t("merc.manualSub")}}/>}
-    {mode==="pdf"&&<PdfInvoiceReader onCancel={()=>setMode("manual")} onItemsConfirmed={(detected)=>{setRows(detected.map(it=>({...empty(),description:it.description||"",quantity:String(it.quantity||"1"),unit_price:String(it.unit_price_usd||"").replace(".",","),ncm_hint:String(it.hs_code||"").replace(/[^\d.]/g,"")})));setMode("manual");}}/>}
+    {mode==="pdf"&&<PdfInvoiceReader token={token} onCancel={()=>setMode("manual")} onItemsConfirmed={(detected)=>{setRows(detected.map(it=>({...empty(),description:it.description||"",quantity:String(it.quantity||"1"),unit_price:String(it.unit_price_usd||"").replace(".",","),ncm_hint:String(it.hs_code||"").replace(/[^\d.]/g,"")})));setMode("manual");}}/>}
     {mode==="manual"&&<>
       <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{[t("common.description"),"USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"].map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===4?40:0}}>{h}</span>)}</div>
       {rows.map((p,i)=><div key={i}>
