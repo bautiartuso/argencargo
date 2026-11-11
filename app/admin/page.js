@@ -11338,7 +11338,7 @@ function ReclamosDeposito({token,signups=[],onCount}){
   const [cliId,setCliId]=useState("");const [busca,setBusca]=useState("");const [abierto,setAbierto]=useState(false);
   const [trk,setTrk]=useState("");const [nota,setNota]=useState("");
   // Solo depósito de China (09/10/2026): se reclama a un agente aprobado que no sea de USA.
-  const agentes=signups.filter(a=>a.status==="approved"&&a.auth_user_id&&!/estados unidos|usa|united states/i.test(String(a.country||"")));
+  const agentes=signups.filter(a=>a.status==="approved"&&a.auth_user_id&&a.recibe_reclamos!==false&&!/estados unidos|usa|united states/i.test(String(a.country||"")));
   const [agenteId,setAgenteId]=useState("");
   useEffect(()=>{if(!agenteId&&agentes.length===1)setAgenteId(agentes[0].auth_user_id);},[agentes.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const nombreAgente=(id)=>{const a=signups.find(x=>x.auth_user_id===id);return a?`${a.first_name||""} ${a.last_name||""}`.trim()||a.email||"Agente":"";};

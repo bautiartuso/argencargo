@@ -1,6 +1,7 @@
 // /api/portal/reclamar-bulto (20/10/2026)
 // POST { tracking, note?, client_id? }  → el cliente reclama desde su Depósito un bulto que no le
-//   figura. Se crea un reclamo (deposit_claims) por CADA agente de China aprobado: el que lo tenga
+//   figura. Se crea un reclamo (deposit_claims) por CADA agente de China aprobado que recibe reclamos
+//   (agent_signups.recibe_reclamos; desde el 11/11/2026 solo 飞殷, VV Xiao quedó afuera): el que lo tenga
 //   lo registra y, al registrarlo, se cierran los de los demás. El agente no puede rechazarlo.
 // GET                                    → reclamos del cliente (pendientes + últimos 30 días).
 // Va con service role: el cliente no tiene policies sobre deposit_claims ni agent_signups.
@@ -67,7 +68,7 @@ export async function POST(req) {
   if (Array.isArray(prev.data) && prev.data.length) return Response.json({ error: "ya_reclamado" }, { status: 409 });
 
   // Agentes de China aprobados (mismo criterio que el admin: aprobado, con usuario, no USA).
-  const ag = await svc(`/rest/v1/agent_signups?status=eq.approved&auth_user_id=not.is.null&select=auth_user_id,country`);
+  const ag = await svc(`/rest/v1/agent_signups?status=eq.approved&auth_user_id=not.is.null&recibe_reclamos=is.true&select=auth_user_id,country`);
   const agentes = (Array.isArray(ag.data) ? ag.data : []).filter((a) => !/estados unidos|usa|united states/i.test(String(a.country || "")));
   if (!agentes.length) return Response.json({ error: "sin_agentes" }, { status: 500 });
 
