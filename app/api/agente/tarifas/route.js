@@ -8,11 +8,14 @@
 //   GET  → el agente recibe las suyas; admin/empleado recibe las de todos los agentes.
 //   POST → el agente guarda las suyas (admin puede guardar las de cualquiera con agent_user_id).
 
+// 10/11/2026: formato v2 con China Mainland / Hong Kong y 9 servicios (lib/tarifas-agente.js). Lo viejo se
+// convierte al leer; al guardar queda en v2 con una copia de China en `servicios` (la usa el costo DHL).
+import { normalizarTarifas, limpiarTarifas } from "../../../../lib/tarifas-agente";
+
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const BUCKET = "agent-tariffs";
-const SERVICIOS = ["DHL", "FEDEX_5000", "FEDEX_6000", "UPS_5000", "UPS_6000"];
 
 const svc = (path, init = {}) => fetch(`${SB_URL}${path}`, { ...init, cache: "no-store", headers: { apikey: SB, Authorization: `Bearer ${SB}`, ...(init.headers || {}) } });
 
@@ -40,31 +43,7 @@ async function asegurarBucket() {
 async function leer(userId) {
   const r = await svc(`/storage/v1/object/${BUCKET}/${userId}.json`);
   if (!r.ok) return null;
-  try { return await r.json(); } catch { return null; }
-}
-
-const num = (v) => { if (v === "" || v == null) return null; const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : null; };
-
-function limpiar(body) {
-  const servicios = {};
-  SERVICIOS.forEach((s) => {
-    const filas = Array.isArray(body?.servicios?.[s]) ? body.servicios[s] : [];
-    servicios[s] = filas
-      .map((f) => ({ min: num(f.min) ?? 0, max: num(f.max), usd: num(f.usd) }))
-      .filter((f) => f.usd != null && f.usd >= 0)
-      .sort((a, b) => a.min - b.min)
-      .slice(0, 20);
-  });
-  const e = body?.extras || {};
-  const extras = {
-    bateria_usd_total: num(e.bateria_usd_total),
-    marca_usd_kg: num(e.marca_usd_kg),
-    sobrepeso_usd_pieza: num(e.sobrepeso_usd_pieza),
-    remota_usd_kg: num(e.remota_usd_kg),
-    remota_min_usd: num(e.remota_min_usd),
-  };
-  const fecha = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
-  return { servicios, extras, vigencia: { desde: fecha(body?.vigencia?.desde), hasta: fecha(body?.vigencia?.hasta) }, notas: String(body?.notas || "").slice(0, 500) };
+  try { return normalizarTarifas(await r.json()); } catch { return null; }
 }
 
 // ── Costo del aéreo courier (20/10/2026) ─────────────────────────────────────────────────────
@@ -83,7 +62,8 @@ async function agenteFuente() {
   for (const a of Array.isArray(ags) ? ags : []) {
     if (/estados unidos|usa|united states/i.test(String(a.country || ""))) continue;
     const t = await leer(a.auth_user_id);
-    const dhl = Array.isArray(t?.servicios?.DHL) ? t.servicios.DHL.filter((f) => f.usd != null) : [];
+    const fuente = t?.origenes?.CN?.servicios?.DHL || t?.servicios?.DHL; // DHL desde China Mainland
+    const dhl = Array.isArray(fuente) ? fuente.filter((f) => f.usd != null) : [];
     if (dhl.length) return { agente: a, dhl: dhl.slice().sort((x, y) => Number(x.min || 0) - Number(y.min || 0)) };
   }
   return null;
@@ -149,7 +129,7 @@ export async function POST(req) {
   const destino = yo.staff && /^[0-9a-f-]{36}$/i.test(String(body?.agent_user_id || "")) ? body.agent_user_id : yo.id;
   if (!yo.staff && destino !== yo.id) return Response.json({ error: "sin_permiso" }, { status: 403 });
   await asegurarBucket();
-  const data = { ...limpiar(body), actualizado: new Date().toISOString() };
+  const data = { ...limpiarTarifas(body), actualizado: new Date().toISOString() };
   const r = await svc(`/storage/v1/object/${BUCKET}/${destino}.json`, { method: "POST", headers: { "Content-Type": "application/json", "x-upsert": "true" }, body: JSON.stringify(data) });
   if (!r.ok) return Response.json({ error: "no_guardado", detalle: await r.text() }, { status: 500 });
   // Si cambió la tarifa DHL del agente fuente, el costo del aéreo de Argencargo se actualiza solo.
