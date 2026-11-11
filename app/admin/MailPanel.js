@@ -74,7 +74,7 @@ export default function MailPanel({ token }) {
   useEffect(() => { if (noLeidosTotal == null) return; try { window.dispatchEvent(new CustomEvent("ac_mail_noleidos", { detail: noLeidosTotal })); } catch {} }, [noLeidosTotal]);
   const cargarLista = useCallback(async (mas) => {
     setCargando(true);
-    try { const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}) }); setLista((p) => mas ? [...p, ...d.mensajes] : d.mensajes); setSig(d.siguiente); }
+    try { const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}) }); setLista((p) => mas ? [...p, ...d.mensajes.filter((m) => !m.hilo || !p.some((x) => x.hilo === m.hilo))] : d.mensajes); setSig(d.siguiente); }
     catch (e) { toast(e.message, "error"); }
     setCargando(false);
   }, [api, carpeta, busq, sig]);

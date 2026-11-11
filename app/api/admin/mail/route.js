@@ -154,14 +154,25 @@ export async function GET(req) {
       // de la cadena (sin borradores; en Papelera solo lo tirado, afuera lo que no está tirado), con
       // la cantidad de mensajes, cuántos están sin leer y quiénes escribieron.
       const d = await gm(`/threads?${params}`);
-      const hilos = await Promise.all((d.threads || []).map((t) => gm(`/threads/${t.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`).catch(() => null)));
+      // Sin leer siempre a la vista (11/11/2026): Gmail ordena cada cadena por su último mensaje que entra en la
+      // carpeta, así que una cadena con un mensaje viejo sin leer quedaba varias páginas abajo y el globo marcaba
+      // un mail que no se encontraba. En la primera página (sin búsqueda) se traen aparte las cadenas sin leer y
+      // van arriba de todo.
+      const ids = (d.threads || []).map((t) => t.id);
+      if (!pagina && !q && carpeta !== "enviados" && carpeta !== "papelera") {
+        const pu = new URLSearchParams({ maxResults: "15", includeSpamTrash: "true" });
+        if (base) pu.set("q", `${base} is:unread`); else { pu.append("labelIds", carpeta); pu.set("q", "is:unread"); }
+        const du = await gm(`/threads?${pu}`).catch(() => ({}));
+        (du.threads || []).forEach((t) => { if (!ids.includes(t.id)) ids.push(t.id); });
+      }
+      const hilos = await Promise.all(ids.map((id) => gm(`/threads/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`).catch(() => null)));
       const tiene = (m, l) => (m.labelIds || []).includes(l);
       const mensajes = hilos.filter(Boolean).map((t) => {
         const msgs = (t.messages || []).filter((m) => !tiene(m, "DRAFT") && (carpeta === "papelera" ? tiene(m, "TRASH") : !tiene(m, "TRASH"))).sort((a, b) => Number(a.internalDate) - Number(b.internalDate));
         if (!msgs.length) return null;
         const r = resumen(msgs[msgs.length - 1]);
         return { ...r, hilo: t.id, n: msgs.length, nNoLeidos: msgs.filter((m) => tiene(m, "UNREAD")).length, noLeido: msgs.some((m) => tiene(m, "UNREAD")), spam: msgs.some((m) => tiene(m, "SPAM")), adjuntos: msgs.some((m) => /multipart\/mixed/i.test(hdr(m.payload?.headers, "Content-Type"))), remitentes: [...new Set(msgs.map((m) => hdr(m.payload?.headers, "From")))] };
-      }).filter(Boolean).sort((a, b) => b.fecha - a.fecha);
+      }).filter(Boolean).sort((a, b) => (!pagina && !q ? Number(b.noLeido) - Number(a.noLeido) : 0) || b.fecha - a.fecha);
       return json({ mensajes, siguiente: d.nextPageToken || null });
     }
     if (accion === "mensaje") {
