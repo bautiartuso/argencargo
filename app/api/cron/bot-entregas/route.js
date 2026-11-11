@@ -125,13 +125,16 @@ export async function GET(req) {
     } catch (e) { console.error("[bot-entregas] aviso", op.operation_code, e.message); }
   }
 
-  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,client_id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,sent_notifications,clients(first_name,last_name,client_code,whatsapp)`);
+  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito)&bot_coord_reminder_count=lt.2&select=id,client_id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,sent_notifications,channel,ri_entrega_directa,clients(first_name,last_name,client_code,whatsapp,tax_condition)`);
 
   // Link único (28/10/2026): un cliente con varias cargas sin coordinar recibe UN recordatorio con
   // todas y el link compartido (el de la avisada primero), no uno por carga.
   const porCliente = new Map();
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
     if (op.sent_notifications?.silenciada) continue;
+    // Entrega directa por courier (11/11/2026, AC-0337): aunque se haya avisado como retiro antes de
+    // marcarla, no hay nada que coordinar — no se le recuerda.
+    if (op.channel === "aereo_blanco" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || op.clients?.tax_condition === "responsable_inscripto")) continue;
     const k = op.client_id || op.id;
     if (!porCliente.has(k)) porCliente.set(k, []);
     porCliente.get(k).push(op);

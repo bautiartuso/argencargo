@@ -2467,8 +2467,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       }>
         {/* Ajustes del aéreo A en un solo bloque (rediseño 22/10/2026): impuestos del RI, entrega del RI y baterías. */}
         {op.channel==="aereo_blanco"&&(()=>{
-          const cobra=!!op.ri_argencargo_collects_taxes;const dir=op.ri_entrega_directa!==false;
+          const cobra=!!op.ri_argencargo_collects_taxes;const dir=op.ri_entrega_directa===true||(isRI&&op.ri_entrega_directa!==false);
           const setCobra=async()=>{const v=!cobra;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo a la aduana");setSaving(false);};
+          // Entrega Domicilio/Oficina para cualquier cliente del aéreo A (11/11/2026, AC-0337: monotributista con
+          // entrega directa del courier). En el RI es automática; en el resto se marca a mano.
           // Pasar a oficina (11/11/2026, AC-0297): si el courier ya había entregado y el flujo directo la dejó como
           // entregada al cliente (delivery_completed_at), esa marca se borra: la carga está en la oficina y falta el retiro.
           const setDir=async(v)=>{if(saving||v===dir)return;setSaving(true);const body={ri_entrega_directa:v};if(!v&&op.delivery_completed_at&&!op.delivery_confirmed_at&&!op.is_collected)body.delivery_completed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});setOp(p=>({...p,...body}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
@@ -2481,7 +2483,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>;
           return <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
             {isRI&&seg("Impuestos",cobra?"ac":"cli",[["cli","Cliente","#60a5fa"],["ac","Argencargo","#E8D098"]],()=>setCobra())}
-            {isRI&&seg("Entrega",dir,[[true,"Domicilio","#60a5fa"],[false,"Oficina","#E8D098"]],(v)=>setDir(v))}
+            {seg("Entrega",dir,[[true,"Domicilio","#60a5fa"],[false,"Oficina","#E8D098"]],(v)=>setDir(v))}
             {seg(`Baterías${op.has_battery?` · USD ${usdKg}/kg`:""}`,!!op.has_battery,[[true,"Sí","#fb923c"],[false,"No","#cbd5e1"]],()=>setBat())}
           </div>;
         })()}
