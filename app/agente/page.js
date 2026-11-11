@@ -6,6 +6,7 @@ import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 import { comprimirImagen } from "../../lib/img";
 import { TarifasAgenteEditor, TarifasAgenteAdmin } from "../components/TarifasAgente";
+import { parsePedido } from "../../lib/tarifas-agente";
 import { hoyAR } from "../../lib/fecha-ar";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 import { filtrosSeguros } from "../../lib/columnas-seguras";
@@ -368,6 +369,8 @@ const I18N={
     intl_tracking:"Tracking internacional",
     courier:"Courier",
     requested_carrier:"Enviar por",
+    origin_CN:"China Mainland",
+    origin_HK:"Hong Kong",
     requested_carrier_warn:"Argencargo pidió",
     payment_method_label:"Método de pago",
     method_cc:"Cuenta corriente",
@@ -757,6 +760,8 @@ const I18N={
     intl_tracking:"国际物流单号",
     courier:"快递",
     requested_carrier:"请使用",
+    origin_CN:"中国大陆",
+    origin_HK:"香港",
     requested_carrier_warn:"Argencargo 要求使用",
     payment_method_label:"付款方式",
     method_cc:"往来账户",
@@ -961,9 +966,10 @@ html,body{background:#0A1628}
 
 // Courier pedido por Argencargo (03/10/2026): DHL, FEDEX_5000, FEDEX_6000, UPS_5000, UPS_6000.
 // "FEDEX" y "UPS" sin divisor son vuelos viejos y equivalen a ÷6000.
-const carrierBase=(v)=>{const s=String(v||"");return s==="DHL"?"DHL":s.startsWith("FEDEX")?"FedEx":s.startsWith("UPS")?"UPS":null;};
-const carrierDiv=(v)=>{const s=String(v||"");if(s.endsWith("5000"))return 5000;return s.startsWith("FEDEX")||s.startsWith("UPS")?6000:null;};
-const carrierPedido=(v)=>{const b=carrierBase(v);if(!b)return v||"";const d=carrierDiv(v);return d?`${b} (÷${d})`:b;};
+// Desde el 11/11/2026 el pedido trae origen y servicio ("HK:UPS_SAV_5000"): lib/tarifas-agente parsePedido.
+const carrierBase=(v)=>parsePedido(v)?.carrierNombre||null;
+const carrierDiv=(v)=>parsePedido(v)?.div||null;
+const carrierPedido=(v,t)=>{const p=parsePedido(v);if(!p)return v||"";const org=p.viejo?"":` · ${p.origen==="HK"?(t?.origin_HK||"Hong Kong"):(t?.origin_CN||"China Mainland")}`;return `${p.viejo?p.carrierNombre:p.servicio.nombre}${p.div?` (÷${p.div})`:""}${org}`;};
 
 export default function AgentePortal(){
   const [session,setSession]=useState(null);
@@ -1335,7 +1341,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           <span style={{fontSize:15,fontWeight:800,fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
           <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,color:c,background:`${c}18`,border:`1px solid ${c}55`,textTransform:"uppercase",letterSpacing:"0.06em",display:"inline-flex",alignItems:"center",gap:6}}><span className={live?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:c}}/>{faseLabel(fase)}</span>
           {isWaiting&&<span style={{fontSize:11,fontWeight:700,color:"var(--amber)"}}>{t.waiting_invoice}</span>}
-          {f.status==="preparando"&&f.requested_carrier&&<span style={{fontSize:11,fontWeight:700,color:"var(--blue)",padding:"2px 9px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {carrierPedido(f.requested_carrier)}</span>}
+          {f.status==="preparando"&&f.requested_carrier&&<span style={{fontSize:11,fontWeight:700,color:"var(--blue)",padding:"2px 9px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {carrierPedido(f.requested_carrier,t)}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           {f.invoice_presented_at?<Pill color="var(--gold)">📄 {t.tl_presented} · {fechaCorta(f.invoice_presented_at)}</Pill>:<span style={{fontSize:11.5,color:"rgba(var(--ink),0.5)"}}>{t.tl_created} {fechaCorta(f.created_at)}</span>}
@@ -2082,7 +2088,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1.5px solid ${pedido&&carrier!==pedido?"rgba(248,113,113,0.6)":"rgba(var(--ink),0.12)"}`,borderRadius:10,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none"}}>
               {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"var(--panel)"}}>{c}</option>)}
             </select>
-            {pedido&&<p style={{fontSize:11,margin:"4px 0 0",color:carrier===pedido?"#93c5fd":"#f87171",fontWeight:600}}>{carrier===pedido?`✓ ${t.requested_carrier||"Enviar por"}: ${pedido}${divPedido?` (÷${divPedido})`:""}`:`⚠ ${t.requested_carrier_warn||"Argencargo pidió"} ${pedido}${divPedido?` (÷${divPedido})`:""}`}</p>}
+            {pedido&&<p style={{fontSize:11,margin:"4px 0 0",color:carrier===pedido?"#93c5fd":"#f87171",fontWeight:600}}>{carrier===pedido?`✓ ${t.requested_carrier||"Enviar por"}: ${carrierPedido(flight.requested_carrier,t)}`:`⚠ ${t.requested_carrier_warn||"Argencargo pidió"} ${carrierPedido(flight.requested_carrier,t)}`}</p>}
           </div>
           <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(var(--ink),0.6)",marginBottom:5}}>{t.payment_method_label}</label>
             <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(var(--ink),0.12)",borderRadius:10,background:"rgba(var(--ink),0.06)",color:"var(--tx)",outline:"none"}}>

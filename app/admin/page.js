@@ -10,7 +10,8 @@ import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, con
 import DatePicker from "../components/DatePicker";
 import { NAVIERAS, navieraDe, navieraColor } from "../../lib/navieras";
 import CarrierLogo from "../components/CarrierLogo";
-import { TarifasAgenteResumen } from "../components/TarifasAgente";
+import { TarifasAgenteResumen, Bandera } from "../components/TarifasAgente";
+import { CARRIERS as CARRIERS_AG, ORIGENES as ORIGENES_AG, parsePedido, codigoPedido } from "../../lib/tarifas-agente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { diasFeriados } from "../../lib/feriados-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
@@ -9621,64 +9622,137 @@ function FeTimeline({flight}){
   </div>;
 }
 
-// Estimado por courier (11/10/2026): con el vuelo en preparación y el courier elegido, cuánto se le
-// cobraría a cada cliente, cuánto costaría según las tarifas que cargó el agente y la ganancia.
-// Kilos: facturable de cada bulto con el divisor del servicio (DHL y ÷5000 → 5000, ÷6000 → 6000),
-// redondeado al medio kilo para arriba como cobra el agente. La tarifa por kg sale del tramo que
-// corresponde al total del vuelo. Cobro = presupuesto de la op sin los impuestos (que se pagan aparte).
-function EstimadoCourier({servicio,tarifas,ops,pkgs,usd}){
-  if(tarifas===undefined)return <p style={{margin:"12px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.45)"}}>Calculando estimado…</p>;
-  const nombre={DHL:"DHL",FEDEX_5000:"FedEx ÷5.000",FEDEX_6000:"FedEx ÷6.000",UPS_5000:"UPS ÷5.000",UPS_6000:"UPS ÷6.000"}[servicio]||servicio;
-  const filasT=(tarifas?.servicios?.[servicio]||[]).filter(f=>f.usd!=null).sort((a,b)=>Number(a.min||0)-Number(b.min||0));
-  if(!filasT.length)return <p style={{margin:"12px 0 0",fontSize:12.5,color:"#fbbf24"}}>El agente no cargó tarifas de {nombre}</p>;
-  const div=/6000/.test(servicio)?6000:5000;
-  const kgOp=(opId)=>pkgs.filter(p=>p.operation_id===opId).reduce((a,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?(l*w*h)/div*q:0;return a+Math.ceil(Math.max(gw,vol)*2)/2;},0);
-  const filas=ops.map(o=>({o,kg:kgOp(o.id)}));
-  const totKg=filas.reduce((a,f)=>a+f.kg,0);
-  const tramo=[...filasT].reverse().find(f=>totKg>=Number(f.min||0))||filasT[0];
-  const tarifa=Number(tramo.usd||0);
-  const bat=Number(tarifas?.extras?.bateria_usd_total||0);
-  const kgBat=filas.filter(f=>f.o.has_battery).reduce((a,f)=>a+f.kg,0);
+// Courier a pedir al agente (11/11/2026, rediseño). Con el vuelo en preparación se ven TODAS las
+// opciones que cotiza el agente — origen (China Mainland / Hong Kong) × servicio (DHL, FedEx
+// International Economy / Priority, UPS Expedited / Saver) × divisor — y en cada una la ganancia
+// estimada del vuelo (verde gana, rojo pierde). Tocar una opción abre su desglose (cobro, costo del
+// agente con la comisión de los anticipos, ganancia por operación); recién el botón "Pedir" la
+// guarda en flights.requested_carrier, así mirar opciones no le cambia nada al agente.
+// Kilos: facturable de cada bulto con el divisor del servicio (DHL → 5000), redondeado al medio
+// kilo para arriba como cobra el agente. La tarifa sale del tramo del total del vuelo.
+// Cobro = presupuesto de la op sin los impuestos (que se pagan aparte).
+function PedidoCourier({flight,token,tarifas,finRate=0,ops,pkgs,usd,onReload,soloPedir}){
+  const pedido=parsePedido(flight.requested_carrier);
+  const [origen,setOrigen]=useState(pedido?.origen||"CN");
+  const [ver,setVer]=useState(pedido?.codigo||null);
+  const [guardando,setGuardando]=useState(false);
   const r2=(x)=>Math.round(x*100)/100;
-  const det=filas.map(f=>{
-    const o=f.o;const ri=o.clients?.tax_condition==="responsable_inscripto";
-    const impEnTotal=o.channel!=="aereo_blanco"||!ri||!!o.ri_argencargo_collects_taxes;
-    const cobro=r2(Number(o.budget_total||0)-(impEnTotal?Number(o.budget_taxes||0):0));
-    const costo=r2(f.kg*tarifa+(o.has_battery&&bat>0&&kgBat>0?bat*f.kg/kgBat:0));
-    return {...f,cobro,costo,gan:r2(cobro-costo)};
-  });
-  const T=det.reduce((a,d)=>({cobro:a.cobro+d.cobro,costo:a.costo+d.costo,gan:a.gan+d.gan}),{cobro:0,costo:0,gan:0});
-  const pct=(g,c)=>c>0?` · ${Math.round(g/c*100)}%`:"";
   const n2=(v)=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fin=Number(finRate||0);
+  const estimar=(org,key,div)=>{
+    const filasT=(tarifas?.origenes?.[org]?.servicios?.[key]||[]).filter(f=>f.usd!=null).sort((a,b)=>Number(a.min||0)-Number(b.min||0));
+    if(!filasT.length)return null;
+    const dv=div||5000;
+    const kgOp=(opId)=>pkgs.filter(p=>p.operation_id===opId).reduce((a,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?(l*w*h)/dv*q:0;return a+Math.ceil(Math.max(gw,vol)*2)/2;},0);
+    const filas=ops.map(o=>({o,kg:kgOp(o.id)}));
+    const totKg=filas.reduce((a,f)=>a+f.kg,0);
+    const tramo=[...filasT].reverse().find(f=>totKg>=Number(f.min||0))||filasT[0];
+    const tarifa=Number(tramo.usd||0);
+    const bat=Number(tarifas?.extras?.bateria_usd_total||0);
+    const kgBat=filas.filter(f=>f.o.has_battery).reduce((a,f)=>a+f.kg,0);
+    const det=filas.map(f=>{
+      const o=f.o;const ri=o.clients?.tax_condition==="responsable_inscripto";
+      const impEnTotal=o.channel!=="aereo_blanco"||!ri||!!o.ri_argencargo_collects_taxes;
+      const cobro=r2(Number(o.budget_total||0)-(impEnTotal?Number(o.budget_taxes||0):0));
+      const base=f.kg*tarifa+(o.has_battery&&bat>0&&kgBat>0?bat*f.kg/kgBat:0);
+      const costo=r2(base*(1+fin));
+      return {...f,cobro,costo,com:r2(base*fin),gan:r2(cobro-costo)};
+    });
+    const T=det.reduce((a,d)=>({cobro:a.cobro+d.cobro,costo:a.costo+d.costo,com:a.com+d.com,gan:a.gan+d.gan}),{cobro:0,costo:0,com:0,gan:0});
+    return {det,T,totKg,tarifa,tramo,bat:kgBat>0?bat:0};
+  };
+  // Todas las opciones de los dos orígenes, calculadas una vez por render.
+  const opciones=useMemo(()=>{const m={};ORIGENES_AG.forEach(o=>CARRIERS_AG.forEach(c=>c.servicios.forEach(s=>s.cols.forEach(col=>{m[codigoPedido(o,col.key)]={o,c,s,col,e:soloPedir||tarifas==null?null:estimar(o,col.key,col.div)};}))));return m;},[tarifas,ops,pkgs,fin,soloPedir]);
+  const mejorDe=(o)=>Object.entries(opciones).filter(([,x])=>x.o===o&&x.e).sort((a,b)=>b[1].e.T.gan-a[1].e.T.gan)[0]||null;
+  const mejorTotal=Object.entries(opciones).filter(([,x])=>x.e).sort((a,b)=>b[1].e.T.gan-a[1].e.T.gan)[0]?.[0]||null;
+  const pedir=async(codigo)=>{
+    if(guardando)return;setGuardando(true);
+    const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{requested_carrier:codigo||null}});
+    setGuardando(false);
+    if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar el courier: ${r.message||r.code}`,"error");return;}
+    toast(codigo?"Courier pedido al agente":"Pedido quitado: el agente elige el courier");onReload();
+  };
+  const gColor=(g)=>g>=0?"#4ade80":"#f87171";
+  const signo=(g)=>`${g>=0?"+":"−"}${usd(Math.abs(g))}`;
+  const nombreDe=(x)=>`${x.s.nombre}${x.col.div?` ÷${x.col.div.toLocaleString("es-AR")}`:""}`;
+  const orgNombre={CN:"China Mainland",HK:"Hong Kong"};
+  const celda=(codigo)=>{
+    const x=opciones[codigo];const e=x.e;const esPedido=pedido?.codigo===codigo;const abierta=ver===codigo;const esMejor=mejorTotal===codigo;
+    const sinTarifa=!soloPedir&&tarifas!==undefined&&!e;
+    return <button key={codigo} type="button" disabled={sinTarifa||guardando} onClick={()=>soloPedir?pedir(esPedido?null:codigo):setVer(abierta?null:codigo)} title={sinTarifa?"El agente no cargó tarifa para este servicio":nombreDe(x)}
+      style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,minHeight:58,padding:"7px 8px",borderRadius:12,cursor:sinTarifa?"default":"pointer",fontFamily:"inherit",border:`1.5px solid ${esPedido?"rgba(96,165,250,0.85)":abierta?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.09)"}`,background:esPedido?"rgba(96,165,250,0.14)":abierta?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.03)",boxShadow:esPedido?"0 0 0 3px rgba(96,165,250,0.12)":"none",opacity:sinTarifa?0.45:1,transition:"all 140ms",minWidth:0}}>
+      <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",letterSpacing:"0.04em",fontVariantNumeric:"tabular-nums"}}>{x.col.div?`÷ ${x.col.div.toLocaleString("es-AR")}`:"Express"}</span>
+      {soloPedir?<span style={{fontSize:12.5,fontWeight:800,color:esPedido?"#93c5fd":"rgba(255,255,255,0.75)"}}>{esPedido?"Pedido":"Pedir"}</span>
+        :tarifas===undefined?<span style={{fontSize:12,color:"rgba(255,255,255,0.35)"}}>…</span>
+        :e?<span style={{fontSize:15,fontWeight:900,color:gColor(e.T.gan),fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{signo(e.T.gan)}</span>
+        :<span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>sin tarifa</span>}
+      {(esPedido||esMejor)&&!soloPedir&&<span style={{position:"absolute",top:-8,right:6,fontSize:8.5,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",padding:"2px 6px",borderRadius:999,background:esPedido?"#60a5fa":"#22c55e",color:"#0A1628"}}>{esPedido?"Pedido":"Mejor"}</span>}
+    </button>;
+  };
+  const abierto=ver?opciones[ver]:null;
+  const th={padding:"7px 12px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
+  const td={padding:"8px 12px",fontSize:12.5,color:"rgba(255,255,255,0.75)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
   const caja=(l,v,c,sub)=><div style={{flex:"1 1 150px",padding:"12px 14px",borderRadius:12,background:`${c}10`,border:`1px solid ${c}40`}}>
     <p style={{margin:0,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:c}}>{l}</p>
     <p style={{margin:"4px 0 0",fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</p>
     {sub&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{sub}</p>}
   </div>;
-  const th={padding:"7px 12px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
-  const td={padding:"8px 12px",fontSize:12.5,color:"rgba(255,255,255,0.75)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
-  return <div style={{marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.09)"}}>
-    <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:12}}>
-      <span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.09em"}}>Estimado · {nombre}</span>
-      <span style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{n2(totKg)} kg ↑ · tarifa <b style={{color:"#fff"}}>{usd(tarifa)}/kg</b> (tramo {Number(tramo.min||0)}{tramo.max!=null?`–${tramo.max}`:"+"} kg){kgBat>0&&bat>0?` · baterías ${usd(bat)}`:""}</span>
+  return <div style={{marginTop:-6,marginBottom:14,padding:"14px 16px",borderRadius:16,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)"}}>
+    <style>{`.pc-grid{display:grid;grid-template-columns:minmax(0,0.7fr) minmax(0,1.5fr) minmax(0,1.5fr);gap:12px}@media(max-width:900px){.pc-grid{grid-template-columns:1fr}}`}</style>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.09em"}}>Courier a pedir</span>
+        {pedido?<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:800,color:"#93c5fd",padding:"4px 10px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.4)"}}><Bandera o={pedido.origen} w={18}/>{pedido.servicio.nombre}{pedido.div?` ÷${pedido.div.toLocaleString("es-AR")}`:""} · {orgNombre[pedido.origen]}</span>
+          :<span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.45)"}}>Sin pedir · el agente elige</span>}
+      </div>
+      {pedido&&<button type="button" disabled={guardando} onClick={()=>pedir(null)} style={{height:30,padding:"0 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.6)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Quitar pedido</button>}
     </div>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
-      {caja("Cobro estimado",T.cobro,"#E8C99B","sin impuestos")}
-      {caja("Costo agente",T.costo,"#f87171",`${n2(totKg)} kg × ${usd(tarifa)}`)}
-      {caja("Ganancia",T.gan,T.gan>=0?"#4ade80":"#f87171",T.cobro>0?`margen ${Math.round(T.gan/T.cobro*100)}%`:null)}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+      {ORIGENES_AG.map(o=>{const on=origen===o;const m=mejorDe(o);return <button key={o} type="button" onClick={()=>setOrigen(o)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 13px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",color:"#fff",border:`1.5px solid ${on?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.09)"}`,background:on?"linear-gradient(135deg, rgba(222,41,16,0.14), rgba(184,149,106,0.1))":"rgba(255,255,255,0.03)"}}>
+        <Bandera o={o} w={28}/>
+        <span style={{flex:1,minWidth:0,fontSize:13.5,fontWeight:800}}>{orgNombre[o]}</span>
+        {!soloPedir&&(m?<span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap"}}>mejor <b style={{color:gColor(m[1].e.T.gan),fontVariantNumeric:"tabular-nums"}}>{signo(m[1].e.T.gan)}</b></span>:tarifas!==undefined&&<span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.35)"}}>sin tarifas</span>)}
+      </button>;})}
     </div>
-    <div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
-      <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr style={{background:"rgba(0,0,0,0.2)"}}><th style={{...th,textAlign:"left"}}>Operación</th><th style={th}>Kg ↑</th><th style={th}>Cobro</th><th style={th}>Costo</th><th style={th}>Ganancia</th></tr></thead>
-        <tbody>{det.map(d=><tr key={d.o.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-          <td style={{...td,textAlign:"left"}}><b style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT}}>{d.o.operation_code}</b> <span style={{color:"rgba(255,255,255,0.5)",fontSize:11.5}}>{d.o.clients?.client_code||""}</span>{d.o.has_battery&&<span title="Con baterías" style={{marginLeft:6}}>🔋</span>}</td>
-          <td style={td}>{n2(d.kg)}</td>
-          <td style={td}>{usd(d.cobro)}</td>
-          <td style={{...td,color:"#fca5a5"}}>{usd(d.costo)}</td>
-          <td style={{...td,fontWeight:800,color:d.gan>=0?"#4ade80":"#f87171"}}>{usd(d.gan)}<span style={{fontWeight:500,color:"rgba(255,255,255,0.4)",fontSize:11}}>{pct(d.gan,d.cobro)}</span></td>
-        </tr>)}</tbody>
-      </table>
+    <div className="pc-grid">
+      {CARRIERS_AG.map(c=><div key={c.k} style={{padding:"10px 10px 12px",borderRadius:14,background:"rgba(0,0,0,0.16)",border:"1px solid rgba(255,255,255,0.06)",minWidth:0}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:10}}><CarrierLogo k={c.k} alto={32}/></div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {c.servicios.map(s=><div key={s.k} style={{display:"grid",gridTemplateColumns:c.servicios.length>1?"minmax(0,0.95fr) minmax(0,1fr) minmax(0,1fr)":"1fr",gap:8,alignItems:"center"}}>
+            {c.servicios.length>1&&<span style={{minWidth:0}}><span style={{display:"block",fontSize:12.5,fontWeight:800,color:"#fff",lineHeight:1.2}}>{s.corto}</span><span style={{display:"block",fontSize:10,fontWeight:700,color:s.vel==="rapido"?GOLD_LIGHT:"#4ade80",marginTop:2}}>{s.vel==="rapido"?"⚡ más rápido":"◷ más económico"}</span></span>}
+            {s.cols.map(col=>celda(codigoPedido(origen,col.key)))}
+          </div>)}
+        </div>
+      </div>)}
     </div>
+    {abierto&&abierto.e&&(()=>{const e=abierto.e;const T=e.T;const esPedido=pedido?.codigo===ver;
+      return <div style={{marginTop:14,padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(232,208,152,0.3)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}>
+          <div style={{minWidth:0}}>
+            <p style={{margin:0,display:"flex",alignItems:"center",gap:8,fontSize:14.5,fontWeight:800,color:"#fff"}}><Bandera o={abierto.o} w={20}/>{nombreDe(abierto)} <span style={{fontWeight:600,color:"rgba(255,255,255,0.5)",fontSize:12.5}}>· {orgNombre[abierto.o]}</span></p>
+            <p style={{margin:"4px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{n2(e.totKg)} kg ↑ · tarifa <b style={{color:"#fff"}}>{usd(e.tarifa)}/kg</b> (tramo {Number(e.tramo.min||0)}{e.tramo.max!=null?`–${e.tramo.max}`:"+"} kg){e.bat>0?` · baterías ${usd(e.bat)}`:""}</p>
+          </div>
+          {esPedido?<span style={{fontSize:12.5,fontWeight:800,color:"#93c5fd"}}>✓ Pedido al agente</span>
+            :<Btn small disabled={guardando} onClick={()=>pedir(ver)}>{guardando?"Guardando…":"Pedir este courier al agente"}</Btn>}
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
+          {caja("Cobro estimado",T.cobro,"#E8C99B","sin impuestos")}
+          {caja("Costo agente",T.costo,"#f87171",`${n2(e.totKg)} kg × ${usd(e.tarifa)}${fin>0?` + comisión ${(fin*100).toFixed(2).replace(".",",")}% (${usd(T.com)})`:""}`)}
+          {caja("Ganancia",T.gan,gColor(T.gan),T.cobro>0?`margen ${Math.round(T.gan/T.cobro*100)}%`:null)}
+        </div>
+        <div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr style={{background:"rgba(0,0,0,0.2)"}}><th style={{...th,textAlign:"left"}}>Operación</th><th style={th}>Kg ↑</th><th style={th}>Cobro</th><th style={th}>Costo</th><th style={th}>Ganancia</th></tr></thead>
+            <tbody>{e.det.map(d=><tr key={d.o.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+              <td style={{...td,textAlign:"left"}}><b style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT}}>{d.o.operation_code}</b> <span style={{color:"rgba(255,255,255,0.5)",fontSize:11.5}}>{d.o.clients?.client_code||""}</span>{d.o.has_battery&&<span title="Con baterías" style={{marginLeft:6}}>🔋</span>}</td>
+              <td style={td}>{n2(d.kg)}</td>
+              <td style={td}>{usd(d.cobro)}</td>
+              <td style={{...td,color:"#fca5a5"}}>{usd(d.costo)}</td>
+              <td style={{...td,fontWeight:800,color:gColor(d.gan)}}>{usd(d.gan)}<span style={{fontWeight:500,color:"rgba(255,255,255,0.4)",fontSize:11}}>{d.cobro>0?` · ${Math.round(d.gan/d.cobro*100)}%`:""}</span></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>;})()}
   </div>;
 }
 
@@ -10419,20 +10493,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     <div style={{marginTop:-2}}>
       {/* Courier pedido al agente (03/10/2026): botones con el logo y el divisor del volumétrico.
           El reembalaje ya no se pide desde el vuelo: se pide sobre los bultos en depósito. */}
-      {flight.status==="preparando"&&flightOps.length>0&&(()=>{
-        const actual=flight.requested_carrier||"";
-        // "FEDEX" y "UPS" sin divisor son vuelos viejos: equivalen a ÷6000.
-        const norm=actual==="FEDEX"?"FEDEX_6000":actual==="UPS"?"UPS_6000":actual;
-        const OPC=[["",null,null],["DHL","dhl",null],["FEDEX_5000","fedex",5000],["FEDEX_6000","fedex",6000],["UPS_5000","ups",5000],["UPS_6000","ups",6000]];
-        return <div style={{marginTop:-6,marginBottom:14}}>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            {OPC.map(([v,k,div])=>{const on=norm===v;return <button key={v||"none"} type="button" onClick={async()=>{const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{requested_carrier:v||null}});if(r&&!Array.isArray(r)&&r.code){toast(`No se pudo guardar el courier: ${r.message||r.code}`,"error");return;}onReload();}} title={!v?"El agente elige":k==="dhl"?"DHL":`${k==="fedex"?"FedEx":"UPS"} con volumétrico ÷${div}`} style={{display:"inline-flex",alignItems:"center",gap:10,height:52,padding:k?"0 14px 0 7px":"0 18px",borderRadius:13,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,border:`1px solid ${on?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:on?"rgba(96,165,250,0.16)":"rgba(255,255,255,0.03)",color:on?"#93c5fd":"rgba(255,255,255,0.7)",boxShadow:on?"0 0 0 3px rgba(96,165,250,0.12)":"none",transition:"all 150ms"}}>
-              {k?<><CarrierLogo k={k} alto={38}/>{div?<span style={{fontSize:15,fontWeight:900,fontVariantNumeric:"tabular-nums"}}>÷ {div.toLocaleString("es-AR")}</span>:null}</>:"Sin pedir"}
-            </button>;})}
-          </div>
-          {norm&&!esEmpleado()&&<EstimadoCourier servicio={norm} tarifas={tarifasAg} ops={opsUnique} pkgs={edPkgs} usd={usd}/>}
-        </div>;
-      })()}
+      {flight.status==="preparando"&&flightOps.length>0&&<PedidoCourier flight={flight} token={token} tarifas={tarifasAg} finRate={finRate} ops={opsUnique} pkgs={edPkgs} usd={usd} onReload={onReload} soloPedir={esEmpleado()}/>}
       {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
     </div>
     <div id="fe-card-factura"/>
