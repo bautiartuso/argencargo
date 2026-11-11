@@ -1,6 +1,7 @@
 // GET  /api/entrega/[token] → datos de la operación para la pantalla pública de "carga lista"
 // POST /api/entrega/[token] → cliente confirma envío/retiro + método de pago
 
+import { fetchDolar } from "../../../../lib/dolar";
 import { DELIVERY_CFG_KEYS, matchLocality, matchDireccion, computeDeliveryCostUsd, kgDeBultos } from "../../../../lib/delivery";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -347,7 +348,7 @@ export async function GET(req, { params }) {
   try {
     // Timeout corto: si DolarAPI esta lenta NO puede colgar la carga del link (paso 28/08:
     // 55 segundos de "Cargando..." por este fetch sin limite).
-    const tcRes = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
+    const tcRes = await fetchDolar({ next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
     if (tcRes.ok) {
       const d = await tcRes.json();
       if (Number(d?.venta) > 0) tc = { venta: Number(d.venta), fuente: "Dólar blue (venta)", actualizado: d.fechaActualizacion || null };
@@ -451,7 +452,7 @@ export async function POST(req, { params }) {
     sbFetch(`/op_communications`, { method: "POST", body: JSON.stringify({ operation_id: opRi.id, type: "note", direction: "in", content: `✅ Cliente RI (entrega directa por courier) eligió forma de pago: ${PLri[body.payment_method]}\nSaldo: USD ${saldoRi.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }) }).catch(() => {});
     const [stgRi, tcRi] = await Promise.all([
       sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`),
-      fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetchDolar({ next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     ]);
     const stg0 = Array.isArray(stgRi.body) && stgRi.body[0] ? stgRi.body[0] : {};
     return Response.json({
@@ -490,7 +491,7 @@ export async function POST(req, { params }) {
     sbFetch(`/op_communications`, { method: "POST", body: JSON.stringify({ operation_id: opE.id, type: "note", direction: "in", content: `💳 Cliente cambió la forma de pago (carga ya entregada): ${PLe[body.payment_method]}\nSaldo: USD ${totalE.toFixed(2)}` }) }).catch(() => {});
     const [stgE, tcE] = await Promise.all([
       sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`),
-      fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetchDolar({ next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null),
     ]);
     const stE = Array.isArray(stgE.body) && stgE.body[0] ? stgE.body[0] : {};
     return Response.json({
@@ -669,7 +670,7 @@ export async function POST(req, { params }) {
   // Todo lo que sigue (nota, avisos, settings, TC) corre EN PARALELO con el PATCH para que
   // el "Confirmar" no acumule latencias en serie (la demora que se veia era esta suma).
   const settingsP = sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`);
-  const tcP = fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null);
+  const tcP = fetchDolar({ next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null);
 
   const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por Vía Cargo";
   const PL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };

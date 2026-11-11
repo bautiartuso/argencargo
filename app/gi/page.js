@@ -6,6 +6,7 @@
 //   socio    → desde el 20/10/2026 control total: lo mismo que el admin (cotizaciones, operaciones,
 //              plata, socios y configuración). Lo único que se le esconde es lo que se le esconde al
 //              empleado: nada. SQL: 2026_10_20_gi_socios_control_total.sql
+import { fetchDolar } from "../../lib/dolar";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { ToastStack, DialogHost, toast, confirmDialog, promptDialog } from "../../lib/ui";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
@@ -1241,7 +1242,7 @@ function CobroModal({ op, saldo, cobrado, token, onClose, onListo }) {
   const [g, setG] = useState(false);
   const m = METODOS_COBRO.find((x) => x.k === metodo);
   const enArs = m.moneda === "ARS";
-  useEffect(() => { if (enArs && !tc) fetch("https://dolarapi.com/v1/dolares/blue").then((r) => r.json()).then((j) => { if (j?.venta) setTc(String(j.venta)); }).catch(() => {}); }, [enArs]);
+  useEffect(() => { if (enArs && !tc) fetchDolar().then((r) => r.json()).then((j) => { if (j?.venta) setTc(String(j.venta)); }).catch(() => {}); }, [enArs]);
   const usd = enArs ? (Number(ars) > 0 && Number(tc) > 0 ? Number(ars) / Number(tc) : 0) : Number(monto || 0);
   const guardar = async () => {
     if (!(usd > 0)) { toast.error("Poné el monto"); return; }
@@ -1287,7 +1288,7 @@ function CostoModal({ op, token, tarjetas, pagos, res, fuenteFlete, inicial = nu
   const [g, setG] = useState(false);
   const esTC = metodo === "tarjeta_credito";
   const ars = moneda === "ARS" && metodo !== "cripto";
-  useEffect(() => { if (ars && !tc) fetch("https://dolarapi.com/v1/dolares/blue").then((r) => r.json()).then((j) => { if (j?.venta) setTc(String(j.venta)); }).catch(() => {}); }, [ars]);
+  useEffect(() => { if (ars && !tc) fetchDolar().then((r) => r.json()).then((j) => { if (j?.venta) setTc(String(j.venta)); }).catch(() => {}); }, [ars]);
   const amt = Number(String(monto).replace(",", ".")) || 0;
   const usd = ars ? (esTC ? 0 : Number(tc) > 0 ? amt / Number(tc) : 0) : amt;
 

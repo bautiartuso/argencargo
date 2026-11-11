@@ -18,6 +18,7 @@
 // Env: ANTHROPIC_API_KEY (ya configurada) · CRON_SECRET (interno)
 //      WA_TOKEN, WA_PHONE_ID, WA_VERIFY_TOKEN (Meta — recién al conectar el número)
 
+import { fetchDolar } from "../../../../lib/dolar";
 import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_MODEL } from "../../../../lib/anthropic";
 import { tgNotify, logUso, costoClaude } from "../../../../lib/telegram";
@@ -344,7 +345,7 @@ async function runTool(name, input, phone) {
     const data = await apiEntrega("GET", `whatsapp=${encodeURIComponent(phone)}`);
     let tc = null;
     try {
-      const r = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
+      const r = await fetchDolar({ next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
       if (r.ok) { const d = await r.json(); if (Number(d?.venta) > 0) tc = Number(d.venta); }
     } catch {}
     return { ...data, tc_blue_venta: tc };
@@ -555,7 +556,7 @@ export async function POST(req) {
         // Saldo esperado en ARS al blue del día (best effort).
         if (opDest && Number(opDest.saldo_usd) > 0) {
           try {
-            const r = await fetch("https://dolarapi.com/v1/dolares/blue", { signal: AbortSignal.timeout(2500) });
+            const r = await fetchDolar({ signal: AbortSignal.timeout(2500) });
             if (r.ok) { const d = await r.json(); if (Number(d?.venta) > 0) { tcBlue = Number(d.venta); esperadoArs = Math.round(Number(opDest.saldo_usd) * tcBlue); } }
           } catch {}
         }

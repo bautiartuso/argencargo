@@ -21,6 +21,7 @@
 //
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
+import { fetchDolar } from "../../../../lib/dolar";
 import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES, uploadWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
 import { tokenRetiro, nombreCargas } from "../../../../lib/link-retiro";
 
@@ -214,7 +215,7 @@ export async function GET(req) {
         const estado = estados[plantilla];
         if (estado && estado !== "APPROVED") { out.ri_plantilla = `${plantilla}: ${estado} en Meta — se reintenta en 5 min`; continue; }
         if (!tc) {
-          const d = await fetch("https://dolarapi.com/v1/dolares/blue", { signal: AbortSignal.timeout(4000) }).then((r) => r.ok ? r.json() : null).catch(() => null);
+          const d = await fetchDolar({ signal: AbortSignal.timeout(4000) }).then((r) => r.ok ? r.json() : null).catch(() => null);
           tc = Number(d?.venta) > 0 ? Number(d.venta) : 0;
           if (!tc) { out.ri_error = "sin tipo de cambio (DolarAPI) — se reintenta en 5 min"; break; }
           const stg = await sb(`/gi_settings?select=payment_alias,payment_titular&limit=1`);

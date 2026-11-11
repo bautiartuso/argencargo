@@ -1,4 +1,5 @@
 "use client";
+import { fetchDolar } from "../../lib/dolar";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
@@ -5261,7 +5262,7 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
   const [err,setErr]=useState("");
   const [soloEntregar,setSoloEntregar]=useState(false);
   // TC del dia precargado (best effort)
-  useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(String(d.venta));}}catch{}})();},[]);
+  useEffect(()=>{(async()=>{try{const r=await fetchDolar({signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(String(d.venta));}}catch{}})();},[]);
   // Si el cliente mandó el comprobante por WhatsApp (nota del bot), se precarga acá:
   // el cobro sale con un click y el archivo fluye a la CC financiera como siempre.
   useEffect(()=>{(async()=>{try{
@@ -5866,7 +5867,7 @@ function EntregasPanel({token,onOpenOp,vista}){
       dq("operation_client_payments",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,payment_date,amount_usd,amount_ars,currency,exchange_rate,payment_method,receipt_number,created_at&order=payment_date.asc`}).catch(()=>[]),
       dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality,office_address&limit=1"}).catch(()=>[]),
       // Si el cliente eligió pagar en pesos, el recibo sale en pesos al blue del día (venta).
-      fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetchDolar({signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
     const settings=Array.isArray(st)&&st[0]?st[0]:{};
     const tc=Number(blue?.venta||0);
@@ -6427,7 +6428,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
     setCliPagos((Array.isArray(r)?r:[]).reduce((a,p)=>a+Number(p.amount_usd||0),0));
   })();},[op.id,op.collected_amount,op.is_collected,token]);
   useEffect(()=>{
-    fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null).then(j=>setBlue(Number(j?.venta||0))).catch(()=>{});
+    fetchDolar({signal:AbortSignal.timeout(4000)}).then(r=>r.ok?r.json():null).then(j=>setBlue(Number(j?.venta||0))).catch(()=>{});
     dq("gi_settings",{token,filters:"?select=payment_crypto_wallet&limit=1"}).then(r=>setWallet(Array.isArray(r)&&r[0]?r[0].payment_crypto_wallet||"":"")).catch(()=>{});
   },[token]);
   useEffect(()=>{
@@ -6874,7 +6875,7 @@ function RegistrarPagoCC({token,cl,onDone}){
   const [solfin,setSolfin]=useState(true);
   const [fecha,setFecha]=useState(hoyAR());const [nota,setNota]=useState("");
   const [recibo,setRecibo]=useState(null);const [subiendo,setSubiendo]=useState(false);const [guardando,setGuardando]=useState(false);
-  useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(t=>t||String(d.venta));}}catch{}})();},[]);
+  useEffect(()=>{(async()=>{try{const r=await fetchDolar({signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(t=>t||String(d.venta));}}catch{}})();},[]);
   const num=(v)=>{const x=String(v||"").trim();if(!x)return 0;const n=Number(x.includes(",")?x.replace(/\./g,"").replace(",","."):x);return Number.isFinite(n)?n:0;};
   const enPesos=metodo==="transferencia"||(metodo==="efectivo"&&moneda==="ARS");
   const m=num(monto),t=num(tc),c=num(com);
@@ -13940,7 +13941,7 @@ const agpTxt=(v)=>v==null||v===""?"":String(v).replace(".",",");
 // TC de referencia: el último que usó la financiera; si no hay, el blue del día.
 async function agpTcRef(token){
   try{const r=await dq("cc_solfin_movements",{token,filters:"?provisional_rate=not.is.null&select=provisional_rate&order=date.desc,created_at.desc&limit=1"});const v=Number(Array.isArray(r)&&r[0]?.provisional_rate);if(v>0)return v;}catch{}
-  try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)return Number(d.venta);}}catch{}
+  try{const r=await fetchDolar({signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)return Number(d.venta);}}catch{}
   return 0;
 }
 async function agpSubir(file,token,prefijo){
@@ -14507,7 +14508,7 @@ function FacturasPanel({token}){
   };
   useEffect(()=>{load();},[token]);
   // TC por defecto al abrir el modal: blue del día (editable; si la op tiene cobros con TC, pisa esto).
-  useEffect(()=>{if(!modal)return;(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(t=>t||String(d.venta));}}catch{}})();},[modal]);
+  useEffect(()=>{if(!modal)return;(async()=>{try{const r=await fetchDolar({signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(t=>t||String(d.venta));}}catch{}})();},[modal]);
   // Abrir precargado desde el editor de una operación (botón "🧾 Facturar" de la op).
   useEffect(()=>{
     const code=typeof window!=="undefined"?window.__facturarOp:null;
@@ -17198,7 +17199,7 @@ function AdminCalculator({token}){
     const fob=products.reduce((a,p)=>a+toN(p.unit_price)*(toN(p.quantity)||1),0);const pct=toN(ov);
     return {pct,amt:Math.round(fob*pct)/100,ov:true};
   };
-  useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTcCert(t=>t||String(d.venta));}}catch{}})();},[]);
+  useEffect(()=>{(async()=>{try{const r=await fetchDolar({signal:AbortSignal.timeout(3000)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTcCert(t=>t||String(d.venta));}}catch{}})();},[]);
   const certsDe=(chKey)=>{
     if(chKey!=="maritimo_a_china")return {lines:[],total:0};
     const tc=toN(tcCert);const n=(k)=>Math.max(1,Math.round(toN(certs[k].n)||1));const lines=[];
