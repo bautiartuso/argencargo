@@ -8,6 +8,7 @@
 // GET  ?accion=vuelo&flight_id=…           → { pedido, plantilla, mensajes }
 // GET  ?accion=adjunto&msg=…&adj=…&nombre=…&tipo=…  → el archivo
 // POST { accion:"pedir", flight_id, para, cc, texto } | { accion:"revisado", pedido_id }
+//      { accion:"responder", pedido_id, texto, msg? } → contesta en la misma cadena al mail del courier (11/11/2026)
 import { leerConfig, gm, hdr, b64dec, b64url, recorrer, armarMime, BUCKET } from "../../../../lib/gmail";
 import { docEsAdjunto } from "../../../../lib/legajo";
 
@@ -78,7 +79,8 @@ let ultimaRevision = 0;
 // solo mail "DESPACHOS" con varias guías, el manifiesto (guía aérea) y una DSI por guía.
 const direccionesDe = (para) => String(para || "").split(/[,;]/).map((x) => (x.match(/[\w.+-]+@[\w.-]+/) || [])[0]).filter(Boolean);
 function consultaPedido(p, { sinMios = false } = {}) {
-  const desde = Math.floor(new Date(p.enviado_at || Date.now()).getTime() / 1000) - 86400;
+  // Después de contestarle al courier (espera_desde), solo cuenta como respuesta lo que llegue desde ahí.
+  const desde = sinMios && p.espera_desde ? Math.floor(new Date(p.espera_desde).getTime() / 1000) : Math.floor(new Date(p.enviado_at || Date.now()).getTime() / 1000) - 86400;
   const de = direccionesDe(p.para);
   const porRemitente = de.length ? ` (from:(${de.join(" OR ")}) "${p.guia}")` : "";
   return `{subject:"${asuntoDe(p.guia)}"${porRemitente}} after:${desde}${sinMios ? " -from:me" : ""}`;
@@ -88,7 +90,7 @@ async function revisar(forzar = false) {
   if (!forzar && Date.now() - ultimaRevision < 2 * 60000) return;
   ultimaRevision = Date.now();
   const desde = new Date(Date.now() - 45 * 86400000).toISOString();
-  const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia,para,enviado_at`));
+  const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia,para,enviado_at,espera_desde`));
   await Promise.all(abiertos.map(revisarUno));
 }
 async function revisarUno(p) {
@@ -257,6 +259,46 @@ export async function POST(req) {
       await guardarPlantillas(pls).catch(() => {});
       if (!ins.ok) return json({ ok: true, aviso: "Se mandó el mail pero falta correr el SQL de dsi_pedidos" });
       return json({ ok: true, pedidos: lista(ins), pedido: lista(ins)[0] });
+    }
+    if (b.accion === "responder") {
+      const texto = String(b.texto || "").trim();
+      if (!texto) return json({ error: "Escribí la respuesta" }, 400);
+      const pid = String(b.pedido_id || "");
+      if (!/^[0-9a-f-]{36}$/i.test(pid)) return json({ error: "pedido_invalido" }, 400);
+      const p = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${pid}&select=*&limit=1`))[0];
+      if (!p) return json({ error: "no_encontrado" }, 404);
+      const cfg = await leerConfig();
+      if (!cfg?.refresh_token) return json({ error: "no_conectado" }, 409);
+      // Solo se puede contestar un mail de este pedido: el que eligió la pantalla o el último del courier.
+      const delPedido = ((await gm(`/messages?maxResults=20&includeSpamTrash=true&q=${encodeURIComponent(consultaPedido({ ...p, espera_desde: null }, { sinMios: true }))}`).catch(() => ({}))).messages || []).map((x) => x.id);
+      const msgId = delPedido.includes(String(b.msg || "")) ? String(b.msg) : delPedido[0];
+      if (!msgId) return json({ error: "Todavía no hay un mail del courier para responder" }, 400);
+      const m = await gm(`/messages/${msgId}?format=full`);
+      const h = m.payload?.headers || [];
+      const correos = (x) => String(x || "").toLowerCase().match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/g) || [];
+      const yo = String(cfg.email || "").toLowerCase();
+      const para = hdr(h, "Reply-To") || hdr(h, "From");
+      const cc = [...new Set([...correos(hdr(h, "To")), ...correos(hdr(h, "Cc")), ...correos(p.cc)])].filter((e) => e !== yo && !correos(para).includes(e));
+      const asunto0 = hdr(h, "Subject") || p.asunto || asuntoDe(p.guia);
+      const mid = hdr(h, "Message-ID") || hdr(h, "Message-Id");
+      // Debajo va el mail al que se contesta, citado, como en cualquier respuesta.
+      const out = { html: "", texto: "", adjuntos: [] };
+      recorrer(m.payload, out);
+      const orig = (out.texto || textoPlano(out.html)).slice(0, 6000);
+      const cuando = new Date(Number(m.internalDate) || Date.now()).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+      const cab = `El ${cuando}, ${hdr(h, "From")} escribió:`;
+      const esc = (x) => String(x || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      const mime = armarMime({
+        de: cfg.email, para, cc: cc.join(", ") || undefined, asunto: /^\s*re:/i.test(asunto0) ? asunto0 : `Re: ${asunto0}`, texto,
+        enRespuestaA: mid || undefined, referencias: [hdr(h, "References"), mid].filter(Boolean).join(" ") || undefined,
+        textoExtra: `\n\n${cab}\n${orig.split("\n").map((l) => `> ${l}`).join("\n")}`,
+        htmlExtra: `<br><div style="font-family:Arial,sans-serif;font-size:13px;color:#555">${esc(cab)}</div><blockquote style="margin:6px 0 0 6px;padding-left:10px;border-left:2px solid #ccc;font-family:Arial,sans-serif;font-size:13px;color:#555;white-space:pre-wrap">${esc(orig)}</blockquote>`,
+      });
+      const enviado = await gm("/messages/send", { method: "POST", body: JSON.stringify({ raw: b64url(Buffer.from(mime, "utf8")), threadId: m.threadId }) });
+      if (!enviado?.id) return json({ error: "No se pudo mandar la respuesta" }, 500);
+      // El pedido vuelve a "esperando respuesta": el cartel se prende de nuevo cuando el courier conteste.
+      await sb(`/rest/v1/dsi_pedidos?id=eq.${pid}`, { method: "PATCH", body: JSON.stringify({ respuesta_at: null, respuesta_de: null, espera_desde: new Date().toISOString() }) });
+      return json({ ok: true, para, cc });
     }
     if (b.accion === "revisado") {
       const marca = { revisado_at: new Date().toISOString(), revisado_por: uid };

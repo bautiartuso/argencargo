@@ -8854,7 +8854,7 @@ function precargarAdjuntosDsi(d,token){(d?.mensajes||[]).filter(m=>!m.mio).forEa
 function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   const [usados,setUsados]=useState({});
   const [enPdf,setEnPdf]=useState({}); // adjunto → guías que nombra adentro (manifiestos de FedEx)
-  const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);
+  const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);const [resp,setResp]=useState(null); // respuesta libre al courier (11/11/2026)
   const cargar=useCallback(async(forzar=true)=>{setD(await cargarDsiVuelo(flight.id,token,forzar));},[flight.id,token]);
   useEffect(()=>{cargar(false);},[cargar]);
   useEffect(()=>{
@@ -8872,6 +8872,17 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
     try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...datos})});const j=await r.json();
       if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
       toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();refrescarDsiEstado(token);onCambio?.();}
+    catch(e){toast(e.message,"error");}
+    setEnviando(false);
+  };
+  // Responder el mail del courier con un mensaje propio, en la misma cadena (no es un pedido nuevo).
+  const responder=async()=>{
+    if(!String(resp||"").trim()){toast("Escribí la respuesta","error");return;}
+    setEnviando(true);
+    try{const ult=(d.mensajes||[]).filter(m=>!m.mio).slice(-1)[0];
+      const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"responder",pedido_id:d.pedido.id,texto:resp,msg:ult?.id})});const j=await r.json();
+      if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
+      toast("Respuesta enviada","success");setResp(null);await cargar();refrescarDsiEstado(token);onCambio?.();}
     catch(e){toast(e.message,"error");}
     setEnviando(false);
   };
@@ -8893,6 +8904,8 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   // también si su vuelo ya tiene la DSI.
   const revisado=async()=>{const otros=[...new Set((d.mensajes||[]).flatMap(m=>(m.guias||[]).map(g=>g.pedido_id)))];await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id,otros})});refrescarDsiEstado(token);await cargar();onCambio?.();onCerrar?.();toast("Mail cerrado","success");};
   const p=d.pedido;const respuestas=(d.mensajes||[]).filter(m=>!m.mio);const nueva=p?.respuesta_at&&!p.revisado_at;
+  // La cadena: lo del courier y, desde su primera respuesta, lo que le contestamos nosotros.
+  const hilo=(d.mensajes||[]).filter(m=>!m.mio||(respuestas[0]&&m.fecha>respuestas[0].fecha));
   const INP={width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",outline:"none"};
   const LBL={display:"block",fontSize:10.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 5px"};
   const btnC=(txt,fn,c,extra={})=><button type="button" onClick={fn} disabled={extra.disabled} style={{height:28,padding:"0 10px",borderRadius:8,border:`1px solid ${c}55`,background:`${c}14`,color:c,fontSize:11.5,fontWeight:800,cursor:extra.disabled?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{txt}</button>;
@@ -8906,7 +8919,8 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
       </div>
       {!p&&d.conectado&&!form&&d.plantilla.para&&btn("✎ Editar mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
       {!p&&d.conectado&&!form&&<button type="button" disabled={enviando} onClick={()=>{const f={para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto};if(f.para)enviar(f);else setForm(f);}} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":"✉ Solicitar DSI"}</button>}
-      {p&&!form&&btn("Volver a pedir",()=>setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
+      {p&&!form&&resp==null&&respuestas.length>0&&d.conectado&&btn("↩ Responder",()=>setResp(""),"#E8D098")}
+      {p&&!form&&resp==null&&btn("Volver a pedir",()=>setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
       {nueva&&btn("✓ Listo, cerrar mail",revisado,"#4ade80")}
     </div>
     {form&&<div style={{marginTop:12,display:"grid",gap:10}}>
@@ -8922,7 +8936,17 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
         <button type="button" onClick={()=>enviar()} disabled={enviando} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit"}}>{enviando?"Enviando…":"Enviar pedido"}</button>
       </div>
     </div>}
-    {respuestas.map(m=><div key={m.id} style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.07)"}}>
+    {resp!=null&&<div style={{marginTop:12,display:"grid",gap:10}}>
+      <div><span style={LBL}>Respuesta a {nombreDe(respuestas[respuestas.length-1]?.de)}</span><textarea data-enter-libre="1" autoFocus value={resp} onChange={e=>setResp(e.target.value)} rows={5} style={{...INP,resize:"vertical",lineHeight:1.5}}/></div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",alignItems:"center",flexWrap:"wrap"}}>
+        <button type="button" onClick={()=>setResp(null)} disabled={enviando} style={{height:34,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+        <button type="button" onClick={responder} disabled={enviando} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit"}}>{enviando?"Enviando…":"Enviar respuesta"}</button>
+      </div>
+    </div>}
+    {hilo.map(m=>m.mio?<div key={m.id} style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(232,208,152,0.06)",border:"1px solid rgba(232,208,152,0.22)"}}>
+      <span style={{fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>Vos <span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}>· {fecha(m.fecha)}</span></span>
+      <p style={{margin:"6px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.8)",whiteSpace:"pre-wrap",lineHeight:1.5,maxHeight:200,overflowY:"auto"}}>{String(m.texto||"").split(/\n+El [^\n]{5,120} escribió:/)[0].trim()}</p>
+    </div>:<div key={m.id} style={{marginTop:10,padding:"10px 12px",borderRadius:10,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.07)"}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{nombreDe(m.de)} <span style={{color:"rgba(255,255,255,0.45)",fontWeight:500}}>· {fecha(m.fecha)}</span></span>
         {m.texto&&<button type="button" onClick={()=>setAbierto(abierto===m.id?null:m.id)} style={{background:"none",border:"none",color:"#93c5fd",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>{abierto===m.id?"Ocultar mail":"Ver mail"}</button>}
