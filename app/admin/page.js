@@ -28,7 +28,7 @@ const CARRIER_NOMBRE={dhl:"DHL",fedex:"FedEx",ups:"UPS"};
 const carrierKey=(c)=>{const x=String(c||"").toLowerCase().replace(/[^a-z]/g,"");return x.includes("fedex")?"fedex":x.includes("dhl")?"dhl":x.includes("ups")?"ups":null;};
 import { comprimirImagen } from "../../lib/img";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
-instalarAuthFetch(["ac_admin"]);
+instalarAuthFetch(["ac_admin"],{refrescar:(t)=>ensureFreshToken(t)});
 
 // Cuenta para transferencias en pesos. Un solo lugar: antes estaba escrita a mano adentro del
 // mensaje de WhatsApp y quedo con los datos viejos sin que nadie lo viera.
@@ -12328,6 +12328,16 @@ function AgentsPanel({token}){
           toast(`${code} creada`,"success");load();
         }catch(e){alertDialog("No se pudo crear: "+e.message);}
       };
+      // Eliminar la importación desde el depósito (11/11/2026): los bultos vuelven al depósito del cliente y la op
+      // se borra con sus productos. Una sola transacción en la base (devolver_importacion_a_deposito).
+      const eliminarImportacion=async(o,nPk,nIt)=>{
+        const cli=o.clients?.client_code||"el cliente";
+        const partes=[nPk?`${nPk===1?"El bulto vuelve":`Los ${nPk} bultos vuelven`} al depósito de ${cli}.`:null,nIt?`Se ${nIt===1?"borra el producto declarado":`borran los ${nIt} productos declarados`}.`:null].filter(Boolean).join(" ");
+        if(!await confirmDialog(`¿Eliminar la importación ${o.operation_code}?\n\n${partes?partes+" ":""}No se puede deshacer.`,{confirmText:"Eliminar importación"}))return;
+        const r=await dq("rpc/devolver_importacion_a_deposito",{method:"POST",token,body:{p_op:o.id}});
+        if(!r?.operation_code){alertDialog(r?.message||"No se pudo eliminar la importación");return;}
+        toast(`${o.operation_code} eliminada${r.bultos_devueltos?` · ${r.bultos_devueltos} bulto${r.bultos_devueltos!==1?"s":""} de vuelta en el depósito de ${cli}`:""}`,"success");setExpandedOp?.(null);load();
+      };
       // Con reenvío pedido los bultos salen del depósito: acá solo queda el aviso; la lista completa (pedidos,
       // hechos con tracking y costo, cancelados) vive en la solapa Reenvíos (05/11/2026).
       const reenviosAbiertos=reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede");
@@ -12352,6 +12362,7 @@ function AgentsPanel({token}){
                         </>;})()}
                         {canRepack&&<button onClick={(e)=>{e.stopPropagation();requestRepackForOp(o);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🔄 Pedir reempaque</button>}
                         {pkgsOfOp.length>0&&<><button onClick={(e)=>{e.stopPropagation();const ag=approvedAgents.find(a=>a.auth_user_id===o.created_by_agent_id);setReenvioModal({tipo:"china",agentId:o.created_by_agent_id||pkgsOfOp[0]?.registered_by_agent_id,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:o.client_id,client_code:o.clients?.client_code},operationId:o.id,packages:pkgsOfOp});}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",cursor:"pointer"}}>↪ Reenviar a otro depósito en China</button><button onClick={(e)=>{e.stopPropagation();const ag=approvedAgents.find(a=>a.auth_user_id===o.created_by_agent_id);setReenvioModal({tipo:"miami",agentId:o.created_by_agent_id||pkgsOfOp[0]?.registered_by_agent_id,agentName:ag?`${ag.first_name||""} ${ag.last_name||""}`.trim():"",cliente:{id:o.client_id,client_code:o.clients?.client_code},operationId:o.id,packages:pkgsOfOp});}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>✈ DDP Miami</button></>}
+                        {["pendiente","en_deposito_origen","en_preparacion"].includes(o.status)&&<button onClick={(e)=>{e.stopPropagation();eliminarImportacion(o,pkgsOfOp.length,itemsOfOp.length);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(248,113,113,0.45)",background:"rgba(248,113,113,0.08)",color:"#fca5a5",cursor:"pointer"}}>🗑 Eliminar importación</button>}
                       </div>
                     </div>
                     {rpk?.status==="done"&&expandedRepack===o.id&&(()=>{const oSnap=Array.isArray(rpk.original_packages_snapshot)?rpk.original_packages_snapshot:null;const nSnap=Array.isArray(rpk.new_packages_snapshot)?rpk.new_packages_snapshot:null;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>

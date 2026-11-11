@@ -10,7 +10,7 @@ import { parsePedido } from "../../lib/tarifas-agente";
 import { hoyAR } from "../../lib/fecha-ar";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 import { filtrosSeguros } from "../../lib/columnas-seguras";
-instalarAuthFetch(["ac_agent_s"]);
+instalarAuthFetch(["ac_agent_s"],{refrescar:(t)=>ensureFreshToken(t)});
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";

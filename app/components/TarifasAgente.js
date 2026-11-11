@@ -149,6 +149,7 @@ const aCuerpo = (d) => {
   });
   return { origenes, extras: d.extras, vigencia: d.vigencia, notas: d.notas };
 };
+const leerBorrador = (clave) => { try { const b = JSON.parse(localStorage.getItem(clave) || "null"); return b?.origenes ? b : null; } catch { return null; } };
 const cuentaEdicion = (d, o) => SERVICIOS_V2.filter((k) => CARRIERS.some((c) => keysDe(c).includes(k) && d.orig[o][c.k].some((r) => aNum(r.v[k]) != null))).length;
 
 const CSS = `
@@ -310,15 +311,24 @@ export function TarifasAgenteEditor({ token, lang = "es", onSaved, agentUserId =
   const [msg, setMsg] = useState(null);
   const [sucio, setSucio] = useState(false);
   const base = useRef("");
+  const clave = `ac_tarifas_borrador_${agentUserId || "yo"}`;
   useEffect(() => {
     fetch("/api/agente/tarifas", { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json()).then((j) => {
         const tar = agentUserId ? (j?.agentes || []).find((a) => a.auth_user_id === agentUserId)?.tarifas : j?.tarifas;
-        const e = aEdicion(tar); setD(e); base.current = JSON.stringify(aCuerpo(e)); setActualizado(tar?.actualizado || null);
+        const e = aEdicion(tar); base.current = JSON.stringify(aCuerpo(e)); setActualizado(tar?.actualizado || null);
+        // Borrador local (11/11/2026): lo tipeado y no guardado sobrevive a una recarga o a un guardado que falló.
+        const b = leerBorrador(clave);
+        setD(b && JSON.stringify(b) !== base.current ? aEdicion(b) : e);
       })
-      .catch(() => setD(aEdicion(null)));
+      .catch(() => { const b = leerBorrador(clave); setD(aEdicion(b)); });
   }, [token, agentUserId]);
-  useEffect(() => { if (d) setSucio(JSON.stringify(aCuerpo(d)) !== base.current); }, [d]);
+  useEffect(() => {
+    if (!d) return;
+    const cuerpo = JSON.stringify(aCuerpo(d)); const cambio = cuerpo !== base.current;
+    setSucio(cambio);
+    try { if (cambio) localStorage.setItem(clave, cuerpo); else localStorage.removeItem(clave); } catch {}
+  }, [d]);
   if (!d) return <p style={{ color: INK(0.5), textAlign: "center", padding: "2rem 0" }}>{t.cargando}</p>;
 
   const cambiarFilas = (ck, fn) => { setMsg(null); setD((p) => ({ ...p, orig: { ...p.orig, [o]: { ...p.orig[o], [ck]: fn(p.orig[o][ck]) } } })); };
