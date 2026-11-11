@@ -6794,7 +6794,9 @@ function ClientsList({token,onSelect}){
   // Lista de clientes (04/10/2026): filas con avatar de iniciales, chips y accesos directos a
   // WhatsApp y mail. En el celu son tarjetas.
   const celu=useEsCelu();
-  const COLS_CL="minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,0.9fr) 92px";
+  const COLS_CL="minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,0.9fr) 104px 92px";
+  // Fecha de registro (10/11/2026): día de alta de la ficha, en hora argentina.
+  const alta=c=>{if(!c.created_at)return null;const d=new Date(c.created_at);return{f:d.toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric",timeZone:"America/Argentina/Buenos_Aires"}).replace(/\./g,""),h:d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Argentina/Buenos_Aires"})};};
   const avatar=c=>{const ini=`${(c.first_name||"?")[0]||""}${(c.last_name||"")[0]||""}`.toUpperCase();return <span style={{width:40,height:40,flexShrink:0,borderRadius:12,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:GOLD_LIGHT,background:"linear-gradient(135deg,rgba(184,149,106,0.22),rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.3)"}}>{ini}</span>;};
   const chipRI=<span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:5,background:"rgba(96,165,250,0.14)",color:"#93c5fd",letterSpacing:"0.06em"}}>RI</span>;
   const tier=c=>c.tier&&c.tier!=="standard"?(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts`} style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.06em",textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})():null;
@@ -6815,10 +6817,10 @@ function ClientsList({token,onSelect}){
       <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{total.toLocaleString("es-AR")} {total===1?"cliente":"clientes"}</span>
     </div>
     {err&&<div style={{padding:"12px 16px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",fontSize:13}}>{err}</div>}
-    {lo?<SkeletonTable rows={8} cols={4}/>:clients.length===0
+    {lo?<SkeletonTable rows={8} cols={5}/>:clients.length===0
       ?<EmptyState icon="users" title={busq?"Sin resultados":"No hay clientes"} description={busq?`Nada coincide con "${busq}"`:""}/>
       :<div style={{display:"flex",flexDirection:"column",gap:celu?8:0,background:celu?"transparent":"rgba(255,255,255,0.02)",borderRadius:16,border:celu?"none":"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
-        {!celu&&<div style={{display:"grid",gridTemplateColumns:COLS_CL,gap:16,padding:"11px 18px",background:"rgba(0,0,0,0.2)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Cliente","Contacto","Ciudad",""].map((h,i)=><span key={i} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</span>)}</div>}
+        {!celu&&<div style={{display:"grid",gridTemplateColumns:COLS_CL,gap:16,padding:"11px 18px",background:"rgba(0,0,0,0.2)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Cliente","Contacto","Ciudad","Registro",""].map((h,i)=><span key={i} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</span>)}</div>}
         {clients.map(c=>{const nombre=<div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>{avatar(c)}<div style={{minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{c.first_name} {c.last_name}</span>{c.tax_condition==="responsable_inscripto"&&chipRI}{tier(c)}</div>
             <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{c.client_code}</span>
@@ -6826,11 +6828,13 @@ function ClientsList({token,onSelect}){
           if(celu)return <div role="button" tabIndex={0} key={c.id} onClick={()=>onSelect(c)} style={{cursor:"pointer",display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:10,alignItems:"center",padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",boxSizing:"border-box"}}>
             {nombre}{acciones(c)}
             {(c.email||lugar(c))&&<p style={{gridColumn:"1 / -1",margin:0,fontSize:12,color:"rgba(255,255,255,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[c.email,lugar(c)].filter(Boolean).join(" · ")}</p>}
+            {alta(c)&&<p style={{gridColumn:"1 / -1",margin:0,fontSize:11.5,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>Registro {alta(c).f} · {alta(c).h} h</p>}
           </div>;
           return <div role="button" tabIndex={0} key={c.id} onClick={()=>onSelect(c)} style={{cursor:"pointer",display:"grid",gridTemplateColumns:COLS_CL,gap:16,alignItems:"center",padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.045)",boxSizing:"border-box",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             {nombre}
             <div style={{minWidth:0}}><p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||"—"}</p><p style={{margin:"2px 0 0",fontSize:12,color:"rgba(255,255,255,0.4)"}}>{c.whatsapp||""}</p></div>
             <span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lugar(c)||"—"}</span>
+            {(()=>{const a=alta(c);return a?<div style={{minWidth:0}}><p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{a.f}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.38)",fontVariantNumeric:"tabular-nums"}}>{a.h} h</p></div>:<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>;})()}
             {acciones(c)}
           </div>;})}
       </div>}
