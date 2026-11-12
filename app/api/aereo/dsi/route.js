@@ -57,12 +57,18 @@ const claveCarrier = (c) => String(c || "otro").toLowerCase().replace(/[^a-z]/g,
 // Couriers que piden la DSI por formulario web en vez de por mail.
 const FORMULARIOS = { fedex: { url: "https://www.fedex.com/ar/contact/orderform_2.html", dominio: "fedex.com", para: "Formulario de FedEx" } };
 const esPorFormulario = (para) => /^formulario/i.test(String(para || ""));
-const CAMPOS_FORM = "id,international_tracking,international_carrier,dest_tax_id,liberado_rg_at,carrier_delivered_at,received_at";
+const CAMPOS_FORM = "id,international_tracking,international_carrier,dest_tax_id,carrier_delivered_at,received_at";
 // Lo que hay que cargar en el formulario: la primera guía en los campos y el resto en comentarios.
-function datosFormulario(fl, email) {
+// Fecha de importación = el día que la aduana liberó el envío (evento CC de FedEx en Argentina); si el
+// tracking no lo trae, el día que lo entregó el courier o que se recibió.
+async function datosFormulario(fl, email) {
   const cfg = FORMULARIOS[claveCarrier(fl[0]?.international_carrier)];
   if (!cfg) return null;
-  const fecha = (f) => { const v = f.liberado_rg_at || f.carrier_delivered_at || f.received_at; return v ? new Date(v).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }) : ""; };
+  const fos = lista(await sb(`/rest/v1/flight_operations?flight_id=in.(${fl.map((f) => f.id).join(",")})&select=flight_id,operation_id`));
+  const opIds = [...new Set(fos.map((x) => x.operation_id).filter(Boolean))];
+  const evs = opIds.length ? lista(await sb(`/rest/v1/tracking_events?operation_id=in.(${opIds.join(",")})&source=eq.fedex&status_code=eq.CC&location=ilike.*AR&select=operation_id,occurred_at&order=occurred_at.desc`)) : [];
+  const liberado = (f) => (evs.find((e) => fos.some((x) => x.flight_id === f.id && x.operation_id === e.operation_id)) || {}).occurred_at;
+  const fecha = (f) => { const v = liberado(f) || f.carrier_delivered_at || f.received_at; return v ? new Date(v).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }) : ""; };
   const items = fl.filter((f) => f.international_tracking).map((f) => ({ flight_id: f.id, guia: f.international_tracking, cuit: String(f.dest_tax_id || "").replace(/\D/g, ""), fecha: fecha(f) }));
   return { url: cfg.url, email: email || "", items };
 }
@@ -217,7 +223,7 @@ export async function GET(req) {
         }
         if (!pedido.respuesta_at && mensajes.some((m) => !m.mio)) { const pr2 = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${pedido.id}&select=*`))[0]; if (pr2) Object.assign(pedido, pr2); }
       }
-      return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes, formulario: datosFormulario([f], cfg?.email) });
+      return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes, formulario: await datosFormulario([f], cfg?.email) });
     }
     if (accion === "plantilla") {
       const ids = (u.searchParams.get("flight_ids") || "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
@@ -225,7 +231,7 @@ export async function GET(req) {
       fl.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
       const guias = fl.map((f) => f.international_tracking).filter(Boolean);
       const pl = (await leerPlantillas())[claveCarrier(fl[0]?.international_carrier)] || {};
-      const formulario = FORMULARIOS[claveCarrier(fl[0]?.international_carrier)] ? datosFormulario(fl, (await leerConfig().catch(() => null))?.email) : null;
+      const formulario = FORMULARIOS[claveCarrier(fl[0]?.international_carrier)] ? await datosFormulario(fl, (await leerConfig().catch(() => null))?.email) : null;
       return json({ para: pl.para || "", cc: pl.cc || "", asunto: asuntoVarias(guias), texto: textoVarias(pl.texto, guias), guias, formulario });
     }
     if (accion === "adjunto") {
