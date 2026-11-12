@@ -15008,12 +15008,12 @@ function MonotributoCard({token,refresco}){
     {/* Cómo se mueve el cupo (12/11/2026): la cuenta es de 12 meses corridos, así que cada mes que empieza deja
         afuera al mismo mes del año anterior. Por mes: qué sale, cuánto libera y con cuánto cupo se arranca. */}
     <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cupo al empezar cada mes<span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.4)"}}> · {r.ritmo>0?`facturando ${ps(r.ritmo)} por mes`:"sin facturar más"}</span></p>
+      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cuánto podés facturar cada mes<span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>{r.ritmo>0?` · facturando ${ps(r.ritmo)} por mes, o lo que entre`:" · sin facturar más"}</span></p>
       <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(6,minmax(0,1fr))",gap:6}}>
-        {r.proximos.map(p=>{const mal=p.cupoRitmo<0,justo=!mal&&r.ritmo>0&&p.cupoRitmo<r.ritmo;const c=mal?"#f87171":justo?"#fbbf24":"#fff";
+        {r.proximos.map(p=>{const mal=p.cupo<=0,justo=!mal&&!p.alcanza;const c=mal?"#f87171":justo?"#fbbf24":"#fff";
           return <div key={p.mes} style={{minWidth:0,padding:"8px 10px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:`1px solid ${mal?"rgba(248,113,113,0.4)":justo?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.06)"}`}}>
             <p style={{margin:0,fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{mesCorto(p.mes)}</p>
-            <p style={{margin:"3px 0 0",fontSize:celu?13.5:14.5,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{mal?`− ${ps(-p.cupoRitmo)}`:ps(p.cupoRitmo)}</p>
+            <p style={{margin:"3px 0 0",fontSize:celu?13.5:14.5,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{ps(Math.max(0,p.cupo))}</p>
             <p style={{margin:"3px 0 0",fontSize:11,fontWeight:600,color:p.libera>0?"#4ade80":"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.libera>0?`sale ${mesCorto(p.sale)} · + ${ps(p.libera)}`:`sale ${mesCorto(p.sale)} · no libera`}</p>
           </div>;})}
       </div>
