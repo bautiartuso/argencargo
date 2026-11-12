@@ -11,7 +11,7 @@
 //
 // El flujo es de una sola vía: se llama a ARCA únicamente acá, al emitir.
 
-import { arcaReady, arcaConfig, emitirFacturaC, listarActividades, categoriaMonotributoPropia } from "../../../lib/arca";
+import { arcaReady, arcaConfig, emitirFacturaC, listarActividades, categoriaMonotributoPropia, ultimoComprobante, consultarComprobante } from "../../../lib/arca";
 import { CATEGORIAS, ventana12 } from "../../../lib/monotributo";
 import { hoyAR } from "../../../lib/fecha-ar";
 import { payloadVerificado } from "../../../lib/auth-server";
@@ -72,7 +72,11 @@ async function monotributo() {
   const sistema = {};
   (Array.isArray(fs.body) ? fs.body : []).forEach((f) => { const m = String(f.fecha || "").slice(0, 7); if (!m) return; sistema[m] = (sistema[m] || 0) + (Number(f.tipo_cbte) === 13 ? -1 : 1) * Number(f.importe || 0); });
   Object.keys(sistema).forEach((m) => { sistema[m] = Math.round(sistema[m] * 100) / 100; });
-  return { hoy, sistema, externos: cfg.externos || {}, categoria: cfg.categoria || null, categoria_fuente: cfg.categoria_fuente || null, categoria_at: cfg.categoria_at || null, primera_factura: Array.isArray(primera.body) && primera.body[0] ? primera.body[0].fecha : null };
+  // Otros puntos de venta traídos de ARCA (cfg.arca = { "<pv>": { meses: {"AAAA-MM": pesos}, n, at } }).
+  const otros = {};
+  Object.values(cfg.arca || {}).forEach((pv) => Object.entries(pv?.meses || {}).forEach(([m, v]) => { otros[m] = Math.round(((otros[m] || 0) + Number(v || 0)) * 100) / 100; }));
+  const otros_pv = Object.entries(cfg.arca || {}).map(([pv, d]) => ({ pv: Number(pv), n: d?.n || 0, at: d?.at || null, total: Math.round(Object.values(d?.meses || {}).reduce((a, v) => a + Number(v || 0), 0)) }));
+  return { hoy, sistema, otros, otros_pv, externos: cfg.externos || {}, categoria: cfg.categoria || null, categoria_fuente: cfg.categoria_fuente || null, categoria_at: cfg.categoria_at || null, primera_factura: Array.isArray(primera.body) && primera.body[0] ? primera.body[0].fecha : null };
 }
 
 export async function GET(req) {
@@ -158,6 +162,41 @@ export async function POST(req) {
     return Response.json({ ok: true, ...(await monotributo()) });
   }
   if (!arcaReady()) return Response.json({ error: "ARCA sin configurar: faltan ARCA_CUIT / ARCA_CERT / ARCA_KEY en Vercel" }, { status: 500 });
+  // Monotributo: sumar lo facturado en los OTROS puntos de venta consultándolo en ARCA (12/11/2026).
+  // Recorre de la última factura hacia atrás (Factura C, Nota de Débito C y Nota de Crédito C) hasta
+  // salir de la ventana de 12 meses. Sin pto_vta prueba del 1 al 6, salteando el del sistema.
+  if (body?.action === "monotributo_importar") {
+    const acfg = await arcaConfig();
+    const env = acfg?.environment === "produccion" ? "produccion" : "homologacion";
+    const propio = Number(acfg?.punto_venta || 1);
+    const desde = `${ventana12(hoyAR())[0]}-01`;
+    const pvs = (body.pto_vta ? [Number(body.pto_vta)] : [1, 2, 4, 5, 6, 3]).filter((x) => x > 0 && x !== propio);
+    const t0 = Date.now();
+    const cfg = await monoConfig();
+    cfg.arca = cfg.arca || {};
+    const informe = [];
+    for (const pv of pvs) {
+      const meses = {}; let n = 0, completo = true, error = null;
+      try {
+        for (const [tipo, signo] of [[11, 1], [12, 1], [13, -1]]) {
+          let nro = await ultimoComprobante(pv, tipo, env);
+          let fin = false;
+          while (nro > 0 && !fin) {
+            if (Date.now() - t0 > 45000) { completo = false; break; }
+            const lote = []; for (let k = 0; k < 8 && nro - k > 0; k++) lote.push(nro - k);
+            const rs = await Promise.all(lote.map((x) => consultarComprobante(pv, tipo, x, env).catch(() => null)));
+            rs.forEach((c) => { if (!c) return; if (c.fecha < desde) { fin = true; return; } const m = c.fecha.slice(0, 7); meses[m] = Math.round(((meses[m] || 0) + signo * c.total) * 100) / 100; n++; });
+            nro -= lote.length;
+          }
+        }
+      } catch (e) { error = String(e.message).slice(0, 200); }
+      if (n > 0 && completo) cfg.arca[String(pv)] = { meses, n, at: new Date().toISOString() };
+      informe.push({ pv, comprobantes: n, completo, error, total: Math.round(Object.values(meses).reduce((a, v) => a + v, 0)) });
+      if (Date.now() - t0 > 45000) break;
+    }
+    await guardarMonoConfig(cfg);
+    return Response.json({ ok: true, informe, ...(await monotributo()) });
+  }
   // Monotributo: traer la categoría vigente del padrón de ARCA.
   if (body?.action === "monotributo_arca") {
     try {

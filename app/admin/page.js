@@ -2,7 +2,7 @@
 import { fetchDolar } from "../../lib/dolar";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl, seguroCarga } from "../../lib/calc";
 import { parseDsiTokens, asignarDsi } from "../../lib/dsi.js";
 import { printRecibosEntrega, printRemitos, fusionarDocs } from "../../lib/print-entregas";
 import { TIPOS_LEGAJO, llevaLegajo, listarLegajo, legajoCompleto, nombresFaltan, urlFirmada, subirLegajo, quitarLegajo, analizarDocumento, emparejarDocumento, destinosLegajo, docEsAdjunto } from "../../lib/legajo";
@@ -2238,7 +2238,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const isAereoOp=op.channel?.includes("aereo");
       const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
       const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
-      seguro=(totalFob+certFlAmt)*0.01;const cif=totalFob+certFlAmt+seguro;
+      // Se cobra con seguroCarga (mínimo + escala por valor/kg desde 12/11/2026); la base de impuestos sigue con el 1 %.
+      seguro=seguroCarga({fob:totalFob,certFlete:certFlAmt,kg:totGW,refMs:tRefMs}).seguro;const cif=totalFob+certFlAmt+(totalFob+certFlAmt)*0.01;
       // Impuestos per-item sobre CIF proporcional
       const getDesembolso=(c)=>{const t=tablaDesaduanaje((op?.created_at?Date.parse(op.created_at):Date.now()));for(const[max,amt]of t)if(c<max)return amt;return 120;};
       totalTax=0;
@@ -14705,24 +14706,26 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
 
 // ===== FACTURACIÓN ARCA (Factura C monotributo) =====
 // ── Control del monotributo (12/11/2026) ────────────────────────────────────────────────────────
-// Arriba de Facturación: lo facturado en los últimos 12 meses contra el tope de la categoría y contra el
-// tope del régimen (K), y cuándo se pasan si se sigue facturando al ritmo de los últimos tres meses.
-// Suma lo emitido desde el sistema (neto de notas de crédito) + lo facturado por fuera, que se carga a
-// mano por mes. La categoría se trae del padrón de ARCA o se elige a mano. Cuentas en lib/monotributo.js.
+// Arriba de Facturación: lo facturado en los últimos 12 meses contra el TOPE DEL RÉGIMEN (categoría K), que
+// es lo que importa (pedido de Bautista: lo importante es no salir del monotributo); la categoría va como
+// dato secundario. Suma lo emitido desde el sistema (neto de notas de crédito) + los otros puntos de venta
+// traídos de ARCA + lo que se cargue a mano por mes. La categoría se trae del padrón de ARCA o se elige a mano. Cuentas en lib/monotributo.js.
 function MonotributoCard({token,refresco}){
   const celu=useEsCelu();
   const [d,setD]=useState(null);const [abierto,setAbierto]=useState(false);const [ext,setExt]=useState({});const [ocupado,setOcupado]=useState("");
   const pedir=async(body)=>{const r=await fetch("/api/facturas"+(body?"":"?action=monotributo"),{method:body?"POST":"GET",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||`HTTP ${r.status}`);return j;};
   useEffect(()=>{let vivo=true;pedir().then(j=>{if(vivo)setD(j);}).catch(()=>{});return()=>{vivo=false;};},[token,refresco]); // eslint-disable-line react-hooks/exhaustive-deps
   if(!d||!d.hoy)return null;
-  const r=resumenMonotributo({sistema:d.sistema,externos:d.externos,categoria:d.categoria,hoy:d.hoy});
+  const r=resumenMonotributo({sistema:d.sistema,otros:d.otros,externos:d.externos,categoria:d.categoria,hoy:d.hoy});
   const ps=(v)=>`$ ${Math.round(Number(v||0)).toLocaleString("es-AR")}`;
   const mesCorto=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"short",year:"2-digit"}).replace(".","");};
   const mesLargo=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});};
   // Meses anteriores a la primera factura hecha desde el sistema: si no tienen nada cargado, falta ese dato.
   const primerMes=String(d.primera_factura||"").slice(0,7);
-  const sinCargar=r.meses.filter(m=>(!primerMes||m.mes<primerMes)&&!(m.externo>0)).length;
-  const col=r.pct>=0.9?"#f87171":r.pct>=0.7?"#fbbf24":"#4ade80";
+  const sinCargar=r.meses.filter(m=>(!primerMes||m.mes<primerMes)&&!(m.externo>0)&&!(m.otros>0)).length;
+  const col=r.pctMax>=0.9?"#f87171":r.pctMax>=0.7?"#fbbf24":"#4ade80";
+  const importar=async()=>{if(ocupado)return;setOcupado("pv");try{const j=await pedir({action:"monotributo_importar"});setD(j);const ok=(j.informe||[]).filter(x=>x.comprobantes>0);const err=(j.informe||[]).find(x=>x.error);
+    if(ok.length)toast(ok.map(x=>`Punto de venta ${x.pv}: ${x.comprobantes} comprobantes${x.completo?"":" (incompleto, volvé a traer)"}`).join(" · "),"success");else toast(err?`ARCA no dejó consultar los otros puntos de venta: ${err.error}`:"ARCA no devolvió comprobantes en otros puntos de venta","error");}catch(e){toast(e.message,"error");}finally{setOcupado("");}};
   const fuente=!r.categoriaElegida?"por facturación":d.categoria_fuente==="arca"?"según ARCA":"elegida a mano";
   const correr=async(k,body,ok)=>{if(ocupado)return;setOcupado(k);try{const j=await pedir(body);setD(j);if(ok)toast(ok,"success");return true;}catch(e){toast(e.message,"error");return false;}finally{setOcupado("");}};
   const abrir=()=>{setExt(Object.fromEntries(r.meses.map(m=>[m.mes,m.externo>0?String(m.externo):""])));setAbierto(true);};
@@ -14730,7 +14733,7 @@ function MonotributoCard({token,refresco}){
   const pasa=(x,quien)=>!x?null:x.ya?`ya pasaste ${quien}`:`pasás ${quien} en ${mesLargo(x.mes)}`;
   const btn=(l,on,dis)=><button type="button" onClick={on} disabled={dis} style={{height:32,padding:"0 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:dis?"default":"pointer",opacity:dis?0.5:1,fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
   const dato=(l,v,c)=><div style={{minWidth:0}}><p style={{margin:0,fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:celu?15:17,fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p></div>;
-  return <div style={{marginBottom:14,padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:`1px solid ${r.pct>=0.9?"rgba(248,113,113,0.45)":"rgba(255,255,255,0.08)"}`}}>
+  return <div style={{marginBottom:14,padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:`1px solid ${r.pctMax>=0.9?"rgba(248,113,113,0.45)":"rgba(255,255,255,0.08)"}`}}>
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
       <span style={{fontSize:14,fontWeight:800,color:"#fff"}}>Monotributo</span>
       <span style={{fontSize:12,fontWeight:800,padding:"3px 10px",borderRadius:999,background:"rgba(184,149,106,0.18)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.45)",whiteSpace:"nowrap"}}>Categoría {r.categoria}</span>
@@ -14743,15 +14746,16 @@ function MonotributoCard({token,refresco}){
     </div>
     <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:"12px 18px",marginBottom:12}}>
       {dato("Facturado en 12 meses",ps(r.total))}
-      {dato(`Tope categoría ${r.categoria}`,ps(r.tope))}
-      {dato(r.queda>=0?"Te queda":"Te pasaste por",ps(Math.abs(r.queda)),col)}
-      {dato("Hasta el tope del régimen (K)",r.quedaMax>=0?ps(r.quedaMax):`−${ps(-r.quedaMax)}`,r.pctMax>=0.9?"#f87171":r.pctMax>=0.7?"#fbbf24":null)}
+      {dato("Tope del monotributo",ps(r.topeMax))}
+      {dato(r.quedaMax>=0?"Te queda":"Te pasaste por",ps(Math.abs(r.quedaMax)),col)}
+      {dato("A este ritmo, en 12 meses",r.ritmo>0?ps(r.proyeccion):"—",r.proyeccion>r.topeMax?"#f87171":null)}
     </div>
     <div style={{position:"relative",height:10,borderRadius:999,background:"rgba(255,255,255,0.07)",overflow:"hidden"}}>
-      <div style={{position:"absolute",inset:0,width:`${Math.min(100,Math.max(0,r.pct*100))}%`,borderRadius:999,background:col,transition:"width 300ms"}}/>
+      <div style={{position:"absolute",inset:0,width:`${Math.min(100,Math.max(0,r.pctMax*100))}%`,borderRadius:999,background:col,transition:"width 300ms"}}/>
     </div>
     <p style={{margin:"9px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.5,fontVariantNumeric:"tabular-nums"}}>
-      <b style={{color:col}}>{Math.round(r.pct*100)} %</b> del tope{r.ritmo>0?<> · al ritmo de los últimos tres meses ({ps(r.ritmo)} por mes) {pasa(r.pasaCategoria,`la categoría ${r.categoria}`)||`no pasás la categoría ${r.categoria} en los próximos 12 meses`}{r.pasaMax?<> y <b style={{color:"#f87171"}}>{pasa(r.pasaMax,"el tope del monotributo")}</b></>:null}</>:null}
+      <b style={{color:col}}>{Math.round(r.pctMax*100)} %</b> del tope del régimen{r.ritmo>0?<> · al ritmo de los últimos tres meses ({ps(r.ritmo)} por mes) {r.pasaMax?<b style={{color:"#f87171"}}>{r.pasaMax.ya?"ya estás fuera del tope":`salís del monotributo en ${mesLargo(r.pasaMax.mes)}`}</b>:"no pasás el tope en los próximos 12 meses"}</>:null}
+      <span style={{color:"rgba(255,255,255,0.45)"}}> · categoría {r.categoria}: tope {ps(r.tope)}, {r.queda>=0?`te quedan ${ps(r.queda)}`:`la pasaste por ${ps(-r.queda)}`}</span>
       {r.escalaVieja&&<span style={{color:"#fbbf24",fontWeight:700}}> · Revisar la escala: puede haber una nueva desde febrero</span>}
     </p>
     {abierto&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
@@ -14760,9 +14764,14 @@ function MonotributoCard({token,refresco}){
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{CATS_MONO.map(c=>{const on=d.categoria===c;return <button key={c} type="button" disabled={!!ocupado} onClick={()=>correr("cat",{action:"monotributo",categoria:on?null:c})} style={{width:34,height:34,borderRadius:9,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1.5px solid ${on?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.22)":"rgba(255,255,255,0.03)",color:on?"#E8D098":"rgba(255,255,255,0.6)"}}>{c}</button>;})}</div>
         {btn(ocupado==="arca"?"Consultando…":"Traer de ARCA",()=>correr("arca",{action:"monotributo_arca"},"Categoría traída de ARCA"),!!ocupado)}
       </div>
-      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Facturado por fuera del sistema</p>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Otros puntos de venta</span>
+        {btn(ocupado==="pv"?"Consultando ARCA…":"Traer de ARCA",importar,!!ocupado)}
+        {(d.otros_pv||[]).map(x=><span key={x.pv} style={{fontSize:12,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>Punto de venta {x.pv}: {x.n} comprobantes · {ps(x.total)}</span>)}
+      </div>
+      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cargado a mano</p>
       <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(6,minmax(0,1fr))",gap:"0 10px"}}>
-        {r.meses.map(m=><div key={m.mes}><Inp label={`${mesCorto(m.mes)}${m.sistema?` · ${ps(m.sistema)}`:""}`} type="number" step="0.01" small value={ext[m.mes]??""} onChange={v=>setExt(p=>({...p,[m.mes]:v}))} placeholder="0"/></div>)}
+        {r.meses.map(m=><div key={m.mes}><Inp label={`${mesCorto(m.mes)}${m.sistema+m.otros?` · ${ps(m.sistema+m.otros)}`:""}`} type="number" step="0.01" small value={ext[m.mes]??""} onChange={v=>setExt(p=>({...p,[m.mes]:v}))} placeholder="0"/></div>)}
       </div>
       <div style={{display:"flex",gap:8}}><Btn small onClick={guardar} disabled={!!ocupado}>{ocupado==="guardar"?"Guardando…":"Guardar"}</Btn><Btn small variant="secondary" onClick={()=>setAbierto(false)}>Cerrar</Btn></div>
     </div>}
@@ -16544,9 +16553,9 @@ function QuotesList({token}){
       const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
       let detail=null;
       if(isBlancoCh&&isAereoCh){
-        detail=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-Number(c.battExtra||0)-Number(c.itemsExtra||0)],["Recargo por baterías",Number(c.battExtra||0)],["Recargo por ítems de factura",Number(c.itemsExtra||0)],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
+        detail=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-Number(c.battExtra||0)-Number(c.itemsExtra||0)],["Recargo por baterías",Number(c.battExtra||0)],["Recargo por ítems de factura",Number(c.itemsExtra||0)],["Recargo por sobrepeso",ow],["Seguro",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
       }else if(isBlancoCh&&!isAereoCh){
-        detail=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),c.flete||0],["Seguro (1%)",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];
+        detail=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),c.flete||0],["Seguro",c.seguro||0],[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];
       }
       if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
       // Costo de cada producto puesto en Argentina, igual que en la calculadora. En el integral
@@ -16865,8 +16874,8 @@ function QuotesList({token}){
       const detalleDe=(c)=>{const isB=c.type==="maritimo_b"||c.type==="aereo_b";const td=c.taxDetail||{};const ow=Number(c.overweightSurcharge||0);const bat=Number(c.battExtra||0);
         let d=[];
         if(isB){d=[["Servicio integral de importación",Number(c.flete||0)]];}
-        else if(c.type==="aereo_a"){d=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-bat-Number(c.itemsExtra||0)],["Recargo por baterías",bat],["Recargo por ítems de factura",Number(c.itemsExtra||0)],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
-        else{d=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),Number(c.flete||0)],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];}
+        else if(c.type==="aereo_a"){d=[[rotuloFlete("Flete aéreo internacional",c.fleteRate,true),Number(c.flete||0)-bat-Number(c.itemsExtra||0)],["Recargo por baterías",bat],["Recargo por ítems de factura",Number(c.itemsExtra||0)],["Recargo por sobrepeso",ow],["Seguro",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
+        else{d=[[rotuloFlete("Servicio marítimo de importación",c.fleteRate,false),Number(c.flete||0)],["Seguro",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];}
         if(Number(c.shipCost||0)>0)d.push(["Envío a domicilio",c.shipCost]);
         return d.filter(([l,v])=>/^(Derechos|Tasa estad)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);};
       const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
@@ -17607,9 +17616,9 @@ function AdminCalculator({token}){
         const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
         let detail=null;
         if(bd.isBlanco&&bd.isAereo){
-          detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff-itxEff],["Recargo por baterías",batEff],["Recargo por ítems de factura",itxEff],["Recargo por sobrepeso",owEffLink],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
+          detail=[[rotuloFlete("Flete aéreo internacional",fleteRateEff,true),fleteEff-batEff-itxEff],["Recargo por baterías",batEff],["Recargo por ítems de factura",itxEff],["Recargo por sobrepeso",owEffLink],["Seguro",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
         }else if(bd.isBlanco&&bd.isMaritimo){
-          detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro (1%)",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
+          detail=[[rotuloFlete("Servicio marítimo de importación",fleteRateEff,false),fleteEff],["Seguro",Number(c.seguro||0)],[pctL("Derechos importación",rateU("import_duty_rate",0)),bd.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),bd.tasaE||0],[pctL("IVA de Importación",rateU("iva_rate",21)),bd.iva||0],["IVA adicional (20%)",bd.ivaAdic||0],["Ganancias IIGG (6%)",bd.iigg||0],["Ingresos brutos IIBB (5%)",bd.iibb||0]];
         }
         if(detail&&certL.lines.length)detail=[...detail,...certL.lines];
         if(detail)detail=detail.filter(([l,v])=>/^(Derechos importación|Tasa estadística)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
@@ -18029,7 +18038,7 @@ function AdminCalculator({token}){
               const desReal=bd.isAereo&&bd.impReal&&!hasOv?(bd.impReal.desReal||0)*1.21:desEff+ivaDesEff;
               const impPagado=bd.impReal?(bd.impReal.total+(bd.isAereo?desReal:0)):impCobrado;
               const filas=bd.isBlanco
-                ?[["Flete",fleteEff-batt,cFlete,`${fmt(qty)} ${unit} × ${fmt(rate)}`],batt>0&&["Baterías",batt,0],owEff>0&&["Sobrepeso",owEff,0],Number(ch.seguro||0)>0&&["Seguro (1 %)",Number(ch.seguro||0),0],
+                ?[["Flete",fleteEff-batt,cFlete,`${fmt(qty)} ${unit} × ${fmt(rate)}`],batt>0&&["Baterías",batt,0],owEff>0&&["Sobrepeso",owEff,0],Number(ch.seguro||0)>0&&["Seguro",Number(ch.seguro||0),0],
                   bd.impReal&&["Impuestos",impCobrado,impPagado,bd.isAereo?`flete declarado ${fmt(bd.certFl)} vs real ${fmt(bd.impReal.certReal)}`:`cert. ${fmt(bd.certFl)} vs ${fmt(bd.impReal.certReal)} · IVA ad. 10,5 % · IIGG 6 % · IIBB 3 %`]].filter(Boolean)
                 :[["Servicio",fleteEff,cFlete,`${qty.toFixed(2)} m³ × ${fmt(rate)}`],recValor>0&&["Recargo por valor",recValor,0]].filter(Boolean);
               const cobra=filas.reduce((a,f)=>a+f[1],0),cuesta=filas.reduce((a,f)=>a+f[2],0);
