@@ -8034,8 +8034,10 @@ function GastosFijosPanel({token}){
   </Card>;
   const fila=({g,e})=>{
     const hecho=e.estado!=="pendiente",pagado=e.estado==="pagado";
-    const col=pagado?"#4ade80":e.estado==="salteado"?"rgba(255,255,255,0.35)":e.vencido&&g.avisar?"#f87171":e.alerta?"#fbbf24":"rgba(255,255,255,0.45)";
-    const venceTxt=pagado?`Pagado el ${e.pagos.map(p=>formatDate(p.date)).join(" · ")}`:e.estado==="salteado"?"No va este mes":periodo>periodoDe(hoy)||(!e.alerta&&!e.vencido)?`Vence el ${Number(e.vence.slice(8))}`:textoVence(e.faltan).replace(/^./,c=>c.toUpperCase());
+    // Meses anteriores al alta del concepto: no se reclaman, quedan como "sin anotar".
+    const previo=!hecho&&periodo<periodoDe(g.created_at);
+    const col=pagado?"#4ade80":e.estado==="salteado"||previo?"rgba(255,255,255,0.35)":e.vencido&&g.avisar?"#f87171":e.alerta?"#fbbf24":"rgba(255,255,255,0.45)";
+    const venceTxt=pagado?`Pagado el ${e.pagos.map(p=>formatDate(p.date)).join(" · ")}`:e.estado==="salteado"?"No va este mes":previo?"Sin anotar":periodo>periodoDe(hoy)||(!e.alerta&&!e.vencido)?`Vence el ${Number(e.vence.slice(8))}`:textoVence(e.faltan).replace(/^./,c=>c.toUpperCase());
     const totArs=pagado?e.pagos.reduce((s,p)=>s+Number(p.amount_ars||0),0):0,totUsd=pagado?e.pagos.reduce((s,p)=>s+Number(p.amount||0),0):0;
     const der=pagado?<span style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{textAlign:"right",lineHeight:1.25}}><span style={{display:"block",fontSize:14.5,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(totUsd)}</span>{totArs>0&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{pesos(totArs)}</span>}</span>
