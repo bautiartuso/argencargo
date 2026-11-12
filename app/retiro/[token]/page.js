@@ -647,9 +647,13 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia, feriados, fra
       </div>)}
     </div>
     <label style={fieldLblStyle()}>¿En qué horario?</label>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(108px,1fr))", gap: 6 }}>
-      {franjas.map((f) => { const off = dia ? franjaPasada(dia, f) : false; return <div key={f} onClick={() => !off && setFranja(f)} style={chip(franja === f, off)}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: off ? MUTED : INK, whiteSpace: "nowrap", textDecoration: off ? "line-through" : "none" }}>{f}</div>
+    {/* Con cinco franjas o más (retiro en depósito) van todas en un renglón, también en el celular: la hora
+        de inicio arriba y la de fin abajo, como los días. Con menos, quedan como siempre. */}
+    <div style={{ display: "grid", gridTemplateColumns: franjas.length >= 5 ? `repeat(${franjas.length},minmax(0,1fr))` : "repeat(auto-fit,minmax(108px,1fr))", gap: 6 }}>
+      {franjas.map((f) => { const off = dia ? franjaPasada(dia, f) : false; const [ini, fin] = f.split(" a "); return <div key={f} onClick={() => !off && setFranja(f)} style={chip(franja === f, off)}>
+        {franjas.length >= 5
+          ? <><div style={{ fontSize: 12, fontWeight: 800, color: off ? MUTED : INK, whiteSpace: "nowrap", textDecoration: off ? "line-through" : "none" }}>{ini}</div><div style={{ fontSize: 10, color: MUTED, marginTop: 1, whiteSpace: "nowrap" }}>a {fin}</div></>
+          : <div style={{ fontSize: 11.5, fontWeight: 700, color: off ? MUTED : INK, whiteSpace: "nowrap", textDecoration: off ? "line-through" : "none" }}>{f}</div>}
       </div>; })}
     </div>
   </div>;
