@@ -46,13 +46,11 @@ async function envioDomicilio(client, opIds = []) {
   } catch { return null; }
 }
 
-const FRANJAS = {
-  oficina: ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"],
-  propio: ["10:00 a 13:00", "13:00 a 16:00", "16:00 a 19:00"],
-};
+// Franjas y lugar de retiro según el canal (LCL/FCL retira en el depósito de Conesa): lib/retiro-lugar.
 const METODOS = ["efectivo", "transferencia", "crypto"];
 
 import { diasFeriados, queryFeriadosAr } from "../../../../lib/feriados-ar";
+import { franjasRetiro, lugarRetiro } from "../../../../lib/retiro-lugar";
 async function sb(path, opts = {}) {
   const r = await fetch(`${SB_URL}/rest/v1${path}`, {
     ...opts,
@@ -106,7 +104,7 @@ function saldoOf(op, pagosUsd) {
   ) * 100) / 100;
 }
 
-const OP_SEL = "id,operation_code,link_opened_at,link_last_opened_at,link_open_count,status,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_ready_at,delivery_public_token,delivery_contact,carrier_mode,delivery_group_id,client_id,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+const OP_SEL = "id,operation_code,channel,link_opened_at,link_last_opened_at,link_open_count,status,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_ready_at,delivery_public_token,delivery_contact,carrier_mode,delivery_group_id,client_id,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
 
 async function opView(op) {
   const [pagosRes, pkRes] = await Promise.all([
@@ -141,9 +139,11 @@ async function opView(op) {
     },
     link_abierto: op.link_opened_at ? { veces: Number(op.link_open_count || 0), primera: op.link_opened_at, ultima: op.link_last_opened_at } : { veces: 0 },
     link: op.delivery_public_token ? `https://argencargo.com.ar/retiro/${op.delivery_public_token}` : null,
-    franjas_validas: op.delivery_choice === "propio" ? FRANJAS.propio : FRANJAS.oficina,
+    franjas_validas: franjasRetiro(op.channel, op.delivery_choice === "propio" ? "propio" : "oficina"),
     // Si se cambia la modalidad, las franjas válidas pasan a ser las de la nueva.
-    franjas_por_modalidad: { oficina: FRANJAS.oficina, envio_domicilio: FRANJAS.propio },
+    franjas_por_modalidad: { oficina: franjasRetiro(op.channel, "oficina"), envio_domicilio: franjasRetiro(op.channel, "propio") },
+    // Dónde retira esta carga si elige retiro: la oficina, o el depósito de Conesa si es marítima LCL/FCL.
+    lugar_retiro: (() => { const l = lugarRetiro(op.channel); return l.lclfcl ? `${l.address}, ${l.locality} (depósito, NO la oficina)` : null; })(),
   };
 }
 
@@ -343,7 +343,8 @@ export async function POST(req) {
     if (choiceEfectivo === "carrier") return Response.json({ error: "Envío por transportista: no lleva día y franja" }, { status: 400 });
     const dia = body.delivery_day, franja = body.delivery_slot;
     if (!dia || !/^\d{4}-\d{2}-\d{2}$/.test(String(dia))) return Response.json({ error: "delivery_day inválido (YYYY-MM-DD)" }, { status: 400 });
-    if (!FRANJAS[modo].includes(franja)) return Response.json({ error: `Franja inválida para ${modo}. Válidas: ${FRANJAS[modo].join(" / ")}` }, { status: 400 });
+    const validas = franjasRetiro(op.channel, modo);
+    if (!validas.includes(franja)) return Response.json({ error: `Franja inválida para ${modo}. Válidas: ${validas.join(" / ")}` }, { status: 400 });
     const dow = new Date(dia + "T12:00:00Z").getUTCDay();
     if (dow === 0 || dow === 6) return Response.json({ error: "Elegí un día hábil (lunes a viernes)" }, { status: 400 });
     // Hoy en Argentina (UTC-3) — un día anterior no sirve para coordinar.

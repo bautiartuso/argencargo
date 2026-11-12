@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { lugarRetiro } from "../../../lib/retiro-lugar";
 
 const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 const NAVY = "#0A1628";
@@ -453,7 +454,7 @@ export default function EntregaPublica({ params }) {
           {/* Rediseño 28/10/2026: primero se elige la modalidad (dos tarjetas parejas) y abajo, separado,
               lo que pide esa modalidad (día y horario, dirección o datos del transportista). */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 8 }}>
-            <ModoEntrega selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} icon="oficina" label="Retiro en oficina" meta={deliveryInfo.office_locality || "Buenos Aires"} price="Sin cargo" />
+            <ModoEntrega selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} icon="oficina" label={`Retiro en ${deliveryInfo.lugar_nombre || "oficina"}`} meta={deliveryInfo.office_locality || "Buenos Aires"} price="Sin cargo" />
             {hasPropio
               ? <ModoEntrega selected={delivery === "propio"} onClick={() => setDelivery("propio")} icon="domicilio" label="Envío a domicilio" meta={cotEnvio?.zone || inferredZone || "A tu dirección"} price={precioPropio != null ? "+ " + fmt(precioPropio) : "Fuera de zona"} />
               : <ModoEntrega selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} icon="transporte" label="Envío al interior" meta="Por Vía Cargo" price="A coordinar" />}
@@ -464,7 +465,7 @@ export default function EntregaPublica({ params }) {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={GOLD_A} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
               <span><b>{deliveryInfo.office_address}</b>{deliveryInfo.office_locality ? `, ${deliveryInfo.office_locality}` : ""}{deliveryInfo.office_hours && <span style={{ display: "block", color: MUTED, fontSize: 11 }}>{deliveryInfo.office_hours}</span>}</span>
             </div>
-            <DiaFranja modo="oficina" minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
+            <DiaFranja modo="oficina" franjasOficina={deliveryInfo.franjas_oficina} minDia={data?.delivery_min_day} feriados={data?.feriados_ar} dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
           </div>}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}` }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
@@ -537,7 +538,7 @@ export default function EntregaPublica({ params }) {
           {/* Rediseño 28/10/2026: el total en el mismo bloque navy del paso 1, con qué incluye y cuándo. */}
           {(() => {
             const enPesos = payMethods[0] === "transferencia" && tcVenta > 0;
-            const modoTxt = modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro en oficina" : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por Vía Cargo";
+            const modoTxt = modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? `Retiro en ${deliveryInfo.lugar_nombre || "oficina"}` : delivery === "propio" ? `Envío a domicilio · ${cotEnvio?.zone || inferredZone}` : "Envío por Vía Cargo";
             const dE = diaEntrega ? new Date(diaEntrega + "T12:00:00") : null;
             const cuando = dE ? `${["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][dE.getDay()]} ${dE.getDate()}/${dE.getMonth() + 1}${franjaEntrega ? ` · ${franjaEntrega} hs` : ""}` : "";
             const incl = multi ? cargas.filter((c) => c.main || selExtra.includes(c.id)) : [];
@@ -603,14 +604,15 @@ export default function EntregaPublica({ params }) {
 
 // Selector de día (próximos 5 días hábiles) + franja horaria. Las franjas dependen del modo:
 // oficina cada 2 hs (10-18), fletero propio cada 3 hs (10-19).
-function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia, feriados }) {
+function DiaFranja({ modo, dia, setDia, franja, setFranja, minDia, feriados, franjasOficina }) {
   const fer = new Set(Array.isArray(feriados) ? feriados : []);
+  // Las de retiro vienen del servidor (LCL/FCL tiene las del depósito); si no llegan, las de la oficina.
   const franjas = modo === "oficina"
-    ? ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"]
+    ? (Array.isArray(franjasOficina) && franjasOficina.length ? franjasOficina : ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"])
     : ["10:00 a 13:00", "13:00 a 16:00", "16:00 a 19:00"];
   // Una franja de HOY ya no sirve si su hora de fin ya pasó (12:24 → la de 10-12 no va más).
   const ahora = new Date();
-  const finDe = (f) => Number(f.split(" a ")[1].split(":")[0]);
+  const finDe = (f) => { const [h, m] = f.split(" a ")[1].split(":").map(Number); return h + (m || 0) / 60; };
   const franjaPasada = (isoDia, f) => {
     const hoyIso = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
     return isoDia === hoyIso && (ahora.getHours() + ahora.getMinutes() / 60) >= finDe(f);
@@ -731,7 +733,9 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
     ? split.map((p) => `${L[p.method] || p.method} (${montoTxt(p)})`).join(" + ")
     : split && split[0] ? `${L[split[0].method]}${split[0].currency === "ARS" ? " en pesos" : split[0].currency === "mixto" ? " (USD + ARS)" : ""}` : (L[data.payment_method] || data.payment_method);
   const transfPart = split ? split.find((p) => p.method === "transferencia") : null;
-  const entregaLabel = delivery === "ri" ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por Vía Cargo";
+  // LCL/FCL se retira en el depósito: la confirmación dice la dirección.
+  const lug = lugarRetiro(op?.channel);
+  const entregaLabel = delivery === "ri" ? "Entrega a domicilio por courier" : delivery === "oficina" ? (lug.lclfcl ? `Retiro en depósito · ${lug.address}, ${lug.locality.split(",")[0]}` : "Retiro por oficina") : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por Vía Cargo";
   const [verDetalle, setVerDetalle] = useState(false);
   const rowS = { display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 };
   // Rediseño 22/10/2026: cabecera navy con el estado, total grande, datos para pagar con botón de copiar.

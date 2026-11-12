@@ -2,6 +2,7 @@
 // POST /api/entrega/[token] → cliente confirma envío/retiro + método de pago
 
 import { fetchDolar } from "../../../../lib/dolar";
+import { lugarRetiro, franjasRetiro, esLclFcl, franjaCorta } from "../../../../lib/retiro-lugar";
 import { DELIVERY_CFG_KEYS, matchLocality, matchDireccion, computeDeliveryCostUsd, kgDeBultos } from "../../../../lib/delivery";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -70,7 +71,8 @@ const HERMANA_SEL = "id,operation_code,description,channel,created_at,delivery_r
 async function loadHermanas(op) {
   if (!op.client_id) return [];
   const r = await sbFetch(`/operations?client_id=eq.${op.client_id}&id=neq.${op.id}&delivery_completed_at=is.null&status=not.in.(pendiente,en_deposito_origen,en_preparacion,en_transito,operacion_cerrada,cancelada)&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}&order=created_at.asc`);
-  const list = Array.isArray(r.body) ? r.body : [];
+  // Solo se pueden coordinar juntas las cargas que se retiran en el mismo lugar (LCL/FCL va por Conesa).
+  const list = (Array.isArray(r.body) ? r.body : []).filter((o) => esLclFcl(o.channel) === esLclFcl(op.channel));
   if (list.length === 0) return [];
   const [pk, pagos] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=in.(${list.map((o) => o.id).join(",")})&select=operation_id,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking`),
@@ -411,9 +413,12 @@ export async function GET(req, { params }) {
       inferred_zone: match ? match.name : null,
       price: price,
       default_address: fullAddress(client),
-      office_address: settings.office_address || "",
-      office_locality: settings.office_locality || "",
-      office_hours: settings.office_hours || "",
+      // Lugar de retiro según el canal: LCL/FCL se retira en el depósito de Conesa (lib/retiro-lugar).
+      office_address: lugarRetiro(op.channel, settings).address,
+      office_locality: lugarRetiro(op.channel, settings).locality,
+      office_hours: lugarRetiro(op.channel, settings).hours,
+      lugar_nombre: lugarRetiro(op.channel, settings).nombre,
+      franjas_oficina: franjasRetiro(op.channel, "oficina"),
     },
     payment: {
       titular: settings.payment_titular || "",
@@ -519,6 +524,8 @@ export async function POST(req, { params }) {
   if ((delivery_choice === "oficina" || delivery_choice === "propio")) {
     if (!delivery_day || !/^\d{4}-\d{2}-\d{2}$/.test(String(delivery_day))) return Response.json({ error: "Elegí el día" }, { status: 400 });
     if (!delivery_slot || String(delivery_slot).length > 30) return Response.json({ error: "Elegí la franja horaria" }, { status: 400 });
+    // Retiro de LCL/FCL: solo las franjas del depósito.
+    if (delivery_choice === "oficina" && esLclFcl(op.channel) && !franjasRetiro(op.channel, "oficina").includes(delivery_slot)) return Response.json({ error: "Elegí uno de los horarios de retiro del depósito" }, { status: 400 });
     const dow = new Date(delivery_day + "T12:00:00Z").getUTCDay();
     if (dow === 0 || dow === 6) return Response.json({ error: "Elegí un día hábil (lunes a viernes)" }, { status: 400 });
   }
@@ -549,7 +556,7 @@ export async function POST(req, { params }) {
     const ids = body.extra_ops.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x)).slice(0, 20);
     if (ids.length > 0) {
       const exRes = await sbFetch(`/operations?id=in.(${ids.join(",")})&client_id=eq.${op.client_id}&delivery_completed_at=is.null&status=not.in.(operacion_cerrada,cancelada)&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}`);
-      extraOps = Array.isArray(exRes.body) ? exRes.body : [];
+      extraOps = (Array.isArray(exRes.body) ? exRes.body : []).filter((o) => esLclFcl(o.channel) === esLclFcl(op.channel));
     }
   }
 
@@ -735,9 +742,11 @@ export async function POST(req, { params }) {
       const combinedTot = Math.round((finalTotal + extrasCalc.reduce((a, e) => a + e.saldo, 0)) * 100) / 100;
       const fmtU = (v) => `USD ${v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const tcV = Number(tcJson?.venta) > 0 ? Number(tcJson.venta) : 0;
+      // LCL/FCL se retira en el depósito: el mensaje dice dónde, para que no vayan a la oficina.
+      const enDeposito = esLclFcl(op.channel) ? ` en ${lugarRetiro(op.channel).address}, ${lugarRetiro(op.channel).locality.split(",")[0]},` : "";
       const cuando = (delivery_choice === "carrier")
         ? "Va por transportista — te avisamos apenas se despache"
-        : `${delivery_choice === "oficina" ? "Te esperamos" : "Te la llevamos"} el ${diaLabel} de ${delivery_slot}`;
+        : `${delivery_choice === "oficina" ? `Te esperamos${enDeposito}` : "Te la llevamos"} el ${diaLabel} de ${delivery_slot}`;
       const enPesos = payment_method === "transferencia" || (payment_method === "efectivo" && splitFinal?.[0]?.currency === "ARS");
       const totalTxt = enPesos && tcV > 0 ? `ARS ${Math.round(combinedTot * tcV).toLocaleString("es-AR")} (${fmtU(combinedTot)})` : fmtU(combinedTot);
       let pagoTxt;
@@ -757,10 +766,10 @@ export async function POST(req, { params }) {
       // si la nueva todavía no está aprobada (o el split es mixto), cae en la genérica.
       const dd = delivery_day ? `${delivery_day.slice(8, 10)}/${delivery_day.slice(5, 7)}` : "";
       const diaSem = delivery_day ? new Date(delivery_day + "T12:00:00Z").toLocaleDateString("es-AR", { weekday: "long", timeZone: "UTC" }) : "";
-      const franja = String(delivery_slot || "").replace(/:00/g, "").replace(/\s*a\s*/, " a ").trim();
+      const franja = franjaCorta(delivery_slot);
       const cuando2 = (delivery_choice === "carrier")
         ? "Va por transportista: te avisamos apenas se despache"
-        : `${delivery_choice === "oficina" ? "Te esperamos" : "Te la llevamos"} el ${diaSem} ${dd}${franja ? ` de ${franja} hs` : ""}`;
+        : `${delivery_choice === "oficina" ? `Te esperamos${enDeposito}` : "Te la llevamos"} el ${diaSem} ${dd}${franja ? ` de ${franja} hs` : ""}`;
       const totalSolo = enPesos && tcV > 0 ? `ARS ${Math.round(combinedTot * tcV).toLocaleString("es-AR")}` : fmtU(combinedTot);
       const nombre = client.first_name || "Hola";
       let r2 = { ok: false };

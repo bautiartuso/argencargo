@@ -16,6 +16,7 @@ import { CARRIERS as CARRIERS_AG, ORIGENES as ORIGENES_AG, parsePedido, codigoPe
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { periodoDe, periodoAnterior, periodoSiguiente, nombrePeriodo, estadoGasto, porAvisar, textoVence } from "../../lib/gastos-fijos";
 import { resumenMonotributo, CATEGORIAS as CATS_MONO } from "../../lib/monotributo";
+import { franjasRetiro, lugarRetiro } from "../../lib/retiro-lugar";
 import { diasFeriados } from "../../lib/feriados-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
 import { CcFinancieraPanel, parseMontoAr } from "../ccfinanciera/page";
@@ -1710,7 +1711,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:"";
     const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo),retiroLink};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
-    let msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Virrey Loreto 2428, Belgrano.${saldoTxt}`;
+    let msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en ${lugarRetiro(op.channel).address}, ${lugarRetiro(op.channel).locality.split(",")[0]}.${saldoTxt}`;
     // Si el template no incluye {{retiroLink}} (ej. wa_envio, o el fallback sin template), lo adjuntamos
     // igual — así el cliente siempre puede confirmar entrega + forma de pago desde el link.
     if(trigger==="retiro"&&retiroLink&&!(tpl&&tpl.body.includes("{{retiroLink}}"))){
@@ -5467,7 +5468,8 @@ function CoordinarModal({op,otras=[],token,onClose,onSaved,onEntregada}){
   const [direccion,setDireccion]=useState(op.delivery_address||"");
   const [guardando,setGuardando]=useState(false);
   const [err,setErr]=useState("");
-  const franjas=entrega==="oficina"?["10:00 a 12:00","12:00 a 14:00","14:00 a 16:00","16:00 a 18:00"]:["10:00 a 13:00","13:00 a 16:00","16:00 a 19:00"];
+  // LCL/FCL se retira en el depósito de Conesa, con sus propias franjas (lib/retiro-lugar).
+  const franjas=franjasRetiro(op.channel,entrega==="oficina"?"oficina":"propio");
   const guardar=async()=>{
     setErr("");
     if(entrega!=="carrier"&&!franja){setErr("Elegí la franja horaria.");return;}
@@ -6413,7 +6415,8 @@ function EntregasPanel({token,onOpenOp,vista}){
 // Solapa Entrega de la operación (rehecha 01/10/2026). Sirve en cualquier etapa: aunque el
 // cliente no haya completado el link se puede elegir cómo se entrega, el día, la forma de pago y
 // pasarle el importe; arriba siempre está el estado del aviso y el link. Inspirada en MyBox.
-const FRANJAS_ENTREGA={oficina:["10:00 a 12:00","12:00 a 14:00","14:00 a 16:00","16:00 a 18:00"],propio:["10:00 a 13:00","13:00 a 16:00","16:00 a 19:00"]};
+// Franjas según la forma de entrega y el canal de la op (LCL/FCL retira en Conesa: lib/retiro-lugar).
+const franjasEntregaDe=(op,modo)=>modo==="oficina"||modo==="propio"?franjasRetiro(op?.channel,modo):[];
 function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload}){
   const celu=useEsCelu();
   const [tc,setTc]=useState("");
@@ -6504,7 +6507,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
     return {match,costo:match?computeDeliveryCostUsd(match,cfg,kgDeBultos(Array.isArray(pkR)?pkR:[])):0,direccion:direccionDeCliente(opClient)};
   };
   // La franja depende de la forma de entrega: si la guardada no existe en la nueva, se limpia.
-  const slotPara=(nueva)=>(FRANJAS_ENTREGA[nueva]||[]).includes(op.delivery_slot)?op.delivery_slot:null;
+  const slotPara=(nueva)=>franjasEntregaDe(op,nueva).includes(op.delivery_slot)?op.delivery_slot:null;
   const cambiarEntrega=async(nueva)=>{
     if(nueva===op.delivery_choice)return;
     if(nueva==="propio"){
@@ -6643,7 +6646,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
           <p style={rotulo}>Día y franja</p>
           <DatePicker value={op.delivery_day||""} onChange={v=>guardar({delivery_day:v||null})} placeholder="Elegir día"/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:8}}>
-            {FRANJAS_ENTREGA[op.delivery_choice].map(f=><button key={f} type="button" disabled={guardando} onClick={()=>guardar({delivery_slot:op.delivery_slot===f?null:f})} style={{...seg(op.delivery_slot===f),flex:"none",width:"100%"}}>{f.replace(" a "," – ")}</button>)}
+            {franjasEntregaDe(op,op.delivery_choice).map(f=><button key={f} type="button" disabled={guardando} onClick={()=>guardar({delivery_slot:op.delivery_slot===f?null:f})} style={{...seg(op.delivery_slot===f),flex:"none",width:"100%"}}>{f.replace(" a "," – ")}</button>)}
           </div>
         </div>}
         {!op.delivery_confirmed_at&&<div style={{marginTop:14,paddingTop:12,borderTop:"1px dashed rgba(255,255,255,0.08)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -16039,7 +16042,7 @@ function ComunicacionesPanel({token}){
     // Fallback si no se cargaron las plantillas todavía
     return trigger==="deposito"
       ? `Hola ${firstName}! Recibimos *${desc}* (${opCode}) en el depósito.\n\n${portalLink}`
-      : `Tu carga *${desc}* (${opCode}) está lista para retirar en Virrey Loreto 2428, Belgrano.${saldoTxt}`;
+      : `Tu carga *${desc}* (${opCode}) está lista para retirar en ${lugarRetiro(op.channel).address}, ${lugarRetiro(op.channel).locality.split(",")[0]}.${saldoTxt}`;
   };
 
   const pending=ops.map(op=>{
