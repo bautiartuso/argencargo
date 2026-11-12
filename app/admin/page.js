@@ -12,7 +12,7 @@ import DatePicker from "../components/DatePicker";
 import { NAVIERAS, navieraDe, navieraColor } from "../../lib/navieras";
 import CarrierLogo from "../components/CarrierLogo";
 import { TarifasAgenteResumen, Bandera } from "../components/TarifasAgente";
-import { CARRIERS as CARRIERS_AG, ORIGENES as ORIGENES_AG, parsePedido, codigoPedido } from "../../lib/tarifas-agente";
+import { CARRIERS as CARRIERS_AG, ORIGENES as ORIGENES_AG, parsePedido, codigoPedido, tramoDe, nombrePedido, alertaTarifa } from "../../lib/tarifas-agente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { diasFeriados } from "../../lib/feriados-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
@@ -9685,7 +9685,7 @@ function PedidoCourier({flight,token,tarifas,finRate=0,ops,pkgs,usd,onReload,sol
     const kgOp=(opId)=>pkgs.filter(p=>p.operation_id===opId).reduce((a,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0)*q,l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?(l*w*h)/dv*q:0;return a+Math.ceil(Math.max(gw,vol)*2)/2;},0);
     const filas=ops.map(o=>({o,kg:kgOp(o.id)}));
     const totKg=filas.reduce((a,f)=>a+f.kg,0);
-    const tramo=[...filasT].reverse().find(f=>totKg>=Number(f.min||0))||filasT[0];
+    const tramo=tramoDe(filasT,totKg);
     const tarifa=Number(tramo.usd||0);
     const bat=Number(tarifas?.extras?.bateria_usd_total||0);
     const kgBat=filas.filter(f=>f.o.has_battery).reduce((a,f)=>a+f.kg,0);
@@ -10529,6 +10529,15 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </div>
       </FeCard>;
     })()}
+    {(()=>{const al=esEmpleado()?null:alertaTarifa(flight);if(!al)return null;const c=al.c;const ped=parsePedido(flight.requested_carrier);
+      const rango=c.min!=null?`${String(c.min).replace(".",",")}${c.max!=null?`–${String(c.max).replace(".",",")}`:"+"} kg`:"";
+      const visto=async()=>{const r=await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{tarifa_control:{...c,visto_at:new Date().toISOString()}}});if(!Array.isArray(r)){onFlash(`No se pudo guardar: ${r?.message||""}`);return;}onReload?.();};
+      const dato=(l,v,col)=><div><p style={{margin:0,fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:15,fontWeight:800,color:col||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p></div>;
+      return <div style={{display:"flex",alignItems:"center",gap:"12px 26px",flexWrap:"wrap",marginBottom:14,padding:"13px 16px",borderRadius:14,background:"rgba(244,63,94,0.08)",border:"1px solid rgba(244,63,94,0.45)"}}>
+        <div style={{flex:"1 1 220px",minWidth:0}}><p style={{margin:0,fontSize:13.5,fontWeight:800,color:"#fb7185"}}>{al.tipo==="courier"?"Despachó por otro courier":"La tarifa no coincide con la cargada"}</p><p style={{margin:"3px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.65)"}}>{al.tipo==="courier"?`Pedido: ${nombrePedido(ped)}`:`${nombrePedido(ped)}${rango?` · ${rango}`:""}`}</p></div>
+        {al.tipo==="courier"?dato("Despachó por",flight.international_carrier||"—","#fb7185"):<>{dato("Cobró",`${usd(flight.cost_per_kg_usd)}/kg`,"#fb7185")}{dato("Tarifa cargada",`${usd(c.esperada)}/kg`)}{dato("Diferencia",`${al.dif>0?"+":"−"}${usd(Math.abs(al.total))}`,al.dif>0?"#fb7185":"#4ade80")}</>}
+        <button type="button" onClick={visto} style={{height:36,padding:"0 16px",borderRadius:10,border:"1px solid rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.05)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Ya lo revisé</button>
+      </div>;})()}
     <div style={{marginTop:-2}}>
       {/* Courier pedido al agente (03/10/2026): botones con el logo y el divisor del volumétrico.
           El reembalaje ya no se pide desde el vuelo: se pide sobre los bultos en depósito. */}
@@ -11744,6 +11753,10 @@ function AgentsPanel({token}){
     const todasEnReenvio=(o)=>(Array.isArray(depPkgs)?depPkgs:[]).some(p=>p.operation_id===o.id&&(p.reenviado_at||enReenvio.has(p.id)))&&!opsConPkgs.has(o.id);
     setDepositOps((Array.isArray(depOps)?depOps:[]).filter(o=>!todasEnReenvio(o)));setDepositPkgs(pkgsDep);setDepSueltos((Array.isArray(sueltos)?sueltos:[]).filter(p=>!p.reenviado_at&&!enReenvio.has(p.id)));
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
+    // Control de tarifa (12/11/2026): si el agente despachó y el servidor todavía no comparó lo cobrado con
+    // su tarifa cargada, se pide ahora. Es margen: solo el admin.
+    if(!esEmpleado()){const faltan=(Array.isArray(fl)?fl:[]).filter(f=>f.agent_id&&f.status==="despachado"&&!f.tarifa_control).map(f=>f.id);
+      if(faltan.length)ensureFreshToken(token).then(tk=>fetch("/api/aereo/control-tarifa",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${tk}`},body:JSON.stringify({flight_ids:faltan})})).then(r=>r.ok?r.json():null).then(j=>{const c=j?.controles||{};if(Object.keys(c).length)setFlights(p=>p.map(f=>c[f.id]?{...f,tarifa_control:c[f.id]}:f));}).catch(()=>{});}
     setDepositItems(Array.isArray(depItems)?depItems:[]);
     setRepackReqs(Array.isArray(rpkReqs)?rpkReqs:[]);
     // Set de ops que tienen al menos un item (documentación completa)
@@ -12154,9 +12167,8 @@ function AgentsPanel({token}){
         }
       }catch(e){console.error("auto budget on flight create",op.id,e);}
     }
-    // Notification #1: notify agent about new flight
-    try{await dq("notifications",{method:"POST",token,body:{user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,link:"?tab=active_flights"}});}catch(e){console.error("notif error",e);}
-    try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,url:"/agente?tab=active_flights"})});}catch(e){}
+    // Al agente ya no se le avisa del vuelo nuevo (12/11/2026): no ve los vuelos en preparación. Se entera
+    // con "Factura lista para vuelo…", cuando ya puede despachar.
     // Notification #2: notify each client whose op is in this flight (in-app + push)
     try{
       const opIds=ops.map(o=>o.id);
@@ -12904,6 +12916,7 @@ function AgentsPanel({token}){
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.
             const warns=[];
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
+            {const al=esEmpleado()?null:alertaTarifa(f);if(al)warns.push({t:"TARIFA",c:"#f43f5e",title:al.tipo==="courier"?`Despachó por ${f.international_carrier||"otro courier"} y se había pedido ${nombrePedido(parsePedido(f.requested_carrier))}`:`Cobró ${usd(f.cost_per_kg_usd)}/kg y su tarifa cargada es ${usd(al.c.esperada)}/kg: ${al.dif>0?"+":"−"}${usd(Math.abs(al.total))} en el vuelo`});}
             if(f.dispatched_at&&!Number(f.total_cost_usd))warns.push({t:"COSTO",c:"#f87171",title:f.agent_id?"Despachado sin costo del agente cargado":"Vuelo directo sin el costo del courier cargado"});
             if(f.status==="recibido"&&ops.some(fo=>Number(fo.operations?.budget_taxes||0)>0&&!Number(fo.operations?.cost_impuestos_reales)))warns.push({t:"IMP",c:"#a78bfa",title:"Hay ops con impuestos presupuestados sin cargar el costo real de aduana"});
             // Desglose del courier subido y todavía no pasado a las ops. Se apaga al extraerlos con IA o cuando el equipo

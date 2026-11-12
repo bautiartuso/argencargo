@@ -6,7 +6,7 @@ import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 import { comprimirImagen } from "../../lib/img";
 import { TarifasAgenteEditor, TarifasAgenteAdmin } from "../components/TarifasAgente";
-import { parsePedido } from "../../lib/tarifas-agente";
+import { parsePedido, tarifaPedido } from "../../lib/tarifas-agente";
 import { hoyAR } from "../../lib/fecha-ar";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 import { filtrosSeguros } from "../../lib/columnas-seguras";
@@ -372,6 +372,9 @@ const I18N={
     origin_CN:"China Mainland",
     origin_HK:"Hong Kong",
     requested_carrier_warn:"Argencargo pidió",
+    my_rate:"Tu tarifa cargada",
+    my_rate_none:"No tenés tarifa cargada para este servicio",
+    use_my_rate:"Usar mi tarifa",
     payment_method_label:"Método de pago",
     method_cc:"Cuenta corriente",
     method_alibaba:"Alibaba",
@@ -763,6 +766,9 @@ const I18N={
     origin_CN:"中国大陆",
     origin_HK:"香港",
     requested_carrier_warn:"Argencargo 要求使用",
+    my_rate:"您录入的价格",
+    my_rate_none:"您尚未为该服务录入价格",
+    use_my_rate:"使用我的价格",
     payment_method_label:"付款方式",
     method_cc:"往来账户",
     method_alibaba:"阿里巴巴",
@@ -1104,7 +1110,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [showTutorial,setShowTutorial]=useState(false);
   const [tutorialDone,setTutorialDone]=useState(false);
   const [statsPeriod,setStatsPeriod]=useState("month");
-  const [fase,setFase]=useState("preparando"); // solapa de Vuelos
+  const [fase,setFase]=useState("listo"); // solapa de Vuelos
   const [flightSearch,setFlightSearch]=useState("");
   const [soloSinFoto,setSoloSinFoto]=useState(false);
   const [soloSinFotoVuelo,setSoloSinFotoVuelo]=useState(false);
@@ -1123,7 +1129,11 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     ]);
     setClaims(Array.isArray(cl)?cl:[]);
     setReenvios(Array.isArray(fw)?fw:[]);
-    setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);setRepackRequests(Array.isArray(rp)?rp:[]);
+    // El agente no ve los vuelos que Argencargo todavía está armando (12/11/2026): aparecen recién con la
+    // factura presentada, listos para despachar. Mientras tanto sus bultos siguen figurando en el depósito.
+    const flVis=(Array.isArray(fl)?fl:[]).filter(f=>!(f.status==="preparando"&&!f.invoice_presented_at));
+    const idsVis=new Set(flVis.map(f=>f.id));
+    setPackages(Array.isArray(pk)?pk:[]);setFlights(flVis);setFlightOps((Array.isArray(fo)?fo:[]).filter(x=>idsVis.has(x.flight_id)));setAccount(Array.isArray(acc)?acc:[]);setRepackRequests(Array.isArray(rp)?rp:[]);
   };
 
   useEffect(()=>{(async()=>{
@@ -1550,7 +1560,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
 
     {/* TAB 2: Vuelos — en preparación · listo · en tránsito · en aduana · recibidos · todos */}
     {tab==="active_flights"&&!selFlight&&(()=>{
-      const FASES=[["preparando",t.sec_preparing],["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs],["recibido",t.tab_history]];
+      const FASES=[["listo",t.sec_ready],["transito",t.sec_transit],["aduana",t.sec_customs],["recibido",t.tab_history]];
       const todos=[...activeFlights,...historyFlights];
       const q=flightSearch.trim().toLowerCase();
       const sinDocs=(f)=>f.status==="despachado"&&(!f.dispatch_photo_url||!f.commercial_invoice_path);
@@ -1731,7 +1741,12 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   })();return()=>{vivo=false;};},[flight.id,token]);
   const packages=flightPkgs!==null?flightPkgs:packagesProp;
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto.
-  const VOL_DIV=Number(signup?.volumetric_divisor)||5000;
+  // Courier que pidió Argencargo. El valor tiene que coincidir con una opción del select de
+  // abajo (DHL / FedEx / UPS): si no matchea, el aviso no aparece y el chequeo queda muerto.
+  const pedidoObj=parsePedido(flight.requested_carrier);
+  const pedido=pedidoObj?.carrierNombre||null;
+  // El volumétrico se calcula con el divisor del servicio pedido (÷5000 / ÷6000); sin pedido, el del agente.
+  const VOL_DIV=pedidoObj?.div||Number(signup?.volumetric_divisor)||5000;
   const pkgFact=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?((l*w*h)/VOL_DIV)*q:0;return Math.max(gw,vol);};
   // Peso total calculado automáticamente desde los bultos (bruto) — sigue siendo lo que el agente entra al carrier.
   const autoWeight=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);},0);
@@ -1747,10 +1762,6 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // Peso facturable: el agente lo puede ajustar a mano (prefill con el calculado de los bultos).
   const [factKgInput,setFactKgInput]=useState("");
   const [tracking,setTracking]=useState(flight.international_tracking||"");
-  // Courier que pidió Argencargo. El valor tiene que coincidir con una opción del select de
-  // abajo (DHL / FedEx / UPS): si no matchea, el aviso no aparece y el chequeo queda muerto.
-  const pedido=carrierBase(flight.requested_carrier);
-  const divPedido=carrierDiv(flight.requested_carrier);
   const [carrier,setCarrier]=useState(flight.international_carrier||pedido||"DHL");
   const [pmtMethod,setPmtMethod]=useState(flight.payment_method||"cuenta_corriente");
   const [saving,setSaving]=useState(false);
@@ -1911,6 +1922,18 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   const costBase=(()=>{const r=Number(String(costPerKg).replace(",","."));return r>0&&kgParaCosto>0?Math.round(kgParaCosto*r*100)/100:0;})();
   const costBrandAmt=costBrand?Math.round(0.7*kgParaCosto*100)/100:0;
   const computedCost=costBase>0?Math.round((costBase+(costBattery?10:0)+costBrandAmt+(costOverweight?35:0))*100)/100:0;
+  // Tarifa que el agente tiene cargada para el servicio pedido y los kilos del vuelo (12/11/2026):
+  // se completa sola y, si la cambia, se le avisa (Argencargo ve la diferencia en su panel).
+  const [misTar,setMisTar]=useState(undefined);
+  const porDespachar=flight.status==="preparando"&&!!flight.invoice_presented_at;
+  useEffect(()=>{if(!porDespachar||!pedidoObj)return;let vivo=true;fetch("/api/agente/tarifas",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{if(vivo)setMisTar(j?.tarifas||(j?.agentes||[]).find(a=>a.auth_user_id===flight.agent_id)?.tarifas||null);}).catch(()=>{if(vivo)setMisTar(null);});return()=>{vivo=false;};},[flight.id,porDespachar]);
+  const miTarifa=pedidoObj&&carrier===pedido&&misTar&&kgParaCosto>0?tarifaPedido(misTar,pedidoObj,kgParaCosto):null;
+  const [tarifaTocada,setTarifaTocada]=useState(!!flight.cost_per_kg_usd);
+  const fmtTar=(v)=>String(Math.round(Number(v)*100)/100).replace(".",",");
+  useEffect(()=>{if(porDespachar&&miTarifa&&!tarifaTocada)setCostPerKg(fmtTar(miTarifa.usd));},[miTarifa?.usd,tarifaTocada,porDespachar]);
+  const tarifaNum=Number(String(costPerKg).replace(",","."))||0;
+  const tarifaDistinta=!!miTarifa&&tarifaNum>0&&Math.abs(tarifaNum-miTarifa.usd)>0.005;
+  const rangoTar=miTarifa?`${String(miTarifa.min).replace(".",",")}${miTarifa.max!=null?`–${String(miTarifa.max).replace(".",",")}`:"+"} kg`:"";
   const dispatch=async()=>{
     if(!(computedCost>0)||!tracking){setErr(t.err_generic);return;}
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
@@ -1947,6 +1970,8 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       const body=isAlibaba?`Cargá cómo pagaste (TC/débito) para calcular el costo real con comisiones`:`${carrier} - ${tracking}`;
       await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title,body,link:null}});
     }}catch(e){console.error("notif error",e);}
+    // El servidor compara lo cobrado con la tarifa cargada y lo deja anotado en el vuelo.
+    try{await fetch("/api/aereo/control-tarifa",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({flight_id:flight.id})});}catch(e){console.error("control tarifa",e);}
     setSaving(false);
     onDispatched();
   };
@@ -2064,8 +2089,12 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         return <>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
           <AgAdornInp label={t.fact_weight} value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100).replace(".",","):"0"} suffix="kg"/>
-          <AgAdornInp label={t.cost_per_kg} req value={costPerKg} onChange={setCostPerKg} placeholder="12,59" prefix="USD" suffix="/kg"/>
+          <AgAdornInp label={t.cost_per_kg} req value={costPerKg} onChange={(v)=>{setTarifaTocada(true);setCostPerKg(v);}} placeholder="12,59" prefix="USD" suffix="/kg"/>
         </div>
+        {pedidoObj&&carrier===pedido&&misTar!==undefined&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",margin:"-4px 0 14px",padding:"9px 13px",borderRadius:10,border:`1px solid ${!miTarifa?"rgba(251,191,36,0.35)":tarifaDistinta?"rgba(248,113,113,0.45)":"rgba(96,165,250,0.35)"}`,background:!miTarifa?"rgba(251,191,36,0.07)":tarifaDistinta?"rgba(248,113,113,0.08)":"rgba(96,165,250,0.08)"}}>
+          <span style={{fontSize:12,fontWeight:700,lineHeight:1.45,color:!miTarifa?"var(--amber)":tarifaDistinta?"#f87171":"#93c5fd"}}>{!miTarifa?(t.my_rate_none||"No tenés tarifa cargada para este servicio"):<>{tarifaDistinta?"⚠":"✓"} {t.my_rate||"Tu tarifa cargada"}: {carrierPedido(flight.requested_carrier,t)} · {rangoTar} → <b style={{fontFeatureSettings:'"tnum"'}}>USD {fmtTar(miTarifa.usd)}/kg</b></>}</span>
+          {tarifaDistinta&&<button type="button" onClick={()=>{setTarifaTocada(false);setCostPerKg(fmtTar(miTarifa.usd));}} style={{height:30,padding:"0 12px",borderRadius:8,border:"1px solid rgba(248,113,113,0.5)",background:"transparent",color:"#f87171",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.use_my_rate||"Usar mi tarifa"}</button>}
+        </div>}
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
           <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
             {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,ROJO)}
