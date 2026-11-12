@@ -7879,81 +7879,171 @@ const FIXED_CATS=[
 ];
 const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",obra_social:"Obra Social",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
 const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",obra_social:"#14b8a6",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
-// ── Estadísticas de la operativa (12/11/2026) ───────────────────────────────────────────────────
-// Kilos aéreos por país de origen y metros cúbicos marítimos por canal (LCL/FCL · Integral), por mes de
-// un año o por año. Sin plata: es volumen. La cuenta la hace la base (rpc estadisticas_operativa).
+// ── Estadísticas de la operativa (12/11/2026, rehecha) ──────────────────────────────────────────
+// Finanzas → Estadísticas. Volumen, sin plata: kilos aéreos y metros cúbicos marítimos por mes, año o
+// total, comparados con el período anterior; evolución mes a mes; y los desgloses por origen, courier,
+// canal y cliente. Los datos vienen de una sola función (rpc estadisticas_operativa_v2: una fila por
+// operación embarcada) y todo lo demás se arma acá.
+// Colores: cada origen y cada canal tiene SIEMPRE el mismo (paleta validada sobre el fondo oscuro).
+const EST_ORIGEN_COL={China:"#3987e5",USA:"#d95926",Bangladesh:"#199e70",Pakistan:"#c98500",Otros:"#8b93a3"};
+const EST_ORIGEN_ORDEN=["China","USA","Bangladesh","Pakistan","Otros"];
+const EST_CANAL={lclfcl:{l:"LCL/FCL",c:"#9085e9"},integral:{l:"Integral",c:"#d55181"}};
+const EST_FONDO="#101c30";
+const estOrigen=(o)=>{const s=String(o||"").trim();if(/^usa$|estados unidos|eeuu/i.test(s))return "USA";if(/pakist/i.test(s))return "Pakistan";if(/bangla/i.test(s))return "Bangladesh";if(/china/i.test(s))return "China";return "Otros";};
+const estMesAnt=(m)=>{const [a,x]=m.split("-").map(Number);return x===1?`${a-1}-12`:`${a}-${String(x-1).padStart(2,"0")}`;};
+const estMesSig=(m)=>{const [a,x]=m.split("-").map(Number);return x===12?`${a+1}-01`:`${a}-${String(x+1).padStart(2,"0")}`;};
+const estMesTxt=(m,largo)=>{const [a,x]=m.split("-").map(Number);return new Date(a,x-1,1).toLocaleDateString("es-AR",largo?{month:"long",year:"numeric"}:{month:"short"}).replace(".","");};
+
+// Columnas apiladas por mes. series: [{k,l,c}] · valor(mes,k) · una sola escala, marcas finas, 2 px de
+// aire entre segmentos, punta redondeada arriba. Tocar una columna elige ese mes; al pasar muestra el detalle.
+function EstBarras({meses,series,valor,sel,onSel,fmt,unidad,pie}){
+  const [hov,setHov]=useState(null);
+  const W=560,H=210,L=44,R=8,T=14,B=26;
+  const tot=(m)=>series.reduce((a,s)=>a+valor(m,s.k),0);
+  const max=Math.max(1,...meses.map(tot));
+  // Marcas del eje: 3 saltos "redondos".
+  const paso=(()=>{const bruto=max/3;const p=Math.pow(10,Math.floor(Math.log10(bruto)));const n=bruto/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p;})();
+  const tope=Math.ceil(max/paso)*paso;
+  const ticks=[];for(let v=0;v<=tope+1e-9;v+=paso)ticks.push(v);
+  const y=(v)=>T+(H-T-B)*(1-v/tope);
+  const ancho=(W-L-R)/meses.length;const bw=Math.min(24,ancho*0.62);
+  const eje=(v)=>v>=10000?`${Math.round(v/1000)}K`:Number(v).toLocaleString("es-AR",{maximumFractionDigits:v<10?1:0});
+  const h=hov!=null?meses[hov]:null;
+  return <div style={{position:"relative"}}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}} onMouseLeave={()=>setHov(null)}>
+      {ticks.map(v=><g key={v}><line x1={L} x2={W-R} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.07)" strokeWidth="1"/><text x={L-8} y={y(v)+3.5} textAnchor="end" fontSize="10" fill="rgba(255,255,255,0.4)" style={{fontVariantNumeric:"tabular-nums"}}>{eje(v)}</text></g>)}
+      {meses.map((m,i)=>{const cx=L+ancho*i+ancho/2;let acum=0;const t=tot(m);const activo=sel==null||sel===m;
+        const segs=series.map(s=>({s,v:valor(m,s.k)})).filter(x=>x.v>0);
+        return <g key={m} onMouseEnter={()=>setHov(i)} onClick={()=>onSel&&onSel(m)} style={{cursor:onSel?"pointer":"default"}}>
+          <rect x={L+ancho*i} y={T} width={ancho} height={H-T-B} fill={hov===i?"rgba(255,255,255,0.04)":"transparent"}/>
+          {segs.map((x,j)=>{const y0=y(acum),y1=y(acum+x.v);acum+=x.v;const ultimo=j===segs.length-1;const alto=Math.max(0,y0-y1-(ultimo?0:2));const r=ultimo?Math.min(4,alto):0;
+            return <path key={x.s.k} d={`M${cx-bw/2},${y0} L${cx-bw/2},${y0-alto+r} Q${cx-bw/2},${y0-alto} ${cx-bw/2+r},${y0-alto} L${cx+bw/2-r},${y0-alto} Q${cx+bw/2},${y0-alto} ${cx+bw/2},${y0-alto+r} L${cx+bw/2},${y0} Z`} fill={x.s.c} opacity={activo?1:0.4}/>;})}
+          {sel===m&&t>0&&<text x={cx} y={y(t)-6} textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#fff" style={{fontVariantNumeric:"tabular-nums"}}>{fmt(t)}</text>}
+          <text x={cx} y={H-8} textAnchor="middle" fontSize="10" fontWeight={sel===m?800:500} fill={sel===m?"#fff":"rgba(255,255,255,0.45)"}>{estMesTxt(m)}{m.endsWith("-01")||i===0?` ${m.slice(2,4)}`:""}</text>
+        </g>;})}
+      <line x1={L} x2={W-R} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,0.18)" strokeWidth="1"/>
+    </svg>
+    {h&&<div style={{position:"absolute",top:6,left:`${Math.min(72,Math.max(2,((L+ancho*hov+ancho/2)/W)*100-14))}%`,pointerEvents:"none",padding:"9px 12px",borderRadius:10,background:"#0b1424",border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 10px 30px rgba(0,0,0,0.45)",minWidth:150,zIndex:5}}>
+      <p style={{margin:"0 0 5px",fontSize:11.5,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{estMesTxt(h,true)}</p>
+      {series.filter(s=>valor(h,s.k)>0).map(s=><p key={s.k} style={{margin:"2px 0",fontSize:11.5,color:"rgba(255,255,255,0.75)",display:"flex",justifyContent:"space-between",gap:14,fontVariantNumeric:"tabular-nums"}}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:2,background:s.c}}/>{s.l}</span><b style={{color:"#fff"}}>{fmt(valor(h,s.k))}</b></p>)}
+      <p style={{margin:"5px 0 0",paddingTop:5,borderTop:"1px solid rgba(255,255,255,0.1)",fontSize:11.5,color:"rgba(255,255,255,0.6)",display:"flex",justifyContent:"space-between",gap:14,fontVariantNumeric:"tabular-nums"}}><span>Total</span><b style={{color:"#fff"}}>{fmt(tot(h))} {unidad}</b></p>
+      {pie&&<p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{pie(h)}</p>}
+    </div>}
+    {series.length>1&&<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:6,paddingLeft:L*0.5}}>{series.map(s=><span key={s.k} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11.5,color:"rgba(255,255,255,0.65)"}}><span style={{width:9,height:9,borderRadius:2,background:s.c}}/>{s.l}</span>)}</div>}
+  </div>;
+}
+
 function EstadisticasPanel({token}){
   const celu=useEsCelu();
-  const [filas,setFilas]=useState(null);const [anio,setAnio]=useState(()=>hoyAR().slice(0,4));
-  useEffect(()=>{let vivo=true;dq("rpc/estadisticas_operativa",{method:"POST",token,body:{}}).then(r=>{if(vivo)setFilas(Array.isArray(r)?r:[]);});return()=>{vivo=false;};},[token]);
+  const mesHoy=hoyAR().slice(0,7);
+  const [filas,setFilas]=useState(null);
+  const [vista,setVista]=useState("mes");const [mes,setMes]=useState(mesHoy);const [anio,setAnio]=useState(mesHoy.slice(0,4));
+  useEffect(()=>{let vivo=true;dq("rpc/estadisticas_operativa_v2",{method:"POST",token,body:{}}).then(r=>{if(vivo)setFilas(Array.isArray(r)?r.map(f=>({...f,o:estOrigen(f.o),q:Number(f.q||0)})):[]);});return()=>{vivo=false;};},[token]);
   if(filas===null)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>;
   const kg=(v)=>Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:Number(v)>=100?0:1});
   const m3=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const anios=[...new Set(filas.map(f=>String(f.mes||"").slice(0,4)).filter(Boolean))].sort().reverse();
-  const todos=anio==="todos";
-  const delPeriodo=todos?filas:filas.filter(f=>String(f.mes).startsWith(anio));
-  // Orígenes del aéreo, del que más kilos trae al que menos (sobre todo el historial, así no saltan de lugar).
-  const origenes=Object.entries(filas.filter(f=>f.modo==="aereo").reduce((a,f)=>{a[f.clave]=(a[f.clave]||0)+Number(f.cantidad||0);return a;},{})).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
-  const periodoDe=(f)=>todos?String(f.mes).slice(0,4):f.mes;
-  const periodos=[...new Set(delPeriodo.map(periodoDe))].sort().reverse();
-  const suma=(rows,modo,clave)=>rows.filter(f=>f.modo===modo&&(clave==null||f.clave===clave)).reduce((a,f)=>a+Number(f.cantidad||0),0);
-  const cuenta=(rows,modo,campo)=>rows.filter(f=>f.modo===modo).reduce((a,f)=>a+Number(f[campo]||0),0);
-  const nombreMes=(p)=>{if(todos)return p;const [y,m]=p.split("-");return new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long"});};
-  const fila=(p)=>{const rows=delPeriodo.filter(f=>periodoDe(f)===p);return {p,rows,aer:suma(rows,"aereo"),vuelos:cuenta(rows,"aereo","viajes"),opsA:cuenta(rows,"aereo","ops"),lcl:suma(rows,"maritimo","lclfcl"),intg:suma(rows,"maritimo","integral")};};
-  const datos=periodos.map(fila);
-  const tot={aer:suma(delPeriodo,"aereo"),vuelos:cuenta(delPeriodo,"aereo","viajes"),opsA:cuenta(delPeriodo,"aereo","ops"),lcl:suma(delPeriodo,"maritimo","lclfcl"),intg:suma(delPeriodo,"maritimo","integral")};
-  const chipA=(v,l)=>{const on=anio===v;return <button key={v} type="button" onClick={()=>setAnio(v)} style={{height:34,padding:"0 14px",borderRadius:8,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(184,149,106,0.22)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.55)"}}>{l}</button>;};
+  const en=(f,p)=>p.vista==="total"?true:p.vista==="anio"?f.m.startsWith(p.anio):f.m===p.mes;
+  const P={vista,mes,anio};
+  const Pant=vista==="mes"?{vista,mes:estMesAnt(mes)}:vista==="anio"?{vista,anio:String(Number(anio)-1)}:null;
+  const unicos=(rows,campo)=>new Set(rows.map(f=>f[campo]).filter(Boolean)).size;
+  const resumen=(rows)=>{const a=rows.filter(f=>f.t==="a"),m=rows.filter(f=>f.t==="m");const kgA=a.reduce((s,f)=>s+f.q,0),vuelos=unicos(a,"v");
+    return {kg:kgA,vuelos,opsA:unicos(a,"op"),kgVuelo:vuelos?kgA/vuelos:0,m3:m.reduce((s,f)=>s+f.q,0),cont:unicos(m,"v"),envios:unicos(m,"op"),clientes:unicos(rows,"cl")};};
+  const rows=filas.filter(f=>en(f,P));const R=resumen(rows);
+  const A=Pant?resumen(filas.filter(f=>en(f,Pant))):null;
+  const nombrePer=vista==="total"?"todo el historial":vista==="anio"?anio:estMesTxt(mes,true);
+  const nombreAnt=vista==="mes"?estMesTxt(estMesAnt(mes)):vista==="anio"?String(Number(anio)-1):"";
+  // Meses del gráfico: los 12 que terminan en el mes elegido (o en hoy), los del año, o todos.
+  const todosMeses=[...new Set(filas.map(f=>f.m))].sort();
+  const mesesGraf=(()=>{if(vista==="anio")return Array.from({length:12},(_,i)=>`${anio}-${String(i+1).padStart(2,"0")}`).filter(m=>m<=mesHoy||todosMeses.includes(m));
+    if(vista==="total"){const out=[];let m=todosMeses[0]||mesHoy;while(m<=mesHoy&&out.length<60){out.push(m);m=estMesSig(m);}return out;}
+    const fin=mes>mesHoy?mes:mesHoy;const out=[fin];while(out.length<12)out.unshift(estMesAnt(out[0]));return out;})();
+  const suma=(rs,t,campo,val)=>rs.filter(f=>f.t===t&&(campo==null||f[campo]===val)).reduce((s,f)=>s+f.q,0);
+  const origenes=EST_ORIGEN_ORDEN.filter(o=>filas.some(f=>f.t==="a"&&f.o===o));
+  const seriesA=origenes.map(o=>({k:o,l:o==="Pakistan"?"Pakistán":o,c:EST_ORIGEN_COL[o]}));
+  const seriesM=Object.entries(EST_CANAL).map(([k,x])=>({k,l:x.l,c:x.c}));
+  const delMes=(m)=>filas.filter(f=>f.m===m);
+  const elegir=(m)=>{setVista("mes");setMes(m);};
+  // ── piezas ──
+  const delta=(act,ant)=>{if(!A||!(ant>0))return null;const d=(act-ant)/ant;const sube=d>=0;return <span style={{fontSize:11.5,fontWeight:800,color:sube?"#4ade80":"#f87171",whiteSpace:"nowrap"}}>{sube?"▲":"▼"} {Math.abs(Math.round(d*100))} % <span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>vs {nombreAnt}</span></span>;};
+  const tile=(l,v,d,sub)=><div style={{padding:"14px 16px",borderRadius:14,background:"linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.08)",minWidth:0}}>
+    <p style={{margin:0,fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{l}</p>
+    <p style={{margin:"5px 0 3px",fontSize:celu?20:24,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p>
+    {d||<span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>{sub||" "}</span>}
+  </div>;
+  const card=(titulo,sub,hijos)=><div style={{padding:"16px 18px",borderRadius:16,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",minWidth:0}}>
+    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,marginBottom:12}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{titulo}</p>{sub&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{sub}</span>}</div>{hijos}</div>;
+  // Lista con barra: [{k, etiqueta (nodo), v, extra}] ordenada de mayor a menor.
+  const lista=(items,fmtV,color)=>{const mx=Math.max(1e-9,...items.map(i=>i.v));const tt=items.reduce((s,i)=>s+i.v,0);
+    if(!items.length||tt<=0)return <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Sin movimientos en {nombrePer}.</p>;
+    return <div style={{display:"flex",flexDirection:"column",gap:9}}>{items.map(i=><div key={i.k}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:4}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:8,minWidth:0,fontSize:13,fontWeight:700,color:"#fff"}}>{i.etiqueta}</span>
+        <span style={{fontSize:13,color:"rgba(255,255,255,0.75)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><b style={{color:"#fff"}}>{fmtV(i.v)}</b> · {Math.round(i.v/tt*100)} %{i.extra?<span style={{color:"rgba(255,255,255,0.45)"}}> · {i.extra}</span>:null}</span>
+      </div>
+      <div style={{height:6,borderRadius:999,background:"rgba(255,255,255,0.06)"}}><div style={{height:"100%",width:`${Math.max(1.5,i.v/mx*100)}%`,borderRadius:999,background:i.c||color}}/></div>
+    </div>)}</div>;};
+  const punto=(c)=><span style={{width:9,height:9,borderRadius:2,background:c,flexShrink:0}}/>;
+  const agrupar=(rs,campo)=>{const m=new Map();rs.forEach(f=>{const k=f[campo]||"—";const x=m.get(k)||{k,v:0,ops:new Set(),via:new Set(),nm:f.nm};x.v+=f.q;x.ops.add(f.op);if(f.v)x.via.add(f.v);m.set(k,x);});return [...m.values()].sort((a,b)=>b.v-a.v);};
+  const aer=rows.filter(f=>f.t==="a"),mar=rows.filter(f=>f.t==="m");
+  const pl=(n,s,p)=>`${n} ${n===1?s:p}`;
+  const porOrigen=agrupar(aer,"o").map(x=>({k:x.k,v:x.v,c:EST_ORIGEN_COL[x.k],etiqueta:<>{punto(EST_ORIGEN_COL[x.k])}{x.k==="Pakistan"?"Pakistán":x.k}</>,extra:pl(x.via.size,"vuelo","vuelos")}));
+  const porCourier=agrupar(aer,"k").map(x=>({k:x.k,v:x.v,etiqueta:["dhl","fedex","ups"].includes(String(x.k).toLowerCase())?<CarrierLogo k={String(x.k).toLowerCase()} alto={18}/>:x.k,extra:pl(x.via.size,"vuelo","vuelos")}));
+  const porCanal=agrupar(mar,"c").map(x=>({k:x.k,v:x.v,c:EST_CANAL[x.k]?.c,etiqueta:<>{punto(EST_CANAL[x.k]?.c)}{EST_CANAL[x.k]?.l||x.k}</>,extra:pl(x.ops.size,"envío","envíos")}));
+  const porOrigenM=agrupar(mar,"o").map(x=>({k:x.k,v:x.v,etiqueta:x.k==="Pakistan"?"Pakistán":x.k,extra:pl(x.ops.size,"envío","envíos")}));
+  const cliente=(x)=><><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,color:GOLD_LIGHT}}>{x.k}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:600,color:"rgba(255,255,255,0.8)"}}>{x.nm||""}</span></>;
+  const topA=agrupar(aer,"cl").slice(0,8).map(x=>({k:x.k,v:x.v,etiqueta:cliente(x),extra:pl(x.ops.size,"op","ops")}));
+  const topM=agrupar(mar,"cl").slice(0,8).map(x=>({k:x.k,v:x.v,etiqueta:cliente(x),extra:pl(x.ops.size,"envío","envíos")}));
+  const seg=(v,l)=>{const on=vista===v;return <button key={v} type="button" onClick={()=>setVista(v)} style={{height:34,padding:"0 16px",borderRadius:8,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(184,149,106,0.22)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.55)"}}>{l}</button>;};
+  const flecha=(l,on)=><button type="button" onClick={on} style={{width:34,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)",color:"#fff",fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>;
   const th={padding:"9px 12px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"right",whiteSpace:"nowrap"};
-  const td={padding:"10px 12px",fontSize:13,color:"rgba(255,255,255,0.8)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+  const td={padding:"9px 12px",fontSize:12.5,color:"rgba(255,255,255,0.8)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
   const cero=(v,txt)=>Number(v)>0?txt:<span style={{color:"rgba(255,255,255,0.2)"}}>—</span>;
-  const dato=(l,v,sub)=><div style={{flex:"1 1 200px",padding:"13px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}><p style={{margin:0,fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p><p style={{margin:"4px 0 0",fontSize:celu?19:22,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p>{sub&&<p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{sub}</p>}</div>;
+  const dos=celu?"1fr":"repeat(2,minmax(0,1fr))";
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto"}}>{anios.map(a=>chipA(a,a))}{chipA("todos","Total")}</div>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)"}}>{seg("mes","Mes")}{seg("anio","Año")}{seg("total","Total")}</div>
+      {vista!=="total"&&<div style={{display:"flex",alignItems:"center",gap:8}}>
+        {flecha("‹",()=>vista==="mes"?setMes(estMesAnt(mes)):setAnio(String(Number(anio)-1)))}
+        <span style={{minWidth:vista==="mes"?150:70,textAlign:"center",fontSize:15,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{nombrePer}</span>
+        {flecha("›",()=>vista==="mes"?setMes(estMesSig(mes)):setAnio(String(Number(anio)+1)))}
+      </div>}
     </div>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
-      {dato("Aéreo",`${kg(tot.aer)} kg`,`${tot.vuelos} vuelos · ${origenes.filter(o=>suma(delPeriodo,"aereo",o)>0).map(o=>`${o} ${kg(suma(delPeriodo,"aereo",o))}`).join(" · ")}`)}
-      {dato("Marítimo",`${m3(tot.lcl+tot.intg)} m³`,`LCL/FCL ${m3(tot.lcl)} · Integral ${m3(tot.intg)}`)}
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(6,minmax(0,1fr))",gap:10,marginBottom:16}}>
+      {tile("Kilos aéreos",`${kg(R.kg)} kg`,delta(R.kg,A?.kg))}
+      {tile("Vuelos",String(R.vuelos),delta(R.vuelos,A?.vuelos))}
+      {tile("Kilos por vuelo",R.vuelos?`${kg(R.kgVuelo)} kg`:"—",delta(R.kgVuelo,A?.kgVuelo))}
+      {tile("Metros cúbicos",`${m3(R.m3)} m³`,delta(R.m3,A?.m3))}
+      {tile("Contenedores",String(R.cont),null,pl(R.envios,"envío","envíos"))}
+      {tile("Clientes que embarcaron",String(R.clientes),delta(R.clientes,A?.clientes))}
     </div>
-    {datos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin movimientos en ese período.</p>
-    :celu?<div style={{display:"flex",flexDirection:"column",gap:8}}>{datos.map(d=><div key={d.p} style={{padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)"}}>
-        <p style={{margin:"0 0 8px",fontSize:14,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{nombreMes(d.p)}</p>
-        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}><span>Aéreo</span><span><b style={{color:"#fff"}}>{kg(d.aer)} kg</b> · {d.vuelos} vuelos</span></div>
-        {origenes.filter(o=>suma(d.rows,"aereo",o)>0).length>1&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{origenes.filter(o=>suma(d.rows,"aereo",o)>0).map(o=>`${o} ${kg(suma(d.rows,"aereo",o))}`).join(" · ")}</p>}
-        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums",marginTop:6}}><span>Marítimo</span><span><b style={{color:"#fff"}}>{m3(d.lcl+d.intg)} m³</b></span></div>
-        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>LCL/FCL {m3(d.lcl)} · Integral {m3(d.intg)}</p>
-      </div>)}</div>
-    :<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflowX:"auto"}}>
+    <div style={{display:"grid",gridTemplateColumns:dos,gap:12,marginBottom:12}}>
+      {card("Kilos aéreos por mes",vista==="mes"?"tocá un mes para verlo":null,<EstBarras meses={mesesGraf} series={seriesA} valor={(m,o)=>suma(delMes(m),"a","o",o)} sel={vista==="mes"?mes:null} onSel={elegir} fmt={kg} unidad="kg" pie={(m)=>pl(unicos(delMes(m).filter(f=>f.t==="a"),"v"),"vuelo","vuelos")}/>)}
+      {card("Metros cúbicos marítimos por mes",null,<EstBarras meses={mesesGraf} series={seriesM} valor={(m,c)=>suma(delMes(m),"m","c",c)} sel={vista==="mes"?mes:null} onSel={elegir} fmt={m3} unidad="m³" pie={(m)=>pl(unicos(delMes(m).filter(f=>f.t==="m"),"v"),"contenedor","contenedores")}/>)}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:dos,gap:12,marginBottom:12}}>
+      {card("Aéreo por origen",nombrePer,lista(porOrigen,v=>`${kg(v)} kg`))}
+      {card("Marítimo por canal",nombrePer,lista(porCanal,v=>`${m3(v)} m³`))}
+      {card("Aéreo por courier",nombrePer,lista(porCourier,v=>`${kg(v)} kg`,"rgba(255,255,255,0.4)"))}
+      {card("Marítimo por origen",nombrePer,lista(porOrigenM,v=>`${m3(v)} m³`,"rgba(255,255,255,0.4)"))}
+      {card("Clientes con más kilos aéreos",nombrePer,lista(topA,v=>`${kg(v)} kg`,"rgba(255,255,255,0.4)"))}
+      {card("Clientes con más metros cúbicos",nombrePer,lista(topM,v=>`${m3(v)} m³`,"rgba(255,255,255,0.4)"))}
+    </div>
+    {card("Mes a mes",null,<div style={{overflowX:"auto",margin:"0 -6px"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead>
-          <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            <th style={{...th,textAlign:"left"}}></th>
-            <th colSpan={origenes.length+2} style={{...th,textAlign:"center",color:"#93c5fd",borderLeft:"1px solid rgba(255,255,255,0.06)"}}>Aéreo · kilos facturables</th>
-            <th colSpan={3} style={{...th,textAlign:"center",color:"#5eead4",borderLeft:"1px solid rgba(255,255,255,0.06)"}}>Marítimo · metros cúbicos</th>
-          </tr>
-          <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-            <th style={{...th,textAlign:"left"}}>{todos?"Año":"Mes"}</th>
-            {origenes.map((o,i)=><th key={o} style={{...th,borderLeft:i===0?"1px solid rgba(255,255,255,0.06)":"none"}}>{o}</th>)}
-            <th style={th}>Total</th><th style={th}>Vuelos</th>
-            <th style={{...th,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>LCL/FCL</th><th style={th}>Integral</th><th style={th}>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {datos.map(d=><tr key={d.p} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{...td,textAlign:"left",fontWeight:700,color:"#fff",textTransform:"capitalize"}}>{nombreMes(d.p)}</td>
-            {origenes.map((o,i)=><td key={o} style={{...td,borderLeft:i===0?"1px solid rgba(255,255,255,0.06)":"none"}}>{cero(suma(d.rows,"aereo",o),kg(suma(d.rows,"aereo",o)))}</td>)}
-            <td style={{...td,fontWeight:800,color:"#fff"}}>{cero(d.aer,kg(d.aer))}</td><td style={td}>{cero(d.vuelos,d.vuelos)}</td>
-            <td style={{...td,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>{cero(d.lcl,m3(d.lcl))}</td><td style={td}>{cero(d.intg,m3(d.intg))}</td><td style={{...td,fontWeight:800,color:"#fff"}}>{cero(d.lcl+d.intg,m3(d.lcl+d.intg))}</td>
-          </tr>)}
-          <tr style={{background:"rgba(184,149,106,0.08)"}}>
-            <td style={{...td,textAlign:"left",fontWeight:800,color:GOLD_LIGHT}}>Total</td>
-            {origenes.map((o,i)=><td key={o} style={{...td,fontWeight:800,color:"#fff",borderLeft:i===0?"1px solid rgba(255,255,255,0.06)":"none"}}>{cero(suma(delPeriodo,"aereo",o),kg(suma(delPeriodo,"aereo",o)))}</td>)}
-            <td style={{...td,fontWeight:800,color:GOLD_LIGHT}}>{kg(tot.aer)}</td><td style={{...td,fontWeight:800,color:"#fff"}}>{tot.vuelos}</td>
-            <td style={{...td,fontWeight:800,color:"#fff",borderLeft:"1px solid rgba(255,255,255,0.06)"}}>{m3(tot.lcl)}</td><td style={{...td,fontWeight:800,color:"#fff"}}>{m3(tot.intg)}</td><td style={{...td,fontWeight:800,color:GOLD_LIGHT}}>{m3(tot.lcl+tot.intg)}</td>
-          </tr>
-        </tbody>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+          <th style={{...th,textAlign:"left"}}>Mes</th>
+          {seriesA.map(s=><th key={s.k} style={th}>{s.l} kg</th>)}<th style={th}>Aéreo kg</th><th style={th}>Vuelos</th>
+          <th style={{...th,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>LCL/FCL m³</th><th style={th}>Integral m³</th><th style={th}>Marítimo m³</th><th style={th}>Clientes</th>
+        </tr></thead>
+        <tbody>{[...mesesGraf].reverse().map(m=>{const rs=delMes(m);const r=resumen(rs);return <tr key={m} onClick={()=>elegir(m)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:vista==="mes"&&m===mes?"rgba(184,149,106,0.08)":"transparent"}}>
+          <td style={{...td,textAlign:"left",fontWeight:700,color:"#fff",textTransform:"capitalize"}}>{estMesTxt(m,true)}</td>
+          {seriesA.map(s=><td key={s.k} style={td}>{cero(suma(rs,"a","o",s.k),kg(suma(rs,"a","o",s.k)))}</td>)}
+          <td style={{...td,fontWeight:800,color:"#fff"}}>{cero(r.kg,kg(r.kg))}</td><td style={td}>{cero(r.vuelos,r.vuelos)}</td>
+          <td style={{...td,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>{cero(suma(rs,"m","c","lclfcl"),m3(suma(rs,"m","c","lclfcl")))}</td><td style={td}>{cero(suma(rs,"m","c","integral"),m3(suma(rs,"m","c","integral")))}</td>
+          <td style={{...td,fontWeight:800,color:"#fff"}}>{cero(r.m3,m3(r.m3))}</td><td style={td}>{cero(r.clientes,r.clientes)}</td>
+        </tr>;})}</tbody>
       </table>
-    </div>}
+    </div>)}
   </div>;
 }
 
@@ -18422,7 +18512,6 @@ function AdminDashboard({session,onLogout}){
       {key:"lclfcl",label:"Marítimo LCL/FCL",p:["M3 7h18v10H3z","M7 7v10","M12 7v10","M17 7v10","M1 19h22"]},
       {key:"agp",label:"Pagos internacionales",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
-      {key:"stats",label:"Estadísticas",p:["M3 3v18h18","M7 16v-5","M12 16V7","M17 16v-9"]},
     ]},
     {section:"Comercial",items:[
       {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
@@ -18435,6 +18524,7 @@ function AdminDashboard({session,onLogout}){
     {section:"Finanzas",items:[
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
       {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
+      {key:"stats",label:"Estadísticas",p:["M3 3v18h18","M7 16l4-5 3 3 5-7"]},
       {key:"fijos",label:"Gastos fijos",p:["M8 2v4","M16 2v4","M3 10h18","M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z","M9 16l2 2 4-4"]},
       {key:"facturas",label:"Facturación",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M9 13h6","M9 17h4"]},
       {key:"ccfin",label:"CC Financiera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
