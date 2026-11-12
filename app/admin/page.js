@@ -9091,7 +9091,7 @@ function LegajoOpTab({op,setOp,opClient,token,clientPayments,setClientPayments,f
     }catch(e){flash("No se pudo: "+e.message);}
     setOcupado(null);
   };
-  const quitar=async(d)=>{if(!await confirmDialog(`¿Quitar ${TIPOS_LEGAJO[d.tipo].corto} del legajo?`,{danger:true}))return;await quitarLegajo(await ensureFreshToken(token),d.id);await cargar();};
+  const quitar=async(d)=>{if(!await confirmDialog(`¿Quitar ${TIPOS_LEGAJO[d.tipo].corto} del legajo?`,{danger:true}))return;await quitarLegajo(await ensureFreshToken(token),d.id);if(d.tipo==="dsi"){try{await aplicarDsiAOp(token,d.operation_id,null);}catch(e){console.error("quitar dsi",e);}}await cargar();};
   const [mandandoMail,setMandandoMail]=useState(false);
   const setVisible=async(v)=>{const r=await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{legajo_visible:v}});if(!Array.isArray(r)){flash("Falta correr el SQL del legajo");return;}setOp(p=>({...p,legajo_visible:v}));};
   useEffect(()=>{
@@ -9169,11 +9169,14 @@ async function aplicarDsiAOp(token,opId,dsi){
   const op=Array.isArray(fop)?fop[0]:null;
   if(!op||op.channel!=="aereo_blanco"||op.clients?.tax_condition!=="responsable_inscripto")return false;
   const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};
+  // dsi = null: se está quitando la DSI (12/11/2026). Si la op no tenía una aplicada, no hay nada que deshacer.
+  if(!dsi&&!td.dsi)return false;
+  const {dsi:_dsiVieja,...tdSinDsi}=td;
   const {clients:_c,...opBase}=op;
   // Desaduanaje leído de la factura del courier (23/10/2026), si todavía no hay uno cargado a mano.
   let desFactura=null;
   if(!(Number(op.despacho_desaduanaje_usd)>0)){try{const fc=await dq("legajo_docs",{token,filters:`?operation_id=eq.${opId}&tipo=eq.factura_courier&borrado_at=is.null&select=datos&order=uploaded_at.desc&limit=1`});const d=Array.isArray(fc)&&fc[0]?.datos?.desaduanaje;if(d?.usdConIva>0)desFactura=d.usdConIva;}catch{}}
-  const opNuevo={...opBase,...(desFactura?{despacho_desaduanaje_usd:desFactura}:{}),budget_tax_detail:{...td,dsi:{...dsi,cargado_at:new Date().toISOString()}}};
+  const opNuevo={...opBase,...(desFactura?{despacho_desaduanaje_usd:desFactura}:{}),budget_tax_detail:dsi?{...td,dsi:{...dsi,cargado_at:new Date().toISOString()}}:tdSinDsi};
   const [its,pks,tar,ov,cfg,decl]=await Promise.all([
     dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=*`}),
     dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=*`}),
@@ -9514,6 +9517,19 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     // Una factura por op: con varias ops en la misma factura no se sabe cómo repartir el desaduanaje.
     if(tipo==="factura_courier"&&info?.desaduanaje&&ids.length===1){try{await aplicarDesaduanajeAOp(token,ids[0],info.desaduanaje);toast(`Desaduanaje de la factura: USD ${info.desaduanaje.usdSinIva} + IVA`,"success");}catch(e){console.error("desaduanaje→op",e);}}
   };
+  // Quitar un papel subido por error (12/11/2026): antes solo se podía reemplazar. Sale de todas las ops del
+  // vuelo que lo tengan; si era una DSI aplicada a un responsable inscripto, sus impuestos vuelven al cálculo.
+  const quitarTipo=async(tipo)=>{
+    const ds=ops.map(o=>doc(o.id,tipo)).filter(Boolean);if(!ds.length||ocupado)return;
+    const nom=TIPOS_LEGAJO[tipo]?.corto||tipo;
+    if(!await confirmDialog(`¿Quitar ${nom} de ${flight.flight_code}? Sale de ${ds.length===1?"la operación":`las ${ds.length} operaciones`} del vuelo.`,{danger:true,confirmText:"Quitar"}))return;
+    setOcupado(tipo);
+    try{const tk=await ensureFreshToken(token);
+      for(const d of ds){await quitarLegajo(tk,d.id);if(tipo==="dsi"){try{await aplicarDsiAOp(token,d.operation_id,null);}catch(e){console.error("quitar dsi",e);}}}
+      await cargar();toast(`${nom.charAt(0).toUpperCase()}${nom.slice(1)} quitada de ${flight.flight_code}`,"success");
+    }catch(e){toast(`No se pudo quitar: ${e.message}`,"error");}
+    setOcupado(null);
+  };
   // tipo: lo dice el botón donde se subió/arrastró/pegó (DSI o factura del courier); sin tipo se adivina.
   const procesar=async(files,tipoFijo=null,gmailMsg=null)=>{
     const lista=[...(files||[])].filter(Boolean);if(!lista.length)return;
@@ -9571,6 +9587,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
     <label onClick={e=>e.stopPropagation()} style={{position:"relative",height:32,padding:"0 12px",borderRadius:9,display:"inline-flex",alignItems:"center",border:"1px solid rgba(232,208,152,0.45)",background:"rgba(10,22,40,0.6)",color:"#E8D098",fontSize:12,fontWeight:800,cursor:ocupado?"wait":"pointer",whiteSpace:"nowrap"}}>{lista?"Reemplazar":"Elegir archivo"}
       <input type="file" multiple accept="application/pdf,.pdf,image/*" style={{display:"none"}} disabled={!!ocupado} onChange={e=>{procesar(e.target.files,tipo);e.target.value="";}}/>
     </label>
+    {conDoc.length>0&&<button type="button" title="Quitar este papel del vuelo" disabled={!!ocupado} onClick={e=>{e.stopPropagation();quitarTipo(tipo);}} style={{position:"relative",height:32,width:32,borderRadius:9,border:"1px solid rgba(248,113,113,0.45)",background:"rgba(10,22,40,0.6)",color:"#f87171",fontSize:15,fontWeight:800,cursor:ocupado?"wait":"pointer",fontFamily:"inherit",flexShrink:0}}>×</button>}
   </div>;};
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
