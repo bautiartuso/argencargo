@@ -72,7 +72,7 @@ async function datosFormulario(fl, email) {
   const evs = opIds.length ? lista(await sb(`/rest/v1/tracking_events?operation_id=in.(${opIds.join(",")})&source=eq.fedex&status_code=eq.CC&location=ilike.*AR&select=operation_id,occurred_at&order=occurred_at.desc`)) : [];
   const liberado = (f) => (evs.find((e) => fos.some((x) => x.flight_id === f.id && x.operation_id === e.operation_id)) || {}).occurred_at;
   const fecha = (f) => { const v = liberado(f) || f.carrier_delivered_at || f.received_at || arribo(f); return v ? new Date(v).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }) : ""; };
-  const items = fl.filter((f) => f.international_tracking).map((f) => ({ flight_id: f.id, guia: f.international_tracking, cuit: String(f.dest_tax_id || "").replace(/\D/g, ""), fecha: fecha(f) }));
+  const items = fl.filter((f) => String(f.international_tracking || "").trim()).map((f) => ({ flight_id: f.id, guia: String(f.international_tracking).trim(), cuit: String(f.dest_tax_id || "").replace(/\D/g, ""), fecha: fecha(f) }));
   return { url: cfg.url, email: email || "", items };
 }
 // Solo se pide la DSI. Entre el 05/11 y el 10/11/2026 también se pedía la factura del courier con los
@@ -135,15 +135,15 @@ async function revisarUno(p) {
 // (alguna op sin cerrar o llegado hace 14 días o menos).
 //  · Llegados a Buenos Aires (recibidos o entregados por el courier), de cualquier courier.
 //  · Los que se piden por formulario (FedEx) entran antes, apenas están en aduana (12/11/2026): FedEx tarda
-//    48 a 72 h en contestar y se pide todo junto.
+//    48 a 72 h en contestar y se pide todo junto. Solo si llegaron a Argentina hace 30 días o menos: lo que
+//    lleva meses trabado en aduana (FL-0075) no tiene DSI para pedir.
 //  · Nunca los retenidos por Aduana ni los liberados vía régimen general: no tienen DSI.
-const EN_ADUANA = ["en_aduana", "entregada", "operacion_cerrada"];
 async function vuelosPorPedir() {
   const desde = new Date(Date.now() - 150 * 86400000).toISOString();
   const fl = lista(await sb(`/rest/v1/flights?status=in.(recibido,despachado)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=${CAMPOS_FORM},dispatched_at,flight_operations(operations(id,channel,service_type,status,retenida_at,liberada_rg_at,arrived_in_argentina_at))`));
   const vuelos = fl.filter((f) => !f.liberado_rg_at && !(f.status !== "recibido" && f.retenido_at))
     .map((f) => ({ ...f, ops: (f.flight_operations || []).map((x) => x.operations).filter((o) => o && o.channel === "aereo_blanco" && o.service_type !== "gestion_integral" && !o.retenida_at && !o.liberada_rg_at) }))
-    .filter((f) => f.ops.length && (f.status === "recibido" || f.carrier_delivered_at || (FORMULARIOS[claveCarrier(f.international_carrier)] && f.ops.some((o) => EN_ADUANA.includes(o.status)))));
+    .filter((f) => f.ops.length && (f.status === "recibido" || f.carrier_delivered_at || (FORMULARIOS[claveCarrier(f.international_carrier)] && f.ops.some((o) => o.status === "en_aduana" && Date.now() - new Date(o.arrived_in_argentina_at || f.dispatched_at).getTime() < 30 * 86400000))));
   if (!vuelos.length) return [];
   const opIds = vuelos.flatMap((f) => f.ops.map((o) => o.id));
   const [docs, peds] = await Promise.all([
@@ -308,8 +308,8 @@ export async function POST(req) {
       const ids = (Array.isArray(b.flight_ids) ? b.flight_ids : [b.flight_id]).filter((x) => /^[0-9a-f-]{36}$/i.test(String(x || "")));
       const fl = ids.length ? lista(await sb(`/rest/v1/flights?id=in.(${ids.join(",")})&select=id,international_tracking,international_carrier`)).filter((f) => f.international_tracking && FORMULARIOS[claveCarrier(f.international_carrier)]) : [];
       if (!fl.length) return json({ error: "Ese courier no se pide por formulario" }, 400);
-      const guias = fl.map((f) => f.international_tracking);
-      const ins = await sb(`/rest/v1/dsi_pedidos`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(fl.map((f) => ({ flight_id: f.id, guia: f.international_tracking, carrier: f.international_carrier, para: FORMULARIOS[claveCarrier(f.international_carrier)].para, asunto: asuntoVarias(guias), enviado_por: uid }))) });
+      const guias = fl.map((f) => String(f.international_tracking).trim());
+      const ins = await sb(`/rest/v1/dsi_pedidos`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(fl.map((f) => ({ flight_id: f.id, guia: String(f.international_tracking).trim(), carrier: f.international_carrier, para: FORMULARIOS[claveCarrier(f.international_carrier)].para, asunto: asuntoVarias(guias), enviado_por: uid }))) });
       if (!ins.ok) return json({ error: "No se pudo anotar el pedido" }, 500);
       return json({ ok: true, pedidos: lista(ins) });
     }

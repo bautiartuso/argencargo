@@ -9475,7 +9475,7 @@ function AereosEmpleado({token}){
     // Sin DSI: lo retenido por Aduana y lo liberado vía régimen general (12/11/2026) no se pide.
     const opsDe={};(Array.isArray(fos)?fos:[]).forEach(x=>{if(x.operations&&llevaLegajo(x.operations)&&!x.operations.retenida_at&&!x.operations.liberada_rg_at)(opsDe[x.flight_id]=opsDe[x.flight_id]||[]).push(x.operations);});
     // Entran los llegados a Buenos Aires y, de los que se piden por formulario (FedEx), también los que están en aduana.
-    const entra=(f)=>!f.liberado_rg_at&&!(f.status!=="recibido"&&f.retenido_at)&&(f.status==="recibido"||!!f.carrier_delivered_at||(AGRUPAR_DSI.has(String(f.international_carrier||"").toLowerCase().replace(/[^a-z]/g,""))&&(opsDe[f.id]||[]).some(o=>["en_aduana","entregada","operacion_cerrada"].includes(o.status))));
+    const entra=(f)=>!f.liberado_rg_at&&!(f.status!=="recibido"&&f.retenido_at)&&(f.status==="recibido"||!!f.carrier_delivered_at||(AGRUPAR_DSI.has(String(f.international_carrier||"").toLowerCase().replace(/[^a-z]/g,""))&&(opsDe[f.id]||[]).some(o=>o.status==="en_aduana"&&Date.now()-new Date(o.arrived_in_argentina_at||f.dispatched_at).getTime()<30*86400000)));
     const opIds=Object.values(opsDe).flat().map(o=>o.id);
     const leg=opIds.length?await listarLegajo(await ensureFreshToken(token),{opIds}):{docs:[]};
     const pedDe={};(Array.isArray(peds)?peds:[]).forEach(x=>{if(!pedDe[x.flight_id])pedDe[x.flight_id]=x;});
