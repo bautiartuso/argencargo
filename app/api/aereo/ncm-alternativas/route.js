@@ -9,6 +9,7 @@
 //                                            en hs_original (la operación del cliente no se toca)
 // POST { action:"descartar", item_id }     → no vuelve a sugerirla para esa mercadería
 // POST { action:"volver", item_id }        → restituye la posición original
+// POST { action:"probar", descripcion, ncm } → consulta suelta, sin vuelo y sin guardar nada
 import { usuarioConRol } from "../../../../lib/auth-server";
 import { callClaudeText } from "../../../../lib/anthropic";
 
@@ -165,6 +166,24 @@ export async function POST(req) {
   if (["usar", "descartar", "volver"].includes(b.action)) {
     if (!UUID.test(String(b.item_id || ""))) return json({ error: "Ítem inválido" }, 400);
     return decidir(b.item_id, b.action, b.ncm);
+  }
+  // Consulta suelta, sin vuelo y sin guardar nada: qué posiciones más baratas encajan con una mercadería.
+  if (b.action === "probar") {
+    const hs = conPuntos(b.ncm), desc = String(b.descripcion || "").trim();
+    if (!hs || desc.length < 4) return json({ error: "Faltan la descripción o la posición" }, 400);
+    const cods = await partida(hs.slice(0, 4));
+    const actual = cods.get(hs);
+    if (!actual) return json({ error: "Esa posición no está en el nomenclador" }, 400);
+    const carga = actual.die + actual.te;
+    const candidatos = [...cods.values()].filter((c) => c.ncm !== hs && c.die + c.te < carga)
+      .sort((x, y) => (y.ncm.slice(0, 7) === hs.slice(0, 7)) - (x.ncm.slice(0, 7) === hs.slice(0, 7)) || x.ncm.localeCompare(y.ncm)).slice(0, 70);
+    if (!candidatos.length) return json({ actual, candidatos: 0, alternativas: [] });
+    try {
+      const alts = await analizar(desc, actual, candidatos);
+      const out = [];
+      for (const a of alts) { let c = candidatos.find((x) => x.ncm === a.ncm); if (!c) c = (await partida(a.ncm.slice(0, 4))).get(a.ncm) || null; if (c && c.die + c.te < carga) out.push({ ...a, die: c.die, te: c.te, texto: c.textos[0] || "" }); }
+      return json({ actual, candidatos: candidatos.length, alternativas: out });
+    } catch (e) { return json({ error: String(e?.message || e).slice(0, 300) }, 502); }
   }
   if (!UUID.test(String(b.flight_id || ""))) return json({ error: "Vuelo inválido" }, 400);
   try { return json(await analizarVuelo(b.flight_id)); }
