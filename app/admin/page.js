@@ -7892,7 +7892,7 @@ const EST_FONDO="#101c30";
 const estOrigen=(o)=>{const s=String(o||"").trim();if(/^usa$|estados unidos|eeuu/i.test(s))return "USA";if(/pakist/i.test(s))return "Pakistan";if(/bangla/i.test(s))return "Bangladesh";if(/china/i.test(s))return "China";return "Otros";};
 const estMesAnt=(m)=>{const [a,x]=m.split("-").map(Number);return x===1?`${a-1}-12`:`${a}-${String(x-1).padStart(2,"0")}`;};
 const estMesSig=(m)=>{const [a,x]=m.split("-").map(Number);return x===12?`${a+1}-01`:`${a}-${String(x+1).padStart(2,"0")}`;};
-const estMesTxt=(m,largo)=>{const [a,x]=m.split("-").map(Number);return new Date(a,x-1,1).toLocaleDateString("es-AR",largo?{month:"long",year:"numeric"}:{month:"short"}).replace(".","");};
+const estMesTxt=(m,largo)=>{const [a,x]=m.split("-").map(Number);const n=new Date(a,x-1,1).toLocaleDateString("es-AR",{month:largo?"long":"short"}).replace(".","");return largo?`${n.charAt(0).toUpperCase()}${n.slice(1)} ${a}`:n;};
 
 // Columnas apiladas por mes. series: [{k,l,c}] · valor(mes,k) · una sola escala, marcas finas, 2 px de
 // aire entre segmentos, punta redondeada arriba. Tocar una columna elige ese mes; al pasar muestra el detalle.
@@ -7917,14 +7917,14 @@ function EstBarras({meses,series,valor,sel,onSel,fmt,unidad,pie}){
         return <g key={m} onMouseEnter={()=>setHov(i)} onClick={()=>onSel&&onSel(m)} style={{cursor:onSel?"pointer":"default"}}>
           <rect x={L+ancho*i} y={T} width={ancho} height={H-T-B} fill={hov===i?"rgba(255,255,255,0.04)":"transparent"}/>
           {segs.map((x,j)=>{const y0=y(acum),y1=y(acum+x.v);acum+=x.v;const ultimo=j===segs.length-1;const alto=Math.max(0,y0-y1-(ultimo?0:2));const r=ultimo?Math.min(4,alto):0;
-            return <path key={x.s.k} d={`M${cx-bw/2},${y0} L${cx-bw/2},${y0-alto+r} Q${cx-bw/2},${y0-alto} ${cx-bw/2+r},${y0-alto} L${cx+bw/2-r},${y0-alto} Q${cx+bw/2},${y0-alto} ${cx+bw/2},${y0-alto+r} L${cx+bw/2},${y0} Z`} fill={x.s.c} opacity={activo?1:0.4}/>;})}
+            return <path key={x.s.k} d={`M${cx-bw/2},${y0} L${cx-bw/2},${y0-alto+r} Q${cx-bw/2},${y0-alto} ${cx-bw/2+r},${y0-alto} L${cx+bw/2-r},${y0-alto} Q${cx+bw/2},${y0-alto} ${cx+bw/2},${y0-alto+r} L${cx+bw/2},${y0} Z`} fill={x.s.c} opacity={activo?1:0.5}/>;})}
           {sel===m&&t>0&&<text x={cx} y={y(t)-6} textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#fff" style={{fontVariantNumeric:"tabular-nums"}}>{fmt(t)}</text>}
           <text x={cx} y={H-8} textAnchor="middle" fontSize="10" fontWeight={sel===m?800:500} fill={sel===m?"#fff":"rgba(255,255,255,0.45)"}>{estMesTxt(m)}{m.endsWith("-01")||i===0?` ${m.slice(2,4)}`:""}</text>
         </g>;})}
       <line x1={L} x2={W-R} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,0.18)" strokeWidth="1"/>
     </svg>
     {h&&<div style={{position:"absolute",top:6,left:`${Math.min(72,Math.max(2,((L+ancho*hov+ancho/2)/W)*100-14))}%`,pointerEvents:"none",padding:"9px 12px",borderRadius:10,background:"#0b1424",border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 10px 30px rgba(0,0,0,0.45)",minWidth:150,zIndex:5}}>
-      <p style={{margin:"0 0 5px",fontSize:11.5,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{estMesTxt(h,true)}</p>
+      <p style={{margin:"0 0 5px",fontSize:11.5,fontWeight:800,color:"#fff"}}>{estMesTxt(h,true)}</p>
       {series.filter(s=>valor(h,s.k)>0).map(s=><p key={s.k} style={{margin:"2px 0",fontSize:11.5,color:"rgba(255,255,255,0.75)",display:"flex",justifyContent:"space-between",gap:14,fontVariantNumeric:"tabular-nums"}}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:2,background:s.c}}/>{s.l}</span><b style={{color:"#fff"}}>{fmt(valor(h,s.k))}</b></p>)}
       <p style={{margin:"5px 0 0",paddingTop:5,borderTop:"1px solid rgba(255,255,255,0.1)",fontSize:11.5,color:"rgba(255,255,255,0.6)",display:"flex",justifyContent:"space-between",gap:14,fontVariantNumeric:"tabular-nums"}}><span>Total</span><b style={{color:"#fff"}}>{fmt(tot(h))} {unidad}</b></p>
       {pie&&<p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{pie(h)}</p>}
@@ -7938,25 +7938,30 @@ function EstadisticasPanel({token}){
   const mesHoy=hoyAR().slice(0,7);
   const [filas,setFilas]=useState(null);
   const [vista,setVista]=useState("mes");const [mes,setMes]=useState(mesHoy);const [anio,setAnio]=useState(mesHoy.slice(0,4));
-  useEffect(()=>{let vivo=true;dq("rpc/estadisticas_operativa_v2",{method:"POST",token,body:{}}).then(r=>{if(vivo)setFilas(Array.isArray(r)?r.map(f=>({...f,o:estOrigen(f.o),q:Number(f.q||0)})):[]);});return()=>{vivo=false;};},[token]);
+  useEffect(()=>{let vivo=true;dq("rpc/estadisticas_operativa_v2",{method:"POST",token,body:{}}).then(r=>{if(vivo)setFilas(Array.isArray(r)?r.map(f=>({...f,m:String(f.d||f.m||"").slice(0,7),dia:Number(String(f.d||"").slice(8,10))||1,o:estOrigen(f.o),q:Number(f.q||0)})):[]);});return()=>{vivo=false;};},[token]);
   if(filas===null)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>;
   const kg=(v)=>Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:Number(v)>=100?0:1});
   const m3=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const en=(f,p)=>p.vista==="total"?true:p.vista==="anio"?f.m.startsWith(p.anio):f.m===p.mes;
+  const diaHoy=Number(hoyAR().slice(8,10));
+  // Mes o año en curso: la comparación es contra el mismo tramo del período anterior (hasta el mismo día),
+  // no contra el período entero, que siempre daría una caída.
+  const enCurso=(vista==="mes"&&mes===mesHoy)||(vista==="anio"&&anio===mesHoy.slice(0,4));
+  const en=(f,p)=>p.vista==="total"?true:p.vista==="anio"?f.m.startsWith(p.anio)&&(!p.hasta||f.d.slice(5)<=p.hasta):f.m===p.mes&&(!p.hastaDia||f.dia<=p.hastaDia);
   const P={vista,mes,anio};
-  const Pant=vista==="mes"?{vista,mes:estMesAnt(mes)}:vista==="anio"?{vista,anio:String(Number(anio)-1)}:null;
+  const Pant=vista==="mes"?{vista,mes:estMesAnt(mes),hastaDia:enCurso?diaHoy:null}:vista==="anio"?{vista,anio:String(Number(anio)-1),hasta:enCurso?hoyAR().slice(5):null}:null;
   const unicos=(rows,campo)=>new Set(rows.map(f=>f[campo]).filter(Boolean)).size;
   const resumen=(rows)=>{const a=rows.filter(f=>f.t==="a"),m=rows.filter(f=>f.t==="m");const kgA=a.reduce((s,f)=>s+f.q,0),vuelos=unicos(a,"v");
     return {kg:kgA,vuelos,opsA:unicos(a,"op"),kgVuelo:vuelos?kgA/vuelos:0,m3:m.reduce((s,f)=>s+f.q,0),cont:unicos(m,"v"),envios:unicos(m,"op"),clientes:unicos(rows,"cl")};};
   const rows=filas.filter(f=>en(f,P));const R=resumen(rows);
   const A=Pant?resumen(filas.filter(f=>en(f,Pant))):null;
   const nombrePer=vista==="total"?"todo el historial":vista==="anio"?anio:estMesTxt(mes,true);
-  const nombreAnt=vista==="mes"?estMesTxt(estMesAnt(mes)):vista==="anio"?String(Number(anio)-1):"";
+  const nombreAnt=vista==="mes"?`${estMesTxt(estMesAnt(mes))}${enCurso?` al ${diaHoy}`:""}`:vista==="anio"?`${Number(anio)-1}${enCurso?" a esta fecha":""}`:"";
   // Meses del gráfico: los 12 que terminan en el mes elegido (o en hoy), los del año, o todos.
   const todosMeses=[...new Set(filas.map(f=>f.m))].sort();
   const mesesGraf=(()=>{if(vista==="anio")return Array.from({length:12},(_,i)=>`${anio}-${String(i+1).padStart(2,"0")}`).filter(m=>m<=mesHoy||todosMeses.includes(m));
     if(vista==="total"){const out=[];let m=todosMeses[0]||mesHoy;while(m<=mesHoy&&out.length<60){out.push(m);m=estMesSig(m);}return out;}
-    const fin=mes>mesHoy?mes:mesHoy;const out=[fin];while(out.length<12)out.unshift(estMesAnt(out[0]));return out;})();
+    const fin=mes>mesHoy?mes:mesHoy;const out=[fin];while(out.length<12)out.unshift(estMesAnt(out[0]));
+    const primero=todosMeses[0];return primero?out.filter(m=>m>=primero||m===mes):out;})();
   const suma=(rs,t,campo,val)=>rs.filter(f=>f.t===t&&(campo==null||f[campo]===val)).reduce((s,f)=>s+f.q,0);
   const origenes=EST_ORIGEN_ORDEN.filter(o=>filas.some(f=>f.t==="a"&&f.o===o));
   const seriesA=origenes.map(o=>({k:o,l:o==="Pakistan"?"Pakistán":o,c:EST_ORIGEN_COL[o]}));
@@ -8004,7 +8009,7 @@ function EstadisticasPanel({token}){
       <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)"}}>{seg("mes","Mes")}{seg("anio","Año")}{seg("total","Total")}</div>
       {vista!=="total"&&<div style={{display:"flex",alignItems:"center",gap:8}}>
         {flecha("‹",()=>vista==="mes"?setMes(estMesAnt(mes)):setAnio(String(Number(anio)-1)))}
-        <span style={{minWidth:vista==="mes"?150:70,textAlign:"center",fontSize:15,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{nombrePer}</span>
+        <span style={{minWidth:vista==="mes"?150:70,textAlign:"center",fontSize:15,fontWeight:800,color:"#fff"}}>{nombrePer}</span>
         {flecha("›",()=>vista==="mes"?setMes(estMesSig(mes)):setAnio(String(Number(anio)+1)))}
       </div>}
     </div>
@@ -8036,7 +8041,7 @@ function EstadisticasPanel({token}){
           <th style={{...th,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>LCL/FCL m³</th><th style={th}>Integral m³</th><th style={th}>Marítimo m³</th><th style={th}>Clientes</th>
         </tr></thead>
         <tbody>{[...mesesGraf].reverse().map(m=>{const rs=delMes(m);const r=resumen(rs);return <tr key={m} onClick={()=>elegir(m)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:vista==="mes"&&m===mes?"rgba(184,149,106,0.08)":"transparent"}}>
-          <td style={{...td,textAlign:"left",fontWeight:700,color:"#fff",textTransform:"capitalize"}}>{estMesTxt(m,true)}</td>
+          <td style={{...td,textAlign:"left",fontWeight:700,color:"#fff"}}>{estMesTxt(m,true)}</td>
           {seriesA.map(s=><td key={s.k} style={td}>{cero(suma(rs,"a","o",s.k),kg(suma(rs,"a","o",s.k)))}</td>)}
           <td style={{...td,fontWeight:800,color:"#fff"}}>{cero(r.kg,kg(r.kg))}</td><td style={td}>{cero(r.vuelos,r.vuelos)}</td>
           <td style={{...td,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>{cero(suma(rs,"m","c","lclfcl"),m3(suma(rs,"m","c","lclfcl")))}</td><td style={td}>{cero(suma(rs,"m","c","integral"),m3(suma(rs,"m","c","integral")))}</td>
