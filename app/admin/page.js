@@ -14,6 +14,7 @@ import CarrierLogo from "../components/CarrierLogo";
 import { TarifasAgenteResumen, Bandera } from "../components/TarifasAgente";
 import { CARRIERS as CARRIERS_AG, ORIGENES as ORIGENES_AG, parsePedido, codigoPedido, tramoDe, nombrePedido, alertaTarifa } from "../../lib/tarifas-agente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
+import { periodoDe, periodoAnterior, periodoSiguiente, nombrePeriodo, estadoGasto, porAvisar, textoVence } from "../../lib/gastos-fijos";
 import { diasFeriados } from "../../lib/feriados-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
 import { CcFinancieraPanel, parseMontoAr } from "../ccfinanciera/page";
@@ -7873,6 +7874,228 @@ const FIXED_CATS=[
 ];
 const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",obra_social:"Obra Social",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
 const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",obra_social:"#14b8a6",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
+// Valida y arma un gasto manual del libro diario. Lo usan "Nuevo gasto" y el pago de un gasto fijo,
+// así la dolarización y la tarjeta se resuelven igual en los dos lados.
+function armarGasto(ne){
+  if(!ne.category)return {error:"Faltan datos"};
+  if(ne.category==="otros"&&!ne.detail)return {error:"Categoría 'Otros' requiere detalle"};
+  const isTC=ne.payment_method==="tarjeta_credito";
+  if(isTC&&!ne.card_closing_date)return {error:"Falta fecha de cierre de tarjeta"};
+  const isARS=ne.currency==="ARS";
+  if(isARS&&!ne.amount_ars)return {error:"Falta monto ARS"};
+  if(!isARS&&!ne.amount)return {error:"Falta monto USD"};
+  // ARS + no TC → necesita tipo de cambio para dollarizar ya
+  if(isARS&&!isTC&&!ne.exchange_rate)return {error:"Falta tipo de cambio"};
+  if(isTC&&!ne.credit_card_id)return {error:"Elegí qué tarjeta usaste"};
+  let body={date:ne.date,type:"gasto",description:CAT_LBL[ne.category]+(ne.detail?` — ${ne.detail}`:""),detail:ne.detail||null,category:ne.category,payment_method:ne.payment_method,is_paid:!isTC,card_closing_date:isTC?ne.card_closing_date:null,credit_card_id:isTC?ne.credit_card_id:null,auto_generated:false};
+  if(isARS){
+    const ars=Number(ne.amount_ars);
+    if(isTC){
+      // TC + ARS: pendiente de débito, se dollariza cuando se marca pagado
+      body={...body,amount:0,amount_ars:ars,currency:"ARS",exchange_rate:null};
+    } else {
+      // Efectivo/transferencia + ARS: dollarizar ya al TC provisto
+      const rate=Number(ne.exchange_rate);
+      const usd=Math.round((ars/rate)*100)/100;
+      body={...body,amount:usd,amount_ars:ars,exchange_rate:rate,currency:"USD",dollarized_at:new Date().toISOString()};
+    }
+  } else {
+    // USD puro
+    body={...body,amount:Number(ne.amount),currency:"USD"};
+  }
+  return {body};
+}
+
+// ── Gastos fijos (12/11/2026) ───────────────────────────────────────────────────────────────────
+// Los conceptos que se pagan todos los meses. Cada mes aparecen pendientes, en orden alfabético; "Pagar"
+// anota lo que se pagó ese mes en el libro diario (finance_entries con gasto_fijo_id + periodo) y la fila
+// baja al final, tachada. No hay monto habitual: se carga lo pagado, en pesos (al tipo de cambio) o en
+// dólares. La alerta arranca N días antes del vencimiento; los opcionales nunca avisan. Solo gastos fijos:
+// los variables (publicidad, etc.) siguen en "Gastos del negocio". Cuentas en lib/gastos-fijos.js.
+const GF_METODOS=[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"tarjeta_credito",label:"Tarjeta Crédito"}];
+const GF_EMOJIS=["🏛️","🏥","📱","💵","✴️","▲","⚡","📧","🚨","🛵","🏢","🧾","💡","🌐","🧮","💧","🧹","🏦","🛡️","🚗","⛽","📦","🖨️","☕","🔧","📺","🎓","💳","🧯","📌"];
+function GastosFijosPanel({token}){
+  const celu=useEsCelu();
+  const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const pesos=(v)=>`$ ${Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:0})}`;
+  const hoy=hoyAR();
+  const [periodo,setPeriodo]=useState(periodoDe(hoy));
+  const [gastos,setGastos]=useState(null);const [pagos,setPagos]=useState([]);
+  const [pago,setPago]=useState(null);   // { g, ne } pago abierto
+  const [edit,setEdit]=useState(null);   // concepto en edición (sin id = nuevo)
+  const [tc,setTc]=useState("");const [guardando,setGuardando]=useState(false);
+  const load=async()=>{
+    const [g,p]=await Promise.all([
+      dq("gastos_fijos",{token,filters:"?select=*&order=nombre.asc"}),
+      dq("finance_entries",{token,filters:"?gasto_fijo_id=not.is.null&select=id,date,amount,amount_ars,currency,payment_method,gasto_fijo_id,periodo&order=date.desc"}),
+    ]);
+    setGastos(Array.isArray(g)?g:[]);setPagos(Array.isArray(p)?p:[]);
+    try{window.dispatchEvent(new Event("gf_cambio"));}catch(e){}
+  };
+  useEffect(()=>{load();fetchDolar().then(r=>r.ok?r.json():null).then(d=>{if(d?.venta)setTc(String(d.venta));}).catch(()=>{});},[token]);
+  const mal=(r)=>r&&!Array.isArray(r)&&(r.code||r.message);
+  const alfa=(a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||""),"es",{sensitivity:"base"});
+  // El pago arranca como el último de ese concepto (pesos o dólares, mismo método); el monto se escribe siempre.
+  const abrirPago=(g)=>{const ult=pagos.find(p=>p.gasto_fijo_id===g.id);const enPesos=ult?Number(ult.amount_ars)>0:true;
+    setEdit(null);setPago({g,ne:{date:hoy,category:g.categoria,detail:g.nombre,amount:"",amount_ars:"",exchange_rate:tc,currency:enPesos?"ARS":"USD",payment_method:ult?.payment_method||"transferencia",card_closing_date:"",credit_card_id:""}});};
+  const guardarPago=async()=>{
+    if(guardando||!pago)return;
+    const a=armarGasto(pago.ne);
+    if(a.error){toast(a.error,"error");return;}
+    setGuardando(true);
+    const r=await dq("finance_entries",{method:"POST",token,body:{...a.body,gasto_fijo_id:pago.g.id,periodo}});
+    setGuardando(false);
+    if(mal(r)){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return;}
+    toast(`${pago.g.nombre}: pago anotado en el libro diario`);setPago(null);load();
+  };
+  const deshacerPago=async(g,ps)=>{
+    if(!await confirmDialog(`¿Borrar el pago de ${g.nombre} de ${nombrePeriodo(periodo)}? También se borra del libro diario.`))return;
+    const r=await dq("finance_entries",{method:"DELETE",token,filters:`?id=in.(${ps.map(p=>p.id).join(",")})`});
+    if(mal(r)){toast(`No se pudo borrar: ${r.message||r.code}`,"error");return;}load();
+  };
+  const saltear=async(g,si)=>{
+    const s=new Set(g.salteados||[]);if(si)s.add(periodo);else s.delete(periodo);
+    const r=await dq("gastos_fijos",{method:"PATCH",token,filters:`?id=eq.${g.id}`,body:{salteados:[...s]}});
+    if(mal(r)){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return;}load();
+  };
+  const aceptar=async(g)=>{const r=await dq("gastos_fijos",{method:"PATCH",token,filters:`?id=eq.${g.id}`,body:{estado:"activo",created_at:new Date().toISOString()}});if(mal(r)){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return;}load();};
+  const descartar=async(g)=>{const r=await dq("gastos_fijos",{method:"DELETE",token,filters:`?id=eq.${g.id}`});if(mal(r)){toast(`No se pudo borrar: ${r.message||r.code}`,"error");return;}load();};
+  const guardarConcepto=async()=>{
+    if(guardando||!edit)return;
+    const nombre=String(edit.nombre||"").trim();
+    if(!nombre){toast("Falta el nombre","error");return;}
+    const dia=edit.dia_vence===""||edit.dia_vence==null?null:Math.round(Number(edit.dia_vence));
+    if(dia!=null&&!(dia>=1&&dia<=31)){toast("El día de vencimiento va de 1 a 31","error");return;}
+    const dias=Math.min(30,Math.max(0,Math.round(Number(edit.avisar_dias)||0)));
+    const body={nombre,emoji:edit.emoji||null,categoria:edit.categoria||"otros",dia_vence:dia,avisar:!!edit.avisar,avisar_dias:dias,estado:edit.estado||"activo"};
+    setGuardando(true);
+    const r=edit.id?await dq("gastos_fijos",{method:"PATCH",token,filters:`?id=eq.${edit.id}`,body}):await dq("gastos_fijos",{method:"POST",token,body});
+    setGuardando(false);
+    if(mal(r)){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return;}
+    toast(edit.id?"Concepto actualizado":"Concepto agregado");setEdit(null);load();
+  };
+  const borrarConcepto=async()=>{
+    if(!edit?.id)return;
+    if(!await confirmDialog(`¿Eliminar "${edit.nombre}" de los gastos fijos? Los pagos ya anotados quedan en el libro diario.`))return;
+    const r=await dq("gastos_fijos",{method:"DELETE",token,filters:`?id=eq.${edit.id}`});
+    if(mal(r)){toast(`No se pudo borrar: ${r.message||r.code}`,"error");return;}
+    setEdit(null);load();
+  };
+  if(gastos===null)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>;
+  const activos=gastos.filter(g=>g.estado==="activo").sort(alfa),pausados=gastos.filter(g=>g.estado==="pausado").sort(alfa),sugeridos=gastos.filter(g=>g.estado==="sugerido").sort(alfa);
+  const todas=activos.map(g=>({g,e:estadoGasto(g,periodo,pagos,hoy)}));
+  // Primero lo que falta pagar; abajo lo ya resuelto (pagado o "no va"), todo en orden alfabético.
+  const filas=[...todas.filter(f=>f.e.estado==="pendiente"),...todas.filter(f=>f.e.estado!=="pendiente")];
+  const nPag=todas.filter(f=>f.e.estado==="pagado").length,nVan=todas.filter(f=>f.e.estado!=="salteado").length;
+  const pagadoUsd=todas.reduce((a,f)=>a+(f.e.pagos||[]).reduce((s,p)=>s+Number(p.amount||0),0),0);
+  const seg=(val,opts,set)=><div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",width:"fit-content"}}>{opts.map(([v,l])=>{const on=val===v;return <button key={l} type="button" onClick={()=>set(v)} style={{height:32,padding:"0 14px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none"}}>{l}</button>;})}</div>;
+  const lbl={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
+  const btnFila=(l,on,fuerte)=><button type="button" onClick={on} style={{height:34,padding:"0 13px",borderRadius:9,border:fuerte?"none":"1px solid rgba(255,255,255,0.12)",background:fuerte?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:fuerte?"#0A1628":"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+  const icono=(g,apagado)=><span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,lineHeight:1,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",color:"#fff",opacity:apagado?0.45:1}}>{g.emoji||"📌"}</span>;
+  const lapiz=(g)=><button type="button" title="Editar" onClick={()=>{setPago(null);setEdit({...g,dia_vence:g.dia_vence==null?"":String(g.dia_vence),avisar_dias:String(g.avisar_dias??3)});}} style={{width:34,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",fontSize:14,cursor:"pointer",flexShrink:0}}>✎</button>;
+  const formPago=pago&&(()=>{const ne=pago.ne;const setNe=(k,v)=>setPago(p=>({...p,ne:{...p.ne,[k]:v}}));const esARS=ne.currency==="ARS",esTC=ne.payment_method==="tarjeta_credito";
+    return <div style={{padding:"14px 16px",borderRadius:12,background:"rgba(184,149,106,0.07)",border:"1px solid rgba(184,149,106,0.3)",margin:"0 0 2px"}}>
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":esARS&&!esTC?"auto 1fr 1fr 1fr 1fr":"auto 1fr 1fr 1fr",gap:"0 12px",alignItems:"end"}}>
+        <div style={{marginBottom:12}}><label style={lbl}>Pagué en</label>{seg(ne.currency,[["ARS","Pesos"],["USD","Dólares"]],v=>setNe("currency",v))}</div>
+        {esARS?<Inp label="Monto en pesos" type="number" step="0.01" value={ne.amount_ars} onChange={v=>setNe("amount_ars",v)} placeholder="0,00"/>:<Inp label="Monto en dólares" type="number" step="0.01" value={ne.amount} onChange={v=>setNe("amount",v)} placeholder="0,00"/>}
+        {esARS&&!esTC&&<Inp label="Tipo de cambio" type="number" step="0.01" value={ne.exchange_rate} onChange={v=>setNe("exchange_rate",v)}/>}
+        <Inp label="Fecha" type="date" value={ne.date} onChange={v=>setNe("date",v)}/>
+        <Sel label="Forma de pago" value={ne.payment_method} onChange={v=>setNe("payment_method",v)} options={GF_METODOS}/>
+      </div>
+      {esTC&&<div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1fr 1fr",gap:"0 12px"}}>
+        <CreditCardPicker token={token} value={ne.credit_card_id} onChange={v=>setNe("credit_card_id",v)} required/>
+        <Inp label="Fecha de cierre / débito" type="date" value={ne.card_closing_date} onChange={v=>setNe("card_closing_date",v)}/>
+      </div>}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <Btn small onClick={guardarPago} disabled={guardando}>{guardando?"Guardando…":"Guardar pago"}</Btn><Btn small variant="secondary" onClick={()=>setPago(null)}>Cancelar</Btn>
+        {esARS&&!esTC&&Number(ne.amount_ars)>0&&Number(ne.exchange_rate)>0&&<span style={{fontSize:12.5,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>= {usd(Number(ne.amount_ars)/Number(ne.exchange_rate))}</span>}
+      </div>
+    </div>;})();
+  const formConcepto=edit&&<Card v2 title={edit.id?"Editar concepto":"Nuevo concepto"}>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1.4fr 1fr",gap:"0 12px"}}>
+      <Inp label="Nombre" value={edit.nombre||""} onChange={v=>setEdit(p=>({...p,nombre:v}))} placeholder="Ej: Alquiler oficina"/>
+      <Sel label="Categoría" value={edit.categoria||"otros"} onChange={v=>setEdit(p=>({...p,categoria:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:CAT_LBL[c.k]}))}/>
+    </div>
+    <div style={{marginBottom:12}}><label style={lbl}>Emoji</label>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{GF_EMOJIS.map(em=>{const on=edit.emoji===em;return <button key={em} type="button" onClick={()=>setEdit(p=>({...p,emoji:em}))} style={{width:38,height:38,borderRadius:10,fontSize:19,lineHeight:1,cursor:"pointer",color:"#fff",fontFamily:"inherit",border:`1.5px solid ${on?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.08)"}`,background:on?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.03)"}}>{em}</button>;})}</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"1fr auto 1fr",gap:"0 14px",alignItems:"end"}}>
+      <Inp label="Día de vencimiento" type="number" value={edit.dia_vence??""} onChange={v=>setEdit(p=>({...p,dia_vence:v}))} placeholder="Fin de mes"/>
+      <div style={{marginBottom:12}}><label style={lbl}>Aviso</label>{seg(!!edit.avisar,[[true,"Avisarme"],[false,"Opcional"]],v=>setEdit(p=>({...p,avisar:v})))}</div>
+      {edit.avisar?<Inp label="Días antes" type="number" value={edit.avisar_dias??"3"} onChange={v=>setEdit(p=>({...p,avisar_dias:v}))}/>:<div/>}
+    </div>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
+      <Btn onClick={guardarConcepto} disabled={guardando}>Guardar</Btn><Btn variant="secondary" onClick={()=>setEdit(null)}>Cancelar</Btn>
+      {edit.id&&<span style={{marginLeft:"auto",display:"flex",gap:8}}>
+        <Btn small variant="secondary" onClick={()=>setEdit(p=>({...p,estado:p.estado==="pausado"?"activo":"pausado"}))}>{edit.estado==="pausado"?"Reactivar al guardar":"Pausar al guardar"}</Btn>
+        <button type="button" onClick={borrarConcepto} style={{height:34,padding:"0 13px",borderRadius:9,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff8a8a",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Eliminar</button>
+      </span>}
+    </div>
+  </Card>;
+  const fila=({g,e})=>{
+    const hecho=e.estado!=="pendiente",pagado=e.estado==="pagado";
+    const col=pagado?"#4ade80":e.estado==="salteado"?"rgba(255,255,255,0.35)":e.vencido&&g.avisar?"#f87171":e.alerta?"#fbbf24":"rgba(255,255,255,0.45)";
+    const venceTxt=pagado?`Pagado el ${e.pagos.map(p=>formatDate(p.date)).join(" · ")}`:e.estado==="salteado"?"No va este mes":periodo>periodoDe(hoy)||(!e.alerta&&!e.vencido)?`Vence el ${Number(e.vence.slice(8))}`:textoVence(e.faltan).replace(/^./,c=>c.toUpperCase());
+    const totArs=pagado?e.pagos.reduce((s,p)=>s+Number(p.amount_ars||0),0):0,totUsd=pagado?e.pagos.reduce((s,p)=>s+Number(p.amount||0),0):0;
+    const der=pagado?<span style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{textAlign:"right",lineHeight:1.25}}><span style={{display:"block",fontSize:14.5,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(totUsd)}</span>{totArs>0&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{pesos(totArs)}</span>}</span>
+        <button type="button" title="Borrar este pago" onClick={()=>deshacerPago(g,e.pagos)} style={{width:30,height:30,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.45)",fontSize:15,cursor:"pointer"}}>×</button>
+      </span>
+      :e.estado==="salteado"?btnFila("Deshacer",()=>saltear(g,false))
+      :<span style={{display:"flex",gap:6}}>{btnFila("No va este mes",()=>saltear(g,true))}{btnFila("Pagar",()=>abrirPago(g),true)}</span>;
+    const nombre=<div style={{display:"flex",alignItems:"center",gap:11,minWidth:0}}>
+      {icono(g,hecho)}
+      <span style={{fontSize:14.5,fontWeight:700,color:hecho?"rgba(255,255,255,0.45)":"#fff",textDecoration:pagado?"line-through":"none",textDecorationColor:"rgba(74,222,128,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span>
+      {!g.avisar&&!hecho&&<span style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>Opcional</span>}
+    </div>;
+    const abierta=pago?.g.id===g.id;
+    if(celu)return <div key={g.id} style={{padding:"12px 14px",borderRadius:14,background:hecho?"rgba(255,255,255,0.02)":"rgba(255,255,255,0.035)",border:`1px solid ${e.alerta?`${col}66`:"rgba(255,255,255,0.07)"}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>{nombre}{lapiz(g)}</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}><span style={{fontSize:12.5,fontWeight:700,color:col}}>{venceTxt}</span>{der}</div>
+      {abierta&&<div style={{marginTop:10}}>{formPago}</div>}
+    </div>;
+    return <div key={g.id} style={{borderBottom:"1px solid rgba(255,255,255,0.045)",background:hecho?"rgba(0,0,0,0.12)":"transparent"}}>
+      <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 190px minmax(240px,auto) 34px",gap:14,alignItems:"center",padding:"9px 18px"}}>
+        {nombre}
+        <span style={{fontSize:12.5,fontWeight:700,color:col,whiteSpace:"nowrap"}}>{venceTxt}</span>
+        <span style={{display:"flex",justifyContent:"flex-end"}}>{der}</span>
+        {lapiz(g)}
+      </div>
+      {abierta&&<div style={{padding:"0 18px 12px"}}>{formPago}</div>}
+    </div>;
+  };
+  const caja={display:"flex",flexDirection:"column",gap:celu?8:0,background:celu?"transparent":"rgba(255,255,255,0.02)",borderRadius:14,border:celu?"none":"1px solid rgba(255,255,255,0.07)",overflow:"hidden"};
+  const flecha=(l,on)=><button type="button" onClick={on} style={{width:34,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)",color:"#fff",fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>;
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        {flecha("‹",()=>{setPago(null);setPeriodo(periodoAnterior(periodo));})}
+        <span style={{minWidth:150,textAlign:"center",fontSize:15,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{nombrePeriodo(periodo)}</span>
+        {flecha("›",()=>{setPago(null);setPeriodo(periodoSiguiente(periodo));})}
+      </div>
+      <span style={{fontSize:13,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}><b style={{color:"#fff"}}>{nPag} de {nVan}</b> pagados · {usd(pagadoUsd)}</span>
+      <span style={{marginLeft:celu?0:"auto"}}><Btn small variant="gold" onClick={()=>{setPago(null);setEdit({nombre:"",emoji:"📌",categoria:"otros",dia_vence:"",avisar:true,avisar_dias:"3",estado:"activo"});}}>+ Concepto</Btn></span>
+    </div>
+    {formConcepto}
+    {activos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"1.5rem 0"}}>Todavía no hay gastos fijos.</p>:<div style={caja}>{filas.map(fila)}</div>}
+    {pausados.length>0&&<div style={{marginTop:18}}>
+      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Pausados</p>
+      <div style={caja}>{pausados.map(g=><div key={g.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:celu?"10px 14px":"8px 18px",borderBottom:"1px solid rgba(255,255,255,0.045)",borderRadius:celu?14:0,background:celu?"rgba(255,255,255,0.03)":"transparent"}}>
+        <span style={{display:"flex",alignItems:"center",gap:11,minWidth:0}}>{icono(g,true)}<span style={{fontSize:13.5,fontWeight:600,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span></span>{lapiz(g)}
+      </div>)}</div>
+    </div>}
+    {sugeridos.length>0&&<div style={{marginTop:22}}>
+      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Sugeridos · {sugeridos.length}</p>
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"repeat(2,minmax(0,1fr))",gap:8}}>{sugeridos.map(g=><div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px dashed rgba(255,255,255,0.14)"}}>
+        {icono(g)}
+        <p style={{flex:1,minWidth:0,margin:0,fontSize:13.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</p>
+        <button type="button" onClick={()=>aceptar(g)} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"rgba(34,197,94,0.18)",color:"#4ade80",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"inset 0 0 0 1px rgba(34,197,94,0.45)"}}>Sí</button>
+        <button type="button" onClick={()=>descartar(g)} style={{height:34,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>No</button>
+      </div>)}</div>
+    </div>}
+  </div>;
+}
+
 function FinancePanel({token}){
   const celu=useEsCelu();
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
@@ -7922,32 +8145,9 @@ function FinancePanel({token}){
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const addEntry=async()=>{
-    if(!newEntry.category){flash("Faltan datos");return;}
-    if(newEntry.category==="otros"&&!newEntry.detail){flash("Categoría 'Otros' requiere detalle");return;}
-    const isTC=newEntry.payment_method==="tarjeta_credito";
-    if(isTC&&!newEntry.card_closing_date){flash("Falta fecha de cierre de tarjeta");return;}
-    const isARS=newEntry.currency==="ARS";
-    if(isARS&&!newEntry.amount_ars){flash("Falta monto ARS");return;}
-    if(!isARS&&!newEntry.amount){flash("Falta monto USD");return;}
-    // ARS + no TC → necesita tipo de cambio para dollarizar ya
-    if(isARS&&!isTC&&!newEntry.exchange_rate){flash("Falta tipo de cambio");return;}
-    if(isTC&&!newEntry.credit_card_id){flash("Elegí qué tarjeta usaste");return;}
-    let body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,payment_method:newEntry.payment_method,is_paid:!isTC,card_closing_date:isTC?newEntry.card_closing_date:null,credit_card_id:isTC?newEntry.credit_card_id:null,auto_generated:false};
-    if(isARS){
-      const ars=Number(newEntry.amount_ars);
-      if(isTC){
-        // TC + ARS: pendiente de débito, se dollariza cuando se marca pagado
-        body={...body,amount:0,amount_ars:ars,currency:"ARS",exchange_rate:null};
-      } else {
-        // Efectivo/transferencia + ARS: dollarizar ya al TC provisto
-        const rate=Number(newEntry.exchange_rate);
-        const usd=Math.round((ars/rate)*100)/100;
-        body={...body,amount:usd,amount_ars:ars,exchange_rate:rate,currency:"USD",dollarized_at:new Date().toISOString()};
-      }
-    } else {
-      // USD puro
-      body={...body,amount:Number(newEntry.amount),currency:"USD"};
-    }
+    const armado=armarGasto(newEntry);
+    if(armado.error){flash(armado.error);return;}
+    const body=armado.body;
     // En edición: PATCH al registro existente. En alta: POST.
     let r;
     if(editingId){
@@ -18027,6 +18227,7 @@ function AdminDashboard({session,onLogout}){
     {section:"Finanzas",items:[
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
       {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
+      {key:"fijos",label:"Gastos fijos",p:["M8 2v4","M16 2v4","M3 10h18","M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z","M9 16l2 2 4-4"]},
       {key:"facturas",label:"Facturación",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M9 13h6","M9 17h4"]},
       {key:"ccfin",label:"CC Financiera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
     ]},
@@ -18034,6 +18235,13 @@ function AdminDashboard({session,onLogout}){
       {key:"settings",label:"Ajustes",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
     ]},
   ];
+  // Gastos fijos por pagar (12/11/2026): los que entraron en su ventana de aviso o ya vencieron. Solo admin.
+  const [fijosPend,setFijosPend]=useState(0);
+  useEffect(()=>{if(!token||isEmpleado)return;let vivo=true;
+    const contar=async()=>{try{const hoy=hoyAR();const act=periodoDe(hoy);const [g,p]=await Promise.all([dq("gastos_fijos",{token,filters:"?estado=eq.activo&avisar=is.true&select=id,estado,avisar,avisar_dias,dia_vence,salteados,created_at"}),dq("finance_entries",{token,filters:`?gasto_fijo_id=not.is.null&periodo=in.(${periodoAnterior(act)},${act})&select=gasto_fijo_id,periodo`})]);if(vivo&&Array.isArray(g))setFijosPend(porAvisar(g,Array.isArray(p)?p:[],hoy).length);}catch(e){}};
+    contar();const iv=setInterval(()=>{if(!document.hidden)contar();},600000);window.addEventListener("gf_cambio",contar);
+    return()=>{vivo=false;clearInterval(iv);window.removeEventListener("gf_cambio",contar);};
+  },[token,isEmpleado]);
   // Número de pedidos marítimos nuevos (sin ver) en "Esperando confirmación", para el menú.
   const [mtNuevosNav,setMtNuevosNav]=useState(0);
   useEffect(()=>{
@@ -18090,7 +18298,7 @@ function AdminDashboard({session,onLogout}){
     {/* Sidebar nav agrupado por secciones — sentence case, tipografía Inter limpia */}
     <nav style={{flex:1,padding:"10px 10px 14px",overflowY:"auto"}}>{navSections.map(sec=><div key={sec.section} style={{marginTop:16}}>
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
-      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="agents"&&!isEmpleado&&vuelosListos>0&&<span title={`${vuelosListos} op${vuelosListos>1?"s":""} lista${vuelosListos>1?"s":""} para vuelo`} style={{background:"#22c55e",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{vuelosListos}</span>}{item.key==="agents"&&isEmpleado&&(dsiPorPedir>0||dsiResp.size>0)&&<span style={{display:"inline-flex",gap:4}}>{dsiPorPedir>0&&<span title={`${dsiPorPedir} DSI para pedir`} style={{background:"#f97316",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{dsiPorPedir}</span>}{dsiResp.size>0&&<span title={`${dsiResp.size} respuesta${dsiResp.size>1?"s":""} del courier con la DSI`} style={{background:"#22c55e",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{dsiResp.size}</span>}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}</button>;})}
+      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="maritime"&&mtNuevosNav>0&&<span title="Pedidos nuevos en Esperando confirmación" style={{minWidth:20,height:20,padding:"0 6px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:11,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{mtNuevosNav}</span>}{item.key==="fijos"&&fijosPend>0&&<span title={`${fijosPend} gasto${fijosPend>1?"s":""} fijo${fijosPend>1?"s":""} por pagar`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{fijosPend}</span>}{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}{item.key==="agents"&&!isEmpleado&&vuelosListos>0&&<span title={`${vuelosListos} op${vuelosListos>1?"s":""} lista${vuelosListos>1?"s":""} para vuelo`} style={{background:"#22c55e",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{vuelosListos}</span>}{item.key==="agents"&&isEmpleado&&(dsiPorPedir>0||dsiResp.size>0)&&<span style={{display:"inline-flex",gap:4}}>{dsiPorPedir>0&&<span title={`${dsiPorPedir} DSI para pedir`} style={{background:"#f97316",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{dsiPorPedir}</span>}{dsiResp.size>0&&<span title={`${dsiResp.size} respuesta${dsiResp.size>1?"s":""} del courier con la DSI`} style={{background:"#22c55e",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:999,minWidth:18,textAlign:"center",letterSpacing:0}}>{dsiResp.size}</span>}</span>}{item.key==="mail"&&mailUnread>0&&<span title={`${mailUnread} mail${mailUnread>1?"s":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{mailUnread}</span>}</button>;})}
     </div>)}</nav>
     {/* Usuario, modo claro y cerrar sesión viven en Ajustes → Tu cuenta (18/10/2026): más lugar para el menú. */}
   </>;
@@ -18174,6 +18382,7 @@ function AdminDashboard({session,onLogout}){
       {page==="lclfcl"&&<LclFclPanel token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onNew={()=>{setPage("operations");setSelOp(null);setSelClient(null);setNewOp({channel:"maritimo_blanco",origin:"China"});}}/>}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
+      {page==="fijos"&&<GastosFijosPanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="ccfin"&&<CcFinancieraPanel token={token}/>}
       {page==="mail"&&<MailPanel token={token}/>}

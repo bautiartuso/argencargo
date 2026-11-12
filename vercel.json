@@ -107,6 +107,10 @@
     {
       "path": "/api/cron/crm-resumen",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/gastos-fijos",
+      "schedule": "0 12 * * *"
     }
   ]
 }
