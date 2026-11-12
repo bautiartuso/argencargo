@@ -524,8 +524,6 @@ export async function POST(req, { params }) {
   if ((delivery_choice === "oficina" || delivery_choice === "propio")) {
     if (!delivery_day || !/^\d{4}-\d{2}-\d{2}$/.test(String(delivery_day))) return Response.json({ error: "Elegí el día" }, { status: 400 });
     if (!delivery_slot || String(delivery_slot).length > 30) return Response.json({ error: "Elegí la franja horaria" }, { status: 400 });
-    // Retiro de LCL/FCL: solo las franjas del depósito.
-    if (delivery_choice === "oficina" && esLclFcl(op.channel) && !franjasRetiro(op.channel, "oficina").includes(delivery_slot)) return Response.json({ error: "Elegí uno de los horarios de retiro del depósito" }, { status: 400 });
     const dow = new Date(delivery_day + "T12:00:00Z").getUTCDay();
     if (dow === 0 || dow === 6) return Response.json({ error: "Elegí un día hábil (lunes a viernes)" }, { status: 400 });
   }
@@ -533,6 +531,9 @@ export async function POST(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
   if (op.delivery_completed_at) return Response.json({ error: "Esta carga ya fue entregada: solo podés cambiar la forma de pago" }, { status: 400 });
+  // Retiro de LCL/FCL: solo las franjas del depósito. Va acá, con la op ya cargada: el 12/11/2026 estuvo unas
+  // horas antes de `const op` y toda confirmación con retiro se caía ("Cannot access 'op' before initialization").
+  if (delivery_choice === "oficina" && esLclFcl(op.channel) && !franjasRetiro(op.channel, "oficina").includes(delivery_slot)) return Response.json({ error: "Elegí uno de los horarios de retiro del depósito" }, { status: 400 });
   // Una carga que todavía viaja no se coordina (29/10/2026: AC-0274 se coordinó desde un link que
   // quedó abierto después de que la op volvió a "en tránsito").
   if (["pendiente", "en_deposito_origen", "en_preparacion", "en_transito", "cancelada"].includes(op.status) || (["arribo_argentina", "en_aduana"].includes(op.status) && !op.delivery_ready_at)) {
