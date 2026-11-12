@@ -3,7 +3,7 @@
 // ESTÁ DESCRIPTA, también puede clasificarse. No inventa: los candidatos salen del nomenclador
 // (ncm_database) y Claude solo dice cuáles encajan, con qué fuerza y por qué. Nunca se aplica sola.
 //
-// POST { flight_id }                       → analiza (hasta 10 descripciones nuevas por llamada; el resto
+// POST { flight_id }                       → analiza (hasta 6 descripciones nuevas por llamada; el resto
 //                                            queda en `pendientes` y el panel vuelve a llamar)
 // POST { action:"usar", item_id, ncm }     → cambia la posición del ítem del vuelo y guarda la anterior
 //                                            en hs_original (la operación del cliente no se toca)
@@ -45,25 +45,30 @@ function porCodigo(filas) {
 const partida = async (p4) => porCodigo(await sb(`/ncm_database?ncm_code=like.${p4}*&select=ncm_code,description,die,te&limit=2000`));
 
 const SYSTEM = `Sos despachante de aduana experto en la Nomenclatura Común del Mercosur (NCM) para importaciones a la Argentina.
-Te paso una mercadería, la posición con la que se va a declarar y una lista de posiciones que pagan menos derechos. Tu tarea es decir en cuáles de esas posiciones ESTA mercadería, tal como está descripta, puede clasificarse aplicando las Reglas Generales Interpretativas y el texto de la partida, la subpartida y la apertura.
+Te paso una mercadería, la posición con la que se va a declarar y una lista de posiciones que pagan menos derechos. Tu tarea es decir en cuáles de esas posiciones ESTA mercadería puede clasificarse aplicando las Reglas Generales Interpretativas y el texto legal.
+
+Cómo razonar: la lista solo trae el texto de la última apertura de cada código. Antes de decidir, reconstruí de memoria el texto de la partida (4 dígitos) y de las subpartidas (6 y 8 dígitos) de la posición actual y de cada candidata que estés considerando, y compará la mercadería contra esos textos completos, no contra la apertura suelta.
 
 Criterio:
 - "firme": la alternativa describe la mercadería igual o mejor que la posición actual (es más específica o igual de válida).
-- "discutible": es defendible con el texto y con la función principal del producto, aunque la Aduana podría preferir la posición actual.
+- "discutible": es defendible con el texto y con la función principal del producto, aunque la Aduana podría preferir la posición actual. También va acá cuando la alternativa depende de una característica que la descripción no dice pero que ese tipo de producto normalmente tiene (por ejemplo, que transmite por Bluetooth o WiFi): proponela y poné en "condicion" exactamente qué hay que verificar en el producto.
 - Todo lo demás NO se propone.
 
-Nunca propongas una posición que solo sirva describiendo la mercadería como otra cosa: otra función, otro material, una parte en lugar del aparato completo, un uso que el producto no tiene, o características técnicas que la descripción no permite afirmar. Ante la duda, no la propongas. Que ninguna alternativa encaje es lo más frecuente y es una respuesta correcta.
+Nunca propongas una posición que solo sirva describiendo la mercadería como otra cosa: otra función principal, otro material, una parte en lugar del aparato completo, o un uso que el producto no tiene. Que ninguna alternativa encaje es frecuente y es una respuesta correcta.
+
+En "motivo" decí solo lo que estás seguro que dice el texto legal; no afirmes qué exige o excluye una posición si no lo recordás con certeza.
 
 Además de la lista, podés sumar como máximo UNA posición de otra partida si la mercadería encaja ahí con claridad.
 
 Respondé SOLO con JSON, sin texto alrededor:
-{"alternativas":[{"ncm":"0000.00.00","fuerza":"firme","motivo":"una oración: por qué la mercadería encaja en esa posición","condicion":"qué tiene que cumplir el producto para sostenerla, o null"}]}
+{"alternativas":[{"ncm":"0000.00.00","fuerza":"firme","motivo":"una oración: por qué la mercadería encaja en esa posición","condicion":"qué tiene que cumplir o qué hay que verificar en el producto para sostenerla, o null"}]}
 Como máximo 2 alternativas, de la más sólida a la menos.`;
 
 async function analizar(desc, actual, candidatos) {
   const lista = candidatos.map((c) => `${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`).join("\n");
   const user = `Mercadería: "${desc}"\nPosición actual: ${actual.ncm} (derechos ${actual.die} %, tasa de estadística ${actual.te} %): ${actual.textos.join(" · ") || "sin texto"}\n\nPosiciones que pagan menos:\n${lista}`;
-  const txt = await callClaudeText({ system: SYSTEM, user, max_tokens: 700, feature: "ncm-alternativas" });
+  // Con razonamiento: una posición mal sugerida es un problema en Aduana.
+  const txt = await callClaudeText({ system: SYSTEM, user, max_tokens: 6000, thinking: "adaptive", feature: "ncm-alternativas" });
   const m = String(txt || "").match(/\{[\s\S]*\}/);
   if (!m) return [];
   let j = null; try { j = JSON.parse(m[0]); } catch { return []; }
@@ -94,7 +99,7 @@ async function analizarVuelo(flightId) {
   const codigosVuelo = [...new Set(lista.map((g) => g.hs))];
 
   const faltan = lista.filter((g) => !guardados.has(g.k) && dato(g.hs));
-  const tanda = faltan.slice(0, 10);
+  const tanda = faltan.slice(0, 6);
   await Promise.all(tanda.map(async (g) => {
     const actual = dato(g.hs);
     const carga = actual.die + actual.te;
@@ -111,7 +116,7 @@ async function analizarVuelo(flightId) {
         for (const a of alts) {
           let c = candidatos.find((x) => x.ncm === a.ncm);
           if (!c) { const otra = await partida(a.ncm.slice(0, 4)); c = otra.get(a.ncm) || null; } // la de otra partida: tiene que existir
-          if (c && c.die + c.te < carga) res.push({ ...a, die: c.die, te: c.te, texto: c.textos[0] || "" });
+          if (c && c.die + c.te < carga) res.push({ ...a, die: c.die, te: c.te, texto: c.textos.slice(0, 2).join(" · ") });
         }
       } catch (e) { return; } // si falla la IA no se guarda nada: se reintenta en la próxima llamada
     }
@@ -181,7 +186,7 @@ export async function POST(req) {
     try {
       const alts = await analizar(desc, actual, candidatos);
       const out = [];
-      for (const a of alts) { let c = candidatos.find((x) => x.ncm === a.ncm); if (!c) c = (await partida(a.ncm.slice(0, 4))).get(a.ncm) || null; if (c && c.die + c.te < carga) out.push({ ...a, die: c.die, te: c.te, texto: c.textos[0] || "" }); }
+      for (const a of alts) { let c = candidatos.find((x) => x.ncm === a.ncm); if (!c) c = (await partida(a.ncm.slice(0, 4))).get(a.ncm) || null; if (c && c.die + c.te < carga) out.push({ ...a, die: c.die, te: c.te, texto: c.textos.slice(0, 2).join(" · ") }); }
       return json({ actual, candidatos: candidatos.length, alternativas: out });
     } catch (e) { return json({ error: String(e?.message || e).slice(0, 300) }, 502); }
   }
