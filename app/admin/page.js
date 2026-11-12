@@ -14724,8 +14724,6 @@ function MonotributoCard({token,refresco}){
   const primerMes=String(d.primera_factura||"").slice(0,7);
   const sinCargar=r.meses.filter(m=>(!primerMes||m.mes<primerMes)&&!(m.externo>0)&&!(m.otros>0)).length;
   const col=r.pctMax>=0.9?"#f87171":r.pctMax>=0.7?"#fbbf24":"#4ade80";
-  const importar=async()=>{if(ocupado)return;setOcupado("pv");try{const j=await pedir({action:"monotributo_importar"});setD(j);const ok=(j.informe||[]).filter(x=>x.comprobantes>0);const err=(j.informe||[]).find(x=>x.error);
-    if(ok.length)toast(ok.map(x=>`Punto de venta ${x.pv}: ${x.comprobantes} comprobantes${x.completo?"":" (incompleto, volvé a traer)"}`).join(" · "),"success");else toast(err?`ARCA no dejó consultar los otros puntos de venta: ${err.error}`:"ARCA no devolvió comprobantes en otros puntos de venta","error");}catch(e){toast(e.message,"error");}finally{setOcupado("");}};
   const fuente=!r.categoriaElegida?"por facturación":d.categoria_fuente==="arca"?"según ARCA":"elegida a mano";
   const correr=async(k,body,ok)=>{if(ocupado)return;setOcupado(k);try{const j=await pedir(body);setD(j);if(ok)toast(ok,"success");return true;}catch(e){toast(e.message,"error");return false;}finally{setOcupado("");}};
   const abrir=()=>{setExt(Object.fromEntries(r.meses.map(m=>[m.mes,m.externo>0?String(m.externo):""])));setAbierto(true);};
@@ -14764,12 +14762,9 @@ function MonotributoCard({token,refresco}){
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{CATS_MONO.map(c=>{const on=d.categoria===c;return <button key={c} type="button" disabled={!!ocupado} onClick={()=>correr("cat",{action:"monotributo",categoria:on?null:c})} style={{width:34,height:34,borderRadius:9,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1.5px solid ${on?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.22)":"rgba(255,255,255,0.03)",color:on?"#E8D098":"rgba(255,255,255,0.6)"}}>{c}</button>;})}</div>
         {btn(ocupado==="arca"?"Consultando…":"Traer de ARCA",()=>correr("arca",{action:"monotributo_arca"},"Categoría traída de ARCA"),!!ocupado)}
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
-        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Otros puntos de venta</span>
-        {btn(ocupado==="pv"?"Consultando ARCA…":"Traer de ARCA",importar,!!ocupado)}
-        {(d.otros_pv||[]).map(x=><span key={x.pv} style={{fontSize:12,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>Punto de venta {x.pv}: {x.n} comprobantes · {ps(x.total)}</span>)}
-      </div>
-      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cargado a mano</p>
+      {/* Los otros puntos de venta (los de la web de ARCA) no se pueden consultar por web service: probado el
+          12/11/2026, FECompUltimoAutorizado devuelve 0 para los puntos 1, 2, 4, 5 y 6. Esos meses se cargan acá. */}
+      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Facturado por fuera del sistema</p>
       <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(6,minmax(0,1fr))",gap:"0 10px"}}>
         {r.meses.map(m=><div key={m.mes}><Inp label={`${mesCorto(m.mes)}${m.sistema+m.otros?` · ${ps(m.sistema+m.otros)}`:""}`} type="number" step="0.01" small value={ext[m.mes]??""} onChange={v=>setExt(p=>({...p,[m.mes]:v}))} placeholder="0"/></div>)}
       </div>
