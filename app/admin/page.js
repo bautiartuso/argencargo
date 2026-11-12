@@ -15,6 +15,7 @@ import { TarifasAgenteResumen, Bandera } from "../components/TarifasAgente";
 import { CARRIERS as CARRIERS_AG, ORIGENES as ORIGENES_AG, parsePedido, codigoPedido, tramoDe, nombrePedido, alertaTarifa } from "../../lib/tarifas-agente";
 import { isoAR, hoyAR } from "../../lib/fecha-ar";
 import { periodoDe, periodoAnterior, periodoSiguiente, nombrePeriodo, estadoGasto, porAvisar, textoVence } from "../../lib/gastos-fijos";
+import { resumenMonotributo, CATEGORIAS as CATS_MONO } from "../../lib/monotributo";
 import { diasFeriados } from "../../lib/feriados-ar";
 import { repartirDeudas } from "../../lib/reparto-deudas";
 import { CcFinancieraPanel, parseMontoAr } from "../ccfinanciera/page";
@@ -14703,6 +14704,71 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
 }
 
 // ===== FACTURACIÓN ARCA (Factura C monotributo) =====
+// ── Control del monotributo (12/11/2026) ────────────────────────────────────────────────────────
+// Arriba de Facturación: lo facturado en los últimos 12 meses contra el tope de la categoría y contra el
+// tope del régimen (K), y cuándo se pasan si se sigue facturando al ritmo de los últimos tres meses.
+// Suma lo emitido desde el sistema (neto de notas de crédito) + lo facturado por fuera, que se carga a
+// mano por mes. La categoría se trae del padrón de ARCA o se elige a mano. Cuentas en lib/monotributo.js.
+function MonotributoCard({token,refresco}){
+  const celu=useEsCelu();
+  const [d,setD]=useState(null);const [abierto,setAbierto]=useState(false);const [ext,setExt]=useState({});const [ocupado,setOcupado]=useState("");
+  const pedir=async(body)=>{const r=await fetch("/api/facturas"+(body?"":"?action=monotributo"),{method:body?"POST":"GET",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||`HTTP ${r.status}`);return j;};
+  useEffect(()=>{let vivo=true;pedir().then(j=>{if(vivo)setD(j);}).catch(()=>{});return()=>{vivo=false;};},[token,refresco]); // eslint-disable-line react-hooks/exhaustive-deps
+  if(!d||!d.hoy)return null;
+  const r=resumenMonotributo({sistema:d.sistema,externos:d.externos,categoria:d.categoria,hoy:d.hoy});
+  const ps=(v)=>`$ ${Math.round(Number(v||0)).toLocaleString("es-AR")}`;
+  const mesCorto=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"short",year:"2-digit"}).replace(".","");};
+  const mesLargo=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});};
+  // Meses anteriores a la primera factura hecha desde el sistema: si no tienen nada cargado, falta ese dato.
+  const primerMes=String(d.primera_factura||"").slice(0,7);
+  const sinCargar=r.meses.filter(m=>(!primerMes||m.mes<primerMes)&&!(m.externo>0)).length;
+  const col=r.pct>=0.9?"#f87171":r.pct>=0.7?"#fbbf24":"#4ade80";
+  const fuente=!r.categoriaElegida?"por facturación":d.categoria_fuente==="arca"?"según ARCA":"elegida a mano";
+  const correr=async(k,body,ok)=>{if(ocupado)return;setOcupado(k);try{const j=await pedir(body);setD(j);if(ok)toast(ok,"success");return true;}catch(e){toast(e.message,"error");return false;}finally{setOcupado("");}};
+  const abrir=()=>{setExt(Object.fromEntries(r.meses.map(m=>[m.mes,m.externo>0?String(m.externo):""])));setAbierto(true);};
+  const guardar=async()=>{const limpio={};Object.entries(ext).forEach(([m,v])=>{const n=Number(String(v).replace(",","."));if(n>0)limpio[m]=n;});if(await correr("guardar",{action:"monotributo",externos:limpio},"Guardado"))setAbierto(false);};
+  const pasa=(x,quien)=>!x?null:x.ya?`ya pasaste ${quien}`:`pasás ${quien} en ${mesLargo(x.mes)}`;
+  const btn=(l,on,dis)=><button type="button" onClick={on} disabled={dis} style={{height:32,padding:"0 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.8)",fontSize:12,fontWeight:700,cursor:dis?"default":"pointer",opacity:dis?0.5:1,fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
+  const dato=(l,v,c)=><div style={{minWidth:0}}><p style={{margin:0,fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{l}</p><p style={{margin:"3px 0 0",fontSize:celu?15:17,fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</p></div>;
+  return <div style={{marginBottom:14,padding:"14px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:`1px solid ${r.pct>=0.9?"rgba(248,113,113,0.45)":"rgba(255,255,255,0.08)"}`}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <span style={{fontSize:14,fontWeight:800,color:"#fff"}}>Monotributo</span>
+      <span style={{fontSize:12,fontWeight:800,padding:"3px 10px",borderRadius:999,background:"rgba(184,149,106,0.18)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.45)",whiteSpace:"nowrap"}}>Categoría {r.categoria}</span>
+      <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>{fuente}</span>
+      {r.corresponde!==r.categoria&&<span style={{fontSize:11.5,fontWeight:700,color:"#fbbf24",whiteSpace:"nowrap"}}>{r.corresponde?`por facturación corresponde la ${r.corresponde}`:"la facturación supera el tope del régimen"}</span>}
+      <span style={{marginLeft:celu?0:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+        {sinCargar>0&&!abierto&&<button type="button" onClick={abrir} style={{height:32,padding:"0 12px",borderRadius:8,border:"1px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Faltan cargar {sinCargar} {sinCargar===1?"mes":"meses"}</button>}
+        {!abierto&&btn("Ajustar",abrir)}
+      </span>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(4,minmax(0,1fr))",gap:"12px 18px",marginBottom:12}}>
+      {dato("Facturado en 12 meses",ps(r.total))}
+      {dato(`Tope categoría ${r.categoria}`,ps(r.tope))}
+      {dato(r.queda>=0?"Te queda":"Te pasaste por",ps(Math.abs(r.queda)),col)}
+      {dato("Hasta el tope del régimen (K)",r.quedaMax>=0?ps(r.quedaMax):`−${ps(-r.quedaMax)}`,r.pctMax>=0.9?"#f87171":r.pctMax>=0.7?"#fbbf24":null)}
+    </div>
+    <div style={{position:"relative",height:10,borderRadius:999,background:"rgba(255,255,255,0.07)",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,width:`${Math.min(100,Math.max(0,r.pct*100))}%`,borderRadius:999,background:col,transition:"width 300ms"}}/>
+    </div>
+    <p style={{margin:"9px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.6)",lineHeight:1.5,fontVariantNumeric:"tabular-nums"}}>
+      <b style={{color:col}}>{Math.round(r.pct*100)} %</b> del tope{r.ritmo>0?<> · al ritmo de los últimos tres meses ({ps(r.ritmo)} por mes) {pasa(r.pasaCategoria,`la categoría ${r.categoria}`)||`no pasás la categoría ${r.categoria} en los próximos 12 meses`}{r.pasaMax?<> y <b style={{color:"#f87171"}}>{pasa(r.pasaMax,"el tope del monotributo")}</b></>:null}</>:null}
+      {r.escalaVieja&&<span style={{color:"#fbbf24",fontWeight:700}}> · Revisar la escala: puede haber una nueva desde febrero</span>}
+    </p>
+    {abierto&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Categoría</span>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{CATS_MONO.map(c=>{const on=d.categoria===c;return <button key={c} type="button" disabled={!!ocupado} onClick={()=>correr("cat",{action:"monotributo",categoria:on?null:c})} style={{width:34,height:34,borderRadius:9,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:`1.5px solid ${on?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.22)":"rgba(255,255,255,0.03)",color:on?"#E8D098":"rgba(255,255,255,0.6)"}}>{c}</button>;})}</div>
+        {btn(ocupado==="arca"?"Consultando…":"Traer de ARCA",()=>correr("arca",{action:"monotributo_arca"},"Categoría traída de ARCA"),!!ocupado)}
+      </div>
+      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Facturado por fuera del sistema</p>
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(6,minmax(0,1fr))",gap:"0 10px"}}>
+        {r.meses.map(m=><div key={m.mes}><Inp label={`${mesCorto(m.mes)}${m.sistema?` · ${ps(m.sistema)}`:""}`} type="number" step="0.01" small value={ext[m.mes]??""} onChange={v=>setExt(p=>({...p,[m.mes]:v}))} placeholder="0"/></div>)}
+      </div>
+      <div style={{display:"flex",gap:8}}><Btn small onClick={guardar} disabled={!!ocupado}>{ocupado==="guardar"?"Guardando…":"Guardar"}</Btn><Btn small variant="secondary" onClick={()=>setAbierto(false)}>Cerrar</Btn></div>
+    </div>}
+  </div>;
+}
+
 function FacturasPanel({token}){
   // Panel de facturación (rehecho el 19/10/2026): resumen del mes arriba, lo que falta facturar,
   // y las facturas en una tabla con búsqueda y filtros por estado. Desde cada factura emitida se
@@ -14924,6 +14990,7 @@ function FacturasPanel({token}){
       {kpi("Por facturar",String(porFacturar.length),porFacturar.length?"#fbbf24":null,"ops entregadas")}
       <button onClick={()=>{setModal(true);setErr("");}} style={{gridColumn:celu?"1 / -1":"auto",minHeight:64,borderRadius:12,border:"1px solid rgba(184,149,106,0.6)",background:"linear-gradient(135deg,#B8956A,#E8C99B)",color:"#0A1628",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 24px rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><span style={{fontSize:20,lineHeight:1}}>+</span>Nueva factura</button>
     </div>
+    <MonotributoCard token={token} refresco={rows.length}/>
     {!configured&&<div style={{padding:"12px 16px",marginBottom:14,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.35)",borderRadius:12,fontSize:12.5,color:"#fbbf24"}}>ARCA sin conectar: faltan ARCA_CUIT, ARCA_CERT y ARCA_KEY en Vercel.</div>}
 
     {/* Por facturar */}

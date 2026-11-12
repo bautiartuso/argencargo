@@ -11,7 +11,9 @@
 //
 // El flujo es de una sola vía: se llama a ARCA únicamente acá, al emitir.
 
-import { arcaReady, arcaConfig, emitirFacturaC, listarActividades } from "../../../lib/arca";
+import { arcaReady, arcaConfig, emitirFacturaC, listarActividades, categoriaMonotributoPropia } from "../../../lib/arca";
+import { CATEGORIAS, ventana12 } from "../../../lib/monotributo";
+import { hoyAR } from "../../../lib/fecha-ar";
 import { payloadVerificado } from "../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -48,6 +50,31 @@ async function guardarOmitidas(lista) {
   await sb(`/cs_settings?on_conflict=key`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "facturas_omitidas", value: lista.slice(0, 2000), updated_at: new Date().toISOString() }) });
 }
 
+// ── Monotributo (12/11/2026): lo facturado por mes en los últimos 12 meses + la categoría ──────────
+// cs_settings "monotributo": { categoria, categoria_fuente: "arca"|"manual", categoria_at, externos: {"AAAA-MM": pesos} }
+// externos = lo facturado por fuera del sistema (web de ARCA), cargado a mano en el panel.
+async function monoConfig() {
+  const r = await sb(`/cs_settings?key=eq.monotributo&select=value`);
+  const v = Array.isArray(r.body) && r.body[0] ? r.body[0].value : null;
+  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+}
+async function guardarMonoConfig(v) {
+  await sb(`/cs_settings?on_conflict=key`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "monotributo", value: v, updated_at: new Date().toISOString() }) });
+}
+async function monotributo() {
+  const hoy = hoyAR();
+  const meses = ventana12(hoy);
+  const [fs, primera, cfg] = await Promise.all([
+    sb(`/invoices?status=eq.emitida&environment=eq.produccion&fecha=gte.${meses[0]}-01&select=fecha,importe,tipo_cbte&limit=5000`),
+    sb(`/invoices?status=eq.emitida&environment=eq.produccion&select=fecha&order=fecha.asc&limit=1`),
+    monoConfig(),
+  ]);
+  const sistema = {};
+  (Array.isArray(fs.body) ? fs.body : []).forEach((f) => { const m = String(f.fecha || "").slice(0, 7); if (!m) return; sistema[m] = (sistema[m] || 0) + (Number(f.tipo_cbte) === 13 ? -1 : 1) * Number(f.importe || 0); });
+  Object.keys(sistema).forEach((m) => { sistema[m] = Math.round(sistema[m] * 100) / 100; });
+  return { hoy, sistema, externos: cfg.externos || {}, categoria: cfg.categoria || null, categoria_fuente: cfg.categoria_fuente || null, categoria_at: cfg.categoria_at || null, primera_factura: Array.isArray(primera.body) && primera.body[0] ? primera.body[0].fecha : null };
+}
+
 export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
@@ -57,6 +84,7 @@ export async function GET(req) {
     try { const cfg = await arcaConfig(); return Response.json({ actividades: await listarActividades(cfg?.environment === "produccion" ? "produccion" : "homologacion") }); }
     catch (e) { return Response.json({ actividades: [], error: String(e.message) }); }
   }
+  if (url.searchParams.get("action") === "monotributo") return Response.json(await monotributo(), { headers: { "Cache-Control": "no-store" } });
   const opId = url.searchParams.get("operation_id");
   const limit = Math.min(Number(url.searchParams.get("limit") || 300), 500);
   const filt = opId ? `operation_id=eq.${opId}&` : "";
@@ -114,7 +142,34 @@ export async function POST(req) {
     await guardarOmitidas(lista);
     return Response.json({ ok: true, omitidas: lista });
   }
+  // Monotributo: guardar la categoría elegida a mano y lo facturado por fuera del sistema.
+  if (body?.action === "monotributo") {
+    const cfg = await monoConfig();
+    if (body.categoria !== undefined) {
+      if (body.categoria && !CATEGORIAS.includes(body.categoria)) return Response.json({ error: "Categoría inválida" }, { status: 400 });
+      cfg.categoria = body.categoria || null; cfg.categoria_fuente = body.categoria ? "manual" : null; cfg.categoria_at = new Date().toISOString();
+    }
+    if (body.externos && typeof body.externos === "object") {
+      const ext = {};
+      Object.entries(body.externos).forEach(([m, v]) => { const n = Math.round(Number(v) * 100) / 100; if (/^\d{4}-\d{2}$/.test(m) && n > 0) ext[m] = n; });
+      cfg.externos = ext;
+    }
+    await guardarMonoConfig(cfg);
+    return Response.json({ ok: true, ...(await monotributo()) });
+  }
   if (!arcaReady()) return Response.json({ error: "ARCA sin configurar: faltan ARCA_CUIT / ARCA_CERT / ARCA_KEY en Vercel" }, { status: 500 });
+  // Monotributo: traer la categoría vigente del padrón de ARCA.
+  if (body?.action === "monotributo_arca") {
+    try {
+      const acfg = await arcaConfig();
+      const c = await categoriaMonotributoPropia(acfg?.environment === "produccion" ? "produccion" : "homologacion");
+      if (!c) return Response.json({ error: "El padrón de ARCA no informa la categoría" }, { status: 502 });
+      const cfg = await monoConfig();
+      cfg.categoria = c.letra; cfg.categoria_fuente = "arca"; cfg.categoria_at = new Date().toISOString(); cfg.categoria_desc = c.descripcion;
+      await guardarMonoConfig(cfg);
+      return Response.json({ ok: true, ...(await monotributo()) });
+    } catch (e) { return Response.json({ error: String(e.message) }, { status: 502 }); }
+  }
   if (body?.action === "nota_credito") return notaCredito(body);
   const docTipo = Number(body?.doc_tipo);
   // Ítems (03/11/2026): detalle, cantidad y precio unitario en ARS (usd/tc solo si vinieron de una op).
