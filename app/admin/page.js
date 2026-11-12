@@ -10174,7 +10174,55 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const saveItem=async(it)=>{
     await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});
     // Propagar HS al operation_item original (si existe) para que el cálculo de budget lo use.
-    if(it.source_item_id&&it.hs_code)await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}});
+    // Con una posición más favorable aplicada (hs_original), la del vuelo NO baja a la operación: el
+    // presupuesto del cliente sigue con su posición de siempre (12/11/2026).
+    if(it.source_item_id&&it.hs_code&&!it.hs_original)await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}});
+  };
+  // ── Posiciones con menos derechos (12/11/2026) ──────────────────────────────────────────────
+  // Busca, para cada ítem de la factura, posiciones donde la mercadería también encaja y que pagan
+  // menos (/api/aereo/ncm-alternativas). Solo sugiere: se aplica con "Usar" y cambia únicamente la
+  // posición que se presenta en el vuelo.
+  const [altNcm,setAltNcm]=useState({});const [altBusy,setAltBusy]=useState(false);
+  const altPost=async(body)=>{const r=await fetch("/api/aereo/ncm-alternativas",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||`HTTP ${r.status}`);return j;};
+  const buscarAlternativas=async()=>{
+    if(altBusy)return;setAltBusy(true);
+    try{let pend=1,vueltas=0,res=[];
+      while(pend>0&&vueltas++<8){const j=await altPost({flight_id:flight.id});res=j.items||[];pend=j.pendientes||0;setAltNcm(Object.fromEntries(res.map(x=>[x.item_id,x])));}
+      const hay=res.filter(x=>x.aplicada||(x.alternativas.length&&x.decision!=="descartar")).length;
+      onFlash(hay?`${hay} ítem${hay>1?"s":""} con una posición que paga menos`:"No encontré posiciones más favorables que encajen");
+    }catch(e){onFlash(`❌ ${e.message}`);}
+    setAltBusy(false);
+  };
+  const decidirAlt=async(it,action,ncm)=>{
+    try{const j=await altPost({action,item_id:it.id,ncm});
+      if(action!=="descartar"){setItems(p=>p.map(x=>x.id===it.id?{...x,hs_code:j.hs_code,hs_original:j.hs_original}:x));const b=origRef.current?.get?.(it.id);if(b!=null)origRef.current.set(it.id,itemKey({...it,hs_code:j.hs_code}));}
+      setAltNcm(p=>({...p,[it.id]:{...p[it.id],decision:action==="descartar"?"descartar":action==="usar"?`usar:${j.hs_code}`:null,aplicada:action==="usar"?j.hs_code:null}}));
+      onFlash(action==="usar"?`Posición cambiada a ${j.hs_code}`:action==="volver"?"Volvió a la posición original":"Descartada");
+    }catch(e){onFlash(`❌ ${e.message}`);}
+  };
+  // Franja debajo de un ítem de la factura: la alternativa, cuánto ahorra y por qué encaja.
+  const altNcmFila=(it)=>{
+    const a=altNcm[it.id];
+    if(esEmpleado())return null;
+    if(it.hs_original)return <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:8,padding:"8px 12px",borderRadius:9,background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.35)"}}>
+      <span style={{fontSize:12,fontWeight:700,color:"#4ade80"}}>Posición más favorable aplicada · antes <span style={{fontFamily:"monospace"}}>{it.hs_original}</span></span>
+      {flight.status==="preparando"&&<button type="button" onClick={()=>decidirAlt(it,"volver")} style={{marginLeft:"auto",height:28,padding:"0 11px",borderRadius:7,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Volver a la original</button>}
+    </div>;
+    if(!a||!a.alternativas?.length||a.decision==="descartar"||flight.status!=="preparando")return null;
+    return <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6}}>{a.alternativas.map(x=>{const firme=x.fuerza==="firme";const col=firme?"#4ade80":"#fbbf24";
+      return <div key={x.ncm} style={{padding:"9px 12px",borderRadius:9,background:`${col}12`,border:`1px solid ${col}55`}}>
+        <div style={{display:"flex",alignItems:"center",gap:"6px 12px",flexWrap:"wrap"}}>
+          <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"#fff"}}>{x.ncm}</span>
+          <span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.75)"}}>derechos {pct(x.die)} · tasa {pct(x.te)} <span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>(hoy {pct(a.actual.die)} · {pct(a.actual.te)})</span></span>
+          {x.ahorro_usd>0&&<span style={{fontSize:12,fontWeight:800,color:col}}>≈ {usd(x.ahorro_usd)} menos</span>}
+          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 8px",borderRadius:999,background:`${col}22`,color:col}}>{firme?"Firme":"Discutible"}</span>
+          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+            <button type="button" onClick={()=>decidirAlt(it,"usar",x.ncm)} style={{height:28,padding:"0 13px",borderRadius:7,border:"none",background:col,color:"#0A1628",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Usar</button>
+            <button type="button" onClick={()=>decidirAlt(it,"descartar")} style={{height:28,padding:"0 11px",borderRadius:7,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.6)",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Descartar</button>
+          </span>
+        </div>
+        <p style={{margin:"5px 0 0",fontSize:12,color:"rgba(255,255,255,0.75)",lineHeight:1.45}}>{x.texto?<span style={{color:"rgba(255,255,255,0.5)"}}>«{x.texto}» · </span>:null}{x.motivo}{x.condicion?<span style={{color:col}}> · Tiene que cumplir: {x.condicion}</span>:null}</p>
+      </div>;})}</div>;
   };
   // En paralelo: son escrituras independientes entre si, no hay razon para encadenarlas.
   const saveAllItems=async()=>{await Promise.all(items.map(it=>saveItem(it)));origRef.current=new Map(items.map(x=>[x.id,itemKey(x)]));};
@@ -10185,7 +10233,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   // que es objetivo: mismo producto, misma clasificación.
   const syncHsToOps=async()=>{
     await Promise.all(items
-      .filter(it=>it.source_item_id&&isValidNcmCode(it.hs_code))
+      .filter(it=>it.source_item_id&&isValidNcmCode(it.hs_code)&&!it.hs_original)
       .map(it=>dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}}).catch(()=>{})));
   };
   // Conectar la ref para que el effect de auto-recalc pueda llamarla
@@ -10847,6 +10895,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
             <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            {(it.hs_original||altNcm[it.id])&&<div style={{gridColumn:"1 / -1"}}>{altNcmFila(it)}</div>}
           </div>;})}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
             <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
@@ -10872,6 +10921,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>NCM {it.hs_code||"—"} → <AlicTxt hs={it.hs_code}/></span>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </div>
+          {altNcmFila(it)}
         </div>;})}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
           <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
@@ -10900,6 +10950,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           {/* Agrupar (11/10/2026): los botones por operación se ven siempre que la op tenga 2+ ítems,
               aunque el vuelo no pase de 8; si pasa, marcan cuánto hay que bajar. */}
           {!flight.invoice_presented_at&&Object.entries(itemsByOp).filter(([,list])=>list.length>=2).map(([opId,list])=>{const exc=opsCompressible.find(x=>x.opId===opId);const opCode=opsUnique.find(o=>o.id===opId)?.operation_code||"?";const target=exc?exc.target:list.length-1;return <button key={opId} onClick={()=>openCompressFor(opId,target,exc?undefined:list.length-1)} title={exc?`Límite RG 5608: ${MAX_INVOICE_ITEMS} ítems por factura`:undefined} style={{display:"inline-flex",alignItems:"center",gap:8,height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:10,border:`1px solid ${exc?"rgba(251,146,60,0.55)":"rgba(255,255,255,0.14)"}`,background:exc?"rgba(251,146,60,0.12)":"rgba(255,255,255,0.04)",color:exc?"#fb923c":"rgba(255,255,255,0.8)",cursor:"pointer",fontFamily:"inherit"}}>🗜 {exc?"Comprimir":"Agrupar"} <span style={{fontFamily:"'JetBrains Mono',monospace"}}>{opCode}</span> <span style={{opacity:0.7,fontWeight:600}}>{exc?`${list.length} → ≤${target}`:`${list.length} ítems`}</span></button>;})}
+          {!esEmpleado()&&flight.status==="preparando"&&items.some(it=>it.hs_code&&it.hs_code.trim())&&<button onClick={buscarAlternativas} disabled={altBusy} style={{display:"inline-flex",alignItems:"center",gap:8,height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:10,border:"1px solid rgba(34,197,94,0.45)",background:"rgba(34,197,94,0.1)",color:"#4ade80",cursor:altBusy?"wait":"pointer",opacity:altBusy?0.6:1,fontFamily:"inherit"}}>{altBusy?"Buscando posiciones…":"Posiciones con menos derechos"}</button>}
           {items.some(it=>it.hs_code&&it.hs_code.trim())&&<button onClick={recheckInterventions} disabled={checkingInterventions} title="Vuelve a chequear intervención de organismos con el HS code actual de cada ítem" style={{display:"inline-flex",alignItems:"center",gap:8,height:38,padding:"0 16px",fontSize:12.5,fontWeight:800,borderRadius:10,border:"1px solid rgba(96,165,250,0.5)",background:"linear-gradient(135deg,rgba(96,165,250,0.16),rgba(59,130,246,0.08))",color:"#93c5fd",cursor:checkingInterventions?"wait":"pointer",opacity:checkingInterventions?0.6:1,fontFamily:"inherit"}}><span style={{display:"inline-flex",width:20,height:20,borderRadius:6,alignItems:"center",justifyContent:"center",background:"rgba(96,165,250,0.2)",fontSize:11}}>🛡</span>{checkingInterventions?"Revisando…":"Revisar intervenciones"}</button>}
         </div>
       </div>}
