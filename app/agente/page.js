@@ -2091,10 +2091,19 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           <AgAdornInp label={t.fact_weight} value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100).replace(".",","):"0"} suffix="kg"/>
           <AgAdornInp label={t.cost_per_kg} req value={costPerKg} onChange={(v)=>{setTarifaTocada(true);setCostPerKg(v);}} placeholder="12,59" prefix="USD" suffix="/kg"/>
         </div>
-        {pedidoObj&&carrier===pedido&&misTar!==undefined&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",margin:"-4px 0 14px",padding:"9px 13px",borderRadius:10,border:`1px solid ${!miTarifa?"rgba(251,191,36,0.35)":tarifaDistinta?"rgba(248,113,113,0.45)":"rgba(96,165,250,0.35)"}`,background:!miTarifa?"rgba(251,191,36,0.07)":tarifaDistinta?"rgba(248,113,113,0.08)":"rgba(96,165,250,0.08)"}}>
-          <span style={{fontSize:12,fontWeight:700,lineHeight:1.45,color:!miTarifa?"var(--amber)":tarifaDistinta?"#f87171":"#93c5fd"}}>{!miTarifa?(t.my_rate_none||"No tenés tarifa cargada para este servicio"):<>{tarifaDistinta?"⚠":"✓"} {t.my_rate||"Tu tarifa cargada"}: {carrierPedido(flight.requested_carrier,t)} · {rangoTar} → <b style={{fontFeatureSettings:'"tnum"'}}>USD {fmtTar(miTarifa.usd)}/kg</b></>}</span>
-          {tarifaDistinta&&<button type="button" onClick={()=>{setTarifaTocada(false);setCostPerKg(fmtTar(miTarifa.usd));}} style={{height:30,padding:"0 12px",borderRadius:8,border:"1px solid rgba(248,113,113,0.5)",background:"transparent",color:"#f87171",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.use_my_rate||"Usar mi tarifa"}</button>}
-        </div>}
+        {pedidoObj&&carrier===pedido&&misTar!==undefined&&(()=>{
+          // Cartel de la tarifa cargada: azul si coincide, rojo si la cambió, ámbar si no cargó ese servicio.
+          const col=!miTarifa?"251,191,36":tarifaDistinta?"248,113,113":"96,165,250";
+          const tx=!miTarifa?"var(--amber)":tarifaDistinta?"#fca5a5":"#bfdbfe";
+          return <div style={{display:"flex",alignItems:"center",gap:"10px 16px",flexWrap:"wrap",margin:"-2px 0 16px",padding:"14px 18px",borderRadius:14,border:`1.5px solid rgba(${col},0.6)`,background:`linear-gradient(135deg,rgba(${col},0.2),rgba(${col},0.07))`,boxShadow:`inset 4px 0 0 rgba(${col},0.95), 0 0 22px rgba(${col},0.14)`}}>
+            <span style={{flex:"none",width:34,height:34,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:900,color:"#0A1628",background:`rgb(${col})`}}>{!miTarifa||tarifaDistinta?"!":"✓"}</span>
+            <div style={{flex:"1 1 260px",minWidth:0}}>
+              <p style={{margin:0,fontSize:10.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:`rgba(${col},0.95)`}}>{t.my_rate||"Tu tarifa cargada"}</p>
+              <p style={{margin:"3px 0 0",fontSize:14.5,fontWeight:700,lineHeight:1.4,color:tx}}>{!miTarifa?(t.my_rate_none||"No tenés tarifa cargada para este servicio"):<>{carrierPedido(flight.requested_carrier,t)} · {rangoTar}</>}</p>
+            </div>
+            {miTarifa&&<p style={{margin:0,fontSize:24,fontWeight:900,color:"#fff",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>USD {fmtTar(miTarifa.usd)}<span style={{fontSize:13,fontWeight:700,color:`rgba(${col},0.95)`}}> /kg</span></p>}
+            {tarifaDistinta&&<button type="button" onClick={()=>{setTarifaTocada(false);setCostPerKg(fmtTar(miTarifa.usd));}} style={{height:38,padding:"0 16px",borderRadius:10,border:"none",background:"#f87171",color:"#0A1628",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.use_my_rate||"Usar mi tarifa"}</button>}
+          </div>;})()}
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
           <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
             {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,ROJO)}
