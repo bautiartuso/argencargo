@@ -9,6 +9,12 @@
 // GET  ?accion=adjunto&msg=…&adj=…&nombre=…&tipo=…  → el archivo
 // POST { accion:"pedir", flight_id, para, cc, texto } | { accion:"revisado", pedido_id }
 //      { accion:"responder", pedido_id, texto, msg? } → contesta en la misma cadena al mail del courier (11/11/2026)
+//      { accion:"pedir_formulario", flight_ids } → deja anotado que se pidió por el formulario web del courier
+//
+// FedEx (12/11/2026): pidió que no se le manden más mails; las copias de despacho se piden por su formulario
+// web (queda registrado en su sistema) y contestan por mail en 48 a 72 h. El panel muestra los datos que pide
+// el formulario para copiarlos, y el pedido se anota a mano ("Ya la pedí"). La respuesta se reconoce por
+// cualquier mail de @fedex.com que nombre la guía.
 import { leerConfig, gm, hdr, b64dec, b64url, recorrer, armarMime, BUCKET } from "../../../../lib/gmail";
 import { docEsAdjunto } from "../../../../lib/legajo";
 
@@ -48,6 +54,18 @@ async function staffSinCache(tok) {
 
 const asuntoDe = (guia) => `Solicitud DSI ${guia}`;
 const claveCarrier = (c) => String(c || "otro").toLowerCase().replace(/[^a-z]/g, "") || "otro";
+// Couriers que piden la DSI por formulario web en vez de por mail.
+const FORMULARIOS = { fedex: { url: "https://www.fedex.com/ar/contact/orderform_2.html", dominio: "fedex.com", para: "Formulario de FedEx" } };
+const esPorFormulario = (para) => /^formulario/i.test(String(para || ""));
+const CAMPOS_FORM = "id,international_tracking,international_carrier,dest_tax_id,liberado_rg_at,carrier_delivered_at,received_at";
+// Lo que hay que cargar en el formulario: la primera guía en los campos y el resto en comentarios.
+function datosFormulario(fl, email) {
+  const cfg = FORMULARIOS[claveCarrier(fl[0]?.international_carrier)];
+  if (!cfg) return null;
+  const fecha = (f) => { const v = f.liberado_rg_at || f.carrier_delivered_at || f.received_at; return v ? new Date(v).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }) : ""; };
+  const items = fl.filter((f) => f.international_tracking).map((f) => ({ flight_id: f.id, guia: f.international_tracking, cuit: String(f.dest_tax_id || "").replace(/\D/g, ""), fecha: fecha(f) }));
+  return { url: cfg.url, email: email || "", items };
+}
 // Solo se pide la DSI. Entre el 05/11 y el 10/11/2026 también se pedía la factura del courier con los
 // impuestos; Bautista lo sacó ("solamente necesitamos la destinación simplificada").
 const textoBase = (f) => `Buenas tardes,\n\nLes pedimos la DSI (Destinación Simplificada de Importación) de la guía ${f.international_tracking}${f.dest_name ? `, destinatario ${f.dest_name}${f.dest_tax_id ? ` (CUIT ${f.dest_tax_id})` : ""}` : ""}.\n\nMuchas gracias.\nArgencargo`;
@@ -82,7 +100,8 @@ function consultaPedido(p, { sinMios = false } = {}) {
   // Después de contestarle al courier (espera_desde), solo cuenta como respuesta lo que llegue desde ahí.
   const desde = sinMios && p.espera_desde ? Math.floor(new Date(p.espera_desde).getTime() / 1000) : Math.floor(new Date(p.enviado_at || Date.now()).getTime() / 1000) - 86400;
   const de = direccionesDe(p.para);
-  const porRemitente = de.length ? ` (from:(${de.join(" OR ")}) "${p.guia}")` : "";
+  const form = esPorFormulario(p.para) ? FORMULARIOS[claveCarrier(p.carrier)] || FORMULARIOS.fedex : null;
+  const porRemitente = form ? ` (from:${form.dominio} "${p.guia}")` : de.length ? ` (from:(${de.join(" OR ")}) "${p.guia}")` : "";
   return `{subject:"${asuntoDe(p.guia)}"${porRemitente}} after:${desde}${sinMios ? " -from:me" : ""}`;
 }
 
@@ -90,7 +109,7 @@ async function revisar(forzar = false) {
   if (!forzar && Date.now() - ultimaRevision < 2 * 60000) return;
   ultimaRevision = Date.now();
   const desde = new Date(Date.now() - 45 * 86400000).toISOString();
-  const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia,para,enviado_at,espera_desde`));
+  const abiertos = lista(await sb(`/rest/v1/dsi_pedidos?respuesta_at=is.null&enviado_at=gte.${desde}&select=id,guia,para,carrier,enviado_at,espera_desde`));
   await Promise.all(abiertos.map(revisarUno));
 }
 async function revisarUno(p) {
@@ -156,7 +175,7 @@ export async function GET(req) {
     if (accion === "vuelo") {
       const fid = u.searchParams.get("flight_id") || "";
       const [fr, pr, cfg, pls] = await Promise.all([
-        sb(`/rest/v1/flights?id=eq.${fid}&select=id,flight_code,international_tracking,international_carrier,dest_name,dest_tax_id&limit=1`),
+        sb(`/rest/v1/flights?id=eq.${fid}&select=${CAMPOS_FORM},flight_code,dest_name&limit=1`),
         sb(`/rest/v1/dsi_pedidos?flight_id=eq.${fid}&select=*&order=enviado_at.desc&limit=1`),
         leerConfig().catch(() => null),
         leerPlantillas(),
@@ -198,14 +217,16 @@ export async function GET(req) {
         }
         if (!pedido.respuesta_at && mensajes.some((m) => !m.mio)) { const pr2 = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${pedido.id}&select=*`))[0]; if (pr2) Object.assign(pedido, pr2); }
       }
-      return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes });
+      return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes, formulario: datosFormulario([f], cfg?.email) });
     }
     if (accion === "plantilla") {
       const ids = (u.searchParams.get("flight_ids") || "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
-      const fl = ids.length ? lista(await sb(`/rest/v1/flights?id=in.(${ids.join(",")})&select=international_tracking,international_carrier`)) : [];
+      const fl = ids.length ? lista(await sb(`/rest/v1/flights?id=in.(${ids.join(",")})&select=${CAMPOS_FORM}`)) : [];
+      fl.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
       const guias = fl.map((f) => f.international_tracking).filter(Boolean);
       const pl = (await leerPlantillas())[claveCarrier(fl[0]?.international_carrier)] || {};
-      return json({ para: pl.para || "", cc: pl.cc || "", asunto: asuntoVarias(guias), texto: textoVarias(pl.texto, guias), guias });
+      const formulario = FORMULARIOS[claveCarrier(fl[0]?.international_carrier)] ? datosFormulario(fl, (await leerConfig().catch(() => null))?.email) : null;
+      return json({ para: pl.para || "", cc: pl.cc || "", asunto: asuntoVarias(guias), texto: textoVarias(pl.texto, guias), guias, formulario });
     }
     if (accion === "adjunto") {
       const msg = u.searchParams.get("msg") || "";
@@ -218,7 +239,9 @@ export async function GET(req) {
       ]);
       const remitente = ((hdr(m.payload?.headers, "From").match(/[\w.+-]+@[\w.-]+/) || [])[0] || "").toLowerCase();
       const paras = new Set(lista(parasR).flatMap((x) => direccionesDe(x.para)).map((x) => x.toLowerCase()));
-      if (!/Solicitud DSI/i.test(hdr(m.payload?.headers, "Subject")) && !paras.has(remitente)) return json({ error: "sin_permiso" }, 403);
+      // Los pedidos hechos por formulario los contesta cualquier casilla del courier.
+      const delCourier = lista(parasR).some((x) => esPorFormulario(x.para)) && Object.values(FORMULARIOS).some((c) => remitente.endsWith(`@${c.dominio}`) || remitente.endsWith(`.${c.dominio}`));
+      if (!/Solicitud DSI/i.test(hdr(m.payload?.headers, "Subject")) && !paras.has(remitente) && !delCourier) return json({ error: "sin_permiso" }, 403);
       const nombre = u.searchParams.get("nombre") || "adjunto.pdf";
       return new Response(b64dec(d.data), { headers: { "Content-Type": u.searchParams.get("tipo") || "application/pdf", "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(nombre)}`, "Cache-Control": "no-store" } });
     }
@@ -259,6 +282,15 @@ export async function POST(req) {
       await guardarPlantillas(pls).catch(() => {});
       if (!ins.ok) return json({ ok: true, aviso: "Se mandó el mail pero falta correr el SQL de dsi_pedidos" });
       return json({ ok: true, pedidos: lista(ins), pedido: lista(ins)[0] });
+    }
+    if (b.accion === "pedir_formulario") {
+      const ids = (Array.isArray(b.flight_ids) ? b.flight_ids : [b.flight_id]).filter((x) => /^[0-9a-f-]{36}$/i.test(String(x || "")));
+      const fl = ids.length ? lista(await sb(`/rest/v1/flights?id=in.(${ids.join(",")})&select=id,international_tracking,international_carrier`)).filter((f) => f.international_tracking && FORMULARIOS[claveCarrier(f.international_carrier)]) : [];
+      if (!fl.length) return json({ error: "Ese courier no se pide por formulario" }, 400);
+      const guias = fl.map((f) => f.international_tracking);
+      const ins = await sb(`/rest/v1/dsi_pedidos`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(fl.map((f) => ({ flight_id: f.id, guia: f.international_tracking, carrier: f.international_carrier, para: FORMULARIOS[claveCarrier(f.international_carrier)].para, asunto: asuntoVarias(guias), enviado_por: uid }))) });
+      if (!ins.ok) return json({ error: "No se pudo anotar el pedido" }, 500);
+      return json({ ok: true, pedidos: lista(ins) });
     }
     if (b.accion === "responder") {
       const texto = String(b.texto || "").trim();

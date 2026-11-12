@@ -9232,12 +9232,39 @@ function guiasEnPdfDsi(m,a,token,guias){
 }
 function precargarAdjuntosDsi(d,token){(d?.mensajes||[]).filter(m=>!m.mio).forEach(m=>(m.adjuntos||[]).forEach(a=>traerAdjuntoDsi(m,a,token).catch(()=>{})));}
 
+// FedEx (12/11/2026) pidió que las copias de despacho se pidan por su formulario web y no por mail. Acá van
+// los datos que pide el formulario, cada uno con su botón de copiar: la primera guía en los campos y las
+// demás en comentarios. El pedido se anota a mano con "Ya la pedí" y pasa a Esperando respuesta.
+function FormularioDsiCourier({form,courier,enviando,onPedida}){
+  const it=form?.items||[];const a=it[0];if(!a)return null;
+  const coment=it.slice(1).map(x=>`${x.guia}${x.cuit?` - CUIT ${x.cuit}`:""}${x.fecha?` - ${x.fecha}`:""}`).join("\n");
+  const copiar=async(txt)=>{try{await navigator.clipboard.writeText(txt);toast("Copiado","success");}catch{await promptDialog("Copialo de acá",{defaultValue:txt});}};
+  const fila=(l,v,multi)=><div style={{display:"flex",alignItems:multi?"flex-start":"center",gap:10,flexWrap:"wrap",padding:"7px 10px",borderRadius:9,background:"rgba(0,0,0,0.22)"}}>
+    <span style={{flex:"0 0 150px",fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>{l}</span>
+    <span style={{flex:"1 1 140px",minWidth:0,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:v?"#fff":"#fbbf24",whiteSpace:multi?"pre-wrap":"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.5}}>{v||"falta"}</span>
+    {v&&<button type="button" onClick={()=>copiar(v)} style={{height:26,padding:"0 10px",borderRadius:8,border:"1px solid rgba(147,197,253,0.45)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Copiar</button>}
+  </div>;
+  return <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
+    {fila("Número de guía aérea",a.guia)}
+    {fila("CUIT",a.cuit)}
+    {fila("Fecha de importación",a.fecha)}
+    {fila("Su envío es una","Importación")}
+    {fila("Correo electrónico",form.email)}
+    {coment&&fila("Comentarios",coment,true)}
+    <div style={{display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap",marginTop:4}}>
+      <a href={form.url} target="_blank" rel="noopener noreferrer" style={{height:34,padding:"0 16px",borderRadius:9,display:"inline-flex",alignItems:"center",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,textDecoration:"none",whiteSpace:"nowrap"}}>Abrir el formulario de {courier||"FedEx"} ↗</a>
+      <button type="button" disabled={enviando} onClick={onPedida} style={{height:34,padding:"0 16px",borderRadius:9,border:"1px solid rgba(74,222,128,0.5)",background:"rgba(34,197,94,0.12)",color:"#4ade80",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Anotando…":it.length>1?`✓ Ya pedí las ${it.length}`:"✓ Ya la pedí"}</button>
+    </div>
+  </div>;
+}
+
 // cargados: {dsi:[docs], guia_aerea:[docs], factura_courier:[docs]} de lo que ya está en el legajo. Un adjunto se marca
 // como cargado solo si ese documento salió de este mismo mail (docEsAdjunto, 06/11/2026), no por el nombre del archivo.
 function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   const [usados,setUsados]=useState({});
   const [enPdf,setEnPdf]=useState({}); // adjunto → guías que nombra adentro (manifiestos de FedEx)
   const [d,setD]=useState(null);const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);const [abierto,setAbierto]=useState(null);const [usando,setUsando]=useState(null);const [resp,setResp]=useState(null); // respuesta libre al courier (11/11/2026)
+  const [verForm,setVerForm]=useState(false); // datos del formulario web del courier, al volver a pedir
   const cargar=useCallback(async(forzar=true)=>{setD(await cargarDsiVuelo(flight.id,token,forzar));},[flight.id,token]);
   useEffect(()=>{cargar(false);},[cargar]);
   useEffect(()=>{
@@ -9255,6 +9282,15 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
     try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir",flight_id:flight.id,...datos})});const j=await r.json();
       if(!r.ok)throw new Error(j.error==="no_conectado"?"El Gmail no está conectado (Email del admin)":j.error||"No se pudo mandar");
       toast(j.aviso||"Pedido de DSI enviado","success");setForm(null);await cargar();refrescarDsiEstado(token);onCambio?.();}
+    catch(e){toast(e.message,"error");}
+    setEnviando(false);
+  };
+  // Couriers que se piden por formulario web (FedEx): no sale ningún mail, solo queda anotado.
+  const pedidaPorFormulario=async()=>{
+    setEnviando(true);
+    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir_formulario",flight_id:flight.id})});const j=await r.json();
+      if(!r.ok)throw new Error(j.error||"No se pudo anotar");
+      toast("DSI anotada como pedida","success");setVerForm(false);await cargar();refrescarDsiEstado(token);onCambio?.();}
     catch(e){toast(e.message,"error");}
     setEnviando(false);
   };
@@ -9287,6 +9323,7 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   // también si su vuelo ya tiene la DSI.
   const revisado=async()=>{const otros=[...new Set((d.mensajes||[]).flatMap(m=>(m.guias||[]).map(g=>g.pedido_id)))];await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"revisado",pedido_id:d.pedido.id,otros})});refrescarDsiEstado(token);await cargar();onCambio?.();onCerrar?.();toast("Mail cerrado","success");};
   const p=d.pedido;const respuestas=(d.mensajes||[]).filter(m=>!m.mio);const nueva=p?.respuesta_at&&!p.revisado_at;
+  const fx=d.formulario?.items?.length?d.formulario:null;const porForm=/^formulario/i.test(p?.para||"");
   // La cadena: lo del courier y, desde su primera respuesta, lo que le contestamos nosotros.
   const hilo=(d.mensajes||[]).filter(m=>!m.mio||(respuestas[0]&&m.fecha>respuestas[0].fecha));
   const INP={width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",outline:"none"};
@@ -9297,15 +9334,16 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <span style={{fontSize:17}}>{nueva?"📬":p?"✉️":"📨"}</span>
       <div style={{flex:"1 1 200px",minWidth:0}}>
-        <p style={{margin:0,fontSize:13,fontWeight:800,color:nueva?"#93c5fd":"#fff"}}>{!p?"Pedir la DSI al courier":p.respuesta_at?`Respondió ${nombreDe(p.respuesta_de)}`:"DSI pedida · esperando respuesta"}</p>
-        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!p?`Mail con asunto "${d.plantilla.asunto}"${d.conectado?"":" · el Gmail no está conectado"}`:p.respuesta_at?`${fecha(p.respuesta_at)} · pedida el ${fecha(p.enviado_at)} a ${p.para}`:`Pedida el ${fecha(p.enviado_at)} a ${p.para}`}</p>
+        <p style={{margin:0,fontSize:13,fontWeight:800,color:nueva?"#93c5fd":"#fff"}}>{!p?(fx?`Pedir la DSI por el formulario de ${d.carrier||"el courier"}`:"Pedir la DSI al courier"):p.respuesta_at?`Respondió ${nombreDe(p.respuesta_de)}`:"DSI pedida · esperando respuesta"}</p>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!p?(fx?`Guía ${d.guia}`:`Mail con asunto "${d.plantilla.asunto}"${d.conectado?"":" · el Gmail no está conectado"}`):`${p.respuesta_at?`${fecha(p.respuesta_at)} · pedida`:"Pedida"} el ${fecha(p.enviado_at)} ${porForm?"por el formulario":`a ${p.para}`}`}</p>
       </div>
-      {!p&&d.conectado&&!form&&d.plantilla.para&&btn("✎ Editar mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
-      {!p&&d.conectado&&!form&&<button type="button" disabled={enviando} onClick={()=>{const f={para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto};if(f.para)enviar(f);else setForm(f);}} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":"✉ Solicitar DSI"}</button>}
+      {!p&&!fx&&d.conectado&&!form&&d.plantilla.para&&btn("✎ Editar mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
+      {!p&&!fx&&d.conectado&&!form&&<button type="button" disabled={enviando} onClick={()=>{const f={para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto};if(f.para)enviar(f);else setForm(f);}} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":"✉ Solicitar DSI"}</button>}
       {p&&!form&&resp==null&&respuestas.length>0&&d.conectado&&btn("↩ Responder",()=>setResp(""),"#E8D098")}
-      {p&&!form&&resp==null&&btn("Volver a pedir",()=>setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
+      {p&&!form&&resp==null&&btn("Volver a pedir",()=>fx?setVerForm(v=>!v):setForm({para:p.para||d.plantilla.para,cc:p.cc||d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
       {nueva&&btn("✓ Listo, cerrar mail",revisado,"#4ade80")}
     </div>
+    {fx&&(!p||verForm)&&<FormularioDsiCourier form={fx} courier={d.carrier} enviando={enviando} onPedida={pedidaPorFormulario}/>}
     {form&&<div style={{marginTop:12,display:"grid",gap:10}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
         <div><span style={LBL}>Para</span><input value={form.para} onChange={e=>setForm(f=>({...f,para:e.target.value}))} placeholder="dsi@courier.com" style={INP}/></div>
@@ -9362,9 +9400,20 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
 const AGRUPAR_DSI=new Set(["fedex"]);
 function GrupoPedidoDsi({vuelos,token,onListo}){
   const [form,setForm]=useState(null);const [enviando,setEnviando]=useState(false);
+  const [pl,setPl]=useState(null); // con formulario → se pide por la web del courier, no por mail
   const m=marcaCourier(vuelos[0]?.international_carrier);
   const ids=vuelos.map(v=>v.id);
   const plantilla=async()=>{const r=await fetch(`/api/aereo/dsi?accion=plantilla&flight_ids=${ids.join(",")}`,{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});return r.json();};
+  useEffect(()=>{let vivo=true;setPl(null);plantilla().then(j=>{if(vivo)setPl(j);}).catch(()=>{if(vivo)setPl({});});return()=>{vivo=false;};},[ids.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fx=pl?.formulario?.items?.length?pl.formulario:null;
+  const pedidaPorFormulario=async()=>{
+    setEnviando(true);
+    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir_formulario",flight_ids:ids})});const j=await r.json();
+      if(!r.ok)throw new Error(j.error||"No se pudo anotar");
+      toast(ids.length>1?`${ids.length} DSI anotadas como pedidas`:"DSI anotada como pedida","success");refrescarDsiEstado(token);onListo?.();}
+    catch(e){toast(e.message,"error");}
+    setEnviando(false);
+  };
   const enviar=async(datos)=>{
     setEnviando(true);
     try{const d=datos||await plantilla();
@@ -9381,9 +9430,9 @@ function GrupoPedidoDsi({vuelos,token,onListo}){
   return <div style={{borderRadius:12,marginBottom:8,padding:"12px",background:m?`linear-gradient(135deg,${m.tinte}1f,rgba(0,0,0,0.18) 60%)`:"rgba(0,0,0,0.18)",border:`1px solid ${m?`${m.tinte}55`:"rgba(255,255,255,0.07)"}`}}>
     <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       {m?logoMarca(m,38):null}
-      <div style={{flex:"1 1 180px",minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{vuelos[0]?.international_carrier} · {vuelos.length} guías</p><p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Se piden todas juntas en un solo mail</p></div>
-      {!form&&<button type="button" onClick={async()=>{const d=await plantilla();setForm({para:d.para||"",cc:d.cc||"",texto:d.texto||""});}} style={{height:34,padding:"0 12px",borderRadius:9,border:"1px solid rgba(147,197,253,0.45)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✎ Editar mail</button>}
-      {!form&&<button type="button" disabled={enviando} onClick={()=>enviar()} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":`✉ Solicitar las ${vuelos.length} DSI`}</button>}
+      <div style={{flex:"1 1 180px",minWidth:0}}><p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{vuelos[0]?.international_carrier} · {vuelos.length} {vuelos.length===1?"guía":"guías"}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!pl?"Cargando…":fx?`Se ${vuelos.length===1?"pide":"piden"} por el formulario de ${vuelos[0]?.international_carrier}`:"Se piden todas juntas en un solo mail"}</p></div>
+      {pl&&!fx&&!form&&<button type="button" onClick={async()=>{const d=await plantilla();setForm({para:d.para||"",cc:d.cc||"",texto:d.texto||""});}} style={{height:34,padding:"0 12px",borderRadius:9,border:"1px solid rgba(147,197,253,0.45)",background:"rgba(96,165,250,0.1)",color:"#93c5fd",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✎ Editar mail</button>}
+      {pl&&!fx&&!form&&<button type="button" disabled={enviando} onClick={()=>enviar()} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":`✉ Solicitar las ${vuelos.length} DSI`}</button>}
     </div>
     <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
       {vuelos.map(v=><div key={v.id} style={{display:"flex",alignItems:"baseline",gap:10,padding:"7px 10px",borderRadius:9,background:"rgba(0,0,0,0.22)"}}>
@@ -9392,6 +9441,7 @@ function GrupoPedidoDsi({vuelos,token,onListo}){
         <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>Llegó {new Date(v.llego).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
       </div>)}
     </div>
+    {fx&&<FormularioDsiCourier form={fx} courier={vuelos[0]?.international_carrier} enviando={enviando} onPedida={pedidaPorFormulario}/>}
     {form&&<div style={{marginTop:12,display:"grid",gap:10}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
         <div><span style={LBL}>Para</span><input value={form.para} onChange={e=>setForm(f=>({...f,para:e.target.value}))} style={INP}/></div>
@@ -9470,8 +9520,8 @@ function AereosEmpleado({token}){
     {ab&&<div style={{padding:"0 12px 10px"}}><PedidoDsiVuelo flight={f} token={token} onAdjuntar={(file,tipo,ctx)=>adjuntar(f,file,tipo,ctx)} onCambio={cargar} onCerrar={()=>setAbierto(null)} cargados={f.cargados}/></div>}
   </div>;};
   const claveC=(c)=>String(c||"").toLowerCase().replace(/[^a-z]/g,"");
-  // En "Pedir DSI" los de FedEx (2 o más) van en una sola tarjeta que pide todo en un mail.
-  const grupos=Object.values(pedir.reduce((acc,f)=>{const k=claveC(f.international_carrier);if(AGRUPAR_DSI.has(k))(acc[k]=acc[k]||[]).push(f);return acc;},{})).filter(g=>g.length>1);
+  // En "Pedir DSI" los de FedEx van en una sola tarjeta que pide todo junto (por su formulario web desde el 12/11/2026).
+  const grupos=Object.values(pedir.reduce((acc,f)=>{const k=claveC(f.international_carrier);if(AGRUPAR_DSI.has(k))(acc[k]=acc[k]||[]).push(f);return acc;},{})).filter(g=>g.length>0);
   const agrupados=new Set(grupos.flat().map(f=>f.id));
   const columna=(titulo,color,lst,col,vacio)=><div style={{padding:"18px 16px 10px",borderRadius:18,background:"linear-gradient(180deg,rgba(13,24,45,0.96),rgba(8,16,32,0.96))",border:"1px solid rgba(255,255,255,0.08)",alignSelf:"start"}}>
     <div style={{display:"flex",alignItems:"center",gap:10,margin:"0 4px 14px"}}>
