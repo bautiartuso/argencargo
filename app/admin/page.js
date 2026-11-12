@@ -9237,7 +9237,7 @@ function precargarAdjuntosDsi(d,token){(d?.mensajes||[]).filter(m=>!m.mio).forEa
 // demás en comentarios. El pedido se anota a mano con "Ya la pedí" y pasa a Esperando respuesta.
 function FormularioDsiCourier({form,courier,enviando,onPedida}){
   const it=form?.items||[];const a=it[0];if(!a)return null;
-  const coment=it.slice(1).map(x=>`${x.guia}${x.cuit?` - CUIT ${x.cuit}`:""}${x.fecha?` - ${x.fecha}`:""}`).join("\n");
+  const coment=it.length>1?`Solicito también la copia de despacho (DSI) de estas guías:\n${it.slice(1).map(x=>`${x.guia}${x.cuit?` - CUIT ${x.cuit}`:""}${x.fecha?` - importación ${x.fecha}`:""}`).join("\n")}`:"";
   const copiar=async(txt)=>{try{await navigator.clipboard.writeText(txt);toast("Copiado","success");}catch{await promptDialog("Copialo de acá",{defaultValue:txt});}};
   const fila=(l,v,multi)=><div style={{display:"flex",alignItems:multi?"flex-start":"center",gap:10,flexWrap:"wrap",padding:"7px 10px",borderRadius:9,background:"rgba(0,0,0,0.22)"}}>
     <span style={{flex:"0 0 150px",fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)"}}>{l}</span>
@@ -9288,9 +9288,9 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
   // Couriers que se piden por formulario web (FedEx): no sale ningún mail, solo queda anotado.
   const pedidaPorFormulario=async()=>{
     setEnviando(true);
-    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir_formulario",flight_id:flight.id})});const j=await r.json();
+    try{const r=await fetch("/api/aereo/dsi",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${await ensureFreshToken(token)}`},body:JSON.stringify({accion:"pedir_formulario",flight_ids:fx?.items?.length?fx.items.map(x=>x.flight_id):[flight.id]})});const j=await r.json();
       if(!r.ok)throw new Error(j.error||"No se pudo anotar");
-      toast("DSI anotada como pedida","success");setVerForm(false);await cargar();refrescarDsiEstado(token);onCambio?.();}
+      const n=(j.pedidos||[]).length;toast(n>1?`${n} DSI anotadas como pedidas`:"DSI anotada como pedida","success");setVerForm(false);dsiVueloCache.clear();await cargar();refrescarDsiEstado(token);onCambio?.();}
     catch(e){toast(e.message,"error");}
     setEnviando(false);
   };
@@ -9334,8 +9334,8 @@ function PedidoDsiVuelo({flight,token,onAdjuntar,onCambio,onCerrar,cargados}){
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <span style={{fontSize:17}}>{nueva?"📬":p?"✉️":"📨"}</span>
       <div style={{flex:"1 1 200px",minWidth:0}}>
-        <p style={{margin:0,fontSize:13,fontWeight:800,color:nueva?"#93c5fd":"#fff"}}>{!p?(fx?`Pedir la DSI por el formulario de ${d.carrier||"el courier"}`:"Pedir la DSI al courier"):p.respuesta_at?`Respondió ${nombreDe(p.respuesta_de)}`:"DSI pedida · esperando respuesta"}</p>
-        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!p?(fx?`Guía ${d.guia}`:`Mail con asunto "${d.plantilla.asunto}"${d.conectado?"":" · el Gmail no está conectado"}`):`${p.respuesta_at?`${fecha(p.respuesta_at)} · pedida`:"Pedida"} el ${fecha(p.enviado_at)} ${porForm?"por el formulario":`a ${p.para}`}`}</p>
+        <p style={{margin:0,fontSize:13,fontWeight:800,color:nueva?"#93c5fd":"#fff"}}>{!p?(fx?(fx.items.length>1?`Pedir las ${fx.items.length} DSI de ${d.carrier||"el courier"} en un solo formulario`:`Pedir la DSI por el formulario de ${d.carrier||"el courier"}`):"Pedir la DSI al courier"):p.respuesta_at?`Respondió ${nombreDe(p.respuesta_de)}`:"DSI pedida · esperando respuesta"}</p>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{!p?(fx?(fx.items.length>1?`Esta guía y ${fx.items.length-1} más que ${fx.items.length===2?"está":"están"} para pedir`:`Guía ${d.guia}`):`Mail con asunto "${d.plantilla.asunto}"${d.conectado?"":" · el Gmail no está conectado"}`):`${p.respuesta_at?`${fecha(p.respuesta_at)} · pedida`:"Pedida"} el ${fecha(p.enviado_at)} ${porForm?"por el formulario":`a ${p.para}`}`}</p>
       </div>
       {!p&&!fx&&d.conectado&&!form&&d.plantilla.para&&btn("✎ Editar mail",()=>setForm({para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto}),"#93c5fd")}
       {!p&&!fx&&d.conectado&&!form&&<button type="button" disabled={enviando} onClick={()=>{const f={para:d.plantilla.para,cc:d.plantilla.cc,texto:d.plantilla.texto};if(f.para)enviar(f);else setForm(f);}} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#E8D098,#B8956A)",color:"#0A1628",fontSize:12.5,fontWeight:800,cursor:enviando?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{enviando?"Enviando…":"✉ Solicitar DSI"}</button>}

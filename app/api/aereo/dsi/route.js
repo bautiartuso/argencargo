@@ -10,6 +10,7 @@
 // POST { accion:"pedir", flight_id, para, cc, texto } | { accion:"revisado", pedido_id }
 //      { accion:"responder", pedido_id, texto, msg? } → contesta en la misma cadena al mail del courier (11/11/2026)
 //      { accion:"pedir_formulario", flight_ids } → deja anotado que se pidió por el formulario web del courier
+//      (un solo pedido con todas las guías pendientes de ese courier; FedEx contesta por mail)
 //
 // FedEx (12/11/2026): pidió que no se le manden más mails; las copias de despacho se piden por su formulario
 // web (queda registrado en su sistema) y contestan por mail en 48 a 72 h. El panel muestra los datos que pide
@@ -130,11 +131,11 @@ async function revisarUno(p) {
 // Vuelos llegados a Buenos Aires a los que todavía hay que pedirles la DSI (la pelotita naranja de
 // Aéreos). Misma regla que la pantalla del empleado: aéreo courier comercial, sin pedido abierto, sin DSI en
 // todas sus ops, y vigente (alguna op sin cerrar o llegado hace 14 días o menos).
-async function contarPorPedir() {
+async function vuelosPorPedir() {
   const desde = new Date(Date.now() - 150 * 86400000).toISOString();
-  const fl = lista(await sb(`/rest/v1/flights?or=(status.eq.recibido,carrier_delivered_at.not.is.null)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=id,received_at,carrier_delivered_at,dispatched_at,flight_operations(operations(id,channel,service_type,status))`));
+  const fl = lista(await sb(`/rest/v1/flights?or=(status.eq.recibido,carrier_delivered_at.not.is.null)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=${CAMPOS_FORM},dispatched_at,flight_operations(operations(id,channel,service_type,status))`));
   const vuelos = fl.map((f) => ({ ...f, ops: (f.flight_operations || []).map((x) => x.operations).filter((o) => o && o.channel === "aereo_blanco" && o.service_type !== "gestion_integral") })).filter((f) => f.ops.length);
-  if (!vuelos.length) return 0;
+  if (!vuelos.length) return [];
   const opIds = vuelos.flatMap((f) => f.ops.map((o) => o.id));
   const [docs, peds] = await Promise.all([
     sb(`/rest/v1/legajo_docs?operation_id=in.(${opIds.join(",")})&tipo=eq.dsi&borrado_at=is.null&select=operation_id`),
@@ -142,12 +143,13 @@ async function contarPorPedir() {
   ]);
   const conDsi = new Set(lista(docs).map((d) => d.operation_id));
   const pedidos = new Set(lista(peds).map((p) => p.flight_id));
+  const llego = (f) => new Date(f.received_at || f.carrier_delivered_at || f.dispatched_at).getTime();
   return vuelos.filter((f) => {
     if (pedidos.has(f.id) || f.ops.every((o) => conDsi.has(o.id))) return false;
-    const llego = new Date(f.received_at || f.carrier_delivered_at || f.dispatched_at).getTime();
-    return f.ops.some((o) => !["operacion_cerrada", "cancelada"].includes(o.status)) || Date.now() - llego < 14 * 86400000;
-  }).length;
+    return f.ops.some((o) => !["operacion_cerrada", "cancelada"].includes(o.status)) || Date.now() - llego(f) < 14 * 86400000;
+  }).sort((x, y) => llego(y) - llego(x));
 }
+const contarPorPedir = async () => (await vuelosPorPedir()).length;
 
 const textoPlano = (html) => String(html || "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr|li)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\n{3,}/g, "\n\n").trim();
 
@@ -188,6 +190,10 @@ export async function GET(req) {
       ]);
       const f = lista(fr)[0];
       if (!f) return json({ error: "no_encontrado" }, 404);
+      // Por formulario se pide todo junto (12/11/2026): esta guía y las demás del mismo courier que están
+      // para pedir van en un solo pedido (la primera en los campos, el resto en comentarios).
+      const kc = claveCarrier(f.international_carrier);
+      const otrosP = FORMULARIOS[kc] ? vuelosPorPedir().catch(() => []) : null;
       const conectado = !!cfg?.refresh_token;
       const pedido = lista(pr)[0] || null;
       const pl = pls[claveCarrier(f.international_carrier)] || {};
@@ -223,7 +229,7 @@ export async function GET(req) {
         }
         if (!pedido.respuesta_at && mensajes.some((m) => !m.mio)) { const pr2 = lista(await sb(`/rest/v1/dsi_pedidos?id=eq.${pedido.id}&select=*`))[0]; if (pr2) Object.assign(pedido, pr2); }
       }
-      return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes, formulario: await datosFormulario([f], cfg?.email) });
+      return json({ conectado, guia: f.international_tracking || null, carrier: f.international_carrier || null, pedido, plantilla, mensajes, formulario: await datosFormulario([f, ...(otrosP ? (await otrosP).filter((x) => x.id !== f.id && claveCarrier(x.international_carrier) === kc) : [])], cfg?.email) });
     }
     if (accion === "plantilla") {
       const ids = (u.searchParams.get("flight_ids") || "").split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x));
