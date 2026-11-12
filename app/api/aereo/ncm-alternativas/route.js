@@ -3,7 +3,7 @@
 // ESTÁ DESCRIPTA, también puede clasificarse. No inventa: los candidatos salen del nomenclador
 // (ncm_database) y Claude solo dice cuáles encajan, con qué fuerza y por qué. Nunca se aplica sola.
 //
-// POST { flight_id }                       → analiza (hasta 5 descripciones nuevas por llamada; el resto
+// POST { flight_id, rapido? }              → analiza (rapido = solo lo que no necesita IA, al instante) (hasta 10 descripciones nuevas por llamada; el resto
 //                                            queda en `pendientes` y el panel vuelve a llamar)
 // POST { action:"usar", item_id, ncm }     → cambia la posición del ítem del vuelo y guarda la anterior
 //                                            en hs_original (la operación del cliente no se toca)
@@ -13,8 +13,7 @@
 import { usuarioConRol } from "../../../../lib/auth-server";
 import { callClaudeText } from "../../../../lib/anthropic";
 
-// Cada mercadería se analiza con razonamiento (30 a 60 s): margen amplio y tandas chicas.
-export const maxDuration = 300;
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -86,15 +85,38 @@ async function analizar(desc, actual, candidatos, todas) {
   const lista = todas ? estructura(todas, actual, candidatos) : candidatos.map((c) => `✔ ${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`).join("\n");
   const extra = todas ? candidatos.filter((c) => !todas.has(c.ncm)).map((c) => `✔ ${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`).join("\n") : "";
   const user = `Mercadería: "${desc}"\nPosición actual (●): ${actual.ncm} (derechos ${actual.die} %, tasa de estadística ${actual.te} %): ${actual.textos.join(" · ") || "sin texto"}\n\nAperturas de la partida, agrupadas (✔ = paga menos y se puede proponer; · = solo contexto):\n${lista}${extra ? `\n\nOtras posiciones más baratas que ya se usan en este mismo vuelo:\n${extra}` : ""}`;
-  // Con razonamiento: una posición mal sugerida es un problema en Aduana.
-  const txt = await callClaudeText({ system: SYSTEM, user, max_tokens: 6000, thinking: "adaptive", feature: "ncm-alternativas" });
+  // Dos pasos rápidos en vez de un razonamiento largo (tardaba un minuto por ítem, 12/11/2026):
+  // 1) barrido: qué candidatas podrían servir; 2) verificación: cada propuesta se revisa sola contra su grupo.
+  const txt = await callClaudeText({ system: SYSTEM, user, max_tokens: 800, feature: "ncm-alternativas" });
   const m = String(txt || "").match(/\{[\s\S]*\}/);
   if (!m) return [];
   let j = null; try { j = JSON.parse(m[0]); } catch { return []; }
-  return arr(j?.alternativas).slice(0, 2).map((a) => ({ ncm: conPuntos(a?.ncm), fuerza: a?.fuerza === "firme" ? "firme" : "discutible", motivo: String(a?.motivo || "").slice(0, 400), condicion: a?.condicion ? String(a.condicion).slice(0, 300) : null })).filter((a) => a.ncm && a.ncm !== actual.ncm);
+  const props = arr(j?.alternativas).slice(0, 2).map((a) => ({ ncm: conPuntos(a?.ncm), fuerza: a?.fuerza === "firme" ? "firme" : "discutible", motivo: String(a?.motivo || "").slice(0, 400), condicion: a?.condicion ? String(a.condicion).slice(0, 300) : null })).filter((a) => a.ncm && a.ncm !== actual.ncm);
+  const ok = await Promise.all(props.map((a) => verificar(desc, actual, a, todas).catch(() => null)));
+  return ok.filter(Boolean);
 }
 
-async function analizarVuelo(flightId) {
+const SYSTEM_VERIF = `Sos despachante de aduana experto en la Nomenclatura Común del Mercosur. Revisás con criterio estricto si una mercadería puede declararse en una posición propuesta.
+Te paso la mercadería, la posición propuesta y TODAS las aperturas de su grupo. Las hermanas te dicen de qué trata el grupo: un "Los demás" solo cubre mercadería de la misma clase que sus hermanas (si las hermanas son aparatos con conexión por cable, ese "Los demás" es de aparatos por cable, y un aparato inalámbrico NO entra).
+Respondé SOLO con JSON:
+{"valida":true,"fuerza":"firme","motivo":"una oración con el porqué","condicion":"qué hay que verificar en el producto, o null"}
+- "valida": false si el grupo es de otra clase de mercadería, o si haría falta describir el producto como algo que no es.
+- "fuerza": "firme" si describe la mercadería igual o mejor que la posición actual; "discutible" si es defendible pero la Aduana podría preferir la actual.`;
+
+// Segunda mirada, una propuesta por vez, contra las aperturas de su propio grupo.
+async function verificar(desc, actual, a, todas) {
+  const grupo = todas ? [...todas.values()].filter((c) => c.ncm.slice(0, 9) === a.ncm.slice(0, 9)).sort((x, y) => x.ncm.localeCompare(y.ncm)) : [];
+  if (!grupo.length) return a; // posición de otra partida: no hay grupo cargado para contrastar
+  const user = `Mercadería: "${desc}"\nPosición actual: ${actual.ncm}: ${actual.textos.join(" · ") || "sin texto"}\nPosición propuesta: ${a.ncm}\n\nAperturas del grupo ${a.ncm.slice(0, 9)}x:\n${grupo.map((c) => `${c.ncm === a.ncm ? "→" : " "} ${c.ncm}: ${c.textos.join(" · ") || "sin texto"}`).join("\n")}`;
+  const txt = await callClaudeText({ system: SYSTEM_VERIF, user, max_tokens: 400, feature: "ncm-alternativas" });
+  const m = String(txt || "").match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let j = null; try { j = JSON.parse(m[0]); } catch { return null; }
+  if (!j?.valida) return null;
+  return { ...a, fuerza: j.fuerza === "firme" && a.fuerza === "firme" ? "firme" : "discutible", motivo: String(j.motivo || a.motivo).slice(0, 400), condicion: j.condicion ? String(j.condicion).slice(0, 300) : a.condicion };
+}
+
+async function analizarVuelo(flightId, soloRapido = false) {
   const items = arr(await sb(`/flight_invoice_items?flight_id=eq.${flightId}&select=id,description,quantity,unit_price_declared_usd,hs_code,hs_original&order=sort_order.asc`));
   // Un grupo por (descripción, posición): si el ítem ya tiene una alternativa aplicada, se mira la original.
   const grupos = new Map();
@@ -118,7 +140,7 @@ async function analizarVuelo(flightId) {
   const codigosVuelo = [...new Set(lista.map((g) => g.hs))];
 
   const faltan = lista.filter((g) => !guardados.has(g.k) && dato(g.hs));
-  const tanda = faltan.slice(0, 5);
+  const tanda = soloRapido ? [] : faltan.slice(0, 10);
   await Promise.all(tanda.map(async (g) => {
     const actual = dato(g.hs);
     const carga = actual.die + actual.te;
@@ -144,16 +166,29 @@ async function analizarVuelo(flightId) {
     guardados.set(g.k, { ...fila, decision: null });
   }));
 
+  // Sin IA: si otro ítem parecido de este mismo vuelo ya va por una posición que paga menos, se sugiere esa.
+  // "Parecido" = mismas dos primeras palabras con sentido (gafas inteligentes, auriculares bluetooth…).
+  const tipoDe = (d) => d.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, " ").split(" ").filter((w) => w.length >= 4 && !["para", "with", "from", "tipo", "modelo", "nuevo", "nueva", "alta", "calidad"].includes(w)).slice(0, 2).join(" ");
+  const propias = (g) => {
+    const actual = dato(g.hs), tipo = tipoDe(g.d);
+    if (!actual || tipo.split(" ").length < 2) return [];
+    const vistos = new Set();
+    return lista.filter((o) => o.hs !== g.hs && tipoDe(o.d) === tipo).map((o) => ({ o, c: dato(o.hs) })).filter(({ o, c }) => c && c.die + c.te < actual.die + actual.te && !vistos.has(o.hs) && vistos.add(o.hs))
+      .map(({ o, c }) => ({ ncm: o.hs, fuerza: "propia", die: c.die, te: c.te, texto: c.textos.slice(0, 2).join(" · "), motivo: `En este mismo vuelo ya presentás "${o.desc.slice(0, 70)}" por esta posición.`, condicion: null }));
+  };
+
   const out = [];
   lista.forEach((g) => {
     const r = guardados.get(g.k), actual = dato(g.hs);
-    if (!r || !actual) return;
+    if (!actual) return;
+    const mias = propias(g);
+    if (!r && !mias.length) return;
     g.items.forEach((it) => {
       const valor = Number(it.quantity || 0) * Number(it.unit_price_declared_usd || 0);
-      const alternativas = arr(r.resultado).map((a) => ({ ...a, ahorro_usd: Math.round(valor * (actual.die + actual.te - a.die - a.te)) / 100 }));
+      const alternativas = [...mias, ...arr(r?.resultado).filter((a) => !mias.some((m) => m.ncm === a.ncm))].map((a) => ({ ...a, ahorro_usd: Math.round(valor * (actual.die + actual.te - a.die - a.te)) / 100 }));
       const aplicada = it.hs_original ? conPuntos(it.hs_code) : null;
       if (!alternativas.length && !aplicada) return;
-      out.push({ item_id: it.id, actual: { ncm: g.hs, die: actual.die, te: actual.te }, alternativas, decision: r.decision || null, aplicada });
+      out.push({ item_id: it.id, actual: { ncm: g.hs, die: actual.die, te: actual.te }, alternativas, decision: r?.decision || null, aplicada });
     });
   });
   return { items: out, pendientes: Math.max(0, faltan.length - tanda.length) };
@@ -210,6 +245,6 @@ export async function POST(req) {
     } catch (e) { return json({ error: String(e?.message || e).slice(0, 300) }, 502); }
   }
   if (!UUID.test(String(b.flight_id || ""))) return json({ error: "Vuelo inválido" }, 400);
-  try { return json(await analizarVuelo(b.flight_id)); }
+  try { return json(await analizarVuelo(b.flight_id, !!b.rapido)); }
   catch (e) { return json({ error: String(e?.message || e).slice(0, 300) }, 500); }
 }

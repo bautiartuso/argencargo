@@ -10187,6 +10187,8 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const buscarAlternativas=async()=>{
     if(altBusy)return;setAltBusy(true);
     try{let pend=1,vueltas=0,res=[];
+      // Primero lo que no necesita IA (otro ítem parecido del vuelo ya va por una posición más barata): al instante.
+      try{const j0=await altPost({flight_id:flight.id,rapido:true});setAltNcm(Object.fromEntries((j0.items||[]).map(x=>[x.item_id,x])));}catch(e){}
       while(pend>0&&vueltas++<8){const j=await altPost({flight_id:flight.id});res=j.items||[];pend=j.pendientes||0;setAltNcm(Object.fromEntries(res.map(x=>[x.item_id,x])));}
       const hay=res.filter(x=>x.aplicada||(x.alternativas.length&&x.decision!=="descartar")).length;
       onFlash(hay?`${hay} ítem${hay>1?"s":""} con una posición que paga menos`:"No encontré posiciones más favorables que encajen");
@@ -10209,13 +10211,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       {flight.status==="preparando"&&<button type="button" onClick={()=>decidirAlt(it,"volver")} style={{marginLeft:"auto",height:28,padding:"0 11px",borderRadius:7,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.7)",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Volver a la original</button>}
     </div>;
     if(!a||!a.alternativas?.length||a.decision==="descartar"||flight.status!=="preparando")return null;
-    return <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6}}>{a.alternativas.map(x=>{const firme=x.fuerza==="firme";const col=firme?"#4ade80":"#fbbf24";
+    return <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6}}>{a.alternativas.map(x=>{const firme=x.fuerza==="firme",propia=x.fuerza==="propia";const col=propia?"#60a5fa":firme?"#4ade80":"#fbbf24";
       return <div key={x.ncm} style={{padding:"9px 12px",borderRadius:9,background:`${col}12`,border:`1px solid ${col}55`}}>
         <div style={{display:"flex",alignItems:"center",gap:"6px 12px",flexWrap:"wrap"}}>
           <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"#fff"}}>{x.ncm}</span>
           <span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.75)"}}>derechos {pct(x.die)} · tasa {pct(x.te)} <span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>(hoy {pct(a.actual.die)} · {pct(a.actual.te)})</span></span>
           {x.ahorro_usd>0&&<span style={{fontSize:12,fontWeight:800,color:col}}>≈ {usd(x.ahorro_usd)} menos</span>}
-          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 8px",borderRadius:999,background:`${col}22`,color:col}}>{firme?"Firme":"Discutible"}</span>
+          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 8px",borderRadius:999,background:`${col}22`,color:col}}>{propia?"Ya la usás":firme?"Firme":"Discutible"}</span>
           <span style={{marginLeft:"auto",display:"flex",gap:6}}>
             <button type="button" onClick={()=>decidirAlt(it,"usar",x.ncm)} style={{height:28,padding:"0 13px",borderRadius:7,border:"none",background:col,color:"#0A1628",fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Usar</button>
             <button type="button" onClick={()=>decidirAlt(it,"descartar")} style={{height:28,padding:"0 11px",borderRadius:7,border:"1px solid rgba(255,255,255,0.14)",background:"transparent",color:"rgba(255,255,255,0.6)",fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Descartar</button>
