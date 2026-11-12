@@ -76,7 +76,9 @@ async function monotributo() {
   const otros = {};
   Object.values(cfg.arca || {}).forEach((pv) => Object.entries(pv?.meses || {}).forEach(([m, v]) => { otros[m] = Math.round(((otros[m] || 0) + Number(v || 0)) * 100) / 100; }));
   const otros_pv = Object.entries(cfg.arca || {}).map(([pv, d]) => ({ pv: Number(pv), n: d?.n || 0, at: d?.at || null, total: Math.round(Object.values(d?.meses || {}).reduce((a, v) => a + Number(v || 0), 0)) }));
-  return { hoy, sistema, otros, otros_pv, externos: cfg.externos || {}, categoria: cfg.categoria || null, categoria_fuente: cfg.categoria_fuente || null, categoria_at: cfg.categoria_at || null, primera_factura: Array.isArray(primera.body) && primera.body[0] ? primera.body[0].fecha : null };
+  // externos_al: fecha hasta la que lo facturado por fuera está cargado desde el listado de ARCA
+  // (Mis Comprobantes); los meses hasta ahí sin importe son ceros de verdad, no datos que falten.
+  return { hoy, sistema, otros, otros_pv, externos: cfg.externos || {}, externos_al: cfg.externos_al || null, categoria: cfg.categoria || null, categoria_fuente: cfg.categoria_fuente || null, categoria_at: cfg.categoria_at || null, primera_factura: Array.isArray(primera.body) && primera.body[0] ? primera.body[0].fecha : null };
 }
 
 export async function GET(req) {

@@ -14951,7 +14951,8 @@ function MonotributoCard({token,refresco}){
   const mesLargo=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});};
   // Meses anteriores a la primera factura hecha desde el sistema: si no tienen nada cargado, falta ese dato.
   const primerMes=String(d.primera_factura||"").slice(0,7);
-  const sinCargar=r.meses.filter(m=>(!primerMes||m.mes<primerMes)&&!(m.externo>0)&&!(m.otros>0)).length;
+  const cargadoAl=String(d.externos_al||"").slice(0,7);
+  const sinCargar=r.meses.filter(m=>(!primerMes||m.mes<primerMes)&&!(m.externo>0)&&!(m.otros>0)&&!(cargadoAl&&m.mes<=cargadoAl)).length;
   const col=r.pctMax>=0.9?"#f87171":r.pctMax>=0.7?"#fbbf24":"#4ade80";
   const fuente=!r.categoriaElegida?"por facturación":d.categoria_fuente==="arca"?"según ARCA":"elegida a mano";
   const correr=async(k,body,ok)=>{if(ocupado)return;setOcupado(k);try{const j=await pedir(body);setD(j);if(ok)toast(ok,"success");return true;}catch(e){toast(e.message,"error");return false;}finally{setOcupado("");}};
@@ -14993,7 +14994,7 @@ function MonotributoCard({token,refresco}){
       </div>
       {/* Los otros puntos de venta (los de la web de ARCA) no se pueden consultar por web service: probado el
           12/11/2026, FECompUltimoAutorizado devuelve 0 para los puntos 1, 2, 4, 5 y 6. Esos meses se cargan acá. */}
-      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Facturado por fuera del sistema</p>
+      <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Facturado por fuera del sistema{d.externos_al?<span style={{textTransform:"none",letterSpacing:0,fontWeight:600,color:"rgba(255,255,255,0.4)"}}> · cargado desde Mis Comprobantes hasta el {formatDate(d.externos_al)}</span>:null}</p>
       <div style={{display:"grid",gridTemplateColumns:celu?"1fr 1fr":"repeat(6,minmax(0,1fr))",gap:"0 10px"}}>
         {r.meses.map(m=><div key={m.mes}><Inp label={`${mesCorto(m.mes)}${m.sistema+m.otros?` · ${ps(m.sistema+m.otros)}`:""}`} type="number" step="0.01" small value={ext[m.mes]??""} onChange={v=>setExt(p=>({...p,[m.mes]:v}))} placeholder="0"/></div>)}
       </div>
