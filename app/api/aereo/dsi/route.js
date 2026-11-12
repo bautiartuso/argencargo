@@ -58,18 +58,20 @@ const claveCarrier = (c) => String(c || "otro").toLowerCase().replace(/[^a-z]/g,
 // Couriers que piden la DSI por formulario web en vez de por mail.
 const FORMULARIOS = { fedex: { url: "https://www.fedex.com/ar/contact/orderform_2.html", dominio: "fedex.com", para: "Formulario de FedEx" } };
 const esPorFormulario = (para) => /^formulario/i.test(String(para || ""));
-const CAMPOS_FORM = "id,international_tracking,international_carrier,dest_tax_id,carrier_delivered_at,received_at";
+const CAMPOS_FORM = "id,status,international_tracking,international_carrier,dest_tax_id,carrier_delivered_at,received_at,retenido_at,liberado_rg_at";
 // Lo que hay que cargar en el formulario: la primera guía en los campos y el resto en comentarios.
 // Fecha de importación = el día que la aduana liberó el envío (evento CC de FedEx en Argentina); si el
-// tracking no lo trae, el día que lo entregó el courier o que se recibió.
+// tracking no lo trae, el día que lo entregó el courier o que se recibió, y si sigue en aduana, el día que
+// llegó a Argentina.
 async function datosFormulario(fl, email) {
   const cfg = FORMULARIOS[claveCarrier(fl[0]?.international_carrier)];
   if (!cfg) return null;
-  const fos = lista(await sb(`/rest/v1/flight_operations?flight_id=in.(${fl.map((f) => f.id).join(",")})&select=flight_id,operation_id`));
+  const fos = lista(await sb(`/rest/v1/flight_operations?flight_id=in.(${fl.map((f) => f.id).join(",")})&select=flight_id,operation_id,operations(arrived_in_argentina_at)`));
   const opIds = [...new Set(fos.map((x) => x.operation_id).filter(Boolean))];
+  const arribo = (f) => fos.filter((x) => x.flight_id === f.id).map((x) => x.operations?.arrived_in_argentina_at).filter(Boolean).sort()[0];
   const evs = opIds.length ? lista(await sb(`/rest/v1/tracking_events?operation_id=in.(${opIds.join(",")})&source=eq.fedex&status_code=eq.CC&location=ilike.*AR&select=operation_id,occurred_at&order=occurred_at.desc`)) : [];
   const liberado = (f) => (evs.find((e) => fos.some((x) => x.flight_id === f.id && x.operation_id === e.operation_id)) || {}).occurred_at;
-  const fecha = (f) => { const v = liberado(f) || f.carrier_delivered_at || f.received_at; return v ? new Date(v).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }) : ""; };
+  const fecha = (f) => { const v = liberado(f) || f.carrier_delivered_at || f.received_at || arribo(f); return v ? new Date(v).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }) : ""; };
   const items = fl.filter((f) => f.international_tracking).map((f) => ({ flight_id: f.id, guia: f.international_tracking, cuit: String(f.dest_tax_id || "").replace(/\D/g, ""), fecha: fecha(f) }));
   return { url: cfg.url, email: email || "", items };
 }
@@ -128,13 +130,20 @@ async function revisarUno(p) {
   await sb(`/rest/v1/dsi_pedidos?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ respuesta_at: new Date(Number(m.internalDate) || Date.now()).toISOString(), respuesta_de: hdr(m.payload?.headers, "From") || null }) });
 }
 
-// Vuelos llegados a Buenos Aires a los que todavía hay que pedirles la DSI (la pelotita naranja de
-// Aéreos). Misma regla que la pantalla del empleado: aéreo courier comercial, sin pedido abierto, sin DSI en
-// todas sus ops, y vigente (alguna op sin cerrar o llegado hace 14 días o menos).
+// Vuelos a los que todavía hay que pedirles la DSI (la pelotita naranja de Aéreos). Misma regla que la
+// pantalla del empleado: aéreo courier comercial, sin pedido abierto, sin DSI en todas sus ops, y vigente
+// (alguna op sin cerrar o llegado hace 14 días o menos).
+//  · Llegados a Buenos Aires (recibidos o entregados por el courier), de cualquier courier.
+//  · Los que se piden por formulario (FedEx) entran antes, apenas están en aduana (12/11/2026): FedEx tarda
+//    48 a 72 h en contestar y se pide todo junto.
+//  · Nunca los retenidos por Aduana ni los liberados vía régimen general: no tienen DSI.
+const EN_ADUANA = ["en_aduana", "entregada", "operacion_cerrada"];
 async function vuelosPorPedir() {
   const desde = new Date(Date.now() - 150 * 86400000).toISOString();
-  const fl = lista(await sb(`/rest/v1/flights?or=(status.eq.recibido,carrier_delivered_at.not.is.null)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=${CAMPOS_FORM},dispatched_at,flight_operations(operations(id,channel,service_type,status))`));
-  const vuelos = fl.map((f) => ({ ...f, ops: (f.flight_operations || []).map((x) => x.operations).filter((o) => o && o.channel === "aereo_blanco" && o.service_type !== "gestion_integral") })).filter((f) => f.ops.length);
+  const fl = lista(await sb(`/rest/v1/flights?status=in.(recibido,despachado)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=${CAMPOS_FORM},dispatched_at,flight_operations(operations(id,channel,service_type,status,retenida_at,liberada_rg_at,arrived_in_argentina_at))`));
+  const vuelos = fl.filter((f) => !f.liberado_rg_at && !(f.status !== "recibido" && f.retenido_at))
+    .map((f) => ({ ...f, ops: (f.flight_operations || []).map((x) => x.operations).filter((o) => o && o.channel === "aereo_blanco" && o.service_type !== "gestion_integral" && !o.retenida_at && !o.liberada_rg_at) }))
+    .filter((f) => f.ops.length && (f.status === "recibido" || f.carrier_delivered_at || (FORMULARIOS[claveCarrier(f.international_carrier)] && f.ops.some((o) => EN_ADUANA.includes(o.status)))));
   if (!vuelos.length) return [];
   const opIds = vuelos.flatMap((f) => f.ops.map((o) => o.id));
   const [docs, peds] = await Promise.all([
@@ -143,7 +152,7 @@ async function vuelosPorPedir() {
   ]);
   const conDsi = new Set(lista(docs).map((d) => d.operation_id));
   const pedidos = new Set(lista(peds).map((p) => p.flight_id));
-  const llego = (f) => new Date(f.received_at || f.carrier_delivered_at || f.dispatched_at).getTime();
+  const llego = (f) => new Date(f.received_at || f.carrier_delivered_at || f.ops.map((o) => o.arrived_in_argentina_at).filter(Boolean).sort()[0] || f.dispatched_at).getTime();
   return vuelos.filter((f) => {
     if (pedidos.has(f.id) || f.ops.every((o) => conDsi.has(o.id))) return false;
     return f.ops.some((o) => !["operacion_cerrada", "cancelada"].includes(o.status)) || Date.now() - llego(f) < 14 * 86400000;

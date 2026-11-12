@@ -9464,21 +9464,24 @@ function AereosEmpleado({token}){
   const dsiResp=useDsiRespondidos();
   const cargar=useCallback(async()=>{
     const desde=new Date(Date.now()-150*86400000).toISOString();
-    const fl=await dq("flights",{token,filters:`?or=(status.eq.recibido,carrier_delivered_at.not.is.null)&dispatched_at=gte.${desde}&select=id,flight_code,international_tracking,international_carrier,status,received_at,carrier_delivered_at,dispatched_at,dest_name&order=dispatched_at.desc`});
+    const fl=await dq("flights",{token,filters:`?status=in.(recibido,despachado)&dispatched_at=gte.${desde}&select=id,flight_code,international_tracking,international_carrier,status,received_at,carrier_delivered_at,dispatched_at,dest_name,retenido_at,liberado_rg_at&order=dispatched_at.desc`});
     const lista=Array.isArray(fl)?fl.filter(f=>f.international_tracking):[];
     if(!lista.length){setVuelos([]);return;}
     const ids=lista.map(f=>f.id).join(",");
     const [fos,peds]=await Promise.all([
-      dq("flight_operations",{token,filters:`?flight_id=in.(${ids})&select=flight_id,operations(id,operation_code,channel,service_type,status,international_tracking,clients(first_name,last_name,company_name,cuit,tax_condition))`}),
+      dq("flight_operations",{token,filters:`?flight_id=in.(${ids})&select=flight_id,operations(id,operation_code,channel,service_type,status,international_tracking,retenida_at,liberada_rg_at,arrived_in_argentina_at,clients(first_name,last_name,company_name,cuit,tax_condition))`}),
       dq("dsi_pedidos",{token,filters:`?flight_id=in.(${ids})&select=flight_id,enviado_at,respuesta_at,revisado_at&order=enviado_at.desc`}).catch(()=>[]),
     ]);
-    const opsDe={};(Array.isArray(fos)?fos:[]).forEach(x=>{if(x.operations&&llevaLegajo(x.operations))(opsDe[x.flight_id]=opsDe[x.flight_id]||[]).push(x.operations);});
+    // Sin DSI: lo retenido por Aduana y lo liberado vía régimen general (12/11/2026) no se pide.
+    const opsDe={};(Array.isArray(fos)?fos:[]).forEach(x=>{if(x.operations&&llevaLegajo(x.operations)&&!x.operations.retenida_at&&!x.operations.liberada_rg_at)(opsDe[x.flight_id]=opsDe[x.flight_id]||[]).push(x.operations);});
+    // Entran los llegados a Buenos Aires y, de los que se piden por formulario (FedEx), también los que están en aduana.
+    const entra=(f)=>!f.liberado_rg_at&&!(f.status!=="recibido"&&f.retenido_at)&&(f.status==="recibido"||!!f.carrier_delivered_at||(AGRUPAR_DSI.has(String(f.international_carrier||"").toLowerCase().replace(/[^a-z]/g,""))&&(opsDe[f.id]||[]).some(o=>["en_aduana","entregada","operacion_cerrada"].includes(o.status))));
     const opIds=Object.values(opsDe).flat().map(o=>o.id);
     const leg=opIds.length?await listarLegajo(await ensureFreshToken(token),{opIds}):{docs:[]};
     const pedDe={};(Array.isArray(peds)?peds:[]).forEach(x=>{if(!pedDe[x.flight_id])pedDe[x.flight_id]=x;});
     // Vigente: alguna op sin cerrar o llegado hace 14 días o menos (misma regla que la pelotita naranja).
-    const llego=(f)=>new Date(f.received_at||f.carrier_delivered_at||f.dispatched_at).getTime();
-    setVuelos(lista.filter(f=>opsDe[f.id]?.length).map(f=>{const ops=opsDe[f.id];const ds=leg.docs.filter(d=>ops.some(o=>o.id===d.operation_id));return {...f,ops,llego:llego(f),cargados:{dsi:ds.filter(d=>d.tipo==="dsi"),guia_aerea:ds.filter(d=>d.tipo==="guia_aerea"),factura_courier:ds.filter(d=>d.tipo==="factura_courier")},pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
+    const llego=(f)=>new Date(f.received_at||f.carrier_delivered_at||(opsDe[f.id]||[]).map(o=>o.arrived_in_argentina_at).filter(Boolean).sort()[0]||f.dispatched_at).getTime();
+    setVuelos(lista.filter(f=>opsDe[f.id]?.length&&entra(f)).map(f=>{const ops=opsDe[f.id];const ds=leg.docs.filter(d=>ops.some(o=>o.id===d.operation_id));return {...f,ops,llego:llego(f),cargados:{dsi:ds.filter(d=>d.tipo==="dsi"),guia_aerea:ds.filter(d=>d.tipo==="guia_aerea"),factura_courier:ds.filter(d=>d.tipo==="factura_courier")},pedido:pedDe[f.id]||null,vigente:ops.some(o=>!["operacion_cerrada","cancelada"].includes(o.status))||Date.now()-llego(f)<14*86400000,conDsi:ops.every(o=>leg.docs.some(d=>d.operation_id===o.id&&d.tipo==="dsi"))};}));
   },[token]);
   useEffect(()=>{cargar();},[cargar]);
   // Precarga el mail y los adjuntos de los que ya respondieron.
@@ -9643,7 +9646,7 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
   </div>;};
   return <div data-legajo-vuelo={flight.id} style={{marginTop:14,padding:"16px 18px",borderRadius:16,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)"}}>
     <p style={{margin:"0 0 12px",fontSize:10.5,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>Documentación del vuelo</p>
-    <PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo,ctx)=>{if(tipo==="dsi"&&ctx?.adjunto?.guia&&ctx.adjunto.guia!==flight.international_tracking){toast(`Esa DSI es de la guía ${ctx.adjunto.guia}: cargala desde ese vuelo`,"info");return false;}if(tipo==="guia_aerea"&&ctx?.guiasEnPdf?.length&&!ctx.guiasEnPdf.includes(flight.international_tracking)){toast(`Esa guía aérea es de la guía ${ctx.guiasEnPdf.join(", ")}: cargala desde ese vuelo`,"info");return false;}return procesar([f],tipo||"dsi",ctx?.mensaje?.id||null);}} cargados={{dsi:docs.filter(d=>d.tipo==="dsi"),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea"),factura_courier:docs.filter(d=>d.tipo==="factura_courier")}}/>
+    {!liberadoRg&&!retenido&&<PedidoDsiVuelo flight={flight} token={token} onAdjuntar={(f,tipo,ctx)=>{if(tipo==="dsi"&&ctx?.adjunto?.guia&&ctx.adjunto.guia!==flight.international_tracking){toast(`Esa DSI es de la guía ${ctx.adjunto.guia}: cargala desde ese vuelo`,"info");return false;}if(tipo==="guia_aerea"&&ctx?.guiasEnPdf?.length&&!ctx.guiasEnPdf.includes(flight.international_tracking)){toast(`Esa guía aérea es de la guía ${ctx.guiasEnPdf.join(", ")}: cargala desde ese vuelo`,"info");return false;}return procesar([f],tipo||"dsi",ctx?.mensaje?.id||null);}} cargados={{dsi:docs.filter(d=>d.tipo==="dsi"),guia_aerea:docs.filter(d=>d.tipo==="guia_aerea"),factura_courier:docs.filter(d=>d.tipo==="factura_courier")}}/>}
     <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>{zona("dsi",MARCA_DSI,"🛃","Subir DSI")}{zona("factura_courier",marcaCourier(flight.international_carrier),"📑",`Subir factura ${marcaCourier(flight.international_carrier)?flight.international_carrier:"courier"}`)}{zona("guia_aerea",marcaCourier(flight.international_carrier),"✈️","Subir guía aérea")}{zona("factura_comercial",null,"🧾","Subir factura comercial")}</div>
     {sinTabla&&<p style={{margin:"0 0 10px",padding:"8px 12px",borderRadius:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",fontSize:12,color:"#fbbf24"}}>Falta correr el SQL del legajo para poder guardar documentos.</p>}
     {pend.map(p=><div key={p.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:8,borderRadius:12,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.3)"}}>
