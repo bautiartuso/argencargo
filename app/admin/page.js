@@ -7879,6 +7879,84 @@ const FIXED_CATS=[
 ];
 const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",obra_social:"Obra Social",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
 const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",obra_social:"#14b8a6",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
+// ── Estadísticas de la operativa (12/11/2026) ───────────────────────────────────────────────────
+// Kilos aéreos por país de origen y metros cúbicos marítimos por canal (LCL/FCL · Integral), por mes de
+// un año o por año. Sin plata: es volumen. La cuenta la hace la base (rpc estadisticas_operativa).
+function EstadisticasPanel({token}){
+  const celu=useEsCelu();
+  const [filas,setFilas]=useState(null);const [anio,setAnio]=useState(()=>hoyAR().slice(0,4));
+  useEffect(()=>{let vivo=true;dq("rpc/estadisticas_operativa",{method:"POST",token,body:{}}).then(r=>{if(vivo)setFilas(Array.isArray(r)?r:[]);});return()=>{vivo=false;};},[token]);
+  if(filas===null)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>;
+  const kg=(v)=>Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:Number(v)>=100?0:1});
+  const m3=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const anios=[...new Set(filas.map(f=>String(f.mes||"").slice(0,4)).filter(Boolean))].sort().reverse();
+  const todos=anio==="todos";
+  const delPeriodo=todos?filas:filas.filter(f=>String(f.mes).startsWith(anio));
+  // Orígenes del aéreo, del que más kilos trae al que menos (sobre todo el historial, así no saltan de lugar).
+  const origenes=Object.entries(filas.filter(f=>f.modo==="aereo").reduce((a,f)=>{a[f.clave]=(a[f.clave]||0)+Number(f.cantidad||0);return a;},{})).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+  const periodoDe=(f)=>todos?String(f.mes).slice(0,4):f.mes;
+  const periodos=[...new Set(delPeriodo.map(periodoDe))].sort().reverse();
+  const suma=(rows,modo,clave)=>rows.filter(f=>f.modo===modo&&(clave==null||f.clave===clave)).reduce((a,f)=>a+Number(f.cantidad||0),0);
+  const cuenta=(rows,modo,campo)=>rows.filter(f=>f.modo===modo).reduce((a,f)=>a+Number(f[campo]||0),0);
+  const nombreMes=(p)=>{if(todos)return p;const [y,m]=p.split("-");return new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long"});};
+  const fila=(p)=>{const rows=delPeriodo.filter(f=>periodoDe(f)===p);return {p,rows,aer:suma(rows,"aereo"),vuelos:cuenta(rows,"aereo","viajes"),opsA:cuenta(rows,"aereo","ops"),lcl:suma(rows,"maritimo","lclfcl"),intg:suma(rows,"maritimo","integral")};};
+  const datos=periodos.map(fila);
+  const tot={aer:suma(delPeriodo,"aereo"),vuelos:cuenta(delPeriodo,"aereo","viajes"),opsA:cuenta(delPeriodo,"aereo","ops"),lcl:suma(delPeriodo,"maritimo","lclfcl"),intg:suma(delPeriodo,"maritimo","integral")};
+  const chipA=(v,l)=>{const on=anio===v;return <button key={v} type="button" onClick={()=>setAnio(v)} style={{height:34,padding:"0 14px",borderRadius:8,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(184,149,106,0.22)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.55)"}}>{l}</button>;};
+  const th={padding:"9px 12px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"right",whiteSpace:"nowrap"};
+  const td={padding:"10px 12px",fontSize:13,color:"rgba(255,255,255,0.8)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+  const cero=(v,txt)=>Number(v)>0?txt:<span style={{color:"rgba(255,255,255,0.2)"}}>—</span>;
+  const dato=(l,v,sub)=><div style={{flex:"1 1 200px",padding:"13px 16px",borderRadius:14,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}><p style={{margin:0,fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p><p style={{margin:"4px 0 0",fontSize:celu?19:22,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p>{sub&&<p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{sub}</p>}</div>;
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      <div style={{display:"flex",gap:3,padding:3,background:"rgba(0,0,0,0.22)",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",overflowX:"auto"}}>{anios.map(a=>chipA(a,a))}{chipA("todos","Total")}</div>
+    </div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
+      {dato("Aéreo",`${kg(tot.aer)} kg`,`${tot.vuelos} vuelos · ${origenes.filter(o=>suma(delPeriodo,"aereo",o)>0).map(o=>`${o} ${kg(suma(delPeriodo,"aereo",o))}`).join(" · ")}`)}
+      {dato("Marítimo",`${m3(tot.lcl+tot.intg)} m³`,`LCL/FCL ${m3(tot.lcl)} · Integral ${m3(tot.intg)}`)}
+    </div>
+    {datos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin movimientos en ese período.</p>
+    :celu?<div style={{display:"flex",flexDirection:"column",gap:8}}>{datos.map(d=><div key={d.p} style={{padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <p style={{margin:"0 0 8px",fontSize:14,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{nombreMes(d.p)}</p>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}><span>Aéreo</span><span><b style={{color:"#fff"}}>{kg(d.aer)} kg</b> · {d.vuelos} vuelos</span></div>
+        {origenes.filter(o=>suma(d.rows,"aereo",o)>0).length>1&&<p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{origenes.filter(o=>suma(d.rows,"aereo",o)>0).map(o=>`${o} ${kg(suma(d.rows,"aereo",o))}`).join(" · ")}</p>}
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums",marginTop:6}}><span>Marítimo</span><span><b style={{color:"#fff"}}>{m3(d.lcl+d.intg)} m³</b></span></div>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>LCL/FCL {m3(d.lcl)} · Integral {m3(d.intg)}</p>
+      </div>)}</div>
+    :<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse"}}>
+        <thead>
+          <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+            <th style={{...th,textAlign:"left"}}></th>
+            <th colSpan={origenes.length+2} style={{...th,textAlign:"center",color:"#93c5fd",borderLeft:"1px solid rgba(255,255,255,0.06)"}}>Aéreo · kilos facturables</th>
+            <th colSpan={3} style={{...th,textAlign:"center",color:"#5eead4",borderLeft:"1px solid rgba(255,255,255,0.06)"}}>Marítimo · metros cúbicos</th>
+          </tr>
+          <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            <th style={{...th,textAlign:"left"}}>{todos?"Año":"Mes"}</th>
+            {origenes.map((o,i)=><th key={o} style={{...th,borderLeft:i===0?"1px solid rgba(255,255,255,0.06)":"none"}}>{o}</th>)}
+            <th style={th}>Total</th><th style={th}>Vuelos</th>
+            <th style={{...th,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>LCL/FCL</th><th style={th}>Integral</th><th style={th}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {datos.map(d=><tr key={d.p} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{...td,textAlign:"left",fontWeight:700,color:"#fff",textTransform:"capitalize"}}>{nombreMes(d.p)}</td>
+            {origenes.map((o,i)=><td key={o} style={{...td,borderLeft:i===0?"1px solid rgba(255,255,255,0.06)":"none"}}>{cero(suma(d.rows,"aereo",o),kg(suma(d.rows,"aereo",o)))}</td>)}
+            <td style={{...td,fontWeight:800,color:"#fff"}}>{cero(d.aer,kg(d.aer))}</td><td style={td}>{cero(d.vuelos,d.vuelos)}</td>
+            <td style={{...td,borderLeft:"1px solid rgba(255,255,255,0.06)"}}>{cero(d.lcl,m3(d.lcl))}</td><td style={td}>{cero(d.intg,m3(d.intg))}</td><td style={{...td,fontWeight:800,color:"#fff"}}>{cero(d.lcl+d.intg,m3(d.lcl+d.intg))}</td>
+          </tr>)}
+          <tr style={{background:"rgba(184,149,106,0.08)"}}>
+            <td style={{...td,textAlign:"left",fontWeight:800,color:GOLD_LIGHT}}>Total</td>
+            {origenes.map((o,i)=><td key={o} style={{...td,fontWeight:800,color:"#fff",borderLeft:i===0?"1px solid rgba(255,255,255,0.06)":"none"}}>{cero(suma(delPeriodo,"aereo",o),kg(suma(delPeriodo,"aereo",o)))}</td>)}
+            <td style={{...td,fontWeight:800,color:GOLD_LIGHT}}>{kg(tot.aer)}</td><td style={{...td,fontWeight:800,color:"#fff"}}>{tot.vuelos}</td>
+            <td style={{...td,fontWeight:800,color:"#fff",borderLeft:"1px solid rgba(255,255,255,0.06)"}}>{m3(tot.lcl)}</td><td style={{...td,fontWeight:800,color:"#fff"}}>{m3(tot.intg)}</td><td style={{...td,fontWeight:800,color:GOLD_LIGHT}}>{m3(tot.lcl+tot.intg)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>}
+  </div>;
+}
+
 // Valida y arma un gasto manual del libro diario. Lo usan "Nuevo gasto" y el pago de un gasto fijo,
 // así la dolarización y la tarjeta se resuelven igual en los dos lados.
 function armarGasto(ne){
@@ -18344,6 +18422,7 @@ function AdminDashboard({session,onLogout}){
       {key:"lclfcl",label:"Marítimo LCL/FCL",p:["M3 7h18v10H3z","M7 7v10","M12 7v10","M17 7v10","M1 19h22"]},
       {key:"agp",label:"Pagos internacionales",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
+      {key:"stats",label:"Estadísticas",p:["M3 3v18h18","M7 16v-5","M12 16V7","M17 16v-9"]},
     ]},
     {section:"Comercial",items:[
       {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
@@ -18512,6 +18591,7 @@ function AdminDashboard({session,onLogout}){
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="fijos"&&<GastosFijosPanel token={token}/>}
+      {page==="stats"&&<EstadisticasPanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="ccfin"&&<CcFinancieraPanel token={token}/>}
       {page==="mail"&&<MailPanel token={token}/>}
