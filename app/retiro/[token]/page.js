@@ -263,8 +263,12 @@ export default function EntregaPublica({ params }) {
     if (errPago) { setFormError(errPago); return; }
     setFormError("");
     setConfirming(true);
+    // Si el servidor falla o se corta la conexión, el botón no puede quedar clavado en "Confirmando…"
+    // (pasó el 12/11/2026): se avisa y se puede volver a intentar.
+    let r = null, d = null;
+    try {
     // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
-    const r = await fetch(`/api/entrega/${token}`, {
+    r = await fetch(`/api/entrega/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -283,9 +287,10 @@ export default function EntregaPublica({ params }) {
         extra_ops: selExtra,
       }),
     });
-    const d = await r.json();
+    d = await r.json().catch(() => null);
+    } catch (e) { r = null; }
     setConfirming(false);
-    if (!r.ok) { setFormError(d.error || "Error al confirmar"); return; }
+    if (!r || !r.ok || !d) { setFormError(d?.error || "No pudimos confirmar. Probá de nuevo en un momento; si sigue igual, escribinos por WhatsApp."); return; }
     setConfirmed(d);
   };
 
