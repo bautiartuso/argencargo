@@ -15172,6 +15172,9 @@ function FacturasPanel({token}){
   const enMes=f=>!mes||String(f.fecha||"").slice(0,7)===mes;
   const delMes=rows.filter(f=>f.status==="emitida"&&!esNC(f)&&enMes(f));
   const ncMes=rows.filter(f=>f.status==="emitida"&&esNC(f)&&enMes(f));
+  // Van antes de periodoTxt: definidas después, elegir otro mes tiraba "Cannot access before initialization".
+  const mesTxt=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"short",year:"2-digit"}).replace(".","");};
+  const mesTxtLargo=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});};
   const periodoTxt=!mes?"total":mes===mesAct?"este mes":mesTxtLargo(mes);
   const omitSet=new Set(omitidas);
   const porFacturar=facturables.filter(o=>!omitSet.has(o.id));
@@ -15180,8 +15183,6 @@ function FacturasPanel({token}){
   const ocultas=facturables.filter(o=>omitSet.has(o.id));
   const totMes=delMes.reduce((a,f)=>a+Number(f.importe||0),0)-ncMes.reduce((a,f)=>a+Number(f.importe||0),0);
   const meses=[...new Set(rows.map(f=>String(f.fecha||"").slice(0,7)).filter(Boolean))].sort().reverse();
-  const mesTxt=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"short",year:"2-digit"}).replace(".","");};
-  const mesTxtLargo=(m)=>{const [y,mm]=m.split("-");return new Date(Number(y),Number(mm)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});};
   const qn=q.trim().toLowerCase();
   const lista=rows.filter(f=>{
     const est=estadoDe(f);
