@@ -3,7 +3,7 @@
 // ESTÁ DESCRIPTA, también puede clasificarse. No inventa: los candidatos salen del nomenclador
 // (ncm_database) y Claude solo dice cuáles encajan, con qué fuerza y por qué. Nunca se aplica sola.
 //
-// POST { flight_id }                       → analiza (hasta 6 descripciones nuevas por llamada; el resto
+// POST { flight_id }                       → analiza (hasta 5 descripciones nuevas por llamada; el resto
 //                                            queda en `pendientes` y el panel vuelve a llamar)
 // POST { action:"usar", item_id, ncm }     → cambia la posición del ítem del vuelo y guarda la anterior
 //                                            en hs_original (la operación del cliente no se toca)
@@ -13,7 +13,8 @@
 import { usuarioConRol } from "../../../../lib/auth-server";
 import { callClaudeText } from "../../../../lib/anthropic";
 
-export const maxDuration = 60;
+// Cada mercadería se analiza con razonamiento (30 a 60 s): margen amplio y tandas chicas.
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -47,7 +48,7 @@ const partida = async (p4) => porCodigo(await sb(`/ncm_database?ncm_code=like.${
 const SYSTEM = `Sos despachante de aduana experto en la Nomenclatura Común del Mercosur (NCM) para importaciones a la Argentina.
 Te paso una mercadería, la posición con la que se va a declarar y una lista de posiciones que pagan menos derechos. Tu tarea es decir en cuáles de esas posiciones ESTA mercadería puede clasificarse aplicando las Reglas Generales Interpretativas y el texto legal.
 
-Cómo razonar: la lista solo trae el texto de la última apertura de cada código. Antes de decidir, reconstruí de memoria el texto de la partida (4 dígitos) y de las subpartidas (6 y 8 dígitos) de la posición actual y de cada candidata que estés considerando, y compará la mercadería contra esos textos completos, no contra la apertura suelta.
+Cómo razonar: la lista trae solo el texto de la última apertura de cada código, agrupada por subpartida. Un "Los demás" no significa nada suelto: vale únicamente dentro de su grupo, así que mirá las hermanas de cada candidata para saber de qué trata ese grupo (por ejemplo, si las hermanas son aparatos con conexión por cable, ese "Los demás" es de aparatos por cable). Reconstruí además de memoria el texto de la partida (4 dígitos) y de las subpartidas (6 y 8 dígitos), y compará la mercadería contra el texto completo de la rama, no contra la apertura suelta. Solo se pueden proponer las marcadas con ✔.
 
 Criterio:
 - "firme": la alternativa describe la mercadería igual o mejor que la posición actual (es más específica o igual de válida).
@@ -64,9 +65,27 @@ Respondé SOLO con JSON, sin texto alrededor:
 {"alternativas":[{"ncm":"0000.00.00","fuerza":"firme","motivo":"una oración: por qué la mercadería encaja en esa posición","condicion":"qué tiene que cumplir o qué hay que verificar en el producto para sostenerla, o null"}]}
 Como máximo 2 alternativas, de la más sólida a la menos.`;
 
-async function analizar(desc, actual, candidatos) {
-  const lista = candidatos.map((c) => `${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`).join("\n");
-  const user = `Mercadería: "${desc}"\nPosición actual: ${actual.ncm} (derechos ${actual.die} %, tasa de estadística ${actual.te} %): ${actual.textos.join(" · ") || "sin texto"}\n\nPosiciones que pagan menos:\n${lista}`;
+// La base solo tiene el texto de la última apertura ("Los demás" no dice nada suelto). Para que se entienda
+// de qué trata cada grupo se le muestra la partida agrupada por subpartida, con las hermanas de cada
+// candidata: ✔ = paga menos y se puede proponer; las demás van solo como contexto.
+function estructura(todas, actual, candidatos) {
+  const esCand = new Set(candidatos.map((c) => c.ncm));
+  const grupos = new Map();
+  [...todas.values()].sort((a, b) => a.ncm.localeCompare(b.ncm)).forEach((c) => { const k = c.ncm.slice(0, 9); (grupos.get(k) || grupos.set(k, []).get(k)).push(c); });
+  const lineas = [];
+  for (const [k, cs] of grupos) {
+    if (!cs.some((c) => esCand.has(c.ncm) || c.ncm === actual.ncm)) continue;
+    lineas.push(`Grupo ${k}x:`);
+    cs.forEach((c) => lineas.push(`  ${esCand.has(c.ncm) ? "✔" : c.ncm === actual.ncm ? "●" : "·"} ${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`));
+    if (lineas.length > 170) break;
+  }
+  return lineas.join("\n");
+}
+
+async function analizar(desc, actual, candidatos, todas) {
+  const lista = todas ? estructura(todas, actual, candidatos) : candidatos.map((c) => `✔ ${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`).join("\n");
+  const extra = todas ? candidatos.filter((c) => !todas.has(c.ncm)).map((c) => `✔ ${c.ncm} (derechos ${c.die} %, tasa ${c.te} %): ${c.textos.join(" · ") || "sin texto"}`).join("\n") : "";
+  const user = `Mercadería: "${desc}"\nPosición actual (●): ${actual.ncm} (derechos ${actual.die} %, tasa de estadística ${actual.te} %): ${actual.textos.join(" · ") || "sin texto"}\n\nAperturas de la partida, agrupadas (✔ = paga menos y se puede proponer; · = solo contexto):\n${lista}${extra ? `\n\nOtras posiciones más baratas que ya se usan en este mismo vuelo:\n${extra}` : ""}`;
   // Con razonamiento: una posición mal sugerida es un problema en Aduana.
   const txt = await callClaudeText({ system: SYSTEM, user, max_tokens: 6000, thinking: "adaptive", feature: "ncm-alternativas" });
   const m = String(txt || "").match(/\{[\s\S]*\}/);
@@ -99,7 +118,7 @@ async function analizarVuelo(flightId) {
   const codigosVuelo = [...new Set(lista.map((g) => g.hs))];
 
   const faltan = lista.filter((g) => !guardados.has(g.k) && dato(g.hs));
-  const tanda = faltan.slice(0, 6);
+  const tanda = faltan.slice(0, 5);
   await Promise.all(tanda.map(async (g) => {
     const actual = dato(g.hs);
     const carga = actual.die + actual.te;
@@ -112,7 +131,7 @@ async function analizarVuelo(flightId) {
     let res = [];
     if (candidatos.length) {
       try {
-        const alts = await analizar(g.desc, actual, candidatos);
+        const alts = await analizar(g.desc, actual, candidatos, partidas.get(g.hs.slice(0, 4)));
         for (const a of alts) {
           let c = candidatos.find((x) => x.ncm === a.ncm);
           if (!c) { const otra = await partida(a.ncm.slice(0, 4)); c = otra.get(a.ncm) || null; } // la de otra partida: tiene que existir
@@ -184,7 +203,7 @@ export async function POST(req) {
       .sort((x, y) => (y.ncm.slice(0, 7) === hs.slice(0, 7)) - (x.ncm.slice(0, 7) === hs.slice(0, 7)) || x.ncm.localeCompare(y.ncm)).slice(0, 70);
     if (!candidatos.length) return json({ actual, candidatos: 0, alternativas: [] });
     try {
-      const alts = await analizar(desc, actual, candidatos);
+      const alts = await analizar(desc, actual, candidatos, cods);
       const out = [];
       for (const a of alts) { let c = candidatos.find((x) => x.ncm === a.ncm); if (!c) c = (await partida(a.ncm.slice(0, 4))).get(a.ncm) || null; if (c && c.die + c.te < carga) out.push({ ...a, die: c.die, te: c.te, texto: c.textos.slice(0, 2).join(" · ") }); }
       return json({ actual, candidatos: candidatos.length, alternativas: out });
