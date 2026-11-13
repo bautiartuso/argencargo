@@ -411,6 +411,25 @@ const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSO
 const PRE_ARRIBO=["pendiente","en_deposito_origen","en_preparacion","en_transito"];
 // Estados en los que la op todavía no llegó al cliente: al marcarla entregada pasa a "entregada" (05/11/2026).
 const EN_CAMINO=[...PRE_ARRIBO,"arribo_argentina","en_aduana"];
+// Entrega ya coordinada y se toca el total a mano (13/11/2026, AC-0338: se bonificó el envío después de
+// coordinar): el cliente tiene el total viejo en el WhatsApp del bot, así que el nuevo se le avisa solo por
+// el mismo número. Sale como mensaje de Argencargo (con plantilla si no escribió en las últimas 24 h).
+// motivo: "bonificado" | "envio" | "total". tcPesos > 0 = el monto va en pesos (paga por transferencia).
+const saldoOp=(o,bt,cobrado)=>Math.round(Math.max(0,Number(bt||0)+Number(o.debt_applied_usd||0)-Number(o.total_anticipos||0)-Number(cobrado||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0))*100)/100;
+async function avisarNuevoTotal({token,op,whatsapp,nombre,viejo,nuevo,motivo,tcPesos=0}){
+  const num=String(whatsapp||"").replace(/[^0-9]/g,"");
+  if(!num||op.sent_notifications?.silenciada||Math.abs(nuevo-viejo)<0.01)return;
+  const usdT=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const plata=v=>tcPesos>0?`ARS ${Math.round(v*tcPesos).toLocaleString("es-AR")}`:usdT(v);
+  const inicio=motivo==="bonificado"?"Te bonificamos el envío":motivo==="envio"?"Actualizamos el costo de envío":"Actualizamos el total";
+  const texto=`${inicio} de tu operación ${op.operation_code}: el total a abonar es ${plata(nuevo)} (no ${plata(viejo)}). El día, el horario y la forma de pago quedan igual.`;
+  try{
+    const r=await fetch("/api/admin/bot",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"reply",phone:num,text:texto})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||"no salió");
+    toast(`Le avisamos el nuevo total a ${String(nombre||"").trim().split(" ")[0]||"el cliente"} por WhatsApp`,"success");
+  }catch(e){toast("No se le pudo avisar el nuevo total por WhatsApp: "+e.message,"error");}
+}
 const limpiarAlRetroceder=(status,sentNotif)=>{
   if(!PRE_ARRIBO.includes(status)&&status!=="arribo_argentina"&&status!=="en_aduana")return null;
   const sn={...(sentNotif||{})};delete sn.wa_retiro;delete sn.email_retiro;
@@ -2367,9 +2386,19 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         // Marítimo LCL/FCL (22/10/2026): los seis conceptos impositivos editables uno por uno.
         if(manualTax&&op.channel==="maritimo_blanco"){const v=(k)=>r2(num(manualTax[k]));const des=v("des");
           body.budget_tax_detail={...(op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{}),derechos:v("die"),tasaE:v("te"),iva:v("iva"),ivaAdic:v("ivaAdic"),iigg:v("iigg"),iibb:v("iibb"),...(des>0||manualTax.conDes?{desembolso:r2(des/1.21),ivaDesembolso:r2(des-des/1.21)}:{}),impuestos_manual:true};}
+        // Cómo estaba en la base antes de guardar: si la entrega ya está coordinada y cambia el total, se avisa.
+        const antesR=await dq("operations",{token,filters:`?id=eq.${op.id}&select=budget_total,delivery_cost_usd,delivery_confirmed_at,delivery_completed_at`}).catch(()=>null);
+        const antes=Array.isArray(antesR)?antesR[0]:null;
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
         setOp(p=>({...p,...body}));
         flash("Presupuesto manual guardado");
+        if(antes?.delivery_confirmed_at&&!antes.delivery_completed_at){
+          const cob=clientPayments.reduce((a,p)=>a+Number(p.amount_usd||0),0)||usdCollected(op);
+          const viejo=saldoOp(op,antes.budget_total,cob),nuevo=saldoOp(op,body.budget_total,cob);
+          const dEnvio=body.delivery_cost_usd!=null?r2(body.delivery_cost_usd-Number(antes.delivery_cost_usd||0)):0;
+          const soloEnvio=dEnvio!==0&&Math.abs((body.budget_total-Number(antes.budget_total||0))-dEnvio)<0.01;
+          await avisarNuevoTotal({token,op,whatsapp:opClient?.whatsapp,nombre:opClient?.first_name,viejo,nuevo,motivo:soloEnvio?(body.delivery_cost_usd===0?"bonificado":"envio"):"total"});
+        }
         setSaving(false);
       };
       // Helper: convierte string (con coma o punto) a number, tolerante a vacío y NaN.
@@ -6552,9 +6581,15 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
     const c=Math.round((Number(String(costoEnvio).replace(",","."))||0)*100)/100;
     if(c<0)return;
     const delta=Math.round((c-deliveryCost)*100)/100;
-    await guardar({delivery_cost_usd:c,budget_total:Math.round((bt+delta)*100)/100});
+    const nuevoTotal=Math.round(Math.max(0,total+delta)*100)/100;
+    const body={delivery_cost_usd:c,budget_total:Math.round((bt+delta)*100)/100};
+    // Lo que quedó anotado como "paga X" al coordinar acompaña el cambio (un solo método).
+    if(delta!==0&&Array.isArray(op.payment_split)&&op.payment_split.length===1&&Number(op.payment_split[0]?.amount)>0)body.payment_split=[{...op.payment_split[0],amount:nuevoTotal}];
+    await guardar(body);
     setCostoEnvio("");
     toast(delta===0?"Sin cambios":`Presupuesto ${delta>0?"+":""}${usd(delta)}`,"success");
+    // Ya coordinada: el cliente tiene el total viejo en el WhatsApp del bot; se le avisa el nuevo.
+    if(delta!==0&&op.delivery_confirmed_at&&!op.delivery_completed_at)await avisarNuevoTotal({token,op,whatsapp:opClient?.whatsapp,nombre:opClient?.first_name,viejo:total,nuevo:nuevoTotal,motivo:c===0?"bonificado":"envio",tcPesos:isTransferencia?tcNum:0});
   };
   // Coordinar a mano: el cliente arregló por WhatsApp y no usó el link.
   const necesitaDia=op.delivery_choice==="oficina"||op.delivery_choice==="propio";

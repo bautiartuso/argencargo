@@ -10,7 +10,7 @@
 //
 // Todo con service role: bot_messages no tiene policies, así que el cliente nunca la toca.
 
-import { sendWaText, sendWaTemplate, ensureWaTemplate, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
+import { sendWaText, sendWaTemplate, ensureWaTemplate, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate, waNumber } from "../../../../lib/wa";
 import { igBotConfig, igTexts, igSaveTexts, igStats } from "../../../../lib/ig";
 import { payloadVerificado } from "../../../../lib/auth-server";
 
@@ -238,7 +238,14 @@ export async function POST(req) {
   if (body.action === "reply") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return Response.json({ error: "Texto vacío" }, { status: 400 });
-    let r = await sendWaText(phone, text);
+    // Ventana de 24 h (13/11/2026, aviso a Facundo de AC-0338): Meta acepta el texto libre y recién después
+    // avisa por webhook que lo rechazó ("Re-engagement message"), así que mirar la respuesta del envío no
+    // alcanza: el panel lo mostraba como enviado y nunca llegaba. Si el cliente no escribió en las últimas
+    // 24 h, va directo por la plantilla.
+    const nums = [...new Set([phone, waNumber(phone)].filter(Boolean))];
+    const ult = await sb(`/bot_messages?phone=in.(${nums.join(",")})&role=eq.user&created_at=gte.${encodeURIComponent(new Date(Date.now() - 23.5 * 3600e3).toISOString())}&select=id&limit=1`);
+    const ventanaAbierta = Array.isArray(ult.body) && ult.body.length > 0;
+    let r = ventanaAbierta ? await sendWaText(phone, text) : { ok: false, error: "fuera de la ventana de 24 h" };
     let viaPlantilla = false;
     if (!r?.ok) {
       const msg = r?.skipped ? "WhatsApp no configurado" : (r?.error || "Meta rechazó el envío");
