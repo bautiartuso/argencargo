@@ -1943,7 +1943,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     const w=kgParaCosto,c=computedCost;
     const isAlibaba=pmtMethod==="alibaba";
     // Para Alibaba: el costo es PROVISIONAL (sin comisiones todavía). Admin completa después método tarjeta y se recalcula.
-    const flightPatch={total_weight_kg:w,total_cost_usd:c,cost_per_kg_usd:Number(String(costPerKg).replace(",","."))||null,cost_battery:costBattery,cost_brand:costBrand,cost_overweight_pieces:costOverweight?1:0,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,dispatch_photo_url:dispatchPhotoUrl||null,status:"despachado",dispatched_at:new Date().toISOString()};
+    const flightPatch={total_weight_kg:w,total_cost_usd:c,cost_per_kg_usd:Number(String(costPerKg).replace(",","."))||null,cost_battery:costBattery,cost_brand:costBrand,cost_overweight_pieces:costOverweight?1:0,international_tracking:String(tracking||"").trim(),international_carrier:carrier,payment_method:pmtMethod,dispatch_photo_url:dispatchPhotoUrl||null,status:"despachado",dispatched_at:new Date().toISOString()};
     if(isAlibaba){flightPatch.awaiting_alibaba_payment=true;flightPatch.alibaba_base_cost_usd=c;}
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
     // 2. Distribuir costo según peso FACTURABLE (max bruto vs volumétrico) de cada op.
@@ -1955,7 +1955,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       await dq("operation_packages",{method:"PATCH",token,filters:`?operation_id=eq.${fo.operation_id}&flight_id=is.null`,body:{flight_id:flight.id}}).catch(()=>{});
       const share=autoFact>0?(opFactW/autoFact)*c:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opFactW,cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:String(tracking||"").trim(),international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod}});
     }
     // 3. Registrar pago según método
     if(pmtMethod==="cuenta_corriente"){

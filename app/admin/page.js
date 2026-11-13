@@ -10789,7 +10789,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     setSavingCost(true);
     const newPmt=costForm.payment_method||null;
     const newCarrier=costForm.international_carrier||null;
-    const newTracking=costForm.international_tracking||null;
+    const newTracking=String(costForm.international_tracking||"").trim()||null;
     const flightPatch={total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:newCarrier,international_tracking:newTracking,payment_method:newPmt};
     if(!esEmpleado()){
       flightPatch.cost_per_kg_usd=numF(costForm.cost_per_kg_usd)||null;

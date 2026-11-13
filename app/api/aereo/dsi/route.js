@@ -199,6 +199,9 @@ export async function GET(req) {
       ]);
       const f = lista(fr)[0];
       if (!f) return json({ error: "no_encontrado" }, 404);
+      // La guía puede venir con espacios pegados (FL-0156 tenía uno al final): sin recortar no coincide con el
+      // nombre del adjunto ni con el pedido, y el panel tachaba la factura propia como "otra guía".
+      f.international_tracking = String(f.international_tracking || "").trim() || null;
       // Por formulario se pide todo junto (12/11/2026): esta guía y las demás del mismo courier que están
       // para pedir van en un solo pedido (la primera en los campos, el resto en comentarios).
       const kc = claveCarrier(f.international_carrier);
