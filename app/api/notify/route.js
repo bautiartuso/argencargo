@@ -313,8 +313,21 @@ export async function POST(req) {
     const tpl = await renderEmail(trigger, op, client);
     if (!tpl) return Response.json({ error: "template no encontrada" }, { status: 500 });
 
+    // Reserva del aviso (13/11/2026, AC-0373: el sync y el cron de estados llamaron a la vez y el cliente
+    // recibió dos veces "Tu carga llegó a Argentina"). El que logra marcar la clave manda; el otro se frena.
+    let reservado = false;
+    if (!force) {
+      const marca = await sb(`/rest/v1/operations?id=eq.${op_id}&sent_notifications->>${sentKey}=is.null`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ sent_notifications: { ...(op.sent_notifications || {}), [sentKey]: new Date().toISOString() } }) });
+      if (Array.isArray(marca) && marca.length === 0) return Response.json({ skipped: "already_sent" });
+      reservado = Array.isArray(marca) && marca.length > 0;
+    }
+
     const env = await enviarEmail({ to: client.email, subject: tpl.subject, html: tpl.html, trigger, client_id: client.id || null, op_id });
-    if (!env.ok) return Response.json({ error: "resend_failed", detail: env.detail || env.error }, { status: 500 });
+    if (!env.ok) {
+      // No salió: se suelta la reserva para que el próximo intento lo mande.
+      if (reservado) await sb(`/rest/v1/operations?id=eq.${op_id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ sent_notifications: op.sent_notifications || {} }) }).catch(() => {});
+      return Response.json({ error: "resend_failed", detail: env.detail || env.error }, { status: 500 });
+    }
     const resp = { id: env.id };
 
     // Aviso de retiro también por WhatsApp (bot de entregas): plantilla fija, sin IA.

@@ -133,6 +133,12 @@ export function sinMarca(text) {
 // Normaliza eventos al shape de tracking_events.
 // Eventos del courier (28/10/2026): courier_text = el texto exacto (admin); title = ese texto sin la
 // marca (cliente). Los internos siguen con su título propio.
+// Avisos del courier que traen la ubicación del DESTINO aunque la carga siga en viaje (13/11/2026, FL-0177:
+// DHL informó "Envío en tránsito e iniciando el proceso de aduana…" con ubicación Buenos Aires y la carga
+// seguía en Hong Kong; la base lo tomó como arribo y le mandó al cliente "Tu carga llegó a Argentina").
+// A esos eventos se les saca la ubicación: el texto queda, pero no cuentan como llegada.
+const PRE_ADUANA_RE = /mientras el env[ií]o se encuentra en tr[aá]nsito|en tr[aá]nsito e iniciando el proceso de aduana|puede iniciarse mientras|may start while the shipment is in transit|while the shipment is in transit to/i;
+export const esAvisoPreAduana = (texto) => PRE_ADUANA_RE.test(String(texto || ""));
 export function normalizeEvent({ operation_id, source, external_id, title, description, location, occurred_at, status_code, carrier }) {
   const base = { operation_id, source, external_id: external_id || null, occurred_at: occurred_at || new Date().toISOString(), is_visible_to_client: true, carrier: carrier || null, status_code: status_code || null };
   if (source === "internal") {
@@ -145,6 +151,6 @@ export function normalizeEvent({ operation_id, source, external_id, title, descr
     title: sinMarca(texto) || genericTitleFor(status_code, texto),
     description: null,
     courier_text: texto || null,
-    location: sinMarca(location),
+    location: esAvisoPreAduana(`${texto} ${description || ""}`) ? null : sinMarca(location),
   };
 }
