@@ -7,6 +7,7 @@
 // prueba ven entregas ya hechas y no escriben nada en las operaciones.
 import { ac, mb, hayMyBox, cargarEnvios, ubicar, origenOficina, ordenar, medir, subirFoto } from "../../../../lib/reparto";
 import { hoyAR } from "../../../../lib/fecha-ar";
+import { anotarCobro } from "../../../../lib/reparto-plata";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -189,15 +190,21 @@ export async function POST(req, { params }) {
     Object.assign(p, filas(upd)[0]);
     if (!rep.prueba) {
       const cobroTxt = cobros.length ? `Cobró en efectivo ${cobros.map((c) => `${c.moneda} ${c.monto.toLocaleString("es-AR")}`).join(" + ")}` : p.datos?.pagado ? "Ya estaba paga" : "No cobró nada";
-      if (p.base === "argencargo") {
-        if (entregado) {
-          const op = filas(await ac(`/operations?id=eq.${p.operation_id}&select=status,delivered_at,delivery_completed_at`))[0];
-          if (op && !op.delivery_completed_at) await ac(`/operations?id=eq.${p.operation_id}`, { method: "PATCH", body: JSON.stringify({ delivery_completed_at: ahora, ...(EN_CAMINO.includes(op.status) ? { status: "entregada", delivered_at: op.delivered_at || ahora } : {}) }) });
-        }
-        await ac("/op_communications", { method: "POST", body: JSON.stringify({ operation_id: p.operation_id, type: "note", direction: "in", content: entregado ? `🚚 ${rep.nombre} entregó el envío.\n${cobroTxt}${foto_path ? "\nCon foto de la entrega (Admin → Reparto)" : ""}${nota ? `\nNota: ${nota}` : ""}` : `🚚 ${rep.nombre} no pudo entregar: ${MOTIVOS[motivo]}${nota ? `\nNota: ${nota}` : ""}` }) });
+      // 1) La operación queda entregada en su sistema.
+      if (entregado && p.base === "argencargo") {
+        const op = filas(await ac(`/operations?id=eq.${p.operation_id}&select=status,delivered_at,delivery_completed_at`))[0];
+        if (op && !op.delivery_completed_at) await ac(`/operations?id=eq.${p.operation_id}`, { method: "PATCH", body: JSON.stringify({ delivery_completed_at: ahora, ...(EN_CAMINO.includes(op.status) ? { status: "entregada", delivered_at: op.delivered_at || ahora } : {}) }) });
       } else if (entregado) {
         const op = filas(await mb(`/operations?id=eq.${p.operation_id}&select=paid_at,delivered_at`))[0];
         if (op && !op.delivered_at) await mb(`/operations?id=eq.${p.operation_id}`, { method: "PATCH", body: JSON.stringify({ delivered_at: ahora, ...(op.paid_at ? { status: "cerrada" } : {}) }) });
+      }
+      // 2) Lo que cobró se anota como cobro de la operación. Si no cierra, no se anota y queda el motivo.
+      const anotado = entregado ? await anotarCobro({ base: p.base, opId: p.operation_id, cobros, quien: rep.nombre }) : null;
+      if (anotado) await ac(`/reparto_paradas?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ anotado }) });
+      // 3) Nota en la operación (Argencargo).
+      if (p.base === "argencargo") {
+        const anotTxt = !anotado ? "" : anotado.ok ? `\nAnotado como cobro: USD ${anotado.usd.toLocaleString("es-AR")}${anotado.cubre ? " (queda cobrada)" : " (queda saldo)"}. El efectivo lo tiene ${rep.nombre} hasta que lo rinda.` : `\n⚠️ El cobro NO se anotó: ${anotado.motivo}. Revisar en Admin → Reparto.`;
+        await ac("/op_communications", { method: "POST", body: JSON.stringify({ operation_id: p.operation_id, type: "note", direction: "in", content: entregado ? `🚚 ${rep.nombre} entregó el envío.\n${cobroTxt}${anotTxt}${foto_path ? "\nCon foto de la entrega (Admin → Reparto)" : ""}${nota ? `\nNota: ${nota}` : ""}` : `🚚 ${rep.nombre} no pudo entregar: ${MOTIVOS[motivo]}${nota ? `\nNota: ${nota}` : ""}` }) });
       }
     }
     await replanificar(viaje, { reordenar: false });

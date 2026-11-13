@@ -71,3 +71,9 @@ alter table public.reparto_geo enable row level security;
 alter table public.reparto_paradas add column if not exists foto_path text;
 alter table public.repartidores alter column cuenta_vuelta set default true;
 insert into storage.buckets (id, name, public) values ('reparto-fotos', 'reparto-fotos', false) on conflict (id) do nothing;
+
+-- Mismo día: lo que cobra el repartidor se anota como cobro de la operación (anotado = qué se anotó o
+-- por qué no) y lo que se le paga por el viaje se reparte como flete local entre sus operaciones (costo).
+alter table public.reparto_paradas add column if not exists anotado jsonb;
+alter table public.reparto_paradas add column if not exists costo jsonb;
+alter table public.reparto_viajes add column if not exists pago_metodo text;

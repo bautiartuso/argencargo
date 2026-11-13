@@ -4,6 +4,7 @@
 //        pagado (viaje pagado sí/no) · rendido (la plata del viaje ya se rindió) · borrar_viaje.
 import { usuarioConRol } from "../../../../lib/auth-server";
 import { ac, hayMyBox, cargarEnvios, nuevoToken, linkFoto } from "../../../../lib/reparto";
+import { anotarCobro, anotarCostoViaje, quitarCostoViaje } from "../../../../lib/reparto-plata";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ async function panel() {
   const desde = new Date(Date.now() - 60 * 86400e3).toISOString().slice(0, 10);
   const [reps, viajes, envios, cargadas] = await Promise.all([
     ac("/repartidores?select=*&order=activo.desc,nombre.asc"),
-    ac(`/reparto_viajes?fecha=gte.${desde}&select=id,repartidor_id,fecha,estado,km,km_manual,tarifa_km_ars,pago_ars,pagado_at,terminado_at,created_at,reparto_paradas(id,base,operation_id,operation_code,orden,estado,datos,cobros,motivo,nota,resuelto_at,rendido_at,foto_path)&order=created_at.desc&limit=200`),
+    ac(`/reparto_viajes?fecha=gte.${desde}&select=id,repartidor_id,fecha,estado,km,km_manual,tarifa_km_ars,pago_ars,pagado_at,pago_metodo,terminado_at,created_at,reparto_paradas(id,base,operation_id,operation_code,orden,estado,datos,cobros,motivo,nota,resuelto_at,rendido_at,foto_path,anotado,costo)&order=created_at.desc&limit=200`),
     cargarEnvios("pendientes"),
     ac("/reparto_paradas?estado=eq.cargado&select=base,operation_id"),
   ]);
@@ -57,7 +58,32 @@ export async function POST(req) {
     const km = b.km === "" || b.km == null ? null : Math.max(0, Math.round(num(b.km) * 10) / 10);
     await ac(`/reparto_viajes?id=eq.${b.viaje_id}&estado=eq.terminado`, { method: "PATCH", body: JSON.stringify({ km_manual: km }) });
   } else if (b.accion === "pagado") {
-    await ac(`/reparto_viajes?id=eq.${b.viaje_id}&estado=eq.terminado`, { method: "PATCH", body: JSON.stringify({ pagado_at: b.si ? ahora : null }) });
+    // Pagar el viaje: el importe se reparte como flete local entre las operaciones que llevó (cada una en
+    // su sistema). Marcarlo como no pagado deshace esos costos. Los viajes de prueba no anotan nada.
+    const v = filas(await ac(`/reparto_viajes?id=eq.${b.viaje_id}&estado=eq.terminado&select=id,km,km_manual,tarifa_km_ars,pago_ars,pagado_at,repartidores(nombre,prueba),reparto_paradas(id,base,operation_id,operation_code,costo)`))[0];
+    if (!v) return error("Ese viaje no existe", 404);
+    const paradas = v.reparto_paradas || [];
+    if (b.si && !v.pagado_at) {
+      const metodo = b.metodo === "transferencia" ? "transferencia" : "efectivo";
+      const pago = v.km_manual != null ? Math.round(Number(v.km_manual) * Number(v.tarifa_km_ars || 0)) : Number(v.pago_ars || 0);
+      if (!v.repartidores?.prueba && pago > 0 && paradas.length) {
+        let hecho;
+        try { hecho = await anotarCostoViaje({ paradas, pagoArs: pago, metodo, quien: v.repartidores?.nombre || "repartidor" }); } catch (e) { return error(e.message, 502); }
+        await Promise.all(hecho.map((h) => ac(`/reparto_paradas?id=eq.${h.parada_id}`, { method: "PATCH", body: JSON.stringify({ costo: h.costo }) })));
+      }
+      await ac(`/reparto_viajes?id=eq.${v.id}`, { method: "PATCH", body: JSON.stringify({ pagado_at: ahora, pago_metodo: metodo }) });
+    } else if (!b.si && v.pagado_at) {
+      await quitarCostoViaje(paradas);
+      await ac(`/reparto_paradas?viaje_id=eq.${v.id}`, { method: "PATCH", body: JSON.stringify({ costo: null }) });
+      await ac(`/reparto_viajes?id=eq.${v.id}`, { method: "PATCH", body: JSON.stringify({ pagado_at: null, pago_metodo: null }) });
+    }
+  } else if (b.accion === "anotar") {
+    // Reintenta anotar un cobro que no se pudo anotar, o lo da por cargado a mano.
+    const p = filas(await ac(`/reparto_paradas?id=eq.${b.parada_id}&select=id,base,operation_id,cobros,anotado,reparto_viajes(repartidores(nombre,prueba))`))[0];
+    if (!p || p.anotado?.ok) return json(await panel());
+    const r = b.a_mano ? { ok: true, a_mano: true } : p.reparto_viajes?.repartidores?.prueba ? null : await anotarCobro({ base: p.base, opId: p.operation_id, cobros: p.cobros, quien: p.reparto_viajes?.repartidores?.nombre || "repartidor" });
+    if (r) await ac(`/reparto_paradas?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ anotado: r }) });
+    if (r && !r.ok) return json({ ...(await panel()), aviso: r.motivo });
   } else if (b.accion === "foto") {
     const p = filas(await ac(`/reparto_paradas?id=eq.${b.parada_id}&select=foto_path`))[0];
     const url = p?.foto_path ? await linkFoto(p.foto_path) : null;

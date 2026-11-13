@@ -54,6 +54,7 @@ export default function RepartoPanel({ token }) {
   const [abierto, setAbierto] = useState(null); // viaje desplegado
   const [km, setKm] = useState({}); // viaje_id → texto en edición
   const [guardando, setGuardando] = useState(false);
+  const [pagando, setPagando] = useState(null); // viaje al que se le está eligiendo cómo se pagó
 
   const pedir = useCallback(async (cuerpo) => {
     const r = await fetch("/api/reparto/admin", { method: cuerpo ? "POST" : "GET", headers: { Authorization: `Bearer ${token}`, ...(cuerpo ? { "Content-Type": "application/json" } : {}) }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: "no-store" });
@@ -63,7 +64,7 @@ export default function RepartoPanel({ token }) {
     return j;
   }, [token]);
   useEffect(() => { pedir().catch((e) => setError(e.message)); }, [pedir]);
-  const hacer = async (cuerpo, ok) => { setGuardando(true); try { await pedir(cuerpo); if (ok) toast(ok); return true; } catch (e) { toast(e.message, "error"); return false; } finally { setGuardando(false); } };
+  const hacer = async (cuerpo, ok) => { setGuardando(true); try { const j = await pedir(cuerpo); if (j.aviso) toast(j.aviso, "error"); else if (ok) toast(ok); return true; } catch (e) { toast(e.message, "error"); return false; } finally { setGuardando(false); } };
 
   if (error) return <div style={{ ...caja, color: "#fca5a5" }}>{error}</div>;
   if (!d) return <div style={{ ...caja, color: "rgba(255,255,255,0.5)" }}>Cargando…</div>;
@@ -88,9 +89,14 @@ export default function RepartoPanel({ token }) {
       <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: p.base === "mybox" ? "#8BEA3A" : GOLD_LIGHT, flexShrink: 0 }}>{p.operation_code}</span>
       <span style={{ flex: 1, minWidth: 0, color: "#fff", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.datos?.cliente}<span style={{ color: "rgba(255,255,255,0.45)", fontWeight: 500 }}> · {p.datos?.calle}{p.datos?.localidad ? `, ${p.datos.localidad}` : ""}</span></span>
       <span style={{ flexShrink: 0, textAlign: "right", color: p.estado === "no_entregado" ? "#fca5a5" : p.cobros?.length ? "#fbbf24" : "rgba(255,255,255,0.5)", fontWeight: 700 }}>
-        {p.estado === "cargado" ? `${p.datos?.franja || ""}` : p.estado === "no_entregado" ? MOTIVOS[p.motivo] || "no entregado" : p.cobros?.length ? `cobró ${cobroTxt(p.cobros)}` : p.datos?.pagado ? "ya paga" : "sin cobrar"}
+        {p.estado === "cargado" ? `${p.datos?.franja || ""}` : p.estado === "no_entregado" ? MOTIVOS[p.motivo] || "no entregado" : p.cobros?.length ? `cobró ${cobroTxt(p.cobros)}${p.anotado?.ok && !p.anotado.a_mano ? " ✓" : ""}` : p.datos?.pagado ? "ya paga" : "sin cobrar"}
         {p.resuelto_at ? <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 500 }}> · {hora(p.resuelto_at)}</span> : null}
       </span>
+      {p.cobros?.length > 0 && p.anotado && !p.anotado.ok && <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+        <span style={chip("#f87171")} title={p.anotado.motivo}>SIN ANOTAR</span>
+        <button disabled={guardando} onClick={() => hacer({ accion: "anotar", parada_id: p.id }, "Cobro anotado en la operación")} style={{ ...btn(false), height: 26, padding: "0 9px", fontSize: 11.5 }}>Reintentar</button>
+        <button disabled={guardando} onClick={() => hacer({ accion: "anotar", parada_id: p.id, a_mano: true }, "Listo")} style={{ ...btn(false), height: 26, padding: "0 9px", fontSize: 11.5 }}>Ya lo cargué</button>
+      </span>}
       {p.foto_path && <button onClick={async () => { try { const j = await pedir({ accion: "foto", parada_id: p.id }); window.open(j.url, "_blank", "noopener"); } catch (e) { toast(e.message, "error"); } }} style={{ ...btn(false), height: 26, padding: "0 9px", fontSize: 11.5, flexShrink: 0 }}>Foto</button>}
     </div>
   );
@@ -176,7 +182,15 @@ export default function RepartoPanel({ token }) {
                   <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.5)", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{entregas} {entregas === 1 ? "entrega" : "entregas"} · {plata(v.km_final, 1)} km{v.km_manual != null ? " (corregido)" : ""} × $ {plata(v.tarifa_km_ars)}{rendir ? <span style={{ color: "#fbbf24", fontWeight: 700 }}> · rendir {rendir}</span> : null}</div>
                 </button>
                 <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", fontVariantNumeric: "tabular-nums" }}>$ {plata(v.pago_final)}</div>
-                <button style={{ ...btn(!v.pagado_at), minWidth: 92 }} disabled={guardando} onClick={() => hacer({ accion: "pagado", viaje_id: v.id, si: !v.pagado_at }, v.pagado_at ? "Marcado sin pagar" : "Viaje pagado")}>{v.pagado_at ? "✓ Pagado" : "Pagar"}</button>
+                {v.pagado_at
+                  ? <button style={{ ...btn(false), minWidth: 92 }} disabled={guardando} onClick={async () => { if (await confirmDialog("¿Marcar este viaje como no pagado? Se saca el flete local que se había anotado en las operaciones.", { title: "Deshacer pago", confirmText: "Deshacer" })) hacer({ accion: "pagado", viaje_id: v.id, si: false }, "Marcado sin pagar"); }}>✓ Pagado{v.pago_metodo === "transferencia" ? " · transf." : ""}</button>
+                  : pagando === v.id
+                    ? <span style={{ display: "inline-flex", gap: 6 }}>
+                        <button style={btn(true)} disabled={guardando} onClick={async () => { if (await hacer({ accion: "pagado", viaje_id: v.id, si: true, metodo: "efectivo" }, "Viaje pagado y anotado en las operaciones")) setPagando(null); }}>Efectivo</button>
+                        <button style={btn(true)} disabled={guardando} onClick={async () => { if (await hacer({ accion: "pagado", viaje_id: v.id, si: true, metodo: "transferencia" }, "Viaje pagado y anotado en las operaciones")) setPagando(null); }}>Transferencia</button>
+                        <button style={btn(false)} disabled={guardando} onClick={() => setPagando(null)} aria-label="Cancelar">✕</button>
+                      </span>
+                    : <button style={{ ...btn(true), minWidth: 92 }} disabled={guardando} onClick={() => setPagando(v.id)}>Pagar</button>}
               </div>
               {on && (
                 <div style={{ marginTop: 10, padding: "4px 12px 12px", borderRadius: 10, background: "rgba(0,0,0,0.2)" }}>
