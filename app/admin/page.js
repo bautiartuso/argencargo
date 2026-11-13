@@ -9711,8 +9711,10 @@ function LegajoVueloBlock({flight,flightOps,token,onMarcarRecibido}){
       <span style={{fontSize:12.5,color:retenido?"#fca5a5":completo?"#4ade80":"rgba(255,255,255,0.55)"}}>{retenido?"Retenido por Aduana: no hace falta documentación":liberadoRg?"Liberado vía régimen general: sin DSI ni factura del courier":completo?"✓ Documentación completa":recibible?`Factura del courier cargada · falta la DSI de ${faltan.map(o=>o.operation_code).join(", ")} para cerrar`:`Falta la factura del courier de ${faltanFactura.map(o=>o.operation_code).join(", ")}`}</span>
       {recibido
         ?<span style={{height:40,padding:"0 16px",borderRadius:11,display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.4)",color:"#4ade80",fontSize:13,fontWeight:800}}>✓ Recibido en Buenos Aires{flight.received_at?` · ${new Date(flight.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}`:""}</span>
-        :flight.status==="despachado"&&<button type="button" onClick={onMarcarRecibido} disabled={!puedeRecibir} title={!puedeRecibir?"Primero subí la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${puedeRecibir?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:puedeRecibir?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:puedeRecibir?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:puedeRecibir?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
-          <span style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${puedeRecibir?"#4ade80":"rgba(255,255,255,0.3)"}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{""}</span>Marcar recibido en Buenos Aires</button>}
+        :flight.status==="despachado"&&<span style={{display:"inline-flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {!puedeRecibir&&<button type="button" onClick={async()=>{if(await confirmDialog(`Falta la factura del courier de ${faltanFactura.map(o=>o.operation_code).join(", ")}. ¿Marcar ${flight.flight_code} como recibido igual? El desaduanaje queda como está en el presupuesto.`,{confirmText:"Recibir sin la factura"}))onMarcarRecibido(true);}} style={{height:40,padding:"0 14px",borderRadius:11,border:"1px solid rgba(251,191,36,0.45)",background:"rgba(251,191,36,0.08)",color:"#fbbf24",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>No tengo la factura</button>}
+          <button type="button" onClick={()=>onMarcarRecibido()} disabled={!puedeRecibir} title={!puedeRecibir?"Primero subí la factura del courier de cada operación":""} style={{height:40,padding:"0 16px",borderRadius:11,border:`1px solid ${puedeRecibir?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.12)"}`,background:puedeRecibir?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.03)",color:puedeRecibir?"#4ade80":"rgba(255,255,255,0.35)",fontSize:13,fontWeight:800,cursor:puedeRecibir?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${puedeRecibir?"#4ade80":"rgba(255,255,255,0.3)"}`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{""}</span>Marcar recibido en Buenos Aires</button></span>}
     </div>
   </div>;
 }
@@ -10885,15 +10887,17 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       setDeletingFlight(false);
     }
   };
-  const markReceived=async()=>{
+  // sinFactura===true (13/11/2026, FL-0166): Bautista no tiene la factura del courier (DHL) y lo recibe igual;
+  // ya lo confirmó en el bloque de documentación. La factura sigue haciendo falta para cerrar el legajo.
+  const markReceived=async(sinFactura)=>{
     // Sin la factura del courier de cada op no se marca recibido (27/10/2026; antes pedía también
     // la DSI, que ahora solo hace falta para cerrar).
     {const ids=flightOps.map(fo=>fo.operation_id).filter(Boolean);
-      if(ids.length&&!flight.retenido_at){const l=await listarLegajo(await ensureFreshToken(token),{opIds:ids});
+      if(sinFactura!==true&&ids.length&&!flight.retenido_at){const l=await listarLegajo(await ensureFreshToken(token),{opIds:ids});
         if(l.ok){const os=await dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=id,operation_code,channel,service_type`});
           const falt=(Array.isArray(os)?os:[]).filter(llevaLegajo).filter(o=>!l.docs.some(d=>d.operation_id===o.id&&d.tipo==="factura_courier"));
           if(falt.length){alertDialog(`Falta la factura del courier de ${falt.map(o=>o.operation_code).join(", ")}.`);return;}}}}
-    if(!await confirmDialog(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
+    if(sinFactura!==true&&!await confirmDialog(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
     // El status de las ops lo maneja el tracking automático (arribo_argentina, en_aduana, etc).
     // Acá solo marcamos el vuelo como recibido — no tocamos las ops.
