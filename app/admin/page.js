@@ -25,6 +25,7 @@ import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, pr
 import IntelligencePanel from "./components/IntelligencePanel";
 import { armarDatosAdmin, abrirCotizacionPdf } from "../../lib/cotizacion-pdf";
 import TicketsPanel from "./components/TicketsPanel";
+import RepartoPanel from "./components/RepartoPanel";
 import FclContenedoresTab, { FclResumen } from "./components/FclContenedores";
 import { fifoSolfin } from "../../lib/fifo-solfin";
 import { CARRIER_LOGOS } from "../../lib/carrier-logos";
@@ -18672,6 +18673,7 @@ function AdminDashboard({session,onLogout}){
       {key:"agents",label:"Aéreos",p:["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"lclfcl",label:"Marítimo LCL/FCL",p:["M3 7h18v10H3z","M7 7v10","M12 7v10","M17 7v10","M1 19h22"]},
+      {key:"reparto",label:"Reparto",p:["M1 3h15v13H1z","M16 8h4l3 3v5h-7z","M5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z","M18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"]},
       {key:"agp",label:"Pagos internacionales",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
@@ -18718,7 +18720,7 @@ function AdminDashboard({session,onLogout}){
     return()=>{vivo=false;clearInterval(iv);window.removeEventListener("mt_vistos",contar);};
   },[token]);
   // Tarifas pasó a Comercial (11/11/2026) pero muestra costos y márgenes: el empleado no la ve.
-  const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)).map(s=>({...s,items:s.items.filter(i=>i.key!=="tariffs")})):navSectionsAll;
+  const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)).map(s=>({...s,items:s.items.filter(i=>i.key!=="tariffs"&&i.key!=="reparto")})):navSectionsAll;
   // Backward-compat: si en algún lado se referencia 'nav' como flat list
   const nav=navSections.flatMap(s=>s.items);
   const [pendingTasks,setPendingTasks]=useState(0);
@@ -18835,6 +18837,7 @@ function AdminDashboard({session,onLogout}){
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
       {page==="tickets"&&<TicketsPanel token={token} allClients={allClients}/>}
+      {page==="reparto"&&<RepartoPanel token={token}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
       {page==="bot"&&<BotPanel token={token}/>}
       {page==="agents"&&(isEmpleado?<AereosEmpleado token={token}/>:<AgentsPanel token={token}/>)}

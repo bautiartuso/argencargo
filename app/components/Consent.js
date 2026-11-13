@@ -20,7 +20,7 @@ const KEY = "ac_cookie_consent";
 // preguntar ahí es puro ruido: se le pedía consentimiento al propio equipo.
 const PRIVADAS = [
   "/admin", "/portal", "/agente", "/gi", "/kairo", "/feedback",
-  "/track", "/retiro", "/factura", "/presupuesto", "/cotizacion", "/ccfinanciera", "/cc/",
+  "/track", "/retiro", "/reparto", "/factura", "/presupuesto", "/cotizacion", "/ccfinanciera", "/cc/",
 ];
 
 function esPrivada(pathname) {
