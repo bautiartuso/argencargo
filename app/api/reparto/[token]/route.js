@@ -8,6 +8,7 @@
 import { ac, mb, hayMyBox, cargarEnvios, ubicar, origenOficina, ordenar, medir, subirFoto } from "../../../../lib/reparto";
 import { hoyAR } from "../../../../lib/fecha-ar";
 import { anotarCobro } from "../../../../lib/reparto-plata";
+import { enviarPush, hayPush } from "../../../../lib/push-web";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -124,6 +125,16 @@ export async function POST(req, { params }) {
   let viaje = await viajeAbierto(rep);
   const parada = () => viaje?.paradas.find((p) => p.id === b.parada_id && p.estado === "cargado");
 
+  if (b.accion === "push") {
+    // Este teléfono quiere recibir los avisos. Se confirma con una notificación de bienvenida.
+    const sub = b.subscription || {};
+    if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return error("Suscripción inválida");
+    const fila = { repartidor_id: rep.id, endpoint: String(sub.endpoint).slice(0, 1000), p256dh: sub.keys.p256dh, auth: sub.keys.auth };
+    await ac("/reparto_push?on_conflict=endpoint", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(fila) });
+    if (hayPush()) await enviarPush(fila, { title: "Reparto", body: `Listo, ${rep.nombre}: te va a llegar un aviso cuando haya envíos para el día.`, url: `/reparto/${rep.token}`, tag: "alta" });
+    return json({ ok: true });
+  }
+
   if (b.accion === "cargar") {
     const pedidos = (Array.isArray(b.items) ? b.items : []).map((i) => `${i.base}:${i.id}`);
     if (!pedidos.length) return error("Elegí qué cargaste");
@@ -170,6 +181,18 @@ export async function POST(req, { params }) {
     return json(await estado(rep));
   }
 
+  if (b.accion === "reordenar") {
+    // Orden armado a mano arrastrando las paradas.
+    const faltan = viaje.paradas.filter((p) => p.estado === "cargado");
+    const ids = Array.isArray(b.ids) ? b.ids : [];
+    if (ids.length !== faltan.length || !faltan.every((p) => ids.includes(p.id))) return json(await estado(rep));
+    const nuevas = ids.map((id) => faltan.find((p) => p.id === id));
+    nuevas.forEach((p) => { p.orden = -1; });
+    viaje.paradas = [...viaje.paradas.filter((p) => p.estado !== "cargado"), ...nuevas];
+    await replanificar(viaje, { reordenar: false });
+    return json(await estado(rep));
+  }
+
   if (b.accion === "ordenar") {
     await replanificar(viaje, { reordenar: true });
     return json(await estado(rep));
@@ -178,6 +201,8 @@ export async function POST(req, { params }) {
   if (b.accion === "entregar" || b.accion === "no_entregado") {
     const p = parada();
     if (!p) return error("Esa parada ya no está");
+    // Si es la próxima de la lista, el recorrido no cambia y no hace falta volver a medirlo.
+    const eraLaProxima = viaje.paradas.filter((x) => x.estado === "cargado")[0]?.id === p.id;
     await alDia(viaje, rep);
     const ahora = new Date().toISOString();
     const entregado = b.accion === "entregar";
@@ -207,7 +232,7 @@ export async function POST(req, { params }) {
         await ac("/op_communications", { method: "POST", body: JSON.stringify({ operation_id: p.operation_id, type: "note", direction: "in", content: entregado ? `🚚 ${rep.nombre} entregó el envío.\n${cobroTxt}${anotTxt}${foto_path ? "\nCon foto de la entrega (Admin → Reparto)" : ""}${nota ? `\nNota: ${nota}` : ""}` : `🚚 ${rep.nombre} no pudo entregar: ${MOTIVOS[motivo]}${nota ? `\nNota: ${nota}` : ""}` }) });
       }
     }
-    await replanificar(viaje, { reordenar: false });
+    if (!eraLaProxima) await replanificar(viaje, { reordenar: false });
     return json(await estado(rep));
   }
 

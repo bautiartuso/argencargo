@@ -77,3 +77,20 @@ insert into storage.buckets (id, name, public) values ('reparto-fotos', 'reparto
 alter table public.reparto_paradas add column if not exists anotado jsonb;
 alter table public.reparto_paradas add column if not exists costo jsonb;
 alter table public.reparto_viajes add column if not exists pago_metodo text;
+
+-- Mismo día: notificaciones a los repartidores. reparto_push = teléfonos suscriptos;
+-- reparto_avisos = qué ya se avisó (resumen del día y cada envío nuevo), para no repetir.
+create table if not exists public.reparto_push (
+  id uuid primary key default gen_random_uuid(),
+  repartidor_id uuid not null references public.repartidores(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.reparto_avisos (
+  clave text primary key,
+  created_at timestamptz not null default now()
+);
+alter table public.reparto_push enable row level security;
+alter table public.reparto_avisos enable row level security;

@@ -29,6 +29,10 @@ const diaTxt = (iso, hoy) => {
 };
 const metodoTxt = (m) => (m === "transferencia" ? "transferencia" : m === "crypto" || m === "cripto" ? "cripto" : m === "efectivo" ? "efectivo" : "");
 
+// Clave pública de las notificaciones (la misma del resto del sistema).
+const CLAVE_PUSH = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+const claveBinaria = (b64) => { const t = (b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"); return Uint8Array.from(atob(t), (c) => c.charCodeAt(0)); };
+
 // ── Íconos (trazo) ──
 const Ic = ({ d, s = 20, w = 2 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{[].concat(d).map((p, i) => <path key={i} d={p} />)}</svg>;
 const I = {
@@ -49,6 +53,11 @@ const I = {
   sol: ["M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z", "M12 1v2", "M12 21v2", "M4.2 4.2l1.4 1.4", "M18.4 18.4l1.4 1.4", "M1 12h2", "M21 12h2", "M4.2 19.8l1.4-1.4", "M18.4 5.6l1.4-1.4"],
   luna: ["M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"],
   enviar: ["M22 2L11 13", "M22 2l-7 20-4-9-9-4 20-7z"],
+  ampliar: ["M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7"],
+  achicar: ["M4 14h6v6", "M20 10h-6V4", "M14 10l7-7", "M3 21l7-7"],
+  agarre: ["M4 9h16", "M4 15h16"],
+  campana: ["M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9", "M13.7 21a2 2 0 0 1-3.4 0"],
+  cuentas: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M8 13h8", "M8 17h5"],
 };
 
 // ── Mapa (Leaflet, cargado desde el CDN solo en esta pantalla) ──
@@ -71,43 +80,65 @@ function cargarLeaflet() {
 
 // puntos: [{ id, lat, lng, texto, color, apagado }]  ·  linea: [[lat,lng]…]  ·  oficina: {lat,lng}
 function Mapa({ puntos, linea, oficina, alto = 230, onTocar }) {
-  const caja = useRef(null), mapa = useRef(null), capa = useRef(null);
+  const caja = useRef(null), mapa = useRef(null), capa = useRef(null), teselas = useRef(null), limites = useRef([]);
   const [falla, setFalla] = useState(false);
+  const [grande, setGrande] = useState(false);
+  const [credito, setCredito] = useState(false);
+  const encuadrar = () => {
+    const m = mapa.current, l = limites.current;
+    if (!m) return;
+    if (l.length > 1) m.fitBounds(l, { padding: [34, 34], maxZoom: 15, animate: false });
+    else if (l.length === 1) m.setView(l[0], 13, { animate: false });
+  };
   const firma = JSON.stringify([puntos.map((p) => [p.id, p.lat, p.lng, p.texto, p.color, p.apagado]), linea?.length, oficina?.lat]);
   useEffect(() => {
     let vivo = true;
     cargarLeaflet().then((L) => {
       if (!vivo || !caja.current) return;
       if (!mapa.current) {
-        // En el teléfono el mapa queda quieto: arrastrar el dedo encima tiene que bajar la pantalla, no mover el
-        // mapa. Se acerca y se aleja con los botones + y −.
-        const tactil = window.matchMedia?.("(pointer: coarse)").matches;
-        mapa.current = L.map(caja.current, { zoomControl: true, attributionControl: true, dragging: !tactil, touchZoom: !tactil, doubleClickZoom: !tactil, scrollWheelZoom: false, boxZoom: false, keyboard: false }).setView([oficina?.lat ?? -34.6, oficina?.lng ?? -58.44], 11);
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(mapa.current);
+        // Chico, el mapa queda quieto (arrastrar encima baja la pantalla). Agrandado se mueve y se acerca con los dedos.
+        mapa.current = L.map(caja.current, { zoomControl: false, attributionControl: false, dragging: false, touchZoom: false, doubleClickZoom: false, scrollWheelZoom: false, boxZoom: false, keyboard: false, zoomSnap: 0.25 }).setView([oficina?.lat ?? -34.6, oficina?.lng ?? -58.44], 11);
+        teselas.current = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(mapa.current);
         capa.current = L.layerGroup().addTo(mapa.current);
       }
       capa.current.clearLayers();
-      const limites = [];
-      if (linea?.length > 1) L.polyline(linea, { color: "#2563EB", weight: 4.5, opacity: 0.8 }).addTo(capa.current);
+      const l = [];
+      if (linea?.length > 1) L.polyline(linea, { color: "#2563EB", weight: 5, opacity: 0.85 }).addTo(capa.current);
       if (oficina?.lat != null) {
         L.marker([oficina.lat, oficina.lng], { icon: L.divIcon({ className: "", html: `<div style="width:26px;height:26px;border-radius:8px;background:#111827;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font:800 11px system-ui">OF</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(capa.current);
-        limites.push([oficina.lat, oficina.lng]);
+        l.push([oficina.lat, oficina.lng]);
       }
       for (const p of puntos) {
         if (p.lat == null || p.lng == null) continue;
         const m = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: "", html: `<div style="min-width:30px;height:30px;padding:0 6px;box-sizing:border-box;border-radius:15px;background:${p.apagado ? "#9CA3AF" : p.color};border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;color:#fff;font:800 13px system-ui">${p.texto}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }) }).addTo(capa.current);
         if (onTocar) m.on("click", () => onTocar(p.id));
-        limites.push([p.lat, p.lng]);
+        l.push([p.lat, p.lng]);
       }
-      if (limites.length > 1) mapa.current.fitBounds(limites, { padding: [34, 34], maxZoom: 15 });
-      else if (limites.length === 1) mapa.current.setView(limites[0], 13);
+      limites.current = l;
+      encuadrar();
       setTimeout(() => mapa.current && mapa.current.invalidateSize(), 60);
     }).catch(() => vivo && setFalla(true));
     return () => { vivo = false; };
   }, [firma]);
+  useEffect(() => {
+    const m = mapa.current;
+    if (!m) return;
+    const f = grande ? "enable" : "disable";
+    m.dragging[f](); m.doubleClickZoom[f](); m.scrollWheelZoom[f]();
+    if (m.touchZoom) m.touchZoom[f]();
+    const t = setTimeout(() => { m.invalidateSize(); encuadrar(); }, 260);
+    return () => clearTimeout(t);
+  }, [grande]);
   useEffect(() => () => { if (mapa.current) { mapa.current.remove(); mapa.current = null; } }, []);
   if (falla) return null;
-  return <div ref={caja} style={{ height: alto, borderRadius: 16, overflow: "hidden", background: LINEA, border: `1px solid ${LINEA}`, zIndex: 0, position: "relative" }} />;
+  return (
+    <div style={{ position: "relative", height: grande ? "72dvh" : alto, borderRadius: 16, overflow: "hidden", background: LINEA, border: `1px solid ${LINEA}`, zIndex: 0, transition: "height 220ms ease" }}>
+      <div ref={caja} style={{ position: "absolute", inset: 0 }} />
+      <button onClick={() => setGrande((g) => !g)} aria-label={grande ? "Achicar el mapa" : "Agrandar el mapa"} className="rp-tocar" style={{ position: "absolute", top: 10, right: 10, zIndex: 1100, width: 42, height: 42, borderRadius: 12, border: "none", background: CARTA, color: TINTA, boxShadow: "0 2px 8px rgba(0,0,0,.3)", display: "flex", alignItems: "center", justifyContent: "center" }}><Ic d={grande ? I.achicar : I.ampliar} s={19} /></button>
+      <button onClick={() => setCredito((c) => !c)} aria-label="Créditos del mapa" className="rp-tocar" style={{ position: "absolute", right: 8, bottom: 8, zIndex: 1100, width: 20, height: 20, borderRadius: 10, border: "none", padding: 0, background: "rgba(17,24,39,.4)", color: "#fff", fontSize: 11, fontWeight: 800, fontFamily: "inherit" }}>i</button>
+      {credito && <div style={{ position: "absolute", right: 34, bottom: 8, zIndex: 1100, padding: "3px 8px", borderRadius: 8, background: "rgba(17,24,39,.8)", color: "#fff", fontSize: 11, fontWeight: 600 }}>© OpenStreetMap</div>}
+    </div>
+  );
 }
 
 // ── Piezas ──
@@ -118,13 +149,14 @@ const Marca = ({ base, codigo }) => (
   </span>
 );
 
-function Cobro({ d }) {
-  if (d.pagado) return <span className="rp-pill" style={OK}><Ic d={I.ok} s={14} w={3} />Ya está pago</span>;
-  const m = metodoTxt(d.metodo);
-  // Si transfiere, el repartidor no le cobra nada.
-  if (m === "transferencia" || m === "cripto") return <span className="rp-pill" style={{ background: FONDO, color: TINTA }}>{usd(d.saldo)} · paga por {m}</span>;
-  return <span className="rp-pill" style={AVISO}>Cobrar {usd(d.saldo)}</span>;
+// El repartidor solo cobra efectivo: si ya está pago o el cliente transfiere, no le cobra nada.
+const noCobra = (d) => !!d.pagado || ["transferencia", "crypto", "cripto"].includes(d.metodo);
+function Cobro({ d, grande }) {
+  const medida = grande ? { display: "flex", width: "100%", boxSizing: "border-box", justifyContent: "center", height: 50, borderRadius: 14, fontSize: 19 } : {};
+  if (noCobra(d)) return <span className="rp-pill" style={{ ...OK, ...medida }}><Ic d={I.ok} s={grande ? 19 : 14} w={3} />No cobrar nada</span>;
+  return <span className="rp-pill" style={{ ...MAL, ...medida }}>Cobrar {usd(d.saldo)}</span>;
 }
+const miles = (t) => { const n = String(t).replace(/\D/g, ""); return n ? Number(n).toLocaleString("es-AR") : ""; };
 
 function Hoja({ titulo, onCerrar, children }) {
   useEffect(() => { const o = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = o; }; }, []);
@@ -148,19 +180,19 @@ function Hoja({ titulo, onCerrar, children }) {
 // La foto de la entrega queda como comprobante.
 function HojaEntregar({ parada, onCerrar, onGuardar, ocupado }) {
   const d = parada.datos;
-  const transfiere = !d.pagado && ["transferencia", "crypto", "cripto"].includes(d.metodo);
+  const sinCobro = noCobra(d);
   const [usdTxt, setUsdTxt] = useState("");
   const [arsTxt, setArsTxt] = useState("");
-  const [nada, setNada] = useState(transfiere);
+  const [nada, setNada] = useState(false);
   const [nota, setNota] = useState("");
   const [foto, setFoto] = useState(null); // { vista, base64 }
   const [leyendo, setLeyendo] = useState(false);
   const archivo = useRef(null);
   const num = (t) => Number(String(t).replace(/\./g, "").replace(",", ".")) || 0;
   const nUsd = num(usdTxt), nArs = num(arsTxt);
-  const cobros = d.pagado || nada ? [] : [nUsd > 0 && { monto: nUsd, moneda: "USD", metodo: "efectivo" }, nArs > 0 && { monto: nArs, moneda: "ARS", metodo: "efectivo" }].filter(Boolean);
-  const puede = d.pagado || nada || cobros.length > 0;
-  const deMas = !d.pagado && !nada && nUsd > Number(d.saldo || 0) + Math.max(20, Number(d.saldo || 0) * 0.2);
+  const cobros = sinCobro || nada ? [] : [nUsd > 0 && { monto: nUsd, moneda: "USD", metodo: "efectivo" }, nArs > 0 && { monto: nArs, moneda: "ARS", metodo: "efectivo" }].filter(Boolean);
+  const puede = sinCobro || nada || cobros.length > 0;
+  const deMas = !sinCobro && !nada && nUsd > Number(d.saldo || 0) + Math.max(20, Number(d.saldo || 0) * 0.2);
   const elegirFoto = async (e) => {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -177,17 +209,17 @@ function HojaEntregar({ parada, onCerrar, onGuardar, ocupado }) {
     <label style={{ display: "flex", alignItems: "center", gap: 12, height: 62, padding: "0 16px", marginBottom: 10, border: `1.5px solid ${LINEA}`, borderRadius: 14, background: "var(--campo)" }}>
       <span style={{ width: 70, flexShrink: 0, fontSize: 15, fontWeight: 700, color: GRIS }}>{rotulo}</span>
       <span style={{ fontSize: 20, fontWeight: 800, color: GRIS }}>{signo}</span>
-      <input value={valor} onChange={(e) => { set(e.target.value.replace(/[^\d.,]/g, "")); setNada(false); }} inputMode="decimal" placeholder="0" aria-label={`Cobrado en ${rotulo.toLowerCase()}`} style={{ flex: 1, minWidth: 0, height: 56, fontSize: 24, fontWeight: 800, border: "none", outline: "none", background: "transparent", color: TINTA, fontFamily: "inherit", fontVariantNumeric: "tabular-nums", textAlign: "right" }} />
+      <input value={valor} onChange={(e) => { set(miles(e.target.value)); setNada(false); }} inputMode="numeric" placeholder="0" aria-label={`Cobrado en ${rotulo.toLowerCase()}`} style={{ flex: 1, minWidth: 0, height: 56, fontSize: 24, fontWeight: 800, border: "none", outline: "none", background: "transparent", color: TINTA, fontFamily: "inherit", fontVariantNumeric: "tabular-nums", textAlign: "right" }} />
     </label>
   );
   return (
     <Hoja titulo={`Entregar a ${d.cliente}`} onCerrar={onCerrar}>
-      {d.pagado ? (
-        <div style={{ padding: "14px 16px", borderRadius: 14, ...OK, fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Ya está pago. No hay que cobrar nada.</div>
+      {sinCobro ? (
+        <div style={{ padding: "14px 16px", borderRadius: 14, ...OK, fontSize: 16, fontWeight: 700, marginBottom: 14 }}>{d.pagado ? "Ya está pago. No hay que cobrar nada." : "Paga por transferencia. No hay que cobrar nada."}</div>
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
-            <span style={{ fontSize: 14, color: GRIS, fontWeight: 700 }}>{transfiere ? "Paga por transferencia" : "Debe"}</span>
+            <span style={{ fontSize: 14, color: GRIS, fontWeight: 700 }}>Debe</span>
             <span style={{ fontSize: 26, fontWeight: 800, color: TINTA, fontVariantNumeric: "tabular-nums" }}>{usd(d.saldo)}</span>
           </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: GRIS, margin: "0 2px 8px" }}>¿Cuánto pagó?</div>
@@ -230,6 +262,103 @@ function HojaNoPude({ parada, onCerrar, onGuardar, onQuitar, ocupado }) {
   );
 }
 
+// Lista de paradas que faltan. La próxima está desplegada; las demás se abren al tocarlas. Para cambiar
+// el orden se arrastra desde las dos rayitas de la derecha.
+function Paradas({ faltan, llegadas, hoy, quien, ocupado, onEntregar, onNoPude, onReordenar }) {
+  const [abierta, setAbierta] = useState(null);
+  const [orden, setOrden] = useState(null); // ids en el orden que se está armando al arrastrar
+  const [agarrada, setAgarrada] = useState(null);
+  const filas = useRef({});
+  const lista = orden ? orden.map((id) => faltan.find((p) => p.id === id)).filter(Boolean) : faltan;
+  const idAbierta = orden ? null : abierta && lista.some((p) => p.id === abierta) ? abierta : lista[0]?.id;
+
+  const empezar = (e, id) => {
+    if (ocupado) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    setAgarrada(id);
+    setOrden(lista.map((p) => p.id));
+  };
+  const mover = (e) => {
+    if (!agarrada) return;
+    const y = e.clientY;
+    setOrden((o) => {
+      if (!o) return o;
+      const desde = o.indexOf(agarrada);
+      let hasta = desde;
+      o.forEach((id, k) => {
+        const r = filas.current[id]?.getBoundingClientRect();
+        if (!r) return;
+        const medio = r.top + r.height / 2;
+        if (k < desde && y < medio) hasta = Math.min(hasta, k);
+        if (k > desde && y > medio) hasta = Math.max(hasta, k);
+      });
+      if (hasta === desde) return o;
+      const n = [...o];
+      n.splice(desde, 1);
+      n.splice(hasta, 0, agarrada);
+      return n;
+    });
+    if (y < 110) window.scrollBy(0, -14); else if (y > window.innerHeight - 160) window.scrollBy(0, 14);
+  };
+  const soltar = async () => {
+    if (!agarrada) return;
+    setAgarrada(null);
+    const o = orden;
+    if (o && o.join() !== faltan.map((p) => p.id).join()) await onReordenar(o);
+    setOrden(null);
+    setAbierta(null);
+  };
+
+  return lista.map((p, i) => {
+    const x = p.datos, eta = llegadas[p.id], fin = finFranja(x.franja), tarde = fin != null && eta > fin, abierto = idAbierta === p.id;
+    const tel = soloNumeros(x.telefono);
+    const destino = encodeURIComponent([x.calle, x.localidad, "Buenos Aires"].filter(Boolean).join(", "));
+    const desde = Math.round((eta || 0) / 5) * 5;
+    const aviso = `¡Hola ${String(x.cliente || "").split(" ")[0]}! Soy ${quien}, de ${p.base === "mybox" ? "MyBox" : "Argencargo"}.\n\nEstoy yendo a tu domicilio con tu carga. Llego entre las ${hhmm(desde)} y las ${hhmm(desde + 20)}.`;
+    return (
+      <article key={p.id} id={`parada-${p.id}`} ref={(el) => { filas.current[p.id] = el; }} style={{ background: CARTA, borderRadius: 18, marginBottom: 10, boxShadow: agarrada === p.id ? "0 10px 28px rgba(0,0,0,.28)" : "var(--sombra)", border: `2px solid ${abierto || agarrada === p.id ? TINTA : "transparent"}`, position: "relative", zIndex: agarrada === p.id ? 5 : "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 8px 12px 14px" }}>
+          <button onClick={() => setAbierta(abierto ? null : p.id)} aria-expanded={abierto} className="rp-tocar" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, background: "none", border: "none", padding: 0, textAlign: "left", fontFamily: "inherit", color: TINTA }}>
+            <span style={{ width: 40, height: 40, borderRadius: 20, background: colorZona(x.zona), color: "#fff", fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 19, fontWeight: 800, color: tarde ? ROJO : TINTA, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>≈ {hhmm(eta)}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: tarde ? ROJO : GRIS, whiteSpace: "nowrap" }}>{x.franja ? `de ${franjaCorta(x.franja)} hs` : "sin horario"}{x.dia && x.dia !== hoy ? ` · ${diaTxt(x.dia, hoy).split(" · ")[0].toLowerCase()}` : ""}</span>
+              </span>
+              <span style={{ display: "block", fontSize: abierto ? 19 : 15.5, fontWeight: 800, lineHeight: 1.2, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: abierto ? "normal" : "nowrap" }}>{x.cliente}</span>
+              {!abierto && <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: GRIS, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.calle}{x.localidad ? ` · ${x.localidad}` : ""}</span>}
+              {!abierto && !noCobra(x) && <span style={{ display: "inline-block", marginTop: 5, fontSize: 13.5, fontWeight: 800, color: "var(--mal-t)", background: "var(--mal-f)", padding: "3px 9px", borderRadius: 8, fontVariantNumeric: "tabular-nums" }}>Cobrar {usd(x.saldo)}</span>}
+            </span>
+            {!abierto && noCobra(x) && <span style={{ width: 28, height: 28, borderRadius: 14, ...OK, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Ic d={I.ok} s={15} w={3} /></span>}
+          </button>
+          {lista.length > 1 && <span role="button" tabIndex={-1} aria-label="Arrastrar para cambiar el orden" onPointerDown={(e) => empezar(e, p.id)} onPointerMove={mover} onPointerUp={soltar} onPointerCancel={soltar} style={{ width: 44, height: 48, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: GRIS, touchAction: "none", cursor: "grab", userSelect: "none", WebkitUserSelect: "none" }}><Ic d={I.agarre} s={24} w={2.4} /></span>}
+        </div>
+        {abierto && (
+          <div style={{ padding: "2px 16px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: TINTA, lineHeight: 1.3 }}>{x.calle}{x.piso ? <span style={{ color: GRIS, fontWeight: 600 }}> · {x.piso}</span> : null}</div>
+              <Marca base={p.base} codigo={p.codigo} />
+            </div>
+            <div style={{ fontSize: 14.5, color: GRIS, fontWeight: 600, marginTop: 2 }}>{[x.localidad, x.cp ? `CP ${x.cp}` : "", `${x.bultos} ${x.bultos === 1 ? "bulto" : "bultos"}`, x.kg ? `${plata(x.kg, x.kg % 1 ? 1 : 0)} kg` : ""].filter(Boolean).join(" · ")}{p.lat == null ? " · sin ubicar en el mapa" : ""}</div>
+            {x.notas && <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, background: FONDO, fontSize: 15, fontWeight: 600, color: TINTA, lineHeight: 1.35 }}>{x.notas}</div>}
+            <div style={{ margin: "12px 0" }}><Cobro d={x} grande /></div>
+            {!noCobra(x) && x.llega_con && <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 700, color: AMBAR }}>Paga con {x.llega_con.moneda === "ARS" ? "$" : "USD"} {plata(x.llega_con.monto)}: llevá cambio</div>}
+            {p.cambio && <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 12, ...MAL, fontSize: 14.5, fontWeight: 700 }}>La oficina cambió este envío. Consultá antes de entregarlo.</div>}
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${destino}`} target="_blank" rel="noreferrer" className="rp-tocar rp-link"><Ic d={I.mapa} s={21} /><span>Cómo llegar</span></a>
+              {tel && <a href={`tel:+${tel}`} className="rp-tocar rp-link"><Ic d={I.tel} s={21} /><span>Llamar</span></a>}
+              {tel && <a href={`https://wa.me/${tel}?text=${encodeURIComponent(aviso)}`} target="_blank" rel="noreferrer" className="rp-tocar rp-link"><Ic d={I.enviar} s={21} /><span>Avisar que voy</span></a>}
+            </div>
+            <button disabled={ocupado} onClick={() => onEntregar(p)} className="rp-tocar" style={{ width: "100%", height: 56, borderRadius: 15, border: "none", background: VERDE, color: "#fff", fontSize: 18, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Ic d={I.ok} w={3} />Entregado</button>
+            <button disabled={ocupado} onClick={() => onNoPude(p)} className="rp-tocar" style={{ width: "100%", height: 46, marginTop: 6, borderRadius: 14, border: "none", background: "transparent", color: GRIS, fontSize: 15, fontWeight: 700, fontFamily: "inherit" }}>No pude entregar</button>
+          </div>
+        )}
+      </article>
+    );
+  });
+}
+
 export default function Reparto({ params }) {
   const { token } = params;
   const [d, setD] = useState(null);
@@ -255,6 +384,24 @@ export default function Reparto({ params }) {
     const m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute("content", tema === "oscuro" ? "#0B1220" : "#F3F4F6");
   }, [tema]);
+  // Avisos al teléfono: a las 9 si hay envíos para el día, y cuando se suma uno para hoy.
+  const [avisos, setAvisos] = useState(null); // null = este teléfono no puede · "no" · "si"
+  useEffect(() => {
+    if (!CLAVE_PUSH || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
+    navigator.serviceWorker.register("/sw-reparto.js").then((reg) => reg.pushManager.getSubscription()).then((sub) => setAvisos(sub && Notification.permission === "granted" ? "si" : "no")).catch(() => {});
+  }, []);
+  const activarAvisos = async () => {
+    if (avisos === "si") return avisar("Los avisos ya están activados");
+    try {
+      if ((await Notification.requestPermission()) !== "granted") return avisar("Permití las notificaciones desde los ajustes del teléfono");
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: claveBinaria(CLAVE_PUSH) }));
+      const r = await fetch(`/api/reparto/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "push", subscription: sub.toJSON() }) });
+      if (!r.ok) throw new Error();
+      setAvisos("si");
+      avisar("Avisos activados");
+    } catch { avisar("No se pudieron activar los avisos"); }
+  };
   const cambiarTema = () => setTema((t) => { const n = t === "oscuro" ? "claro" : "oscuro"; try { localStorage.setItem("reparto-tema", n); } catch {} return n; });
 
   const traer = useCallback(async () => {
@@ -339,6 +486,7 @@ export default function Reparto({ params }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           {d.repartidor.prueba && <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", padding: "5px 9px", borderRadius: 8, ...AVISO }}>PRUEBA</span>}
+          {avisos && <button onClick={activarAvisos} aria-label={avisos === "si" ? "Avisos activados" : "Activar avisos"} className="rp-tocar" style={{ width: 44, height: 44, borderRadius: 22, border: `1.5px solid ${avisos === "si" ? VERDE : LINEA}`, background: CARTA, color: avisos === "si" ? VERDE : TINTA, display: "flex", alignItems: "center", justifyContent: "center" }}><Ic d={I.campana} s={20} /></button>}
           <button onClick={cambiarTema} aria-label={tema === "oscuro" ? "Pasar a modo claro" : "Pasar a modo oscuro"} className="rp-tocar" style={{ width: 44, height: 44, borderRadius: 22, border: `1.5px solid ${LINEA}`, background: CARTA, color: TINTA, display: "flex", alignItems: "center", justifyContent: "center" }}><Ic d={tema === "oscuro" ? I.sol : I.luna} s={20} /></button>
         </div>
       </header>
@@ -359,7 +507,7 @@ export default function Reparto({ params }) {
                 )}
                 {dias.map((dia) => (
                   <section key={dia || "sin"}>
-                    <h3 style={{ margin: "18px 4px 8px", fontSize: 13, fontWeight: 800, color: dia && dia < d.hoy ? ROJO : GRIS, letterSpacing: "0.02em" }}>{diaTxt(dia, d.hoy)}</h3>
+                    <h3 style={{ margin: "20px 4px 10px", fontSize: 16, fontWeight: 800, color: dia && dia < d.hoy ? ROJO : TINTA, display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}><span>{diaTxt(dia, d.hoy)}</span><span style={{ fontSize: 13, fontWeight: 700, color: GRIS }}>{porDia[dia].length} {porDia[dia].length === 1 ? "envío" : "envíos"}</span></h3>
                     {porDia[dia].sort((a, b) => (inicioFranja(a.franja) ?? 9999) - (inicioFranja(b.franja) ?? 9999)).map((e) => {
                       const on = sel.has(clave(e));
                       return (
@@ -367,7 +515,7 @@ export default function Reparto({ params }) {
                           <span style={{ width: 30, height: 30, borderRadius: 15, flexShrink: 0, marginTop: 2, border: `2px solid ${on ? VERDE : "var(--linea2)"}`, background: on ? VERDE : CARTA, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>{on && <Ic d={I.ok} s={17} w={3.2} />}</span>
                           <span style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "6px 8px", alignItems: "center", marginBottom: 8 }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 17, fontWeight: 800, color: TINTA, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}><Ic d={I.reloj} s={17} w={2.4} />{e.franja ? `${franjaCorta(e.franja)} hs` : "Sin horario"}</span>
+                              <span className="rp-hora"><Ic d={I.reloj} s={16} w={2.4} />{e.franja ? `${franjaCorta(e.franja)} hs` : "Sin horario"}</span>
                               <Cobro d={e} />
                             </span>
                             <span style={{ display: "block", fontSize: 16.5, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.cliente}</span>
@@ -403,51 +551,7 @@ export default function Reparto({ params }) {
                   {faltan.length > 1 && <button disabled={ocupado} onClick={() => accion({ accion: "ordenar" })} className="rp-tocar rp-chip" style={{ background: CARTA, color: TINTA, borderColor: LINEA }}><Ic d={I.orden} s={15} />Ordenar</button>}
                 </div>
 
-                {faltan.map((p, i) => {
-                  const x = p.datos, eta = llegadas[p.id], fin = finFranja(x.franja), tarde = fin != null && eta > fin;
-                  const tel = soloNumeros(x.telefono);
-                  const destino = encodeURIComponent([x.calle, x.localidad, "Buenos Aires"].filter(Boolean).join(", "));
-                  return (
-                    <article key={p.id} id={`parada-${p.id}`} style={{ background: CARTA, borderRadius: 18, padding: 16, marginBottom: 12, boxShadow: "var(--sombra)", border: i === 0 ? `2px solid ${TINTA}` : "2px solid transparent" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                        <span style={{ width: 40, height: 40, borderRadius: 20, background: colorZona(x.zona), color: "#fff", fontSize: 18, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 20, fontWeight: 800, color: tarde ? ROJO : TINTA, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>≈ {hhmm(eta)}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: tarde ? ROJO : GRIS }}>{x.franja ? `Lo esperan de ${franjaCorta(x.franja)}` : "Sin horario"}{x.dia && x.dia !== d.hoy ? ` · ${diaTxt(x.dia, d.hoy).split(" · ")[0].toLowerCase()}` : ""}</div>
-                        </div>
-                        {faltan.length > 1 && (
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button disabled={ocupado || i === 0} onClick={() => accion({ accion: "mover", parada_id: p.id, hacia: "arriba" })} aria-label="Subir en la ruta" className="rp-tocar rp-flecha" style={{ opacity: i === 0 ? 0.3 : 1 }}><Ic d={I.arriba} /></button>
-                            <button disabled={ocupado || i === faltan.length - 1} onClick={() => accion({ accion: "mover", parada_id: p.id, hacia: "abajo" })} aria-label="Bajar en la ruta" className="rp-tocar rp-flecha" style={{ opacity: i === faltan.length - 1 ? 0.3 : 1 }}><Ic d={I.abajo} /></button>
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-                        <div style={{ fontSize: 19, fontWeight: 800, color: TINTA, lineHeight: 1.2 }}>{x.cliente}</div>
-                        <Marca base={p.base} codigo={p.codigo} />
-                      </div>
-                      <div style={{ fontSize: 17, fontWeight: 600, color: TINTA, marginTop: 6, lineHeight: 1.3 }}>{x.calle}{x.piso ? <span style={{ color: GRIS, fontWeight: 600 }}> · {x.piso}</span> : null}</div>
-                      <div style={{ fontSize: 14.5, color: GRIS, fontWeight: 600, marginTop: 2 }}>{[x.localidad, x.cp ? `CP ${x.cp}` : ""].filter(Boolean).join(" · ")}{p.lat == null ? " · sin ubicar en el mapa" : ""}</div>
-                      {x.notas && <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 12, background: FONDO, fontSize: 15, fontWeight: 600, color: TINTA, lineHeight: 1.35 }}>{x.notas}</div>}
-
-                      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: "12px 0" }}>
-                        <Cobro d={x} />
-                        <span style={{ fontSize: 13.5, fontWeight: 700, color: GRIS }}>{x.bultos} {x.bultos === 1 ? "bulto" : "bultos"}{x.kg ? ` · ${plata(x.kg, x.kg % 1 ? 1 : 0)} kg` : ""}</span>
-                      </div>
-                      {!x.pagado && x.llega_con && <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 700, color: AMBAR }}>Paga con {x.llega_con.moneda === "ARS" ? "$" : "USD"} {plata(x.llega_con.monto)}: llevá cambio</div>}
-                      {p.cambio && <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 12, ...MAL, fontSize: 14.5, fontWeight: 700 }}>La oficina cambió este envío. Consultá antes de entregarlo.</div>}
-
-                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${destino}`} target="_blank" rel="noreferrer" className="rp-tocar rp-link"><Ic d={I.mapa} s={21} /><span>Cómo llegar</span></a>
-                        {tel && <a href={`tel:+${tel}`} className="rp-tocar rp-link"><Ic d={I.tel} s={21} /><span>Llamar</span></a>}
-                        {tel && <a href={`https://wa.me/${tel}?text=${encodeURIComponent(`¡Hola ${String(x.cliente || "").split(" ")[0]}! Soy ${d.repartidor.nombre}, de ${p.base === "mybox" ? "MyBox" : "Argencargo"}. Estoy yendo para tu domicilio con tu pedido${eta != null ? `, llego aproximadamente a las ${hhmm(eta)}` : ""}.`)}`} target="_blank" rel="noreferrer" className="rp-tocar rp-link"><Ic d={I.enviar} s={21} /><span>Avisar que voy</span></a>}
-                      </div>
-                      <button disabled={ocupado} onClick={() => setHoja({ tipo: "entregar", parada: p })} className="rp-tocar" style={{ width: "100%", height: 56, borderRadius: 15, border: "none", background: VERDE, color: "#fff", fontSize: 18, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Ic d={I.ok} w={3} />Entregado</button>
-                      <button disabled={ocupado} onClick={() => setHoja({ tipo: "nopude", parada: p })} className="rp-tocar" style={{ width: "100%", height: 46, marginTop: 6, borderRadius: 14, border: "none", background: "transparent", color: GRIS, fontSize: 15, fontWeight: 700, fontFamily: "inherit" }}>No pude entregar</button>
-                    </article>
-                  );
-                })}
+                <Paradas faltan={faltan} llegadas={llegadas} hoy={d.hoy} quien={d.repartidor.nombre} ocupado={ocupado} onEntregar={(p) => setHoja({ tipo: "entregar", parada: p })} onNoPude={(p) => setHoja({ tipo: "nopude", parada: p })} onReordenar={(ids) => accion({ accion: "reordenar", ids })} />
 
                 {faltan.length === 0 && (
                   <button disabled={ocupado} onClick={async () => { const j = await accion({ accion: "terminar" }); if (j?.cierre) { setHoja({ tipo: "cierre", cierre: j.cierre }); setTab("plata"); } }} className="rp-tocar" style={{ width: "100%", height: 60, borderRadius: 16, border: "none", background: FUERTE, color: SOBRE, fontSize: 18, fontWeight: 800, fontFamily: "inherit", marginBottom: 14 }}>{ocupado ? "Cerrando…" : "Terminar viaje"}</button>
@@ -516,7 +620,7 @@ export default function Reparto({ params }) {
       )}
 
       <nav style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 600, background: "var(--barra)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${LINEA}`, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "6px 8px calc(6px + env(safe-area-inset-bottom))" }}>
-        {[["cargar", "Cargar", I.caja, pend.length], ["ruta", "Ruta", I.ruta, faltan.length], ["plata", "Plata", I.plata, 0]].map(([k, l, ic, n]) => (
+        {[["cargar", "Cargar", I.caja, pend.length], ["ruta", "Ruta", I.ruta, faltan.length], ["plata", "Cuentas", I.cuentas, 0]].map(([k, l, ic, n]) => (
           <button key={k} onClick={() => { setTab(k); window.scrollTo(0, 0); }} aria-current={tab === k ? "page" : undefined} className="rp-tocar" style={{ height: 56, border: "none", background: "transparent", color: tab === k ? TINTA : "#9CA3AF", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, position: "relative" }}>
             <span style={{ position: "relative" }}><Ic d={ic} s={24} w={tab === k ? 2.4 : 2} />{n > 0 && <span style={{ position: "absolute", top: -6, right: -13, minWidth: 18, height: 18, padding: "0 5px", boxSizing: "border-box", borderRadius: 9, background: k === "ruta" ? VERDE : FUERTE, color: k === "ruta" ? "#fff" : SOBRE, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{n}</span>}</span>
             <span style={{ fontSize: 12, fontWeight: tab === k ? 800 : 600 }}>{l}</span>
@@ -559,12 +663,11 @@ function Pantalla({ children }) {
       <style dangerouslySetInnerHTML={{ __html: `
         html{--tinta:#111827;--tinta2:#374151;--gris:#6B7280;--linea:#E5E7EB;--linea2:#D1D5DB;--fondo:#F3F4F6;--carta:#FFFFFF;--campo:#FFFFFF;--fuerte:#111827;--sobre:#FFFFFF;--apagado:#D1D5DB;--ambar:#B45309;--rojo:#DC2626;--barra:rgba(255,255,255,.96);--ok-f:#DCFCE7;--ok-t:#166534;--av-f:#FEF3C7;--av-t:#92400E;--mal-f:#FEE2E2;--mal-t:#991B1B;--sombra:0 1px 2px rgba(17,24,39,.06);color-scheme:light}
         html[data-rp-tema="oscuro"]{--tinta:#F9FAFB;--tinta2:#D1D5DB;--gris:#9CA3AF;--linea:#2B3648;--linea2:#4B5563;--fondo:#0B1220;--carta:#172033;--campo:#0F1727;--fuerte:#F9FAFB;--sobre:#111827;--apagado:#374151;--ambar:#FBBF24;--rojo:#F87171;--barra:rgba(15,23,39,.95);--ok-f:rgba(34,197,94,.18);--ok-t:#86EFAC;--av-f:rgba(251,191,36,.16);--av-t:#FCD34D;--mal-f:rgba(248,113,113,.18);--mal-t:#FCA5A5;--sombra:0 0 0 1px rgba(255,255,255,.04);color-scheme:dark}
-        html[data-rp-tema="oscuro"] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.88) saturate(.7)}
-        html[data-rp-tema="oscuro"] .leaflet-control-attribution{background:rgba(15,23,39,.75);color:#9CA3AF}
-        html[data-rp-tema="oscuro"] .leaflet-control-attribution a{color:#9CA3AF}
+        .leaflet-tile-pane{filter:saturate(.45) contrast(1.06) brightness(1.02)}
+        html[data-rp-tema="oscuro"] .leaflet-tile-pane{filter:grayscale(1) invert(1) contrast(.82) brightness(1.15)}
         html,body{background:${FONDO}}
         .leaflet-container{touch-action:pan-y}
-        .leaflet-bar a{width:34px!important;height:34px!important;line-height:34px!important}
+
         input::placeholder{color:var(--gris);opacity:.8}
         .rp-tocar{cursor:pointer;transition:transform 90ms ease,opacity 120ms ease;-webkit-user-select:none;user-select:none;touch-action:manipulation}
         .rp-tocar:active{transform:scale(0.97)}
@@ -574,6 +677,7 @@ function Pantalla({ children }) {
         .rp-chip{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:19px;border:1.5px solid;font-size:14px;font-weight:700;font-family:inherit;white-space:nowrap;flex-shrink:0}
         .rp-link{flex:1 1 0;min-width:0;height:66px;border-radius:14px;background:${FONDO};color:${TINTA};font-size:13px;font-weight:700;line-height:1.1;text-align:center;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
         .rp-flecha{width:42px;height:42px;border-radius:12px;border:1.5px solid ${LINEA};background:${CARTA};color:${TINTA};display:flex;align-items:center;justify-content:center}
+        .rp-hora{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:10px;background:${FONDO};color:${TINTA};font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
         .rp-sinbarra{scrollbar-width:none}.rp-sinbarra::-webkit-scrollbar{display:none}
         .rp-hoja{animation:rp-sube 220ms cubic-bezier(.2,.8,.2,1)}
         @keyframes rp-sube{from{transform:translateY(48px)}to{transform:none}}
