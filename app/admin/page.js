@@ -12530,7 +12530,11 @@ function AgentsPanel({token}){
     return (sameAgent||moveCandidateOps[0])?.id||"new";
   })();
   const moveEffectiveDest=moveDest||moveDefaultDest;
-  const executeMove=async()=>{
+  const moveSelClientSt=moveSelClient,moveEffectiveDestSt=moveEffectiveDest;
+  // forz={cliente,destino}: atajo "Devolver al depósito" (13/11/2026), sin elegir cliente ni destino en el modal.
+  const executeMove=async(forz)=>{
+    const moveSelClient=forz?.cliente||moveSelClientSt;
+    const moveEffectiveDest=forz?.destino||moveEffectiveDestSt;
     if(!moveSelClient||!movePkgState)return;
     const {pkg,fromOp}=movePkgState;
     setMoveSaving(true);
@@ -12547,7 +12551,7 @@ function AgentsPanel({token}){
         if(vacia&&borrable){await dq("operations",{method:"DELETE",token,filters:`?id=eq.${fromOp.id}`});borrada=` · ${fromOp.operation_code} eliminada (quedó vacía)`;}
       }
       setMoveSaving(false);closeMoveModal();
-      flash(`✓ Bulto reasignado al depósito de ${moveSelClient.client_code}${borrada}`);
+      flash(fromOp&&fromOp.client_id===moveSelClient.id?`✓ Bulto devuelto al depósito de ${moveSelClient.client_code||"el cliente"}${borrada}`:`✓ Bulto reasignado al depósito de ${moveSelClient.client_code}${borrada}`);
       load();return;
     }
     if(moveEffectiveDest&&moveEffectiveDest!=="new"){
@@ -13574,6 +13578,10 @@ function AgentsPanel({token}){
           </div>
           <button onClick={closeMoveModal} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
+        {!suelto&&!moveSelClient&&movePkgState.fromOp.client_id&&<button type="button" disabled={moveSaving} onClick={()=>executeMove({cliente:{id:movePkgState.fromOp.client_id,client_code:fromCl?.client_code||""},destino:"deposito"})} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:12,fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(140,200,245,0.45)",background:"rgba(140,200,245,0.1)",color:"#fff",cursor:moveSaving?"wait":"pointer",fontFamily:"inherit",textAlign:"left"}}>
+          <span>🏬 Devolver al depósito{fromCl?.client_code?` de ${fromCl.client_code}`:""}</span>
+          <span style={{color:"#8CC8F5",fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>{moveSaving?"Moviendo…":"Sacarlo de "+movePkgState.fromOp.operation_code}</span>
+        </button>}
         <input autoFocus value={moveSearch} onChange={e=>{setMoveSearch(e.target.value);setMoveSelClient(null);setMoveDest(null);}} placeholder="Buscar cliente por código o nombre…" style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",marginBottom:10,outline:"none"}}/>
         {!moveSelClient&&<div style={{maxHeight:260,overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
           {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===(suelto?movePkgState.pkg.client_id:movePkgState.fromOp.client_id);return <button key={c.id} onClick={()=>{setMoveSelClient(c);setMoveDest(null);}} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
@@ -13603,7 +13611,7 @@ function AgentsPanel({token}){
         </div>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={closeMoveModal} disabled={moveSaving} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>Cancelar</button>
-          <button onClick={executeMove} disabled={!moveSelClient||moveSaving} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:moveSelClient?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:moveSelClient?"#0A1628":"rgba(255,255,255,0.3)",cursor:moveSelClient?"pointer":"not-allowed",opacity:moveSaving?0.6:1}}>{moveSaving?"Moviendo…":"✓ Confirmar"}</button>
+          <button onClick={()=>executeMove()} disabled={!moveSelClient||moveSaving} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:moveSelClient?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:moveSelClient?"#0A1628":"rgba(255,255,255,0.3)",cursor:moveSelClient?"pointer":"not-allowed",opacity:moveSaving?0.6:1}}>{moveSaving?"Moviendo…":"✓ Confirmar"}</button>
         </div>
       </div>
     </div>;})()}
