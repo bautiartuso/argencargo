@@ -215,7 +215,7 @@ export async function POST(req) {
     if (!isAdmin) return Response.json({ error: "unauthorized" }, { status: 401 });
     if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 });
 
-    const { op_id, trigger, force, allow_zero, client_id, package_id, container_id } = await req.json();
+    const { op_id, trigger, force, allow_zero, ignorar_directa, client_id, package_id, container_id } = await req.json();
     // Contenedor llegó a Buenos Aires (21/10/2026): un mail por cliente con lo suyo que viaja en ese
     // contenedor. No se repite: si el cliente ya recibió el aviso de ESE contenedor, se saltea.
     if (trigger === "contenedor_puerto") {
@@ -285,7 +285,8 @@ export async function POST(req) {
 
     // RI con entrega directa: el courier entrega en el domicilio — el aviso de "lista para
     // retirar" no aplica (el link de pago lo dispara el sync de tracking al entregarse).
-    if (trigger === "retiro" && op.channel === "aereo_blanco" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || client?.tax_condition === "responsable_inscripto")) {
+    // Desde la op se puede mandar igual (13/11/2026, AC-0357): el admin lo confirma con ignorar_directa.
+    if (trigger === "retiro" && !ignorar_directa && op.channel === "aereo_blanco" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || client?.tax_condition === "responsable_inscripto")) {
       return Response.json({ skipped: "ri_entrega_directa" });
     }
 

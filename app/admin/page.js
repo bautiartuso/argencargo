@@ -6473,15 +6473,26 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
 
   // ── Aviso al cliente (mismo envío que el panel de Entregas)
   const avisadaAt=op.delivery_ready_at||op.sent_notifications?.wa_retiro||op.sent_notifications?.email_retiro||null;
-  const enviarAviso=async(allowZero=false)=>{
+  // El aviso del sistema (mail + WhatsApp del bot) todavía no salió: el botón sigue a mano aunque el link ya
+  // se haya mandado por WhatsApp propio (13/11/2026).
+  const botAviso=!!(op.sent_notifications?.wa_retiro||op.sent_notifications?.email_retiro);
+  // En aduana el link del cliente muestra el candado hasta que la carga queda avisada.
+  const enAduanaOp=["arribo_argentina","en_aduana"].includes(op.status);
+  const enviarAviso=async(allowZero=false,ignorarDirecta=false)=>{
     try{
-      const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro",allow_zero:allowZero})});
+      const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro",allow_zero:allowZero,ignorar_directa:ignorarDirecta})});
       if(!r.ok)throw new Error("notify "+r.status);
       const j=await r.json().catch(()=>({}));
       if(j?.skipped==="presupuesto_cero"){
-        if(await confirmDialog(`El presupuesto de ${op.operation_code} está en USD 0: el cliente vería "total 0" en el link y el bot le diría que no debe nada. ¿Avisar igual con USD 0?`))return enviarAviso(true);
+        if(await confirmDialog(`El presupuesto de ${op.operation_code} está en USD 0: el cliente vería "total 0" en el link y el bot le diría que no debe nada. ¿Avisar igual con USD 0?`))return enviarAviso(true,ignorarDirecta);
         return;
       }
+      // Entrega directa (13/11/2026, AC-0357): el aviso sale solo cuando el courier entrega, pero desde la op se puede mandar igual.
+      if(j?.skipped==="ri_entrega_directa"){
+        if(await confirmDialog(`${op.operation_code} es de entrega directa: el courier la lleva al domicilio y el aviso de pago sale solo cuando la entrega. ¿Mandarle el link ahora igual?`))return enviarAviso(allowZero,true);
+        return;
+      }
+      if(j?.skipped==="silenciada"){toast("Esta operación está silenciada: no se le manda nada al cliente","error");return;}
       if(j?.skipped&&j.skipped!=="already_sent"){toast("No se envió el aviso: "+j.skipped,"error");return;}
       toast("📨 Aviso enviado por mail y WhatsApp","success");
       onReload?.();
@@ -6601,9 +6612,9 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
           :<span style={{color:"#fbbf24"}}>🔗 No abrió el link</span>}
       </div>}
       {retiroLink&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
-        {estado==="sinaviso"&&accion("📨 Avisar (mail + WA)",()=>enviarAviso(),true)}
+        {estado!=="entregada"&&!botAviso&&accion("📨 Avisar (mail + WA)",()=>enviarAviso(),estado==="sinaviso")}
         {estado!=="entregada"&&accion(estado==="sinaviso"?"💬 WA con el link":"🔁 Reenviar link por WA",waConLink)}
-        {accion("📋 Copiar link",()=>{navigator.clipboard?.writeText(retiroLink);toast("Link copiado","success");})}
+        {accion("📋 Copiar link",()=>{navigator.clipboard?.writeText(retiroLink);toast("Link copiado","success");if(!op.delivery_ready_at&&!op.delivery_completed_at&&enAduanaOp)guardar({delivery_ready_at:new Date().toISOString()});})}
         <a href={retiroLink} target="_blank" rel="noopener noreferrer" style={{height:38,padding:"0 14px",fontSize:12.5,fontWeight:800,borderRadius:9,display:"inline-flex",alignItems:"center",justifyContent:"center",flex:celu?1:"0 0 auto",border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.85)",textDecoration:"none",whiteSpace:"nowrap"}}>Ver link ↗</a>
       </div>}
     </div>
