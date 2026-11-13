@@ -12258,7 +12258,7 @@ function AgentsPanel({token}){
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,channel,ri_argencargo_collects_taxes,budget_total,budget_taxes,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,channel,ri_argencargo_collects_taxes,budget_total,budget_taxes,budget_flete,budget_seguro,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"}),
@@ -13406,7 +13406,7 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           {flightsSubTab==="received"&&<thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Estado","⚠","Clientes","Destinatario","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Presentación","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+            {["Código","Estado","⚠","Clientes","Destinatario","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Ganancia"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>}
           <tbody>{(()=>{
             // Vuelos en operación agrupados (29/09/2026): primero los que faltan despachar, después
@@ -13451,6 +13451,13 @@ function AgentsPanel({token}){
             const finR=f.payment_method==="cuenta_corriente"?finRateOf(f.agent_id):0;
             const costoEf=Number(f.total_cost_usd||0)*(1+finR);
             const costoKg=Number(f.total_cost_usd||0)>0&&(kgVuelo>0||pesoFact>0)?costoEf/(kgVuelo||pesoFact):null;
+            // Ganancia del vuelo (13/11/2026, columna de Recibidos): facturado − costo real de sus ops, el mismo
+            // "Estimado" del Detalle financiero del vuelo (lo que queda si se cobra todo). Cada op cuenta una vez.
+            const ganV=(()=>{const vistos=new Set();let fact=0,costo=0;ops.forEach(fo=>{const o=fo.operations;if(!o||vistos.has(fo.operation_id))return;vistos.add(fo.operation_id);
+              const esRIo=o.clients?.tax_condition==="responsable_inscripto";
+              fact+=Number(o.budget_flete||0)+Number(o.budget_seguro||0)+((!esRIo||o.ri_argencargo_collects_taxes)?Number(o.budget_taxes||0):0);
+              costo+=Number(o.cost_flete||0)*(1+finR)+Number(o.cost_seguro||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);});
+              return {fact,costo,g:fact-costo};})();
             const etaOp=ops.map(fo=>fo.operations?.eta).filter(Boolean).sort()[0]||null;
             const etaTxt=etaOp?`${etaOp.slice(8,10)}/${etaOp.slice(5,7)}`:"";
             // Pipeline visual del vuelo: Preparando → Factura lista → En tránsito → Aduana → Recibido.
@@ -13507,9 +13514,13 @@ function AgentsPanel({token}){
               const v=esRI?{t:"RI",c:"#60a5fa",tit:"Responsable inscripto: los impuestos los paga el cliente"}:noAplica?{t:"—",c:"rgba(255,255,255,0.3)",tit:"Todavía no despachó"}:pagado?{t:"Sí",c:"#4ade80",tit:`Impuestos cargados: ${f.cost_impuestos_usd?`USD ${Number(f.cost_impuestos_usd).toLocaleString("es-AR",{maximumFractionDigits:2})}`:`ARS ${Number(f.cost_impuestos_ars).toLocaleString("es-AR",{maximumFractionDigits:0})}`}`,pill:true}:llego?{t:"⚠ Pagar",c:"#f87171",tit:"La carga ya llegó y los impuestos todavía no se cargaron",pill:true,alerta:true}:{t:"No",c:"rgba(255,255,255,0.35)",tit:"Impuestos sin cargar (se pagan cuando llega)"};
               return <td style={{padding:"10px 8px",fontSize:11,fontWeight:800,color:v.c,whiteSpace:"nowrap",textAlign:"center"}} title={v.tit}>{v.pill?<span style={{display:"inline-block",padding:"3px 10px",borderRadius:999,background:`${v.c}22`,border:`1px solid ${v.c}66`,boxShadow:v.alerta?`0 0 10px ${v.c}55`:"none"}}>{v.t==="Sí"?"✓ Sí":v.t}</span>:v.t}</td>;
             })()}
+            {flightsSubTab==="received"
+              ?<td style={{padding:"10px 8px",fontSize:13,fontWeight:800,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center",color:esEmpleado()||ganV.costo<=0.005?"rgba(255,255,255,0.3)":ganV.g>=0?"#4ade80":"#f87171"}} title={esEmpleado()?"":ganV.costo<=0.005?"Todavía no hay costos cargados en las operaciones del vuelo":`Facturado ${usd(ganV.fact)} − costos ${usd(ganV.costo)}`}>{esEmpleado()||ganV.costo<=0.005?"—":`${ganV.g<-0.005?"−":""}${usd(Math.abs(ganV.g))}`}</td>
+              :<>
             <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Presentado el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
+              </>}
           </tr>;});
             if(flightsSubTab==="received")return shownFlights.map(filaVuelo);
             const esRIv=(f)=>flightOps.some(fo=>fo.flight_id===f.id&&fo.operations?.clients?.tax_condition==="responsable_inscripto");
