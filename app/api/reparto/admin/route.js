@@ -3,7 +3,7 @@
 // POST → { accion }: repartidor (alta/edición) · link (link nuevo) · km (corregir kilómetros) ·
 //        pagado (viaje pagado sí/no) · rendido (la plata del viaje ya se rindió) · borrar_viaje.
 import { usuarioConRol } from "../../../../lib/auth-server";
-import { ac, hayMyBox, cargarEnvios, nuevoToken } from "../../../../lib/reparto";
+import { ac, hayMyBox, cargarEnvios, nuevoToken, linkFoto } from "../../../../lib/reparto";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ async function panel() {
   const desde = new Date(Date.now() - 60 * 86400e3).toISOString().slice(0, 10);
   const [reps, viajes, envios, cargadas] = await Promise.all([
     ac("/repartidores?select=*&order=activo.desc,nombre.asc"),
-    ac(`/reparto_viajes?fecha=gte.${desde}&select=id,repartidor_id,fecha,estado,km,km_manual,tarifa_km_ars,pago_ars,pagado_at,terminado_at,created_at,reparto_paradas(id,base,operation_code,orden,estado,datos,cobros,motivo,nota,resuelto_at,rendido_at)&order=created_at.desc&limit=200`),
+    ac(`/reparto_viajes?fecha=gte.${desde}&select=id,repartidor_id,fecha,estado,km,km_manual,tarifa_km_ars,pago_ars,pagado_at,terminado_at,created_at,reparto_paradas(id,base,operation_id,operation_code,orden,estado,datos,cobros,motivo,nota,resuelto_at,rendido_at,foto_path)&order=created_at.desc&limit=200`),
     cargarEnvios("pendientes"),
     ac("/reparto_paradas?estado=eq.cargado&select=base,operation_id"),
   ]);
@@ -58,8 +58,19 @@ export async function POST(req) {
     await ac(`/reparto_viajes?id=eq.${b.viaje_id}&estado=eq.terminado`, { method: "PATCH", body: JSON.stringify({ km_manual: km }) });
   } else if (b.accion === "pagado") {
     await ac(`/reparto_viajes?id=eq.${b.viaje_id}&estado=eq.terminado`, { method: "PATCH", body: JSON.stringify({ pagado_at: b.si ? ahora : null }) });
+  } else if (b.accion === "foto") {
+    const p = filas(await ac(`/reparto_paradas?id=eq.${b.parada_id}&select=foto_path`))[0];
+    const url = p?.foto_path ? await linkFoto(p.foto_path) : null;
+    return url ? json({ ok: true, url }) : error("Esa entrega no tiene foto", 404);
   } else if (b.accion === "rendido") {
-    await ac(`/reparto_paradas?viaje_id=eq.${b.viaje_id}&cobros=not.is.null`, { method: "PATCH", body: JSON.stringify({ rendido_at: b.si === false ? null : ahora }) });
+    // Por viaje, o todo lo que tiene encima un repartidor ("me lo entregó").
+    let filtro = `viaje_id=eq.${b.viaje_id}`;
+    if (b.repartidor_id) {
+      const ids = filas(await ac(`/reparto_viajes?repartidor_id=eq.${b.repartidor_id}&select=id`)).map((v) => v.id);
+      if (!ids.length) return json(await panel());
+      filtro = `viaje_id=in.(${ids.join(",")})&rendido_at=is.null`;
+    }
+    await ac(`/reparto_paradas?${filtro}&cobros=not.is.null`, { method: "PATCH", body: JSON.stringify({ rendido_at: b.si === false ? null : ahora }) });
   } else if (b.accion === "borrar_viaje") {
     // Solo viajes de prueba o sin ninguna entrega hecha: lo demás es historia de plata.
     const v = filas(await ac(`/reparto_viajes?id=eq.${b.viaje_id}&select=id,repartidores(prueba),reparto_paradas(estado)`))[0];

@@ -5,7 +5,7 @@
 // Al entregar se marca la operación como entregada en su sistema y queda una nota con lo que cobró; el
 // cobro lo registra la oficina (no se toca la plata de la operación desde acá). Los repartidores de
 // prueba ven entregas ya hechas y no escriben nada en las operaciones.
-import { ac, mb, hayMyBox, cargarEnvios, ubicar, origenOficina, ordenar, medir } from "../../../../lib/reparto";
+import { ac, mb, hayMyBox, cargarEnvios, ubicar, origenOficina, ordenar, medir, subirFoto } from "../../../../lib/reparto";
 import { hoyAR } from "../../../../lib/fecha-ar";
 
 export const dynamic = "force-dynamic";
@@ -98,7 +98,7 @@ async function estado(rep) {
     oficina: await origenOficina(),
     mybox: hayMyBox(),
     pendientes,
-    viaje: viaje ? { id: viaje.id, fecha: viaje.fecha, ruta: viaje.ruta || null, paradas: viaje.paradas.map((p) => ({ id: p.id, base: p.base, codigo: p.operation_code, orden: p.orden, estado: p.estado, lat: p.lat, lng: p.lng, datos: p.datos, cobros: p.cobros, motivo: p.motivo, resuelto_at: p.resuelto_at, cambio: !!p.cambio })) } : null,
+    viaje: viaje ? { id: viaje.id, fecha: viaje.fecha, ruta: viaje.ruta || null, paradas: viaje.paradas.map((p) => ({ id: p.id, base: p.base, codigo: p.operation_code, orden: p.orden, estado: p.estado, lat: p.lat, lng: p.lng, datos: p.datos, cobros: p.cobros, motivo: p.motivo, resuelto_at: p.resuelto_at, foto: !!p.foto_path, cambio: !!p.cambio })) } : null,
     plata: {
       rendir,
       viajes: terminados.map((v) => {
@@ -180,20 +180,21 @@ export async function POST(req, { params }) {
     await alDia(viaje, rep);
     const ahora = new Date().toISOString();
     const entregado = b.accion === "entregar";
-    const cobros = entregado ? (Array.isArray(b.cobros) ? b.cobros : []).map((c) => ({ monto: Math.round(Number(String(c.monto).replace(",", ".")) * 100) / 100, moneda: c.moneda === "ARS" ? "ARS" : "USD", metodo: c.metodo === "transferencia" ? "transferencia" : "efectivo" })).filter((c) => c.monto > 0).slice(0, 4) : [];
+    const cobros = entregado ? (Array.isArray(b.cobros) ? b.cobros : []).map((c) => ({ monto: Math.round(Number(String(c.monto).replace(",", ".")) * 100) / 100, moneda: c.moneda === "ARS" ? "ARS" : "USD", metodo: "efectivo" })).filter((c) => c.monto > 0).slice(0, 4) : [];
     const motivo = entregado ? null : MOTIVOS[b.motivo] ? b.motivo : "otro";
     const nota = String(b.nota || "").trim().slice(0, 300) || null;
-    const upd = await ac(`/reparto_paradas?id=eq.${p.id}&estado=eq.cargado`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ estado: entregado ? "entregado" : "no_entregado", cobros: cobros.length ? cobros : null, motivo, nota, resuelto_at: ahora, datos: p.datos }) });
+    const foto_path = entregado && b.foto ? await subirFoto(`${viaje.id}/${p.id}.jpg`, b.foto) : null;
+    const upd = await ac(`/reparto_paradas?id=eq.${p.id}&estado=eq.cargado`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ estado: entregado ? "entregado" : "no_entregado", cobros: cobros.length ? cobros : null, motivo, nota, resuelto_at: ahora, datos: p.datos, foto_path }) });
     if (!filas(upd)[0]) return error("No se pudo guardar", 500);
     Object.assign(p, filas(upd)[0]);
     if (!rep.prueba) {
-      const cobroTxt = cobros.length ? `Cobró ${cobros.map((c) => `${c.moneda} ${c.monto.toLocaleString("es-AR")} (${c.metodo})`).join(" + ")}` : p.datos?.pagado ? "Ya estaba paga" : "No cobró nada";
+      const cobroTxt = cobros.length ? `Cobró en efectivo ${cobros.map((c) => `${c.moneda} ${c.monto.toLocaleString("es-AR")}`).join(" + ")}` : p.datos?.pagado ? "Ya estaba paga" : "No cobró nada";
       if (p.base === "argencargo") {
         if (entregado) {
           const op = filas(await ac(`/operations?id=eq.${p.operation_id}&select=status,delivered_at,delivery_completed_at`))[0];
           if (op && !op.delivery_completed_at) await ac(`/operations?id=eq.${p.operation_id}`, { method: "PATCH", body: JSON.stringify({ delivery_completed_at: ahora, ...(EN_CAMINO.includes(op.status) ? { status: "entregada", delivered_at: op.delivered_at || ahora } : {}) }) });
         }
-        await ac("/op_communications", { method: "POST", body: JSON.stringify({ operation_id: p.operation_id, type: "note", direction: "in", content: entregado ? `🚚 ${rep.nombre} entregó el envío.\n${cobroTxt}${nota ? `\nNota: ${nota}` : ""}` : `🚚 ${rep.nombre} no pudo entregar: ${MOTIVOS[motivo]}${nota ? `\nNota: ${nota}` : ""}` }) });
+        await ac("/op_communications", { method: "POST", body: JSON.stringify({ operation_id: p.operation_id, type: "note", direction: "in", content: entregado ? `🚚 ${rep.nombre} entregó el envío.\n${cobroTxt}${foto_path ? "\nCon foto de la entrega (Admin → Reparto)" : ""}${nota ? `\nNota: ${nota}` : ""}` : `🚚 ${rep.nombre} no pudo entregar: ${MOTIVOS[motivo]}${nota ? `\nNota: ${nota}` : ""}` }) });
       } else if (entregado) {
         const op = filas(await mb(`/operations?id=eq.${p.operation_id}&select=paid_at,delivered_at`))[0];
         if (op && !op.delivered_at) await mb(`/operations?id=eq.${p.operation_id}`, { method: "PATCH", body: JSON.stringify({ delivered_at: ahora, ...(op.paid_at ? { status: "cerrada" } : {}) }) });

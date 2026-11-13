@@ -65,3 +65,9 @@ alter table public.repartidores enable row level security;
 alter table public.reparto_viajes enable row level security;
 alter table public.reparto_paradas enable row level security;
 alter table public.reparto_geo enable row level security;
+
+-- Mismo día: foto de la entrega como comprobante (bucket privado reparto-fotos) y la vuelta a la
+-- oficina cuenta en los kilómetros por defecto (oficina → paradas → oficina).
+alter table public.reparto_paradas add column if not exists foto_path text;
+alter table public.repartidores alter column cuenta_vuelta set default true;
+insert into storage.buckets (id, name, public) values ('reparto-fotos', 'reparto-fotos', false) on conflict (id) do nothing;

@@ -25,7 +25,7 @@ const Llave = ({ on, onCambio, texto }) => (
 );
 
 function FormRepartidor({ inicial, onGuardar, onCancelar, guardando }) {
-  const [f, setF] = useState(() => ({ nombre: "", telefono: "", tarifa_km_ars: "", cuenta_vuelta: false, activo: true, prueba: false, ...(inicial || {}), ...(inicial ? { tarifa_km_ars: String(inicial.tarifa_km_ars ?? "").replace(".", ",") } : {}) }));
+  const [f, setF] = useState(() => ({ nombre: "", telefono: "", tarifa_km_ars: "", cuenta_vuelta: true, activo: true, prueba: false, ...(inicial || {}), ...(inicial ? { tarifa_km_ars: String(inicial.tarifa_km_ars ?? "").replace(".", ",") } : {}) }));
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   return (
     <div style={{ padding: 14, borderRadius: 12, background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: 12 }}>
@@ -59,7 +59,7 @@ export default function RepartoPanel({ token }) {
     const r = await fetch("/api/reparto/admin", { method: cuerpo ? "POST" : "GET", headers: { Authorization: `Bearer ${token}`, ...(cuerpo ? { "Content-Type": "application/json" } : {}) }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: "no-store" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || "No se pudo");
-    setD(j);
+    if (j.repartidores) setD(j);
     return j;
   }, [token]);
   useEffect(() => { pedir().catch((e) => setError(e.message)); }, [pedir]);
@@ -91,6 +91,7 @@ export default function RepartoPanel({ token }) {
         {p.estado === "cargado" ? `${p.datos?.franja || ""}` : p.estado === "no_entregado" ? MOTIVOS[p.motivo] || "no entregado" : p.cobros?.length ? `cobró ${cobroTxt(p.cobros)}` : p.datos?.pagado ? "ya paga" : "sin cobrar"}
         {p.resuelto_at ? <span style={{ color: "rgba(255,255,255,0.35)", fontWeight: 500 }}> · {hora(p.resuelto_at)}</span> : null}
       </span>
+      {p.foto_path && <button onClick={async () => { try { const j = await pedir({ accion: "foto", parada_id: p.id }); window.open(j.url, "_blank", "noopener"); } catch (e) { toast(e.message, "error"); } }} style={{ ...btn(false), height: 26, padding: "0 9px", fontSize: 11.5, flexShrink: 0 }}>Foto</button>}
     </div>
   );
 
@@ -118,9 +119,10 @@ export default function RepartoPanel({ token }) {
             <div key={r.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 14px", padding: "11px 0", borderTop: "1px solid rgba(255,255,255,0.06)", opacity: r.activo ? 1 : 0.5 }}>
               <div style={{ flex: "1 1 180px", minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{r.nombre}{r.prueba && <span style={chip("#fbbf24")}>PRUEBA</span>}{!r.activo && <span style={chip("#94a3b8")}>INACTIVO</span>}</div>
-                <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>$ {plata(r.tarifa_km_ars)} por km{r.cuenta_vuelta ? " · con vuelta" : ""}{s.rendir ? <span style={{ color: "#fbbf24", fontWeight: 700 }}> · tiene {s.rendir} para rendir</span> : null}{s.debe > 0 ? <span style={{ color: GOLD_LIGHT, fontWeight: 700 }}> · se le deben $ {plata(s.debe)}</span> : null}</div>
+                <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>$ {plata(r.tarifa_km_ars)} por km{r.cuenta_vuelta ? "" : " · sin la vuelta"}{s.rendir ? <span style={{ color: "#fbbf24", fontWeight: 700 }}> · tiene {s.rendir} para rendir</span> : null}{s.debe > 0 ? <span style={{ color: GOLD_LIGHT, fontWeight: 700 }}> · se le deben $ {plata(s.debe)}</span> : null}</div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {s.rendir && <button style={btn(true)} disabled={guardando} onClick={async () => { if (await confirmDialog(`¿${r.nombre} te entregó ${s.rendir}?`, { title: "Rendición", confirmText: "Me lo entregó" })) hacer({ accion: "rendido", repartidor_id: r.id }, "Rendición anotada"); }}>Me lo entregó</button>}
                 <button style={btn(false)} onClick={() => { navigator.clipboard?.writeText(link(r)); toast("Link copiado"); }}>Copiar link</button>
                 {r.telefono && <a style={{ ...btn(false), display: "inline-flex", alignItems: "center", textDecoration: "none" }} href={`https://wa.me/${String(r.telefono).replace(/\D/g, "")}?text=${encodeURIComponent(`Hola ${r.nombre}! Este es tu link del reparto: ${link(r)}`)}`} target="_blank" rel="noreferrer">Mandar por WhatsApp</a>}
                 <button style={btn(false)} onClick={() => setForm(r.id)}>Editar</button>
