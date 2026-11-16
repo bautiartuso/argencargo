@@ -7,7 +7,7 @@
 //
 // GET  ?accion=estado | carpetas | lista&carpeta=…&q=…&pagina=… | mensaje&id=… | adjunto&id=…&adj=… |
 //          filtros | no_leidos | conectar | oauth (callback de Google)
-// POST {accion:"enviar"|"borrador"|"filtro"|"borrar_filtro"|"leido"|"papelera"|"ordenar"|"desconectar", …}
+// POST {accion:"enviar"|"borrador"|"filtro"|"borrar_filtro"|"leido"|"papelera"|"restaurar"|"mover"|"ordenar"|"desconectar", …}
 //      enviar con reenviar:id suma el mail original y sus adjuntos.
 
 import crypto from "crypto";
@@ -68,6 +68,12 @@ const AUTO = [
   { nombre: "WhatsApp", q: "from:whatsapp OR subject:whatsapp" },
   // Informes DMARC diarios (Google, Microsoft, Yahoo…): no hace falta leerlos.
   { nombre: "DMARC", q: 'from:dmarc OR subject:"Report domain"', leido: true },
+  // 16/11/2026: recibos y avisos de Meta, avisos de Google y los "Nueva carga recibida" de Xiexie
+  // (cargas de MyBox en China). Por dominio, no por nombre, y sin rescatar del spam (soloBandeja):
+  // un mail trucho "de Facebook" que Gmail frenó no tiene que aparecer en la carpeta de Facebook.
+  { nombre: "Facebook", q: "{from:facebook.com from:facebookmail.com from:meta.com from:instagram.com} -subject:whatsapp", soloBandeja: true },
+  { nombre: "Google", q: '{from:google.com from:googleworkspace.com} -from:dmarc -subject:"Report domain" -from:calendar-notification@google.com -from:drive-shares-dm-noreply@google.com -from:drive-shares-noreply@google.com', soloBandeja: true },
+  { nombre: "Tracking cargas China", q: "from:xiexieltd.com", soloBandeja: true },
 ];
 // Filtros viejos que se reemplazaron (se borran al ordenar).
 const AVISOS_15_10 = ['subject:"Documentación de soporte para AWB"', 'subject:"Recibo de pago de DHL"', 'subject:"On Demand Delivery"'];
@@ -82,8 +88,15 @@ const SIN_AUTO = AUTO.map((a) => `-label:${etiquetaQ(a.nombre)}`).join(" ");
 const separar = (s) => (String(s || "").match(/(?:"[^"]*"|[^,])+/g) || []).map((x) => x.trim()).filter(Boolean);
 const direccion = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim().toLowerCase();
 
-// Carpetas especiales: bandeja incluye spam (pedido de Bautista: que no se le pierda nada).
-const CONSULTA = { bandeja: `{in:inbox in:spam} ${SIN_AUTO}`, enviados: "in:sent", destacados: "is:starred", papelera: "in:trash" };
+// Carpetas especiales. Hasta el 16/11/2026 la bandeja traía también el spam y las notificaciones;
+// desde ese día van como en Gmail: Bandeja = principal, Notificaciones = lo que Gmail clasifica
+// como avisos, promociones, redes y foros, Spam y Papelera aparte (las tres con su contador).
+const CATS = ["updates", "promotions", "social", "forums"];
+const CONSULTA = {
+  bandeja: `in:inbox ${CATS.map((c) => `-category:${c}`).join(" ")} ${SIN_AUTO}`,
+  notificaciones: `in:inbox {${CATS.map((c) => `category:${c}`).join(" ")}} ${SIN_AUTO}`,
+  spam: "in:spam", enviados: "in:sent", destacados: "is:starred", papelera: "in:trash",
+};
 
 export async function GET(req) {
   const u = new URL(req.url);
@@ -126,13 +139,13 @@ export async function GET(req) {
       const d = await gm("/labels");
       const propias = (d.labels || []).filter((l) => l.type === "user");
       const conteos = await Promise.all(propias.map((l) => gm(`/labels/${l.id}`).catch(() => ({}))));
-      const [nl, tot] = await Promise.all([
-        gm(`/messages?maxResults=100&includeSpamTrash=true&q=${encodeURIComponent(`is:unread {in:inbox in:spam} ${SIN_AUTO}`)}`).catch(() => ({})),
-        gm(`/messages?maxResults=200&includeSpamTrash=true&q=${encodeURIComponent(Q_NO_LEIDOS)}`).catch(() => ({})),
-      ]);
+      const cuenta = (q, max = 100) => gm(`/messages?maxResults=${max}&includeSpamTrash=true&q=${encodeURIComponent(q)}`).then((d) => (d.messages || []).length).catch(() => 0);
+      const [nl, nn, ns, tot] = await Promise.all([cuenta(`is:unread ${CONSULTA.bandeja}`), cuenta(`is:unread ${CONSULTA.notificaciones}`), cuenta("is:unread in:spam"), cuenta(Q_NO_LEIDOS, 200)]);
       return json({
-        noLeidosBandeja: (nl.messages || []).length,
-        noLeidosTotal: (tot.messages || []).length,
+        noLeidosBandeja: nl,
+        noLeidosNotif: nn,
+        noLeidosSpam: ns,
+        noLeidosTotal: tot,
         carpetas: propias.map((l, i) => ({ id: l.id, nombre: l.name, noLeidos: conteos[i]?.messagesUnread || 0 })).sort((a, b) => a.nombre.localeCompare(b.nombre)),
       });
     }
@@ -252,11 +265,11 @@ export async function POST(req) {
         }
         // Etiquetas de las que estos mails tienen que salir (los avisos de DHL estaban en "DHL").
         const sacarIds = (a.sacar || []).map((n) => labels.find((x) => x.name.toLowerCase() === n.toLowerCase())?.id).filter(Boolean);
-        const ex = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(sacarIds.length ? `(${a.q}) -label:${etiquetaQ(a.nombre)}` : `(${a.q}) {in:inbox in:spam}`)}`).catch(() => ({}));
+        const ex = await gm(`/messages?maxResults=500&includeSpamTrash=true&q=${encodeURIComponent(sacarIds.length ? `(${a.q}) -label:${etiquetaQ(a.nombre)}` : `(${a.q}) ${a.soloBandeja ? "in:inbox" : "{in:inbox in:spam}"}`)}`).catch(() => ({}));
         const hilos = sacarIds.length ? { messages: [] } : await gm(`/messages?maxResults=500&q=${encodeURIComponent(a.q)}`).catch(() => ({}));
         const deHilo = new Set((hilos.messages || []).map((m) => m.threadId));
         const ids = [...new Set([...(ex.messages || []).map((m) => m.id), ...enBandeja.filter((m) => deHilo.has(m.threadId)).map((m) => m.id)])];
-        if (ids.length) { await gm("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids, addLabelIds: [label.id], removeLabelIds: [...quitar, "SPAM", ...sacarIds] }) }).catch(() => {}); movidos += ids.length; }
+        if (ids.length) { await gm("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids, addLabelIds: [label.id], removeLabelIds: [...quitar, ...(a.soloBandeja ? [] : ["SPAM"]), ...sacarIds] }) }).catch(() => {}); movidos += ids.length; }
       }
       return json({ ok: true, movidos });
     }
@@ -315,8 +328,18 @@ export async function POST(req) {
     }
     // Con hilo (03/11/2026) va la conversación entera a la papelera, como en Gmail.
     if (b.accion === "papelera") { await gm(b.hilo ? `/threads/${b.hilo}/trash` : `/messages/${b.id}/trash`, { method: "POST" }); return json({ ok: true }); }
+    // Sacar de la papelera (16/11/2026): vuelve a donde estaba; lo que no tenía carpeta va a la bandeja.
+    if (b.accion === "restaurar") {
+      const t = b.hilo ? await gm(`/threads/${b.hilo}?format=minimal`) : { messages: [await gm(`/messages/${b.id}?format=minimal`)] };
+      const tirados = (t.messages || []).filter((m) => (m.labelIds || []).includes("TRASH"));
+      await gm(b.hilo ? `/threads/${b.hilo}/untrash` : `/messages/${b.id}/untrash`, { method: "POST" });
+      const sueltos = tirados.filter((m) => !(m.labelIds || []).some((l) => ["SENT", "DRAFT", "INBOX", "SPAM"].includes(l) || l.startsWith("Label_"))).map((m) => m.id);
+      if (sueltos.length) await gm("/messages/batchModify", { method: "POST", body: JSON.stringify({ ids: sueltos, addLabelIds: ["INBOX"] }) }).catch(() => {});
+      return json({ ok: true, restaurados: tirados.length });
+    }
+    // Sin carpeta = a la bandeja ("No es spam"). Con hilo va la conversación entera.
     if (b.accion === "mover") {
-      await gm(`/messages/${b.id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: b.carpeta ? [b.carpeta] : ["INBOX"], removeLabelIds: b.carpeta ? ["INBOX", "SPAM"] : ["SPAM"] }) });
+      await gm(b.hilo ? `/threads/${b.hilo}/modify` : `/messages/${b.id}/modify`, { method: "POST", body: JSON.stringify({ addLabelIds: b.carpeta ? [b.carpeta] : ["INBOX"], removeLabelIds: b.carpeta ? ["INBOX", "SPAM"] : ["SPAM"] }) });
       return json({ ok: true });
     }
     // Filtro: los mails de ese remitente (o con ese asunto) van directo a la carpeta. También mueve

@@ -1,7 +1,8 @@
 "use client";
 // Solapa Email del admin (04/10/2026, rediseñada el 23/10/2026). Habla con /api/admin/mail (API de Gmail).
-// Bandeja (incluye spam), Enviados, Borradores y carpetas propias con filtros. DHL, FedEx, UPS y
-// WhatsApp (y los informes DMARC) son automáticas: el servidor crea los filtros y saca esos mails de la bandeja.
+// Bandeja, Notificaciones, Enviados, Borradores, Spam y Papelera (como Gmail, 16/11/2026) y carpetas propias
+// con filtros. DHL, FedEx, UPS, WhatsApp, Facebook, Google y Tracking cargas China (y los informes DMARC) son
+// automáticas: el servidor crea los filtros y saca esos mails de la bandeja. La lista se actualiza sola.
 // Redactar con varios adjuntos y arrastrar y soltar. En el celu: carpetas → lista → mensaje.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../../lib/ui";
@@ -27,22 +28,33 @@ const I = {
   papelera: ["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6"],
   bajar: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
   x: ["M18 6L6 18", "M6 6l12 12"],
+  notificaciones: ["M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9", "M13.73 21a2 2 0 0 1-3.46 0"],
+  spam: ["M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2z", "M12 8v4", "M12 16h.01"],
+  restaurar: ["M1 4v6h6", "M3.51 15a9 9 0 1 0 2.13-9.36L1 10"],
 };
 const fmtFecha = (ms) => { if (!ms) return ""; const d = new Date(ms); const hoy = new Date(); return d.toDateString() === hoy.toDateString() ? d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" }); };
 const nombreDe = (s) => { const m = String(s || "").match(/^\s*"?([^"<]*)"?\s*<([^>]+)>/); return m ? (m[1].trim() || m[2]) : String(s || "").trim(); };
 const separar = (s) => (String(s || "").match(/(?:"[^"]*"|[^,])+/g) || []).map((x) => x.trim()).filter(Boolean);
 const direccion = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim().toLowerCase();
 const WA = <svg width="22" height="22" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.2-.2.3-.8 1-.9 1.1-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.4-.5c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3M12 21.8a9.9 9.9 0 0 1-5-1.4l-.4-.2-3.7 1 1-3.7-.2-.4A9.9 9.9 0 1 1 12 21.8M20.5 3.5A11.8 11.8 0 0 0 12 0C5.5 0 .2 5.3.2 11.9c0 2.1.5 4.1 1.6 5.9L0 24l6.3-1.7a11.9 11.9 0 0 0 5.7 1.4c6.6 0 11.9-5.3 11.9-11.9 0-3.2-1.2-6.2-3.4-8.4z" /></svg>;
+const FB = <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877F2" /><path fill="#fff" d="M16.67 15.47l.53-3.47h-3.33V9.75c0-.95.47-1.88 1.96-1.88h1.51V4.92s-1.37-.23-2.69-.23c-2.74 0-4.53 1.66-4.53 4.67V12H7.08v3.47h3.04V24h3.75v-8.53h2.8z" /></svg>;
+const GOOGLE = <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" /><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" /><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" /><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" /></svg>;
+// Carpetas con marca (16/11/2026). "Tracking cargas China" son los avisos de Xiexie: va con el logo de MyBox.
+const MARCAS_CARPETA = { whatsapp: 1, facebook: 2, google: 3, "tracking cargas china": 4 };
 const pesoTxt = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 const tipoArchivo = (a) => { const n = String(a.nombre || "").toLowerCase(); return /\.pdf$/.test(n) ? ["PDF", "#ef4444"] : /\.(png|jpe?g|gif|webp|heic)$/.test(n) ? ["IMG", "#a78bfa"] : /\.(xlsx?|csv)$/.test(n) ? ["XLS", "#22c55e"] : /\.(docx?)$/.test(n) ? ["DOC", "#3b82f6"] : ["ARCH", "#94a3b8"]; };
 const fechaTxt = (f) => f ? new Date(f).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+
+const FIJAS = ["bandeja", "notificaciones", "enviados", "borradores", "spam", "papelera"];
 
 export default function MailPanel({ token }) {
   const celu = useCelu();
   const [estado, setEstado] = useState(null);
   const [carpetas, setCarpetas] = useState([]);
   const [noLeidos, setNoLeidos] = useState(0);
-  const [noLeidosTotal, setNoLeidosTotal] = useState(null); // bandeja + DHL, FedEx y UPS (globo del menú)
+  const [noLeidosNotif, setNoLeidosNotif] = useState(0);
+  const [noLeidosSpam, setNoLeidosSpam] = useState(0);
+  const [noLeidosTotal, setNoLeidosTotal] = useState(null); // bandeja + notificaciones + spam + DHL, FedEx y UPS (globo del menú)
   const [carpeta, setCarpeta] = useState("bandeja");
   const [lista, setLista] = useState([]);
   const [sig, setSig] = useState(null);
@@ -69,7 +81,7 @@ export default function MailPanel({ token }) {
   useEffect(() => { (async () => { try { setEstado(await api({ accion: "estado" })); } catch (e) { setEstado({ error: e.message }); } })(); }, [api]);
   useEffect(() => { try { const m = new URLSearchParams(location.search).get("mail"); if (m === "ok") toast("Gmail conectado", "success"); else if (m) toast("No se pudo conectar Gmail", "error"); } catch {} }, []);
 
-  const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); setNoLeidosTotal(d.noLeidosTotal ?? null); } catch {} }, [api]);
+  const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); setNoLeidosNotif(d.noLeidosNotif || 0); setNoLeidosSpam(d.noLeidosSpam || 0); setNoLeidosTotal(d.noLeidosTotal ?? null); } catch {} }, [api]);
   // El globo del menú (Email) suma la bandeja y las carpetas de DHL, FedEx y UPS (23/10/2026).
   useEffect(() => { if (noLeidosTotal == null) return; try { window.dispatchEvent(new CustomEvent("ac_mail_noleidos", { detail: noLeidosTotal })); } catch {} }, [noLeidosTotal]);
   const cargarLista = useCallback(async (mas) => {
@@ -84,6 +96,34 @@ export default function MailPanel({ token }) {
   useEffect(() => { if (!estado?.conectado) return; (async () => { try { const d = await api(null, { accion: "ordenar" }); if (d.movidos) { cargarCarpetas(); if (carpeta === "bandeja") cargarLista(false); } } catch {} })(); }, [estado]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (estado?.conectado) { setAbierto(null); cargarLista(false); } }, [estado, carpeta, busq]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = setTimeout(() => setBusq(q.trim()), 400); return () => clearTimeout(t); }, [q]);
+  // Se actualiza sola (16/11/2026): cada minuto, y al volver a la pestaña, trae la primera página de la
+  // carpeta abierta sin tocar lo que se está leyendo. Antes había que tocar Actualizar para ver lo nuevo.
+  const enVivo = useRef({});
+  enVivo.current = { carpeta, busq, api, cargarCarpetas };
+  useEffect(() => {
+    if (!estado?.conectado) return;
+    let ocupado = false;
+    const tick = async () => {
+      const v = enVivo.current;
+      if (document.hidden || ocupado || v.busq || v.carpeta === "borradores") return;
+      ocupado = true;
+      try {
+        const d = await v.api({ accion: "lista", carpeta: v.carpeta });
+        if (enVivo.current.carpeta === v.carpeta && !enVivo.current.busq && Array.isArray(d.mensajes)) {
+          const nuevos = new Set(d.mensajes.map((m) => m.hilo));
+          const piso = d.mensajes.reduce((a, m) => Math.min(a, m.fecha || a), Infinity);
+          // Lo de páginas siguientes ("Ver más") se conserva; la primera página se reemplaza entera.
+          setLista((p) => [...d.mensajes, ...p.filter((x) => !nuevos.has(x.hilo) && (x.fecha || 0) < piso)]);
+          v.cargarCarpetas();
+        }
+      } catch {}
+      ocupado = false;
+    };
+    const id = setInterval(tick, 60000);
+    const vis = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", vis); };
+  }, [estado]);
 
   const abrir = async (m) => {
     if (m.borrador) { setRedactar({ para: nombreDe(m.para) === m.para ? m.para : m.para, asunto: m.asunto, texto: "", borrador: m.borrador }); return; }
@@ -96,9 +136,10 @@ export default function MailPanel({ token }) {
       setAbierto({ ...m, ...(msgs[0] || {}), mensajes: msgs, cargando: false }); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: false, nNoLeidos: 0 } : x));
       if (m.noLeido) {
         const k = m.nNoLeidos || 1;
-        if (carpeta === "bandeja") setNoLeidos((n) => Math.max(0, n - k)); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - k) } : c));
-        const nombre = carpeta === "bandeja" ? "bandeja" : String(carpetas.find((c) => c.id === carpeta)?.nombre || "").toLowerCase();
-        if (["bandeja", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - k)));
+        const baja = (n) => Math.max(0, n - k);
+        if (carpeta === "bandeja") setNoLeidos(baja); else if (carpeta === "notificaciones") setNoLeidosNotif(baja); else if (carpeta === "spam") setNoLeidosSpam(baja); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - k) } : c));
+        const nombre = FIJAS.includes(carpeta) ? carpeta : String(carpetas.find((c) => c.id === carpeta)?.nombre || "").toLowerCase();
+        if (["bandeja", "notificaciones", "spam", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - k)));
       }
     }
     catch (e) { toast(e.message, "error"); setAbierto(null); }
@@ -129,6 +170,15 @@ export default function MailPanel({ token }) {
       if (prox && !prox.borrador) abrir(prox); else { setAbierto(null); if (celu) setVista("lista"); }
     } catch (e) { toast(e.message, "error"); }
   };
+  // Papelera → Restaurar; Spam → No es spam. Las dos sacan la conversación de la lista.
+  const sacar = async (m, accion, aviso) => {
+    try {
+      await api(null, { accion, id: m.id, hilo: m.hilo });
+      setLista((p) => p.filter((x) => x.id !== m.id));
+      setAbierto(null); if (celu) setVista("lista");
+      toast(aviso, "success"); cargarCarpetas();
+    } catch (e) { toast(e.message, "error"); }
+  };
   // Responder es siempre responder a todos: el remitente (o su Reply-To) + los demás destinatarios, sin mi casilla.
   const responder = (m, plantilla = null) => {
     const yo = String(estado?.email || "").toLowerCase();
@@ -151,18 +201,20 @@ export default function MailPanel({ token }) {
 
   // ── Rediseño 23/10/2026: tres columnas a pantalla completa, cada una con su scroll. Desde el
   // 02/11/2026 sin tarjeta: ocupa todo el ancho y alto del admin, como parte del sistema. ──
-  const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }];
+  const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "notificaciones", l: "Notificaciones", ic: I.notificaciones, n: noLeidosNotif }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }, { k: "spam", l: "Spam", ic: I.spam, n: noLeidosSpam }, { k: "papelera", l: "Papelera", ic: I.papelera }];
   const elegir = (k) => { setCarpeta(k); if (celu) setVista("lista"); };
   const marca = (l) => { const x = String(l || "").toLowerCase(); return x === "dhl" ? "dhl" : x === "fedex" ? "fedex" : x === "ups" ? "ups" : null; };
   const esAuto = (n) => /avisos|dmarc/i.test(n);
   const couriers = carpetas.filter((c) => marca(c.nombre)).sort((x, y) => ["dhl", "fedex", "ups"].indexOf(marca(x.nombre)) - ["dhl", "fedex", "ups"].indexOf(marca(y.nombre)));
   const automaticas = carpetas.filter((c) => esAuto(c.nombre)).sort((x, y) => x.nombre.localeCompare(y.nombre));
-  const otras = carpetas.filter((c) => !marca(c.nombre) && !esAuto(c.nombre)).sort((x, y) => (String(x.nombre).toLowerCase() === "whatsapp" ? -1 : String(y.nombre).toLowerCase() === "whatsapp" ? 1 : x.nombre.localeCompare(y.nombre)));
+  const ordenMarca = (c) => MARCAS_CARPETA[String(c.nombre).toLowerCase()] || 99;
+  const otras = carpetas.filter((c) => !marca(c.nombre) && !esAuto(c.nombre)).sort((x, y) => ordenMarca(x) - ordenMarca(y) || x.nombre.localeCompare(y.nombre));
+  const iconoCarpeta = (n) => { const x = String(n).toLowerCase(); return x === "whatsapp" ? WA : x === "facebook" ? FB : x === "google" ? GOOGLE : <Ico d={I.carpeta} />; };
 
   // soloLogo: los couriers van con su logo y sin texto (el logo ya dice qué es).
-  const fila = (k, l, icono, n, { tenue = false, soloLogo = false } = {}) => {
+  const fila = (k, l, icono, n, { tenue = false, soloLogo = false, alto = 0 } = {}) => {
     const on = carpeta === k;
-    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: soloLogo ? 42 : 38, padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: alto || (soloLogo ? 42 : 38), padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
       {on && <span style={{ position: "absolute", left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: GOLD_LIGHT }} />}
       {soloLogo ? <span title={l} style={{ flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center" }}>{icono}</span> : <>
         <span style={{ width: 22, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>{icono}</span>
@@ -180,7 +232,9 @@ export default function MailPanel({ token }) {
     {couriers.length > 0 && seccion("Couriers")}
     {couriers.map((c) => fila(c.id, c.nombre, <CarrierLogo k={marca(c.nombre)} alto={26} radio={7} />, c.noLeidos, { soloLogo: true }))}
     {otras.length > 0 && seccion("Carpetas")}
-    {otras.map((c) => fila(c.id, c.nombre, String(c.nombre).toLowerCase() === "whatsapp" ? WA : <Ico d={I.carpeta} />, c.noLeidos))}
+    {otras.map((c) => String(c.nombre).toLowerCase() === "tracking cargas china"
+      ? fila(c.id, c.nombre, <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><img src="/brand/mybox.png" alt="MyBox" style={{ height: 15, width: "auto", alignSelf: "flex-start", display: "block" }} /><span style={{ fontSize: 12.5, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</span></span>, c.noLeidos, { soloLogo: true, alto: 50 })
+      : fila(c.id, c.nombre, iconoCarpeta(c.nombre), c.noLeidos))}
     {automaticas.length > 0 && seccion("Automáticas · se leen solas")}
     {automaticas.map((c) => fila(c.id, c.nombre, <Ico d={I.carpeta} />, c.noLeidos, { tenue: true }))}
     <div style={{ marginTop: "auto", paddingTop: 16 }}>
@@ -191,7 +245,7 @@ export default function MailPanel({ token }) {
   </div>;
 
   const titulo = NAV.find((x) => x.k === carpeta)?.l || carpetas.find((c) => c.id === carpeta)?.nombre || "";
-  const nCarpeta = carpeta === "bandeja" ? noLeidos : carpetas.find((c) => c.id === carpeta)?.noLeidos || 0;
+  const nCarpeta = carpeta === "bandeja" ? noLeidos : carpeta === "notificaciones" ? noLeidosNotif : carpeta === "spam" ? noLeidosSpam : carpetas.find((c) => c.id === carpeta)?.noLeidos || 0;
   const panelLista = <div style={{ display: "flex", flexDirection: "column", minWidth: 0, height: celu ? "auto" : "100%" }}>
     <div style={{ padding: celu ? "0 0 12px" : "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -217,7 +271,7 @@ export default function MailPanel({ token }) {
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: m.noLeido ? 800 : 600, color: m.noLeido ? "#fff" : "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{carpeta === "enviados" || m.borrador ? `Para: ${quien}` : quien}</span>
             {m.n > 1 && <span title={`${m.n} mensajes en la conversación`} style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)", flexShrink: 0 }}>{m.n}</span>}
-            {m.spam && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
+            {m.spam && carpeta !== "spam" && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
             {m.adjuntos && <span style={{ color: "rgba(255,255,255,0.4)", display: "inline-flex" }}><Ico d={I.clip} s={13} /></span>}
             <span style={{ fontSize: 11.5, color: m.noLeido ? GOLD_LIGHT : "rgba(255,255,255,0.4)", fontWeight: m.noLeido ? 700 : 500, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
           </div>
@@ -248,7 +302,10 @@ export default function MailPanel({ token }) {
       </div>}
       <span style={{ flex: 1 }} />
       <button onClick={() => noLeido(abierto)} style={btnIco} aria-label="Marcar como no leído" title="Marcar como no leído"><Ico d={["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z", "M22 6l-10 7L2 6"]} s={15} /></button>
-      <button onClick={() => papelera(abierto)} style={{ ...btnIco, color: "#fca5a5" }} aria-label="Papelera" title="Mover a la papelera"><Ico d={I.papelera} s={15} /></button>
+      {carpeta === "spam" && <button onClick={() => sacar(abierto, "mover", "Movido a la bandeja")} style={btnTxt}><Ico d={I.bandeja} s={15} />No es spam</button>}
+      {carpeta === "papelera"
+        ? <button onClick={() => sacar(abierto, "restaurar", "Restaurado")} style={btnTxt}><Ico d={I.restaurar} s={15} />Restaurar</button>
+        : <button onClick={() => papelera(abierto)} style={{ ...btnIco, color: "#fca5a5" }} aria-label="Papelera" title="Mover a la papelera"><Ico d={I.papelera} s={15} /></button>}
     </div>
     <div style={{ flex: 1, overflowY: celu ? "visible" : "auto", minHeight: 0, padding: celu ? "14px 0" : "20px 24px 28px" }}>
       <p style={{ fontSize: 21, fontWeight: 800, color: "#fff", margin: "0 0 4px", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{abierto.asunto || "(sin asunto)"}</p>
