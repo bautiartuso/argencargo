@@ -17,9 +17,9 @@ import {
   C, BG, LOGO, MONO, GOLD_GRADIENT, dq, dqTodos, arr, ok, ac, ensureFresh, sesionInicial, saveSession, clearSession, usarSesionPropia,
   fmtDate, fmtDateShort, fmtDateTime, fmtUSD, usd0, hace, hoyISO, nombre, buildQuoteWaMessage, cleanWaNumber, useMovil,
   Btn, Pill, Caja, Titulo, Chips, Vacio, Cargando, Modal, Campo, inp, Opciones, Dato, Fila, Codigo, Volver,
-  P, Papel, DatoP, PillP, inpP, BtnP,
+  P, Papel, DatoP, PillP, inpP, BtnP, Interruptor,
 } from "./_base";
-import { CotizadorWizard } from "./_cotizador";
+import { CotizadorWizard, minimosPlan, planCubierto } from "./_cotizador";
 
 const CSS = `@keyframes giShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 *{-webkit-tap-highlight-color:transparent}
@@ -536,6 +536,9 @@ function CotDetalle({ ctx, id }) {
   const [fotoGrande, setFotoGrande] = useState(null);
   const e = r ? estadoCot(r, d.comms) : null;
   const q = e?.q;
+  // Servicios ocultos al cliente: se muestra al toque y después se confirma con la base.
+  const [ocultosLocal, setOcultosLocal] = useState(null);
+  useEffect(() => { setOcultosLocal(null); }, [q?.id, (q?.hidden_channels || []).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { (async () => {
     if (!r) return;
     const [qp, rp, pk] = await Promise.all([
@@ -607,6 +610,22 @@ function CotDetalle({ ctx, id }) {
     await log("note", { content: `Validez renovada hasta el ${fmtDate(hasta)}` });
     toast.success(`Vigente hasta el ${fmtDate(hasta)}`); recargar();
   };
+  // Mostrar / ocultar un servicio al cliente. El precio queda guardado; el plan de pagos se
+  // vuelve a cubrir con los servicios que quedan a la vista (misma regla que el cotizador).
+  const alternarCanal = async (k) => {
+    const nuevo = ocultos.includes(k) ? ocultos.filter((x) => x !== k) : [...ocultos, k];
+    const quedan = canales.filter((c) => !nuevo.includes(c.k));
+    if (!quedan.length) { toast.error("Tiene que quedar al menos un servicio a la vista"); return; }
+    const body = { hidden_channels: nuevo };
+    const { min1, min12 } = minimosPlan(fob, q.supplier_deposit_pct, quedan.map((c) => c.total));
+    if (plan.length && min12 > 0 && min12 < 100) { const np = planCubierto(plan, min1, min12); if (np !== plan) body.payment_plan = np; }
+    setOcultosLocal(nuevo);
+    const res = await dq("gi_quotes", { method: "PATCH", token, filters: `?id=eq.${q.id}`, body });
+    if (!ok(res)) { setOcultosLocal(null); toast.error("No se pudo guardar"); return; }
+    await log("note", { content: `${GI_CANALES[k].largo}: ${nuevo.includes(k) ? "oculto al cliente" : "a la vista del cliente"}${body.payment_plan ? " · plan de pagos ajustado" : ""}` });
+    toast.success(`${GI_CANALES[k].nombre} ${nuevo.includes(k) ? "oculto al cliente" : "a la vista del cliente"}`);
+    recargar();
+  };
   const agregarNota = async () => { const t = nota.trim(); if (!t) return; await log("note", { content: t }); setNota(""); recargar(); };
   const pdf = () => printGiQuotePdf({ quote: q, products: prods || [], client: r.clients, settings: null, requestCode: r.request_code });
 
@@ -620,12 +639,14 @@ function CotDetalle({ ctx, id }) {
   const kg = bultos.reduce((s, k) => s + Number(k.kg || 0) * k.n, 0);
   const TIEMPO = { aereo_blanco: "7 a 10 días hábiles", maritimo_blanco: "~60 días", maritimo_negro: "~60 días" };
   const honor = Number(q?.honorarios_pct || 0);
+  const ocultos = ocultosLocal || (Array.isArray(q?.hidden_channels) ? q.hidden_channels : []);
   const canales = Object.entries(GI_CANALES).filter(([k]) => !esUSA || k !== "maritimo_blanco").map(([k, c]) => {
     const total = totalCanal(q, k); const real = Number(q?.[c.key.replace("_total_", "_real_")] || 0);
     const impo = honor > 0 ? total / (1 + honor / 100) : total;
-    return { k, ...c, total, real, impo, honorarios: total - impo, gana: real > 0 ? total - real : null };
+    return { k, ...c, total, real, impo, honorarios: total - impo, gana: real > 0 ? total - real : null, oculto: ocultos.includes(k) && q?.selected_channel !== k };
   }).filter((c) => c.total > 0);
-  const masBarato = canales.slice().sort((a, b) => a.total - b.total)[0];
+  const masBarato = canales.filter((c) => !c.oculto).sort((a, b) => a.total - b.total)[0];
+  const puedeOcultar = !!q && ["por_cotizar", "borrador", "enviada", "vencida"].includes(e.k);
   const elegido = q?.selected_channel ? canales.find((c) => c.k === q.selected_channel) : null;
   const totalElegido = totalAceptado(q);
   const baseCliente = totalElegido || masBarato?.total || 0;
@@ -694,13 +715,14 @@ function CotDetalle({ ctx, id }) {
         {/* Precios por canal */}
         {q && canales.length > 0 && <Papel title="Precio final al cliente">
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "13px 16px", borderRadius: 14, border: `1.5px solid ${el ? P.gold : barato ? "rgba(52,211,153,0.35)" : P.line}`, background: el ? P.goldBg : barato ? P.greenBg : P.soft }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: P.txt }}>{c.largo} {el && <PillP c={P.goldHi}>Eligió esta</PillP>}{!el && barato && <PillP c={P.green}>Más económica</PillP>}</p>
+            {canales.map((c) => { const el = elegido?.k === c.k; const barato = masBarato?.k === c.k; return <div key={c.k} style={{ padding: "13px 16px", borderRadius: 14, border: `1.5px ${c.oculto ? "dashed" : "solid"} ${el ? P.gold : barato ? "rgba(52,211,153,0.35)" : P.line}`, background: el ? P.goldBg : barato ? P.greenBg : P.soft }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {puedeOcultar && <Interruptor on={!c.oculto} onChange={() => alternarCanal(c.k)} label={c.oculto ? "Mostrar al cliente" : "Ocultar al cliente"} />}
+                <div style={{ minWidth: 0, flex: 1, opacity: c.oculto ? 0.45 : 1 }}>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: P.txt }}>{c.largo} {el && <PillP c={P.goldHi}>Eligió esta</PillP>}{!el && barato && <PillP c={P.green}>Más económica</PillP>}{c.oculto && <PillP c={P.sub}>Oculta al cliente</PillP>}</p>
                   <p style={{ margin: "2px 0 0", fontSize: 12, color: P.mute }}>{TIEMPO[c.k]}</p>
                 </div>
-                <p style={{ margin: 0, fontSize: 22, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtUSD(c.total)}</p>
+                <p style={{ margin: 0, fontSize: movil ? 18 : 22, fontWeight: 900, color: P.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", opacity: c.oculto ? 0.45 : 1 }}>{fmtUSD(c.total)}</p>
               </div>
               {verPlata && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 6, fontSize: 12, color: P.sub, fontVariantNumeric: "tabular-nums", flexWrap: "wrap" }}>
                 <span>importación {fmtUSD(c.impo)} + honorarios {fmtUSD(c.honorarios)}</span>

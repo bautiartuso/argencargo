@@ -32,6 +32,11 @@ const CHANNEL_KEYS = {
   maritimo_blanco: "cost_maritimo_int_total_usd",
 };
 
+// Un servicio oculto (hidden_channels) no le llega al cliente: ni el precio ni la opción de elegirlo.
+// Si ya lo había elegido antes de que se oculte, se respeta.
+const oculto = (quote, canal) => Array.isArray(quote.hidden_channels) && quote.hidden_channels.includes(canal) && quote.selected_channel !== canal;
+const precioVisible = (quote, canal) => (oculto(quote, canal) ? null : quote[CHANNEL_KEYS[canal]]);
+
 const cargarCotizacion = async (token) => {
   const q = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,assigned_partner_id,prospect_first_name,prospect_last_name,prospect_whatsapp,clients(id,auth_user_id,first_name,last_name,email,city,province,postal_code,gi_partner_id)),gi_quote_products(*),gi_quote_packages(*)`);
   return Array.isArray(q.body) && q.body[0] ? q.body[0] : null;
@@ -164,9 +169,9 @@ export async function GET(req, { params }) {
       payment_plan: quote.payment_plan, delivery_zone: quote.delivery_zone,
       selected_channel: quote.selected_channel, selected_delivery_zone: quote.selected_delivery_zone,
       selected_delivery_cost_usd: quote.selected_delivery_cost_usd, accepted_at: quote.accepted_at,
-      cost_aereo_int_total_usd: quote.cost_aereo_int_total_usd,
-      cost_maritimo_lcl_total_usd: quote.cost_maritimo_lcl_total_usd,
-      cost_maritimo_int_total_usd: quote.cost_maritimo_int_total_usd,
+      cost_aereo_int_total_usd: precioVisible(quote, "aereo_blanco"),
+      cost_maritimo_lcl_total_usd: precioVisible(quote, "maritimo_negro"),
+      cost_maritimo_int_total_usd: precioVisible(quote, "maritimo_blanco"),
       request_code: quote.gi_quote_requests?.request_code || "",
       client: { first_name: cl.first_name, last_name: cl.last_name, city: cl.city, province: cl.province },
     },
@@ -205,7 +210,7 @@ export async function POST(req, { params }) {
   }
 
   if (!body?.channel || !CHANNEL_KEYS[body.channel]) return Response.json({ error: "Elegí un servicio" }, { status: 400 });
-  const channelTotal = Number(quote[CHANNEL_KEYS[body.channel]] || 0);
+  const channelTotal = Number(precioVisible(quote, body.channel) || 0);
   if (!(channelTotal > 0)) return Response.json({ error: "Ese servicio no está disponible en esta cotización" }, { status: 400 });
   const zone = String(body.delivery_zone || "oficina");
 

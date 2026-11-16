@@ -301,6 +301,13 @@ export function DatoP({ label, val, c, sub, grande }) {
 export function PillP({ c = P.sub, bg, children }) {
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: c, background: bg || `${c}14`, border: `1px solid ${c}40`, whiteSpace: "nowrap", letterSpacing: "0.02em" }}>{children}</span>;
 }
+// Interruptor (no hay checkbox nativo en el panel): verde = prendido.
+export function Interruptor({ on, onChange, disabled, label }) {
+  return <button type="button" role="switch" aria-checked={!!on} aria-label={label} title={label} disabled={disabled} onClick={(ev) => { ev.stopPropagation(); if (!disabled) onChange(!on); }}
+    style={{ width: 40, height: 24, borderRadius: 999, border: "none", padding: 3, background: on ? "#22c55e" : "rgba(255,255,255,0.18)", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, flexShrink: 0, transition: "background .15s", display: "inline-flex", alignItems: "center" }}>
+    <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", transform: `translateX(${on ? 16 : 0}px)`, transition: "transform .15s", boxShadow: "0 1px 3px rgba(0,0,0,0.35)" }} />
+  </button>;
+}
 export const inpP = { width: "100%", padding: "10px 12px", fontSize: 14, boxSizing: "border-box", border: `1px solid ${P.lineHi}`, borderRadius: 10, background: "rgba(0,0,0,0.25)", color: P.txt, outline: "none", fontFamily: "inherit" };
 export function BtnP({ children, onClick, v = "sec", disabled, small, full, style = {}, title, type = "button" }) {
   const base = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: small ? "7px 12px" : "10px 16px", fontSize: small ? 12 : 13, fontWeight: 700, borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", border: "1px solid transparent", whiteSpace: "nowrap", opacity: disabled ? 0.5 : 1, width: full ? "100%" : undefined };

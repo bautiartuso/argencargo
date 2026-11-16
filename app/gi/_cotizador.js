@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, tablaDesaduanaje } from "../../lib/calc";
 import { alertDialog, toast } from "../../lib/ui";
 import { clienteDe } from "../../lib/gi-prospecto";
-import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT, P, Papel, DatoP, PillP, inpP, BtnP } from "./_base";
+import { dq, ensureFresh, uploadProductPhoto, fmtDate, fmtUSD, usd0, hace, buildQuoteWaMessage, cleanWaNumber, useMovil, C, MONO, inp, Btn, Titulo, Volver, Dato, GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_GRADIENT, P, Papel, DatoP, PillP, inpP, BtnP, Interruptor } from "./_base";
 
 export const CHANNEL_DEFS=[
   {key:"aereo_blanco",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
@@ -38,6 +38,8 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   const [honorariosPct,setHonorariosPct]=useState("10");
   // Zona del cliente: limita las opciones de envío que ve en /cotizacion/[token].
   const [deliveryZone,setDeliveryZone]=useState("");
+  // Servicios que no se le muestran al cliente (16/11/2026). El precio se calcula y se guarda igual.
+  const [hiddenChannels,setHiddenChannels]=useState([]);
   const [lo,setLo]=useState(true);
   const [cargado,setCargado]=useState(false);
   const [generatedQuote,setGeneratedQuote]=useState(null);
@@ -100,6 +102,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       if(draft.honorarios_pct!=null)setHonorariosPct(String(draft.honorarios_pct));
       if(draft.supplier_deposit_pct!=null)setSupplierDepositPct(String(draft.supplier_deposit_pct));
       if(draft.delivery_zone!=null)setDeliveryZone(draft.delivery_zone);
+      if(Array.isArray(draft.hidden_channels))setHiddenChannels(draft.hidden_channels);
       const draftProds=(draft.gi_quote_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
       if(!origen&&draftProds[0]?.origin)origen=draftProds[0].origin;
       if(draftProds.length>0)setProducts(draftProds.map(emptyProductFrom));
@@ -128,7 +131,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
     setSavingDraft(true);
     try{
       let quoteId=draftQuoteId;
-      const cab={payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null};
+      const cab={payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null,hidden_channels:hiddenChannels};
       if(!quoteId){
         const inserted=await dq("gi_quotes",{method:"POST",token,body:{request_id:requestId,...cab,status:"draft"}});
         quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
@@ -200,7 +203,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
     setDirty(true);
     const t=setTimeout(()=>{saveRef.current({silent:true});},1500);
     return()=>clearTimeout(t);
-  },[products,packages,paymentPlan,honorariosPct,supplierDepositPct,origin,deliveryZone]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[products,packages,paymentPlan,honorariosPct,supplierDepositPct,origin,deliveryZone,hiddenChannels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateProduct=(i,field,value)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[field]:value}:x));
   const addProduct=()=>setProducts(p=>[...p,emptyProductFrom({})]);
@@ -285,7 +288,14 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   // Plan de pagos siempre cubierto (20/10/2026): el 1.º pago tiene que cubrir el anticipo al
   // proveedor y 1.º + 2.º todo el FOB, tomando el canal donde el FOB pesa más (el más barato).
   // Si cambian FOB, anticipo o precios y el plan queda corto, se acomoda solo.
-  const minimos=minimosPlan(totalFob,supplierDepositPct,visibleChannels.filter(c=>!c.error&&c.total>0).map(c=>c.total));
+  // A la vista del cliente: los que tienen precio y no están ocultos. Plan de pagos y "desde" salen de estos.
+  const aLaVista=visibleChannels.filter(c=>!c.error&&c.total>0&&!hiddenChannels.includes(c.key));
+  const toggleChannel=(k)=>{
+    const nuevo=hiddenChannels.includes(k)?hiddenChannels.filter(x=>x!==k):[...hiddenChannels,k];
+    if(!visibleChannels.some(c=>!c.error&&c.total>0&&!nuevo.includes(c.key))){toast.error("Tiene que quedar al menos un servicio a la vista");return;}
+    setHiddenChannels(nuevo);
+  };
+  const minimos=minimosPlan(totalFob,supplierDepositPct,aLaVista.map(c=>c.total));
   useEffect(()=>{
     if(!cargado)return;
     const {min1,min12}=minimos;
@@ -320,7 +330,7 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
       },{});
       const reqExp=request?.expires_at?String(request.expires_at).slice(0,10):null;
       const expDate=reqExp&&new Date(reqExp)>new Date()?reqExp:new Date(Date.now()+7*86400000).toISOString().slice(0,10);
-      const body={request_id:requestId,honorarios_pct:honorariosPct?Number(honorariosPct):0,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null,payment_plan:paymentPlan,...ch,status:"sent",sent_at:new Date().toISOString(),expires_at:expDate};
+      const body={request_id:requestId,honorarios_pct:honorariosPct?Number(honorariosPct):0,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null,hidden_channels:hiddenChannels,payment_plan:paymentPlan,...ch,status:"sent",sent_at:new Date().toISOString(),expires_at:expDate};
       let quoteId, publicToken;
       if(draftQuoteId){
         const updated=await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${draftQuoteId}`,body});
@@ -355,14 +365,14 @@ export function CotizadorWizard({token,requestId,profileId,onBack,rol}){
   if(step===3)return <CotizacionLista generatedQuote={generatedQuote} client={client} request={request} onBack={onBack}/>;
   const cn=client?`${client.first_name||""} ${client.last_name||""}`.trim():"—";
   const faltante=validateStep1();
-  const masBarato=visibleChannels.filter(c=>!c.error&&c.total>0).sort((a,b)=>a.total-b.total)[0];
+  const masBarato=aLaVista.slice().sort((a,b)=>a.total-b.total)[0];
   const generar=()=>{if(faltante){alertDialog(faltante);return;}generateLink();};
   return <CotizadorPantalla
     request={request} cn={cn} lastSavedAt={lastSavedAt} savingDraft={savingDraft} dirty={dirty} onSave={()=>saveDraft({})} onBack={async()=>{await saveDraft({silent:true});onBack();}}
     origin={origin} setOrigin={setOrigin}
     products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} token={token}
     packages={packages} setPackages={setPackages}
-    totalFob={totalFob} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct}
+    totalFob={totalFob} visibleChannels={visibleChannels} hiddenChannels={hiddenChannels} onToggleChannel={toggleChannel} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct}
     paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct}
     desglose={(i)=>desgloseItem({products,packages,origin,productIdx:i,visibleChannels,tariffs,config,client,totalFob})}
     minimos={minimos} verGanancia={verGanancia} faltante={faltante} masBarato={masBarato} saving={saving} onGenerar={generar} yaEnviada={!!draftQuoteId&&lastSentStatus!=="draft"}/>;
@@ -667,10 +677,11 @@ function CondicionesCard(p){
   </Papel>;
 }
 
-// Columna derecha: solo información (nada se edita acá).
+// Columna derecha: información; lo único que se toca es qué servicios ve el cliente.
 function Resumen(p){
   const canales=p.visibleChannels;
-  const validos=canales.filter(c=>!c.error&&c.total>0);
+  const ocultos=p.hiddenChannels||[];
+  const validos=canales.filter(c=>!c.error&&c.total>0&&!ocultos.includes(c.key));
   const menor=validos.length?Math.min(...validos.map(c=>c.total)):0;
   const base=p.masBarato?.total||0;
   const {min1,min12}=p.minimos||{min1:0,min12:0};
@@ -689,10 +700,11 @@ function Resumen(p){
       </div>
     </Papel>
     <Papel title={`Precio final al cliente${p.someUSA?" · origen USA":""}`} pad={16}>
-      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:P.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=>{const barato=c.total===menor&&!c.error;return <div key={c.key} style={{padding:"11px 13px",borderRadius:12,border:`1.5px solid ${barato?"rgba(52,211,153,0.35)":P.line}`,background:barato?P.greenBg:P.soft,marginBottom:8}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
-          <div style={{minWidth:0}}><p style={{margin:0,fontWeight:800,fontSize:13.5,color:P.txt}}>{c.name}{barato&&<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,color:P.green,textTransform:"uppercase",letterSpacing:"0.06em"}}>más económica</span>}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:P.mute}}>{c.time}</p></div>
-          <p style={{margin:0,fontSize:19,fontWeight:900,color:c.error?P.red:P.txt,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{c.error?"sin tarifa":usd0(c.total)}</p>
+      {canales.length===0||p.totalFob<=0?<p style={{margin:0,color:P.mute,fontSize:13}}>Cargá cantidad y costo para ver precios.</p>:canales.map(c=>{const oculto=ocultos.includes(c.key);const barato=c.total===menor&&!c.error&&!oculto;return <div key={c.key} style={{padding:"11px 13px",borderRadius:12,border:`1.5px ${oculto?"dashed":"solid"} ${barato?"rgba(52,211,153,0.35)":P.line}`,background:barato?P.greenBg:P.soft,marginBottom:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {!c.error&&<Interruptor on={!oculto} onChange={()=>p.onToggleChannel(c.key)} label={oculto?"Mostrar al cliente":"Ocultar al cliente"}/>}
+          <div style={{minWidth:0,flex:1,opacity:oculto?0.45:1}}><p style={{margin:0,fontWeight:800,fontSize:13.5,color:P.txt}}>{c.name}{oculto&&<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,color:P.sub,textTransform:"uppercase",letterSpacing:"0.06em"}}>oculta al cliente</span>}{barato&&<span style={{marginLeft:6,fontSize:9.5,fontWeight:800,color:P.green,textTransform:"uppercase",letterSpacing:"0.06em"}}>más económica</span>}</p><p style={{margin:"2px 0 0",fontSize:11.5,color:P.mute}}>{c.time}</p></div>
+          <p style={{margin:0,fontSize:19,fontWeight:900,color:c.error?P.red:P.txt,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",opacity:oculto?0.45:1}}>{c.error?"sin tarifa":usd0(c.total)}</p>
         </div>
         {!c.error&&<div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,fontSize:11.5,color:P.sub,fontVariantNumeric:"tabular-nums",flexWrap:"wrap"}}>
           <span>impo {usd0(c.impoOnly)} + honorarios {usd0(c.honorariosUsd)}</span>
