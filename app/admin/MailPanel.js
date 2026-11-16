@@ -1,6 +1,6 @@
 "use client";
 // Solapa Email del admin (04/10/2026, rediseñada el 23/10/2026). Habla con /api/admin/mail (API de Gmail).
-// Bandeja, Notificaciones, Enviados, Borradores, Spam y Papelera (como Gmail, 16/11/2026) y carpetas propias
+// Bandeja (con el spam y las notificaciones adentro), Enviados, Borradores y Papelera, y carpetas propias
 // con filtros. DHL, FedEx, UPS, WhatsApp, Facebook, Google y Tracking cargas China (y los informes DMARC) son
 // automáticas: el servidor crea los filtros y saca esos mails de la bandeja. La lista se actualiza sola.
 // Redactar con varios adjuntos y arrastrar y soltar. En el celu: carpetas → lista → mensaje.
@@ -28,8 +28,6 @@ const I = {
   papelera: ["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6"],
   bajar: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
   x: ["M18 6L6 18", "M6 6l12 12"],
-  notificaciones: ["M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9", "M13.73 21a2 2 0 0 1-3.46 0"],
-  spam: ["M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2z", "M12 8v4", "M12 16h.01"],
   restaurar: ["M1 4v6h6", "M3.51 15a9 9 0 1 0 2.13-9.36L1 10"],
 };
 const fmtFecha = (ms) => { if (!ms) return ""; const d = new Date(ms); const hoy = new Date(); return d.toDateString() === hoy.toDateString() ? d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("es-AR", { day: "2-digit", month: "short" }); };
@@ -45,16 +43,14 @@ const pesoTxt = (n) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.
 const tipoArchivo = (a) => { const n = String(a.nombre || "").toLowerCase(); return /\.pdf$/.test(n) ? ["PDF", "#ef4444"] : /\.(png|jpe?g|gif|webp|heic)$/.test(n) ? ["IMG", "#a78bfa"] : /\.(xlsx?|csv)$/.test(n) ? ["XLS", "#22c55e"] : /\.(docx?)$/.test(n) ? ["DOC", "#3b82f6"] : ["ARCH", "#94a3b8"]; };
 const fechaTxt = (f) => f ? new Date(f).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
 
-const FIJAS = ["bandeja", "notificaciones", "enviados", "borradores", "spam", "papelera"];
+const FIJAS = ["bandeja", "enviados", "borradores", "papelera"];
 
 export default function MailPanel({ token }) {
   const celu = useCelu();
   const [estado, setEstado] = useState(null);
   const [carpetas, setCarpetas] = useState([]);
   const [noLeidos, setNoLeidos] = useState(0);
-  const [noLeidosNotif, setNoLeidosNotif] = useState(0);
-  const [noLeidosSpam, setNoLeidosSpam] = useState(0);
-  const [noLeidosTotal, setNoLeidosTotal] = useState(null); // bandeja + notificaciones + spam + DHL, FedEx y UPS (globo del menú)
+  const [noLeidosTotal, setNoLeidosTotal] = useState(null); // bandeja + DHL, FedEx y UPS (globo del menú)
   const [carpeta, setCarpeta] = useState("bandeja");
   const [lista, setLista] = useState([]);
   const [sig, setSig] = useState(null);
@@ -81,7 +77,7 @@ export default function MailPanel({ token }) {
   useEffect(() => { (async () => { try { setEstado(await api({ accion: "estado" })); } catch (e) { setEstado({ error: e.message }); } })(); }, [api]);
   useEffect(() => { try { const m = new URLSearchParams(location.search).get("mail"); if (m === "ok") toast("Gmail conectado", "success"); else if (m) toast("No se pudo conectar Gmail", "error"); } catch {} }, []);
 
-  const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); setNoLeidosNotif(d.noLeidosNotif || 0); setNoLeidosSpam(d.noLeidosSpam || 0); setNoLeidosTotal(d.noLeidosTotal ?? null); } catch {} }, [api]);
+  const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); setNoLeidosTotal(d.noLeidosTotal ?? null); } catch {} }, [api]);
   // El globo del menú (Email) suma la bandeja y las carpetas de DHL, FedEx y UPS (23/10/2026).
   useEffect(() => { if (noLeidosTotal == null) return; try { window.dispatchEvent(new CustomEvent("ac_mail_noleidos", { detail: noLeidosTotal })); } catch {} }, [noLeidosTotal]);
   const cargarLista = useCallback(async (mas) => {
@@ -137,9 +133,9 @@ export default function MailPanel({ token }) {
       if (m.noLeido) {
         const k = m.nNoLeidos || 1;
         const baja = (n) => Math.max(0, n - k);
-        if (carpeta === "bandeja") setNoLeidos(baja); else if (carpeta === "notificaciones") setNoLeidosNotif(baja); else if (carpeta === "spam") setNoLeidosSpam(baja); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - k) } : c));
+        if (carpeta === "bandeja") setNoLeidos(baja); else setCarpetas((p) => p.map((c) => c.id === carpeta ? { ...c, noLeidos: Math.max(0, (c.noLeidos || 0) - k) } : c));
         const nombre = FIJAS.includes(carpeta) ? carpeta : String(carpetas.find((c) => c.id === carpeta)?.nombre || "").toLowerCase();
-        if (["bandeja", "notificaciones", "spam", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - k)));
+        if (["bandeja", "dhl", "fedex", "ups"].includes(nombre)) setNoLeidosTotal((n) => (n == null ? n : Math.max(0, n - k)));
       }
     }
     catch (e) { toast(e.message, "error"); setAbierto(null); }
@@ -170,7 +166,7 @@ export default function MailPanel({ token }) {
       if (prox && !prox.borrador) abrir(prox); else { setAbierto(null); if (celu) setVista("lista"); }
     } catch (e) { toast(e.message, "error"); }
   };
-  // Papelera → Restaurar; Spam → No es spam. Las dos sacan la conversación de la lista.
+  // Papelera → Restaurar: saca la conversación de la lista.
   const sacar = async (m, accion, aviso) => {
     try {
       await api(null, { accion, id: m.id, hilo: m.hilo });
@@ -201,7 +197,7 @@ export default function MailPanel({ token }) {
 
   // ── Rediseño 23/10/2026: tres columnas a pantalla completa, cada una con su scroll. Desde el
   // 02/11/2026 sin tarjeta: ocupa todo el ancho y alto del admin, como parte del sistema. ──
-  const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "notificaciones", l: "Notificaciones", ic: I.notificaciones, n: noLeidosNotif }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }, { k: "spam", l: "Spam", ic: I.spam, n: noLeidosSpam }, { k: "papelera", l: "Papelera", ic: I.papelera }];
+  const NAV = [{ k: "bandeja", l: "Bandeja", ic: I.bandeja, n: noLeidos }, { k: "enviados", l: "Enviados", ic: I.enviados }, { k: "borradores", l: "Borradores", ic: I.borradores }, { k: "papelera", l: "Papelera", ic: I.papelera }];
   const elegir = (k) => { setCarpeta(k); if (celu) setVista("lista"); };
   const marca = (l) => { const x = String(l || "").toLowerCase(); return x === "dhl" ? "dhl" : x === "fedex" ? "fedex" : x === "ups" ? "ups" : null; };
   const esAuto = (n) => /avisos|dmarc/i.test(n);
@@ -212,9 +208,9 @@ export default function MailPanel({ token }) {
   const iconoCarpeta = (n) => { const x = String(n).toLowerCase(); return x === "whatsapp" ? WA : x === "facebook" ? FB : x === "google" ? GOOGLE : <Ico d={I.carpeta} />; };
 
   // soloLogo: los couriers van con su logo y sin texto (el logo ya dice qué es).
-  const fila = (k, l, icono, n, { tenue = false, soloLogo = false, alto = 0 } = {}) => {
+  const fila = (k, l, icono, n, { tenue = false, soloLogo = false } = {}) => {
     const on = carpeta === k;
-    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: alto || (soloLogo ? 42 : 38), padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+    return <button key={k} onClick={() => elegir(k)} className="mp-fila" data-on={on ? "1" : "0"} style={{ position: "relative", width: "100%", display: "flex", alignItems: "center", gap: 10, height: soloLogo ? 42 : 38, padding: "0 10px 0 12px", borderRadius: 10, border: "none", background: on ? "rgba(184,149,106,0.14)" : "transparent", color: on ? GOLD_LIGHT : tenue ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.78)", fontSize: 13.5, fontWeight: on ? 800 : 600, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
       {on && <span style={{ position: "absolute", left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: GOLD_LIGHT }} />}
       {soloLogo ? <span title={l} style={{ flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center" }}>{icono}</span> : <>
         <span style={{ width: 22, display: "inline-flex", justifyContent: "center", flexShrink: 0 }}>{icono}</span>
@@ -233,9 +229,9 @@ export default function MailPanel({ token }) {
     {couriers.map((c) => fila(c.id, c.nombre, <CarrierLogo k={marca(c.nombre)} alto={26} radio={7} />, c.noLeidos, { soloLogo: true }))}
     {otras.length > 0 && seccion("Carpetas")}
     {otras.map((c) => String(c.nombre).toLowerCase() === "tracking cargas china"
-      ? fila(c.id, c.nombre, <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><img src="/brand/mybox.png" alt="MyBox" style={{ height: 15, width: "auto", alignSelf: "flex-start", display: "block" }} /><span style={{ fontSize: 12.5, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</span></span>, c.noLeidos, { soloLogo: true, alto: 50 })
+      ? fila(c.id, c.nombre, <img src="/brand/mybox.png" alt="MyBox · Tracking cargas China" style={{ height: 19, width: "auto", display: "block" }} />, c.noLeidos, { soloLogo: true })
       : fila(c.id, c.nombre, iconoCarpeta(c.nombre), c.noLeidos))}
-    {automaticas.length > 0 && seccion("Automáticas · se leen solas")}
+    {automaticas.length > 0 && seccion("Automáticas")}
     {automaticas.map((c) => fila(c.id, c.nombre, <Ico d={I.carpeta} />, c.noLeidos, { tenue: true }))}
     <div style={{ marginTop: "auto", paddingTop: 16 }}>
       <button onClick={() => setPrefsAbierto(true)} style={{ width: "100%", height: 36, marginBottom: 6, borderRadius: 10, border: "1px solid rgba(184,149,106,0.35)", background: "rgba(184,149,106,0.08)", color: GOLD_LIGHT, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✍ Firma y plantillas</button>
@@ -245,7 +241,7 @@ export default function MailPanel({ token }) {
   </div>;
 
   const titulo = NAV.find((x) => x.k === carpeta)?.l || carpetas.find((c) => c.id === carpeta)?.nombre || "";
-  const nCarpeta = carpeta === "bandeja" ? noLeidos : carpeta === "notificaciones" ? noLeidosNotif : carpeta === "spam" ? noLeidosSpam : carpetas.find((c) => c.id === carpeta)?.noLeidos || 0;
+  const nCarpeta = carpeta === "bandeja" ? noLeidos : carpetas.find((c) => c.id === carpeta)?.noLeidos || 0;
   const panelLista = <div style={{ display: "flex", flexDirection: "column", minWidth: 0, height: celu ? "auto" : "100%" }}>
     <div style={{ padding: celu ? "0 0 12px" : "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -271,7 +267,7 @@ export default function MailPanel({ token }) {
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: m.noLeido ? 800 : 600, color: m.noLeido ? "#fff" : "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{carpeta === "enviados" || m.borrador ? `Para: ${quien}` : quien}</span>
             {m.n > 1 && <span title={`${m.n} mensajes en la conversación`} style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)", flexShrink: 0 }}>{m.n}</span>}
-            {m.spam && carpeta !== "spam" && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
+            {m.spam && <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(248,113,113,0.15)", color: "#f87171" }}>SPAM</span>}
             {m.adjuntos && <span style={{ color: "rgba(255,255,255,0.4)", display: "inline-flex" }}><Ico d={I.clip} s={13} /></span>}
             <span style={{ fontSize: 11.5, color: m.noLeido ? GOLD_LIGHT : "rgba(255,255,255,0.4)", fontWeight: m.noLeido ? 700 : 500, flexShrink: 0 }}>{fmtFecha(m.fecha)}</span>
           </div>
@@ -302,7 +298,6 @@ export default function MailPanel({ token }) {
       </div>}
       <span style={{ flex: 1 }} />
       <button onClick={() => noLeido(abierto)} style={btnIco} aria-label="Marcar como no leído" title="Marcar como no leído"><Ico d={["M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z", "M22 6l-10 7L2 6"]} s={15} /></button>
-      {carpeta === "spam" && <button onClick={() => sacar(abierto, "mover", "Movido a la bandeja")} style={btnTxt}><Ico d={I.bandeja} s={15} />No es spam</button>}
       {carpeta === "papelera"
         ? <button onClick={() => sacar(abierto, "restaurar", "Restaurado")} style={btnTxt}><Ico d={I.restaurar} s={15} />Restaurar</button>
         : <button onClick={() => papelera(abierto)} style={{ ...btnIco, color: "#fca5a5" }} aria-label="Papelera" title="Mover a la papelera"><Ico d={I.papelera} s={15} /></button>}

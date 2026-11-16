@@ -88,15 +88,9 @@ const SIN_AUTO = AUTO.map((a) => `-label:${etiquetaQ(a.nombre)}`).join(" ");
 const separar = (s) => (String(s || "").match(/(?:"[^"]*"|[^,])+/g) || []).map((x) => x.trim()).filter(Boolean);
 const direccion = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim().toLowerCase();
 
-// Carpetas especiales. Hasta el 16/11/2026 la bandeja traía también el spam y las notificaciones;
-// desde ese día van como en Gmail: Bandeja = principal, Notificaciones = lo que Gmail clasifica
-// como avisos, promociones, redes y foros, Spam y Papelera aparte (las tres con su contador).
-const CATS = ["updates", "promotions", "social", "forums"];
-const CONSULTA = {
-  bandeja: `in:inbox ${CATS.map((c) => `-category:${c}`).join(" ")} ${SIN_AUTO}`,
-  notificaciones: `in:inbox {${CATS.map((c) => `category:${c}`).join(" ")}} ${SIN_AUTO}`,
-  spam: "in:spam", enviados: "in:sent", destacados: "is:starred", papelera: "in:trash",
-};
+// Carpetas especiales: la bandeja incluye el spam y las notificaciones (pedido de Bautista: todo junto,
+// que no se le pierda nada; el 16/11/2026 se probó separarlos como Gmail y lo rechazó). Papelera aparte.
+const CONSULTA = { bandeja: `{in:inbox in:spam} ${SIN_AUTO}`, enviados: "in:sent", destacados: "is:starred", papelera: "in:trash" };
 
 export async function GET(req) {
   const u = new URL(req.url);
@@ -140,11 +134,9 @@ export async function GET(req) {
       const propias = (d.labels || []).filter((l) => l.type === "user");
       const conteos = await Promise.all(propias.map((l) => gm(`/labels/${l.id}`).catch(() => ({}))));
       const cuenta = (q, max = 100) => gm(`/messages?maxResults=${max}&includeSpamTrash=true&q=${encodeURIComponent(q)}`).then((d) => (d.messages || []).length).catch(() => 0);
-      const [nl, nn, ns, tot] = await Promise.all([cuenta(`is:unread ${CONSULTA.bandeja}`), cuenta(`is:unread ${CONSULTA.notificaciones}`), cuenta("is:unread in:spam"), cuenta(Q_NO_LEIDOS, 200)]);
+      const [nl, tot] = await Promise.all([cuenta(`is:unread ${CONSULTA.bandeja}`), cuenta(Q_NO_LEIDOS, 200)]);
       return json({
         noLeidosBandeja: nl,
-        noLeidosNotif: nn,
-        noLeidosSpam: ns,
         noLeidosTotal: tot,
         carpetas: propias.map((l, i) => ({ id: l.id, nombre: l.name, noLeidos: conteos[i]?.messagesUnread || 0 })).sort((a, b) => a.nombre.localeCompare(b.nombre)),
       });
@@ -159,19 +151,22 @@ export async function GET(req) {
         return json({ mensajes: full.filter(Boolean).map((x) => ({ ...resumen(x.message), borrador: x.id })), siguiente: d.nextPageToken || null });
       }
       const base = CONSULTA[carpeta];
-      const params = new URLSearchParams({ maxResults: "25", includeSpamTrash: "true" });
+      const params = new URLSearchParams({ maxResults: "40", includeSpamTrash: "true" });
       if (base) params.set("q", `${base}${q ? ` ${q}` : ""}`);
       else { params.append("labelIds", carpeta); if (q) params.set("q", q); }
       if (pagina) params.set("pageToken", pagina);
       // Por conversación (03/11/2026): una fila por cadena, como Gmail. La fila es el último mensaje
       // de la cadena (sin borradores; en Papelera solo lo tirado, afuera lo que no está tirado), con
       // la cantidad de mensajes, cuántos están sin leer y quiénes escribieron.
-      const d = await gm(`/threads?${params}`);
+      // Orden por mensaje (16/11/2026): la lista de conversaciones de Gmail no viene ordenada por el último
+      // mail (una cadena larga con respuesta de hoy caía en la segunda página y parecía que el mail no había
+      // llegado). Se piden los últimos mensajes, que sí vienen por fecha, y de ahí salen las conversaciones.
+      const d = await gm(`/messages?${params}`);
       // Sin leer siempre a la vista (11/11/2026): Gmail ordena cada cadena por su último mensaje que entra en la
       // carpeta, así que una cadena con un mensaje viejo sin leer quedaba varias páginas abajo y el globo marcaba
       // un mail que no se encontraba. En la primera página (sin búsqueda) se traen aparte las cadenas sin leer y
       // van arriba de todo.
-      const ids = (d.threads || []).map((t) => t.id);
+      const ids = [...new Set((d.messages || []).map((m) => m.threadId))];
       if (!pagina && !q && carpeta !== "enviados" && carpeta !== "papelera") {
         const pu = new URLSearchParams({ maxResults: "15", includeSpamTrash: "true" });
         if (base) pu.set("q", `${base} is:unread`); else { pu.append("labelIds", carpeta); pu.set("q", "is:unread"); }
