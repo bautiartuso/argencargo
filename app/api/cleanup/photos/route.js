@@ -133,6 +133,11 @@ export async function GET(req) {
       const filas = await todas(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}&order=id.asc`, `${tabla}.${col}`);
       for (const f of filas) { const p = storagePath(f[col]); if (p) referencias.add(p); }
     }
+    // Fotos de prueba de baterías / marca de los vuelos (15/11/2026).
+    for (const col of ["battery_photo_urls", "brand_photo_urls"]) {
+      const filas = await todas(`/rest/v1/flights?${col}=neq.{}&select=${col}&order=id.asc`, `flights.${col}`);
+      for (const f of filas) for (const u of (f[col] || [])) { const pth = storagePath(u); if (pth) referencias.add(pth); }
+    }
     // Fotos múltiples de los bultos (operation_packages/unassigned_packages.photo_urls, 03/11/2026).
     for (const tabla of ["operation_packages", "unassigned_packages"]) {
       const filas = await todas(`/rest/v1/${tabla}?photo_urls=not.is.null&select=photo_urls&order=id.asc`, `${tabla}.photo_urls`);

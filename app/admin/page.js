@@ -9844,10 +9844,18 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
         const cambiados=(Array.isArray(orig)?orig:[]).filter(p2=>!igualesIds.has(p2.id));
         const base=cambiados.length?cambiados:(Array.isArray(orig)?orig:[]);
         const trk=base.map(p2=>String(p2.national_tracking||"").trim()).filter(Boolean).map(t=>t.slice(-5)).join("/");
-        await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}&or=(flight_id.is.null,flight_id.eq.${flight.id})`});
+        // Los bultos que quedaron iguales no se borran: siguen siendo la misma fila, con su tracking entero
+        // y la foto del escaneo (15/11/2026; antes se recreaban y la foto se perdía).
+        const idsOrig=new Set(origArr.map(p2=>p2.id));
+        const conservados=[...igualesIds].filter(id=>idsOrig.has(id));
+        await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}&or=(flight_id.is.null,flight_id.eq.${flight.id})${conservados.length?`&id=not.in.(${conservados.join(",")})`:""}`});
         for(let i=0;i<fs.length;i++){
           const f=fs[i];
           const esIgual=f.match&&f.match.opId===opId;
+          if(esIgual&&idsOrig.has(f.match.pkgId)){
+            const up=await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${f.match.pkgId}`,body:{flight_id:flight.id,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null},headers:{Prefer:"return=representation"}});
+            if(Array.isArray(up)&&up[0])continue;
+          }
           await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,flight_id:flight.id,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:esIgual?(f.match.trk||trk||null):(trk||null)},headers:{Prefer:"return=representation"}});
         }
         try{
@@ -11554,6 +11562,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
         </div>}
         {extraerBultos&&<ExtraerBultosModal flight={flight} flightOps={flightOps} token={token} onClose={()=>setExtraerBultos(false)} onDone={()=>{setExtraerBultos(false);setPkgsV(v=>v+1);onReload?.();}}/>}
+        {/* Fotos de prueba que adjunta el agente cuando marca baterías o marca (15/11/2026). */}
+        {(flight.cost_battery||flight.cost_brand||flight.battery_photo_urls?.length>0||flight.brand_photo_urls?.length>0)&&<div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
+          {[["🔋 Baterías",flight.cost_battery,flight.battery_photo_urls],["🏷 Marca",flight.cost_brand,flight.brand_photo_urls]].filter(([,on,u])=>on||u?.length>0).map(([l,,u])=><div key={l} style={{flex:"1 1 220px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.1)"}}>
+            <span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.75)",marginRight:"auto"}}>{l}</span>
+            {(u||[]).length===0?<span style={{fontSize:11.5,fontWeight:700,color:"#fbbf24"}}>sin foto</span>:(u||[]).map(x=><a key={x} href={x} target="_blank" rel="noreferrer"><img src={x} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.18)",display:"block"}}/></a>)}
+          </div>)}
+        </div>}
         {(flight.status==="despachado"||flight.status==="recibido")&&<LegajoVueloBlock flight={flight} flightOps={flightOps} token={token} onMarcarRecibido={markReceived}/>}
       </>:<>
         <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>

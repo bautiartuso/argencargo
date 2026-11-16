@@ -62,6 +62,36 @@ const saveSession=(d)=>{try{localStorage.setItem("ac_agent_s",JSON.stringify(d))
 const loadSession=()=>{try{const d=localStorage.getItem("ac_agent_s");return d?JSON.parse(d):null;}catch(e){return null;}};
 
 // Upload a photo (File) to the package-photos storage bucket. Returns public URL or null on failure.
+// Fotos de prueba del vuelo (15/11/2026): si la carga lleva baterías o marca, el agente adjunta una o
+// más fotos que lo prueban. No es obligatorio y se pueden agregar después de despachar. Cada cambio se
+// guarda en el momento con set_flight_proof_photos (tipo: "bateria" | "marca").
+function FotosPrueba({flightId,tipo,urls,onChange,token,t,falta}){
+  const [subiendo,setSubiendo]=useState(false);
+  const lista=Array.isArray(urls)?urls:[];
+  const guardar=async(nuevas)=>{
+    const r=await dq("rpc/set_flight_proof_photos",{method:"POST",token,body:{p_flight_id:flightId,p_tipo:tipo,p_urls:nuevas}});
+    if(r!==true){toast(r?.message||t.upload_failed,"error");return;}
+    onChange(nuevas);
+  };
+  const agregar=async(files)=>{
+    const fs=[...(files||[])];if(!fs.length)return;
+    setSubiendo(true);
+    const nuevas=[...lista];
+    for(const f of fs){const u=await uploadPackagePhoto(f,token);if(u)nuevas.push(u);else toast(t.upload_failed,"error");}
+    if(nuevas.length!==lista.length)await guardar(nuevas);
+    setSubiendo(false);
+  };
+  const vacio=lista.length===0;
+  const col=vacio&&falta?"251,191,36":"var(--ink)";
+  return <div onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,background:vacio&&falta?"rgba(251,191,36,0.1)":"rgba(var(--ink),0.03)",border:`1px solid ${vacio&&falta?"rgba(251,191,36,0.45)":"rgba(var(--ink),0.1)"}`}}>
+    <span style={{fontSize:12,fontWeight:700,color:vacio&&falta?"#fbbf24":"rgba(var(--ink),0.7)",flex:"1 1 150px",minWidth:0}}>{tipo==="bateria"?"🔋":"🏷️"} {vacio&&falta?(tipo==="bateria"?t.proof_battery_missing:t.proof_brand_missing):(tipo==="bateria"?t.proof_battery:t.proof_brand)}</span>
+    {lista.map(u=><span key={u} style={{position:"relative",display:"inline-flex"}}>
+      <a href={u} target="_blank" rel="noreferrer"><img src={u} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",display:"block"}}/></a>
+      <button type="button" aria-label={t.proof_remove} title={t.proof_remove} disabled={subiendo} onClick={()=>guardar(lista.filter(x=>x!==u))} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:9,border:"none",background:"#ef4444",color:"#fff",fontSize:11,fontWeight:800,lineHeight:"18px",padding:0,cursor:"pointer"}}>×</button>
+    </span>)}
+    <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:vacio&&falta?"#fbbf24":"rgba(var(--ink),0.1)",color:vacio&&falta?"#0A1628":"rgba(var(--ink),0.85)",cursor:subiendo?"wait":"pointer",whiteSpace:"nowrap"}}>{subiendo?"⏳":"📎"} {vacio?t.attach:t.proof_add}<input type="file" accept="image/*" multiple disabled={subiendo} style={{display:"none"}} onChange={e=>{agregar(e.target.files);e.target.value="";}}/></label>
+  </div>;
+}
 // Pegar una foto con ⌘V / Ctrl+V (21/10/2026): mientras `activo`, la imagen copiada que se pegue en
 // la página va a onFile, igual que en el admin. No se mete si el foco está escribiendo texto.
 function usePegarFoto(activo,onFile){
@@ -107,6 +137,12 @@ const I18N={
     search_flights:"Buscar vuelo, tracking u operación…",
     photo_missing_alert:"Falta la foto del detalle de exportación de los bultos",
     attach:"Adjuntar",
+    proof_battery:"Foto de las baterías",
+    proof_brand:"Foto de la marca",
+    proof_battery_missing:"Falta la foto de las baterías",
+    proof_brand_missing:"Falta la foto de la marca",
+    proof_add:"Agregar foto",
+    proof_remove:"Quitar foto",
     tl_created:"Creado",
     tl_invoice:"Factura OK",
     tl_tracking:"Tracking",
@@ -501,6 +537,12 @@ const I18N={
     search_flights:"搜索航班、单号或操作…",
     photo_missing_alert:"缺少包裹出口明细的截图",
     attach:"上传",
+    proof_battery:"电池照片",
+    proof_brand:"品牌照片",
+    proof_battery_missing:"缺少电池照片",
+    proof_brand_missing:"缺少品牌照片",
+    proof_add:"添加照片",
+    proof_remove:"删除照片",
     tl_created:"创建",
     tl_invoice:"发票确认",
     tl_tracking:"单号",
@@ -1360,6 +1402,10 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           {fase==="recibido"&&f.received_at&&<Pill color="var(--green)">✓ {t.tl_received} · {fechaCorta(f.received_at)}</Pill>}
           {(f.international_carrier||f.international_tracking)&&<span style={{fontSize:11.5,color:"rgba(var(--ink),0.55)",fontFamily:"'JetBrains Mono',monospace"}}>{[f.international_carrier,f.international_tracking].filter(Boolean).join(" · ")}</span>}
         </div>
+        {despachado&&(f.cost_battery||f.cost_brand)&&<div style={{display:"grid",gap:6,marginTop:10}}>
+          {f.cost_battery&&<FotosPrueba flightId={f.id} tipo="bateria" urls={f.battery_photo_urls} falta onChange={u=>setFlights(prev=>prev.map(x=>x.id===f.id?{...x,battery_photo_urls:u}:x))} token={token} t={t}/>}
+          {f.cost_brand&&<FotosPrueba flightId={f.id} tipo="marca" urls={f.brand_photo_urls} falta onChange={u=>setFlights(prev=>prev.map(x=>x.id===f.id?{...x,brand_photo_urls:u}:x))} token={token} t={t}/>}
+        </div>}
         {faltaFoto&&<div onClick={e=>e.stopPropagation()} style={{marginTop:10,padding:"8px 12px",borderRadius:10,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.4)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"var(--red)",flex:1,minWidth:200}}>⚠ {t.photo_missing_alert}</span>
           <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:"var(--red)",color:"#fff",cursor:"pointer"}}>📎 {t.attach}<input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoVuelo(f,e.target.files?.[0]);e.target.value="";}}/></label>
@@ -1756,6 +1802,8 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // Costo desglosado (pedido 26/08: control de tarifas del agente): USD/kg + recargos del carrier.
   const [costPerKg,setCostPerKg]=useState(flight.cost_per_kg_usd||"");
   const [costBattery,setCostBattery]=useState(!!flight.cost_battery);
+  const [fotosBat,setFotosBat]=useState(()=>flight.battery_photo_urls||[]);
+  const [fotosMarca,setFotosMarca]=useState(()=>flight.brand_photo_urls||[]);
   const [costBrand,setCostBrand]=useState(!!flight.cost_brand);
   const owAuto=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+(Number(p.gross_weight_kg||0)>24?Number(p.quantity||1):0),0);},0);
   const [costOverweight,setCostOverweight]=useState(Number(flight.cost_overweight_pieces||0)>0);
@@ -2104,6 +2152,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             {miTarifa&&<p style={{margin:0,fontSize:24,fontWeight:900,color:"#fff",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>USD {fmtTar(miTarifa.usd)}<span style={{fontSize:13,fontWeight:700,color:`rgba(${col},0.95)`}}> /kg</span></p>}
             {tarifaDistinta&&<button type="button" onClick={()=>{setTarifaTocada(false);setCostPerKg(fmtTar(miTarifa.usd));}} style={{height:38,padding:"0 16px",borderRadius:10,border:"none",background:"#f87171",color:"#0A1628",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.use_my_rate||"Usar mi tarifa"}</button>}
           </div>;})()}
+        {(costBattery||costBrand)&&<div style={{display:"grid",gap:8,marginBottom:12}}>
+          {costBattery&&<FotosPrueba flightId={flight.id} tipo="bateria" urls={fotosBat} onChange={setFotosBat} token={token} t={t}/>}
+          {costBrand&&<FotosPrueba flightId={flight.id} tipo="marca" urls={fotosMarca} onChange={setFotosMarca} token={token} t={t}/>}
+        </div>}
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
           <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
             {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,ROJO)}
