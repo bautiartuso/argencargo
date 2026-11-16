@@ -1737,7 +1737,9 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const q=flightSearch.trim().toLowerCase();
       const sinDocs=(f)=>f.status==="despachado"&&(!f.dispatch_photo_url||!f.commercial_invoice_path);
       const coincide=(f)=>{if(soloSinFotoVuelo&&!sinDocs(f))return false;if(!q)return true;if(String(f.flight_code||"").toLowerCase().includes(q))return true;if(String(f.international_tracking||"").toLowerCase().includes(q))return true;return flightOps.some(fo=>fo.flight_id===f.id&&String(fo.operations?.operation_code||"").toLowerCase().includes(q));};
-      const de=(k)=>ordenarVuelos(todos.filter(f=>faseVuelo(f)===k&&coincide(f)));
+      // Recibidos: los más recientes arriba (por fecha de recibido). El resto, como siempre.
+      const porRecibido=(fs)=>[...fs].sort((x,y)=>String(y.received_at||"").localeCompare(String(x.received_at||""))||String(y.flight_code||"").localeCompare(String(x.flight_code||"")));
+      const de=(k)=>{const fs=todos.filter(f=>faseVuelo(f)===k&&coincide(f));return k==="recibido"?porRecibido(fs):ordenarVuelos(fs);};
       const visibles=FASES.filter(([k])=>fase==="todos"||fase===k);
       const nada=visibles.every(([k])=>de(k).length===0);
       const sinFoto=activeFlights.filter(sinDocs);
