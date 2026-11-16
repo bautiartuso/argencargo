@@ -1433,7 +1433,9 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.6)",fontFeatureSettings:'"tnum"'}}>{kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg · {usdF(usd)}</span>
         </div>
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <table style={{width:"100%",minWidth:980,borderCollapse:"collapse",tableLayout:"fixed"}}>
+            {/* Anchos fijos: las columnas quedan alineadas entre las tablas de los distintos couriers. */}
+            <colgroup>{[9,12,6,8,11,8,8,8,9,8,8,5].map((w,i)=><col key={i} style={{width:`${w}%`}}/>)}</colgroup>
             <thead>
               <tr>{th(t.col_flight)}{th(t.col_tracking)}{th(t.col_pkgs,true)}{th(t.col_weight,true)}{th(t.col_cost,true)}{th(t.col_presented)}{th(t.col_dispatched)}{th(t.col_pickup)}{th(t.col_d_dispatch,true,t.col_d_dispatch_hint)}{th(t.col_d_pickup,true,t.col_d_pickup_hint)}{th(t.col_d_total,true,t.col_d_total_hint)}{th(recib?t.col_received:t.col_eta)}</tr>
             </thead>
@@ -1446,7 +1448,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
               const eta=etaVuelo(f);
               return <tr key={f.id} onClick={()=>setSelFlight(f.id)} className="ac-fila-vuelo" style={{cursor:"pointer"}}>
                 <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:800,letterSpacing:"0.03em"}}>{f.flight_code}{falta&&<span title={t.docs_missing} style={{marginLeft:8,display:"inline-block",width:8,height:8,borderRadius:4,background:"var(--red)",verticalAlign:"middle"}}/>}</td>
-                <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:"rgba(var(--ink),0.7)"}}>{f.international_tracking||"—"}</td>
+                <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:"rgba(var(--ink),0.7)",overflow:"hidden",textOverflow:"ellipsis"}} title={f.international_tracking||""}>{f.international_tracking||"—"}</td>
                 <td style={num}>{bultos||"—"}</td>
                 <td style={num}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—"}</td>
                 <td style={{...num,fontWeight:700}}>{f.total_cost_usd?usdF(f.total_cost_usd):"—"}</td>
