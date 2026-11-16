@@ -1438,8 +1438,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const MARCAS=[
     // Vidrio oscuro (15/11/2026, tercera vuelta): el color de la marca queda de tinte y encima va una capa
     // negra translúcida, para que descanse la vista y el texto (siempre claro, en negrita) se lea bien.
-    ["DHL",{logo:"dhl",fondo:"rgba(255,204,0,0.26)",agua:"#FFCC00",op:0.13}],
-    ["FedEx",{logo:"fedex",fondo:"rgba(190,170,255,0.16)",agua:"#ffffff",op:0.05}],
+    ["DHL",{logo:"dhl",fondo:"rgba(255,204,0,0.26)",agua:"#FFCC00",op:0.1}],
+    ["FedEx",{logo:"fedex",fondo:"rgba(190,170,255,0.16)",agua:"#ffffff",op:0.04}],
     ["UPS",{logo:"ups",fondo:"rgba(150,96,52,0.32)",agua:"#FFB500",op:0.1}],
     ["otros",{logo:null,fondo:"rgba(255,255,255,0.05)",agua:null,op:0}],
   ].map(([n,m])=>[n,{...m,tinta:"#ffffff",suave:"rgba(255,255,255,0.86)",linea:"rgba(255,255,255,0.12)"}]);
@@ -1459,7 +1459,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const L=m.logo?CARRIER_LOGOS[m.logo]:null;
       const th=(l,ayuda,lado)=><th style={{padding:"11px 6px",fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",color:m.tinta,textAlign:"center",whiteSpace:"normal",lineHeight:1.3,verticalAlign:"middle",borderBottom:`1px solid ${m.linea}`}}>{l}{ayuda&&<span className="ac-info" tabIndex={0} role="note" aria-label={ayuda} onMouseEnter={e=>mostrarAyuda(e,ayuda)} onFocus={e=>mostrarAyuda(e,ayuda)} onMouseLeave={()=>setAyudaCol(null)} onBlur={()=>setAyudaCol(null)} onClick={e=>{e.stopPropagation();mostrarAyuda(e,ayuda);}} style={{borderColor:m.suave,color:m.suave}}>i</span>}</th>;
       const td={padding:"11px 8px",fontSize:13,fontWeight:800,color:m.tinta,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`,fontFeatureSettings:'"tnum"'};
-      return <div key={nombre} className="ac-noinv" style={{position:"relative",marginBottom:18,borderRadius:16,overflow:"hidden",background:`linear-gradient(rgba(5,10,20,0.58),rgba(5,10,20,0.58)),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0) 45%),${m.fondo}`,backdropFilter:"blur(18px) saturate(1.2)",WebkitBackdropFilter:"blur(18px) saturate(1.2)",border:"1px solid rgba(255,255,255,0.14)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.14),0 14px 34px rgba(0,0,0,0.3)"}}>
+      return <div key={nombre} className="ac-noinv" style={{position:"relative",marginBottom:18,borderRadius:16,overflow:"hidden",background:`linear-gradient(rgba(5,10,20,0.74),rgba(5,10,20,0.74)),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0) 45%),${m.fondo}`,backdropFilter:"blur(18px) saturate(1.2)",WebkitBackdropFilter:"blur(18px) saturate(1.2)",border:"1px solid rgba(255,255,255,0.14)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.14),0 14px 34px rgba(0,0,0,0.3)"}}>
         {L&&<div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",overflow:"hidden"}}>
           <svg viewBox={L.vb} preserveAspectRatio="xMidYMid meet" style={{width:m.logo==="ups"?"24%":"64%",maxHeight:"150%",opacity:m.op,color:"var(--tx)"}}><path d={L.d} fill={m.agua}/></svg>
         </div>}
@@ -1495,7 +1495,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
                 <td style={c}>{f.carrier_pickup_at?fechaDM(f.carrier_pickup_at):pastilla(t.pickup_pending,"#fbbf24")}</td>
                 <td style={c}>{dDesp==null?"—":pastilla(demTxt(dDesp),colDem(dDesp))}</td>
                 <td style={c}>{pick?pastilla(`${demTxt(pick.dias)}${pick.hecho?"":" ⏳"}`,colDem(pick.dias)):"—"}</td>
-                <td style={{...c,fontWeight:800}}>{demTxt(dTot)}</td>
+                <td style={c}>{dTot==null?"—":pastilla(demTxt(dTot),dTot<4?"#4ade80":dTot<=6?"#fbbf24":"#f87171")}</td>
                 <td style={c}>{recib?fechaDM(f.received_at):fechaDM(eta)}</td>
               </tr>;})}</tbody>
           </table>
