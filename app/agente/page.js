@@ -10,6 +10,8 @@ import { parsePedido, tarifaPedido } from "../../lib/tarifas-agente";
 import { hoyAR } from "../../lib/fecha-ar";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
 import { filtrosSeguros } from "../../lib/columnas-seguras";
+import CarrierLogo from "../components/CarrierLogo";
+import { CARRIER_LOGOS } from "../../lib/carrier-logos";
 instalarAuthFetch(["ac_agent_s"],{refrescar:(t)=>ensureFreshToken(t)});
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -154,7 +156,14 @@ const I18N={
     col_flight:"Vuelo",col_tracking:"Tracking",col_pkgs:"Bultos",col_weight:"Peso",col_cost:"Costo",
     col_presented:"Presentado",col_dispatched:"Despachado",col_pickup:"Pick-up",
     col_d_dispatch:"Dem. despacho",col_d_pickup:"Dem. pick-up",col_d_total:"Dem. total",
-    col_d_dispatch_hint:"De la presentación de la factura al despacho",col_d_pickup_hint:"Del despacho al pick-up del courier",col_d_total_hint:"De la presentación al pick-up",
+    col_presented_hint:"Fecha en la que Argencargo presentó la factura del vuelo.",
+    col_dispatched_hint:"Fecha en la que el agente cargó la información del vuelo (tracking y costo).",
+    col_pickup_hint:"Fecha en la que el courier retiró el vuelo.",
+    col_d_dispatch_hint:"Días que tardó el agente en cargar la información del vuelo desde que Argencargo presentó la factura.",
+    col_d_pickup_hint:"Días que tardó el courier en retirar el vuelo desde que el agente cargó la información. Si todavía no lo retiró, sigue contando.",
+    col_d_total_hint:"Días desde que Argencargo presentó la factura hasta que el courier retiró el vuelo.",
+    col_eta_hint:"Fecha estimada de llegada a Argentina.",col_received_hint:"Fecha en la que Argencargo recibió el vuelo.",
+    missing_title:"Falta subir",
     col_eta:"ETA",col_received:"Recibido",pickup_pending:"pendiente",courier_other:"Otros",docs_missing:"Faltan documentos o fotos",
     proof_battery:"Foto de las baterías",
     proof_brand:"Foto de la marca",
@@ -561,7 +570,14 @@ const I18N={
     col_flight:"航班",col_tracking:"运单号",col_pkgs:"件数",col_weight:"重量",col_cost:"费用",
     col_presented:"已提交",col_dispatched:"已发货",col_pickup:"取件",
     col_d_dispatch:"发货用时",col_d_pickup:"取件用时",col_d_total:"总用时",
-    col_d_dispatch_hint:"从提交发票到发货",col_d_pickup_hint:"从发货到快递取件",col_d_total_hint:"从提交发票到取件",
+    col_presented_hint:"Argencargo 提交航班发票的日期。",
+    col_dispatched_hint:"代理录入航班信息（运单号和费用）的日期。",
+    col_pickup_hint:"快递公司取件的日期。",
+    col_d_dispatch_hint:"从 Argencargo 提交发票到代理录入航班信息所用的天数。",
+    col_d_pickup_hint:"从代理录入信息到快递取件所用的天数。尚未取件时继续计时。",
+    col_d_total_hint:"从 Argencargo 提交发票到快递取件的总天数。",
+    col_eta_hint:"预计到达阿根廷的日期。",col_received_hint:"Argencargo 收到航班的日期。",
+    missing_title:"还需上传",
     col_eta:"预计到达",col_received:"已接收",pickup_pending:"待取件",courier_other:"其他",docs_missing:"缺少文件或照片",
     proof_battery:"电池照片",
     proof_brand:"品牌照片",
@@ -998,7 +1014,8 @@ html,body{background:#0A1628}
 .ac-isla-tab .n{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(var(--ink),0.1);font-variant-numeric:tabular-nums}
 .ac-isla-tab.on .n{background:rgba(10,22,40,0.14)}
 .ac-isla-ctl{display:flex;align-items:center;gap:6px;flex-shrink:0}
-.ac-fila-vuelo:hover td{background:rgba(var(--ink),0.045)}
+.ac-fila-vuelo:hover td{box-shadow:inset 0 0 0 999px rgba(127,127,127,0.12)}
+.ac-info{position:relative;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;border:1.2px solid;border-radius:50%;font-size:9px;font-weight:800;font-style:normal;text-transform:none;letter-spacing:0;cursor:help;vertical-align:middle}
 .ac-chip{padding:7px 13px;font-size:12px;font-weight:700;border-radius:999px;border:1px solid rgba(var(--ink),0.12);background:rgba(var(--ink),0.04);color:rgba(var(--ink),0.65);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;transition:all 150ms;white-space:nowrap}
 .ac-chip:hover{color:var(--tx);border-color:rgba(var(--ink),0.25)}
 .ac-chip.on{background:var(--tx);color:var(--panel);border-color:transparent}
@@ -1183,6 +1200,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [statsPeriod,setStatsPeriod]=useState("month");
   const [fase,setFase]=useState("listo"); // solapa de Vuelos
   const [flightSearch,setFlightSearch]=useState("");
+  const [ayudaCol,setAyudaCol]=useState(null); // cartel de ayuda de una columna: {texto,x,y}
   const [anchoV,setAnchoV]=useState(1280);
   useEffect(()=>{const f=()=>setAnchoV(window.innerWidth);f();window.addEventListener("resize",f);return()=>window.removeEventListener("resize",f);},[]);
   const [soloSinFoto,setSoloSinFoto]=useState(false);
@@ -1415,50 +1433,68 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const diasEntreF=(a,b)=>a&&b?Math.max(0,(new Date(b)-new Date(a))/86400000):null;
   const demTxt=(d)=>d==null?"—":d<1?`<1 ${t.days_short}`:`${Math.round(d)} ${t.days_short}`;
   const fechaDM=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—";
-  const COURIERS=[["DHL","#FFCC00","#D40511"],["FedEx","#4D148C","#ffffff"],["UPS","#351C15","#FFB500"],["otros","rgba(var(--ink),0.12)","var(--tx)"]];
+  // Cada courier con su marca (15/11/2026): fondo de vidrio del color de la marca, casi opaco para que se
+  // lea bien, y el logo grande de fondo. tinta = texto, suave = títulos, linea = divisores.
+  const MARCAS=[
+    ["DHL",{logo:"dhl",fondo:"rgba(255,204,0,0.93)",tinta:"#1F1500",suave:"rgba(31,21,0,0.68)",linea:"rgba(31,21,0,0.14)",agua:0.11}],
+    ["FedEx",{logo:"fedex",fondo:"rgba(255,255,255,0.94)",tinta:"#16102A",suave:"rgba(22,16,42,0.62)",linea:"rgba(22,16,42,0.1)",agua:0.07}],
+    ["UPS",{logo:"ups",fondo:"rgba(53,28,21,0.95)",tinta:"#FFF4DC",suave:"rgba(255,244,220,0.7)",linea:"rgba(255,244,220,0.14)",agua:0.12}],
+    ["otros",{logo:null,fondo:"rgba(var(--ink),0.028)",tinta:"var(--tx)",suave:"rgba(var(--ink),0.5)",linea:"rgba(var(--ink),0.08)",agua:0}],
+  ];
   const courierDe=(f)=>{const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"DHL":c.includes("fedex")?"FedEx":c.includes("ups")?"UPS":"otros";};
+  // Lo que le falta subir a un vuelo despachado (lista de textos).
+  const faltantesVuelo=(f)=>f.status!=="despachado"?[]:[!f.dispatch_photo_url&&t.dispatch_photo,!f.commercial_invoice_path&&t.flight_invoice,f.cost_battery&&!(f.battery_photo_urls||[]).length&&t.proof_battery,f.cost_brand&&!(f.brand_photo_urls||[]).length&&t.proof_brand].filter(Boolean);
+  const mostrarAyuda=(e,texto)=>{const r=e.currentTarget.getBoundingClientRect();setAyudaCol({texto,x:Math.min(Math.max(r.left+r.width/2-120,12),window.innerWidth-252),y:r.bottom+8});};
   const tablaVuelos=(fs,k)=>{
     const recib=k==="recibido";
-    const th=(l,der,tit)=><th title={tit} style={{padding:"9px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(var(--ink),0.45)",textAlign:der?"right":"left",whiteSpace:"nowrap",borderBottom:"1px solid rgba(var(--ink),0.08)"}}>{l}</th>;
-    const td={padding:"11px 10px",fontSize:12.5,color:"var(--tx)",whiteSpace:"nowrap",borderBottom:"1px solid rgba(var(--ink),0.05)",fontFeatureSettings:'"tnum"'};
-    const num={...td,textAlign:"right"};
-    return COURIERS.map(([nombre,fondo,tinta])=>{
+    // Demoras y pendientes en pastilla oscura: se leen igual sobre amarillo, blanco o marrón.
+    const pastilla=(txt,color)=><span style={{display:"inline-block",minWidth:44,padding:"3px 9px",borderRadius:999,background:"rgba(10,22,40,0.9)",color,fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>{txt}</span>;
+    const colDem=(d)=>d<2?"#4ade80":d<=3?"#fbbf24":"#f87171";
+    return MARCAS.map(([nombre,m])=>{
       const grupo=fs.filter(f=>courierDe(f)===nombre);
       if(!grupo.length)return null;
       const kg=grupo.reduce((a,f)=>a+Number(f.total_weight_kg||0),0),usd=grupo.reduce((a,f)=>a+Number(f.total_cost_usd||0),0);
-      return <div key={nombre} style={{marginBottom:16,background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.07)",borderRadius:14,overflow:"hidden"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderBottom:"1px solid rgba(var(--ink),0.08)"}}>
-          <span style={{padding:"4px 14px",borderRadius:8,background:fondo,color:tinta,fontSize:13,fontWeight:900,letterSpacing:"0.02em",fontStyle:nombre==="otros"?"normal":"italic"}}>{nombre==="otros"?t.courier_other:nombre}</span>
-          <span style={{fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.5)"}}>{grupo.length}</span>
-          <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.6)",fontFeatureSettings:'"tnum"'}}>{kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg · {usdF(usd)}</span>
+      const L=m.logo?CARRIER_LOGOS[m.logo]:null;
+      const th=(l,ayuda,lado)=><th style={{padding:"10px 8px",fontSize:10,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:m.suave,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`}}>{l}{ayuda&&<span className="ac-info" tabIndex={0} role="note" aria-label={ayuda} onMouseEnter={e=>mostrarAyuda(e,ayuda)} onFocus={e=>mostrarAyuda(e,ayuda)} onMouseLeave={()=>setAyudaCol(null)} onBlur={()=>setAyudaCol(null)} onClick={e=>{e.stopPropagation();mostrarAyuda(e,ayuda);}} style={{borderColor:m.suave,color:m.suave}}>i</span>}</th>;
+      const td={padding:"11px 8px",fontSize:12.5,color:m.tinta,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`,fontFeatureSettings:'"tnum"'};
+      return <div key={nombre} className="ac-noinv" style={{position:"relative",marginBottom:18,borderRadius:16,overflow:"hidden",background:`linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0) 42%),${m.fondo}`,backdropFilter:"blur(16px) saturate(1.25)",WebkitBackdropFilter:"blur(16px) saturate(1.25)",border:"1px solid rgba(255,255,255,0.32)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.4),0 14px 34px rgba(0,0,0,0.28)"}}>
+        {L&&<div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",overflow:"hidden"}}>
+          <svg viewBox={L.vb} preserveAspectRatio="xMidYMid meet" style={{width:m.logo==="ups"?"24%":"64%",maxHeight:"150%",opacity:m.agua}}><path d={L.d} fill={L.fill}/></svg>
+        </div>}
+        <div style={{position:"relative",display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:`1px solid ${m.linea}`}}>
+          {m.logo?<span style={{display:"inline-flex",borderRadius:9,boxShadow:"0 2px 10px rgba(0,0,0,0.22)"}}><CarrierLogo k={m.logo} alto={34}/></span>:<span style={{fontSize:13,fontWeight:800,color:m.tinta}}>{t.courier_other}</span>}
+          <span style={{fontSize:12.5,fontWeight:800,color:m.suave}}>{grupo.length}</span>
+          <span style={{marginLeft:"auto",fontSize:12.5,fontWeight:800,color:m.tinta,fontFeatureSettings:'"tnum"'}}>{kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg · {usdF(usd)}</span>
         </div>
-        <div style={{overflowX:"auto"}}>
+        <div style={{position:"relative",overflowX:"auto"}}>
           <table style={{width:"100%",minWidth:980,borderCollapse:"collapse",tableLayout:"fixed"}}>
             {/* Anchos fijos: las columnas quedan alineadas entre las tablas de los distintos couriers. */}
-            <colgroup>{[9,12,6,8,11,8,8,8,9,8,8,5].map((w,i)=><col key={i} style={{width:`${w}%`}}/>)}</colgroup>
+            <colgroup>{[10,12,6,8,10,8,8,8,9,8,8,5].map((w,i)=><col key={i} style={{width:`${w}%`}}/>)}</colgroup>
             <thead>
-              <tr>{th(t.col_flight)}{th(t.col_tracking)}{th(t.col_pkgs,true)}{th(t.col_weight,true)}{th(t.col_cost,true)}{th(t.col_presented)}{th(t.col_dispatched)}{th(t.col_pickup)}{th(t.col_d_dispatch,true,t.col_d_dispatch_hint)}{th(t.col_d_pickup,true,t.col_d_pickup_hint)}{th(t.col_d_total,true,t.col_d_total_hint)}{th(recib?t.col_received:t.col_eta)}</tr>
+              <tr>{th(t.col_flight)}{th(t.col_tracking)}{th(t.col_pkgs)}{th(t.col_weight)}{th(t.col_cost)}{th(t.col_presented,t.col_presented_hint)}{th(t.col_dispatched,t.col_dispatched_hint)}{th(t.col_pickup,t.col_pickup_hint)}{th(t.col_d_dispatch,t.col_d_dispatch_hint)}{th(t.col_d_pickup,t.col_d_pickup_hint)}{th(t.col_d_total,t.col_d_total_hint)}{th(recib?t.col_received:t.col_eta,recib?t.col_received_hint:t.col_eta_hint)}</tr>
             </thead>
             <tbody>{grupo.map(f=>{
               const bultos=packages.filter(p2=>p2.flight_id===f.id).reduce((a,p2)=>a+Number(p2.quantity||1),0);
               const dDesp=diasEntreF(f.invoice_presented_at,f.dispatched_at);
               const pick=demoraPickup(f); // {dias, hecho}: si todavía no lo retiraron, corre hasta hoy
               const dTot=f.carrier_pickup_at?diasEntreF(f.invoice_presented_at,f.carrier_pickup_at):null;
-              const falta=f.status==="despachado"&&(!f.dispatch_photo_url||!f.commercial_invoice_path||(f.cost_battery&&!(f.battery_photo_urls||[]).length)||(f.cost_brand&&!(f.brand_photo_urls||[]).length));
+              const falta=faltantesVuelo(f);
               const eta=etaVuelo(f);
-              return <tr key={f.id} onClick={()=>setSelFlight(f.id)} className="ac-fila-vuelo" style={{cursor:"pointer"}}>
-                <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:800,letterSpacing:"0.03em"}}>{f.flight_code}{falta&&<span title={t.docs_missing} style={{marginLeft:8,display:"inline-block",width:8,height:8,borderRadius:4,background:"var(--red)",verticalAlign:"middle"}}/>}</td>
-                <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:"rgba(var(--ink),0.7)",overflow:"hidden",textOverflow:"ellipsis"}} title={f.international_tracking||""}>{f.international_tracking||"—"}</td>
-                <td style={num}>{bultos||"—"}</td>
-                <td style={num}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—"}</td>
-                <td style={{...num,fontWeight:700}}>{f.total_cost_usd?usdF(f.total_cost_usd):"—"}</td>
-                <td style={td}>{fechaDM(f.invoice_presented_at)}</td>
-                <td style={td}>{fechaDM(f.dispatched_at)}</td>
-                <td style={{...td,color:f.carrier_pickup_at?"var(--tx)":"var(--amber)",fontWeight:f.carrier_pickup_at?400:700}}>{f.carrier_pickup_at?fechaDM(f.carrier_pickup_at):t.pickup_pending}</td>
-                <td style={{...num,fontWeight:700,color:dDesp==null?"rgba(var(--ink),0.35)":colorDemora(dDesp)}}>{demTxt(dDesp)}</td>
-                <td style={{...num,fontWeight:700,color:pick?colorDemora(pick.dias):"rgba(var(--ink),0.35)"}}>{pick?`${demTxt(pick.dias)}${pick.hecho?"":" ⏳"}`:"—"}</td>
-                <td style={{...num,fontWeight:700}}>{demTxt(dTot)}</td>
-                <td style={td}>{recib?fechaDM(f.received_at):fechaDM(eta)}</td>
+              // Vuelo con algo sin subir: toda la fila con borde rojo y el aviso debajo del código.
+              const c=falta.length?{...td,background:"rgba(239,68,68,0.16)"}:td;
+              return <tr key={f.id} onClick={()=>setSelFlight(f.id)} className="ac-fila-vuelo" title={falta.length?`${t.missing_title}: ${falta.join(" · ")}`:undefined} style={{cursor:"pointer",...(falta.length?{outline:"2px solid #ef4444",outlineOffset:-2}:{})}}>
+                <td style={{...c,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:800,letterSpacing:"0.03em"}}>{f.flight_code}{falta.length>0&&<span style={{display:"block",marginTop:4,fontFamily:"inherit",letterSpacing:0}}><span style={{display:"inline-block",padding:"2px 8px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10.5,fontWeight:800,fontFamily:"system-ui,sans-serif"}}>⚠ {t.missing_title} {falta.length}</span></span>}</td>
+                <td style={{...c,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,overflow:"hidden",textOverflow:"ellipsis"}} title={f.international_tracking||""}>{f.international_tracking||"—"}</td>
+                <td style={c}>{bultos||"—"}</td>
+                <td style={c}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—"}</td>
+                <td style={{...c,fontWeight:800}}>{f.total_cost_usd?usdF(f.total_cost_usd):"—"}</td>
+                <td style={c}>{fechaDM(f.invoice_presented_at)}</td>
+                <td style={c}>{fechaDM(f.dispatched_at)}</td>
+                <td style={c}>{f.carrier_pickup_at?fechaDM(f.carrier_pickup_at):pastilla(t.pickup_pending,"#fbbf24")}</td>
+                <td style={c}>{dDesp==null?"—":pastilla(demTxt(dDesp),colDem(dDesp))}</td>
+                <td style={c}>{pick?pastilla(`${demTxt(pick.dias)}${pick.hecho?"":" ⏳"}`,colDem(pick.dias)):"—"}</td>
+                <td style={{...c,fontWeight:800}}>{demTxt(dTot)}</td>
+                <td style={c}>{recib?fechaDM(f.received_at):fechaDM(eta)}</td>
               </tr>;})}</tbody>
           </table>
         </div>
@@ -1704,11 +1740,6 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const nada=visibles.every(([k])=>de(k).length===0);
       const sinFoto=activeFlights.filter(sinDocs);
       return <>
-        {sinFoto.length>0&&<div className="ac-alerta" style={{marginBottom:14}}>
-          <span style={{fontSize:16}}>📷</span>
-          <span style={{flex:1,fontSize:13,fontWeight:700}}>{sinFoto.length} {t.flights_no_photo}</span>
-          <button onClick={()=>{setFase("todos");setFlightSearch("");setSoloSinFotoVuelo(true);}} style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,border:"none",background:"var(--red)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>{t.show_them} →</button>
-        </div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",marginBottom:12}}>
           {FASES.map(([k,l])=><button key={k} className={`ac-chip${fase===k?" on":""}`} onClick={()=>{setFase(k);setSoloSinFotoVuelo(false);}}><span style={{width:7,height:7,borderRadius:"50%",background:stColors[k],display:"inline-block"}}/>{l}<span className="n">{de(k).length}</span></button>)}
           <button className={`ac-chip${fase==="todos"?" on":""}`} onClick={()=>{setFase("todos");setSoloSinFotoVuelo(false);}}>{t.phase_all}<span className="n">{todos.filter(coincide).length}</span></button>
@@ -1727,6 +1758,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
             {fase==="todos"&&<p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:c,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:`0 0 8px ${c}`}}/>{l}<span style={{color:"rgba(var(--ink),0.4)",fontWeight:600}}>· {fs.length}</span></p>}
             {k!=="listo"&&anchoV>=900?tablaVuelos(fs,k):<div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
           </div>;})}
+        {ayudaCol&&<div role="tooltip" style={{position:"fixed",left:ayudaCol.x,top:ayudaCol.y,zIndex:400,width:240,boxSizing:"border-box",padding:"10px 12px",borderRadius:10,background:"#0A1628",border:"1px solid rgba(255,255,255,0.14)",color:"#fff",fontSize:12.5,fontWeight:600,lineHeight:1.4,boxShadow:"0 12px 30px rgba(0,0,0,0.45)",pointerEvents:"none"}}>{ayudaCol.texto}</div>}
       </>;})()}
 
     {/* Flight detail (shared by active_flights + history) */}
@@ -2113,6 +2145,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   };
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:"var(--gold)",background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_active_flights}</button>
+    {(()=>{if(flight.status!=="despachado")return null;
+      const falta=[!dispatchPhotoUrl&&t.dispatch_photo,!facturaNombre&&t.flight_invoice,flight.cost_battery&&!fotosBat.length&&t.proof_battery,flight.cost_brand&&!fotosMarca.length&&t.proof_brand].filter(Boolean);
+      if(!falta.length)return null;
+      return <div className="ac-alerta" role="alert" style={{marginBottom:14}}><span style={{fontSize:16}}>⚠</span><span style={{flex:1,fontSize:13,fontWeight:700}}>{t.missing_title}: {falta.join(" · ")}</span></div>;})()}
     <div style={{background:"rgba(var(--ink),0.028)",borderRadius:14,border:"1px solid rgba(var(--ink),0.06)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         <h3 style={{fontSize:18,fontWeight:700,color:"var(--tx)",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
