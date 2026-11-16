@@ -1455,7 +1455,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       if(!grupo.length)return null;
       const kg=grupo.reduce((a,f)=>a+Number(f.total_weight_kg||0),0),usd=grupo.reduce((a,f)=>a+Number(f.total_cost_usd||0),0);
       const L=m.logo?CARRIER_LOGOS[m.logo]:null;
-      const th=(l,ayuda,lado)=><th style={{padding:"10px 8px",fontSize:10,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:m.suave,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`}}>{l}{ayuda&&<span className="ac-info" tabIndex={0} role="note" aria-label={ayuda} onMouseEnter={e=>mostrarAyuda(e,ayuda)} onFocus={e=>mostrarAyuda(e,ayuda)} onMouseLeave={()=>setAyudaCol(null)} onBlur={()=>setAyudaCol(null)} onClick={e=>{e.stopPropagation();mostrarAyuda(e,ayuda);}} style={{borderColor:m.suave,color:m.suave}}>i</span>}</th>;
+      const th=(l,ayuda,lado)=><th style={{padding:"10px 6px",fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",color:m.suave,textAlign:"center",whiteSpace:"normal",lineHeight:1.3,verticalAlign:"middle",borderBottom:`1px solid ${m.linea}`}}>{l}{ayuda&&<span className="ac-info" tabIndex={0} role="note" aria-label={ayuda} onMouseEnter={e=>mostrarAyuda(e,ayuda)} onFocus={e=>mostrarAyuda(e,ayuda)} onMouseLeave={()=>setAyudaCol(null)} onBlur={()=>setAyudaCol(null)} onClick={e=>{e.stopPropagation();mostrarAyuda(e,ayuda);}} style={{borderColor:m.suave,color:m.suave}}>i</span>}</th>;
       const td={padding:"11px 8px",fontSize:12.5,color:m.tinta,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`,fontFeatureSettings:'"tnum"'};
       return <div key={nombre} className="ac-noinv" style={{position:"relative",marginBottom:18,borderRadius:16,overflow:"hidden",background:`linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0) 42%),${m.fondo}`,backdropFilter:"blur(16px) saturate(1.25)",WebkitBackdropFilter:"blur(16px) saturate(1.25)",border:"1px solid rgba(255,255,255,0.32)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.4),0 14px 34px rgba(0,0,0,0.28)"}}>
         {L&&<div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",overflow:"hidden"}}>
@@ -1469,7 +1469,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
         <div style={{position:"relative",overflowX:"auto"}}>
           <table style={{width:"100%",minWidth:980,borderCollapse:"collapse",tableLayout:"fixed"}}>
             {/* Anchos fijos: las columnas quedan alineadas entre las tablas de los distintos couriers. */}
-            <colgroup>{[10,12,6,8,10,8,8,8,9,8,8,5].map((w,i)=><col key={i} style={{width:`${w}%`}}/>)}</colgroup>
+            <colgroup>{[10,11,6,8,10,9,9,8,8,8,7,6].map((w,i)=><col key={i} style={{width:`${w}%`}}/>)}</colgroup>
             <thead>
               <tr>{th(t.col_flight)}{th(t.col_tracking)}{th(t.col_pkgs)}{th(t.col_weight)}{th(t.col_cost)}{th(t.col_presented,t.col_presented_hint)}{th(t.col_dispatched,t.col_dispatched_hint)}{th(t.col_pickup,t.col_pickup_hint)}{th(t.col_d_dispatch,t.col_d_dispatch_hint)}{th(t.col_d_pickup,t.col_d_pickup_hint)}{th(t.col_d_total,t.col_d_total_hint)}{th(recib?t.col_received:t.col_eta,recib?t.col_received_hint:t.col_eta_hint)}</tr>
             </thead>
