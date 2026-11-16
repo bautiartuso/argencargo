@@ -65,8 +65,9 @@ const loadSession=()=>{try{const d=localStorage.getItem("ac_agent_s");return d?J
 // Fotos de prueba del vuelo (15/11/2026): si la carga lleva baterías o marca, el agente adjunta una o
 // más fotos que lo prueban. No es obligatorio y se pueden agregar después de despachar. Cada cambio se
 // guarda en el momento con set_flight_proof_photos (tipo: "bateria" | "marca").
-function FotosPrueba({flightId,tipo,urls,onChange,token,t,falta}){
+function FotosPrueba({flightId,tipo,urls,onChange,token,t,falta,enTarjeta,pegar,onArmar}){
   const [subiendo,setSubiendo]=useState(false);
+  const [encima,setEncima]=useState(false);
   const lista=Array.isArray(urls)?urls:[];
   const guardar=async(nuevas)=>{
     const r=await dq("rpc/set_flight_proof_photos",{method:"POST",token,body:{p_flight_id:flightId,p_tipo:tipo,p_urls:nuevas}});
@@ -74,22 +75,35 @@ function FotosPrueba({flightId,tipo,urls,onChange,token,t,falta}){
     onChange(nuevas);
   };
   const agregar=async(files)=>{
-    const fs=[...(files||[])];if(!fs.length)return;
+    const fs=[...(files||[])].filter(f=>f&&f.type?.startsWith("image/"));if(!fs.length||subiendo)return;
     setSubiendo(true);
     const nuevas=[...lista];
     for(const f of fs){const u=await uploadPackagePhoto(f,token);if(u)nuevas.push(u);else toast(t.upload_failed,"error");}
     if(nuevas.length!==lista.length)await guardar(nuevas);
     setSubiendo(false);
   };
+  // Tres maneras de sumar una foto: elegir el archivo, arrastrarla encima o pegarla con ⌘V / Ctrl+V
+  // (pegar va a la zona que está "armada": la que se tocó o se acaba de marcar en Sí).
+  usePegarFoto(!!pegar&&!subiendo,(f)=>agregar([f]));
+  const soltar={onDragOver:e=>{e.preventDefault();e.stopPropagation();setEncima(true);},onDragLeave:()=>setEncima(false),onDrop:e=>{e.preventDefault();e.stopPropagation();setEncima(false);agregar(e.dataTransfer?.files);}};
   const vacio=lista.length===0;
-  const col=vacio&&falta?"251,191,36":"var(--ink)";
-  return <div onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,background:vacio&&falta?"rgba(251,191,36,0.1)":"rgba(var(--ink),0.03)",border:`1px solid ${vacio&&falta?"rgba(251,191,36,0.45)":"rgba(var(--ink),0.1)"}`}}>
+  const miniaturas=lista.map(u=><span key={u} style={{position:"relative",display:"inline-flex"}}>
+    <a href={u} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}><img src={u} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",display:"block"}}/></a>
+    <button type="button" aria-label={t.proof_remove} title={t.proof_remove} disabled={subiendo} onClick={e=>{e.stopPropagation();guardar(lista.filter(x=>x!==u));}} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:9,border:"none",background:"#ef4444",color:"#fff",fontSize:11,fontWeight:800,lineHeight:"18px",padding:0,cursor:"pointer"}}>×</button>
+  </span>);
+  const entrada=<input type="file" accept="image/*" multiple disabled={subiendo} style={{display:"none"}} onChange={e=>{agregar(e.target.files);e.target.value="";}}/>;
+  if(enTarjeta){
+    const activo=pegar||encima;
+    return <div {...soltar} onClick={onArmar} style={{marginTop:10,padding:"10px",borderRadius:10,cursor:"pointer",border:`${activo?2:1.5}px ${activo?"solid":"dashed"} ${activo?"var(--gold)":vacio?"rgba(var(--ink),0.22)":"rgba(34,197,94,0.5)"}`,background:encima?"rgba(184,149,106,0.14)":vacio?"rgba(var(--ink),0.03)":"rgba(34,197,94,0.06)"}}>
+      {!vacio&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>{miniaturas}</div>}
+      <label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,height:34,borderRadius:8,background:"rgba(var(--ink),0.1)",color:"rgba(var(--ink),0.9)",fontSize:12,fontWeight:800,cursor:subiendo?"wait":"pointer"}}>{subiendo?"⏳":"📎"} {vacio?(tipo==="bateria"?t.proof_battery:t.proof_brand):t.proof_add}{entrada}</label>
+      <p style={{margin:"6px 0 0",fontSize:10.5,textAlign:"center",color:pegar?"var(--gold)":"rgba(var(--ink),0.45)",fontWeight:pegar?700:500}}>{pegar?t.proof_paste_ready:t.proof_paste}</p>
+    </div>;
+  }
+  return <div {...soltar} onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,background:encima?"rgba(184,149,106,0.14)":vacio&&falta?"rgba(251,191,36,0.1)":"rgba(var(--ink),0.03)",border:`1px solid ${encima?"var(--gold)":vacio&&falta?"rgba(251,191,36,0.45)":"rgba(var(--ink),0.1)"}`}}>
     <span style={{fontSize:12,fontWeight:700,color:vacio&&falta?"#fbbf24":"rgba(var(--ink),0.7)",flex:"1 1 150px",minWidth:0}}>{tipo==="bateria"?"🔋":"🏷️"} {vacio&&falta?(tipo==="bateria"?t.proof_battery_missing:t.proof_brand_missing):(tipo==="bateria"?t.proof_battery:t.proof_brand)}</span>
-    {lista.map(u=><span key={u} style={{position:"relative",display:"inline-flex"}}>
-      <a href={u} target="_blank" rel="noreferrer"><img src={u} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(var(--ink),0.18)",display:"block"}}/></a>
-      <button type="button" aria-label={t.proof_remove} title={t.proof_remove} disabled={subiendo} onClick={()=>guardar(lista.filter(x=>x!==u))} style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:9,border:"none",background:"#ef4444",color:"#fff",fontSize:11,fontWeight:800,lineHeight:"18px",padding:0,cursor:"pointer"}}>×</button>
-    </span>)}
-    <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:vacio&&falta?"#fbbf24":"rgba(var(--ink),0.1)",color:vacio&&falta?"#0A1628":"rgba(var(--ink),0.85)",cursor:subiendo?"wait":"pointer",whiteSpace:"nowrap"}}>{subiendo?"⏳":"📎"} {vacio?t.attach:t.proof_add}<input type="file" accept="image/*" multiple disabled={subiendo} style={{display:"none"}} onChange={e=>{agregar(e.target.files);e.target.value="";}}/></label>
+    {miniaturas}
+    <label style={{padding:"6px 12px",fontSize:12,fontWeight:800,borderRadius:8,background:vacio&&falta?"#fbbf24":"rgba(var(--ink),0.1)",color:vacio&&falta?"#0A1628":"rgba(var(--ink),0.85)",cursor:subiendo?"wait":"pointer",whiteSpace:"nowrap"}}>{subiendo?"⏳":"📎"} {vacio?t.attach:t.proof_add}{entrada}</label>
   </div>;
 }
 // Pegar una foto con ⌘V / Ctrl+V (21/10/2026): mientras `activo`, la imagen copiada que se pegue en
@@ -143,6 +157,8 @@ const I18N={
     proof_brand_missing:"Falta la foto de la marca",
     proof_add:"Agregar foto",
     proof_remove:"Quitar foto",
+    proof_paste:"o arrastrala acá · tocá y pegala con ⌘V",
+    proof_paste_ready:"Pegala ahora con ⌘V o arrastrala acá",
     tl_created:"Creado",
     tl_invoice:"Factura OK",
     tl_tracking:"Tracking",
@@ -543,6 +559,8 @@ const I18N={
     proof_brand_missing:"缺少品牌照片",
     proof_add:"添加照片",
     proof_remove:"删除照片",
+    proof_paste:"或拖到这里 · 点击后按 ⌘V 粘贴",
+    proof_paste_ready:"现在按 ⌘V 粘贴，或拖到这里",
     tl_created:"创建",
     tl_invoice:"发票确认",
     tl_tracking:"单号",
@@ -1823,7 +1841,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // ⌘V va al cuadro que se tocó último: la foto del desglose (imagen) o la factura comercial
   // (PDF o imagen). Sin tocar nada, una imagen pegada es la foto, como siempre.
   const [pegarEn,setPegarEn]=useState("foto");
-  usePegarFoto(!subiendoFoto&&pegarEn!=="factura",(f)=>subirFotoDespacho(f));
+  usePegarFoto(!subiendoFoto&&pegarEn==="foto",(f)=>subirFotoDespacho(f));
   const subirFotoDespacho=async(file)=>{
     if(!file)return;
     setSubiendoFoto(true);
@@ -2128,10 +2146,11 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         })}</div>;
         const VERDE={fg:"#4ade80",bg:"rgba(34,197,94,0.16)",bd:"rgba(34,197,94,0.55)"};
         const ROJO={fg:"#f87171",bg:"rgba(248,113,113,0.14)",bd:"rgba(248,113,113,0.5)"};
-        const togCard=(icon,label,extra,val,set,onColor)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(var(--ink),0.025)",border:"1px solid rgba(var(--ink),0.07)",borderRadius:12,display:"flex",flexDirection:"column"}}>
+        const togCard=(icon,label,extra,val,set,onColor,abajo)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(var(--ink),0.025)",border:"1px solid rgba(var(--ink),0.07)",borderRadius:12,display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.7)",margin:"0 0 3px",lineHeight:1.35}}>{icon} {label}</p>
           <p style={{fontSize:10.5,color:"rgba(var(--ink),0.4)",margin:"0 0 9px",flex:1}}>{extra}</p>
           {tog(val,set,onColor)}
+          {abajo}
         </div>;
         const desgRow=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"2px 0"}}><span style={{fontSize:11.5,color:"rgba(var(--ink),0.5)"}}>{l}</span><span style={{fontSize:11.5,fontWeight:700,color:"rgba(var(--ink),0.75)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
         return <>
@@ -2152,15 +2171,11 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             {miTarifa&&<p style={{margin:0,fontSize:24,fontWeight:900,color:"#fff",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>USD {fmtTar(miTarifa.usd)}<span style={{fontSize:13,fontWeight:700,color:`rgba(${col},0.95)`}}> /kg</span></p>}
             {tarifaDistinta&&<button type="button" onClick={()=>{setTarifaTocada(false);setCostPerKg(fmtTar(miTarifa.usd));}} style={{height:38,padding:"0 16px",borderRadius:10,border:"none",background:"#f87171",color:"#0A1628",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.use_my_rate||"Usar mi tarifa"}</button>}
           </div>;})()}
-        {(costBattery||costBrand)&&<div style={{display:"grid",gap:8,marginBottom:12}}>
-          {costBattery&&<FotosPrueba flightId={flight.id} tipo="bateria" urls={fotosBat} onChange={setFotosBat} token={token} t={t}/>}
-          {costBrand&&<FotosPrueba flightId={flight.id} tipo="marca" urls={fotosMarca} onChange={setFotosMarca} token={token} t={t}/>}
-        </div>}
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
           <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
-            {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,ROJO)}
+            {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,(v)=>{setCostBattery(v);setPegarEn(v?"bateria":"foto");},ROJO,costBattery&&<FotosPrueba enTarjeta flightId={flight.id} tipo="bateria" urls={fotosBat} onChange={setFotosBat} token={token} t={t} pegar={pegarEn==="bateria"} onArmar={()=>setPegarEn("bateria")}/>)}
             {togCard("⚖️",t.cost_overweight,"+ USD 35",costOverweight,setCostOverweight,ROJO)}
-            {togCard("🏷️",t.cost_brand,"+ USD 0,70/kg",costBrand,setCostBrand,ROJO)}
+            {togCard("🏷️",t.cost_brand,"+ USD 0,70/kg",costBrand,(v)=>{setCostBrand(v);setPegarEn(v?"marca":"foto");},ROJO,costBrand&&<FotosPrueba enTarjeta flightId={flight.id} tipo="marca" urls={fotosMarca} onChange={setFotosMarca} token={token} t={t} pegar={pegarEn==="marca"} onArmar={()=>setPegarEn("marca")}/>)}
           </div>
           <div style={{flex:"1 1 260px",padding:"14px 18px",background:"linear-gradient(150deg,rgba(34,197,94,0.10),rgba(34,197,94,0.03))",border:"1.5px solid rgba(34,197,94,0.28)",borderRadius:12,display:"flex",flexDirection:"column",justifyContent:"center"}}>
             <p style={{fontSize:11,fontWeight:800,color:"rgba(var(--ink),0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.cost_computed}</p>
