@@ -10175,8 +10175,9 @@ function FeTimeline({flight}){
 // opciones que cotiza el agente — origen (China Mainland / Hong Kong) × servicio (DHL, FedEx
 // International Economy / Priority, UPS Expedited / Saver) × divisor — y en cada una la ganancia
 // estimada del vuelo (verde gana, rojo pierde). Tocar una opción abre su desglose (cobro, costo del
-// agente con la comisión de los anticipos, ganancia por operación); recién el botón "Pedir" la
-// guarda en flights.requested_carrier, así mirar opciones no le cambia nada al agente.
+// agente con la comisión de los anticipos, ganancia por operación) y la deja pedida en el momento
+// (flights.requested_carrier). Desde el 15/11/2026 no hay botón "Pedir" aparte: Bautista se lo olvidaba.
+// Cambiar de opción cambia el pedido; cambiarlo no le manda ningún aviso al agente.
 // Kilos: facturable de cada bulto con el divisor del servicio (DHL → 5000), redondeado al medio
 // kilo para arriba como cobra el agente. La tarifa sale del tramo del total del vuelo.
 // Cobro = presupuesto de la op sin los impuestos (que se pagan aparte).
@@ -10228,7 +10229,11 @@ function PedidoCourier({flight,token,tarifas,finRate=0,ops,pkgs,usd,onReload,sol
   const celda=(codigo)=>{
     const x=opciones[codigo];const e=x.e;const esPedido=pedido?.codigo===codigo;const abierta=ver===codigo;const esMejor=mejorTotal===codigo;
     const sinTarifa=!soloPedir&&tarifas!==undefined&&!e;
-    return <button key={codigo} type="button" disabled={sinTarifa||guardando} onClick={()=>soloPedir?pedir(esPedido?null:codigo):setVer(abierta?null:codigo)} title={sinTarifa?"El agente no cargó tarifa para este servicio":nombreDe(x)}
+    return <button key={codigo} type="button" disabled={sinTarifa||guardando} onClick={()=>{if(soloPedir){pedir(esPedido?null:codigo);return;}
+        // Tocar una opción ya la deja pedida (15/11/2026: el botón "Pedir" aparte se olvidaba). Tocar la que
+        // ya está pedida solo abre o cierra su desglose; para sacarla está "Quitar pedido".
+        if(esPedido){setVer(abierta?null:codigo);return;}
+        setVer(codigo);pedir(codigo);}} title={sinTarifa?"El agente no cargó tarifa para este servicio":nombreDe(x)}
       style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,minHeight:58,padding:"7px 8px",borderRadius:12,cursor:sinTarifa?"default":"pointer",fontFamily:"inherit",border:`1.5px solid ${esPedido?"rgba(96,165,250,0.85)":abierta?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.09)"}`,background:esPedido?"rgba(96,165,250,0.14)":abierta?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.03)",boxShadow:esPedido?"0 0 0 3px rgba(96,165,250,0.12)":"none",opacity:sinTarifa?0.45:1,transition:"all 140ms",minWidth:0}}>
       <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",letterSpacing:"0.04em",fontVariantNumeric:"tabular-nums"}}>{x.col.div?`÷ ${x.col.div.toLocaleString("es-AR")}`:"Express"}</span>
       {soloPedir?<span style={{fontSize:12.5,fontWeight:800,color:esPedido?"#93c5fd":"rgba(255,255,255,0.75)"}}>{esPedido?"Pedido":"Pedir"}</span>
