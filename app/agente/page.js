@@ -151,6 +151,11 @@ const I18N={
     search_flights:"Buscar vuelo, tracking u operación…",
     photo_missing_alert:"Falta la foto del detalle de exportación de los bultos",
     attach:"Adjuntar",
+    col_flight:"Vuelo",col_tracking:"Tracking",col_pkgs:"Bultos",col_weight:"Peso",col_cost:"Costo",
+    col_presented:"Presentado",col_dispatched:"Despachado",col_pickup:"Pick-up",
+    col_d_dispatch:"Dem. despacho",col_d_pickup:"Dem. pick-up",col_d_total:"Dem. total",
+    col_d_dispatch_hint:"De la presentación de la factura al despacho",col_d_pickup_hint:"Del despacho al pick-up del courier",col_d_total_hint:"De la presentación al pick-up",
+    col_eta:"ETA",col_received:"Recibido",pickup_pending:"pendiente",courier_other:"Otros",docs_missing:"Faltan documentos o fotos",
     proof_battery:"Foto de las baterías",
     proof_brand:"Foto de la marca",
     proof_battery_missing:"Falta la foto de las baterías",
@@ -553,6 +558,11 @@ const I18N={
     search_flights:"搜索航班、单号或操作…",
     photo_missing_alert:"缺少包裹出口明细的截图",
     attach:"上传",
+    col_flight:"航班",col_tracking:"运单号",col_pkgs:"件数",col_weight:"重量",col_cost:"费用",
+    col_presented:"已提交",col_dispatched:"已发货",col_pickup:"取件",
+    col_d_dispatch:"发货用时",col_d_pickup:"取件用时",col_d_total:"总用时",
+    col_d_dispatch_hint:"从提交发票到发货",col_d_pickup_hint:"从发货到快递取件",col_d_total_hint:"从提交发票到取件",
+    col_eta:"预计到达",col_received:"已接收",pickup_pending:"待取件",courier_other:"其他",docs_missing:"缺少文件或照片",
     proof_battery:"电池照片",
     proof_brand:"品牌照片",
     proof_battery_missing:"缺少电池照片",
@@ -988,6 +998,7 @@ html,body{background:#0A1628}
 .ac-isla-tab .n{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(var(--ink),0.1);font-variant-numeric:tabular-nums}
 .ac-isla-tab.on .n{background:rgba(10,22,40,0.14)}
 .ac-isla-ctl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.ac-fila-vuelo:hover td{background:rgba(var(--ink),0.045)}
 .ac-chip{padding:7px 13px;font-size:12px;font-weight:700;border-radius:999px;border:1px solid rgba(var(--ink),0.12);background:rgba(var(--ink),0.04);color:rgba(var(--ink),0.65);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:7px;transition:all 150ms;white-space:nowrap}
 .ac-chip:hover{color:var(--tx);border-color:rgba(var(--ink),0.25)}
 .ac-chip.on{background:var(--tx);color:var(--panel);border-color:transparent}
@@ -1172,6 +1183,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [statsPeriod,setStatsPeriod]=useState("month");
   const [fase,setFase]=useState("listo"); // solapa de Vuelos
   const [flightSearch,setFlightSearch]=useState("");
+  const [anchoV,setAnchoV]=useState(1280);
+  useEffect(()=>{const f=()=>setAnchoV(window.innerWidth);f();window.addEventListener("resize",f);return()=>window.removeEventListener("resize",f);},[]);
   const [soloSinFoto,setSoloSinFoto]=useState(false);
   const [soloSinFotoVuelo,setSoloSinFotoVuelo]=useState(false);
   const [grpCerrados,setGrpCerrados]=useState(()=>{try{return new Set(JSON.parse(localStorage.getItem("ac_agent_grp")||"[]"));}catch(e){return new Set();}});
@@ -1395,6 +1408,61 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     if(ea!==eb){if(!ea)return 1;if(!eb)return -1;return ea<eb?-1:1;}
     return String(b.flight_code||"").localeCompare(String(a.flight_code||""));
   });
+  // Vuelos en tabla (15/11/2026, pedido de Bautista: "como los tengo yo en mi sección"). Para los vuelos ya
+  // despachados (en tránsito, en aduana, recibidos), agrupados por courier. Muestra las tres fechas
+  // (presentación de la factura → despacho del agente → pick-up del courier) y las tres demoras entre ellas.
+  // "Listo para enviar" sigue en tarjetas, igual que todo en el teléfono.
+  const diasEntreF=(a,b)=>a&&b?Math.max(0,(new Date(b)-new Date(a))/86400000):null;
+  const demTxt=(d)=>d==null?"—":d<1?`<1 ${t.days_short}`:`${Math.round(d)} ${t.days_short}`;
+  const fechaDM=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—";
+  const COURIERS=[["DHL","#FFCC00","#D40511"],["FedEx","#4D148C","#ffffff"],["UPS","#351C15","#FFB500"],["otros","rgba(var(--ink),0.12)","var(--tx)"]];
+  const courierDe=(f)=>{const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"DHL":c.includes("fedex")?"FedEx":c.includes("ups")?"UPS":"otros";};
+  const tablaVuelos=(fs,k)=>{
+    const recib=k==="recibido";
+    const th=(l,der,tit)=><th title={tit} style={{padding:"9px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(var(--ink),0.45)",textAlign:der?"right":"left",whiteSpace:"nowrap",borderBottom:"1px solid rgba(var(--ink),0.08)"}}>{l}</th>;
+    const td={padding:"11px 10px",fontSize:12.5,color:"var(--tx)",whiteSpace:"nowrap",borderBottom:"1px solid rgba(var(--ink),0.05)",fontFeatureSettings:'"tnum"'};
+    const num={...td,textAlign:"right"};
+    return COURIERS.map(([nombre,fondo,tinta])=>{
+      const grupo=fs.filter(f=>courierDe(f)===nombre);
+      if(!grupo.length)return null;
+      const kg=grupo.reduce((a,f)=>a+Number(f.total_weight_kg||0),0),usd=grupo.reduce((a,f)=>a+Number(f.total_cost_usd||0),0);
+      return <div key={nombre} style={{marginBottom:16,background:"rgba(var(--ink),0.028)",border:"1px solid rgba(var(--ink),0.07)",borderRadius:14,overflow:"hidden"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderBottom:"1px solid rgba(var(--ink),0.08)"}}>
+          <span style={{padding:"4px 14px",borderRadius:8,background:fondo,color:tinta,fontSize:13,fontWeight:900,letterSpacing:"0.02em",fontStyle:nombre==="otros"?"normal":"italic"}}>{nombre==="otros"?t.courier_other:nombre}</span>
+          <span style={{fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.5)"}}>{grupo.length}</span>
+          <span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"rgba(var(--ink),0.6)",fontFeatureSettings:'"tnum"'}}>{kg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg · {usdF(usd)}</span>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr>{th(t.col_flight)}{th(t.col_tracking)}{th(t.col_pkgs,true)}{th(t.col_weight,true)}{th(t.col_cost,true)}{th(t.col_presented)}{th(t.col_dispatched)}{th(t.col_pickup)}{th(t.col_d_dispatch,true,t.col_d_dispatch_hint)}{th(t.col_d_pickup,true,t.col_d_pickup_hint)}{th(t.col_d_total,true,t.col_d_total_hint)}{th(recib?t.col_received:t.col_eta)}</tr>
+            </thead>
+            <tbody>{grupo.map(f=>{
+              const bultos=packages.filter(p2=>p2.flight_id===f.id).reduce((a,p2)=>a+Number(p2.quantity||1),0);
+              const dDesp=diasEntreF(f.invoice_presented_at,f.dispatched_at);
+              const pick=demoraPickup(f); // {dias, hecho}: si todavía no lo retiraron, corre hasta hoy
+              const dTot=f.carrier_pickup_at?diasEntreF(f.invoice_presented_at,f.carrier_pickup_at):null;
+              const falta=f.status==="despachado"&&(!f.dispatch_photo_url||!f.commercial_invoice_path||(f.cost_battery&&!(f.battery_photo_urls||[]).length)||(f.cost_brand&&!(f.brand_photo_urls||[]).length));
+              const eta=etaVuelo(f);
+              return <tr key={f.id} onClick={()=>setSelFlight(f.id)} className="ac-fila-vuelo" style={{cursor:"pointer"}}>
+                <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:800,letterSpacing:"0.03em"}}>{f.flight_code}{falta&&<span title={t.docs_missing} style={{marginLeft:8,display:"inline-block",width:8,height:8,borderRadius:4,background:"var(--red)",verticalAlign:"middle"}}/>}</td>
+                <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,color:"rgba(var(--ink),0.7)"}}>{f.international_tracking||"—"}</td>
+                <td style={num}>{bultos||"—"}</td>
+                <td style={num}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—"}</td>
+                <td style={{...num,fontWeight:700}}>{f.total_cost_usd?usdF(f.total_cost_usd):"—"}</td>
+                <td style={td}>{fechaDM(f.invoice_presented_at)}</td>
+                <td style={td}>{fechaDM(f.dispatched_at)}</td>
+                <td style={{...td,color:f.carrier_pickup_at?"var(--tx)":"var(--amber)",fontWeight:f.carrier_pickup_at?400:700}}>{f.carrier_pickup_at?fechaDM(f.carrier_pickup_at):t.pickup_pending}</td>
+                <td style={{...num,fontWeight:700,color:dDesp==null?"rgba(var(--ink),0.35)":colorDemora(dDesp)}}>{demTxt(dDesp)}</td>
+                <td style={{...num,fontWeight:700,color:pick?colorDemora(pick.dias):"rgba(var(--ink),0.35)"}}>{pick?`${demTxt(pick.dias)}${pick.hecho?"":" ⏳"}`:"—"}</td>
+                <td style={{...num,fontWeight:700}}>{demTxt(dTot)}</td>
+                <td style={td}>{recib?fechaDM(f.received_at):fechaDM(eta)}</td>
+              </tr>;})}</tbody>
+          </table>
+        </div>
+      </div>;
+    });
+  };
   const FlightCard=({f})=>{
     const fase=faseVuelo(f);const c=stColors[fase]||stColors[f.status];
     const isReady=fase==="listo",isWaiting=fase==="preparando",live=fase!=="recibido";
@@ -1655,12 +1723,12 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
           const fs=de(k);if(fs.length===0)return null;const c=stColors[k];
           return <div key={k} style={{marginBottom:24}}>
             {fase==="todos"&&<p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:c,margin:"0 0 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:`0 0 8px ${c}`}}/>{l}<span style={{color:"rgba(var(--ink),0.4)",fontWeight:600}}>· {fs.length}</span></p>}
-            <div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>
+            {k!=="listo"&&anchoV>=900?tablaVuelos(fs,k):<div style={{display:"grid",gap:10}}>{fs.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
           </div>;})}
       </>;})()}
 
     {/* Flight detail (shared by active_flights + history) */}
-    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}} onFacturaSubida={(path,name)=>setFlights(prev=>prev.map(x=>x.id===f.id?{...x,commercial_invoice_path:path,commercial_invoice_name:name}:x))}/>;})()}
+    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}} onPrueba={(col,u)=>setFlights(prev=>prev.map(x=>x.id===f.id?{...x,[col]:u}:x))} onFacturaSubida={(path,name)=>setFlights(prev=>prev.map(x=>x.id===f.id?{...x,commercial_invoice_path:path,commercial_invoice_name:name}:x))}/>;})()}
 
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
@@ -1790,7 +1858,7 @@ function AgAdornInp({label,req,value,onChange,placeholder,prefix,suffix}){
   </div>;
 }
 
-function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onBack,onDispatched,onFacturaSubida}){
+function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onBack,onDispatched,onFacturaSubida,onPrueba}){
   const [invoiceItems,setInvoiceItems]=useState([]);
   const [lightboxPhoto,setLightboxPhoto]=useState(null);
   // La lista global de bultos del deposito viene con limit=100 (los mas nuevos): las ops viejas
@@ -2235,6 +2303,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         <span><strong style={{color:"var(--tx)"}}>{t.courier}:</strong> {flight.international_carrier}</span>
         <span><strong style={{color:"var(--tx)"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
       </div>
+      {(flight.cost_battery||flight.cost_brand)&&<div style={{display:"grid",gap:8,marginTop:12}}>
+        {flight.cost_battery&&<FotosPrueba flightId={flight.id} tipo="bateria" urls={fotosBat} falta onChange={u=>{setFotosBat(u);onPrueba?.("battery_photo_urls",u);}} token={token} t={t}/>}
+        {flight.cost_brand&&<FotosPrueba flightId={flight.id} tipo="marca" urls={fotosMarca} falta onChange={u=>{setFotosMarca(u);onPrueba?.("brand_photo_urls",u);}} token={token} t={t}/>}
+      </div>}
       <div style={{marginTop:12}}>
         <label style={{display:"block",fontSize:11,fontWeight:700,color:"var(--gold)",marginBottom:5,textTransform:"uppercase"}}>📷 {t.dispatch_photo}</label>
         <label style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(var(--ink),0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(var(--ink),0.03)"}}>
