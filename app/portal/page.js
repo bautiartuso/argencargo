@@ -1446,7 +1446,7 @@ function OperationDetail({op:opProp,token,client,onBack,vuelo=null}){
           <div style={{position:"relative",paddingLeft:22}}><div style={{position:"absolute",left:6,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.1)"}}/>
             {evNov.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<evNov.length-1?16:0}}><div style={{position:"absolute",left:-21,top:5,width:12,height:12,borderRadius:"50%",background:i===0?GOLD_LIGHT:"rgba(255,255,255,0.18)",boxShadow:i===0?"0 0 0 4px rgba(232,208,152,0.2)":"none"}}/>
               <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}><p style={{fontSize:13.5,fontWeight:700,color:i===0?"#fff":"rgba(255,255,255,0.65)",margin:0}}>{ev.title}</p><p style={{fontSize:11.5,color:SKY,margin:0,fontWeight:600,whiteSpace:"nowrap"}}>{ev.occurred_at?new Date(ev.occurred_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p></div>
-              {ev.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"2px 0 0",lineHeight:1.45}}>{ev.description}{ev.location?` · ${ev.location}`:""}</p>}
+              {(()=>{const lugar=ev.location&&ev.source!=="dhl"&&ev.source!=="internal"&&!String(ev.title||"").toLowerCase().includes(String(ev.location).toLowerCase())?ev.location:"";const sub=ev.description?`${ev.description}${ev.location?` · ${ev.location}`:""}`:lugar;return sub?<p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"2px 0 0",lineHeight:1.45}}>{sub}</p>:null;})()}
             </div>)}
           </div>
         </div>}
