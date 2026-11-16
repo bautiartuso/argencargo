@@ -1431,7 +1431,8 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   // (presentación de la factura → despacho del agente → pick-up del courier) y las tres demoras entre ellas.
   // "Listo para enviar" sigue en tarjetas, igual que todo en el teléfono.
   const diasEntreF=(a,b)=>a&&b?Math.max(0,(new Date(b)-new Date(a))/86400000):null;
-  const demTxt=(d)=>d==null?"—":d<1?`<1 ${t.days_short}`:`${Math.round(d)} ${t.days_short}`;
+  // Con un decimal, igual que el admin (15/11/2026): redondeado, 8,8 días se leía como 8.
+  const demTxt=(d)=>d==null?"—":`${d.toFixed(1)} ${t.days_short}`;
   const fechaDM=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"—";
   // Cada courier con su marca (15/11/2026): fondo de vidrio del color de la marca, casi opaco para que se
   // lea bien, y el logo grande de fondo. tinta = texto, suave = títulos, linea = divisores.
