@@ -1436,11 +1436,13 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   // Cada courier con su marca (15/11/2026): fondo de vidrio del color de la marca, casi opaco para que se
   // lea bien, y el logo grande de fondo. tinta = texto, suave = títulos, linea = divisores.
   const MARCAS=[
-    ["DHL",{logo:"dhl",fondo:"rgba(255,204,0,0.93)",tinta:"#1F1500",suave:"rgba(31,21,0,0.68)",linea:"rgba(31,21,0,0.14)",agua:0.11}],
-    ["FedEx",{logo:"fedex",fondo:"rgba(255,255,255,0.94)",tinta:"#16102A",suave:"rgba(22,16,42,0.62)",linea:"rgba(22,16,42,0.1)",agua:0.07}],
-    ["UPS",{logo:"ups",fondo:"rgba(53,28,21,0.95)",tinta:"#FFF4DC",suave:"rgba(255,244,220,0.7)",linea:"rgba(255,244,220,0.14)",agua:0.12}],
-    ["otros",{logo:null,fondo:"rgba(var(--ink),0.028)",tinta:"var(--tx)",suave:"rgba(var(--ink),0.5)",linea:"rgba(var(--ink),0.08)",agua:0}],
-  ];
+    // Vidrio de verdad (15/11/2026, segunda vuelta): el color de la marca va translúcido para que el texto
+    // tenga más presencia; por eso el texto usa la tinta del tema (clara en oscuro, oscura en claro).
+    ["DHL",{logo:"dhl",fondo:"rgba(255,204,0,0.24)",agua:"#FFCC00",op:0.3}],
+    ["FedEx",{logo:"fedex",fondo:"rgba(255,255,255,0.15)",agua:"currentColor",op:0.1}],
+    ["UPS",{logo:"ups",fondo:"rgba(150,96,52,0.3)",agua:"#FFB500",op:0.22}],
+    ["otros",{logo:null,fondo:"rgba(var(--ink),0.028)",agua:null,op:0}],
+  ].map(([n,m])=>[n,{...m,tinta:"var(--tx)",suave:"rgba(var(--ink),0.72)",linea:"rgba(var(--ink),0.13)"}]);
   const courierDe=(f)=>{const c=String(f.international_carrier||"").toLowerCase();return c.includes("dhl")?"DHL":c.includes("fedex")?"FedEx":c.includes("ups")?"UPS":"otros";};
   // Lo que le falta subir a un vuelo despachado (lista de textos).
   const faltantesVuelo=(f)=>f.status!=="despachado"?[]:[!f.dispatch_photo_url&&t.dispatch_photo,!f.commercial_invoice_path&&t.flight_invoice,f.cost_battery&&!(f.battery_photo_urls||[]).length&&t.proof_battery,f.cost_brand&&!(f.brand_photo_urls||[]).length&&t.proof_brand].filter(Boolean);
@@ -1448,7 +1450,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const tablaVuelos=(fs,k)=>{
     const recib=k==="recibido";
     // Demoras y pendientes en pastilla oscura: se leen igual sobre amarillo, blanco o marrón.
-    const pastilla=(txt,color)=><span style={{display:"inline-block",minWidth:44,padding:"3px 9px",borderRadius:999,background:"rgba(10,22,40,0.9)",color,fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>{txt}</span>;
+    const pastilla=(txt,color)=><span style={{display:"inline-block",minWidth:44,padding:"3px 9px",borderRadius:999,background:"rgba(10,22,40,0.92)",border:`1px solid ${color}66`,color,fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>{txt}</span>;
     const colDem=(d)=>d<2?"#4ade80":d<=3?"#fbbf24":"#f87171";
     return MARCAS.map(([nombre,m])=>{
       const grupo=fs.filter(f=>courierDe(f)===nombre);
@@ -1456,10 +1458,10 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
       const kg=grupo.reduce((a,f)=>a+Number(f.total_weight_kg||0),0),usd=grupo.reduce((a,f)=>a+Number(f.total_cost_usd||0),0);
       const L=m.logo?CARRIER_LOGOS[m.logo]:null;
       const th=(l,ayuda,lado)=><th style={{padding:"10px 6px",fontSize:10,fontWeight:800,letterSpacing:"0.05em",textTransform:"uppercase",color:m.suave,textAlign:"center",whiteSpace:"normal",lineHeight:1.3,verticalAlign:"middle",borderBottom:`1px solid ${m.linea}`}}>{l}{ayuda&&<span className="ac-info" tabIndex={0} role="note" aria-label={ayuda} onMouseEnter={e=>mostrarAyuda(e,ayuda)} onFocus={e=>mostrarAyuda(e,ayuda)} onMouseLeave={()=>setAyudaCol(null)} onBlur={()=>setAyudaCol(null)} onClick={e=>{e.stopPropagation();mostrarAyuda(e,ayuda);}} style={{borderColor:m.suave,color:m.suave}}>i</span>}</th>;
-      const td={padding:"11px 8px",fontSize:12.5,color:m.tinta,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`,fontFeatureSettings:'"tnum"'};
-      return <div key={nombre} className="ac-noinv" style={{position:"relative",marginBottom:18,borderRadius:16,overflow:"hidden",background:`linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0) 42%),${m.fondo}`,backdropFilter:"blur(16px) saturate(1.25)",WebkitBackdropFilter:"blur(16px) saturate(1.25)",border:"1px solid rgba(255,255,255,0.32)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.4),0 14px 34px rgba(0,0,0,0.28)"}}>
+      const td={padding:"11px 8px",fontSize:13,fontWeight:700,color:m.tinta,textAlign:"center",whiteSpace:"nowrap",borderBottom:`1px solid ${m.linea}`,fontFeatureSettings:'"tnum"'};
+      return <div key={nombre} className="ac-noinv" style={{position:"relative",marginBottom:18,borderRadius:16,overflow:"hidden",background:`linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,255,255,0) 45%),${m.fondo}`,backdropFilter:"blur(18px) saturate(1.3)",WebkitBackdropFilter:"blur(18px) saturate(1.3)",border:"1px solid rgba(255,255,255,0.2)",boxShadow:"inset 0 1px 0 rgba(255,255,255,0.22),0 14px 34px rgba(0,0,0,0.25)"}}>
         {L&&<div aria-hidden="true" style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",overflow:"hidden"}}>
-          <svg viewBox={L.vb} preserveAspectRatio="xMidYMid meet" style={{width:m.logo==="ups"?"24%":"64%",maxHeight:"150%",opacity:m.agua}}><path d={L.d} fill={L.fill}/></svg>
+          <svg viewBox={L.vb} preserveAspectRatio="xMidYMid meet" style={{width:m.logo==="ups"?"24%":"64%",maxHeight:"150%",opacity:m.op,color:"var(--tx)"}}><path d={L.d} fill={m.agua}/></svg>
         </div>}
         <div style={{position:"relative",display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:`1px solid ${m.linea}`}}>
           {m.logo?<span style={{display:"inline-flex",borderRadius:9,boxShadow:"0 2px 10px rgba(0,0,0,0.22)"}}><CarrierLogo k={m.logo} alto={34}/></span>:<span style={{fontSize:13,fontWeight:800,color:m.tinta}}>{t.courier_other}</span>}
@@ -1481,10 +1483,10 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
               const falta=faltantesVuelo(f);
               const eta=etaVuelo(f);
               // Vuelo con algo sin subir: toda la fila con borde rojo y el aviso debajo del código.
-              const c=falta.length?{...td,background:"rgba(239,68,68,0.16)"}:td;
+              const c=falta.length?{...td,background:"rgba(239,68,68,0.2)"}:td;
               return <tr key={f.id} onClick={()=>setSelFlight(f.id)} className="ac-fila-vuelo" title={falta.length?`${t.missing_title}: ${falta.join(" · ")}`:undefined} style={{cursor:"pointer",...(falta.length?{outline:"2px solid #ef4444",outlineOffset:-2}:{})}}>
                 <td style={{...c,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:800,letterSpacing:"0.03em"}}>{f.flight_code}{falta.length>0&&<span style={{display:"block",marginTop:4,fontFamily:"inherit",letterSpacing:0}}><span style={{display:"inline-block",padding:"2px 8px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10.5,fontWeight:800,fontFamily:"system-ui,sans-serif"}}>⚠ {t.missing_title} {falta.length}</span></span>}</td>
-                <td style={{...c,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,overflow:"hidden",textOverflow:"ellipsis"}} title={f.international_tracking||""}>{f.international_tracking||"—"}</td>
+                <td style={{...c,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12,overflow:"hidden",textOverflow:"ellipsis"}} title={f.international_tracking||""}>{f.international_tracking||"—"}</td>
                 <td style={c}>{bultos||"—"}</td>
                 <td style={c}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—"}</td>
                 <td style={{...c,fontWeight:800}}>{f.total_cost_usd?usdF(f.total_cost_usd):"—"}</td>
