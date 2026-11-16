@@ -98,7 +98,7 @@ function useDatos(token, rol) {
   const [d, setD] = useState(null);
   const cargar = useCallback(async () => {
     const plata = rol !== "empleado";
-    const [reqs, comms, ops, cobros, pagos, earnings, socios, settings, clientesSocio] = await Promise.all([
+    const [reqs, comms, ops, cobros, pagos, earnings, socios, settings, clientesSocio, blueHoy] = await Promise.all([
       dq("gi_quote_requests", { token, filters: "?select=*,clients(id,first_name,last_name,client_code,whatsapp,email,gi_partner_id,gi_commission_pct),gi_quotes(*,gi_quote_products(description)),gi_quote_request_products(id,description)&order=created_at.desc" }),
       dq("gi_quote_communications", { token, filters: "?select=quote_id,request_id,type,created_at,meta,content&order=created_at.desc&limit=2000" }),
       dq("operations", { token, filters: "?service_type=eq.gestion_integral&select=id,operation_code,status,channel,origin,client_id,description,budget_total,total_anticipos,eta,closed_at,created_at,gi_partner_id,gi_admin_owned,gi_commission_pct,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(id,first_name,last_name,client_code,whatsapp,gi_partner_id,gi_commission_pct)&order=created_at.desc" }),
@@ -108,11 +108,13 @@ function useDatos(token, rol) {
       dq("profiles", { token, filters: "?is_gi_partner=eq.true&select=id,email,gi_partner_pct" }),
       dq("gi_settings", { token, filters: "?select=default_fx_rate&limit=1" }),
       plata ? dq("clients", { token, filters: "?gi_partner_id=not.is.null&select=id,first_name,last_name,client_code,gi_partner_id,gi_commission_pct&order=first_name.asc" }) : [],
+      // TC del momento (16/11/2026); el guardado en gi_settings (una vez por día) queda de respaldo.
+      fetchDolar({ signal: AbortSignal.timeout(3000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     setD({
       // Pedidos sin ficha (06/11/2026): el nombre sale de prospect_* y se muestra como si fuera el cliente.
       reqs: arr(reqs).map((r) => ({ ...r, clients: clienteDe(r) })), comms: arr(comms), ops: arr(ops), cobros: arr(cobros), pagos: arr(pagos),
-      earnings: arr(earnings), socios: arr(socios), fx: Number(arr(settings)[0]?.default_fx_rate || 0), clientesSocio: arr(clientesSocio),
+      earnings: arr(earnings), socios: arr(socios), fx: Number(blueHoy?.venta) || Number(arr(settings)[0]?.default_fx_rate || 0), clientesSocio: arr(clientesSocio),
     });
   }, [token, rol]);
   useEffect(() => { cargar(); const iv = setInterval(() => { if (!document.hidden) cargar(); }, 90000); return () => clearInterval(iv); }, [cargar]);
