@@ -102,7 +102,9 @@ export default function Conexiones() {
   const nums = st?.numeros || [];
   return <div style={{ maxWidth: 820 }}>
     <Titulo eyebrow="Ajustes" sub="Lo último: el sistema anda vacío hasta que conectás cada cosa.">Conexiones</Titulo>
-    {st === null ? <Cargando /> : <>
+    {st === null ? <Cargando /> : st.error ? <Caja title="No se pudo leer el estado" right={<Btn small onClick={() => { setSt(null); cargar(); }}>Reintentar</Btn>}>
+      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: C.red }}>{st.error}</p>
+    </Caja> : <>
       <Caja title="WhatsApp" right={<Btn v="gold" small onClick={conectar} disabled={busy}>{nums.length ? "Conectar otro número" : "Conectar WhatsApp"}</Btn>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: nums.length ? 6 : 0 }}>
           <Dato k="App de Meta" v={st.env?.app_id ? "cargada" : "falta NEXT_PUBLIC_META_APP_ID"} mal={!st.env?.app_id} />
