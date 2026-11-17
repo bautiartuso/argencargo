@@ -1291,7 +1291,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     await loadCCBalance();setLo(false);
     // Auto-sincronizar el presupuesto después de cargar la op (en caso de que esté desactualizado).
     // El usuario quiere que el budget esté siempre sincronizado, sin botón manual.
-    setTimeout(()=>{autoSyncBudget();},300);
+    setTimeout(()=>{autoSyncBudget(false,{soloSubir:true});},300);
   };
   // Cargar al montar / cambiar de op. SIN refetch en focus/visibility — pisaba inputs no guardados.
   useEffect(()=>{load();},[op.id]);
@@ -1428,20 +1428,30 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
   // soloImpuestos (DSI, 22/10/2026): cambia solo budget_taxes / budget_tax_detail y corre el total por la
   // diferencia de impuestos cobrados. No toca flete ni nada cargado a mano.
-  const autoSyncBudget=async(force=false,{soloImpuestos=false}={})=>{
+  // soloSubir (17/11/2026, regla de Bautista: "si es menor, no lo cambies; si es mayor, cambialo"): el
+  // recálculo que corre solo al abrir la op, sin que nadie haya cambiado nada, nunca baja el presupuesto
+  // guardado; si da más, lo sube. Lo que sí puede bajarlo es un cambio hecho a mano (productos, bultos,
+  // datos de la op) o "Editar / Actualizar presupuesto".
+  const autoSyncBudget=async(force=false,{soloImpuestos=false,soloSubir=false}={})=>{
     if(op.status==="cancelada")return;
     if(!force && op.budget_mode==="manual")return; // ← Manual: el admin maneja los números a mano, no pisamos
     try{
       // Refetch TODO fresco para evitar closures stale de tariffs/overrides (puede haber cambiado desde que se cargó la op).
-      const[fit,fpk,ft,fov,fcl,fop,ffii]=await Promise.all([
+      const[fit,fpk,ft,fov,fcl,fop,ffii,fcc]=await Promise.all([
         dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
         dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
         dq("operations",{token,filters:`?id=eq.${op.id}&select=delivery_confirmed_at,payment_split,channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes,budget_tax_detail,budget_taxes,budget_total`}),
-        dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
+        dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`}),
+        dq("calc_config",{token,filters:"?select=key,value"})
       ]);
+      // Config de cálculo FRESCA (17/11/2026). Antes se usaba el estado `config`, que al abrir la op todavía
+      // está vacío: el flete ficticio caía al respaldo (3,50 USD/kg) en vez del de Ajustes (3,25), el
+      // presupuesto se guardaba un poco más alto y la tarjeta avisaba "con los datos de hoy daría menos"
+      // sin que nada hubiera cambiado.
+      const cfgFresh=Array.isArray(fcc)&&fcc.length?Object.fromEntries(fcc.map(r=>[r.key,Number(r.value)])):config;
       // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
       const declFresh=Array.isArray(ffii)?ffii:[];
       const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
@@ -1472,7 +1482,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
       // RI: impuestos sobre el valor declarado (flight_invoice_items de esta op).
-      const{totalTax,flete,seguro,totalAbonar,surcharge,taxDetail,taxesBilledByArgencargo:cobraImp}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declFresh);
+      const{totalTax,flete,seguro,totalAbonar,surcharge,taxDetail,taxesBilledByArgencargo:cobraImp}=calcOpBudget(opForCalc,its,pks,tariffsFresh,cfgFresh,overridesFresh,clientFresh,declFresh);
+      // Solo subir: si la cuenta de hoy da menos que lo guardado, queda lo guardado.
+      if(soloSubir&&!force&&Number(opForCalc.budget_total||0)>0&&totalAbonar<Number(opForCalc.budget_total)-0.005)return;
       if(soloImpuestos){
         const r2=(v)=>Math.round(Number(v||0)*100)/100;
         const nuevoTotal=cobraImp?r2(Number(opForCalc.budget_total||0)-Number(opForCalc.budget_taxes||0)+totalTax):Number(opForCalc.budget_total||0);
@@ -2617,7 +2629,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               </div>
             :<span style={{fontSize:34,fontWeight:800,color:"#E8D098",letterSpacing:"-0.025em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
         </div>
-        {difPresu!==0&&!editandoPresu&&(()=>{
+        {/* Solo se avisa cuando la cuenta de hoy da MÁS que lo guardado (17/11/2026): si da menos, queda lo guardado y no se muestra nada. */}
+        {difPresu>0.01&&!editandoPresu&&(()=>{
           const d=(a,b)=>Math.round((Number(a||0)-Number(b||0))*100)/100;
           const fu=(v)=>`${v>0?"+":"−"}USD ${Math.abs(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
           const partes=[["flete",d(calcVivo.flete,flete)],["impuestos",d(calcVivo.totalTax,totalTax)],["seguro",d(calcVivo.seguro,seguro)],["recargo por valor",d(calcVivo.surcharge,surcharge)]].filter(([,v])=>Math.abs(v)>0.01);
