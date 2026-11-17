@@ -48,6 +48,11 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
   const [celu, setCelu] = useState(false);
   const fin = useRef(null); const archivo = useRef(null); const archivoNuevo = useRef(null); const cantidad = useRef(0);
   useEffect(() => { const f = () => setCelu(window.innerWidth < 860); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
+  // Alto de la pantalla (17/11/2026): llega hasta el borde de abajo de la ventana, esté donde esté incrustada.
+  // Se mide desde dónde arranca la caja; si el panel está achicado con un transform (admin al 90 %), se compensa.
+  const caja = useRef(null); const [altoPx, setAltoPx] = useState(null);
+  const medir = useCallback(() => { const el = caja.current; if (!el) return; const r = el.getBoundingClientRect(); const esc = el.offsetWidth ? r.width / el.offsetWidth : 1; setAltoPx(Math.max(380, Math.floor((window.innerHeight - r.top - 16) / (esc || 1)))); }, []);
+  useEffect(() => { medir(); const t1 = setTimeout(medir, 250); window.addEventListener("resize", medir); return () => { clearTimeout(t1); window.removeEventListener("resize", medir); }; }, [medir, celu, d === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cargar = useCallback(async () => { const r = await api(); if (!r.error) { setD(r); onPendientes?.(r.pendientes || 0); } else setD((x) => x || { tickets: [], agentes: [], error: r.error }); }, [onPendientes]);
   const cargarHilo = useCallback(async (id) => { const r = await api(`?id=${id}`); if (!r.error) setHilo((h) => (id === (h?.ticket?.id || id) ? r : h)); }, []);
@@ -112,7 +117,7 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
   const sinLeer = (k) => { const v = rol === "admin" ? k.visto_admin_at : k.visto_agente_at; return k.ultimo_rol && k.ultimo_rol !== rol && (!v || v < k.ultimo_at); };
   const quien = (r) => (r === "admin" ? "Argencargo" : t.agente);
 
-  if (d === null) return <p style={{ color: INK(0.4) }}>…</p>;
+  if (d === null) return <p ref={caja} style={{ color: INK(0.4) }}>…</p>;
   const tickets = d.tickets || [];
   const lista = tickets.filter((k) => k.status === filtro).sort((a, b) => (filtro === "abierto" ? Number(meToca(b)) - Number(meToca(a)) : 0) || String(b.ultimo_at).localeCompare(String(a.ultimo_at)));
   const nAb = tickets.filter((k) => k.status === "abierto").length, nCe = tickets.length - nAb;
@@ -215,9 +220,9 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
     </div>
   </div>;
 
-  const alto = celu ? `calc(100dvh - ${resta + 20}px)` : `calc(var(--vh100,100dvh) - ${resta}px)`;
+  const alto = altoPx ? `${altoPx}px` : celu ? `calc(100dvh - ${resta + 20}px)` : `calc(var(--vh100,100dvh) - ${resta}px)`;
   const derecha = nuevo ? formNuevo : sel ? chat : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: INK(0.35), fontSize: 14 }}>{t.elegi}</div>;
-  return <div {...dnd} style={{ position: "relative" }}>
+  return <div ref={caja} {...dnd} style={{ position: "relative" }}>
     {arrastra && sel && !nuevo && <div style={{ position: "absolute", inset: 0, zIndex: 20, borderRadius: 16, border: "2px dashed rgba(232,208,152,0.85)", background: "rgba(10,22,40,0.72)", display: "flex", alignItems: "center", justifyContent: "center", color: C.gold, fontSize: 17, fontWeight: 800, pointerEvents: "none" }}>{t.soltar}</div>}
     <style>{`.tk-scroll{scrollbar-width:thin;scrollbar-color:${INK(0.2)} transparent}.tk-scroll::-webkit-scrollbar{width:6px}.tk-scroll::-webkit-scrollbar-thumb{background:${INK(0.2)};border-radius:99px}`}</style>
     {celu ? <div style={{ height: nuevo ? "auto" : alto, minHeight: 380 }}>{nuevo ? formNuevo : sel ? chat : columnaLista}</div>
