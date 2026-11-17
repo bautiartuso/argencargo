@@ -6,6 +6,7 @@ import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 import { comprimirImagen } from "../../lib/img";
 import { TarifasAgenteEditor, TarifasAgenteAdmin } from "../components/TarifasAgente";
+import TicketsAgente from "../components/TicketsAgente";
 import { parsePedido, tarifaPedido } from "../../lib/tarifas-agente";
 import { hoyAR } from "../../lib/fecha-ar";
 import { instalarAuthFetch } from "../../lib/auth-fetch";
@@ -292,6 +293,7 @@ const I18N={
     bulto_n:"Bulto",
     remove:"Quitar",
     tab_deposit:"Depósito",
+    tab_tickets:"Tickets",
     tab_active_flights:"Vuelos",
     tab_history:"Recibidos",
     tab_stats:"Estadísticas",
@@ -706,6 +708,7 @@ const I18N={
     bulto_n:"包裹",
     remove:"删除",
     tab_deposit:"仓库",
+    tab_tickets:"工单",
     tab_active_flights:"航班",
     tab_history:"已接收",
     tab_stats:"统计",
@@ -1193,6 +1196,15 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [editPkg,setEditPkg]=useState(null);
   const [flashMsg,setFlashMsg]=useState("");
   const [tab,setTab]=useState("deposit");
+  // Tickets con Argencargo que esperan respuesta del agente (17/11/2026): número en la solapa. Y si se
+  // entra desde el aviso (?tab=tickets), abre directo ahí.
+  const [ticketsPend,setTicketsPend]=useState(0);
+  useEffect(()=>{if(!token)return;let vivo=true;
+    try{if(new URLSearchParams(window.location.search).get("tab")==="tickets")setTab("tickets");}catch(e){}
+    const contar=async()=>{try{const r=await fetch("/api/agente/tickets",{cache:"no-store"}).then(x=>x.json());if(vivo&&!r.error)setTicketsPend(r.pendientes||0);}catch(e){}};
+    contar();const iv=setInterval(()=>{if(!document.hidden)contar();},120000);
+    return()=>{vivo=false;clearInterval(iv);};
+  },[token]);
   const [selFlight,setSelFlight]=useState(null);
   const [depositSearch,setDepositSearch]=useState("");
   const [showTutorial,setShowTutorial]=useState(false);
@@ -1553,6 +1565,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const tabsIsla=[
     {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length},
     {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
+    {k:"tickets",l:t.tab_tickets||"Tickets",n:ticketsPend},
     {k:"tarifas",l:t.tab_tarifas},
     {k:"stats",l:t.tab_stats},
     {k:"account",l:t.tab_account},
@@ -1771,6 +1784,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
 
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
+    {tab==="tickets"&&<TicketsAgente rol={esAdmin?"admin":"agente"} lang={lang} onPendientes={setTicketsPend}/>}
     {tab==="tarifas"&&(esAdmin
       ?<TarifasAgenteAdmin token={token} lang={lang}/>
       :<TarifasAgenteEditor token={token} lang={lang}/>)}

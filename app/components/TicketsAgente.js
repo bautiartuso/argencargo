@@ -1,0 +1,204 @@
+"use client";
+// Tickets con el agente (17/11/2026). La misma pantalla para los dos lados:
+//   rol="admin"  → Argencargo (admin y empleado), en castellano
+//   rol="agente" → panel del agente, en castellano o chino (lang)
+// A la izquierda la lista de temas (abiertos / cerrados); a la derecha el chat del tema elegido, con fotos.
+// En el celu es una cosa por vez: la lista, y al tocar un tema, su chat a pantalla completa.
+// Todo va por /api/agente/tickets (la sesión la agrega instalarAuthFetch de cada panel).
+// Colores: variables del panel del agente con el valor del admin como reserva, así sirve en los dos.
+import { useState, useEffect, useRef, useCallback } from "react";
+import { comprimirImagen } from "../../lib/img";
+
+const TX = {
+  es: { titulo: "Tickets", nuevo: "Nuevo ticket", abiertos: "Abiertos", cerrados: "Cerrados", asunto: "Asunto", detalle: "Detalle", abrir: "Abrir ticket", cancelar: "Cancelar",
+    cerrar: "Cerrar ticket", reabrir: "Reabrir", teToca: "Te toca responder", escribir: "Escribí un mensaje…", enviar: "Enviar", foto: "Adjuntar foto",
+    sinAbiertos: "No hay tickets abiertos", sinCerrados: "No hay tickets cerrados", elegi: "Elegí un ticket", original: "Original", cerrado: "Cerrado", agente: "Agente",
+    cerradoPor: "Cerrado por", reabiertoPor: "Reabierto por", volver: "Volver", subiendo: "Subiendo foto…", error: "No se pudo guardar", hoy: "hoy" },
+  zh: { titulo: "工单", nuevo: "新建工单", abiertos: "未解决", cerrados: "已关闭", asunto: "主题", detalle: "详情", abrir: "提交工单", cancelar: "取消",
+    cerrar: "关闭工单", reabrir: "重新打开", teToca: "待你回复", escribir: "输入消息…", enviar: "发送", foto: "添加照片",
+    sinAbiertos: "没有未解决的工单", sinCerrados: "没有已关闭的工单", elegi: "请选择一个工单", original: "原文", cerrado: "已关闭", agente: "代理",
+    cerradoPor: "已关闭：", reabiertoPor: "已重新打开：", volver: "返回", subiendo: "正在上传照片…", error: "保存失败", hoy: "今天" },
+};
+const INK = (a) => `rgba(var(--ink,255,255,255),${a})`;
+const C = { tx: "var(--tx,#fff)", gold: "var(--gold,#E8D098)", panel: "var(--panel,#142038)", green: "var(--green,#22c55e)", red: "var(--red,#f87171)", amber: "var(--amber,#fbbf24)" };
+const ORO = "linear-gradient(135deg,#E8D098,#B8956A)";
+
+const api = async (path = "", init) => {
+  try { const r = await fetch(`/api/agente/tickets${path}`, init ? { ...init, headers: init.body instanceof FormData ? undefined : { "Content-Type": "application/json" } } : { cache: "no-store" }); return await r.json(); }
+  catch { return { error: "sin_conexion" }; }
+};
+
+export default function TicketsAgente({ rol, lang = "es", onPendientes }) {
+  const t = TX[rol === "agente" && lang === "zh" ? "zh" : "es"];
+  const traducido = rol === "admin" || lang === "zh"; // este lado lee al otro por la traducción
+  const [d, setD] = useState(null);
+  const [filtro, setFiltro] = useState("abierto");
+  const [sel, setSel] = useState(null);
+  const [hilo, setHilo] = useState(null);
+  const [nuevo, setNuevo] = useState(null); // {titulo, texto, fotos, agent_id}
+  const [texto, setTexto] = useState(""); const [fotos, setFotos] = useState([]);
+  const [subiendo, setSubiendo] = useState(0); const [enviando, setEnviando] = useState(false); const [err, setErr] = useState("");
+  const [grande, setGrande] = useState(null);
+  const [celu, setCelu] = useState(false);
+  const fin = useRef(null); const archivo = useRef(null); const archivoNuevo = useRef(null); const cantidad = useRef(0);
+  useEffect(() => { const f = () => setCelu(window.innerWidth < 860); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
+
+  const cargar = useCallback(async () => { const r = await api(); if (!r.error) { setD(r); onPendientes?.(r.pendientes || 0); } else setD((x) => x || { tickets: [], agentes: [], error: r.error }); }, [onPendientes]);
+  const cargarHilo = useCallback(async (id) => { const r = await api(`?id=${id}`); if (!r.error) setHilo((h) => (id === (h?.ticket?.id || id) ? r : h)); }, []);
+  useEffect(() => { cargar(); const iv = setInterval(() => { if (!document.hidden) cargar(); }, 30000); return () => clearInterval(iv); }, [cargar]);
+  useEffect(() => { if (!sel) { setHilo(null); return; } setHilo(null); cargarHilo(sel).then(cargar); const iv = setInterval(() => { if (!document.hidden) cargarHilo(sel); }, 12000); return () => clearInterval(iv); }, [sel]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Al entrar un mensaje nuevo, el chat baja al final.
+  useEffect(() => { const n = hilo?.mensajes?.length || 0; if (n !== cantidad.current) { cantidad.current = n; fin.current?.scrollIntoView({ block: "end" }); } }, [hilo]);
+
+  const subir = async (lista, poner) => {
+    const fs = [...(lista || [])].filter((f) => String(f.type || "").startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name || ""));
+    for (const f of fs) {
+      setSubiendo((n) => n + 1);
+      try {
+        const chica = await comprimirImagen(f, { maxLado: 1800 }).catch(() => f);
+        const fd = new FormData(); fd.append("file", chica, chica.name || "foto.jpg");
+        const r = await api("", { method: "POST", body: fd });
+        if (r.url) poner((p) => [...p, r.url]); else setErr(r.error || t.error);
+      } finally { setSubiendo((n) => n - 1); }
+    }
+  };
+  const pegar = (poner) => (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); subir(fs, poner); } };
+  const soltar = (poner) => (e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); subir(e.dataTransfer.files, poner); } };
+
+  const enviar = async () => {
+    if (enviando || subiendo || !sel || (!texto.trim() && !fotos.length)) return;
+    setEnviando(true); setErr("");
+    const r = await api("", { method: "POST", body: JSON.stringify({ accion: "mensaje", ticket_id: sel, texto, fotos }) });
+    setEnviando(false);
+    if (r.error) { setErr(r.error); return; }
+    setTexto(""); setFotos([]); await cargarHilo(sel); cargar();
+  };
+  const crear = async () => {
+    if (enviando || subiendo || !nuevo) return;
+    if (!nuevo.titulo.trim()) { setErr(t.asunto); return; }
+    setEnviando(true); setErr("");
+    const r = await api("", { method: "POST", body: JSON.stringify({ accion: "crear", ...nuevo }) });
+    setEnviando(false);
+    if (r.error) { setErr(r.error); return; }
+    setNuevo(null); setFiltro("abierto"); await cargar(); setSel(r.ticket.id);
+  };
+  const estado = async (accion) => { if (!sel) return; const r = await api("", { method: "POST", body: JSON.stringify({ accion, ticket_id: sel }) }); if (r.error) { setErr(r.error); return; } await cargarHilo(sel); cargar(); if (accion === "cerrar") setFiltro("abierto"); };
+
+  const hora = (iso) => { const x = new Date(iso); const mismo = x.toDateString() === new Date().toDateString(); const hm = x.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }); return mismo ? hm : `${x.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })} ${hm}`; };
+  const tituloDe = (k) => (k.creado_rol !== rol && traducido && k.titulo_tr) || k.titulo;
+  const ultimoDe = (k) => (k.ultimo_rol !== rol && traducido && k.ultimo_texto_tr) || k.ultimo_texto || "";
+  const meToca = (k) => k.status === "abierto" && k.ultimo_rol && k.ultimo_rol !== rol;
+  const sinLeer = (k) => { const v = rol === "admin" ? k.visto_admin_at : k.visto_agente_at; return k.ultimo_rol && k.ultimo_rol !== rol && (!v || v < k.ultimo_at); };
+  const quien = (r) => (r === "admin" ? "Argencargo" : t.agente);
+
+  if (d === null) return <p style={{ color: INK(0.4) }}>…</p>;
+  const tickets = d.tickets || [];
+  const lista = tickets.filter((k) => k.status === filtro).sort((a, b) => (filtro === "abierto" ? Number(meToca(b)) - Number(meToca(a)) : 0) || String(b.ultimo_at).localeCompare(String(a.ultimo_at)));
+  const nAb = tickets.filter((k) => k.status === "abierto").length, nCe = tickets.length - nAb;
+  const agentes = d.agentes || [];
+  const abrirNuevo = () => { setErr(""); setSel(null); setNuevo({ titulo: "", texto: "", fotos: [], agent_id: (agentes.find((a) => a.principal) || agentes[0])?.id || "" }); };
+
+  const campo = { width: "100%", boxSizing: "border-box", padding: "11px 13px", borderRadius: 11, border: `1px solid ${INK(0.14)}`, background: INK(0.05), color: C.tx, fontSize: 14.5, fontFamily: "inherit", outline: "none" };
+  const btn = (fuerte) => ({ height: 40, padding: "0 16px", borderRadius: 11, border: fuerte ? "none" : `1px solid ${INK(0.16)}`, background: fuerte ? ORO : "transparent", color: fuerte ? "#0A1628" : C.tx, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" });
+  const miniaturas = (urls, quitar) => urls.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{urls.map((u) => <span key={u} style={{ position: "relative" }}>
+    <img src={u} alt="" onClick={() => setGrande(u)} style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 10, border: `1px solid ${INK(0.14)}`, cursor: "zoom-in", display: "block" }} />
+    {quitar && <button type="button" onClick={() => quitar(u)} aria-label="×" style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: "#0A1628", color: "#fff", fontSize: 12, lineHeight: 1, cursor: "pointer", boxShadow: "0 0 0 1.5px rgba(255,255,255,0.35)" }}>×</button>}
+  </span>)}</div>;
+  const clip = (ref) => <button type="button" onClick={() => ref.current?.click()} title={t.foto} aria-label={t.foto} style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 11, border: `1px solid ${INK(0.16)}`, background: "transparent", color: C.tx, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+  </button>;
+
+  // ── Lista ──
+  const columnaLista = <div style={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", padding: 3, borderRadius: 12, background: INK(0.05), border: `1px solid ${INK(0.08)}` }}>
+        {[["abierto", t.abiertos, nAb], ["cerrado", t.cerrados, nCe]].map(([k, l, n]) => { const on = filtro === k; return <button key={k} type="button" onClick={() => setFiltro(k)} style={{ height: 34, padding: "0 13px", borderRadius: 9, border: "none", background: on ? INK(0.12) : "transparent", color: on ? C.tx : INK(0.55), fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{l}{n > 0 ? ` · ${n}` : ""}</button>; })}
+      </div>
+      <button type="button" onClick={abrirNuevo} style={{ ...btn(true), marginLeft: "auto", height: 38 }}>+ {t.nuevo}</button>
+    </div>
+    <div className="tk-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+      {lista.length === 0 ? <p style={{ color: INK(0.45), fontSize: 14, textAlign: "center", padding: "32px 0" }}>{filtro === "abierto" ? t.sinAbiertos : t.sinCerrados}</p>
+        : lista.map((k) => { const on = sel === k.id, toca = meToca(k), nueva = sinLeer(k); return <button key={k.id} type="button" onClick={() => { setNuevo(null); setErr(""); setSel(k.id); }} style={{ textAlign: "left", padding: "12px 13px", borderRadius: 13, border: "none", borderBottom: `1px solid ${INK(0.06)}`, background: on ? INK(0.09) : "transparent", color: C.tx, cursor: "pointer", fontFamily: "inherit", display: "block", width: "100%" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            {nueva && <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.gold, flexShrink: 0, alignSelf: "center" }} />}
+            <span style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: nueva ? 800 : 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tituloDe(k)}</span>
+            <span style={{ fontSize: 11.5, color: INK(0.45), whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{hora(k.ultimo_at)}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: INK(nueva ? 0.8 : 0.5), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ color: INK(0.4), fontVariantNumeric: "tabular-nums" }}>#{k.numero}</span> · {ultimoDe(k)}</span>
+            {toca && <span style={{ fontSize: 10.5, fontWeight: 800, color: C.amber, whiteSpace: "nowrap" }}>{t.teToca}</span>}
+          </div>
+        </button>; })}
+    </div>
+  </div>;
+
+  // ── Alta ──
+  const formNuevo = nuevo && <div onPaste={pegar((f) => setNuevo((n) => ({ ...n, fotos: f(n.fotos) })))} onDragOver={(e) => e.preventDefault()} onDrop={soltar((f) => setNuevo((n) => ({ ...n, fotos: f(n.fotos) })))} style={{ maxWidth: 640 }}>
+    <p style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 800, color: C.tx }}>{t.nuevo}</p>
+    {rol === "admin" && agentes.length > 1 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{agentes.map((a) => { const on = nuevo.agent_id === a.id; return <button key={a.id} type="button" onClick={() => setNuevo((n) => ({ ...n, agent_id: a.id }))} style={{ height: 34, padding: "0 14px", borderRadius: 99, border: `1px solid ${on ? "rgba(232,208,152,0.7)" : INK(0.14)}`, background: on ? "rgba(184,149,106,0.18)" : "transparent", color: on ? C.gold : INK(0.65), fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{a.nombre}</button>; })}</div>}
+    <input value={nuevo.titulo} onChange={(e) => setNuevo((n) => ({ ...n, titulo: e.target.value }))} placeholder={t.asunto} maxLength={140} autoFocus style={{ ...campo, fontWeight: 700, marginBottom: 10 }} />
+    <textarea data-enter-libre="1" value={nuevo.texto} onChange={(e) => setNuevo((n) => ({ ...n, texto: e.target.value }))} placeholder={t.detalle} rows={5} style={{ ...campo, resize: "vertical", lineHeight: 1.5 }} />
+    {miniaturas(nuevo.fotos, (u) => setNuevo((n) => ({ ...n, fotos: n.fotos.filter((x) => x !== u) })))}
+    {subiendo > 0 && <p style={{ fontSize: 12.5, color: INK(0.55), margin: "8px 0 0" }}>{t.subiendo}</p>}
+    {err && <p style={{ fontSize: 12.5, color: C.red, margin: "8px 0 0" }}>{err}</p>}
+    <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
+      {clip(archivoNuevo)}
+      <input ref={archivoNuevo} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { subir(e.target.files, (f) => setNuevo((n) => ({ ...n, fotos: f(n.fotos) }))); e.target.value = ""; }} />
+      <span style={{ flex: 1 }} />
+      <button type="button" onClick={() => { setNuevo(null); setErr(""); }} style={btn(false)}>{t.cancelar}</button>
+      <button type="button" onClick={crear} disabled={enviando || subiendo > 0} style={{ ...btn(true), opacity: enviando || subiendo > 0 ? 0.6 : 1 }}>{enviando ? "…" : t.abrir}</button>
+    </div>
+  </div>;
+
+  // ── Chat ──
+  const k = hilo?.ticket;
+  const chat = sel && <div style={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: `1px solid ${INK(0.08)}` }}>
+      {celu && <button type="button" onClick={() => setSel(null)} aria-label={t.volver} style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 11, border: `1px solid ${INK(0.14)}`, background: "transparent", color: C.tx, fontSize: 18, cursor: "pointer" }}>‹</button>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontSize: 16.5, fontWeight: 800, color: C.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: celu ? "normal" : "nowrap" }}>{k ? tituloDe(k) : "…"}</p>
+        {k && <p style={{ margin: "2px 0 0", fontSize: 12, color: INK(0.5) }}>#{k.numero} · {hora(k.created_at)}{k.creado_rol !== rol && traducido && k.titulo_tr ? ` · ${k.titulo}` : ""}{k.status === "cerrado" ? <b style={{ color: C.green }}> · ✓ {t.cerrado}</b> : null}</p>}
+      </div>
+      {k && (k.status === "abierto" ? <button type="button" onClick={() => estado("cerrar")} style={{ ...btn(false), height: 36, color: C.green, borderColor: "rgba(34,197,94,0.45)" }}>✓ {t.cerrar}</button>
+        : <button type="button" onClick={() => estado("reabrir")} style={{ ...btn(false), height: 36 }}>{t.reabrir}</button>)}
+    </div>
+    <div className="tk-scroll" onDragOver={(e) => e.preventDefault()} onDrop={soltar(setFotos)} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 2px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {!hilo ? <p style={{ color: INK(0.4), textAlign: "center" }}>…</p> : hilo.mensajes.map((m) => {
+        if (m.autor_rol === "sistema") { const [que, por] = String(m.texto || "").split(":"); return <p key={m.id} style={{ alignSelf: "center", margin: "2px 0", fontSize: 11.5, fontWeight: 700, color: INK(0.5), padding: "4px 12px", borderRadius: 99, background: INK(0.05) }}>{que === "cerrado" ? `✓ ${t.cerradoPor}` : t.reabiertoPor} {quien(por)} · {hora(m.created_at)}</p>; }
+        const mio = m.autor_rol === rol;
+        const principal = !mio && traducido && m.texto_tr ? m.texto_tr : m.texto;
+        const segundo = !mio && traducido && m.texto_tr ? m.texto : null;
+        return <div key={m.id} style={{ alignSelf: mio ? "flex-end" : "flex-start", maxWidth: celu ? "88%" : "72%", padding: "10px 13px", borderRadius: 15, borderBottomRightRadius: mio ? 5 : 15, borderBottomLeftRadius: mio ? 15 : 5, background: mio ? "rgba(184,149,106,0.2)" : INK(0.07), border: `1px solid ${mio ? "rgba(232,208,152,0.3)" : INK(0.08)}` }}>
+          {principal && <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.5, color: C.tx, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{principal}</p>}
+          {segundo && <p style={{ margin: "6px 0 0", paddingTop: 6, borderTop: `1px solid ${INK(0.08)}`, fontSize: 12, lineHeight: 1.45, color: INK(0.5), whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{segundo}</p>}
+          {m.fotos?.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: principal ? 8 : 0 }}>{m.fotos.map((u) => <img key={u} src={u} alt="" onClick={() => setGrande(u)} style={{ width: m.fotos.length === 1 ? 220 : 110, maxWidth: "100%", height: m.fotos.length === 1 ? "auto" : 110, objectFit: "cover", borderRadius: 10, cursor: "zoom-in", display: "block" }} />)}</div>}
+          <p style={{ margin: "5px 0 0", fontSize: 10.5, color: INK(0.4), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{hora(m.created_at)}</p>
+        </div>;
+      })}
+      <div ref={fin} />
+    </div>
+    <div onPaste={pegar(setFotos)} style={{ paddingTop: 10, borderTop: `1px solid ${INK(0.08)}` }}>
+      {miniaturas(fotos, (u) => setFotos((p) => p.filter((x) => x !== u)))}
+      {subiendo > 0 && <p style={{ fontSize: 12.5, color: INK(0.55), margin: "6px 0 0" }}>{t.subiendo}</p>}
+      {err && <p style={{ fontSize: 12.5, color: C.red, margin: "6px 0 0" }}>{err}</p>}
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: fotos.length || subiendo || err ? 8 : 0 }}>
+        {clip(archivo)}
+        <input ref={archivo} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { subir(e.target.files, setFotos); e.target.value = ""; }} />
+        <textarea data-enter-libre="1" value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !celu && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); enviar(); } }} placeholder={t.escribir} rows={Math.min(5, Math.max(1, texto.split("\n").length))} style={{ ...campo, flex: 1, resize: "none", lineHeight: 1.45, minHeight: 42 }} />
+        <button type="button" onClick={enviar} disabled={enviando || subiendo > 0 || (!texto.trim() && !fotos.length)} style={{ ...btn(true), height: 42, opacity: enviando || subiendo > 0 || (!texto.trim() && !fotos.length) ? 0.5 : 1 }}>{enviando ? "…" : t.enviar}</button>
+      </div>
+    </div>
+  </div>;
+
+  const alto = celu ? "calc(100dvh - 190px)" : "calc(var(--vh100,100dvh) - 170px)";
+  const derecha = nuevo ? formNuevo : sel ? chat : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: INK(0.35), fontSize: 14 }}>{t.elegi}</div>;
+  return <div>
+    <style>{`.tk-scroll{scrollbar-width:thin;scrollbar-color:${INK(0.2)} transparent}.tk-scroll::-webkit-scrollbar{width:6px}.tk-scroll::-webkit-scrollbar-thumb{background:${INK(0.2)};border-radius:99px}`}</style>
+    {celu ? <div style={{ height: nuevo ? "auto" : alto, minHeight: 380 }}>{nuevo ? formNuevo : sel ? chat : columnaLista}</div>
+      : <div style={{ display: "grid", gridTemplateColumns: "minmax(300px,380px) minmax(0,1fr)", gap: 22, height: alto, minHeight: 440 }}>
+        {columnaLista}
+        <div style={{ minWidth: 0, minHeight: 0, paddingLeft: 22, borderLeft: `1px solid ${INK(0.08)}` }}>{derecha}</div>
+      </div>}
+    {grande && <div onClick={() => setGrande(null)} style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(0,0,0,0.86)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, cursor: "zoom-out" }}><img src={grande} alt="" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10 }} /></div>}
+  </div>;
+}
