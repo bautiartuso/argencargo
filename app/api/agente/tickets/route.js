@@ -53,7 +53,7 @@ async function traducir(texto, rol) {
 }
 
 const soloFotos = (v) => (Array.isArray(v) ? v : []).map((u) => String(u || "")).filter((u) => u.startsWith(`${SB_URL}/storage/v1/object/public/${BUCKET}/`)).slice(0, 12);
-const recorte = (t, fotos) => (String(t || "").trim() || (fotos.length ? `📷 ${fotos.length} foto${fotos.length !== 1 ? "s" : ""}` : "")).slice(0, 140);
+const recorte = (t, fotos) => (String(t || "").trim() || (fotos.length ? `📎 ${fotos.length} adjunto${fotos.length !== 1 ? "s" : ""}` : "")).slice(0, 140);
 
 // Aviso al otro lado. Nunca frena la respuesta.
 async function avisar(req, ticket, rol, texto, textoTr, nuevo) {
@@ -108,15 +108,22 @@ export async function POST(req) {
   if ((req.headers.get("content-type") || "").includes("multipart/form-data")) {
     const fd = await req.formData().catch(() => null);
     const file = fd?.get("file");
-    if (!file || typeof file.arrayBuffer !== "function") return Response.json({ error: "Falta la foto" }, { status: 400 });
-    if (!String(file.type || "").startsWith("image/")) return Response.json({ error: "Solo se pueden adjuntar fotos" }, { status: 400 });
+    if (!file || typeof file.arrayBuffer !== "function") return Response.json({ error: "Falta el archivo" }, { status: 400 });
+    // Fotos y documentos comunes (PDF, planillas, Word, texto). Nada ejecutable.
+    const nombre = String(file.name || "archivo");
+    const extOrig = (nombre.match(/\.([a-z0-9]{1,5})$/i) || [])[1]?.toLowerCase() || "";
+    const esFoto = String(file.type || "").startsWith("image/");
+    const DOCS = ["pdf", "xls", "xlsx", "doc", "docx", "csv", "txt"];
+    if (!esFoto && !DOCS.includes(extOrig)) return Response.json({ error: "Ese tipo de archivo no se puede adjuntar" }, { status: 400 });
     const bytes = Buffer.from(await file.arrayBuffer());
-    if (bytes.length > 4.2 * 1024 * 1024) return Response.json({ error: "La foto es muy pesada" }, { status: 413 });
-    const ext = file.type.includes("png") ? "png" : file.type.includes("webp") ? "webp" : "jpg";
-    const path = `${new Date().toISOString().slice(0, 7)}/${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
+    if (bytes.length > 4.2 * 1024 * 1024) return Response.json({ error: "El archivo es muy pesado (máximo 4 MB)" }, { status: 413 });
+    const ext = esFoto ? (file.type.includes("png") ? "png" : file.type.includes("webp") ? "webp" : file.type.includes("gif") ? "gif" : "jpg") : extOrig;
+    // Los documentos conservan su nombre (va después del segundo guion bajo) para mostrarlo en el chat.
+    const limpio = nombre.replace(/\.[a-z0-9]{1,5}$/i, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "archivo";
+    const path = `${new Date().toISOString().slice(0, 7)}/${Date.now()}_${Math.random().toString(36).slice(2, 9)}${esFoto ? "" : `_${limpio}`}.${ext}`;
     const key = process.env.SUPABASE_SERVICE_ROLE;
-    const up = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`, { method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": file.type }, body: bytes });
-    if (!up.ok) return Response.json({ error: "No se pudo subir la foto" }, { status: 502 });
+    const up = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${path}`, { method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": file.type || "application/octet-stream" }, body: bytes });
+    if (!up.ok) return Response.json({ error: "No se pudo subir el archivo" }, { status: 502 });
     return Response.json({ url: `${SB_URL}/storage/v1/object/public/${BUCKET}/${path}` });
   }
 
