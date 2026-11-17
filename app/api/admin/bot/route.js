@@ -217,9 +217,10 @@ export async function POST(req) {
     try { buffer = await facturaPdf(f.public_token); }
     catch (e) { console.error("[admin/bot] pdf", e.message); return Response.json({ error: `No se pudo generar el PDF: ${e.message}` }, { status: 500 }); }
     const r = await enviarArchivo({
-      phone, buffer, mime: "application/pdf", filename: `Factura-C-${numero}.pdf`,
-      caption: `Factura C ${numero}${opCode ? ` · ${opCode}` : ""}`,
-      nombreCliente: cli?.first_name || "Hola", descripcion: `la factura C ${numero}${opCode ? ` de tu operación ${opCode}` : ""}`,
+      // 17/11/2026 (Bautista): el mensaje dice "la factura de tu operación", sin "C" ni el número.
+      phone, buffer, mime: "application/pdf", filename: `Factura-${opCode || numero}.pdf`,
+      caption: `Factura${opCode ? ` · ${opCode}` : ` ${numero}`}`,
+      nombreCliente: cli?.first_name || "Hola", descripcion: opCode ? `la factura de tu operación ${opCode}` : "tu factura",
     });
     if (r.ok) await sb(`/invoices?id=eq.${f.id}`, { method: "PATCH", body: JSON.stringify({ wa_sent_at: new Date().toISOString() }) });
     return Response.json(r, { status: r.ok ? 200 : 400 });
