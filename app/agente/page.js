@@ -1204,10 +1204,11 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const [tab,setTab]=useState("deposit");
   // Tickets con Argencargo que esperan respuesta del agente (17/11/2026): número en la solapa. Y si se
   // entra desde el aviso (?tab=tickets), abre directo ahí.
-  const [ticketsPend,setTicketsPend]=useState(0);
+  const [ticketsPend,setTicketsPend]=useState(0);const [ticketsAb,setTicketsAb]=useState(0);
+  const ponerTickets=useCallback((pend,ab)=>{setTicketsPend(pend||0);setTicketsAb(ab||0);},[]);
   useEffect(()=>{if(!token)return;let vivo=true;
     try{if(new URLSearchParams(window.location.search).get("tab")==="tickets")setTab("tickets");}catch(e){}
-    const contar=async()=>{try{const r=await fetch("/api/agente/tickets",{cache:"no-store"}).then(x=>x.json());if(vivo&&!r.error)setTicketsPend(r.pendientes||0);}catch(e){}};
+    const contar=async()=>{try{const r=await fetch("/api/agente/tickets",{cache:"no-store"}).then(x=>x.json());if(vivo&&!r.error){setTicketsPend(r.pendientes||0);setTicketsAb(r.abiertos||0);}}catch(e){}};
     contar();const iv=setInterval(()=>{if(!document.hidden)contar();},120000);
     return()=>{vivo=false;clearInterval(iv);};
   },[token]);
@@ -1571,7 +1572,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
   const tabsIsla=[
     {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length},
     {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
-    {k:"tickets",l:t.tab_tickets||"Tickets",n:ticketsPend},
+    {k:"tickets",l:t.tab_tickets||"Tickets",n:ticketsAb},
     {k:"tarifas",l:t.tab_tarifas},
     {k:"stats",l:t.tab_stats},
     {k:"account",l:t.tab_account},
@@ -1796,7 +1797,7 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
 
     {/* TAB 4: Estadísticas — lo que le sirve al agente: ritmo, tiempos y calidad de la carga */}
     {/* Tarifas (03/10/2026): el agente carga sus rangos por servicio y los adicionales. */}
-    {tab==="tickets"&&<TicketsAgente rol={esAdmin?"admin":"agente"} lang={lang} onPendientes={setTicketsPend}/>}
+    {tab==="tickets"&&<TicketsAgente rol={esAdmin?"admin":"agente"} lang={lang} onPendientes={ponerTickets}/>}
     {tab==="tarifas"&&(esAdmin
       ?<TarifasAgenteAdmin token={token} lang={lang}/>
       :<TarifasAgenteEditor token={token} lang={lang}/>)}

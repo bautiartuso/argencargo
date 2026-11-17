@@ -56,7 +56,7 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
   const medir = useCallback(() => { const el = caja.current; if (!el) return; const r = el.getBoundingClientRect(); const esc = el.offsetWidth ? r.width / el.offsetWidth : 1; setAltoPx(Math.max(380, Math.floor((window.innerHeight - r.top - 16) / (esc || 1)))); }, []);
   useEffect(() => { medir(); const t1 = setTimeout(medir, 250); window.addEventListener("resize", medir); return () => { clearTimeout(t1); window.removeEventListener("resize", medir); }; }, [medir, celu, d === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cargar = useCallback(async () => { const r = await api(); if (!r.error) { setD(r); onPendientes?.(r.pendientes || 0); } else setD((x) => x || { tickets: [], agentes: [], error: r.error }); }, [onPendientes]);
+  const cargar = useCallback(async () => { const r = await api(); if (!r.error) { setD(r); onPendientes?.(r.pendientes || 0, r.abiertos || 0); } else setD((x) => x || { tickets: [], agentes: [], error: r.error }); }, [onPendientes]);
   const cargarHilo = useCallback(async (id) => { const r = await api(`?id=${id}`); if (!r.error) setHilo((h) => (id === (h?.ticket?.id || id) ? r : h)); }, []);
   useEffect(() => { cargar(); const iv = setInterval(() => { if (!document.hidden) cargar(); }, 30000); return () => clearInterval(iv); }, [cargar]);
   useEffect(() => { if (!sel) { setHilo(null); return; } setHilo(null); cargarHilo(sel).then(cargar); const iv = setInterval(() => { if (!document.hidden) cargarHilo(sel); }, 12000); return () => clearInterval(iv); }, [sel]); // eslint-disable-line react-hooks/exhaustive-deps
