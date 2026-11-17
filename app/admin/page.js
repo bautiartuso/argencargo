@@ -12899,8 +12899,9 @@ function AgentsPanel({token}){
   return <div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12,animation:"ac_fade_in 200ms"}}>✓ {msg}</p>}
     {(()=>{
-      // Fila superior (29/09/2026): en Vuelos, "En operación / Recibidos" a la izquierda y el
-      // pendiente de cobro en el aire a la derecha, en la misma línea que las solapas.
+      // Fila superior: las solapas al centro y, en Vuelos, el pendiente de cobro en el aire a la derecha.
+      // "En operación / Recibidos" va en su propia línea debajo, a la izquierda y más chico (17/11/2026:
+      // al sumar la solapa Tickets ya no entraba al lado de las solapas y se encimaba).
       const enVuelos=tab==="flights"&&!selFlight;
       let izq=null,der=null;
       if(enVuelos){
@@ -12916,8 +12917,8 @@ function AgentsPanel({token}){
           const ing=Math.max(0,Number(o.budget_total||0)-(impEnTotal?Number(o.budget_taxes||0):0));
           if(!(Number(o.budget_total||0)>0))sinPres++;total+=ing;if(o.is_collected)cobrado+=ing;});
         const pend=total-cobrado;
-        izq=<div style={{display:"inline-flex",gap:4,padding:4,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
-          {[{k:"active",l:"En operación",n:act.length},{k:"received",l:"Recibidos",n:rec}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"9px 16px",fontSize:13,fontWeight:800,border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,background:on?"rgba(255,255,255,0.1)":"transparent",color:on?"#fff":"rgba(255,255,255,0.55)",boxShadow:on?"inset 0 0 0 1px rgba(255,255,255,0.14)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
+        izq=<div style={{display:"inline-flex",gap:3,padding:3,borderRadius:11,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          {[{k:"active",l:"En operación",n:act.length},{k:"received",l:"Recibidos",n:rec}].map(st=>{const on=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{height:32,padding:"0 14px",fontSize:12.5,fontWeight:800,border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,whiteSpace:"nowrap",background:on?"rgba(232,208,152,0.18)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.45)":"none"}}>{st.l}<span style={{fontSize:11,fontWeight:800,color:on?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
         </div>;
         der=<div title="Lo que falta cobrar de las operaciones en vuelos que ya tienen tracking del courier, sin los impuestos (flete, seguro, sobrepeso, envío)." style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
           <span style={{fontSize:17}}>✈️</span>
@@ -12927,16 +12928,17 @@ function AgentsPanel({token}){
           </div>
         </div>;
       }
-      return <div className="ag-top" style={{marginBottom:18}}>
-        <style>{`.ag-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}.ag-top>.ag-izq{justify-self:start}.ag-top>.ag-der{justify-self:end}@media(max-width:1250px){.ag-top{grid-template-columns:1fr}.ag-top>*{justify-self:center!important}.ag-top>.ag-centro{order:-1}}`}</style>
-        <div className="ag-izq">{izq}</div>
+      return <><div className="ag-top" style={{marginBottom:izq?12:18}}>
+        <style>{`.ag-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}.ag-top>.ag-der{justify-self:end}@media(max-width:1500px){.ag-top{grid-template-columns:1fr}.ag-top>*{justify-self:center!important}.ag-top>.ag-centro{order:-1}.ag-top>.ag-izq{display:none}}`}</style>
+        <div className="ag-izq"/>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
         {[{k:"deposito",l:"Depósito",n:bultosEnDeposito},{k:"flights",l:"Vuelos",n:flights.filter(f=>f.status!=="recibido").length},{k:"tickets",l:"Tickets",n:ticketsN},{k:"signups",l:"Agentes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length},{k:"reclamos",l:"Reclamos",n:reclamosN},{k:"reenvios",l:"Reenvíos",n:reenvios.filter(r=>r.status==="pendiente"||r.status==="no_se_puede").length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"9px 18px",fontSize:13,fontWeight:800,border:"none",borderRadius:12,background:active?GOLD_GRADIENT:"transparent",color:active?"#0A1628":"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:8,transition:"all 150ms",boxShadow:active?"0 6px 18px rgba(184,149,106,0.28)":"none"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>{tb.l}{tb.n>0&&<span style={{fontSize:11,fontWeight:800,padding:"1px 8px",borderRadius:999,background:active?"rgba(10,22,40,0.16)":"rgba(255,255,255,0.08)",color:active?"#0A1628":"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
       </div>
             </div>
         <div className="ag-der">{der}</div>
-      </div>;
+      </div>
+      {izq&&<div style={{marginBottom:14}}>{izq}</div>}</>;
     })()}
 
     {tab==="deposito"&&(()=>{
