@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ToastStack, toast, SkeletonTable, EmptyState, confirmDialog, DialogHost } from "../../lib/ui";
 import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
