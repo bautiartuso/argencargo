@@ -1,5 +1,5 @@
 "use client";
-import { fetchDolar } from "../../lib/dolar";
+import { fetchDolar, blueCrudo } from "../../lib/dolar";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { calcOpBudget, applyAntidumpingFloor, costoPuestoEnArgentina, MAX_ITEMS_FACTURA, recargoItems, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB, minKgAereoDe, bateriaUsdKg, sobrepesoUsdPieza, tarifaAplica, tablaDesaduanaje, esPkBd, SVC_PK_BD, TARIFA_PK_BD, costoMaritimoBUsa, SVC_COSTO_DHL, costoAereoDhl, seguroCarga } from "../../lib/calc";
@@ -8160,7 +8160,9 @@ function GastosFijosPanel({token}){
     setGastos(Array.isArray(g)?g:[]);setPagos(Array.isArray(p)?p:[]);
     try{window.dispatchEvent(new Event("gf_cambio"));}catch(e){}
   };
-  useEffect(()=>{load();fetchDolar().then(r=>r.ok?r.json():null).then(d=>{if(d?.venta)setTc(String(d.venta));}).catch(()=>{});},[token]);
+  // Tipo de cambio del pago: blue COMPRA, sin recargo (16/11/2026). Para pagar un gasto en pesos se venden
+  // dólares, así que vale la punta más baja; el "+2" es solo para lo que se le cobra al cliente.
+  useEffect(()=>{load();blueCrudo().then(d=>{const v=Number(d?.compra)||Number(d?.venta)||0;if(v>0)setTc(String(v));}).catch(()=>{});},[token]);
   const mal=(r)=>r&&!Array.isArray(r)&&(r.code||r.message);
   const alfa=(a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||""),"es",{sensitivity:"base"});
   // El pago arranca como el último de ese concepto (pesos o dólares, mismo método); el monto se escribe siempre.
