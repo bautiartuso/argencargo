@@ -15221,6 +15221,11 @@ function FacturasPanel({token}){
   // USD (usd) y el unitario sale del TC; si se edita el unitario a mano, deja de seguir al TC.
   const ITEM_NUEVO=()=>({key:`i${Date.now()}${Math.random().toString(36).slice(2,6)}`,label:"",cantidad:"1",unitario:"",usd:"",on:true});
   const [items,setItems]=useState(()=>[{...ITEM_NUEVO(),label:"Servicios logísticos"}]);
+  // Datos de la operación traída (17/11/2026): con esto se arman los ítems según el servicio elegido.
+  //   gestión aduanera → flete / seguro / impuestos, ajustados a lo que se cobró
+  //   venta por internet → la mercadería de la op (en castellano), repartiendo lo cobrado por producto
+  // `tocado` = el usuario editó los ítems a mano: no se vuelven a armar solos hasta que cambie de servicio.
+  const [opData,setOpData]=useState(null);const [tocado,setTocado]=useState(false);
   const [tc,setTc]=useState("");
   // Qué servicio se factura: las actividades del emisor en ARCA (Bautista tiene tres), cargadas al abrir.
   const [actividades,setActividades]=useState([]);const [actividadId,setActividadId]=useState(null);
@@ -15266,7 +15271,52 @@ function FacturasPanel({token}){
   const subEff=(it)=>r2(numAr(it.cantidad)*unitEff(it));
   const itemsOn=items.filter(it=>it.on&&subEff(it)>0);
   const totalArs=r2(itemsOn.reduce((s,it)=>s+subEff(it),0));
-  const chItem=(i,patch)=>setItems(p=>p.map((x,j)=>j===i?{...x,...patch}:x));
+  const chItem=(i,patch)=>{setTocado(true);setItems(p=>p.map((x,j)=>j===i?{...x,...patch}:x));};
+  const actDesc=actividades.find(a=>a.id===actividadId)?.desc||"";
+  const esVenta=/venta/i.test(actDesc);
+  // Servicios: los conceptos del presupuesto en USD (siguen al tipo de cambio). Si se cobró menos que el
+  // presupuesto (descuento), la diferencia se descuenta del flete y después del resto; si se cobró más, va
+  // como "Otros cargos". Así la factura da lo cobrado.
+  const armarServicio=(d)=>{
+    const ls=[];
+    if(d.fl>0)ls.push({k:"fl",label:"Flete internacional",usd:d.fl,on:true});
+    if(d.envio>0.01)ls.push({k:"envio",label:"Envío a domicilio",usd:d.envio,on:true});
+    if(d.resto>0.01)ls.push({k:"resto",label:"Otros cargos del servicio",usd:d.resto,on:true});
+    if(d.seg>0)ls.push({k:"seg",label:"Seguro de carga",usd:d.seg,on:true});
+    if(d.tax>0)ls.push({k:"tax",label:"Impuestos y gestión aduanera",usd:d.tax,on:d.taxBilled});
+    let dif=r2(ls.filter(x=>x.on).reduce((a,x)=>a+x.usd,0)-d.cobradoUsd);
+    if(dif>0.005){for(const x of ls){if(!x.on||dif<=0.005)continue;const q=Math.min(x.usd,dif);x.usd=r2(x.usd-q);dif=r2(dif-q);}}
+    else if(dif<-0.005){const o=ls.find(x=>x.k==="resto");if(o)o.usd=r2(o.usd-dif);else ls.push({k:"resto",label:"Otros cargos del servicio",usd:r2(-dif),on:true});}
+    const orden={fl:0,seg:1,tax:2,envio:3,resto:4};
+    const out=ls.filter(x=>x.usd>0.004).sort((a,b)=>orden[a.k]-orden[b.k]).map(x=>({...ITEM_NUEVO(),label:x.label,usd:String(x.usd),on:x.on}));
+    return out.length?out:[{...ITEM_NUEVO(),label:"Servicios logísticos"}];
+  };
+  // Venta: un ítem por producto, con sus unidades y el precio unitario en pesos. El total es lo cobrado al
+  // tipo de cambio, repartido según el valor declarado de cada producto; los centavos del redondeo se
+  // acomodan en los unitarios para que la suma dé exacto.
+  const armarVenta=(d,tcNum)=>{
+    const prods=(d.items||[]).map((m,i)=>({label:String(d.itemsEs?.[i]||m.description||"").trim()||"Mercadería",q:Number(m.quantity)||0,p:Number(m.unit_price_usd)||0})).filter(m=>m.q>0);
+    const T=Math.round(d.cobradoUsd*tcNum*100);
+    if(!prods.length||!(T>0))return null;
+    const conValor=prods.some(m=>m.p>0);
+    const W=prods.reduce((a,m)=>a+(conValor?m.q*m.p:m.q),0);
+    if(!(W>0))return null;
+    const fs=prods.map(m=>({...m,u:Math.max(1,Math.round(T*(conValor?m.q*m.p:m.q)/W/m.q))}));
+    let dif=T-fs.reduce((a,f)=>a+Math.round(f.u*f.q),0);
+    for(const f of [...fs].sort((a,b)=>b.q-a.q)){if(!dif)break;const k=Math.trunc(dif/f.q);if(k&&f.u+k>=1){f.u+=k;dif-=Math.round(k*f.q);}}
+    // Si quedaron centavos sueltos, se busca un par de productos cuyos unitarios los absorban (± 3 centavos).
+    if(dif){busca:for(const a of fs)for(const b of fs){if(a===b)continue;for(let ka=-3;ka<=3;ka++)for(let kb=-3;kb<=3;kb++){if(ka*a.q+kb*b.q===dif&&a.u+ka>=1&&b.u+kb>=1){a.u+=ka;b.u+=kb;dif=0;break busca;}}}}
+    if(dif<0){const f=[...fs].sort((a,b)=>a.q-b.q).find(x=>x.u>1);if(f){f.u-=1;dif+=Math.round(f.q);}}
+    const out=fs.map(f=>({...ITEM_NUEVO(),label:f.label,cantidad:String(f.q),unitario:(f.u/100).toFixed(2),usd:""}));
+    if(dif>0)out.push({...ITEM_NUEVO(),label:"Ajuste por redondeo",cantidad:"1",unitario:(dif/100).toFixed(2),usd:""});
+    return out;
+  };
+  useEffect(()=>{
+    if(!opData||tocado)return;
+    const v=esVenta&&nTc>0?armarVenta(opData,nTc):null;
+    setItems(v||armarServicio(opData));
+  },[opData,esVenta,esVenta?nTc:0,tocado]); // eslint-disable-line react-hooks/exhaustive-deps
+  const elegirActividad=(id)=>{setTocado(false);setActividadId(id);};
   const buscarPadron=async(nroOverride)=>{
     const nro=String(nroOverride||docNro).replace(/\D/g,"");
     if(nro.length!==11)return;
@@ -15280,7 +15330,7 @@ function FacturasPanel({token}){
   // Precarga completa desde la op: cliente + documento + conceptos del presupuesto + TC del cobro.
   const traerOp=async(codeArg)=>{
     setErr("");const code=String(codeArg||opCode).trim().toUpperCase();if(!code)return;
-    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,channel,description,client_id,budget_flete,budget_seguro,budget_taxes,budget_total,delivery_cost_usd,delivery_choice,ri_argencargo_collects_taxes,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
+    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,channel,description,client_id,budget_flete,budget_seguro,budget_taxes,budget_total,discount_applied_usd,delivery_cost_usd,delivery_choice,ri_argencargo_collects_taxes,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
     const op=Array.isArray(r)?r[0]:null;
     if(!op){setErr(`No existe la operación ${code}`);setOpInfo(null);return;}
     const c=op.clients||{};
@@ -15302,29 +15352,55 @@ function FacturasPanel({token}){
     const fl=r2(Number(op.budget_flete||0)),seg=r2(Number(op.budget_seguro||0)),tax=r2(Number(op.budget_taxes||0));
     const otros=r2(Math.max(0,Number(op.budget_total||0)-fl-seg-tax));
     const taxBilled=op.channel!=="aereo_blanco"||!(c.tax_condition==="responsable_inscripto")||!!op.ri_argencargo_collects_taxes;
-    const ls=[];
-    if(fl>0)ls.push({...ITEM_NUEVO(),label:"Flete internacional",usd:String(fl)});
-    if(seg>0)ls.push({...ITEM_NUEVO(),label:"Seguro de carga",usd:String(seg)});
-    if(tax>0)ls.push({...ITEM_NUEVO(),label:"Impuestos y gestión aduanera",usd:String(tax),on:taxBilled});
     // El envío a domicilio (flete local elegido en el link) va como concepto propio; lo que
     // sobre después de eso queda como "Otros cargos del servicio". Las etiquetas se pueden editar.
     const envio=r2(Math.min(otros,Number(op.delivery_cost_usd||0)));
-    if(envio>0.01)ls.push({...ITEM_NUEVO(),label:"Envío a domicilio",usd:String(envio)});
     const resto=r2(otros-envio);
-    if(resto>0.01)ls.push({...ITEM_NUEVO(),label:"Otros cargos del servicio",usd:String(resto)});
-    setItems(ls.length?ls:[{...ITEM_NUEVO(),label:"Servicios logísticos"}]);
-    // TC del último cobro registrado en la op (el real al que se cobró); si no hay, queda el blue.
-    const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&exchange_rate=not.is.null&select=exchange_rate&order=payment_date.desc&limit=1`});
-    const rate=Array.isArray(cp)&&cp[0]?Number(cp[0].exchange_rate):0;
+    // Lo cobrado (17/11/2026, Bautista: "si le cobré menos, le facturo menos"): la suma de los cobros de
+    // la op. Sin cobros todavía, lo que se le va a cobrar (presupuesto facturable menos el descuento).
+    const [cp,mi]=await Promise.all([
+      dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=amount_usd,amount_ars,exchange_rate,payment_date&order=payment_date.desc`}),
+      dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=description,quantity,unit_price_usd&order=created_at.asc`}),
+    ]);
+    const pagos=Array.isArray(cp)?cp:[];
+    const facturable=r2(fl+seg+otros+(taxBilled?tax:0));
+    const cobradoUsd=pagos.length?r2(pagos.reduce((a,x)=>a+Number(x.amount_usd||0),0)):r2(Math.max(0,facturable-Number(op.discount_applied_usd||0)));
+    const mercaderia=Array.isArray(mi)?mi:[];
+    setTocado(false);
+    setOpData({id:op.id,fl,seg,tax,envio,resto,taxBilled,facturable,cobradoUsd,conCobros:pagos.length>0,items:mercaderia,itemsEs:null});
+    // TC al que se cobró: si hubo cobros en pesos, el promedio real (pesos ÷ dólares de esos cobros), así
+    // la factura da los mismos pesos que entraron; si no, queda el blue del día.
+    const enPesos=pagos.filter(x=>Number(x.amount_ars)>0&&Number(x.amount_usd)>0);
+    const ars=enPesos.reduce((a,x)=>a+Number(x.amount_ars),0),usdP=enPesos.reduce((a,x)=>a+Number(x.amount_usd),0);
+    const rate=usdP>0?Math.round(ars/usdP*10000)/10000:(Number(pagos.find(x=>Number(x.exchange_rate)>0)?.exchange_rate)||0);
     if(rate>0)setTc(String(rate));
+    // Descripciones al castellano para la factura de venta (si falla, quedan como están cargadas).
+    if(mercaderia.length){
+      fetch("/api/facturas",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"traducir",textos:mercaderia.map(m=>m.description||"")})}).then(x=>x.json())
+        .then(j=>{if(Array.isArray(j?.textos))setOpData(d=>d&&d.id===op.id?{...d,itemsEs:j.textos}:d);}).catch(()=>{});
+    }
   };
-  const cerrar=()=>{setModal(false);setOpCode("");setOpInfo(null);setItems([{...ITEM_NUEVO(),label:"Servicios logísticos"}]);setTc("");setErr("");};
+  const cerrar=()=>{setModal(false);setOpCode("");setOpInfo(null);setOpData(null);setTocado(false);setItems([{...ITEM_NUEVO(),label:"Servicios logísticos"}]);setTc("");setErr("");};
+  const itemsParaEmitir=()=>itemsOn.map(it=>({label:String(it.label||"").trim()||"Servicios logísticos",cantidad:numAr(it.cantidad)||1,unitario:unitEff(it),ars:subEff(it),usd:sigueTc(it)?r2(Number(it.usd)):0}));
+  // Vista previa (17/11/2026): la misma hoja que recibe el cliente, armada con lo que hay en el formulario.
+  // No emite nada ni toca ARCA: deja los datos en este navegador y abre /factura/vista-previa.
+  const vistaPrevia=async()=>{
+    setErr("");
+    if(items.some(it=>it.on&&sigueTc(it))&&!(nTc>0)){setErr("Cargá el tipo de cambio.");return;}
+    if(itemsOn.length===0){setErr("Cargá al menos un ítem con cantidad y precio.");return;}
+    const its=itemsParaEmitir();
+    let emisor={};
+    try{emisor=(await fetch("/api/facturas?action=emisor",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json()))?.emisor||{};}catch{}
+    const inv={tipo_cbte:11,punto_venta:emisor.punto_venta||1,fecha:hoyAR(),doc_tipo:docTipo,doc_nro:docTipo===99?null:docNro,receptor_nombre:nombre||(docTipo===99?"Consumidor Final":""),receptor_domicilio:domicilio,receptor_cond_iva:condIva,items:its,importe:r2(its.reduce((a,i)=>a+i.ars,0)),actividad_desc:actDesc||null,operations:opInfo?{operation_code:opInfo.code}:null};
+    try{localStorage.setItem("ac_factura_previa",JSON.stringify({inv,cfg:emisor,mercaderias:opData?.items||[]}));}catch{setErr("No se pudo armar la vista previa en este navegador.");return;}
+    window.open("/factura/vista-previa","_blank");
+  };
   const emitir=async()=>{
     setErr("");
     if(items.some(it=>it.on&&sigueTc(it))&&!(nTc>0)){setErr("Cargá el tipo de cambio.");return;}
     if(itemsOn.length===0){setErr("Cargá al menos un ítem con cantidad y precio.");return;}
-    const its=itemsOn.map(it=>({label:String(it.label||"").trim()||"Servicios logísticos",cantidad:numAr(it.cantidad)||1,unitario:unitEff(it),ars:subEff(it),usd:sigueTc(it)?r2(Number(it.usd)):0}));
-    const body={operation_id:opInfo?.id||null,client_id:opInfo?.client_id||null,items:its,tc:nTc>0?nTc:null,importe:r2(its.reduce((s,i)=>s+i.ars,0)),detalle:its.map(i=>i.label).join(" + "),actividad_id:actividadId||null,actividad_desc:actividades.find(a=>a.id===actividadId)?.desc||null};
+    const its=itemsParaEmitir();
+    const body={operation_id:opInfo?.id||null,client_id:opInfo?.client_id||null,items:its,tc:nTc>0?nTc:null,importe:r2(its.reduce((s,i)=>s+i.ars,0)),detalle:its.map(i=>i.label).join(" + ").slice(0,480),actividad_id:actividadId||null,actividad_desc:actDesc||null,concepto:esVenta?1:2};
     Object.assign(body,{doc_tipo:docTipo,doc_nro:docNro,receptor_nombre:nombre,receptor_domicilio:domicilio,receptor_cond_iva:condIva});
     setEmitiendo(true);
     try{
@@ -15533,7 +15609,8 @@ function FacturasPanel({token}){
           <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"'JetBrains Mono',monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
           <Btn variant="secondary" onClick={()=>traerOp()}>Traer</Btn>
         </div>
-        {opInfo?<p style={{fontSize:12.5,color:"#4ade80",margin:"8px 0 0",fontWeight:600}}>✓ {opInfo.code} · {opInfo.cliente}{buscandoPadron?" · consultando padrón…":""}</p>
+        {opInfo?<><p style={{fontSize:12.5,color:"#4ade80",margin:"8px 0 0",fontWeight:600}}>✓ {opInfo.code} · {opInfo.cliente}{buscandoPadron?" · consultando padrón…":""}</p>
+          {opData&&<p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",fontVariantNumeric:"tabular-nums"}}>{opData.conCobros?"Cobrado":"A cobrar"} <b style={{color:"#fff"}}>USD {arsF(opData.cobradoUsd)}</b>{Math.abs(opData.facturable-opData.cobradoUsd)>0.005?` · presupuesto USD ${arsF(opData.facturable)}`:""}</p>}</>
           :facturables.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{facturables.slice(0,8).map(o=><button key={o.id} onClick={()=>{setOpCode(o.operation_code);traerOp(o.operation_code);}} style={{height:30,padding:"0 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:GOLD_LIGHT,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace"}}>{o.operation_code}</button>)}</div>}
 
         {paso(2,"Receptor")}
@@ -15555,10 +15632,10 @@ function FacturasPanel({token}){
         {actividades.length>0&&<>
           <label style={lb}>Servicio (actividad en ARCA)</label>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {actividades.map(a=>{const on=actividadId===a.id;return <button key={a.id} type="button" onClick={()=>setActividadId(a.id)} style={{textAlign:"left",padding:"9px 12px",borderRadius:10,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.03)",color:on?"#fff":"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",gap:10,alignItems:"center"}}><span style={{width:16,height:16,borderRadius:"50%",border:`2px solid ${on?GOLD:"rgba(255,255,255,0.3)"}`,background:on?GOLD:"transparent",flexShrink:0}}/><span style={{flex:1,minWidth:0}}>{a.desc}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>{a.id}</span></button>;})}
+            {actividades.map(a=>{const on=actividadId===a.id;return <button key={a.id} type="button" onClick={()=>elegirActividad(a.id)} style={{textAlign:"left",padding:"9px 12px",borderRadius:10,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.03)",color:on?"#fff":"rgba(255,255,255,0.65)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",gap:10,alignItems:"center"}}><span style={{width:16,height:16,borderRadius:"50%",border:`2px solid ${on?GOLD:"rgba(255,255,255,0.3)"}`,background:on?GOLD:"transparent",flexShrink:0}}/><span style={{flex:1,minWidth:0}}>{a.desc}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono',monospace"}}>{a.id}</span></button>;})}
           </div>
         </>}
-        {items.some(sigueTc)&&<>
+        {(items.some(sigueTc)||(opData&&esVenta))&&<>
           <label style={lb}>Tipo de cambio (ARS por USD)</label>
           <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={{...inp,maxWidth:180,fontWeight:700}}/>
         </>}
@@ -15568,7 +15645,7 @@ function FacturasPanel({token}){
           {items.map((it,i)=>{const u=unitEff(it);const sub=subEff(it);const tcRow=sigueTc(it);return <div key={it.key} style={{display:"grid",gridTemplateColumns:celu?"28px minmax(0,1fr) 28px":"28px minmax(0,1fr) 84px 160px 150px 28px",gap:10,alignItems:"center",padding:"8px 10px",background:it.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${it.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:11}}>
             <button type="button" onClick={()=>chItem(i,{on:!it.on})} aria-label={it.on?"Quitar":"Incluir"} style={{width:26,height:26,borderRadius:8,border:`1.5px solid ${it.on?GOLD:"rgba(255,255,255,0.25)"}`,background:it.on?GOLD:"transparent",color:"#0A1628",fontWeight:900,fontSize:14,cursor:"pointer",lineHeight:1}}>{it.on?"✓":""}</button>
             <input value={it.label} onChange={e=>chItem(i,{label:e.target.value})} placeholder="Detalle del ítem" disabled={!it.on} style={{...inp,height:36,fontSize:13,fontWeight:600,background:"transparent",border:"1px solid transparent",color:it.on?"#fff":"rgba(255,255,255,0.4)"}}/>
-            {celu&&<button type="button" onClick={()=>setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p)} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
+            {celu&&<button type="button" onClick={()=>{setTocado(true);setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p);}} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
             <div style={celu?{gridColumn:"2",display:"grid",gridTemplateColumns:"64px 1fr 1fr",gap:6,alignItems:"center"}:{display:"contents"}}>
               <input value={it.cantidad} onChange={e=>chItem(i,{cantidad:e.target.value.replace(/[^0-9.,]/g,"")})} inputMode="decimal" placeholder="Cant." disabled={!it.on} style={{...inp,height:36,fontSize:13,textAlign:"right"}}/>
               <div style={{position:"relative"}} title={tcRow?`USD ${it.usd} × ${nTc||"TC"}`:undefined}>
@@ -15577,10 +15654,10 @@ function FacturasPanel({token}){
               </div>
               <span style={{fontSize:13,fontWeight:800,textAlign:"right",color:it.on?GOLD_LIGHT:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>$ {arsF(sub)}</span>
             </div>
-            {!celu&&<button type="button" onClick={()=>setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p)} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
+            {!celu&&<button type="button" onClick={()=>{setTocado(true);setItems(p=>p.length>1?p.filter((_,j)=>j!==i):p);}} aria-label="Sacar ítem" style={{width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
           </div>;})}
         </div>
-        <button type="button" onClick={()=>setItems(p=>[...p,ITEM_NUEVO()])} style={{marginTop:8,width:"100%",padding:"10px",borderRadius:10,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar ítem</button>
+        <button type="button" onClick={()=>{setTocado(true);setItems(p=>[...p,ITEM_NUEVO()]);}} style={{marginTop:8,width:"100%",padding:"10px",borderRadius:10,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:GOLD_LIGHT,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Agregar ítem</button>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,padding:"14px 16px",background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:12}}>
           <span style={{fontSize:12.5,fontWeight:800,color:GOLD_LIGHT}}>Total</span>
           <span style={{fontSize:20,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums"}}>$ {arsF(totalArs)}</span>
@@ -15588,6 +15665,7 @@ function FacturasPanel({token}){
         {err&&<p style={{fontSize:12.5,color:"#f87171",margin:"10px 0 0",lineHeight:1.5}}>{err}</p>}
         <div style={{display:"flex",gap:8,marginTop:18,justifyContent:celu?"stretch":"flex-end"}}>
           <Btn variant="secondary" onClick={cerrar} fullWidth={celu}>Cancelar</Btn>
+          <Btn variant="secondary" onClick={vistaPrevia} fullWidth={celu}>Vista previa</Btn>
           <Btn variant="gold" onClick={emitir} disabled={emitiendo} fullWidth={celu}>{emitiendo?"Emitiendo en ARCA…":"Emitir factura"}</Btn>
         </div>
         </div>

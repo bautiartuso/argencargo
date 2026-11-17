@@ -11,6 +11,7 @@
 //
 // El flujo es de una sola vía: se llama a ARCA únicamente acá, al emitir.
 
+import { callClaudeText, HAIKU_MODEL } from "../../../lib/anthropic";
 import { arcaReady, arcaConfig, emitirFacturaC, listarActividades, categoriaMonotributoPropia, ultimoComprobante, consultarComprobante } from "../../../lib/arca";
 import { CATEGORIAS, ventana12 } from "../../../lib/monotributo";
 import { hoyAR } from "../../../lib/fecha-ar";
@@ -89,6 +90,11 @@ export async function GET(req) {
     if (!arcaReady()) return Response.json({ actividades: [] });
     try { const cfg = await arcaConfig(); return Response.json({ actividades: await listarActividades(cfg?.environment === "produccion" ? "produccion" : "homologacion") }); }
     catch (e) { return Response.json({ actividades: [], error: String(e.message) }); }
+  }
+  // Datos del emisor para la vista previa del facturador (17/11/2026).
+  if (url.searchParams.get("action") === "emisor") {
+    const c = await arcaConfig();
+    return Response.json({ emisor: { razon_social: c?.razon_social || null, domicilio: c?.domicilio || null, cuit: c?.cuit || null, inicio_actividades: c?.inicio_actividades || null, punto_venta: Number(c?.punto_venta || 1) } });
   }
   if (url.searchParams.get("action") === "monotributo") return Response.json(await monotributo(), { headers: { "Cache-Control": "no-store" } });
   const opId = url.searchParams.get("operation_id");
@@ -212,10 +218,26 @@ export async function POST(req) {
     } catch (e) { return Response.json({ error: String(e.message) }, { status: 502 }); }
   }
   if (body?.action === "nota_credito") return notaCredito(body);
+  // Descripciones de la mercadería al castellano, para la factura de venta (17/11/2026).
+  if (body?.action === "traducir") {
+    const textos = (Array.isArray(body.textos) ? body.textos : []).slice(0, 60).map((t) => String(t || "").slice(0, 200));
+    if (!textos.length) return Response.json({ textos: [] });
+    try {
+      const out = await callClaudeText({
+        model: HAIKU_MODEL, feature: "factura_traducir", max_tokens: 3000,
+        system: "Traducís descripciones de productos de una factura comercial al castellano rioplatense neutro, para el detalle de una factura de venta en Argentina. Reglas: una traducción por línea de entrada, en el mismo orden; corta y natural (como la escribiría un comercio); conservá marcas, modelos, medidas y códigos tal cual; primera letra en mayúscula, sin punto final; si ya está en castellano, devolvela igual. Respondé SOLO un array JSON de strings, sin texto extra.",
+        user: JSON.stringify(textos),
+      });
+      const m = String(out || "").match(/\[[\s\S]*\]/);
+      const arr = m ? JSON.parse(m[0]) : null;
+      if (!Array.isArray(arr) || arr.length !== textos.length) return Response.json({ error: "No se pudo traducir" }, { status: 502 });
+      return Response.json({ textos: arr.map((t, i) => String(t || "").trim().slice(0, 120) || textos[i]) });
+    } catch (e) { return Response.json({ error: String(e.message || e).slice(0, 160) }, { status: 502 }); }
+  }
   const docTipo = Number(body?.doc_tipo);
   // Ítems (03/11/2026): detalle, cantidad y precio unitario en ARS (usd/tc solo si vinieron de una op).
   // El total fiscal es la suma de los ítems; sin ítems, el importe directo.
-  const itemsIn = Array.isArray(body?.items) && body.items.length > 0 ? body.items.slice(0, 20).map((i) => ({ label: String(i.label || "").slice(0, 120), cantidad: Number(i.cantidad) > 0 ? Number(i.cantidad) : 1, unitario: Number(i.unitario) || 0, usd: Number(i.usd) || 0, ars: Math.round((Number(i.ars) || 0) * 100) / 100 })).filter((i) => i.ars > 0) : null;
+  const itemsIn = Array.isArray(body?.items) && body.items.length > 0 ? body.items.slice(0, 60).map((i) => ({ label: String(i.label || "").slice(0, 120), cantidad: Number(i.cantidad) > 0 ? Number(i.cantidad) : 1, unitario: Number(i.unitario) || 0, usd: Number(i.usd) || 0, ars: Math.round((Number(i.ars) || 0) * 100) / 100 })).filter((i) => i.ars > 0) : null;
   const importe = itemsIn ? Math.round(itemsIn.reduce((s, i) => s + i.ars, 0) * 100) / 100 : Math.round(Number(body?.importe) * 100) / 100;
   const actividadId = Number(body?.actividad_id) > 0 ? Number(body.actividad_id) : null;
   const condIva = Number(body?.receptor_cond_iva);
@@ -258,7 +280,8 @@ export async function POST(req) {
   if (!inv?.id) return Response.json({ error: "No se pudo registrar la factura" }, { status: 500 });
 
   try {
-    const r = await emitirFacturaC({ docTipo, docNro: docTipo === 99 ? 0 : docNro, condIvaReceptor: condIva, importe, fecha, actividadId }, env);
+    // concepto 1 = venta de mercadería (Productos); el resto sale como Servicios, igual que siempre.
+    const r = await emitirFacturaC({ docTipo, docNro: docTipo === 99 ? 0 : docNro, condIvaReceptor: condIva, importe, fecha, actividadId, concepto: Number(body?.concepto) === 1 ? 1 : 2 }, env);
     await sb(`/invoices?id=eq.${inv.id}`, { method: "PATCH", body: JSON.stringify({ numero: r.numero, cae: r.cae, cae_vto: r.caeVto, status: "emitida" }) });
     return Response.json({ ok: true, id: inv.id, numero: r.numero, cae: r.cae, cae_vto: r.caeVto, environment: env, public_token: inv.public_token });
   } catch (e) {
