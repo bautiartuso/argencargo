@@ -28,7 +28,8 @@ const api = async (path = "", init) => {
   catch { return { error: "sin_conexion" }; }
 };
 
-export default function TicketsAgente({ rol, lang = "es", onPendientes }) {
+// resta = alto en px que ocupa lo que hay arriba y abajo en la pantalla donde se incrusta.
+export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 170 }) {
   const t = TX[rol === "agente" && lang === "zh" ? "zh" : "es"];
   const traducido = rol === "admin" || lang === "zh"; // este lado lee al otro por la traducción
   const [d, setD] = useState(null);
@@ -190,7 +191,7 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes }) {
     </div>
   </div>;
 
-  const alto = celu ? "calc(100dvh - 190px)" : "calc(var(--vh100,100dvh) - 170px)";
+  const alto = celu ? `calc(100dvh - ${resta + 20}px)` : `calc(var(--vh100,100dvh) - ${resta}px)`;
   const derecha = nuevo ? formNuevo : sel ? chat : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: INK(0.35), fontSize: 14 }}>{t.elegi}</div>;
   return <div>
     <style>{`.tk-scroll{scrollbar-width:thin;scrollbar-color:${INK(0.2)} transparent}.tk-scroll::-webkit-scrollbar{width:6px}.tk-scroll::-webkit-scrollbar-thumb{background:${INK(0.2)};border-radius:99px}`}</style>
