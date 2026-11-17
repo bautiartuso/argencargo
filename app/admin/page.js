@@ -12929,7 +12929,7 @@ function AgentsPanel({token}){
         </div>;
       }
       return <><div className="ag-top" style={{marginBottom:izq?12:18}}>
-        <style>{`.ag-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}.ag-top>.ag-der{justify-self:end}@media(max-width:1500px){.ag-top{grid-template-columns:1fr}.ag-top>*{justify-self:center!important}.ag-top>.ag-centro{order:-1}.ag-top>.ag-izq{display:none}}`}</style>
+        <style>{`.ag-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}.ag-top>.ag-der{justify-self:end}.ag-sub>.ag-der2{display:none}@media(max-width:1500px){.ag-top{grid-template-columns:1fr}.ag-top>*{justify-self:center!important}.ag-top>.ag-izq,.ag-top>.ag-der{display:none}.ag-sub>.ag-der2{display:block}}`}</style>
         <div className="ag-izq"/>
         <div className="ag-centro">
       <div style={{display:"inline-flex",gap:4,padding:5,borderRadius:16,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",flexWrap:"wrap",justifyContent:"center"}}>
@@ -12938,7 +12938,8 @@ function AgentsPanel({token}){
             </div>
         <div className="ag-der">{der}</div>
       </div>
-      {izq&&<div style={{marginBottom:14}}>{izq}</div>}</>;
+      {/* En pantallas angostas el pendiente de cobro baja a esta línea, a la derecha. */}
+      {izq&&<div className="ag-sub" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>{izq}<div className="ag-der2">{der}</div></div>}</>;
     })()}
 
     {tab==="deposito"&&(()=>{
