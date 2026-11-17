@@ -117,7 +117,8 @@ export async function GET(req) {
         etapa: c ? "transito" : "deposito",
         // Origen por el depósito (Chuse Di Fiori = USA): el portal dice "salió de China/Estados Unidos".
         origen: /usa|estados|ee\.?uu/i.test(String(s.maritime_warehouses?.origin || s.origin || "")) ? "usa" : "china",
-        contenedor: c && s.maritime_warehouses?.mostrar_contenedor_cliente ? (c.code || null) : null,
+        // "PENDIENTE" = contenedor armado sin número todavía (17/11/2026): al cliente no se le muestra.
+        contenedor: c && s.maritime_warehouses?.mostrar_contenedor_cliente && !/^PENDIENTE/i.test(c.code || "") ? (c.code || null) : null,
         eta_puerto: eta,
         // Fecha de zarpe (21/10/2026): la ruta del viaje en el portal la usa para la barra de avance.
         zarpo: c ? (c.departed_at || null) : null,
