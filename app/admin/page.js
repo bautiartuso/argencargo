@@ -8132,7 +8132,7 @@ function armarGasto(ne){
 }
 
 // ── Gastos fijos (12/11/2026) ───────────────────────────────────────────────────────────────────
-// Los conceptos que se pagan todos los meses, en tarjetas por grupo (Oficina, Sistemas, General). "Pagar"
+// Los conceptos que se pagan todos los meses, en una lista con títulos por grupo (Oficina, Sistemas, General). "Pagar"
 // anota lo que se pagó ese mes en el libro diario (finance_entries con gasto_fijo_id + periodo) y la fila
 // baja al final, tachada. No hay monto habitual: se carga lo pagado, en pesos (al tipo de cambio) o en
 // dólares. La alerta arranca N días antes del vencimiento; los opcionales nunca avisan. Solo gastos fijos:
@@ -8213,8 +8213,8 @@ function GastosFijosPanel({token}){
   const nPag=todas.filter(f=>f.e.estado==="pagado").length,nVan=todas.filter(f=>f.e.estado!=="salteado").length;
   const sumaUsd=(fs)=>fs.reduce((a,f)=>a+(f.e.pagos||[]).reduce((s,p)=>s+Number(p.amount||0),0),0);
   const pagadoUsd=sumaUsd(todas);
-  // Grupos (16/11/2026): cada concepto puede ir en un grupo (Oficina, Sistemas…) y se muestra en su
-  // tarjeta; los que no tienen van en "General". Dentro de cada tarjeta, primero lo que falta pagar.
+  // Grupos (16/11/2026): cada concepto puede ir en un grupo (Oficina, Sistemas…) y se lista bajo
+  // ese título; los que no tienen van en "General". Dentro de cada grupo, primero lo que falta pagar.
   const GENERAL="General";
   const grupoDe=(g)=>String(g.grupo||"").trim()||GENERAL;
   const nombresGrupo=[...new Set(activos.map(grupoDe))].sort((a,b)=>a===GENERAL?1:b===GENERAL?-1:a.localeCompare(b,"es",{sensitivity:"base"}));
@@ -8279,7 +8279,7 @@ function GastosFijosPanel({token}){
     const opciones=pagado?[["Borrar el pago",()=>deshacerPago(g,e.pagos),true]]:e.estado==="salteado"?[["Sí va este mes",()=>saltear(g,false)]]:[["No va este mes",()=>saltear(g,true)]];
     opciones.push(["Editar",()=>abrirEdit(g)]);
     return <div key={g.id} style={{borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 4px"}}>
         <span style={{position:"relative",width:38,height:38,borderRadius:11,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,lineHeight:1,color:"#fff",background:urgente?`${col}1f`:"rgba(255,255,255,0.045)",boxShadow:urgente?`inset 0 0 0 1px ${col}66`:"inset 0 0 0 1px rgba(255,255,255,0.07)"}}>
           <span style={{opacity:hecho?0.4:1}}>{g.emoji||"📌"}</span>
           {pagado&&<span style={{position:"absolute",right:-4,bottom:-4,width:17,height:17,borderRadius:"50%",background:"#22c55e",color:"#06281a",fontSize:11,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 0 2px #0f1c30"}}>✓</span>}
@@ -8298,22 +8298,19 @@ function GastosFijosPanel({token}){
             </div></>}
         </span>
       </div>
-      {abierta&&<div style={{padding:"2px 16px 14px"}}>{formPago}</div>}
+      {abierta&&<div style={{padding:"2px 4px 14px"}}>{formPago}</div>}
     </div>;
   };
-  // Tarjeta de un grupo (Oficina, Sistemas…): cuántos van pagados, barra fina de avance y sus filas.
-  const tarjeta=(gr)=>{const completo=gr.van>0&&gr.pag===gr.van;const pct=gr.van?Math.round(gr.pag/gr.van*100):0;
-    return <div key={gr.n} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,marginBottom:14}}>
-      <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"15px 16px 11px"}}>
-        <span style={{fontSize:15.5,fontWeight:800,color:"#fff",letterSpacing:"-0.01em"}}>{gr.n}</span>
-        <span style={{marginLeft:"auto",fontSize:12.5,fontWeight:700,color:completo?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{completo?"✓ Todo pagado":`${gr.pag} de ${gr.van}`}{gr.usd>0?` · ${usd(gr.usd)}`:""}</span>
+  // Una sola lista seguida (16/11/2026, Bautista: sin tarjetas): cada grupo es un título de texto con
+  // su cuenta, y debajo sus filas.
+  const seccion=(gr,i)=>{const completo=gr.van>0&&gr.pag===gr.van;
+    return <div key={gr.n} style={{marginTop:i?22:0}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"0 4px 8px",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+        <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>{gr.n}</span>
+        <span style={{marginLeft:"auto",fontSize:12.5,fontWeight:700,color:completo?"#4ade80":"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{completo?"✓ Todo pagado":`${gr.pag} de ${gr.van}`}{gr.usd>0?` · ${usd(gr.usd)}`:""}</span>
       </div>
-      <div style={{height:3,margin:"0 16px",borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",borderRadius:99,background:completo?"#22c55e":GOLD_GRADIENT,transition:"width .3s"}}/></div>
-      <div style={{paddingTop:5,paddingBottom:4}}>{gr.filas.map((f,i)=>fila(f,gr.n,i))}</div>
+      {gr.filas.map((f,k)=>fila(f,gr.n,k))}
     </div>;};
-  // En la compu van en dos columnas: cada tarjeta cae en la columna más corta.
-  const alto=(c)=>c.reduce((s,gr)=>s+gr.filas.length+1.6,0);
-  const columnas=celu?[grupos]:grupos.reduce((c,gr)=>{(alto(c[0])<=alto(c[1])?c[0]:c[1]).push(gr);return c;},[[],[]]).filter(c=>c.length);
   const flecha=(l,on)=><button type="button" onClick={on} style={{width:36,height:36,borderRadius:10,border:"none",background:"transparent",color:"rgba(255,255,255,0.75)",fontSize:19,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>;
   const pctMes=nVan?Math.round(nPag/nVan*100):0,mesCompleto=nVan>0&&nPag===nVan;
   return <div>
@@ -8334,8 +8331,8 @@ function GastosFijosPanel({token}){
     </div>}
     <div ref={refEdit}>{formConcepto}</div>
     {activos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"1.5rem 0"}}>Todavía no hay gastos fijos.</p>
-      :<div style={{display:"grid",gridTemplateColumns:`repeat(${columnas.length},minmax(0,1fr))`,gap:14,alignItems:"start"}}>{columnas.map((c,i)=><div key={i} style={{minWidth:0}}>{c.map(tarjeta)}</div>)}</div>}
-    {pausados.length>0&&<div style={{marginTop:6}}>
+      :<div>{grupos.map(seccion)}</div>}
+    {pausados.length>0&&<div style={{marginTop:24}}>
       <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Pausados</p>
       <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{pausados.map(g=><button key={g.id} type="button" onClick={()=>abrirEdit(g)} style={{display:"flex",alignItems:"center",gap:8,height:38,padding:"0 13px 0 10px",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.025)",color:"rgba(255,255,255,0.55)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><span style={{fontSize:16,opacity:0.6}}>{g.emoji||"📌"}</span>{g.nombre}</button>)}</div>
     </div>}
