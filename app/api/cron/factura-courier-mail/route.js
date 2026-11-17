@@ -1,6 +1,6 @@
 // GET /api/cron/factura-courier-mail — cada 15 min (16/11/2026, pedido de Bautista).
-// Cuando se paga en DHL, DHL manda el mail "Documentación de soporte para AWB: <guía>" con su factura en
-// PDF. Antes había que bajarla y subirla a mano al legajo del vuelo. Ahora este cron la toma del mail y la
+// DHL manda su factura en PDF por mail ("Documentación de soporte para AWB: <guía>" al pagar, o
+// "DHL-Preliquidacion AWB <guía>" al entrar a nacionalización). Antes había que bajarla y subirla a mano al legajo del vuelo. Ahora este cron la toma del mail y la
 // carga como factura del courier en todas las operaciones del vuelo de esa guía que todavía no la tengan.
 // · Solo mails de @dhl.com, con la guía en el asunto y un PDF adjunto.
 // · No pisa una factura ya cargada; sí reemplaza la marca "sin factura del courier".
@@ -13,7 +13,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const BUCKET = "legajos";
-const CONSULTA = 'from:dhl.com subject:"Documentación de soporte" has:attachment newer_than:12d';
+// Dos mails de DHL traen la factura (17/11/2026): "Documentación de soporte para AWB: <guía>" (después de
+// pagar) y "DHL-Preliquidacion AWB <guía>" (cuando entra a nacionalizarse, con la factura de aranceles
+// DHL_<número>.pdf). Vale el primero que llegue; el otro no pisa nada.
+const CONSULTA = 'from:dhl.com {subject:"Documentación de soporte" subject:Preliquidacion} has:attachment newer_than:12d';
 
 const sb = (path, init = {}) => {
   const key = process.env.SUPABASE_SERVICE_ROLE;
