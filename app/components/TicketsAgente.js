@@ -13,15 +13,17 @@ const TX = {
   es: { titulo: "Tickets", nuevo: "Nuevo ticket", abiertos: "Abiertos", cerrados: "Cerrados", asunto: "Asunto", detalle: "Detalle", abrir: "Abrir ticket", cancelar: "Cancelar",
     cerrar: "Cerrar ticket", reabrir: "Reabrir", teToca: "Te toca responder", escribir: "Escribí un mensaje…", enviar: "Enviar", foto: "Adjuntar", zona: "Arrastrá, pegá (⌘V) o tocá para adjuntar fotos y archivos", soltar: "Soltá para adjuntar",
     sinAbiertos: "No hay tickets abiertos", sinCerrados: "No hay tickets cerrados", elegi: "Elegí un ticket", original: "Original", cerrado: "Cerrado", agente: "Agente",
-    cerradoPor: "Cerrado por", reabiertoPor: "Reabierto por", volver: "Volver", subiendo: "Subiendo…", error: "No se pudo guardar", hoy: "hoy" },
+    cerradoPor: "Cerrado por", reabiertoPor: "Reabierto por", volver: "Volver", urgente: "Urgente", normal: "Normal", traduccion: "Traducción", subiendo: "Subiendo…", error: "No se pudo guardar", hoy: "hoy" },
   zh: { titulo: "工单", nuevo: "新建工单", abiertos: "未解决", cerrados: "已关闭", asunto: "主题", detalle: "详情", abrir: "提交工单", cancelar: "取消",
     cerrar: "关闭工单", reabrir: "重新打开", teToca: "待你回复", escribir: "输入消息…", enviar: "发送", foto: "添加附件", zona: "拖放、粘贴或点击添加照片和文件", soltar: "松开以添加",
     sinAbiertos: "没有未解决的工单", sinCerrados: "没有已关闭的工单", elegi: "请选择一个工单", original: "原文", cerrado: "已关闭", agente: "代理",
-    cerradoPor: "已关闭：", reabiertoPor: "已重新打开：", volver: "返回", subiendo: "正在上传…", error: "保存失败", hoy: "今天" },
+    cerradoPor: "已关闭：", reabiertoPor: "已重新打开：", volver: "返回", urgente: "紧急", normal: "普通", traduccion: "翻译", subiendo: "正在上传…", error: "保存失败", hoy: "今天" },
 };
 const INK = (a) => `rgba(var(--ink,255,255,255),${a})`;
 const C = { tx: "var(--tx,#fff)", gold: "var(--gold,#E8D098)", panel: "var(--panel,#142038)", green: "var(--green,#22c55e)", red: "var(--red,#f87171)", amber: "var(--amber,#fbbf24)" };
 const ORO = "linear-gradient(135deg,#E8D098,#B8956A)";
+// Prioridad: alta = rojo, media = amarillo. No hay verde: un ticket abierto siempre es algo sin resolver.
+const COLOR = { alta: "#ef4444", media: "#f5b301" };
 
 // Un adjunto es una URL del bucket "tickets": foto (se ve en miniatura) o archivo (se ve como ficha con su nombre).
 const esImagen = (u) => /\.(jpe?g|png|webp|gif|heic|heif)(\?|$)/i.test(String(u || ""));
@@ -35,7 +37,7 @@ const api = async (path = "", init) => {
 
 // resta = alto en px que ocupa lo que hay arriba y abajo en la pantalla donde se incrusta.
 export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 170 }) {
-  const t = TX[rol === "agente" && lang === "zh" ? "zh" : "es"];
+  const t = TX[lang === "zh" ? "zh" : "es"];
   const traducido = rol === "admin" || lang === "zh"; // este lado lee al otro por la traducción
   const [d, setD] = useState(null);
   const [filtro, setFiltro] = useState("abierto");
@@ -108,6 +110,7 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
     if (r.error) { setErr(r.error); return; }
     setNuevo(null); setFiltro("abierto"); await cargar(); setSel(r.ticket.id);
   };
+  const prioridad = async (p) => { if (!sel || rol !== "admin") return; setHilo((h) => (h ? { ...h, ticket: { ...h.ticket, prioridad: p } } : h)); const r = await api("", { method: "POST", body: JSON.stringify({ accion: "prioridad", ticket_id: sel, prioridad: p }) }); if (r.error) setErr(r.error); cargar(); };
   const estado = async (accion) => { if (!sel) return; const r = await api("", { method: "POST", body: JSON.stringify({ accion, ticket_id: sel }) }); if (r.error) { setErr(r.error); return; } await cargarHilo(sel); cargar(); if (accion === "cerrar") setFiltro("abierto"); };
 
   const hora = (iso) => { const x = new Date(iso); const mismo = x.toDateString() === new Date().toDateString(); const hm = x.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }); return mismo ? hm : `${x.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })} ${hm}`; };
@@ -119,10 +122,10 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
 
   if (d === null) return <p ref={caja} style={{ color: INK(0.4) }}>…</p>;
   const tickets = d.tickets || [];
-  const lista = tickets.filter((k) => k.status === filtro).sort((a, b) => (filtro === "abierto" ? Number(meToca(b)) - Number(meToca(a)) : 0) || String(b.ultimo_at).localeCompare(String(a.ultimo_at)));
+  const lista = tickets.filter((k) => k.status === filtro).sort((a, b) => (filtro === "abierto" ? (Number(b.prioridad === "alta") - Number(a.prioridad === "alta")) || (Number(meToca(b)) - Number(meToca(a))) : 0) || String(b.ultimo_at).localeCompare(String(a.ultimo_at)));
   const nAb = tickets.filter((k) => k.status === "abierto").length, nCe = tickets.length - nAb;
   const agentes = d.agentes || [];
-  const abrirNuevo = () => { setErr(""); setSel(null); setNuevo({ titulo: "", texto: "", fotos: [], agent_id: (agentes.find((a) => a.principal) || agentes[0])?.id || "" }); };
+  const abrirNuevo = () => { setErr(""); setSel(null); setNuevo({ titulo: "", texto: "", fotos: [], prioridad: "media", agent_id: (agentes.find((a) => a.principal) || agentes[0])?.id || "" }); };
 
   const campo = { width: "100%", boxSizing: "border-box", padding: "11px 13px", borderRadius: 11, border: `1px solid ${INK(0.14)}`, background: INK(0.05), color: C.tx, fontSize: 14.5, fontFamily: "inherit", outline: "none" };
   const btn = (fuerte) => ({ height: 40, padding: "0 16px", borderRadius: 11, border: fuerte ? "none" : `1px solid ${INK(0.16)}`, background: fuerte ? ORO : "transparent", color: fuerte ? "#0A1628" : C.tx, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" });
@@ -135,6 +138,9 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
   </button>;
 
+  // Prioridad: dos fichas (amarillo Normal / rojo Urgente). Argencargo la elige; el agente solo la ve.
+  const fichasPrioridad = (valor, poner) => <div style={{ display: "inline-flex", gap: 6 }}>{[["media", t.normal], ["alta", t.urgente]].map(([p, l]) => { const on = valor === p; if (!poner && !on) return null; return <button key={p} type="button" onClick={poner ? () => poner(p) : undefined} style={{ height: 30, padding: "0 12px", borderRadius: 99, display: "inline-flex", alignItems: "center", gap: 7, border: `1px solid ${on ? COLOR[p] : INK(0.14)}`, background: on ? `${COLOR[p]}26` : "transparent", color: on ? C.tx : INK(0.55), fontSize: 12.5, fontWeight: 800, cursor: poner ? "pointer" : "default", fontFamily: "inherit" }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: COLOR[p], opacity: on ? 1 : 0.5 }} />{l}</button>; })}</div>;
+
   // ── Lista ──
   const columnaLista = <div style={{ display: "flex", flexDirection: "column", minHeight: 0, height: "100%" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -145,7 +151,7 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
     </div>
     <div className="tk-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
       {lista.length === 0 ? <p style={{ color: INK(0.45), fontSize: 14, textAlign: "center", padding: "32px 0" }}>{filtro === "abierto" ? t.sinAbiertos : t.sinCerrados}</p>
-        : lista.map((k) => { const on = sel === k.id, toca = meToca(k), nueva = sinLeer(k); return <button key={k.id} type="button" onClick={() => { setNuevo(null); setErr(""); setSel(k.id); }} style={{ textAlign: "left", padding: "12px 13px", borderRadius: 13, border: "none", borderBottom: `1px solid ${INK(0.06)}`, background: on ? INK(0.09) : "transparent", color: C.tx, cursor: "pointer", fontFamily: "inherit", display: "block", width: "100%" }}>
+        : lista.map((k) => { const on = sel === k.id, toca = meToca(k), nueva = sinLeer(k); return <button key={k.id} type="button" onClick={() => { setNuevo(null); setErr(""); setSel(k.id); }} style={{ textAlign: "left", padding: "12px 13px 12px 15px", borderRadius: 13, border: "none", borderBottom: `1px solid ${INK(0.06)}`, boxShadow: k.status === "abierto" ? `inset 4px 0 0 ${COLOR[k.prioridad] || COLOR.media}` : "none", background: on ? INK(0.09) : "transparent", color: C.tx, cursor: "pointer", fontFamily: "inherit", display: "block", width: "100%" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             {nueva && <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.gold, flexShrink: 0, alignSelf: "center" }} />}
             <span style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: nueva ? 800 : 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tituloDe(k)}</span>
@@ -163,6 +169,7 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
   const formNuevo = nuevo && <div style={{ maxWidth: 640 }}>
     <p style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 800, color: C.tx }}>{t.nuevo}</p>
     {rol === "admin" && agentes.length > 1 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{agentes.map((a) => { const on = nuevo.agent_id === a.id; return <button key={a.id} type="button" onClick={() => setNuevo((n) => ({ ...n, agent_id: a.id }))} style={{ height: 34, padding: "0 14px", borderRadius: 99, border: `1px solid ${on ? "rgba(232,208,152,0.7)" : INK(0.14)}`, background: on ? "rgba(184,149,106,0.18)" : "transparent", color: on ? C.gold : INK(0.65), fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{a.nombre}</button>; })}</div>}
+    {rol === "admin" && <div style={{ marginBottom: 12 }}>{fichasPrioridad(nuevo.prioridad, (p) => setNuevo((n) => ({ ...n, prioridad: p })))}</div>}
     <input value={nuevo.titulo} onChange={(e) => setNuevo((n) => ({ ...n, titulo: e.target.value }))} placeholder={t.asunto} maxLength={140} autoFocus style={{ ...campo, fontWeight: 700, marginBottom: 10 }} />
     <textarea data-enter-libre="1" value={nuevo.texto} onChange={(e) => setNuevo((n) => ({ ...n, texto: e.target.value }))} placeholder={t.detalle} rows={5} style={{ ...campo, resize: "vertical", lineHeight: 1.5 }} />
     <button type="button" onClick={() => archivoNuevo.current?.click()} style={{ marginTop: 10, width: "100%", padding: "16px 14px", borderRadius: 12, border: `1.5px dashed ${arrastra ? "rgba(232,208,152,0.9)" : INK(0.22)}`, background: arrastra ? "rgba(184,149,106,0.14)" : INK(0.03), color: arrastra ? C.gold : INK(0.6), fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}>
@@ -189,7 +196,9 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
         <p style={{ margin: 0, fontSize: 16.5, fontWeight: 800, color: C.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: celu ? "normal" : "nowrap" }}>{k ? tituloDe(k) : "…"}</p>
         {k && <p style={{ margin: "2px 0 0", fontSize: 12, color: INK(0.5) }}>#{k.numero} · {hora(k.created_at)}{k.creado_rol !== rol && traducido && k.titulo_tr ? ` · ${k.titulo}` : ""}{k.status === "cerrado" ? <b style={{ color: C.green }}> · ✓ {t.cerrado}</b> : null}</p>}
       </div>
-      {k && (k.status === "abierto" ? <button type="button" onClick={() => estado("cerrar")} style={{ ...btn(false), height: 36, color: C.green, borderColor: "rgba(34,197,94,0.45)" }}>✓ {t.cerrar}</button>
+      {k && k.status === "abierto" && fichasPrioridad(k.prioridad || "media", rol === "admin" ? prioridad : null)}
+      {/* Cerrar y reabrir: solo Argencargo (17/11/2026). */}
+      {k && rol === "admin" && (k.status === "abierto" ? <button type="button" onClick={() => estado("cerrar")} style={{ ...btn(false), height: 36, color: C.green, borderColor: "rgba(34,197,94,0.45)" }}>✓ {t.cerrar}</button>
         : <button type="button" onClick={() => estado("reabrir")} style={{ ...btn(false), height: 36 }}>{t.reabrir}</button>)}
     </div>
     <div className="tk-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 2px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -197,7 +206,8 @@ export default function TicketsAgente({ rol, lang = "es", onPendientes, resta = 
         if (m.autor_rol === "sistema") { const [que, por] = String(m.texto || "").split(":"); return <p key={m.id} style={{ alignSelf: "center", margin: "2px 0", fontSize: 11.5, fontWeight: 700, color: INK(0.5), padding: "4px 12px", borderRadius: 99, background: INK(0.05) }}>{que === "cerrado" ? `✓ ${t.cerradoPor}` : t.reabiertoPor} {quien(por)} · {hora(m.created_at)}</p>; }
         const mio = m.autor_rol === rol;
         const principal = !mio && traducido && m.texto_tr ? m.texto_tr : m.texto;
-        const segundo = !mio && traducido && m.texto_tr ? m.texto : null;
+        // Debajo va el otro idioma: en lo ajeno, el original; en lo propio, la traducción que lee el otro lado.
+        const segundo = !mio && traducido && m.texto_tr ? m.texto : mio && m.texto_tr ? m.texto_tr : null;
         return <div key={m.id} style={{ alignSelf: mio ? "flex-end" : "flex-start", maxWidth: celu ? "88%" : "72%", padding: "10px 13px", borderRadius: 15, borderBottomRightRadius: mio ? 5 : 15, borderBottomLeftRadius: mio ? 15 : 5, background: mio ? "rgba(184,149,106,0.2)" : INK(0.07), border: `1px solid ${mio ? "rgba(232,208,152,0.3)" : INK(0.08)}` }}>
           {principal && <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.5, color: C.tx, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{principal}</p>}
           {segundo && <p style={{ margin: "6px 0 0", paddingTop: 6, borderTop: `1px solid ${INK(0.08)}`, fontSize: 12, lineHeight: 1.45, color: INK(0.5), whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{segundo}</p>}

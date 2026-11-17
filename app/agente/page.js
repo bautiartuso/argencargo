@@ -294,6 +294,9 @@ const I18N={
     remove:"Quitar",
     tab_deposit:"Depósito",
     tab_tickets:"Tickets",
+    tickets_aviso_1:"Tenés 1 ticket de Argencargo esperando tu respuesta",
+    tickets_aviso_n:"Tenés {n} tickets de Argencargo esperando tu respuesta",
+    tickets_ver:"Ver",
     tab_active_flights:"Vuelos",
     tab_history:"Recibidos",
     tab_stats:"Estadísticas",
@@ -709,6 +712,9 @@ const I18N={
     remove:"删除",
     tab_deposit:"仓库",
     tab_tickets:"工单",
+    tickets_aviso_1:"Argencargo 有 1 个工单等待你回复",
+    tickets_aviso_n:"Argencargo 有 {n} 个工单等待你回复",
+    tickets_ver:"查看",
     tab_active_flights:"航班",
     tab_history:"已接收",
     tab_stats:"统计",
@@ -1575,6 +1581,12 @@ function Dashboard({session,onLogout,lang,setLang,t,theme,setTheme}){
     {/* Tutorial overlay — primera vez para agentes aprobados o cuando piden volver a verlo */}
     {(showTutorial||(signup&&signup.status==="approved"&&!signup.tutorial_completed&&!tutorialDone))&&<AgentTutorialOverlay signup={signup} token={token} lang={lang} onClose={()=>setShowTutorial(false)} onComplete={()=>{setTutorialDone(true);signup.tutorial_completed=true;}}/>}
     <PushNagBanner token={token} t={t}/>
+    {/* Tickets de Argencargo sin responder: cartel fijo arriba en todas las solapas menos en la de Tickets. */}
+    {ticketsPend>0&&tab!=="tickets"&&!esAdmin&&<button type="button" onClick={()=>irA("tickets")} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 16px",marginBottom:16,borderRadius:12,border:"1px solid rgba(239,68,68,0.5)",background:"rgba(239,68,68,0.12)",color:"var(--tx)",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+      <span style={{fontSize:18}}>🎫</span>
+      <span style={{flex:1}}>{ticketsPend===1?t.tickets_aviso_1:(t.tickets_aviso_n||"").replace("{n}",ticketsPend)}</span>
+      <span style={{color:"var(--red)",whiteSpace:"nowrap"}}>{t.tickets_ver} →</span>
+    </button>}
     {repackOpen&&<RepackModal opId={repackOpen} request={repackRequests.find(r=>r.operation_id===repackOpen)} packages={packages.filter(p=>p.operation_id===repackOpen)} divisor={Number(signup?.volumetric_divisor)||5000} token={token} userId={userId} t={t} onClose={()=>setRepackOpen(null)} onDone={async()=>{setRepackOpen(null);await reloadAll();flash(t.repack_done||"Reempaque guardado");}}/>}
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"var(--green)",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
     {/* TAB 1: Depósito — paquetes sin vuelo */}

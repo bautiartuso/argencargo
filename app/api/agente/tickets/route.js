@@ -4,7 +4,8 @@
 //   GET ?id=<ticket>       → el ticket con sus mensajes (y lo marca visto para quien lo abre)
 //   POST {accion:"crear", agent_id?, titulo, texto, fotos}
 //   POST {accion:"mensaje", ticket_id, texto, fotos}
-//   POST {accion:"cerrar"|"reabrir", ticket_id}
+//   POST {accion:"cerrar"|"reabrir", ticket_id}   → solo Argencargo (el agente no cierra tickets)
+//   POST {accion:"prioridad", ticket_id, prioridad:"alta"|"media"} → solo Argencargo (rojo / amarillo)
 //   POST multipart (file)  → sube una foto al bucket "tickets" y devuelve su URL
 // Cada texto se guarda con su traducción (castellano ↔ chino) para que cada lado lo lea en su idioma.
 // Avisos: al agente, campana + push; a Bautista, campana + Telegram.
@@ -139,7 +140,7 @@ export async function POST(req) {
     const agentId = yo.rol === "agente" ? yo.id : String(b.agent_id || "");
     if (!UUID.test(agentId)) return Response.json({ error: "Elegí el agente" }, { status: 400 });
     const [tituloTr, textoTr] = await Promise.all([traducir(titulo, yo.rol), traducir(texto, yo.rol)]);
-    const ins = await sb(`/agent_tickets`, { method: "POST", body: JSON.stringify({ agent_id: agentId, titulo, titulo_tr: tituloTr, creado_por: yo.id, creado_rol: yo.rol, ultimo_at: ahora, ultimo_rol: yo.rol, ultimo_texto: recorte(texto, fotos) || titulo, ultimo_texto_tr: textoTr ? recorte(textoTr, fotos) : (texto ? null : tituloTr), [visto]: ahora }) });
+    const ins = await sb(`/agent_tickets`, { method: "POST", body: JSON.stringify({ agent_id: agentId, titulo, titulo_tr: tituloTr, creado_por: yo.id, creado_rol: yo.rol, prioridad: yo.rol === "admin" && b.prioridad === "alta" ? "alta" : "media", ultimo_at: ahora, ultimo_rol: yo.rol, ultimo_texto: recorte(texto, fotos) || titulo, ultimo_texto_tr: textoTr ? recorte(textoTr, fotos) : (texto ? null : tituloTr), [visto]: ahora }) });
     const t = filas(ins)[0];
     if (!t) return Response.json({ error: "No se pudo crear el ticket" }, { status: 500 });
     if (texto || fotos.length) await sb(`/agent_ticket_messages`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ ticket_id: t.id, autor_id: yo.id, autor_rol: yo.rol, texto: texto || null, texto_tr: textoTr, fotos }) });
@@ -166,7 +167,15 @@ export async function POST(req) {
     return Response.json({ ok: true, mensaje: m });
   }
 
+  if (b.accion === "prioridad") {
+    if (yo.rol !== "admin") return Response.json({ error: "Solo Argencargo cambia la prioridad" }, { status: 403 });
+    const prioridad = b.prioridad === "alta" ? "alta" : "media";
+    await sb(`/agent_tickets?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ prioridad }) });
+    return Response.json({ ok: true, prioridad });
+  }
+
   if (b.accion === "cerrar" || b.accion === "reabrir") {
+    if (yo.rol !== "admin") return Response.json({ error: "Solo Argencargo puede cerrar el ticket" }, { status: 403 });
     const cerrar = b.accion === "cerrar";
     if ((t.status === "cerrado") === cerrar) return Response.json({ ok: true });
     await sb(`/agent_tickets?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(cerrar ? { status: "cerrado", cerrado_at: ahora, cerrado_por: yo.id } : { status: "abierto", cerrado_at: null, cerrado_por: null }) });

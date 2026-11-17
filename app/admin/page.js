@@ -18845,8 +18845,10 @@ function AdminDashboard({session,onLogout}){
   useEffect(()=>{const f=(e)=>setTicketsPend(Number(e.detail)||0);window.addEventListener("tk_pend",f);return()=>window.removeEventListener("tk_pend",f);},[]);
   useEffect(()=>{if(page==="tickets_agente"){try{localStorage.setItem("ac_agents_nav",JSON.stringify({tab:"tickets"}));}catch(e){}setPage("agents");}},[page]);
   useEffect(()=>{if(!token)return;let vivo=true;
-    const contar=async()=>{try{const r=await fetch("/api/agente/tickets",{cache:"no-store"}).then(x=>x.json());if(vivo&&!r.error)setTicketsPend(r.pendientes||0);}catch(e){}};
-    contar();const iv=setInterval(()=>{if(!document.hidden)contar();},120000);
+    // Cada minuto. Si hay más tickets esperando que antes, aviso en pantalla: el agente escribió.
+    let antes=null;
+    const contar=async()=>{try{const r=await fetch("/api/agente/tickets",{cache:"no-store"}).then(x=>x.json());if(!vivo||r.error)return;const n=r.pendientes||0;if(antes!==null&&n>antes)toast("💬 El agente escribió en un ticket · Aéreos → Tickets","info");antes=n;setTicketsPend(n);}catch(e){}};
+    contar();const iv=setInterval(()=>{if(!document.hidden)contar();},60000);
     return()=>{vivo=false;clearInterval(iv);};
   },[token]);
   // Número de pedidos marítimos nuevos (sin ver) en "Esperando confirmación", para el menú.

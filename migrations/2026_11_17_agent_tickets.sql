@@ -44,3 +44,7 @@ alter table public.agent_tickets enable row level security;
 alter table public.agent_ticket_messages enable row level security;
 
 insert into storage.buckets (id, name, public) values ('tickets', 'tickets', true) on conflict (id) do nothing;
+
+-- Mismo día: prioridad del ticket. 'alta' se ve en rojo, 'media' en amarillo (no hay verde: si hay un
+-- ticket abierto, algo falta resolver). La pone y la cambia solo Argencargo.
+alter table public.agent_tickets add column if not exists prioridad text not null default 'media' check (prioridad in ('alta','media'));
