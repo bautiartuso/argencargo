@@ -8218,7 +8218,10 @@ function GastosFijosPanel({token}){
   const GENERAL="General";
   const grupoDe=(g)=>String(g.grupo||"").trim()||GENERAL;
   const nombresGrupo=[...new Set(activos.map(grupoDe))].sort((a,b)=>a===GENERAL?1:b===GENERAL?-1:a.localeCompare(b,"es",{sensitivity:"base"}));
-  const grupos=nombresGrupo.map(n=>{const fs=todas.filter(f=>grupoDe(f.g)===n);return {n,filas:[...fs.filter(f=>f.e.estado==="pendiente"),...fs.filter(f=>f.e.estado!=="pendiente")],pag:fs.filter(f=>f.e.estado==="pagado").length,van:fs.filter(f=>f.e.estado!=="salteado").length,usd:sumaUsd(fs)};});
+  const grupos=nombresGrupo.map(n=>{const fs=todas.filter(f=>grupoDe(f.g)===n);return {n,filas:fs.filter(f=>f.e.estado==="pendiente")};}).filter(gr=>gr.filas.length);
+  // Lo ya resuelto del mes (pagado o "no va") baja a una sola lista al final, sin importar el grupo.
+  const resueltos=[...todas.filter(f=>f.e.estado==="pagado"),...todas.filter(f=>f.e.estado==="salteado")];
+  const nNoVan=todas.filter(f=>f.e.estado==="salteado").length;
   // Dentro de la tarjeta "Oficina", "Alquiler oficina" se lee "Alquiler" (el nombre completo queda en el libro diario).
   const nombreCorto=(g,grupo)=>{const n=String(g.nombre||"");if(grupo===GENERAL)return n;const fin=` ${grupo}`.toLowerCase();return n.toLowerCase().endsWith(fin)&&n.length>fin.length?n.slice(0,-fin.length).trim():n;};
   const abrirEdit=(g)=>{setPago(null);setMenu(null);setEdit({...g,grupo:g.grupo||"",dia_vence:g.dia_vence==null?"":String(g.dia_vence),avisar_dias:String(g.avisar_dias??3)});};
@@ -8301,16 +8304,16 @@ function GastosFijosPanel({token}){
       {abierta&&<div style={{padding:"2px 4px 14px"}}>{formPago}</div>}
     </div>;
   };
-  // Una sola lista seguida (16/11/2026, Bautista: sin tarjetas): cada grupo es un título de texto con
-  // su cuenta, y debajo sus filas.
-  const seccion=(gr,i)=>{const completo=gr.van>0&&gr.pag===gr.van;
-    return <div key={gr.n} style={{marginTop:i?22:0}}>
-      <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"0 4px 8px",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
-        <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#E8D098"}}>{gr.n}</span>
-        <span style={{marginLeft:"auto",fontSize:12.5,fontWeight:700,color:completo?"#4ade80":"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{completo?"✓ Todo pagado":`${gr.pag} de ${gr.van}`}{gr.usd>0?` · ${usd(gr.usd)}`:""}</span>
-      </div>
-      {gr.filas.map((f,k)=>fila(f,gr.n,k))}
-    </div>;};
+  // Una sola lista seguida (16/11/2026, Bautista: sin tarjetas): arriba solo lo que falta pagar, con un
+  // título de texto por grupo; abajo, todo lo pagado o que no va este mes.
+  const titulo=(n,der,col)=><div style={{display:"flex",alignItems:"baseline",gap:10,padding:"0 4px 8px",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+    <span style={{fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:col}}>{n}</span>
+    <span style={{marginLeft:"auto",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{der}</span>
+  </div>;
+  const seccion=(gr,i)=><div key={gr.n} style={{marginTop:i?22:0}}>
+    {titulo(gr.n,`${gr.filas.length} por pagar`,"#E8D098")}
+    {gr.filas.map((f,k)=>fila(f,gr.n,k))}
+  </div>;
   const flecha=(l,on)=><button type="button" onClick={on} style={{width:36,height:36,borderRadius:10,border:"none",background:"transparent",color:"rgba(255,255,255,0.75)",fontSize:19,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>;
   const pctMes=nVan?Math.round(nPag/nVan*100):0,mesCompleto=nVan>0&&nPag===nVan;
   return <div>
@@ -8331,7 +8334,14 @@ function GastosFijosPanel({token}){
     </div>}
     <div ref={refEdit}>{formConcepto}</div>
     {activos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"1.5rem 0"}}>Todavía no hay gastos fijos.</p>
-      :<div>{grupos.map(seccion)}</div>}
+      :<div>
+        {grupos.length===0&&<p style={{margin:"4px 4px 0",fontSize:14,fontWeight:700,color:"#4ade80"}}>✓ No queda nada por pagar este mes</p>}
+        {grupos.map(seccion)}
+        {resueltos.length>0&&<div style={{marginTop:30}}>
+          {titulo("Pagados o no van este mes",[nPag?`${nPag} ${nPag===1?"pagado":"pagados"} · ${usd(pagadoUsd)}`:null,nNoVan?`${nNoVan} no ${nNoVan===1?"va":"van"}`:null].filter(Boolean).join(" · "),"rgba(255,255,255,0.5)")}
+          {resueltos.map((f,k)=>fila(f,GENERAL,k))}
+        </div>}
+      </div>}
     {pausados.length>0&&<div style={{marginTop:24}}>
       <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Pausados</p>
       <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{pausados.map(g=><button key={g.id} type="button" onClick={()=>abrirEdit(g)} style={{display:"flex",alignItems:"center",gap:8,height:38,padding:"0 13px 0 10px",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.025)",color:"rgba(255,255,255,0.55)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><span style={{fontSize:16,opacity:0.6}}>{g.emoji||"📌"}</span>{g.nombre}</button>)}</div>
