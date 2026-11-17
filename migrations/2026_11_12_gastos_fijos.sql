@@ -31,3 +31,6 @@ alter table public.finance_entries add column if not exists periodo text;
 create index if not exists finance_entries_gasto_fijo_idx on public.finance_entries (gasto_fijo_id) where gasto_fijo_id is not null;
 
 -- Los conceptos (cuáles, con qué emoji y vencimiento) se cargan desde el panel; no van en el repositorio.
+
+-- 16/11/2026: grupo del concepto (Oficina, Sistemas…). El panel arma una tarjeta por grupo; sin grupo = "General".
+alter table public.gastos_fijos add column if not exists grupo text;

@@ -8132,7 +8132,7 @@ function armarGasto(ne){
 }
 
 // ── Gastos fijos (12/11/2026) ───────────────────────────────────────────────────────────────────
-// Los conceptos que se pagan todos los meses. Cada mes aparecen pendientes, en orden alfabético; "Pagar"
+// Los conceptos que se pagan todos los meses, en tarjetas por grupo (Oficina, Sistemas, General). "Pagar"
 // anota lo que se pagó ese mes en el libro diario (finance_entries con gasto_fijo_id + periodo) y la fila
 // baja al final, tachada. No hay monto habitual: se carga lo pagado, en pesos (al tipo de cambio) o en
 // dólares. La alerta arranca N días antes del vencimiento; los opcionales nunca avisan. Solo gastos fijos:
@@ -8149,6 +8149,9 @@ function GastosFijosPanel({token}){
   const [pago,setPago]=useState(null);   // { g, ne } pago abierto
   const [edit,setEdit]=useState(null);   // concepto en edición (sin id = nuevo)
   const [tc,setTc]=useState("");const [guardando,setGuardando]=useState(false);
+  const [menu,setMenu]=useState(null);   // id del concepto con el menú ⋯ abierto
+  const refEdit=useRef(null);
+  useEffect(()=>{if(edit)try{refEdit.current?.scrollIntoView({block:"nearest",behavior:"smooth"});}catch(e){}},[edit?.id,!!edit]);
   const load=async()=>{
     const [g,p]=await Promise.all([
       dq("gastos_fijos",{token,filters:"?select=*&order=nombre.asc"}),
@@ -8183,8 +8186,6 @@ function GastosFijosPanel({token}){
     const r=await dq("gastos_fijos",{method:"PATCH",token,filters:`?id=eq.${g.id}`,body:{salteados:[...s]}});
     if(mal(r)){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return;}load();
   };
-  const aceptar=async(g)=>{const r=await dq("gastos_fijos",{method:"PATCH",token,filters:`?id=eq.${g.id}`,body:{estado:"activo",created_at:new Date().toISOString()}});if(mal(r)){toast(`No se pudo guardar: ${r.message||r.code}`,"error");return;}load();};
-  const descartar=async(g)=>{const r=await dq("gastos_fijos",{method:"DELETE",token,filters:`?id=eq.${g.id}`});if(mal(r)){toast(`No se pudo borrar: ${r.message||r.code}`,"error");return;}load();};
   const guardarConcepto=async()=>{
     if(guardando||!edit)return;
     const nombre=String(edit.nombre||"").trim();
@@ -8192,7 +8193,7 @@ function GastosFijosPanel({token}){
     const dia=edit.dia_vence===""||edit.dia_vence==null?null:Math.round(Number(edit.dia_vence));
     if(dia!=null&&!(dia>=1&&dia<=31)){toast("El día de vencimiento va de 1 a 31","error");return;}
     const dias=Math.min(30,Math.max(0,Math.round(Number(edit.avisar_dias)||0)));
-    const body={nombre,emoji:edit.emoji||null,categoria:edit.categoria||"otros",dia_vence:dia,avisar:!!edit.avisar,avisar_dias:dias,estado:edit.estado||"activo"};
+    const body={nombre,emoji:edit.emoji||null,categoria:edit.categoria||"otros",dia_vence:dia,avisar:!!edit.avisar,avisar_dias:dias,estado:edit.estado||"activo",grupo:String(edit.grupo||"").trim()||null};
     setGuardando(true);
     const r=edit.id?await dq("gastos_fijos",{method:"PATCH",token,filters:`?id=eq.${edit.id}`,body}):await dq("gastos_fijos",{method:"POST",token,body});
     setGuardando(false);
@@ -8207,20 +8208,25 @@ function GastosFijosPanel({token}){
     setEdit(null);load();
   };
   if(gastos===null)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>;
-  const activos=gastos.filter(g=>g.estado==="activo").sort(alfa),pausados=gastos.filter(g=>g.estado==="pausado").sort(alfa),sugeridos=gastos.filter(g=>g.estado==="sugerido").sort(alfa);
+  const activos=gastos.filter(g=>g.estado==="activo").sort(alfa),pausados=gastos.filter(g=>g.estado==="pausado").sort(alfa);
   const todas=activos.map(g=>({g,e:estadoGasto(g,periodo,pagos,hoy)}));
-  // Primero lo que falta pagar; abajo lo ya resuelto (pagado o "no va"), todo en orden alfabético.
-  const filas=[...todas.filter(f=>f.e.estado==="pendiente"),...todas.filter(f=>f.e.estado!=="pendiente")];
   const nPag=todas.filter(f=>f.e.estado==="pagado").length,nVan=todas.filter(f=>f.e.estado!=="salteado").length;
-  const pagadoUsd=todas.reduce((a,f)=>a+(f.e.pagos||[]).reduce((s,p)=>s+Number(p.amount||0),0),0);
+  const sumaUsd=(fs)=>fs.reduce((a,f)=>a+(f.e.pagos||[]).reduce((s,p)=>s+Number(p.amount||0),0),0);
+  const pagadoUsd=sumaUsd(todas);
+  // Grupos (16/11/2026): cada concepto puede ir en un grupo (Oficina, Sistemas…) y se muestra en su
+  // tarjeta; los que no tienen van en "General". Dentro de cada tarjeta, primero lo que falta pagar.
+  const GENERAL="General";
+  const grupoDe=(g)=>String(g.grupo||"").trim()||GENERAL;
+  const nombresGrupo=[...new Set(activos.map(grupoDe))].sort((a,b)=>a===GENERAL?1:b===GENERAL?-1:a.localeCompare(b,"es",{sensitivity:"base"}));
+  const grupos=nombresGrupo.map(n=>{const fs=todas.filter(f=>grupoDe(f.g)===n);return {n,filas:[...fs.filter(f=>f.e.estado==="pendiente"),...fs.filter(f=>f.e.estado!=="pendiente")],pag:fs.filter(f=>f.e.estado==="pagado").length,van:fs.filter(f=>f.e.estado!=="salteado").length,usd:sumaUsd(fs)};});
+  // Dentro de la tarjeta "Oficina", "Alquiler oficina" se lee "Alquiler" (el nombre completo queda en el libro diario).
+  const nombreCorto=(g,grupo)=>{const n=String(g.nombre||"");if(grupo===GENERAL)return n;const fin=` ${grupo}`.toLowerCase();return n.toLowerCase().endsWith(fin)&&n.length>fin.length?n.slice(0,-fin.length).trim():n;};
+  const abrirEdit=(g)=>{setPago(null);setMenu(null);setEdit({...g,grupo:g.grupo||"",dia_vence:g.dia_vence==null?"":String(g.dia_vence),avisar_dias:String(g.avisar_dias??3)});};
   const seg=(val,opts,set)=><div style={{display:"flex",padding:3,borderRadius:10,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",width:"fit-content"}}>{opts.map(([v,l])=>{const on=val===v;return <button key={l} type="button" onClick={()=>set(v)} style={{height:32,padding:"0 14px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:on?"rgba(232,208,152,0.16)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.5)",boxShadow:on?"inset 0 0 0 1px rgba(232,208,152,0.4)":"none"}}>{l}</button>;})}</div>;
   const lbl={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
-  const btnFila=(l,on,fuerte)=><button type="button" onClick={on} style={{height:34,padding:"0 13px",borderRadius:9,border:fuerte?"none":"1px solid rgba(255,255,255,0.12)",background:fuerte?GOLD_GRADIENT:"rgba(255,255,255,0.03)",color:fuerte?"#0A1628":"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
-  const icono=(g,apagado)=><span style={{width:36,height:36,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,lineHeight:1,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",color:"#fff",opacity:apagado?0.45:1}}>{g.emoji||"📌"}</span>;
-  const lapiz=(g)=><button type="button" title="Editar" onClick={()=>{setPago(null);setEdit({...g,dia_vence:g.dia_vence==null?"":String(g.dia_vence),avisar_dias:String(g.avisar_dias??3)});}} style={{width:34,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",fontSize:14,cursor:"pointer",flexShrink:0}}>✎</button>;
   const formPago=pago&&(()=>{const ne=pago.ne;const setNe=(k,v)=>setPago(p=>({...p,ne:{...p.ne,[k]:v}}));const esARS=ne.currency==="ARS",esTC=ne.payment_method==="tarjeta_credito";
     return <div style={{padding:"14px 16px",borderRadius:12,background:"rgba(184,149,106,0.07)",border:"1px solid rgba(184,149,106,0.3)",margin:"0 0 2px"}}>
-      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":esARS&&!esTC?"auto 1fr 1fr 1fr 1fr":"auto 1fr 1fr 1fr",gap:"0 12px",alignItems:"end"}}>
+      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"repeat(auto-fit,minmax(150px,1fr))",gap:"0 12px",alignItems:"end"}}>
         <div style={{marginBottom:12}}><label style={lbl}>Pagué en</label>{seg(ne.currency,[["ARS","Pesos"],["USD","Dólares"]],v=>setNe("currency",v))}</div>
         {esARS?<Inp label="Monto en pesos" type="number" step="0.01" value={ne.amount_ars} onChange={v=>setNe("amount_ars",v)} placeholder="0,00"/>:<Inp label="Monto en dólares" type="number" step="0.01" value={ne.amount} onChange={v=>setNe("amount",v)} placeholder="0,00"/>}
         {esARS&&!esTC&&<Inp label="Tipo de cambio" type="number" step="0.01" value={ne.exchange_rate} onChange={v=>setNe("exchange_rate",v)}/>}
@@ -8237,10 +8243,12 @@ function GastosFijosPanel({token}){
       </div>
     </div>;})();
   const formConcepto=edit&&<Card v2 title={edit.id?"Editar concepto":"Nuevo concepto"}>
-    <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1.4fr 1fr",gap:"0 12px"}}>
+    <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"1.4fr 1fr 1fr",gap:"0 12px"}}>
       <Inp label="Nombre" value={edit.nombre||""} onChange={v=>setEdit(p=>({...p,nombre:v}))} placeholder="Ej: Alquiler oficina"/>
       <Sel label="Categoría" value={edit.categoria||"otros"} onChange={v=>setEdit(p=>({...p,categoria:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:CAT_LBL[c.k]}))}/>
+      <Inp label="Grupo" value={edit.grupo||""} onChange={v=>setEdit(p=>({...p,grupo:v}))} placeholder="General"/>
     </div>
+    {nombresGrupo.filter(n=>n!==GENERAL).length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,margin:"-4px 0 12px"}}>{[...nombresGrupo.filter(n=>n!==GENERAL),GENERAL].map(n=>{const on=(String(edit.grupo||"").trim()||GENERAL)===n;return <button key={n} type="button" onClick={()=>setEdit(p=>({...p,grupo:n===GENERAL?"":n}))} style={{height:30,padding:"0 12px",borderRadius:99,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.18)":"transparent",color:on?"#E8D098":"rgba(255,255,255,0.6)"}}>{n}</button>;})}</div>}
     <div style={{marginBottom:12}}><label style={lbl}>Emoji</label>
       <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{GF_EMOJIS.map(em=>{const on=edit.emoji===em;return <button key={em} type="button" onClick={()=>setEdit(p=>({...p,emoji:em}))} style={{width:38,height:38,borderRadius:10,fontSize:19,lineHeight:1,cursor:"pointer",color:"#fff",fontFamily:"inherit",border:`1.5px solid ${on?"rgba(232,208,152,0.8)":"rgba(255,255,255,0.08)"}`,background:on?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.03)"}}>{em}</button>;})}</div>
     </div>
@@ -8257,68 +8265,79 @@ function GastosFijosPanel({token}){
       </span>}
     </div>
   </Card>;
-  const fila=({g,e})=>{
+  // Una fila de la lista: ícono, nombre con su estado debajo, y a la derecha "Pagar" o lo pagado.
+  // Lo que se usa poco (no va este mes, borrar el pago, editar) va en el menú ⋯.
+  const fila=({g,e},grupo,i)=>{
     const hecho=e.estado!=="pendiente",pagado=e.estado==="pagado";
     // Meses anteriores al alta del concepto: no se reclaman, quedan como "sin anotar".
     const previo=!hecho&&periodo<periodoDe(g.created_at);
-    const col=pagado?"#4ade80":e.estado==="salteado"||previo?"rgba(255,255,255,0.35)":e.vencido&&g.avisar?"#f87171":e.alerta?"#fbbf24":"rgba(255,255,255,0.45)";
+    const col=pagado?"#4ade80":e.estado==="salteado"||previo?"rgba(255,255,255,0.38)":e.vencido&&g.avisar?"#f87171":e.alerta?"#fbbf24":"rgba(255,255,255,0.45)";
     const venceTxt=pagado?`Pagado el ${e.pagos.map(p=>formatDate(p.date)).join(" · ")}`:e.estado==="salteado"?"No va este mes":previo?"Sin anotar":periodo>periodoDe(hoy)||(!e.alerta&&!e.vencido)?`Vence el ${Number(e.vence.slice(8))}`:textoVence(e.faltan).replace(/^./,c=>c.toUpperCase());
     const totArs=pagado?e.pagos.reduce((s,p)=>s+Number(p.amount_ars||0),0):0,totUsd=pagado?e.pagos.reduce((s,p)=>s+Number(p.amount||0),0):0;
-    const der=pagado?<span style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{textAlign:"right",lineHeight:1.25}}><span style={{display:"block",fontSize:14.5,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(totUsd)}</span>{totArs>0&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{pesos(totArs)}</span>}</span>
-        <button type="button" title="Borrar este pago" onClick={()=>deshacerPago(g,e.pagos)} style={{width:30,height:30,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.45)",fontSize:15,cursor:"pointer"}}>×</button>
-      </span>
-      :e.estado==="salteado"?btnFila("Deshacer",()=>saltear(g,false))
-      :<span style={{display:"flex",gap:6}}>{btnFila("No va este mes",()=>saltear(g,true))}{btnFila("Pagar",()=>abrirPago(g),true)}</span>;
-    const nombre=<div style={{display:"flex",alignItems:"center",gap:11,minWidth:0}}>
-      {icono(g,hecho)}
-      <span style={{fontSize:14.5,fontWeight:700,color:hecho?"rgba(255,255,255,0.45)":"#fff",textDecoration:pagado?"line-through":"none",textDecorationColor:"rgba(74,222,128,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span>
-      {!g.avisar&&!hecho&&<span style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>Opcional</span>}
-    </div>;
-    const abierta=pago?.g.id===g.id;
-    if(celu)return <div key={g.id} style={{padding:"12px 14px",borderRadius:14,background:hecho?"rgba(255,255,255,0.02)":"rgba(255,255,255,0.035)",border:`1px solid ${e.alerta?`${col}66`:"rgba(255,255,255,0.07)"}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>{nombre}{lapiz(g)}</div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:10,flexWrap:"wrap"}}><span style={{fontSize:12.5,fontWeight:700,color:col}}>{venceTxt}</span>{der}</div>
-      {abierta&&<div style={{marginTop:10}}>{formPago}</div>}
-    </div>;
-    return <div key={g.id} style={{borderBottom:"1px solid rgba(255,255,255,0.045)",background:hecho?"rgba(0,0,0,0.12)":"transparent"}}>
-      <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) 190px minmax(240px,auto) 34px",gap:14,alignItems:"center",padding:"9px 18px"}}>
-        {nombre}
-        <span style={{fontSize:12.5,fontWeight:700,color:col,whiteSpace:"nowrap"}}>{venceTxt}</span>
-        <span style={{display:"flex",justifyContent:"flex-end"}}>{der}</span>
-        {lapiz(g)}
+    const urgente=!hecho&&!previo&&(e.alerta||(e.vencido&&g.avisar));
+    const abierta=pago?.g.id===g.id,conMenu=menu===g.id;
+    const opciones=pagado?[["Borrar el pago",()=>deshacerPago(g,e.pagos),true]]:e.estado==="salteado"?[["Sí va este mes",()=>saltear(g,false)]]:[["No va este mes",()=>saltear(g,true)]];
+    opciones.push(["Editar",()=>abrirEdit(g)]);
+    return <div key={g.id} style={{borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px"}}>
+        <span style={{position:"relative",width:38,height:38,borderRadius:11,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,lineHeight:1,color:"#fff",background:urgente?`${col}1f`:"rgba(255,255,255,0.045)",boxShadow:urgente?`inset 0 0 0 1px ${col}66`:"inset 0 0 0 1px rgba(255,255,255,0.07)"}}>
+          <span style={{opacity:hecho?0.4:1}}>{g.emoji||"📌"}</span>
+          {pagado&&<span style={{position:"absolute",right:-4,bottom:-4,width:17,height:17,borderRadius:"50%",background:"#22c55e",color:"#06281a",fontSize:11,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 0 2px #0f1c30"}}>✓</span>}
+        </span>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{margin:0,fontSize:14.5,fontWeight:700,color:hecho?"rgba(255,255,255,0.55)":"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombreCorto(g,grupo)}</p>
+          <p style={{margin:"2px 0 0",fontSize:12,fontWeight:urgente||pagado?700:500,color:col,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{venceTxt}{!g.avisar&&!hecho?" · opcional":""}</p>
+        </div>
+        {pagado&&<span style={{textAlign:"right",lineHeight:1.25,flexShrink:0}}><span style={{display:"block",fontSize:14.5,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(totUsd)}</span>{totArs>0&&<span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{pesos(totArs)}</span>}</span>}
+        {e.estado==="pendiente"&&<button type="button" onClick={()=>abierta?setPago(null):abrirPago(g)} style={{height:34,padding:"0 16px",borderRadius:9,border:abierta?"1px solid rgba(232,208,152,0.45)":"none",background:abierta?"transparent":GOLD_GRADIENT,color:abierta?"#E8D098":"#0A1628",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>{abierta?"Cerrar":"Pagar"}</button>}
+        <span style={{position:"relative",flexShrink:0}}>
+          <button type="button" aria-label="Más opciones" onClick={()=>setMenu(conMenu?null:g.id)} style={{width:34,height:34,borderRadius:9,border:"none",background:conMenu?"rgba(255,255,255,0.08)":"transparent",color:"rgba(255,255,255,0.5)",fontSize:18,lineHeight:1,cursor:"pointer",fontFamily:"inherit",letterSpacing:"1px"}}>⋯</button>
+          {conMenu&&<><div onClick={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:40}}/>
+            <div style={{position:"absolute",right:0,top:38,zIndex:41,minWidth:170,padding:5,borderRadius:12,background:"#16263f",border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 14px 34px rgba(0,0,0,0.5)"}}>
+              {opciones.map(([l,on,rojo])=><button key={l} type="button" onClick={()=>{setMenu(null);on();}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",borderRadius:8,border:"none",background:"transparent",color:rojo?"#ff8a8a":"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}
+            </div></>}
+        </span>
       </div>
-      {abierta&&<div style={{padding:"0 18px 12px"}}>{formPago}</div>}
+      {abierta&&<div style={{padding:"2px 16px 14px"}}>{formPago}</div>}
     </div>;
   };
-  const caja={display:"flex",flexDirection:"column",gap:celu?8:0,background:celu?"transparent":"rgba(255,255,255,0.02)",borderRadius:14,border:celu?"none":"1px solid rgba(255,255,255,0.07)",overflow:"hidden"};
-  const flecha=(l,on)=><button type="button" onClick={on} style={{width:34,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.03)",color:"#fff",fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>;
-  return <div>
-    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        {flecha("‹",()=>{setPago(null);setPeriodo(periodoAnterior(periodo));})}
-        <span style={{minWidth:150,textAlign:"center",fontSize:15,fontWeight:800,color:"#fff",textTransform:"capitalize"}}>{nombrePeriodo(periodo)}</span>
-        {flecha("›",()=>{setPago(null);setPeriodo(periodoSiguiente(periodo));})}
+  // Tarjeta de un grupo (Oficina, Sistemas…): cuántos van pagados, barra fina de avance y sus filas.
+  const tarjeta=(gr)=>{const completo=gr.van>0&&gr.pag===gr.van;const pct=gr.van?Math.round(gr.pag/gr.van*100):0;
+    return <div key={gr.n} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"15px 16px 11px"}}>
+        <span style={{fontSize:15.5,fontWeight:800,color:"#fff",letterSpacing:"-0.01em"}}>{gr.n}</span>
+        <span style={{marginLeft:"auto",fontSize:12.5,fontWeight:700,color:completo?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{completo?"✓ Todo pagado":`${gr.pag} de ${gr.van}`}{gr.usd>0?` · ${usd(gr.usd)}`:""}</span>
       </div>
-      <span style={{fontSize:13,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}><b style={{color:"#fff"}}>{nPag} de {nVan}</b> pagados · {usd(pagadoUsd)}</span>
-      <span style={{marginLeft:celu?0:"auto"}}><Btn small variant="gold" onClick={()=>{setPago(null);setEdit({nombre:"",emoji:"📌",categoria:"otros",dia_vence:"",avisar:true,avisar_dias:"3",estado:"activo"});}}>+ Concepto</Btn></span>
+      <div style={{height:3,margin:"0 16px",borderRadius:99,background:"rgba(255,255,255,0.06)",overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",borderRadius:99,background:completo?"#22c55e":GOLD_GRADIENT,transition:"width .3s"}}/></div>
+      <div style={{paddingTop:5,paddingBottom:4}}>{gr.filas.map((f,i)=>fila(f,gr.n,i))}</div>
+    </div>;};
+  // En la compu van en dos columnas: cada tarjeta cae en la columna más corta.
+  const alto=(c)=>c.reduce((s,gr)=>s+gr.filas.length+1.6,0);
+  const columnas=celu?[grupos]:grupos.reduce((c,gr)=>{(alto(c[0])<=alto(c[1])?c[0]:c[1]).push(gr);return c;},[[],[]]).filter(c=>c.length);
+  const flecha=(l,on)=><button type="button" onClick={on} style={{width:36,height:36,borderRadius:10,border:"none",background:"transparent",color:"rgba(255,255,255,0.75)",fontSize:19,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>;
+  const pctMes=nVan?Math.round(nPag/nVan*100):0,mesCompleto=nVan>0&&nPag===nVan;
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",padding:3,borderRadius:13,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.08)"}}>
+        {flecha("‹",()=>{setPago(null);setMenu(null);setPeriodo(periodoAnterior(periodo));})}
+        <span style={{minWidth:celu?132:158,textAlign:"center",fontSize:15.5,fontWeight:800,color:"#fff",textTransform:"capitalize",letterSpacing:"-0.01em"}}>{nombrePeriodo(periodo)}</span>
+        {flecha("›",()=>{setPago(null);setMenu(null);setPeriodo(periodoSiguiente(periodo));})}
+      </div>
+      <span style={{marginLeft:"auto"}}><Btn small variant="gold" onClick={()=>{setPago(null);setMenu(null);setEdit({nombre:"",emoji:"📌",categoria:"otros",grupo:"",dia_vence:"",avisar:true,avisar_dias:"3",estado:"activo"});}}>+ Concepto</Btn></span>
     </div>
-    {formConcepto}
-    {activos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"1.5rem 0"}}>Todavía no hay gastos fijos.</p>:<div style={caja}>{filas.map(fila)}</div>}
-    {pausados.length>0&&<div style={{marginTop:18}}>
-      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Pausados</p>
-      <div style={caja}>{pausados.map(g=><div key={g.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:celu?"10px 14px":"8px 18px",borderBottom:"1px solid rgba(255,255,255,0.045)",borderRadius:celu?14:0,background:celu?"rgba(255,255,255,0.03)":"transparent"}}>
-        <span style={{display:"flex",alignItems:"center",gap:11,minWidth:0}}>{icono(g,true)}<span style={{fontSize:13.5,fontWeight:600,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</span></span>{lapiz(g)}
-      </div>)}</div>
+    {activos.length>0&&<div style={{marginBottom:18}}>
+      <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:9}}>
+        <span style={{fontSize:14,color:"rgba(255,255,255,0.6)"}}><b style={{fontSize:celu?26:30,fontWeight:800,color:mesCompleto?"#4ade80":"#fff",letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",marginRight:7}}>{nPag}</b>de {nVan} pagados</span>
+        <span style={{fontSize:13.5,fontWeight:700,color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{usd(pagadoUsd)}</span>
+      </div>
+      <div style={{height:6,borderRadius:99,background:"rgba(255,255,255,0.07)",overflow:"hidden"}}><div style={{width:`${pctMes}%`,height:"100%",borderRadius:99,background:mesCompleto?"#22c55e":GOLD_GRADIENT,transition:"width .3s"}}/></div>
     </div>}
-    {sugeridos.length>0&&<div style={{marginTop:22}}>
-      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Sugeridos · {sugeridos.length}</p>
-      <div style={{display:"grid",gridTemplateColumns:celu?"1fr":"repeat(2,minmax(0,1fr))",gap:8}}>{sugeridos.map(g=><div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:12,background:"rgba(255,255,255,0.025)",border:"1px dashed rgba(255,255,255,0.14)"}}>
-        {icono(g)}
-        <p style={{flex:1,minWidth:0,margin:0,fontSize:13.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.nombre}</p>
-        <button type="button" onClick={()=>aceptar(g)} style={{height:34,padding:"0 16px",borderRadius:9,border:"none",background:"rgba(34,197,94,0.18)",color:"#4ade80",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"inset 0 0 0 1px rgba(34,197,94,0.45)"}}>Sí</button>
-        <button type="button" onClick={()=>descartar(g)} style={{height:34,padding:"0 14px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>No</button>
-      </div>)}</div>
+    <div ref={refEdit}>{formConcepto}</div>
+    {activos.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"1.5rem 0"}}>Todavía no hay gastos fijos.</p>
+      :<div style={{display:"grid",gridTemplateColumns:`repeat(${columnas.length},minmax(0,1fr))`,gap:14,alignItems:"start"}}>{columnas.map((c,i)=><div key={i} style={{minWidth:0}}>{c.map(tarjeta)}</div>)}</div>}
+    {pausados.length>0&&<div style={{marginTop:6}}>
+      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>Pausados</p>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>{pausados.map(g=><button key={g.id} type="button" onClick={()=>abrirEdit(g)} style={{display:"flex",alignItems:"center",gap:8,height:38,padding:"0 13px 0 10px",borderRadius:11,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.025)",color:"rgba(255,255,255,0.55)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><span style={{fontSize:16,opacity:0.6}}>{g.emoji||"📌"}</span>{g.nombre}</button>)}</div>
     </div>}
   </div>;
 }
