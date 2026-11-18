@@ -17,11 +17,21 @@ export const maxDuration = 300;
 // Presupuesto de tiempo propio: si se agota, lo que falta queda para la próxima corrida (cada hora).
 const TIME_BUDGET_MS = 240000;
 // Cadencia (05/11/2026, Bautista: FL-0148 entregado y una hora sin marcarse). El cron corre cada 10 min:
-//  · minuto 00  → "completo": todas las guías (FedEx, UPS y DHL).
-//  · minuto 30  → "medio": FedEx y UPS todas; DHL solo las que ya están en Argentina (arribo / aduana).
-//  · el resto   → "rapido": FedEx y UPS todas; DHL nada.
-// DHL va con cuentagotas porque su API gratuita tiene cupo diario chico; FedEx y UPS aguantan el ritmo.
+//  · minuto 00  → "completo": FedEx y UPS todas; DHL según el plan de abajo.
+//  · el resto   → "medio" / "rapido": FedEx y UPS todas; DHL nada.
+// DHL va con cuentagotas porque su API gratuita tiene un cupo diario que se reinicia a las 00 UTC.
+// El 18/11/2026 se agotó al mediodía (12 guías cada hora + las de Argentina cada media hora = 255
+// consultas en 15 horas) y DHL contestó 429 a todo el resto del día. Ahora el ritmo se calcula solo
+// para no pasar de CUPO_DHL por día: las guías que ya están en Argentina van primero (cada hora si
+// entran) y las que siguen en viaje cada 3, 4, 6, 8, 12 o 24 horas según cuántas haya.
 const EN_ARGENTINA = ["arribo_argentina", "en_aduana"];
+const CUPO_DHL = 200;
+function planDhl(nAr, nViaje) {
+  const cadaAr = [1, 2, 3, 4, 6].find(k => nAr * 24 / k <= CUPO_DHL * 0.75) || 6;
+  const resto = Math.max(0, CUPO_DHL - nAr * 24 / cadaAr);
+  const cadaViaje = [3, 4, 6, 8, 12, 24].find(k => nViaje * 24 / k <= resto) || 24;
+  return { cadaAr, cadaViaje };
+}
 const modoDeCorrida = () => { const m = new Date().getUTCMinutes(); return m < 5 ? "completo" : (m >= 25 && m < 35) ? "medio" : "rapido"; };
 
 // Solo ops que todavía viajan. Las "entregada" ya no tienen nada que sincronizar.
@@ -404,8 +414,17 @@ async function runSync(req) {
   }
   // Corridas intermedias: DHL solo lo que está en Argentina (minuto 30) o nada (el resto). Ver cadencia arriba.
   let dhlOmitidos = 0;
-  if (modo === "rapido") { dhlOmitidos = dhlGroups.length; dhlGroups.length = 0; }
-  else if (modo === "medio") { const antes = dhlGroups.length; const enAr = dhlGroups.filter(g => g.ops.some(o => EN_ARGENTINA.includes(o.status))); dhlGroups.length = 0; dhlGroups.push(...enAr); dhlOmitidos = antes - enAr.length; }
+  let dhlPlan = null;
+  if (modo === "rapido" || modo === "medio") { dhlOmitidos = dhlGroups.length; dhlGroups.length = 0; }
+  else if (modo === "completo") {
+    const enAr = dhlGroups.filter(g => g.ops.some(o => EN_ARGENTINA.includes(o.status)));
+    const enViaje = dhlGroups.filter(g => !enAr.includes(g));
+    dhlPlan = planDhl(enAr.length, enViaje.length);
+    const hora = new Date().getUTCHours();
+    const tocan = [...(hora % dhlPlan.cadaAr === 0 ? enAr : []), ...(hora % dhlPlan.cadaViaje === 0 ? enViaje : [])];
+    dhlOmitidos = dhlGroups.length - tocan.length;
+    dhlGroups.length = 0; dhlGroups.push(...tocan);
+  }
 
   // Carriers permisivos en paralelo
   const otherSettled = await Promise.allSettled(otherGroups.map(processGroup));
@@ -413,8 +432,9 @@ async function runSync(req) {
   // DHL en serie con throttle (~1100ms entre llamadas para quedar por debajo del límite).
   const DHL_THROTTLE_MS = 1100;
   const dhlResults = [];
-  // Orden: el grupo cuya op más nueva es más reciente va primero.
-  dhlGroups.sort((a, b) => Math.max(...b.ops.map(o => new Date(o.created_at).getTime())) - Math.max(...a.ops.map(o => new Date(o.created_at).getTime())));
+  // Orden: primero lo que ya está en Argentina (es lo que más cambia); después, la op más nueva.
+  const enArg = (g) => g.ops.some(o => EN_ARGENTINA.includes(o.status)) ? 1 : 0;
+  dhlGroups.sort((a, b) => (enArg(b) - enArg(a)) || (Math.max(...b.ops.map(o => new Date(o.created_at).getTime())) - Math.max(...a.ops.map(o => new Date(o.created_at).getTime()))));
   for (let i = 0; i < dhlGroups.length; i++) {
     if (Date.now() - startedAt > TIME_BUDGET_MS) {
       console.log(`[sync] presupuesto de tiempo agotado: quedan ${dhlGroups.length - i} grupos DHL para la próxima corrida`);
@@ -427,6 +447,11 @@ async function runSync(req) {
       dhlResults.push({ status: "fulfilled", value: res });
     } catch (e) {
       dhlResults.push({ status: "rejected", reason: e });
+      // Cupo agotado: insistir con el resto no trae nada y solo suma rechazos.
+      if (/\b429\b/.test(String(e?.message || e))) {
+        for (let j = i + 1; j < dhlGroups.length; j++) dhlResults.push({ status: "fulfilled", value: dhlGroups[j].ops.map(o => ({ op: o.operation_code, skipped: "cupo de DHL agotado" })) });
+        break;
+      }
     }
   }
 
@@ -448,7 +473,7 @@ async function runSync(req) {
   const results = [...grouped, ...orphanRes];
   // Marca de corrida exitosa (el cron de salud avisa por Telegram si pasa mucho tiempo sin una).
   try { await fetch(`${SB_URL}/rest/v1/cs_settings?on_conflict=key`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "tracking_sync_last_ok", value: { at: new Date().toISOString(), synced: results.length }, updated_at: new Date().toISOString() }) }); } catch {}
-  return Response.json({ modo, synced: results.length, groups: groups.size, dhl_omitidos: dhlOmitidos, avisos_retenidas: avisosRetenidas, results });
+  return Response.json({ modo, synced: results.length, groups: groups.size, dhl_omitidos: dhlOmitidos, dhl_plan: dhlPlan, avisos_retenidas: avisosRetenidas, results });
 }
 
 // GET y POST → mismo comportamiento. Vercel Cron usa GET por defecto.
