@@ -15833,7 +15833,7 @@ function Barra({pct,color,delay=0,alto=7}){
 }
 
 function FinanceDashboard({token}){
-  const [ccMovs,setCcMovs]=useState([]);
+  const [ccMovs,setCcMovs]=useState([]);const [solfinMb,setSolfinMb]=useState([]);
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>hoyAR());const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return isoAR(m);});
   // Dashboard v2 (02/10/2026): solapas General / Aéreo A / Marítimo A / Marítimo B y año navegable.
   const [vista,setVista]=useState("general");const [selYear,setSelYear]=useState(()=>Number(hoyAR().slice(0,4)));
@@ -15841,7 +15841,7 @@ function FinanceDashboard({token}){
   // Por mes (26/10/2026): Caja (lo que entró y salió) o Resultado (lo que dejó cada mes); mes abierto en detalle.
   const [mesModo,setMesModo]=useState("caja");const [devMesSel,setDevMesSel]=useState(null);const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
   const celu=useEsCelu();
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp,ccm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code,tax_condition)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,client_paid_date,giro_status,giro_date,giro_payment_method,giro_tarjeta_paid,giro_tarjeta_paid_at"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("client_account_movements",{token,filters:"?type=in.(overpayment,payment)&select=operation_id,client_id,type,amount_usd,movement_date,created_at"})]);setCcMovs(Array.isArray(ccm)?ccm:[]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp,ccm,smb]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code,tax_condition)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,client_paid_date,giro_status,giro_date,giro_payment_method,giro_tarjeta_paid,giro_tarjeta_paid_at"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("client_account_movements",{token,filters:"?type=in.(overpayment,payment)&select=operation_id,client_id,type,amount_usd,movement_date,created_at"}),dq("cc_solfin_movements",{token,filters:"?or=(description.ilike.*mybox*,provisional_rate.not.is.null)&select=date,type,currency,amount,provisional_rate,description&order=date.asc"}).catch(()=>[])]);setSolfinMb(Array.isArray(smb)?smb:[]);setCcMovs(Array.isArray(ccm)?ccm:[]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=isoAR(now);const weekAgo=isoAR(now-7*86400000);
@@ -16063,7 +16063,20 @@ function FinanceDashboard({token}){
 
   // ── Falta: lo que todavía no es plata (misma cuenta que antes) ──
   const {ing:cashIngHist,cost:cashCostHist}=libroCaja(()=>true);
-  const cashDisponible=cashIngHist-cashCostHist;
+  // Plata traída de la CC de MyBox a la de Argencargo (18/11/2026). Es plata real que está en la
+  // cuenta pero no la generó ninguna operación de Argencargo: no entra en Entró/Salió ni en la
+  // ganancia, solo suma al cash disponible. Los pesos se pasan a dólares con el tipo de cambio
+  // del cobro más cercano en fecha (los pases no guardan TC).
+  const traidoMyBox=(()=>{
+    const conTc=solfinMb.filter(m=>Number(m.provisional_rate||0)>0);
+    const dia=(d)=>new Date(String(d).slice(0,10)+"T12:00:00Z").getTime();
+    const tcDe=(d)=>{let mejor=0,dist=Infinity;const t=dia(d);conTc.forEach(m=>{const x=Math.abs(dia(m.date)-t);if(x<dist){dist=x;mejor=Number(m.provisional_rate);}});return mejor;};
+    return solfinMb.filter(m=>/my\s?box/i.test(m.description||"")).reduce((s,m)=>{
+      const usd=m.currency==="USD"?Number(m.amount||0):(tcDe(m.date)>0?Number(m.amount||0)/tcDe(m.date):0);
+      return s+(m.type==="ingreso"?usd:-usd);
+    },0);
+  })();
+  const cashDisponible=cashIngHist-cashCostHist+traidoMyBox;
   const girosColgadosDetail=[];
   ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,real});});
   const girosColgados=girosColgadosDetail.reduce((s,d)=>s+d.real,0);
@@ -16157,7 +16170,7 @@ function FinanceDashboard({token}){
         {/* Las tres tarjetas con la misma forma (27/10/2026): título a la izquierda, cifra a la derecha y filas abajo. */}
         <Glass delay={2} title="Cash disponible" actions={<span style={{fontSize:celu?20:24,fontWeight:800,color:cashDisponible>=0?VERDE:ROJO,letterSpacing:"-0.02em",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textShadow:`0 0 22px ${cashDisponible>=0?"rgba(62,230,138,0.3)":"rgba(217,128,128,0.3)"}`}}><NumAnim v={cashDisponible} fmt={usdS}/></span>}>
           <div style={{display:"flex",flexDirection:"column"}}>
-            {[["💰","Entró",`Cobros, pagos y otros ingresos`,cashIngHist,GOLD_LIGHT],["💸","Salió","Costos, gastos y giros",-cashCostHist,"#d98080"]].map(([ic,l,sub,v,c],i)=><div key={l} className="fin-row" style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
+            {[["💰","Entró",`Cobros, pagos y otros ingresos`,cashIngHist,GOLD_LIGHT],["💸","Salió","Costos, gastos y giros",-cashCostHist,"#d98080"],...(Math.abs(traidoMyBox)>0.5?[["🔁","Traído de MyBox","Pases de la cuenta de MyBox",traidoMyBox,"#D3F462"]]:[])].map(([ic,l,sub,v,c],i)=><div key={l} className="fin-row" style={{display:"flex",alignItems:"center",gap:10,padding:"9px 8px",margin:"0 -8px",borderRadius:10,borderTop:i?"1px solid rgba(255,255,255,0.05)":"none"}}>
               <span style={{width:28,textAlign:"center",fontSize:15,flexShrink:0}}>{ic}</span>
               <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:700,color:"#fff"}}>{l}</span><span style={{display:"block",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{sub}</span></span>
               <span style={{fontSize:13.5,fontWeight:800,color:c,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{v>=0?"+":"−"}{usdA(Math.abs(v))}</span>
