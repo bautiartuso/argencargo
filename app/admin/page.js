@@ -8506,6 +8506,12 @@ function FinancePanel({token}){
         if(extraCharge>0.01)detail.push(`incluye cargo extra USD ${extraCharge.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
         const cobroDate=o.collection_date||o.closed_at?.slice(0,10)||"—";
         ledger.push({date:cobroDate,ts:tsOf(cobroDate,o.closed_at),type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cashIn,detail:detail.join(" · ")});
+        // Comisión de la financiera de los cobros viejos (sin pagos registrados): el % vive en la op.
+        const pctViejo=Number(o.collection_fee_pct||0);
+        if(pctViejo>0&&o.collection_method==="transferencia"&&collectedUsd>0){
+          const comViejo=Math.round(collectedUsd*pctViejo)/100;
+          if(comViejo>0.005)ledger.push({date:cobroDate,ts:tsOf(cobroDate,o.closed_at),type:"gasto",origen:"op",code:o.operation_code,desc:`Comisión financiera ${pctViejo}% ${o.operation_code} — ${o.clients?.client_code||""}`,amount:comViejo});
+        }
       }
     }
     // Costos op: una fila por concepto con su fecha real de pago.
@@ -15950,8 +15956,15 @@ function FinanceDashboard({token}){
       const efectivo=credito>0&&cash>=tope-0.01?Math.max(0,cash-credito):cash;
       const cashIn=extraCharge>0.01?efectivo:((tope>0?Math.min(efectivo,tope):efectivo)+Math.min(sobranteDe[o.id]||0,Math.max(0,cash-tope)));
       if(cashIn>0)ing+=cashIn;
+      // Comisión de la financiera de los cobros viejos (sin pagos registrados): el % vive en la op.
+      const pctViejo=Number(o.collection_fee_pct||0);
+      if(pctViejo>0&&o.collection_method==="transferencia"&&cash>0)cost+=cash*pctViejo/100;
     });
     ing+=clientPmts.filter(p=>filtro(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+    // Comisión de la financiera (18/11/2026): el cobro de arriba es el BRUTO que transfirió el
+    // cliente, pero a la cuenta entra el neto. Sin esta resta el cash disponible quedaba inflado
+    // (el libro diario y la ganancia de Finalizadas ya la descontaban). Misma cuenta que el libro.
+    cost+=clientPmts.filter(p=>Number(p.commission_pct||0)>0&&filtro(p.payment_date)).reduce((s,p)=>{const pct=Number(p.commission_pct);const r=Number(p.exchange_rate||0);return s+(p.currency==="ARS"&&r>0?(Number(p.amount_ars||0)*pct/100)/r:Number(p.amount_usd||0)*pct/100);},0);
     ing+=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&filtro(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
     ing+=ccMovs.filter(m=>m.type==="payment"&&filtro(m.movement_date||m.created_at?.slice(0,10))).reduce((s,m)=>s+Math.max(0,Number(m.amount_usd||0)),0);
     ing+=supplierPmts.filter(p=>p.is_paid&&p.type==="refund"&&filtro(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
