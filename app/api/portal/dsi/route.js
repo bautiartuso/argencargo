@@ -31,7 +31,7 @@ export async function GET(req) {
   if (!UUID.test(opId)) return json({ error: "op_invalida" }, 400);
   const firmado = q.get("s") && q.get("s") === firmaLink(`dsi:${opId}`);
 
-  const [op] = lista(await svc(`/rest/v1/operations?id=eq.${opId}&select=id,operation_code,channel,origin,created_at,client_id,clients(auth_user_id,tax_condition)&limit=1`));
+  const [op] = lista(await svc(`/rest/v1/operations?id=eq.${opId}&select=id,operation_code,channel,origin,created_at,client_id,clients(auth_user_id,tax_condition,first_name,last_name,street,floor_apt,city,province,postal_code)&limit=1`));
   if (!op) return json({ error: "no_encontrada" }, 404);
   let quien = null;
   if (!firmado) {
@@ -92,7 +92,14 @@ export async function GET(req) {
   const tasaFlete = Number(lista(cfgR)[0]?.value) || 3.25;
   const kg = pf > 0 ? Math.max(pf, minKgAereoDe(op.origin, op.created_at ? Date.parse(op.created_at) : Date.now())) : 0;
   const fleteDeclarado = kg > 0 ? Math.round(kg * tasaFlete * 100) / 100 : null;
-  const d = armarDsiArgencargo({ dsi: datos, flight, op, items, bultos, condicion: condicionDgi(datos.cab?.destinatarioCondIva), unica: opsEnGuia === 1, fleteDeclarado });
+  // Monotributistas y consumidores finales: el contacto y el destinatario son el cliente, con su
+  // domicilio cargado en el sistema. CUIT, condición y el resto quedan como en la guía.
+  const cl = op.clients || {};
+  const mayus = (t) => String(t || "").replace(/\s+/g, " ").trim().toUpperCase();
+  const cliente = cl.tax_condition !== "responsable_inscripto" && mayus(`${cl.first_name || ""} ${cl.last_name || ""}`)
+    ? { nombre: mayus(`${cl.first_name || ""} ${cl.last_name || ""}`), domicilio: [mayus(`${cl.street || ""} ${cl.floor_apt || ""}`), mayus(cl.city), mayus(cl.province)].filter(Boolean).join(" ") }
+    : null;
+  const d = armarDsiArgencargo({ dsi: datos, flight, op, items, bultos, condicion: condicionDgi(datos.cab?.destinatarioCondIva), unica: opsEnGuia === 1, fleteDeclarado, cliente });
   const html = dsiArgencargoHtml(d);
   if (q.get("formato") === "html") return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 
