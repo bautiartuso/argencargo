@@ -72,7 +72,7 @@ export default function EntregaPublica({ params }) {
   const [cashAmount, setCashAmount] = useState("");
   const [cashCurrency, setCashCurrency] = useState("USD");
   const [carrierMode, setCarrierMode] = useState(""); // sucursal | domicilio (solo con transportista)
-  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "", cp: "", sucursal: "" });
+  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "", cp: "", localidad: "", sucursal: "" });
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
   // Otras cargas listas del mismo cliente: ids seleccionadas para coordinar en la misma visita.
@@ -152,6 +152,7 @@ export default function EntregaPublica({ params }) {
           telefono: c.telefono || d.client?.whatsapp || "",
           direccion: c.direccion || d.delivery?.default_address || "",
           cp: c.cp || d.client?.postal_code || "",
+          localidad: c.localidad || d.client?.city || "",
         }));
         setLoading(false);
       } catch (e) {
@@ -520,6 +521,7 @@ export default function EntregaPublica({ params }) {
                       <input value={contacto.direccion} onChange={(e) => setContacto((c) => ({ ...c, direccion: e.target.value }))} placeholder="Dirección (calle y número)" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
                       <input value={contacto.piso} onChange={(e) => setContacto((c) => ({ ...c, piso: e.target.value }))} placeholder="Piso / depto (si lleva)" style={contactInputStyle()} />
                       <input value={contacto.cp} onChange={(e) => setContacto((c) => ({ ...c, cp: e.target.value }))} placeholder="Código postal" inputMode="numeric" style={contactInputStyle()} />
+                      <input value={contacto.localidad} onChange={(e) => setContacto((c) => ({ ...c, localidad: e.target.value }))} placeholder="Localidad" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
                     </>}
                   </div>
                 </div>

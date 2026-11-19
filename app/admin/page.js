@@ -411,6 +411,13 @@ const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSO
 // retirar" y los avisos de retiro (y el de arribo si vuelve a antes de arribar), así cuando llegue de
 // verdad el aviso sale de nuevo.
 const PRE_ARRIBO=["pendiente","en_deposito_origen","en_preparacion","en_transito"];
+// Localidad para el despacho (19/11/2026): manda la que el cliente cargó en el link. La de su ficha
+// solo se usa si no cargó una y el CP que puso no es distinto del de la ficha (si cambió el CP, la
+// localidad de la ficha seguramente es otra y no se mezcla).
+const localidadDespacho=(o)=>{const c=o.clients||{};const dc=o.delivery_contact||{};
+  if(dc.localidad&&String(dc.localidad).trim())return String(dc.localidad).trim();
+  const cpDistinto=dc.cp&&c.postal_code&&String(dc.cp).trim()!==String(c.postal_code).trim();
+  return cpDistinto?"":[c.city,c.province].filter(Boolean).join(", ");};
 // Estados en los que la op todavía no llegó al cliente: al marcarla entregada pasa a "entregada" (05/11/2026).
 const EN_CAMINO=[...PRE_ARRIBO,"arribo_argentina","en_aduana"];
 // Entrega ya coordinada y se toca el total a mano (13/11/2026, AC-0338: se bonificó el envío después de
@@ -5784,7 +5791,7 @@ function EntregasPanel({token,onOpenOp,vista}){
           const nombre=(dc.nombre||dc.apellido)?`${dc.nombre||""} ${dc.apellido||""}`.trim():(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
           const esSuc=(o.carrier_mode||"").toLowerCase()==="sucursal";
           const lugarVal=esSuc?(dc.sucursal||"⚠ SIN ESPECIFICAR"):([dc.direccion,dc.piso].filter(Boolean).join(", ")||"⚠ SIN ESPECIFICAR");
-          const localidad=[c.city,c.province].filter(Boolean).join(", ");
+          const localidad=localidadDespacho(o);
           cuerpo=[
             f("DNI",dc.dni,true),
             f("Nombre",nombre,true),
@@ -5837,7 +5844,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         ?`${dc.nombre||""} ${dc.apellido||""}`.trim()
         :(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
       const cp=dc.cp||c.postal_code||"";
-      const localidad=[c.city,c.province].filter(Boolean).join(", ");
+      const localidad=localidadDespacho(o);
       const zona=[localidad,cp?`CP ${cp}`:""].filter(Boolean).join(" · ");
       const dir=esCarrier
         ?(aDomicilio
@@ -5968,7 +5975,7 @@ function EntregasPanel({token,onOpenOp,vista}){
     const ids=ops.map(o=>o.id);
     const pk=await dq("operation_packages",{token,filters:`?operation_id=in.(${ids.join(",")})&select=*&order=package_number.asc`}).catch(()=>[]);
     const lista=Array.isArray(pk)?pk:[];
-    const rutaDe=(o)=>{const c=o.clients||{};const loc=[c.city,c.province].filter(Boolean).join(", ");
+    const rutaDe=(o)=>{const loc=localidadDespacho(o);
       const destino=o.delivery_choice==="oficina"?"Belgrano, CABA":o.delivery_choice==="propio"?(o.delivery_address||loc||"Domicilio del cliente"):loc||"Argentina";
       const modalidad=o.delivery_choice==="propio"?"Envío a domicilio":o.delivery_choice==="carrier"?`Vía Cargo${o.carrier_mode?` · ${o.carrier_mode}`:""}`:o.delivery_choice==="oficina"?"Retiro por oficina":"A coordinar";
       return {origen:o.origin==="USA"?"Estados Unidos":esPkBd(o.origin)?o.origin:"China",destino,modalidad,mercaderia:o.description||""};};
@@ -6702,7 +6709,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onEntregarPaga,onReload})
         </div>}
         {op.delivery_choice==="carrier"&&<div style={{marginTop:12}}>
           <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>📮 {op.carrier_mode==="domicilio"?"A domicilio":"Retira en sucursal"}{op.carrier_mode!=="domicilio"&&dc.sucursal?` · ${dc.sucursal}`:""}</p>
-          <p style={sub}>{[dc.nombre&&`${dc.nombre} ${dc.apellido||""}`.trim(),dc.dni&&`DNI ${dc.dni}`,dc.telefono,dc.cp&&`CP ${dc.cp}`].filter(Boolean).join(" · ")||"Sin datos de contacto: los completa el cliente en el link"}</p>
+          <p style={sub}>{[dc.nombre&&`${dc.nombre} ${dc.apellido||""}`.trim(),dc.dni&&`DNI ${dc.dni}`,dc.telefono,dc.cp&&`CP ${dc.cp}`,dc.localidad].filter(Boolean).join(" · ")||"Sin datos de contacto: los completa el cliente en el link"}</p>
           {op.carrier_mode==="domicilio"&&dc.direccion&&<p style={sub}>{dc.direccion}{dc.piso?`, ${dc.piso}`:""}</p>}
         </div>}
         {necesitaDia&&<div style={{marginTop:14}}>
