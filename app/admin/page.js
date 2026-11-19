@@ -14778,6 +14778,11 @@ function AgpPanel({token,allClients}){
     if(Array.isArray(ars)){
       const res=fifoSolfin(ars);
       ars.forEach(mv=>{if(mv.pm_cobro_id&&res[mv.id])fmap[mv.pm_cobro_id]=res[mv.id];});
+      // Un comprobante para varias gestiones (19/11/2026): en la CC es un solo ingreso y cada pago
+      // apunta a él (cc_movement_id); su dolarización es la de ese ingreso, en proporción a su parte.
+      for(const x of c){const f=x.cc_movement_id&&res[x.cc_movement_id];if(!f||!(f.neto>0))continue;
+        const k=Math.min(1,Number(x.amount)*(1-Number(x.commission_pct||0)/100)/f.neto);
+        fmap[x.id]={...f,neto:f.neto*k,pendiente:f.pendiente*k,usd:f.usd*k,arsEnPesos:f.arsEnPesos*k,arsDolarizado:f.arsDolarizado*k};}
       const cambios=[];
       for(const x of c){
         if(!agpADolarizar(x)||!fmap[x.id])continue;
