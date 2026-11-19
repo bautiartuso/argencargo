@@ -15855,10 +15855,6 @@ function FinanceDashboard({token}){
   // Por mes (26/10/2026): Caja (lo que entró y salió) o Resultado (lo que dejó cada mes); mes abierto en detalle.
   const [mesModo,setMesModo]=useState("caja");const [devMesSel,setDevMesSel]=useState(null);const [conceptoAbierto,setConceptoAbierto]=useState(null);const [verTodoConcepto,setVerTodoConcepto]=useState(false);
   const celu=useEsCelu();
-  // Lo que se le debe al agente (19/11/2026): saldo de su cuenta + vuelos despachados sin pick-up, que
-  // todavía no se descontaron (misma cuenta que "Sin pick-up → queda" de Agentes).
-  const [agAg,setAgAg]=useState([]);const [agVuelos,setAgVuelos]=useState([]);
-  useEffect(()=>{(async()=>{const [a,f]=await Promise.all([dq("agent_signups",{token,filters:"?status=eq.approved&select=auth_user_id,first_name,last_name,cc_descuenta_al_pickup"}).catch(()=>[]),dq("flights",{token,filters:"?dispatched_at=not.is.null&carrier_pickup_at=is.null&received_at=is.null&payment_method=eq.cuenta_corriente&select=id,flight_code,agent_id,total_cost_usd,status"}).catch(()=>[])]);setAgAg(Array.isArray(a)?a:[]);setAgVuelos(Array.isArray(f)?f.filter(x=>x.status!=="recibido"):[]);})();},[token]);
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp,ccm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code,tax_condition)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${hoyAR().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,client_paid_date,giro_status,giro_date,giro_payment_method,giro_tarjeta_paid,giro_tarjeta_paid_at"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("client_account_movements",{token,filters:"?type=in.(overpayment,payment)&select=operation_id,client_id,type,amount_usd,movement_date,created_at"})]);setCcMovs(Array.isArray(ccm)?ccm:[]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
@@ -16103,20 +16099,12 @@ function FinanceDashboard({token}){
   const deudores=(clients||[]).filter(c=>Number(c.account_balance_usd||0)<-0.01&&!clientesConOpLista.has(c.id)).map(c=>({name:`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—",code:c.client_code||"",debe:Math.abs(Number(c.account_balance_usd||0))})).sort((a,b)=>b.debe-a.debe);
   const deudaCC=deudores.reduce((s,d)=>s+d.debe,0);
   const porCobrar=pendienteListas+girosColgados+deudaCC;
-  const deudaAgentesDetail=agAg.map(a=>{
-    const bal=agentMvs.filter(m=>m.agent_id===a.auth_user_id).reduce((t,m)=>{const cred=m.type==="anticipo"||m.type==="refund";const amt=cred&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return t+(cred?amt:-amt);},0);
-    const esp=a.cc_descuenta_al_pickup?agVuelos.filter(f=>f.agent_id===a.auth_user_id&&Number(f.total_cost_usd||0)>0):[];
-    const sinPickup=esp.reduce((t,f)=>t+Number(f.total_cost_usd||0),0);
-    return {nombre:`${a.first_name||""} ${a.last_name||""}`.trim()||"agente",bal,sinPickup,n:esp.length,debe:Math.max(0,sinPickup-bal)};
-  }).filter(x=>x.debe>=1); // centavos sueltos no cuentan
-  const deudaAgentes=deudaAgentesDetail.reduce((t,x)=>t+x.debe,0);
-  const porPagar=girosPendientes+deudaTCUsd+deudaAgentes;
+  const porPagar=girosPendientes+deudaTCUsd;
   const pendienteNeto=porCobrar-porPagar;
   const faltaFilas=[
     pendienteListas>0&&{ic:"📦",l:"Listas para retirar sin cobrar",sub:`${opsListasParaEntregar.length} operaci${opsListasParaEntregar.length===1?"ón":"ones"}`,v:pendienteListas,c:"#93c5fd",t:opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usdA(o.falta)}`).join("\n")},
     girosColgados>0&&{ic:"⚠️",l:"Giros hechos que el cliente no pagó",sub:`${girosColgadosDetail.length} operaci${girosColgadosDetail.length===1?"ón":"ones"}`,v:girosColgados,c:"#fb923c",t:girosColgadosDetail.map(d=>`${d.code}: ${usdA(d.real)}`).join("\n")},
     deudaCC>0&&{ic:"🧾",l:"Deuda en cuenta corriente",sub:`${deudores.length} cliente${deudores.length!==1?"s":""}`,v:deudaCC,c:ROJO,t:deudores.map(d=>`${d.code?d.code+" · ":""}${d.name}: ${usdA(d.debe)}`).join("\n")},
-    deudaAgentes>0&&{ic:"🛫",l:deudaAgentesDetail.length===1?`Le debés a ${deudaAgentesDetail[0].nombre}`:"Le debés a los agentes",sub:(()=>{const n=deudaAgentesDetail.reduce((t,x)=>t+x.n,0);const sp=deudaAgentesDetail.reduce((t,x)=>t+x.sinPickup,0);return n>0?`cuenta + ${n} vuelo${n!==1?"s":""} sin pick-up (${usdA(sp)})`:"saldo de la cuenta";})(),v:-deudaAgentes,c:"#f87171",t:deudaAgentesDetail.map(x=>`${x.nombre}: cuenta ${x.bal<0?"−":"+"}${usdA(Math.abs(x.bal))} · sin pick-up ${usdA(x.sinPickup)} → debés ${usdA(x.debe)}`).join("\n")},
     girosPendientes>0&&{ic:"💸",l:"Giros que falta mandar",sub:"el cliente ya pagó",v:-girosPendientes,c:"#60a5fa"},
     deudaTCUsd>0&&{ic:"💳",l:"Tarjeta sin debitar (USD)",sub:deudaTCArs>0?`más $ ${Math.round(deudaTCArs).toLocaleString("es-AR")} en pesos`:"",v:-deudaTCUsd,c:"#c4b5fd"},
   ].filter(Boolean);
