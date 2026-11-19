@@ -6420,11 +6420,13 @@ function EntregasPanel({token,onOpenOp,vista}){
         {carriers.length>0&&(()=>{
           // Vía Cargo (21/10/2026): primero lo pagado (se despacha), aparte lo que todavía debe (no se despacha).
           const vcPagadas=carriers.filter(o=>saldoFor(o)<=0.005),vcDeben=carriers.filter(o=>saldoFor(o)>0.005);
-          const subT=(txt,c,n,hint)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:800,color:c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span><span style={{fontSize:11,fontWeight:800,padding:"1px 7px",borderRadius:999,background:`${c}1f`,color:c}}>{n}</span>{hint&&<span style={{fontSize:11.5,fontWeight:600,color:"#2f3f5c"}}>{hint}</span>}</div>;
+          const subT=(txt,c,n,hint,extra)=><div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:800,color:c,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span><span style={{fontSize:11,fontWeight:800,padding:"1px 7px",borderRadius:999,background:`${c}1f`,color:c}}>{n}</span>{hint&&<span style={{fontSize:11.5,fontWeight:600,color:"#2f3f5c"}}>{hint}</span>}{extra}</div>;
+          // Las etiquetas de las pendientes de pago también se pueden imprimir (19/11/2026): se dejan listas, no se despachan.
+          const btnEtq=(ops)=><button onClick={()=>imprimirEtiquetas("carrier_domicilio",ops)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:"1.5px solid #0A1628",background:"#fff",color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🖨 Etiquetas ({ops.length})</button>;
           return <Bloque titulo="" n={carriers.length} tone="viacargo" claro icono={<ViaCargoLogo alto={40} style={{boxShadow:"0 2px 8px rgba(0,0,0,0.12)",border:"1px solid rgba(30,158,62,0.3)"}}/>}
-            accion={!celu&&vcPagadas.length>0&&<button onClick={()=>imprimirEtiquetas("carrier_domicilio",vcPagadas)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:"1.5px solid #0A1628",background:"#fff",color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🖨 Etiquetas ({vcPagadas.length})</button>}>
+            accion={!celu&&vcPagadas.length>0&&btnEtq(vcPagadas)}>
             {vcPagadas.length>0&&<>{subT("✓ Pagadas · despachar","#15803d",vcPagadas.length)}{renderConGrupos(vcPagadas,"porentregar")}</>}
-            {vcDeben.length>0&&<>{subT("⏳ Pendientes de pago · no despachar",VC_ROJO,vcDeben.length,`deben ${usd(vcDeben.reduce((a,o)=>a+saldoFor(o),0))} en total`)}{renderConGrupos(vcDeben,"porentregar")}</>}
+            {vcDeben.length>0&&<>{subT("⏳ Pendientes de pago · no despachar",VC_ROJO,vcDeben.length,`deben ${usd(vcDeben.reduce((a,o)=>a+saldoFor(o),0))} en total`,!celu&&btnEtq(vcDeben))}{renderConGrupos(vcDeben,"porentregar")}</>}
             {vcPagadas.length===0&&<p style={{color:"#2f3f5c",fontSize:12.5,fontWeight:600,margin:"4px 0 0"}}>Nada para despachar hasta que paguen.</p>}
           </Bloque>;})()}
 
