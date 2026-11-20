@@ -5,6 +5,7 @@
 import { callClaudeText, callClaudeVision } from "../../../lib/anthropic";
 import { payloadVerificado } from "../../../lib/auth-server";
 import { limitar } from "../../../lib/ratelimit";
+import { familiaDe, familiaParecida } from "../../../lib/ncm-familia";
 
 // Margen para los reintentos con backoff ante overload (529) de la API.
 export const maxDuration = 60;
@@ -34,6 +35,38 @@ async function rpcCache(fn, body) {
 }
 const cacheBuscar  = (desc) => rpcCache("ncm_cache_buscar", { p_desc: desc });
 const cacheGuardar = (desc, ncm, src) => rpcCache("ncm_cache_guardar", { p_desc: desc, p_ncm: ncm, p_source: src || "claude" });
+
+// ── Familias de mercadería (20/11/2026): ver lib/ncm-familia.js ───────────────────────────────
+// Todas las variantes de un mismo producto (otra medida, otro color, otro modelo) llevan la misma
+// posición. Con la clave de servicio: nadie de afuera puede cambiarle la posición a una familia.
+const svcH = () => { const key = process.env.SUPABASE_SERVICE_ROLE; return key ? { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" } : null; };
+let _famCache = { at: 0, rows: [] };
+async function familiaBuscar(fam, { fresco = false } = {}) {
+  const h = svcH(); if (!h || !fam) return null;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/ncm_familias?familia=eq.${encodeURIComponent(fam)}&select=ncm_code&limit=1`, { headers: h, cache: "no-store" });
+    const d = await r.json();
+    if (Array.isArray(d) && d[0]?.ncm_code) return { ncm: d[0].ncm_code, exacta: true };
+    if (fresco || Date.now() - _famCache.at > 30000) {
+      const todas = [];
+      for (let desde = 0; desde < 20000; desde += 1000) {
+        const rr = await fetch(`${SB_URL}/rest/v1/ncm_familias?select=familia,ncm_code&order=created_at.asc,familia.asc&offset=${desde}&limit=1000`, { headers: h, cache: "no-store" });
+        const dd = await rr.json(); if (!Array.isArray(dd)) break;
+        todas.push(...dd); if (dd.length < 1000) break;
+      }
+      _famCache = { at: Date.now(), rows: todas };
+    }
+    const p = familiaParecida(fam, _famCache.rows);
+    return p ? { ncm: p.ncm_code, exacta: false } : null;
+  } catch { return null; }
+}
+// Deja fijada la posición de la familia y devuelve la que quedó: si otra variante la fijó un
+// instante antes (renglones de la misma lista, en paralelo), gana aquélla.
+async function familiaFijar(fam, ncm, desc) {
+  if (!fam || !ncm) return ncm || null;
+  const v = await rpcCache("ncm_familia_fijar", { p_familia: fam, p_ncm: ncm, p_desc: desc || null });
+  return typeof v === "string" && v ? v : ncm;
+}
 
 async function searchDB(ncmCode) {
   let r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=eq.${ncmCode}&select=ncm_code,description,die,te,iva,iva_nota&limit=5`, { headers: { apikey: SB_KEY } });
@@ -416,7 +449,11 @@ async function aprender(description, ncm_code) {
   if (!desc || !/^\d{4}\.\d{2}\.\d{2}$/.test(ncm)) return { error: "descripción o NCM inválidos" };
   const desc_norm = desc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
   const r = await fetch(`${SB_URL}/rest/v1/ncm_cache?on_conflict=desc_norm`, { method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ desc_norm, description: desc, ncm_code: ncm, source: "admin", corrected_by_admin: true }) });
-  return r.ok ? { ok: true } : { error: `ncm_cache ${r.status}: ${(await r.text()).slice(0, 200)}` };
+  if (!r.ok) return { error: `ncm_cache ${r.status}: ${(await r.text()).slice(0, 200)}` };
+  // La corrección vale para toda la familia (las demás medidas, colores y modelos de lo mismo).
+  const fam = familiaDe(desc);
+  if (fam) await fetch(`${SB_URL}/rest/v1/ncm_familias?on_conflict=familia`, { method: "POST", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ familia: fam, ncm_code: ncm, description: desc.slice(0, 300), source: "admin", updated_at: new Date().toISOString() }) }).catch(() => {});
+  return { ok: true };
 }
 
 export async function POST(req) {
@@ -475,6 +512,8 @@ export async function POST(req) {
         return Response.json({ ...resp, hint_verdict: "ok" });
       }
     }
+    // Familia de la mercadería (misma cosa, otra medida/color/modelo): una sola posición para todas.
+    const fam = !image && description && !hintCode ? familiaDe(description) : null;
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
     if (!image && description) {
       // Lo que el admin ya corrigió manda sobre todo lo demás (misma mercadería, otra variante).
@@ -485,9 +524,19 @@ export async function POST(req) {
       // Memoria: si esta descripción ya se clasificó, no se vuelve a llamar a la IA. Con una NCM
       // sugerida por el cliente NO se usa la memoria: hay que evaluar su sugerencia (11/10/2026: con
       // memoria se devolvía lo de antes y la sugerencia nunca se miraba).
+      // La familia va ANTES que la memoria por texto exacto: esa memoria tiene guardadas variantes
+      // de un mismo producto con posiciones distintas (las clasificó la IA de a una).
+      if (fam) {
+        const f = await familiaBuscar(fam);
+        if (f) {
+          if (!f.exacta) await familiaFijar(fam, f.ncm, description);
+          return Response.json(withHint(await respuestaDeNcm(f.ncm, null, {}, "familia")));
+        }
+      }
       const recordado = hintCode ? null : await cacheBuscar(description);
       if (typeof recordado === "string" && recordado) {
-        return Response.json(withHint(await respuestaDeNcm(recordado, null, {}, "memoria")));
+        const canon = fam ? await familiaFijar(fam, recordado, description) : recordado;
+        return Response.json(withHint(await respuestaDeNcm(canon, null, {}, canon === recordado ? "memoria" : "familia")));
       }
     }
 
@@ -513,6 +562,16 @@ export async function POST(req) {
       // Forzamos intervención por prefijo de NCM (la IA suele subdetectar ortopedia,
       // suplementos, cosméticos, etc., especialmente cuando el producto se vende
       // como "wellness" sin la palabra "médico").
+      // Mientras la IA pensaba, otro renglón de la misma lista pudo haber fijado la familia (o una
+      // muy parecida): manda la que ya quedó, así todas las variantes salen con la misma posición.
+      if (fam) {
+        const ya = await familiaBuscar(fam, { fresco: true });
+        const canon = await familiaFijar(fam, ya?.ncm || claudeResult.ncm_code, description);
+        if (canon && canon !== claudeResult.ncm_code) {
+          cacheGuardar(description, canon, "familia").catch(() => {});
+          return Response.json(withHint(await respuestaDeNcm(canon, null, extras, "familia")));
+        }
+      }
       const enforcedIntervention = enforceInterventionByNcm(claudeResult.ncm_code, claudeResult.intervention);
       if (!image && description && !hintCode) cacheGuardar(description, claudeResult.ncm_code, "claude").catch(() => {});
       const results = await searchDB(claudeResult.ncm_code);
