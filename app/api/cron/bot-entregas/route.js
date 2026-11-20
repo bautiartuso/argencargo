@@ -24,6 +24,7 @@
 import { fetchDolar } from "../../../../lib/dolar";
 import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES, uploadWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
 import { tokenRetiro, nombreCargas } from "../../../../lib/link-retiro";
+import { ahorroReempaque, paramsReempaque } from "../../../../lib/reempaque-aviso";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -32,6 +33,8 @@ const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 export const maxDuration = 60;
 
 const H60 = 60 * 3600 * 1000;
+// El aviso de reempaque con ahorro arranca con los reempaques hechos desde el 20/11/2026 (hora AR).
+const REEMPAQUE_DESDE = "2026-11-20T03:00:00Z";
 const ESCALERA = ["recordatorio_coordinar", "recordatorio_almacenaje"];
 
 async function sb(path, opts = {}) {
@@ -237,6 +240,51 @@ export async function GET(req) {
       }
     }
   } catch (e) { console.error("[bot-entregas] ri_cobro", e.message); out.ri_error = e.message; }
+
+  // ── Reempaque con ahorro: se le cuenta al cliente ──
+  // (20/11/2026) Cuando un reempaque baja el peso facturable y con eso el flete, el bot le dice
+  // cuánto se ahorró y cuántos kilos bajó. Solo si ahorró (mínimo USD 5), una vez por reempaque
+  // (repack_requests.wa_notified_at). No sale mientras el presupuesto guardado tenga el flete de
+  // antes. Espera 15 min desde que quedó registrado (si se vuelve a
+  // leer el archivo del vuelo, los números cambian) y sale de lunes a sábado de 9 a 20 h.
+  out.reempaques = [];
+  try {
+    const desde = new Date(Math.max(Date.parse(REEMPAQUE_DESDE), now - 30 * 86400000)).toISOString();
+    const hasta = new Date(now - 15 * 60000).toISOString();
+    const rq = await sb(`/repack_requests?status=eq.done&wa_notified_at=is.null&completed_at=gte.${desde}&completed_at=lte.${hasta}&select=id,operation_id,original_billable_kg,new_billable_kg,original_packages_snapshot,completed_at`);
+    const porOp = {};
+    for (const r of Array.isArray(rq.body) ? rq.body : []) (porOp[r.operation_id] = porOp[r.operation_id] || []).push(r);
+    const svc = async (p) => { const r = await sb(p); return Array.isArray(r.body) ? r.body : null; };
+    const enHoraReemp = arNow.getUTCDay() !== 0 && arNow.getUTCHours() >= 9 && arNow.getUTCHours() < 20;
+    let estadoTpl;
+    for (const [opId, filas] of Object.entries(porOp)) {
+      const marcar = (extra = {}) => sb(`/repack_requests?id=in.(${filas.map((f) => f.id).join(",")})`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ wa_notified_at: new Date().toISOString(), ...extra }) });
+      const a = await ahorroReempaque(svc, opId, filas);
+      if (a?.pendiente) { out.reempaques.push(`${a.op?.operation_code || opId}: todavía sin productos para calcular`); continue; }
+      const motivo = !a ? "no ahorró" : a.ahorroUsd < 5 ? `ahorro chico (USD ${a.ahorroUsd})` : a.op.sent_notifications?.silenciada ? "op silenciada" : ["cancelada", "operacion_cerrada"].includes(a.op.status) ? "op cerrada" : !waNumber(a.client.whatsapp) ? "cliente sin WhatsApp" : "";
+      if (motivo) { out.reempaques.push(`${a?.op?.operation_code || opId}: sin aviso (${motivo})`); if (!dry) await marcar(); continue; }
+      const params = paramsReempaque(a);
+      out.reempaques.push(`${a.op.operation_code} → reempaque_ahorro (${params.slice(2).join(" · ")})${a.presupuestoViejo ? " · frenado: el presupuesto guardado no bajó" : enHoraReemp ? "" : " · espera horario"}`);
+      if (dry) continue;
+      if (estadoTpl === undefined) estadoTpl = await ensureWaTemplate("reempaque_ahorro");
+      // El presupuesto guardado sigue con el flete de antes: no se le dice al cliente que ahorró
+      // algo que todavía se le cobra. Se avisa al admin (una vez por día) y sale solo al actualizarlo.
+      if (a.presupuestoViejo) {
+        const last = a.op.sent_notifications?.reempaque_presup_at ? new Date(a.op.sent_notifications.reempaque_presup_at).getTime() : 0;
+        if (now - last > 24 * 3600 * 1000) {
+          await notifyAdmins("📦 Reempaque sin reflejar en el presupuesto", `${a.op.operation_code} (${a.client.first_name || ""} ${a.client.client_code || ""}): el reempaque ahorra ${params[2]} pero el presupuesto guardado sigue con el flete de antes. Actualizá el presupuesto y el aviso al cliente sale solo.`);
+          await sb(`/operations?id=eq.${opId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ sent_notifications: { ...(a.op.sent_notifications || {}), reempaque_presup_at: new Date().toISOString() } }) });
+        }
+        continue;
+      }
+      if (!enHoraReemp) continue;
+      if (estadoTpl && estadoTpl !== "APPROVED") { out.reempaque_plantilla = `reempaque_ahorro: ${estadoTpl} en Meta — se reintenta en 5 min`; continue; }
+      const w = await sendWaTemplate(a.client.whatsapp, "reempaque_ahorro", params);
+      if (!w?.ok) { console.error("[bot-entregas] reempaque falló", a.op.operation_code, w?.error); out.reempaque_error = `${a.op.operation_code}: ${w?.error || "envío falló"}`; continue; }
+      await marcar({ wa_saving_usd: a.ahorroUsd });
+      await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: opId, type: "whatsapp", direction: "out", content: `Argy (reempaque_ahorro): le avisó que el reempaque le ahorró ${params[2]} (${params[5]} menos: de ${params[3]} a ${params[4]}).` }) }).catch(() => {});
+    }
+  } catch (e) { console.error("[bot-entregas] reempaque", e.message); out.reempaque_error = e.message; }
 
   // ── Plantillas de Meta: se crean solas y se avisa cuando cambian de estado (1 vez por hora) ──
   if (!dry && waConfigured() && new Date(now).getUTCMinutes() < 5) {
