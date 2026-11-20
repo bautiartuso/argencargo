@@ -1450,7 +1450,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=delivery_confirmed_at,payment_split,channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes,budget_tax_detail,budget_taxes,budget_total`}),
+        // Todo lo que lee calcOpBudget de la op tiene que venir FRESCO de la base: algunas listas (Entregas)
+        // abren el editor con una op parcial. Sin invoice_items_count el recargo por ítems se cobraba sobre
+        // los productos de la op y no sobre los renglones de la factura (AC-0245, 19/11/2026: +USD 20
+        // después de que el cliente ya había pagado); sin created_at se usaban las tarifas de hoy.
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=delivery_confirmed_at,payment_split,channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes,budget_tax_detail,budget_taxes,budget_total,created_at,invoice_items_count,merchandise_value_usd,delivery_cost_usd`}),
         dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`}),
         dq("calc_config",{token,filters:"?select=key,value"})
       ]);
