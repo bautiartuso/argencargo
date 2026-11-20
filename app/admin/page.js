@@ -9933,7 +9933,15 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
         const nIg=fs.filter(f=>f.match&&f.match.opId===opId).length;
         dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): facturable ${antesKg.toLocaleString("es-AR",{maximumFractionDigits:2})} → ${despuesKg.toLocaleString("es-AR",{maximumFractionDigits:2})} kg · ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales${nIg?` (${nIg} sin cambios, conservan su tracking)`:""}. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
       }
-      toast("Bultos reemplazados — revisá el presupuesto de las ops","success");
+      // Con los bultos del courier el presupuesto guardado se recalcula solo, suba o baje (20/11/2026).
+      let presu="";
+      try{
+        const rr=await fetch("/api/admin/presupuesto-reempaque",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_ids:Object.keys(porOp)})}).then(r=>r.json());
+        const cambios=(rr?.res||[]).filter(x=>!x.omitido&&!x.igual);const sinTocar=(rr?.res||[]).filter(x=>x.omitido);
+        const u=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        presu=[cambios.map(x=>`${x.codigo} USD ${u(x.antes)} → ${u(x.ahora)}`).join(" · "),sinTocar.length?`sin tocar: ${sinTocar.map(x=>`${x.codigo||"op"} (${x.omitido})`).join(", ")}`:""].filter(Boolean).join(" · ");
+      }catch(e){console.error("presupuesto-reempaque",e);presu="no se pudo actualizar el presupuesto: revisalo a mano";}
+      toast(`Bultos reemplazados${presu?` — ${presu}`:""}`,"success");
       onDone();
     }catch(e){setErr("Error aplicando: "+e.message);setAplicando(false);}
   };

@@ -24,7 +24,7 @@
 import { fetchDolar } from "../../../../lib/dolar";
 import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES, uploadWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
 import { tokenRetiro, nombreCargas } from "../../../../lib/link-retiro";
-import { ahorroReempaque, paramsReempaque } from "../../../../lib/reempaque-aviso";
+import { ahorroReempaque, paramsReempaque, recalcularPresupuestoOp, fmtUsd } from "../../../../lib/reempaque-aviso";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -251,10 +251,23 @@ export async function GET(req) {
   try {
     const desde = new Date(Math.max(Date.parse(REEMPAQUE_DESDE), now - 30 * 86400000)).toISOString();
     const hasta = new Date(now - 15 * 60000).toISOString();
-    const rq = await sb(`/repack_requests?status=eq.done&wa_notified_at=is.null&completed_at=gte.${desde}&completed_at=lte.${hasta}&select=id,operation_id,original_billable_kg,new_billable_kg,original_packages_snapshot,completed_at`);
-    const porOp = {};
-    for (const r of Array.isArray(rq.body) ? rq.body : []) (porOp[r.operation_id] = porOp[r.operation_id] || []).push(r);
+    const rq = await sb(`/repack_requests?status=eq.done&completed_at=gte.${desde}&select=id,operation_id,original_billable_kg,new_billable_kg,original_packages_snapshot,completed_at,wa_notified_at,budget_synced_at`);
+    const hechos = Array.isArray(rq.body) ? rq.body : [];
     const svc = async (p) => { const r = await sb(p); return Array.isArray(r.body) ? r.body : null; };
+    // Primero el presupuesto: con un reempaque se recalcula y se guarda siempre, suba o baje
+    // (regla de Bautista, 20/11/2026). A cualquier hora y sin esperar; una vez por reempaque (si se
+    // vuelve a leer el archivo del vuelo, completed_at cambia y se recalcula de nuevo).
+    const sinSync = [...new Set(hechos.filter((r) => !r.budget_synced_at || r.budget_synced_at < r.completed_at).map((r) => r.operation_id))];
+    for (const opId of sinSync) {
+      if (dry) { out.reempaques.push(`${opId}: recalcularía el presupuesto`); continue; }
+      const patch = async (p, body) => { const r = await sb(p, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(body) }); return r.status < 300; };
+      const r = await recalcularPresupuestoOp(svc, patch, opId);
+      await patch(`/repack_requests?operation_id=eq.${opId}&status=eq.done`, { budget_synced_at: new Date().toISOString() });
+      out.reempaques.push(`${r.codigo || opId}: presupuesto ${r.omitido ? `sin tocar (${r.omitido})` : r.igual ? "ya estaba al día" : `${fmtUsd(r.antes)} → ${fmtUsd(r.ahora)}`}`);
+      if (!r.omitido && !r.igual) await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: opId, type: "note", content: `Presupuesto actualizado por el reempaque: ${fmtUsd(r.antes)} → ${fmtUsd(r.ahora)}.` }) }).catch(() => {});
+    }
+    const porOp = {};
+    for (const r of hechos) if (!r.wa_notified_at && r.completed_at <= hasta) (porOp[r.operation_id] = porOp[r.operation_id] || []).push(r);
     const enHoraReemp = arNow.getUTCDay() !== 0 && arNow.getUTCHours() >= 9 && arNow.getUTCHours() < 20;
     let estadoTpl;
     for (const [opId, filas] of Object.entries(porOp)) {
