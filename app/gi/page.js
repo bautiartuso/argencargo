@@ -430,12 +430,76 @@ function Cotizaciones({ ctx }) {
 // ────────────────────────────────────────────
 // COTIZACIONES
 // ────────────────────────────────────────────
+// A quién va la cotización: un cliente con ficha o alguien nuevo (nombre, apellido y WhatsApp).
+// Lo usan el alta y "Cambiar" del detalle.
+function ElegirCliente({ token, modo, setModo, cli, onElegir, onSoltar, nuevo, setNuevo }) {
+  const [clientes, setClientes] = useState(null);
+  const [busca, setBusca] = useState("");
+  useEffect(() => { (async () => { setClientes(await dqTodos("clients", { token, filters: "?select=id,first_name,last_name,client_code,whatsapp,gi_partner_id&order=first_name.asc" })); })(); }, [token]);
+  const s = busca.trim().toLowerCase();
+  const encontrados = (clientes || []).filter((c) => s.length >= 2 && `${c.first_name || ""} ${c.last_name || ""} ${c.client_code || ""} ${c.whatsapp || ""}`.toLowerCase().includes(s)).slice(0, 8);
+  return <>
+    <Opciones value={modo} onChange={(k) => { setModo(k); }} cols={2} items={[{ k: "existente", l: "Cliente existente" }, { k: "nuevo", l: "Nuevo cliente" }]} />
+    <div style={{ height: 14 }} />
+    {modo === "existente" ? (cli ? <Fila style={{ marginBottom: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800 }}>{nombre(cli)}</p><p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{cli.client_code}{cli.whatsapp && cli.whatsapp !== "—" ? ` · ${cli.whatsapp}` : ""}</p></div>
+      <Btn small onClick={onSoltar}>Cambiar</Btn>
+    </Fila> : <Campo label="Buscar entre todos los clientes">
+      <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nombre, código o WhatsApp" style={inp} />
+      {clientes === null && <p style={{ fontSize: 12, color: C.mute, margin: "8px 0 0" }}>Cargando clientes…</p>}
+      {encontrados.length > 0 && <div style={{ marginTop: 6, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+        {encontrados.map((c) => <button key={c.id} type="button" onClick={() => { setBusca(""); onElegir(c); }} style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.line}`, background: "transparent", color: C.txt, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, textAlign: "left" }}>
+          <strong>{nombre(c)}</strong><span style={{ fontFamily: MONO, fontSize: 11, color: C.goldHi }}>{c.client_code}</span>
+        </button>)}
+      </div>}
+      {s.length >= 2 && clientes && encontrados.length === 0 && <div style={{ marginTop: 8, fontSize: 12.5, color: C.sub }}>No aparece. <button type="button" onClick={() => { const [a, ...b] = busca.trim().split(/\s+/); setNuevo((n) => ({ ...n, first_name: a || "", last_name: b.join(" ") })); setModo("nuevo"); }} style={{ background: "none", border: "none", color: C.goldHi, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, padding: 0 }}>Crearlo como cliente nuevo</button></div>}
+    </Campo>) : <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Campo label="Nombre"><input autoFocus value={nuevo.first_name} onChange={(e) => setNuevo({ ...nuevo, first_name: e.target.value })} style={inp} /></Campo>
+        <Campo label="Apellido"><input value={nuevo.last_name} onChange={(e) => setNuevo({ ...nuevo, last_name: e.target.value })} style={inp} /></Campo>
+      </div>
+      <Campo label="WhatsApp"><input inputMode="tel" value={nuevo.whatsapp} onChange={(e) => setNuevo({ ...nuevo, whatsapp: e.target.value })} placeholder="11 2345 6789" style={inp} /></Campo>
+    </>}
+  </>;
+}
+
+// Cambiar a quién va una cotización ya hecha (20/11/2026). Los productos, los precios y el link quedan
+// igual: solo cambia la persona. El socio asignado no se toca.
+function CambiarCliente({ ctx, r, onClose }) {
+  const { token, perfil, recargar } = ctx;
+  const actual = r.clients;
+  const [modo, setModo] = useState(actual?.prospecto ? "nuevo" : "existente");
+  const [cli, setCli] = useState(actual && !actual.prospecto ? actual : null);
+  const [nuevo, setNuevo] = useState(actual?.prospecto ? { first_name: r.prospect_first_name || "", last_name: r.prospect_last_name || "", whatsapp: r.prospect_whatsapp || "" } : { first_name: "", last_name: "", whatsapp: "" });
+  const [guardando, setGuardando] = useState(false);
+  const guardar = async () => {
+    if (guardando) return;
+    if (modo === "existente" && !cli?.id) { toast.error("Elegí el cliente"); return; }
+    if (modo === "nuevo" && !nuevo.first_name.trim()) { toast.error("Poné al menos el nombre"); return; }
+    setGuardando(true);
+    const body = modo === "existente"
+      ? { client_id: cli.id, prospect_first_name: null, prospect_last_name: null, prospect_whatsapp: null }
+      : { client_id: null, prospect_first_name: nuevo.first_name.trim(), prospect_last_name: nuevo.last_name.trim() || null, prospect_whatsapp: nuevo.whatsapp.trim() || null };
+    const res = await dq("gi_quote_requests", { method: "PATCH", token, filters: `?id=eq.${r.id}`, body });
+    if (!ok(res)) { toast.error("No se pudo cambiar"); setGuardando(false); return; }
+    const ahora = modo === "existente" ? nombre(cli) : nombre(nuevo);
+    if (ahora !== nombre(actual)) {
+      const q = quoteDe(r);
+      await dq("gi_quote_communications", { method: "POST", token, body: { quote_id: q?.id || null, request_id: r.id, type: "note", author_id: perfil.id, content: `Cambió a quién va: ${nombre(actual)} → ${ahora}` } });
+    }
+    toast.success(`${r.request_code} ahora va a ${ahora}`);
+    await recargar();
+    onClose();
+  };
+  return <Modal title={`${r.request_code} · ¿a quién va?`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar"}</Btn></>}>
+    <ElegirCliente token={token} modo={modo} setModo={setModo} cli={cli} onElegir={setCli} onSoltar={() => setCli(null)} nuevo={nuevo} setNuevo={setNuevo} />
+  </Modal>;
+}
+
 function NuevaCotizacion({ ctx, onClose }) {
   const { token, rol, perfil, d, ir, recargar } = ctx;
   const staff = true; // socios con control total (20/10/2026): eligen socio y cliente como el admin
-  const [clientes, setClientes] = useState(null);
   const [modo, setModo] = useState("existente");
-  const [busca, setBusca] = useState("");
   const [cli, setCli] = useState(null);
   const [nuevo, setNuevo] = useState({ first_name: "", last_name: "", whatsapp: "" });
   const [socio, setSocio] = useState(rol === "socio" ? perfil.id : "");
@@ -443,10 +507,7 @@ function NuevaCotizacion({ ctx, onClose }) {
   const [dias, setDias] = useState("7");
   const [notas, setNotas] = useState("");
   const [guardando, setGuardando] = useState(false);
-  useEffect(() => { (async () => { setClientes(await dqTodos("clients", { token, filters: "?select=id,first_name,last_name,client_code,whatsapp,gi_partner_id&order=first_name.asc" })); })(); }, [token]);
-  const s = busca.trim().toLowerCase();
-  const encontrados = (clientes || []).filter((c) => s.length >= 2 && `${c.first_name || ""} ${c.last_name || ""} ${c.client_code || ""} ${c.whatsapp || ""}`.toLowerCase().includes(s)).slice(0, 8);
-  const elegir = (c) => { setCli(c); setBusca(""); setSocio(c.gi_partner_id || (rol === "socio" ? perfil.id : "")); };
+  const elegir = (c) => { setCli(c); setSocio(c.gi_partner_id || (rol === "socio" ? perfil.id : "")); };
 
   // "Nuevo cliente" ya NO crea la ficha en clients (06/11/2026, Bautista: "hasta que la operación no se
   // hace, no es cliente"). El pedido guarda nombre, apellido y WhatsApp (prospect_*); la ficha nace cuando
@@ -479,27 +540,7 @@ function NuevaCotizacion({ ctx, onClose }) {
   };
 
   return <Modal title="Nueva cotización" onClose={onClose} footer={<><Btn onClick={onClose}>Cancelar</Btn><Btn v="gold" onClick={crear} disabled={guardando}>{guardando ? "Creando…" : "Crear y cotizar"}</Btn></>}>
-    <Opciones value={modo} onChange={(k) => { setModo(k); }} cols={2} items={[{ k: "existente", l: "Cliente existente" }, { k: "nuevo", l: "Nuevo cliente" }]} />
-    <div style={{ height: 14 }} />
-    {modo === "existente" ? (cli ? <Fila style={{ marginBottom: 12 }}>
-      <div style={{ flex: 1, minWidth: 0 }}><p style={{ margin: 0, fontWeight: 800 }}>{nombre(cli)}</p><p style={{ margin: "2px 0 0", fontSize: 11.5, color: C.mute }}>{cli.client_code}{cli.whatsapp && cli.whatsapp !== "—" ? ` · ${cli.whatsapp}` : ""}</p></div>
-      <Btn small onClick={() => setCli(null)}>Cambiar</Btn>
-    </Fila> : <Campo label={staff ? "Buscar entre todos los clientes" : "Buscar entre tus clientes"}>
-      <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nombre, código o WhatsApp" style={inp} />
-      {clientes === null && <p style={{ fontSize: 12, color: C.mute, margin: "8px 0 0" }}>Cargando clientes…</p>}
-      {encontrados.length > 0 && <div style={{ marginTop: 6, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-        {encontrados.map((c) => <button key={c.id} type="button" onClick={() => elegir(c)} style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", border: "none", borderBottom: `1px solid ${C.line}`, background: "transparent", color: C.txt, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, textAlign: "left" }}>
-          <strong>{nombre(c)}</strong><span style={{ fontFamily: MONO, fontSize: 11, color: C.goldHi }}>{c.client_code}</span>
-        </button>)}
-      </div>}
-      {s.length >= 2 && clientes && encontrados.length === 0 && <div style={{ marginTop: 8, fontSize: 12.5, color: C.sub }}>No aparece. <button type="button" onClick={() => { const [a, ...b] = busca.trim().split(/\s+/); setNuevo((n) => ({ ...n, first_name: a || "", last_name: b.join(" ") })); setModo("nuevo"); }} style={{ background: "none", border: "none", color: C.goldHi, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, padding: 0 }}>Crearlo como cliente nuevo</button></div>}
-    </Campo>) : <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Campo label="Nombre"><input autoFocus value={nuevo.first_name} onChange={(e) => setNuevo({ ...nuevo, first_name: e.target.value })} style={inp} /></Campo>
-        <Campo label="Apellido"><input value={nuevo.last_name} onChange={(e) => setNuevo({ ...nuevo, last_name: e.target.value })} style={inp} /></Campo>
-      </div>
-      <Campo label="WhatsApp"><input inputMode="tel" value={nuevo.whatsapp} onChange={(e) => setNuevo({ ...nuevo, whatsapp: e.target.value })} placeholder="11 2345 6789" style={inp} /></Campo>
-    </>}
+    <ElegirCliente token={token} modo={modo} setModo={setModo} cli={cli} onElegir={elegir} onSoltar={() => setCli(null)} nuevo={nuevo} setNuevo={setNuevo} />
     {staff && <Campo label="Socio">
       <Opciones value={socio} onChange={setSocio} items={[{ k: "", l: "Argencargo" }, ...d.socios.map((p) => ({ k: p.id, l: p.email.split("@")[0] }))]} />
     </Campo>}
@@ -534,6 +575,7 @@ function CotDetalle({ ctx, id }) {
   const [nota, setNota] = useState("");
   const [trabajando, setTrabajando] = useState(false);
   const [fotoGrande, setFotoGrande] = useState(null);
+  const [cambiaCliente, setCambiaCliente] = useState(false);
   const e = r ? estadoCot(r, d.comms) : null;
   const q = e?.q;
   // Servicios ocultos al cliente: se muestra al toque y después se confirma con la base.
@@ -676,7 +718,10 @@ function CotDetalle({ ctx, id }) {
                 <PillP c={EC}>{e.l}</PillP>
                 <PillP c={P.sub}>{esUSA ? "🇺🇸 Estados Unidos" : "🇨🇳 China"}</PillP>
               </div>
-              <p style={{ fontSize: 24, fontWeight: 800, margin: "8px 0 2px", letterSpacing: "-0.01em", color: P.txt }}>{nombre(r.clients)}</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px 0 2px" }}>
+                <p style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: "-0.01em", color: P.txt }}>{nombre(r.clients)}</p>
+                {e.k !== "convertida" && <BtnP small onClick={() => setCambiaCliente(true)}>✎ Cambiar</BtnP>}
+              </div>
               <p style={{ fontSize: 12.5, color: P.mute, margin: 0 }}>
                 <span style={{ fontFamily: MONO }}>{r.clients?.client_code || (r.clients?.prospecto ? "Todavía no es cliente" : "")}</span>{r.clients?.whatsapp && r.clients.whatsapp !== "—" ? ` · ${r.clients.whatsapp}` : ""}{socio ? ` · Socio ${socio.email.split("@")[0]}` : " · Argencargo"}
               </p>
@@ -817,6 +862,7 @@ function CotDetalle({ ctx, id }) {
         </Papel>
       </div>
     </div>
+    {cambiaCliente && <CambiarCliente ctx={ctx} r={r} onClose={() => setCambiaCliente(false)} />}
     {fotoGrande && <div onClick={() => setFotoGrande(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(5,10,20,0.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={fotoGrande} alt="" style={{ maxWidth: "92vw", maxHeight: "88vh", borderRadius: 12, objectFit: "contain" }} /></div>}
   </div>;
 }
