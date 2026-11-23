@@ -95,6 +95,8 @@ const ICON = {
   conexiones: ["M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71", "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"],
 };
 const Ico = ({ k, c, s = 18 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{(ICON[k] || []).map((d, i) => <path key={i} d={d} />)}</svg>;
+// Menú lateral angosto (23/11/2026): deja más ancho para el chat. Chats ocupa toda la pantalla, sin márgenes.
+const ANCHO_MENU = 172;
 const PAGINAS = ["chats", "contactos", "seguimiento", "campanas", "studio", "historias", "blog", "conexiones"];
 
 function Shell({ sesion, perfil, onLogout }) {
@@ -131,23 +133,23 @@ function Shell({ sesion, perfil, onLogout }) {
 
   const iniciales = (perfil.email || "AC").slice(0, 2).toUpperCase();
   const barra = <>
-    <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, position: "relative" }}>
-      <img src={LOGO} alt="Argencargo" style={{ width: "100%", height: "auto", maxHeight: 50, objectFit: "contain" }} />
+    <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, position: "relative" }}>
+      <img src={LOGO} alt="Argencargo" style={{ width: "100%", height: "auto", maxHeight: 40, objectFit: "contain" }} />
       <span style={{ fontSize: 9.5, fontWeight: 900, padding: "3px 10px", borderRadius: 5, background: GOLD_GRADIENT, color: "#0A1628", letterSpacing: "0.18em" }}>CRM</span>
       {movil && <button onClick={() => setMenu(false)} aria-label="Cerrar menú" style={{ position: "absolute", right: 12, top: 12, background: "none", border: "none", color: C.sub, fontSize: 20, cursor: "pointer" }}>✕</button>}
     </div>
-    <nav style={{ flex: 1, padding: "10px 10px 14px", overflowY: "auto" }}>
+    <nav style={{ flex: 1, padding: "6px 8px 12px", overflowY: "auto" }}>
       {SECCIONES.map((sec) => <div key={sec.s} style={{ marginTop: 16 }}>
-        <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.32)", margin: "0 0 6px", padding: "0 14px", textTransform: "uppercase", letterSpacing: "0.14em" }}>{sec.s}</p>
-        {sec.items.map((it) => { const on = nav.p === it.k; return <button key={it.k} onClick={() => ir(it.k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "9px 14px", marginBottom: 1, borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: on ? 700 : 500, background: on ? "linear-gradient(90deg, rgba(184,149,106,0.12), rgba(184,149,106,0.02))" : "transparent", color: on ? "#fff" : "rgba(255,255,255,0.55)", fontFamily: "inherit", textAlign: "left", position: "relative" }}>
-          {on && <span style={{ position: "absolute", left: -10, top: 7, bottom: 7, width: 3, borderRadius: "0 3px 3px 0", background: GOLD_GRADIENT }} />}
+        <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.32)", margin: "0 0 6px", padding: "0 10px", textTransform: "uppercase", letterSpacing: "0.14em" }}>{sec.s}</p>
+        {sec.items.map((it) => { const on = nav.p === it.k; return <button key={it.k} onClick={() => ir(it.k)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", marginBottom: 1, borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, background: on ? "linear-gradient(90deg, rgba(184,149,106,0.12), rgba(184,149,106,0.02))" : "transparent", color: on ? "#fff" : "rgba(255,255,255,0.55)", fontFamily: "inherit", textAlign: "left", position: "relative" }}>
+          {on && <span style={{ position: "absolute", left: -8, top: 7, bottom: 7, width: 3, borderRadius: "0 3px 3px 0", background: GOLD_GRADIENT }} />}
           <Ico k={it.k} c={on ? C.goldHi : "rgba(255,255,255,0.45)"} s={17} />
           <span style={{ flex: 1 }}>{it.l}</span>
           {it.badge > 0 && <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#ef4444", color: "#fff" }}>{it.badge}</span>}
         </button>; })}
       </div>)}
     </nav>
-    <div style={{ padding: "14px 16px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ padding: "12px 12px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{ width: 34, height: 34, flexShrink: 0, borderRadius: "50%", background: "linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))", border: "1px solid rgba(184,149,106,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: C.goldHi }}>{iniciales}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -163,7 +165,7 @@ function Shell({ sesion, perfil, onLogout }) {
   const chat = nav.p === "chats";
   return <div style={{ minHeight: "100vh", background: BG, color: C.txt, fontFamily: "'Inter','Segoe UI',sans-serif" }}>
     <style>{`html,body{background:#0A1628 !important;overflow-x:hidden}`}</style>
-    {!movil && <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 220, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(12px)", borderRight: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", zIndex: 5 }}>{barra}</aside>}
+    {!movil && <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: ANCHO_MENU, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(12px)", borderRight: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", zIndex: 5 }}>{barra}</aside>}
     {movil && <header style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, padding: "0 16px", background: "rgba(10,22,40,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button onClick={() => setMenu(true)} aria-label="Abrir menú" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)", padding: "8px 10px", borderRadius: 8, cursor: "pointer", display: "inline-flex", position: "relative" }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
@@ -176,7 +178,7 @@ function Shell({ sesion, perfil, onLogout }) {
       <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 40 }} />
       <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 270, background: "#0b1729", borderRight: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", zIndex: 41 }}>{barra}</aside>
     </>}
-    <main style={{ marginLeft: movil ? 0 : 220, padding: movil ? (chat ? "12px 10px 16px" : "16px 14px 40px") : (chat ? "20px 22px 20px" : "26px 30px 48px") }}>
+    <main style={{ marginLeft: movil ? 0 : ANCHO_MENU, padding: chat ? 0 : movil ? "16px 14px 40px" : "26px 30px 48px" }}>
       <div style={{ maxWidth: chat ? "none" : 1240, margin: "0 auto" }}>{cuerpo}</div>
     </main>
   </div>;

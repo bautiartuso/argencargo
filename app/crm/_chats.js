@@ -1,32 +1,39 @@
 "use client";
-// Bandeja de WhatsApp del CRM (30/10/2026): lista de chats · hilo · ficha del contacto.
-// Solo lectura por defecto: lo que se escribe acá se manda desde el celu (botón "Abrir en WhatsApp"
-// con el texto ya puesto). Si en Conexiones se enciende "Responder desde el sistema", el botón manda
-// por la API dentro de las 24 h y con tope mensual (/api/crm/enviar decide y avisa por qué no).
+// Bandeja de WhatsApp del CRM (30/10/2026; aspecto de WhatsApp desde el 23/11/2026): lista de chats ·
+// hilo · ficha del contacto, que se abre y se cierra desde el encabezado del chat.
+// Solo lectura por defecto: lo que se escribe acá se manda desde el celu (se abre WhatsApp con el
+// texto ya puesto). Si en Conexiones se enciende "Responder desde el sistema", manda por la API
+// dentro de las 24 h y con tope mensual (/api/crm/enviar decide y avisa por qué no).
 // Las fotos y audios no se guardan en Supabase: se piden a Meta al abrirlos (/api/crm/media).
-import { useState, useEffect, useCallback, useRef } from "react";
-import { C, MONO, dq, arr, Btn, Vacio, Cargando, inp, hace } from "../gi/_base";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { dq, arr } from "../gi/_base";
 import { toast } from "../../lib/ui";
-import { fmtTel, nombreDe, hora, diaDe, VISTA, Avatar, Etapa, api, Accion, ETAPAS } from "./_comun";
+import { fmtTel, nombreDe, horaWa, cuandoLista, diaDe, VISTA, Avatar, Etapa, api, W } from "./_comun";
 import Ficha from "./_ficha";
 import Plantillas from "./_plantillas";
 
-const SEL_CONTACTO = "id,phone,name,wa_name,client_id,stage,stage_manual,source,ad_headline,campaign_name,last_msg_at,last_in_at,last_preview,last_direction,unread,summary,pending,next_contact_at,notes,lost_reason,created_at";
-const FILTROS = [["todos", "Todos"], ["sinleer", "Sin leer"], ["leads", "Leads"], ["clientes", "Clientes"]];
+const SEL_CONTACTO = "id,phone,name,wa_name,client_id,stage,stage_manual,stage_at,source,ad_headline,ad_name,ad_at,campaign_name,first_in_at,last_msg_at,last_in_at,last_preview,last_direction,unread,summary,summary_at,pending,next_contact_at,notes,lost_reason,created_at";
+const FILTROS = [["todos", "Todos"], ["sinleer", "No leídos"], ["leads", "Leads"], ["clientes", "Clientes"]];
+const ANCHO_LISTA = 268, ANCHO_FICHA = 330;
+
+const Ico = ({ d, s = 20, c = "currentColor", fill }) => <svg width={s} height={s} viewBox="0 0 24 24" fill={fill ? c : "none"} stroke={fill ? "none" : c} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{[].concat(d).map((x, i) => <path key={i} d={x} />)}</svg>;
+const Tilde = ({ doble, leido }) => <svg width="17" height="11" viewBox="0 0 18 11" fill="none" stroke={leido ? W.azul : "rgba(255,255,255,0.55)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M1 6l3.2 3.4L11 1.6" />{doble && <path d="M7.4 9.2l.4.4L16.6 1.6" />}</svg>;
+const botonRedondo = { width: 36, height: 36, borderRadius: "50%", border: "none", background: "transparent", color: W.sub, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
 
 export default function Chats({ ctx, inicial }) {
   const { token, movil } = ctx;
   const ancho = useAncho();
-  const conFicha = ancho >= 1180;
   const [lista, setLista] = useState(null);
   const [filtro, setFiltro] = useState("todos");
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(null);
   const [msgs, setMsgs] = useState(null);
-  const [fichaAbierta, setFichaAbierta] = useState(false);
+  // La ficha se abre y se cierra desde el encabezado del chat; se recuerda la última elección.
+  const [fichaAbierta, setFichaAbierta] = useState(() => { try { return localStorage.getItem("crm_ficha") !== "0"; } catch { return true; } });
+  const [fichaMovil, setFichaMovil] = useState(false);
   const [envio, setEnvio] = useState(null); // {enabled, usados, cap}
   const selRef = useRef(null); selRef.current = sel;
-  const fin = useRef(null);
+  const alternarFicha = () => setFichaAbierta((v) => { try { localStorage.setItem("crm_ficha", v ? "0" : "1"); } catch {} return !v; });
 
   const cargarLista = useCallback(async () => {
     const r = await dq("crm_contacts", { token, filters: `?select=${SEL_CONTACTO}&last_msg_at=not.is.null&order=last_msg_at.desc&limit=400` });
@@ -39,16 +46,16 @@ export default function Chats({ ctx, inicial }) {
   }, [token]);
   useEffect(() => { cargarLista(); api("/api/crm/conectar").then((s) => { const n = s?.numeros?.[0]; if (n) { const mes = new Date().toISOString().slice(0, 7); setEnvio({ enabled: !!n.send_enabled, usados: n.send_month === mes ? n.send_count : 0, cap: n.send_cap }); } }); }, [cargarLista]);
   useEffect(() => { const t = setInterval(() => { cargarLista(); if (selRef.current) cargarMsgs(selRef.current); }, 15000); return () => clearInterval(t); }, [cargarLista, cargarMsgs]);
-  useEffect(() => { fin.current?.scrollIntoView?.({ block: "end" }); }, [msgs?.length, sel?.id]);
   // Llegar con un contacto elegido desde Contactos o Seguimiento.
   useEffect(() => { if (inicial && lista) { const c = lista.find((x) => x.id === inicial); if (c) abrir(c); } }, [inicial, lista === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const abrir = async (c) => {
-    setSel(c); setMsgs(null); setFichaAbierta(false); await cargarMsgs(c);
+    setSel(c); setMsgs(null); setFichaMovil(false); await cargarMsgs(c);
     if (c.unread > 0) { await dq("crm_contacts", { token, method: "PATCH", filters: `?id=eq.${c.id}`, body: { unread: 0, seen_at: new Date().toISOString() } }); cargarLista(); }
   };
   const actualizarContacto = (patch) => { setSel((s) => (s ? { ...s, ...patch } : s)); setLista((l) => (l || []).map((c) => (c.id === sel?.id ? { ...c, ...patch } : c))); };
 
+  const sinLeer = (lista || []).filter((c) => c.unread > 0).length;
   const filtrada = (lista || []).filter((c) => {
     if (filtro === "sinleer" && !(c.unread > 0)) return false;
     if (filtro === "leads" && c.client_id) return false;
@@ -56,44 +63,58 @@ export default function Chats({ ctx, inicial }) {
     if (q && !`${c.name || ""} ${c.wa_name || ""} ${c.phone} ${c.last_preview || ""}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
-  const alto = movil ? "calc(100vh - 86px)" : "calc(100vh - 56px)";
+  const alto = movil ? "calc(100dvh - 58px)" : "100vh";
 
-  const Lista = <div style={{ display: "flex", flexDirection: "column", height: alto, minWidth: 0 }}>
-    <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" data-enter-libre="1" style={{ ...inp, padding: "9px 12px", fontSize: 13, marginBottom: 8 }} />
-    <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-      {FILTROS.map(([k, l]) => { const on = filtro === k; const n = k === "sinleer" ? (lista || []).filter((c) => c.unread > 0).length : 0; return <button key={k} onClick={() => setFiltro(k)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1px solid ${on ? "rgba(184,149,106,0.5)" : "transparent"}`, background: on ? "rgba(184,149,106,0.12)" : "rgba(255,255,255,0.03)", color: on ? C.goldHi : C.sub, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{l}{n > 0 ? ` ${n}` : ""}</button>; })}
+  const Lista = <div style={{ display: "flex", flexDirection: "column", height: alto, minWidth: 0, background: W.bg, borderRight: movil ? "none" : `1px solid ${W.line}` }}>
+    <div style={{ padding: "14px 14px 8px" }}>
+      <p style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700, color: W.txt }}>Chats</p>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, height: 38, padding: "0 14px", borderRadius: 999, background: W.caja, color: W.mute }}>
+        <Ico s={16} d={["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "M21 21l-4.3-4.3"]} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" data-enter-libre="1" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: W.txt, fontSize: 14, fontFamily: "inherit" }} />
+      </label>
+      <div className="crm-scroll" style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto" }}>
+        {FILTROS.map(([k, l]) => { const on = filtro === k; return <button key={k} onClick={() => setFiltro(k)} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${on ? "transparent" : W.line}`, background: on ? "#103529" : "transparent", color: on ? "#d9fdd3" : W.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{l}{k === "sinleer" && sinLeer > 0 ? ` ${sinLeer}` : ""}</button>; })}
+      </div>
     </div>
-    <div className="crm-scroll" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
-      {lista === null ? <Cargando /> : !filtrada.length ? <Vacio>{lista.length ? "Nada con ese filtro." : "Todavía no entró ningún chat. Cuando el número esté conectado, aparecen acá solos."}</Vacio> :
-        filtrada.map((c) => { const on = sel?.id === c.id; return <button key={c.id} onClick={() => abrir(c)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 10px", borderRadius: 12, border: "none", background: on ? "rgba(184,149,106,0.1)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: C.txt }}>
-          <Avatar c={c} />
+    <div className="crm-scroll" style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
+      {lista === null ? <p style={{ color: W.mute, fontSize: 13, textAlign: "center", padding: 24 }}>Cargando…</p> : !filtrada.length ? <p style={{ color: W.mute, fontSize: 13, textAlign: "center", padding: 24 }}>{lista.length ? "Nada con ese filtro." : "Todavía no entró ningún chat."}</p> :
+        filtrada.map((c) => { const on = sel?.id === c.id; return <button key={c.id} onClick={() => abrir(c)} className="wa-fila" style={{ width: "100%", display: "flex", gap: 12, alignItems: "center", padding: "10px 10px", borderRadius: 12, border: "none", background: on ? W.sel : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: W.txt }}>
+          <Avatar c={c} s={42} wa />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-              <span style={{ fontSize: 13.5, fontWeight: c.unread ? 800 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</span>
-              <span style={{ fontSize: 10.5, color: c.unread ? C.goldHi : C.mute, flexShrink: 0 }}>{hace(c.last_msg_at)}</span>
+              <span style={{ fontSize: 15.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</span>
+              <span style={{ fontSize: 12, color: c.unread ? W.verde : W.mute, flexShrink: 0 }}>{cuandoLista(c.last_msg_at)}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginTop: 2 }}>
-              <span style={{ fontSize: 12, color: c.unread ? C.txt : C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.last_direction === "out" ? "Vos: " : ""}{c.last_preview || ""}</span>
-              {c.unread > 0 ? <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#ef4444", color: "#fff", flexShrink: 0 }}>{c.unread}</span> : <Etapa k={c.stage} small />}
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 3 }}>
+              {c.last_direction === "out" && <Tilde doble />}
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: W.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.last_preview || ""}</span>
+              {c.unread > 0 ? <span style={{ minWidth: 20, height: 20, padding: "0 6px", boxSizing: "border-box", borderRadius: 999, background: W.verde, color: "#0b1410", fontSize: 11.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{c.unread}</span> : <Etapa k={c.stage} small />}
             </div>
           </div>
         </button>; })}
     </div>
   </div>;
 
-  const Hilo = sel && <Conversacion key={sel.id} ctx={ctx} c={sel} msgs={msgs} envio={envio} setEnvio={setEnvio} alto={alto} movil={movil} conFicha={conFicha} onVolver={() => setSel(null)} onFicha={() => setFichaAbierta((v) => !v)} onEnviado={() => { cargarMsgs(sel); cargarLista(); }} onContacto={actualizarContacto} />;
-  const FichaBox = sel && <div className="crm-scroll" style={{ height: alto, overflowY: "auto" }}><Ficha ctx={ctx} c={sel} onChange={actualizarContacto} /></div>;
+  const Hilo = sel && <Conversacion key={sel.id} ctx={ctx} c={sel} msgs={msgs} envio={envio} setEnvio={setEnvio} alto={alto} movil={movil} fichaAbierta={movil ? fichaMovil : fichaAbierta} onVolver={() => setSel(null)} onFicha={() => (movil ? setFichaMovil(true) : alternarFicha())} onEnviado={() => { cargarMsgs(sel); cargarLista(); }} />;
+  const FichaBox = sel && <div className="crm-scroll" style={{ height: alto, overflowY: "auto", background: W.bg, borderLeft: movil ? "none" : `1px solid ${W.line}`, boxSizing: "border-box" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6, height: 60, padding: "0 10px", boxSizing: "border-box" }}>
+      <button onClick={() => (movil ? setFichaMovil(false) : alternarFicha())} title="Cerrar" style={botonRedondo}><Ico d={["M6 6l12 12", "M18 6L6 18"]} /></button>
+      <span style={{ fontSize: 15.5, fontWeight: 600, color: W.txt }}>Info. del contacto</span>
+    </div>
+    <div style={{ padding: "0 16px 20px" }}><Ficha ctx={ctx} c={sel} onChange={actualizarContacto} wa /></div>
+  </div>;
 
-  if (movil) {
-    if (!sel) return Lista;
-    if (fichaAbierta) return <div><button onClick={() => setFichaAbierta(false)} style={{ background: "transparent", border: "none", color: C.goldHi, fontSize: 13, fontWeight: 700, cursor: "pointer", padding: "0 0 10px", fontFamily: "inherit" }}>‹ Volver al chat</button>{FichaBox}</div>;
-    return Hilo;
-  }
-  return <div style={{ display: "grid", gridTemplateColumns: conFicha ? "320px minmax(0,1fr) 320px" : "320px minmax(0,1fr)", gap: 14 }}>
+  const estilos = <style>{`.wa-fila:hover{background:${W.hover} !important}.wa-chat .crm-scroll::-webkit-scrollbar{width:6px;height:0}.wa-chat .crm-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.14);border-radius:3px}`}</style>;
+  if (movil) return <div className="wa-chat" style={{ background: W.bg, color: W.txt }}>{estilos}{!sel ? Lista : fichaMovil ? FichaBox : Hilo}</div>;
+  // En pantallas angostas la ficha tapa el chat en vez de apretarlo.
+  const fichaAlLado = fichaAbierta && sel && ancho >= 1100;
+  const fichaEncima = fichaAbierta && sel && ancho < 1100;
+  return <div className="wa-chat" style={{ display: "grid", gridTemplateColumns: `${ANCHO_LISTA}px minmax(0,1fr)${fichaAlLado ? ` ${ANCHO_FICHA}px` : ""}`, background: W.bg, color: W.txt, position: "relative" }}>
+    {estilos}
     {Lista}
-    {sel ? Hilo : <div style={{ height: alto, display: "flex", alignItems: "center", justifyContent: "center", color: C.mute, fontSize: 13, border: `1px dashed ${C.line}`, borderRadius: 16 }}>Elegí un chat</div>}
-    {conFicha && (sel ? FichaBox : <div />)}
-    {!conFicha && sel && fichaAbierta && <div onClick={() => setFichaAbierta(false)} style={{ position: "fixed", inset: 0, background: "rgba(3,8,16,0.6)", zIndex: 30 }}><div onClick={(e) => e.stopPropagation()} className="crm-scroll" style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 360, background: C.panel, borderLeft: `1px solid ${C.lineHi}`, overflowY: "auto", padding: 14 }}><Ficha ctx={ctx} c={sel} onChange={actualizarContacto} /></div></div>}
+    {sel ? Hilo : <div style={{ height: alto, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: W.mute, fontSize: 14, background: W.fondo }}><Ico s={46} c="rgba(255,255,255,0.18)" d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5.1A8.4 8.4 0 1 1 21 11.5z" />Elegí un chat</div>}
+    {fichaAlLado && FichaBox}
+    {fichaEncima && <div onClick={alternarFicha} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 30 }}><div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: Math.min(ANCHO_FICHA + 20, ancho - 80) }}>{FichaBox}</div></div>}
   </div>;
 }
 
@@ -104,7 +125,7 @@ function useAncho() {
 }
 
 // ── Hilo + redacción ──
-function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, conFicha, onVolver, onFicha, onEnviado, onContacto }) {
+function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, fichaAbierta, onVolver, onFicha, onEnviado }) {
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
@@ -116,6 +137,20 @@ function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, conFicha, on
   const puedeApi = envio?.enabled && ventana && envio.usados < envio.cap;
   const linkWa = `https://wa.me/${c.phone}${texto.trim() ? `?text=${encodeURIComponent(texto.trim())}` : ""}`;
 
+  // Las reacciones no son mensajes: van pegadas al mensaje al que apuntan (o al anterior, si Meta no
+  // dijo a cuál). De cada lado cuenta la última; una reacción vacía es que la sacaron.
+  const { visibles, reacciones } = useMemo(() => {
+    const vis = [], porDestino = {};
+    for (const m of msgs || []) {
+      if (m.type !== "reaction") { vis.push(m); continue; }
+      const destino = m.reply_to || vis[vis.length - 1]?.wamid || vis[vis.length - 1]?.id; if (!destino) continue;
+      (porDestino[destino] = porDestino[destino] || {})[m.direction] = m.deleted ? "" : m.text || "";
+    }
+    const r = {};
+    for (const [k, v] of Object.entries(porDestino)) { const e = [v.in, v.out].filter(Boolean); if (e.length) r[k] = e; }
+    return { visibles: vis, reacciones: r };
+  }, [msgs]);
+
   const enviar = async () => {
     const t = texto.trim(); if (!t) return;
     if (!puedeApi) { window.open(linkWa, "_blank", "noopener"); setTexto(""); return; }
@@ -126,68 +161,113 @@ function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, conFicha, on
     setAviso({ t: r.error || "No se pudo mandar", link: linkWa });
   };
   const copiar = async () => { try { await navigator.clipboard.writeText(texto); toast("Copiado"); } catch {} };
+  const sub = [fmtTel(c.phone), c.wa_name && c.name && c.wa_name !== c.name ? `~${c.wa_name}` : null, c.source === "ad" ? `Anuncio: ${c.campaign_name || c.ad_headline || "sin nombre"}` : null].filter(Boolean).join(" · ");
 
-  return <div style={{ display: "flex", flexDirection: "column", height: alto, minWidth: 0, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, overflow: "hidden" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.line}` }}>
-      {movil && <button onClick={onVolver} style={{ background: "transparent", border: "none", color: C.sub, fontSize: 22, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>‹</button>}
-      <Avatar c={c} s={36} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</p>
-        <p style={{ margin: 0, fontSize: 11.5, color: C.mute, fontFamily: MONO, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fmtTel(c.phone)}{c.wa_name && c.name ? ` · ${c.wa_name}` : ""}{c.source === "ad" ? ` · 📣 ${c.campaign_name || c.ad_headline || "anuncio"}` : ""}</p>
-      </div>
+  return <div style={{ display: "flex", flexDirection: "column", height: alto, minWidth: 0, background: W.fondo }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, height: 60, padding: "0 14px", boxSizing: "border-box", background: W.bg, borderBottom: `1px solid ${W.line}`, flexShrink: 0 }}>
+      {movil && <button onClick={onVolver} style={{ ...botonRedondo, marginLeft: -8 }}><Ico d="M15 5l-7 7 7 7" /></button>}
+      <button onClick={onFicha} style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: W.txt, fontFamily: "inherit" }}>
+        <Avatar c={c} s={40} wa />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</p>
+          <p style={{ margin: "1px 0 0", fontSize: 12.5, color: W.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>
+        </div>
+      </button>
       <Etapa k={c.stage} />
-      {!conFicha && <Accion onClick={onFicha}>Ficha</Accion>}
+      <button onClick={onFicha} title={fichaAbierta ? "Cerrar la información del contacto" : "Información del contacto"} style={{ ...botonRedondo, background: fichaAbierta ? W.sel : "transparent", color: fichaAbierta ? W.txt : W.sub }}><Ico d={["M4 5h16v14H4z", "M14.5 5v14"]} /></button>
     </div>
-    <div className="crm-scroll" style={{ flex: 1, overflowY: "auto", padding: "12px 14px 6px", display: "flex", flexDirection: "column", gap: 3 }}>
-      {msgs === null ? <Cargando /> : !msgs.length ? <Vacio>Sin mensajes guardados.</Vacio> : msgs.map((m, i) => <Burbuja key={m.id} m={m} nuevoDia={i === 0 || diaDe(m.ts) !== diaDe(msgs[i - 1].ts)} reciente={i >= msgs.length - 30} />)}
+    <div className="crm-scroll" style={{ flex: 1, overflowY: "auto", padding: movil ? "10px 10px 6px" : "12px 5% 8px", display: "flex", flexDirection: "column", backgroundImage: "radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }}>
+      {msgs === null ? <p style={{ color: W.mute, fontSize: 13, textAlign: "center", padding: 24 }}>Cargando…</p> : !visibles.length ? <p style={{ color: W.mute, fontSize: 13, textAlign: "center", padding: 24 }}>Sin mensajes guardados.</p> : visibles.map((m, i) => { const ant = visibles[i - 1]; const nuevoDia = !ant || diaDe(m.ts) !== diaDe(ant.ts); return <Burbuja key={m.id} m={m} nuevoDia={nuevoDia} primero={nuevoDia || ant.direction !== m.direction} reciente={i >= visibles.length - 30} reac={reacciones[m.wamid] || reacciones[m.id]} />; })}
       <div ref={fin} />
     </div>
-    <div style={{ borderTop: `1px solid ${C.line}`, padding: "8px 10px 10px" }}>
-      {aviso && <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12, color: C.amber, padding: "4px 4px 8px" }}><span style={{ flex: 1 }}>{aviso.t}.</span><a href={aviso.link} target="_blank" rel="noreferrer" style={{ color: C.goldHi, fontWeight: 700, textDecoration: "none" }}>Mandar desde WhatsApp ↗</a></div>}
+    <div style={{ background: W.bg, padding: "8px 12px 10px", flexShrink: 0 }}>
+      {aviso && <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, color: "#f5c26b", padding: "2px 6px 8px" }}><span style={{ flex: 1 }}>{aviso.t}.</span><a href={aviso.link} target="_blank" rel="noreferrer" style={{ color: W.verde, fontWeight: 700, textDecoration: "none" }}>Mandar desde WhatsApp ↗</a></div>}
       {plantillas && <Plantillas ctx={ctx} c={c} onElegir={(t) => { setTexto(t); setPlantillas(false); setTimeout(() => area.current?.focus(), 0); }} onCerrar={() => setPlantillas(false)} />}
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-        <textarea ref={area} value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }} placeholder={puedeApi ? "Escribí y Enter manda por el sistema" : "Escribí y Enter lo abre en WhatsApp con el texto listo"} rows={1} style={{ ...inp, resize: "none", minHeight: 40, maxHeight: 140, lineHeight: 1.4, padding: "10px 12px", fontSize: 13.5 }} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px"; }} />
-        <Btn small onClick={() => setPlantillas((v) => !v)} title="Plantillas">✎</Btn>
-        {texto.trim() && !puedeApi && <Btn small onClick={copiar} title="Copiar el texto">⧉</Btn>}
-        <Btn small v={puedeApi ? "gold" : "wa"} onClick={enviar} disabled={enviando || !texto.trim()}>{puedeApi ? "Enviar" : "WhatsApp ↗"}</Btn>
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+        <button onClick={() => setPlantillas((v) => !v)} title="Plantillas" style={{ ...botonRedondo, width: 42, height: 42, color: plantillas ? W.verde : W.sub }}><Ico s={22} d={["M12 5v14", "M5 12h14"]} /></button>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end", background: W.caja, borderRadius: 22, padding: "0 6px 0 16px" }}>
+          <textarea ref={area} value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }} placeholder="Escribe un mensaje" rows={1} data-enter-libre="1" style={{ flex: 1, minWidth: 0, resize: "none", border: "none", outline: "none", background: "transparent", color: W.txt, fontFamily: "inherit", fontSize: 15, lineHeight: 1.4, padding: "11px 0", minHeight: 42, maxHeight: 140, boxSizing: "border-box" }} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px"; }} />
+          {texto.trim() && !puedeApi && <button onClick={copiar} title="Copiar el texto" style={{ ...botonRedondo, height: 42 }}><Ico s={18} d={["M9 9h11v11H9z", "M5 15H4V4h11v1"]} /></button>}
+        </div>
+        <button onClick={enviar} disabled={enviando || !texto.trim()} title={puedeApi ? "Enviar por el sistema" : "Abrir en WhatsApp con el texto"} style={{ ...botonRedondo, width: 42, height: 42, background: texto.trim() ? W.verde : W.caja, color: texto.trim() ? "#0b1410" : W.mute, cursor: texto.trim() ? "pointer" : "default" }}><Ico s={20} fill d="M3.4 20.4l17.5-7.5a1 1 0 0 0 0-1.8L3.4 3.6a1 1 0 0 0-1.4 1.2L4 11l9 1-9 1-2 6.2a1 1 0 0 0 1.4 1.2z" /></button>
       </div>
-      <p style={{ margin: "6px 4px 0", fontSize: 10.5, color: C.mute }}>{envio?.enabled ? (ventana ? `Por el sistema · ${envio.usados} de ${envio.cap} este mes` : "Pasaron más de 24 h del último mensaje del cliente: se manda desde WhatsApp") : "Se manda desde WhatsApp (el envío por el sistema está apagado en Conexiones)"}</p>
+      <p style={{ margin: "5px 54px 0", fontSize: 11, color: W.mute }}>{envio?.enabled ? (ventana ? `Sale por el sistema · ${envio.usados} de ${envio.cap} este mes` : "Pasaron más de 24 h del último mensaje del cliente: se abre en WhatsApp") : "Enter lo abre en WhatsApp con el texto listo"}</p>
     </div>
   </div>;
 }
 
-function Burbuja({ m, nuevoDia, reciente }) {
+function Burbuja({ m, nuevoDia, primero, reciente, reac }) {
   const out = m.direction === "out";
-  const txt = m.deleted ? "Mensaje eliminado" : m.text || (m.type === "document" ? `📄 ${m.media_filename || "Documento"}` : VISTA[m.type] || m.type || "");
   const conMedia = !m.deleted && m.media_id && ["image", "video", "audio", "document", "sticker"].includes(m.type);
-  return <div>
-    {nuevoDia && <div style={{ textAlign: "center", margin: "10px 0 8px" }}><span style={{ fontSize: 10.5, fontWeight: 700, color: C.mute, padding: "3px 10px", borderRadius: 999, background: "rgba(255,255,255,0.05)", textTransform: "capitalize" }}>{diaDe(m.ts)}</span></div>}
-    <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start" }}>
-      <div style={{ maxWidth: "78%", padding: "7px 11px", borderRadius: out ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: out ? "rgba(184,149,106,0.2)" : "rgba(255,255,255,0.06)", border: `1px solid ${out ? "rgba(184,149,106,0.28)" : C.line}`, fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word", fontStyle: m.deleted ? "italic" : "normal", color: m.deleted ? C.mute : C.txt }}>
-        {m.referral && <div style={{ fontSize: 11, color: C.goldHi, fontWeight: 700, marginBottom: 4 }}>📣 Vino del anuncio{m.referral.headline ? `: ${m.referral.headline}` : ""}</div>}
-        {conMedia && <Adjunto m={m} auto={m.type === "image" && reciente} />}
-        {(!conMedia || m.text) && txt}
-        <div style={{ fontSize: 10, color: C.mute, textAlign: "right", marginTop: 3 }}>{hora(m.ts)}{out ? (m.status === "read" ? " ✓✓" : m.status === "delivered" ? " ✓✓" : m.status === "failed" ? " ✗" : " ✓") : ""}{m.via === "app" ? " · celu" : m.via === "api" && out ? " · sistema" : ""}</div>
+  const txt = m.deleted ? "Se eliminó este mensaje" : m.text || (conMedia ? "" : VISTA[m.type] || m.type || "");
+  const pie = <span style={{ float: "right", display: "inline-flex", alignItems: "center", gap: 4, margin: "7px 0 -3px 12px", fontSize: 11, color: "rgba(255,255,255,0.6)", whiteSpace: "nowrap", position: "relative", top: 2 }}>
+    {m.via === "api" && out ? "sistema · " : ""}{horaWa(m.ts)}{out && (m.status === "failed" ? <span style={{ color: W.rojo }}>✗</span> : <Tilde doble={m.status === "delivered" || m.status === "read" || m.via === "app"} leido={m.status === "read"} />)}
+  </span>;
+  return <>
+    {nuevoDia && <div style={{ textAlign: "center", margin: "10px 0 8px" }}><span style={{ fontSize: 12, color: W.sub, padding: "5px 12px", borderRadius: 8, background: "#1d1f1f", textTransform: "capitalize" }}>{diaDe(m.ts)}</span></div>}
+    <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginTop: primero && !nuevoDia ? 10 : 2, marginBottom: reac ? 16 : 0 }}>
+      <div style={{ position: "relative", maxWidth: "min(65%, 560px)", minWidth: 76, padding: "6px 9px 7px", borderRadius: 10, borderTopRightRadius: out && primero ? 2 : 10, borderTopLeftRadius: !out && primero ? 2 : 10, background: out ? W.out : W.inn, fontSize: 14.5, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word", fontStyle: m.deleted ? "italic" : "normal", color: m.deleted ? "rgba(255,255,255,0.55)" : W.txt, boxShadow: "0 1px 0.5px rgba(0,0,0,0.25)" }}>
+        {m.referral && <div style={{ fontSize: 12, color: "#9fe3bf", fontWeight: 600, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,0.2)" }}>Vino del anuncio{m.referral.headline ? `: ${m.referral.headline}` : ""}</div>}
+        {conMedia && <Adjunto m={m} auto={m.type === "image" && reciente} out={out} />}
+        {txt}{pie}
+        {reac && <span style={{ position: "absolute", bottom: -17, [out ? "right" : "left"]: 8, display: "inline-flex", gap: 2, padding: "2px 6px", borderRadius: 999, background: "#1d1f1f", border: `1px solid ${W.fondo}`, fontSize: 14, lineHeight: 1.3, fontStyle: "normal" }}>{reac.join("")}</span>}
       </div>
     </div>
-  </div>;
+  </>;
 }
 
 // Un adjunto se pide a Meta recién cuando hace falta (fotos recientes solas; el resto, al tocar).
-function Adjunto({ m, auto }) {
+function Adjunto({ m, auto, out }) {
   const [url, setUrl] = useState(null);
   const [estado, setEstado] = useState(auto ? "cargando" : "cerrado");
   const cargar = useCallback(async () => {
     setEstado("cargando");
-    try { const r = await fetch(`/api/crm/media?id=${m.media_id}`); if (!r.ok) { setEstado("error"); return; } setUrl(URL.createObjectURL(await r.blob())); setEstado("ok"); } catch { setEstado("error"); }
+    try { const r = await fetch(`/api/crm/media?id=${m.media_id}`); if (!r.ok) { setEstado("error"); return null; } const u = URL.createObjectURL(await r.blob()); setUrl(u); setEstado("ok"); return u; } catch { setEstado("error"); return null; }
   }, [m.media_id]);
   useEffect(() => { if (auto) cargar(); }, [auto, cargar]);
-  const etiqueta = m.type === "document" ? `📄 ${m.media_filename || "Documento"}` : VISTA[m.type] || "Adjunto";
-  if (estado === "error") return <div style={{ fontSize: 12, color: C.mute, marginBottom: 4 }}>{etiqueta} · Meta ya no lo tiene</div>;
-  if (estado === "cargando") return <div style={{ fontSize: 12, color: C.mute, marginBottom: 4 }}>{etiqueta} · cargando…</div>;
-  if (estado === "cerrado") return <button onClick={cargar} style={{ display: "block", background: "rgba(0,0,0,0.2)", border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 10px", color: C.goldHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 4 }}>{etiqueta} · ver</button>;
-  if (m.type === "image" || m.type === "sticker") return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" style={{ maxWidth: "100%", maxHeight: 280, borderRadius: 9, display: "block", marginBottom: 4 }} /></a>;
-  if (m.type === "video") return <video src={url} controls style={{ maxWidth: "100%", maxHeight: 280, borderRadius: 9, display: "block", marginBottom: 4 }} />;
-  if (m.type === "audio") return <audio src={url} controls style={{ display: "block", marginBottom: 4, maxWidth: 260 }} />;
-  return <a href={url} download={m.media_filename || "documento"} style={{ display: "inline-block", color: C.goldHi, fontWeight: 700, fontSize: 12.5, marginBottom: 4 }}>{etiqueta} · descargar</a>;
+  if (m.type === "audio") return <NotaDeVoz m={m} url={url} estado={estado} cargar={cargar} out={out} />;
+  const etiqueta = m.type === "document" ? m.media_filename || "Documento" : VISTA[m.type] || "Adjunto";
+  const caja = { display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 8, background: "rgba(0,0,0,0.22)", color: W.txt, fontSize: 13.5, marginBottom: 4, border: "none", fontFamily: "inherit", textAlign: "left", width: "100%", boxSizing: "border-box", textDecoration: "none" };
+  const icono = <Ico s={22} c="rgba(255,255,255,0.7)" d={m.type === "document" ? ["M6 3h8l5 5v13H6z", "M14 3v5h5"] : ["M4 5h16v14H4z", "M4 15l4.5-4.5 4 4 3-3L20 16"]} />;
+  if (estado === "error") return <div style={{ ...caja, color: W.sub }}>{icono}<span>{etiqueta} · Meta ya no lo tiene</span></div>;
+  if (estado === "cargando") return <div style={{ ...caja, color: W.sub }}>{icono}<span>{etiqueta} · cargando…</span></div>;
+  if (estado === "cerrado") return <button onClick={cargar} style={{ ...caja, cursor: "pointer" }}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: W.verde, fontWeight: 600 }}>Ver</span></button>;
+  if (m.type === "image" || m.type === "sticker") return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 7, display: "block", marginBottom: 4 }} /></a>;
+  if (m.type === "video") return <video src={url} controls style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 7, display: "block", marginBottom: 4 }} />;
+  return <a href={url} download={m.media_filename || "documento"} style={caja}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: W.verde, fontWeight: 600 }}>Descargar</span></a>;
+}
+
+// Nota de voz como en WhatsApp: se ve lista para escuchar y el audio se baja recién al darle play.
+const mmss = (s) => { const n = Math.max(0, Math.floor(s || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`; };
+function NotaDeVoz({ m, url, estado, cargar, out }) {
+  const audio = useRef(null);
+  const [sonando, setSonando] = useState(false);
+  const [pos, setPos] = useState(0); const [dur, setDur] = useState(0); const [vel, setVel] = useState(1);
+  // Las barritas son un dibujo fijo por mensaje (Meta no manda la forma de onda).
+  const barras = useMemo(() => { let h = 0; for (const ch of String(m.media_id || m.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return Array.from({ length: 34 }, () => { h = (h * 1103515245 + 12345) >>> 0; return 4 + ((h >>> 16) % 15); }); }, [m.media_id, m.id]);
+  const tocar = async () => {
+    const a = audio.current; if (!a) return;
+    if (sonando) { a.pause(); return; }
+    if (!a.src) { const u = url || (await cargar()); if (!u) return; a.src = u; a.playbackRate = vel; }
+    a.play().catch(() => {});
+  };
+  const ir = (e) => { const a = audio.current; if (!a || !dur) return; const r = e.currentTarget.getBoundingClientRect(); a.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
+  const cambiarVel = () => { const n = vel === 1 ? 1.5 : vel === 1.5 ? 2 : 1; setVel(n); if (audio.current) audio.current.playbackRate = n; };
+  const frac = dur ? pos / dur : 0;
+  const color = out ? "#a7d4bd" : "#9a9c9c";
+  return <div style={{ display: "flex", alignItems: "center", gap: 10, width: "min(300px, 62vw)", padding: "4px 2px 0" }}>
+    <audio ref={audio} preload="none" onPlay={() => setSonando(true)} onPause={() => setSonando(false)} onEnded={() => { setSonando(false); setPos(0); }} onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)} onLoadedMetadata={(e) => setDur(isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)} onDurationChange={(e) => setDur(isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)} style={{ display: "none" }} />
+    <button onClick={tocar} disabled={estado === "error"} title={estado === "error" ? "Meta ya no tiene este audio" : sonando ? "Pausar" : "Escuchar"} style={{ width: 38, height: 38, borderRadius: "50%", border: "none", background: "transparent", color: estado === "error" ? W.mute : "#e9edef", cursor: estado === "error" ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {estado === "cargando" ? <span style={{ fontSize: 18, lineHeight: 1 }}>…</span> : sonando ? <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4.2" height="15" rx="1" /><rect x="13.8" y="4.5" width="4.2" height="15" rx="1" /></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 4.8v14.4a.8.8 0 0 0 1.2.7l11.6-7.2a.8.8 0 0 0 0-1.4L9.2 4.1A.8.8 0 0 0 8 4.8z" /></svg>}
+    </button>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div onClick={ir} style={{ display: "flex", alignItems: "center", gap: 2, height: 26, cursor: dur ? "pointer" : "default" }}>
+        {barras.map((h, i) => <span key={i} style={{ flex: 1, height: h, borderRadius: 2, background: i / barras.length < frac ? W.azul : color, opacity: i / barras.length < frac ? 1 : 0.75 }} />)}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 }}>
+        <span>{estado === "error" ? "No disponible" : sonando || pos > 0 ? mmss(pos) : dur ? mmss(dur) : "Mensaje de voz"}</span>
+      </div>
+    </div>
+    <button onClick={cambiarVel} title="Velocidad" style={{ minWidth: 38, height: 24, borderRadius: 999, border: "none", background: "rgba(0,0,0,0.25)", color: "#e9edef", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{String(vel).replace(".", ",")}×</button>
+  </div>;
 }
