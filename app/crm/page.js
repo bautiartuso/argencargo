@@ -165,7 +165,7 @@ function Shell({ sesion, perfil, onLogout }) {
   const chat = nav.p === "chats";
   return <div style={{ minHeight: "100vh", background: BG, color: C.txt, fontFamily: "'Inter','Segoe UI',sans-serif" }}>
     <style>{`html,body{background:#0A1628 !important;overflow-x:hidden}`}</style>
-    {!movil && <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: ANCHO_MENU, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(12px)", borderRight: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", zIndex: 5 }}>{barra}</aside>}
+    {!movil && <aside style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: ANCHO_MENU, background: chat ? "#0a1524" : "rgba(0,0,0,0.35)", backdropFilter: "blur(12px)", borderRight: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", zIndex: 5 }}>{barra}</aside>}
     {movil && <header style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, padding: "0 16px", background: "rgba(10,22,40,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button onClick={() => setMenu(true)} aria-label="Abrir menú" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)", padding: "8px 10px", borderRadius: 8, cursor: "pointer", display: "inline-flex", position: "relative" }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>

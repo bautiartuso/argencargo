@@ -53,8 +53,8 @@ export default function Ficha({ ctx, c, onChange, compacta, wa }) {
   const historial = [...hechas.map((o) => ({ k: `o${o.id}`, fecha: o.delivered_at || o.created_at, t: `${o.code || "Operación"} · ${CANAL[o.channel] || ""}`, v: admin && o.total ? usd(o.total) : "", ok: true })), ...cots.map((q) => ({ k: `q${q.id}`, fecha: q.created_at, t: `Cotización ${q.code || ""}${q.channel_name ? ` · ${q.channel_name}` : ""}`, v: admin && q.total ? usd(q.total) : "", ok: false }))].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
 
   return <div style={{ background: compacta ? "transparent" : K.panel, border: compacta || wa ? "none" : `1px solid ${K.line}`, borderRadius: 16, padding: compacta || wa ? 0 : 14, color: K.txt }}>
-    <div style={wa ? { display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 8, padding: "6px 0 4px" } : { display: "flex", gap: 10, alignItems: "center" }}>
-      <Avatar c={c} s={wa ? 84 : 44} wa={wa} />
+    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      {!wa && <Avatar c={c} s={44} />}
       <div style={{ minWidth: 0, maxWidth: "100%", flex: wa ? "none" : 1 }}>
         <p style={{ margin: 0, fontSize: wa ? 19 : 15, fontWeight: wa ? 600 : 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</p>
         <p style={{ margin: "2px 0 0", fontSize: wa ? 13.5 : 11.5, color: K.sub, fontFamily: wa ? "inherit" : MONO }}>{fmtTel(c.phone)}{c.name && c.wa_name && c.wa_name !== c.name ? ` · ~${c.wa_name}` : ""}</p>
