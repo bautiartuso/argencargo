@@ -8,6 +8,11 @@
 //   4. pide la agenda y los últimos 6 meses de chats (Meta deja pedirlos una sola vez, dentro de las 24 h)
 //   5. lee el número y lo guarda
 // POST {accion:"reintentar", phone_number_id} → repite 2, 3 y 5 con el token guardado.
+// POST {accion:"propia", waba_id?} → el número ya quedó conectado desde el celu pero el alta de Meta no
+//   devolvió code porque la cuenta de WhatsApp está en el MISMO portfolio que la app (error 3441128,
+//   23/11/2026: "is in the business portfolio of the app you're connecting to"). No hace falta
+//   compartirla: el token permanente del usuario del sistema ya la ve. Se busca el número en las cuentas
+//   del portfolio y se hacen los pasos 2 a 5 con ese token.
 // GET → estado para la pantalla Conexión (sin el token).
 //
 // Env: NEXT_PUBLIC_META_APP_ID (id de la app de Meta) · la clave secreta de esa app es alguna de
@@ -69,6 +74,37 @@ async function pasosComunes(token, secret, waba_id, phone_number_id, pasos) {
   return info;
 }
 
+// 4. Agenda e historial: Meta deja pedir cada uno una sola vez (y dentro de las 24 h del alta).
+async function pedirSync(token, phone_number_id, pasos, ya = {}) {
+  const sync = {}; const ahora = new Date().toISOString();
+  for (const tipo of ["smb_app_state_sync", "history"]) {
+    const nombre = tipo === "history" ? "Historial de chats" : "Agenda";
+    if (ya[tipo]) { pasos.push({ k: tipo, ok: true, t: `${nombre}: ya se había pedido` }); continue; }
+    try { const d = await graph(`${phone_number_id}/smb_app_data`, { token, method: "POST", body: { messaging_product: "whatsapp", sync_type: tipo } }); sync[tipo] = ahora; pasos.push({ k: tipo, ok: true, t: `${nombre} pedido${d?.request_id ? ` (pedido ${d.request_id})` : ""}` }); }
+    catch (e) { pasos.push({ k: tipo, ok: false, t: `${nombre}: ${e.message}` }); }
+  }
+  return sync;
+}
+
+// Cuentas de WhatsApp que ve el token permanente, por tres caminos (el que ande): la que se pasa a mano,
+// las que figuran en los permisos del token y las del portfolio dueño de la cuenta del bot.
+async function cuentasVisibles(token, secret, wabaManual, pasos) {
+  const ids = new Set(); const notas = [];
+  if (wabaManual) ids.add(String(wabaManual));
+  if (secret) {
+    try { const d = await graph(`debug_token?input_token=${encodeURIComponent(token)}&access_token=${APP_ID()}|${secret}`); for (const g of d?.data?.granular_scopes || []) if (String(g.scope || "").startsWith("whatsapp_business")) for (const t of g.target_ids || []) ids.add(String(t)); }
+    catch (e) { notas.push(`permisos del token: ${e.message}`); }
+  }
+  const wabaBot = process.env.WA_WABA_ID || "1010822298672112";
+  try {
+    const d = await graph(`${wabaBot}?fields=owner_business_info`, { token });
+    const biz = d?.owner_business_info?.id;
+    if (biz) { const l = await graph(`${biz}/owned_whatsapp_business_accounts?fields=id,name&limit=100`, { token }); for (const w of l?.data || []) ids.add(String(w.id)); }
+  } catch (e) { notas.push(`cuentas del portfolio: ${e.message}`); }
+  if (notas.length) pasos.push({ k: "busqueda", ok: true, t: `Búsqueda parcial (${notas.join(" · ")})` });
+  return [...ids];
+}
+
 export async function POST(req) {
   const u = await usuarioConRol(req, ["admin"]);
   if (!u) return Response.json({ error: "No autorizado" }, { status: 401 });
@@ -91,6 +127,30 @@ export async function POST(req) {
     const secret = SECRETOS()[0] || null;
     const info = await pasosComunes(token, secret, n.waba_id, n.phone_number_id, pasos);
     await fetch(`${SB_URL}/rest/v1/crm_numbers?phone_number_id=eq.${encodeURIComponent(n.phone_number_id)}`, { method: "PATCH", headers: { ...sbh(), Prefer: "return=minimal" }, body: JSON.stringify({ display_phone: info?.display_phone_number || n.display_phone, is_on_biz_app: info?.is_on_biz_app ?? n.is_on_biz_app, updated_at: ahora }) });
+    return Response.json({ ok: pasos.every((p) => p.ok), pasos });
+  }
+
+  if (b.accion === "propia") {
+    const token = process.env.WA_TOKEN;
+    if (!token) return Response.json({ ok: false, pasos: [{ k: "token", ok: false, t: "Falta WA_TOKEN (el token permanente del usuario del sistema) en Vercel" }] });
+    const secret = SECRETOS()[0] || null;
+    const botPhone = String(process.env.WA_PHONE_ID || "");
+    const cuentas = await cuentasVisibles(token, secret, b.waba_id, pasos);
+    const candidatos = [];
+    for (const w of cuentas) {
+      try { const d = await graph(`${w}/phone_numbers?fields=id,display_phone_number,verified_name,is_on_biz_app,platform_type`, { token }); for (const n of d?.data || []) if (String(n.id) !== botPhone) candidatos.push({ ...n, waba_id: w }); }
+      catch (e) { pasos.push({ k: "cuenta", ok: true, t: `Cuenta ${w}: no se pudo leer (${e.message})` }); }
+    }
+    pasos.push({ k: "cuentas", ok: cuentas.length > 0, t: cuentas.length ? `Cuentas de WhatsApp a la vista: ${cuentas.length} · números además del bot: ${candidatos.map((n) => `${n.display_phone_number || n.id}${n.is_on_biz_app ? " (en la app del celu)" : ""}`).join(", ") || "ninguno"}` : "El token permanente no ve ninguna cuenta de WhatsApp" });
+    const enApp = candidatos.filter((x) => x.is_on_biz_app);
+    const n = (b.phone_number_id && candidatos.find((x) => String(x.id) === String(b.phone_number_id))) || (enApp.length === 1 ? enApp[0] : null) || (candidatos.length === 1 ? candidatos[0] : null);
+    if (!n) { pasos.push({ k: "numero_id", ok: false, t: candidatos.length ? "Hay más de un número posible: no elijo a ciegas" : "No aparece el número conectado. Si recién lo conectaste, puede faltar asignarle la cuenta de WhatsApp al usuario del sistema" }); return Response.json({ ok: false, pasos }); }
+    const info = await pasosComunes(token, secret, n.waba_id, n.id, pasos);
+    const previo = await numeroGuardado(n.id);
+    const sync = await pedirSync(token, n.id, pasos, { smb_app_state_sync: previo?.sync_contacts_at, history: previo?.sync_history_at });
+    const fila = { phone_number_id: n.id, waba_id: n.waba_id, display_phone: info?.display_phone_number || n.display_phone_number || null, status: "conectado", is_on_biz_app: info?.is_on_biz_app ?? n.is_on_biz_app ?? null, updated_at: ahora, ...(previo ? {} : { connected_at: ahora }), ...(sync.smb_app_state_sync ? { sync_contacts_at: sync.smb_app_state_sync } : {}), ...(sync.history ? { sync_history_at: sync.history } : {}) };
+    const g = await fetch(`${SB_URL}/rest/v1/crm_numbers?on_conflict=phone_number_id`, { method: "POST", headers: { ...sbh(), Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(fila) });
+    pasos.push({ k: "guardado", ok: g.ok, t: g.ok ? "Número guardado en el CRM" : `No se pudo guardar el número (${g.status})` });
     return Response.json({ ok: pasos.every((p) => p.ok), pasos });
   }
 
@@ -118,11 +178,7 @@ export async function POST(req) {
   const info = await pasosComunes(token, secret, waba_id, phone_number_id, pasos);
 
   // 4. Sincronizaciones (una sola vez cada una). Se piden ahora; Meta las manda por el webhook en pedazos.
-  const sync = {};
-  for (const tipo of ["smb_app_state_sync", "history"]) {
-    try { const d = await graph(`${phone_number_id}/smb_app_data`, { token, method: "POST", body: { messaging_product: "whatsapp", sync_type: tipo } }); sync[tipo] = ahora; pasos.push({ k: tipo, ok: true, t: tipo === "history" ? `Historial de chats pedido (pedido ${d?.request_id || ""})` : `Agenda pedida (pedido ${d?.request_id || ""})` }); }
-    catch (e) { pasos.push({ k: tipo, ok: false, t: `${tipo === "history" ? "Historial" : "Agenda"}: ${e.message}` }); }
-  }
+  const sync = await pedirSync(token, phone_number_id, pasos);
 
   const fila = { phone_number_id, waba_id, business_id: business_id || null, display_phone: info?.display_phone_number || null, token, status: "conectado", connected_at: ahora, sync_contacts_at: sync.smb_app_state_sync || null, sync_history_at: sync.history || null, is_on_biz_app: info?.is_on_biz_app ?? null, updated_at: ahora };
   const g = await fetch(`${SB_URL}/rest/v1/crm_numbers?on_conflict=phone_number_id`, { method: "POST", headers: { ...sbh(), Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(fila) });
