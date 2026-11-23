@@ -13,9 +13,10 @@ export const horaWa = (ts) => { const d = new Date(ts); let h = d.getHours(); co
 export const cuandoLista = (ts) => { if (!ts) return ""; const d = new Date(ts); const hoy = new Date(); if (d.toDateString() === hoy.toDateString()) return horaWa(ts); if (d.toDateString() === new Date(Date.now() - 864e5).toDateString()) return "Ayer"; return `${d.getDate()}/${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}`; };
 // Paleta del chat: la forma de WhatsApp en modo oscuro (23/11/2026, pedido de Bautista: "lo más similar a
 // WhatsApp posible") con azul Argencargo en lugar del verde (mismo día: "en vez de los verdes, un azul"), paneles
-// en el navy del menú (el negro de WhatsApp "no pegaba") y el hilo sobre fondo claro con el logo en azul.
+// en el navy del menú (el negro de WhatsApp "no pegaba") y el hilo como el fondo que Bautista usa en su
+// WhatsApp: gris apagado con el logo grande en sus azules, burbujas navy las suyas y oscuras las del cliente.
 // `acento` = lo que en WhatsApp es verde (sin leer, enviar, enlaces); `azul` = tildes de leído y avance del audio.
-export const W = { bg: "#0c1829", fondo: "#e6ebf1", hover: "#12223b", sel: "#182d4c", caja: "#14253f", line: "rgba(255,255,255,0.08)", txt: "#f4f7fb", sub: "#a3b3c8", mute: "#7a8ba3", out: "#14407c", inn: "#ffffff", innTxt: "#101c2b", innSub: "rgba(16,28,43,0.55)", acento: "#3d9bff", sobreAcento: "#04101f", chip: "#173258", chipTxt: "#d3e6ff", avatar: "#1c3a63", azul: "#8fd3ff", rojo: "#f15c6d" };
+export const W = { bg: "#0c1829", fondo: "#5d5e60", hover: "#12223b", sel: "#182d4c", caja: "#14253f", line: "rgba(255,255,255,0.08)", txt: "#f4f7fb", sub: "#a3b3c8", mute: "#7a8ba3", out: "#0c2f5e", inn: "#20242a", innTxt: "#f4f7fb", innSub: "rgba(255,255,255,0.62)", acento: "#3d9bff", sobreAcento: "#04101f", chip: "#173258", chipTxt: "#d3e6ff", avatar: "#1c3a63", azul: "#8fd3ff", rojo: "#f15c6d" };
 export const fechaCorta = (ts) => { if (!ts) return "—"; const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`; };
 export const usd = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 

@@ -136,7 +136,7 @@ export default function Chats({ ctx, inicial }) {
   return <div className="wa-chat" style={{ display: "grid", gridTemplateColumns: `${ANCHO_LISTA}px minmax(0,1fr)${fichaAlLado ? ` ${ANCHO_FICHA}px` : ""}`, background: W.bg, color: W.txt, position: "relative" }}>
     {estilos}
     {Lista}
-    {sel ? Hilo : <div style={{ height: alto, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#7b8794", fontSize: 14, background: W.fondo }}><Ico s={46} c="rgba(16,28,43,0.2)" d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5.1A8.4 8.4 0 1 1 21 11.5z" />Elegí un chat</div>}
+    {sel ? Hilo : <div style={{ height: alto, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(255,255,255,0.7)", fontSize: 14, background: W.fondo }}><Ico s={46} c="rgba(255,255,255,0.35)" d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5.1A8.4 8.4 0 1 1 21 11.5z" />Elegí un chat</div>}
     {fichaAlLado && FichaBox}
     {fichaEncima && <div onClick={alternarFicha} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 30 }}><div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: Math.min(ANCHO_FICHA + 20, ancho - 80) }}>{FichaBox}</div></div>}
   </div>;
@@ -200,9 +200,9 @@ function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, fichaAbierta
       <button onClick={onFicha} title={fichaAbierta ? "Cerrar la información del contacto" : "Información del contacto"} style={{ ...botonRedondo, background: fichaAbierta ? W.sel : "transparent", color: fichaAbierta ? W.txt : W.sub }}><Ico d={["M4 5h16v14H4z", "M14.5 5v14"]} /></button>
     </div>
     <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-    <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, #0A3D91, #1E8BFF)", WebkitMaskImage: `url(${LOGO})`, maskImage: `url(${LOGO})`, WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center", WebkitMaskSize: "min(46%, 420px) auto", maskSize: "min(46%, 420px) auto", opacity: 0.16, pointerEvents: "none" }} />
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, #0a1d3a 0%, #123a6c 55%, #1d5596 100%)", WebkitMaskImage: `url(${LOGO})`, maskImage: `url(${LOGO})`, WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center", WebkitMaskSize: "min(84%, 880px) auto", maskSize: "min(84%, 880px) auto", opacity: 0.92, pointerEvents: "none" }} />
     <div className="crm-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", padding: movil ? "10px 10px 6px" : "12px 5% 8px", display: "flex", flexDirection: "column" }}>
-      {msgs === null ? <p style={{ color: "#6b7785", fontSize: 13, textAlign: "center", padding: 24 }}>Cargando…</p> : !visibles.length ? <p style={{ color: "#6b7785", fontSize: 13, textAlign: "center", padding: 24 }}>Sin mensajes guardados.</p> : visibles.map((m, i) => { const ant = visibles[i - 1]; const nuevoDia = !ant || diaDe(m.ts) !== diaDe(ant.ts); return <Burbuja key={m.id} m={m} nuevoDia={nuevoDia} primero={nuevoDia || ant.direction !== m.direction} reciente={i >= visibles.length - 30} reac={reacciones[m.wamid] || reacciones[m.id]} />; })}
+      {msgs === null ? <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, textAlign: "center", padding: 24 }}>Cargando…</p> : !visibles.length ? <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, textAlign: "center", padding: 24 }}>Sin mensajes guardados.</p> : visibles.map((m, i) => { const ant = visibles[i - 1]; const nuevoDia = !ant || diaDe(m.ts) !== diaDe(ant.ts); return <Burbuja key={m.id} m={m} nuevoDia={nuevoDia} primero={nuevoDia || ant.direction !== m.direction} reciente={i >= visibles.length - 30} reac={reacciones[m.wamid] || reacciones[m.id]} />; })}
       <div ref={fin} />
     </div>
     </div>
@@ -230,13 +230,13 @@ function Burbuja({ m, nuevoDia, primero, reciente, reac }) {
     {m.via === "api" && out ? "sistema · " : ""}{horaWa(m.ts)}{out && (m.status === "failed" ? <span style={{ color: W.rojo }}>✗</span> : <Tilde doble={m.status === "delivered" || m.status === "read" || m.via === "app"} leido={m.status === "read"} />)}
   </span>;
   return <>
-    {nuevoDia && <div style={{ textAlign: "center", margin: "10px 0 8px" }}><span style={{ fontSize: 12, color: "#54636f", padding: "5px 12px", borderRadius: 8, background: "#ffffff", boxShadow: "0 1px 1px rgba(16,28,43,0.12)", textTransform: "capitalize" }}>{diaDe(m.ts)}</span></div>}
+    {nuevoDia && <div style={{ textAlign: "center", margin: "10px 0 8px" }}><span style={{ fontSize: 12, fontWeight: 700, color: "#ffffff", padding: "5px 14px", borderRadius: 10, background: "#15181b", textTransform: "capitalize" }}>{diaDe(m.ts)}</span></div>}
     <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginTop: primero && !nuevoDia ? 10 : 2, marginBottom: reac ? 16 : 0 }}>
-      <div style={{ position: "relative", maxWidth: "min(65%, 560px)", minWidth: 76, padding: "6px 9px 7px", borderRadius: 10, borderTopRightRadius: out && primero ? 2 : 10, borderTopLeftRadius: !out && primero ? 2 : 10, background: out ? W.out : W.inn, fontSize: 14.5, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word", fontStyle: m.deleted ? "italic" : "normal", color: m.deleted ? (out ? "rgba(255,255,255,0.6)" : W.innSub) : out ? "#ffffff" : W.innTxt, boxShadow: "0 1px 1px rgba(16,28,43,0.16)" }}>
-        {m.referral && <div style={{ fontSize: 12, color: out ? "#cfe2ff" : W.out, fontWeight: 600, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: out ? "rgba(0,0,0,0.2)" : "rgba(20,64,124,0.08)" }}>Vino del anuncio{m.referral.headline ? `: ${m.referral.headline}` : ""}</div>}
+      <div style={{ position: "relative", maxWidth: "min(65%, 560px)", minWidth: 76, padding: "6px 9px 7px", borderRadius: 10, borderTopRightRadius: out && primero ? 2 : 10, borderTopLeftRadius: !out && primero ? 2 : 10, background: out ? W.out : W.inn, fontSize: 14.5, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word", fontStyle: m.deleted ? "italic" : "normal", color: m.deleted ? (out ? "rgba(255,255,255,0.6)" : W.innSub) : out ? "#ffffff" : W.innTxt, boxShadow: "0 1px 1.5px rgba(0,0,0,0.3)" }}>
+        {m.referral && <div style={{ fontSize: 12, color: "#cfe2ff", fontWeight: 600, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,0.22)" }}>Vino del anuncio{m.referral.headline ? `: ${m.referral.headline}` : ""}</div>}
         {conMedia && <Adjunto m={m} auto={m.type === "image" && reciente} out={out} />}
         {txt}{pie}
-        {reac && <span style={{ position: "absolute", bottom: -17, [out ? "right" : "left"]: 8, display: "inline-flex", gap: 2, padding: "2px 6px", borderRadius: 999, background: "#ffffff", border: "1px solid rgba(16,28,43,0.1)", boxShadow: "0 1px 1px rgba(16,28,43,0.12)", fontSize: 14, lineHeight: 1.3, fontStyle: "normal" }}>{reac.join("")}</span>}
+        {reac && <span style={{ position: "absolute", bottom: -17, [out ? "right" : "left"]: 8, display: "inline-flex", gap: 2, padding: "2px 6px", borderRadius: 999, background: "#15181b", border: "1px solid rgba(255,255,255,0.12)", fontSize: 14, lineHeight: 1.3, fontStyle: "normal" }}>{reac.join("")}</span>}
       </div>
     </div>
   </>;
@@ -253,9 +253,9 @@ function Adjunto({ m, auto, out }) {
   useEffect(() => { if (auto) cargar(); }, [auto, cargar]);
   if (m.type === "audio") return <NotaDeVoz m={m} url={url} estado={estado} cargar={cargar} out={out} />;
   const etiqueta = m.type === "document" ? m.media_filename || "Documento" : VISTA[m.type] || "Adjunto";
-  const caja = { display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 8, background: out ? "rgba(0,0,0,0.22)" : "rgba(16,28,43,0.06)", color: "inherit", fontSize: 13.5, marginBottom: 4, border: "none", fontFamily: "inherit", textAlign: "left", width: "100%", boxSizing: "border-box", textDecoration: "none" };
-  const enlace = out ? "#cfe2ff" : "#1668c7";
-  const icono = <Ico s={22} c={out ? "rgba(255,255,255,0.75)" : "rgba(16,28,43,0.55)"} d={m.type === "document" ? ["M6 3h8l5 5v13H6z", "M14 3v5h5"] : ["M4 5h16v14H4z", "M4 15l4.5-4.5 4 4 3-3L20 16"]} />;
+  const caja = { display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 8, background: "rgba(0,0,0,0.24)", color: "inherit", fontSize: 13.5, marginBottom: 4, border: "none", fontFamily: "inherit", textAlign: "left", width: "100%", boxSizing: "border-box", textDecoration: "none" };
+  const enlace = "#a9cdfb";
+  const icono = <Ico s={22} c="rgba(255,255,255,0.75)" d={m.type === "document" ? ["M6 3h8l5 5v13H6z", "M14 3v5h5"] : ["M4 5h16v14H4z", "M4 15l4.5-4.5 4 4 3-3L20 16"]} />;
   if (estado === "error") return <div style={{ ...caja, opacity: 0.7 }}>{icono}<span>{etiqueta} · Meta ya no lo tiene</span></div>;
   if (estado === "cargando") return <div style={{ ...caja, opacity: 0.7 }}>{icono}<span>{etiqueta} · cargando…</span></div>;
   if (estado === "cerrado") return <button onClick={cargar} style={{ ...caja, cursor: "pointer" }}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: enlace, fontWeight: 600 }}>Ver</span></button>;
@@ -281,8 +281,8 @@ function NotaDeVoz({ m, url, estado, cargar, out }) {
   const ir = (e) => { const a = audio.current; if (!a || !dur) return; const r = e.currentTarget.getBoundingClientRect(); a.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
   const cambiarVel = () => { const n = vel === 1 ? 1.5 : vel === 1.5 ? 2 : 1; setVel(n); if (audio.current) audio.current.playbackRate = n; };
   const frac = dur ? pos / dur : 0;
-  const color = out ? "#9dbbe6" : "#a9b4c0";
-  const tinta = out ? "#ffffff" : "#4a5866";
+  const color = out ? "#8fa9cf" : "#8d96a1";
+  const tinta = "#ffffff";
   const contador = estado === "error" ? "No disponible" : sonando || pos > 0 ? mmss(pos) : dur ? mmss(dur) : "";
   return <div style={{ display: "flex", alignItems: "center", gap: 8, width: "min(280px, 60vw)", padding: "2px 2px 0" }}>
     <audio ref={audio} preload="none" onPlay={() => setSonando(true)} onPause={() => setSonando(false)} onEnded={() => { setSonando(false); setPos(0); }} onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)} onLoadedMetadata={(e) => setDur(isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)} onDurationChange={(e) => setDur(isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)} style={{ display: "none" }} />
@@ -291,10 +291,10 @@ function NotaDeVoz({ m, url, estado, cargar, out }) {
     </button>
     <div style={{ flex: 1, minWidth: 0 }}>
       <div onClick={ir} style={{ display: "flex", alignItems: "center", gap: 2, height: 26, cursor: dur ? "pointer" : "default" }}>
-        {barras.map((h, i) => <span key={i} style={{ flex: 1, height: h, borderRadius: 2, background: i / barras.length < frac ? (out ? W.azul : "#1e8bff") : color, opacity: i / barras.length < frac ? 1 : 0.75 }} />)}
+        {barras.map((h, i) => <span key={i} style={{ flex: 1, height: h, borderRadius: 2, background: i / barras.length < frac ? W.azul : color, opacity: i / barras.length < frac ? 1 : 0.75 }} />)}
       </div>
       {contador && <div style={{ fontSize: 11, color: out ? "rgba(255,255,255,0.7)" : W.innSub, marginTop: 1 }}>{contador}</div>}
     </div>
-    <button onClick={cambiarVel} title="Velocidad" style={{ minWidth: 38, height: 24, borderRadius: 999, border: "none", background: out ? "rgba(0,0,0,0.25)" : "rgba(16,28,43,0.08)", color: tinta, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{String(vel).replace(".", ",")}×</button>
+    <button onClick={cambiarVel} title="Velocidad" style={{ minWidth: 38, height: 24, borderRadius: 999, border: "none", background: "rgba(0,0,0,0.28)", color: tinta, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{String(vel).replace(".", ",")}×</button>
   </div>;
 }
