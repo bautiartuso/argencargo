@@ -11,8 +11,10 @@ export const diaDe = (ts) => { const d = new Date(ts); const hoy = new Date(); c
 // Hora como la muestra WhatsApp ("5:41 p. m.") y fecha de la lista de chats (hora si es de hoy, "Ayer", o el día).
 export const horaWa = (ts) => { const d = new Date(ts); let h = d.getHours(); const pm = h >= 12; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, "0")} ${pm ? "p. m." : "a. m."}`; };
 export const cuandoLista = (ts) => { if (!ts) return ""; const d = new Date(ts); const hoy = new Date(); if (d.toDateString() === hoy.toDateString()) return horaWa(ts); if (d.toDateString() === new Date(Date.now() - 864e5).toDateString()) return "Ayer"; return `${d.getDate()}/${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}`; };
-// Paleta del chat: la de WhatsApp en modo oscuro (23/11/2026, pedido de Bautista: "lo más similar a WhatsApp posible").
-export const W = { bg: "#161717", fondo: "#0c0d0d", hover: "#1f2121", sel: "#2b2d2d", caja: "#242626", line: "rgba(255,255,255,0.08)", txt: "#fafafa", sub: "#a8a9a9", mute: "#858686", out: "#144d37", inn: "#242626", verde: "#21c063", azul: "#53bdeb", rojo: "#f15c6d" };
+// Paleta del chat: la forma de WhatsApp en modo oscuro (23/11/2026, pedido de Bautista: "lo más similar a
+// WhatsApp posible") con azul Argencargo en lugar del verde (mismo día: "en vez de los verdes, un azul").
+// `acento` = lo que en WhatsApp es verde (sin leer, enviar, enlaces); `azul` = tildes de leído y avance del audio.
+export const W = { bg: "#161717", fondo: "#0c0d0d", hover: "#1f2121", sel: "#2b2d2d", caja: "#242626", line: "rgba(255,255,255,0.08)", txt: "#fafafa", sub: "#a8a9a9", mute: "#858686", out: "#14407c", inn: "#242626", acento: "#3d9bff", sobreAcento: "#04101f", chip: "#10284a", chipTxt: "#d3e6ff", avatar: "#1c3a63", azul: "#8fd3ff", rojo: "#f15c6d" };
 export const fechaCorta = (ts) => { if (!ts) return "—"; const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}`; };
 export const usd = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 
@@ -30,7 +32,7 @@ export const etapaDe = (k) => ETAPAS.find((e) => e.k === k) || ETAPAS[0];
 export const VISTA = { image: "📷 Foto", video: "🎥 Video", audio: "🎤 Audio", document: "📄 Documento", sticker: "Sticker", location: "📍 Ubicación", contacts: "👤 Contacto", media_placeholder: "📎 Adjunto anterior a la conexión", reaction: "Reacción", unsupported: "Mensaje no soportado", request_welcome: "Abrió el chat desde un anuncio" };
 
 export function Avatar({ c, s = 38, wa }) {
-  if (wa) return <div style={{ width: s, height: s, borderRadius: "50%", flexShrink: 0, background: c?.name || c?.wa_name ? "#2f4f43" : "#3a3c3c", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: s * 0.36, color: "#e7f6ee" }}>{c?.name || c?.wa_name ? inicialesDe(c) : <svg width={s * 0.5} height={s * 0.5} viewBox="0 0 24 24" fill="#cfd1d1"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" /></svg>}</div>;
+  if (wa) return <div style={{ width: s, height: s, borderRadius: "50%", flexShrink: 0, background: c?.name || c?.wa_name ? W.avatar : "#3a3c3c", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: s * 0.36, color: "#e3efff" }}>{c?.name || c?.wa_name ? inicialesDe(c) : <svg width={s * 0.5} height={s * 0.5} viewBox="0 0 24 24" fill="#cfd1d1"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" /></svg>}</div>;
   return <div style={{ width: s, height: s, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))", border: "1px solid rgba(184,149,106,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: s * 0.33, color: C.goldHi }}>{inicialesDe(c)}</div>;
 }
 

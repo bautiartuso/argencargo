@@ -6,7 +6,7 @@
 // dentro de las 24 h y con tope mensual (/api/crm/enviar decide y avisa por qué no).
 // Las fotos y audios no se guardan en Supabase: se piden a Meta al abrirlos (/api/crm/media).
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { dq, arr } from "../gi/_base";
+import { dq, arr, LOGO } from "../gi/_base";
 import { toast } from "../../lib/ui";
 import { fmtTel, nombreDe, horaWa, cuandoLista, diaDe, VISTA, Avatar, Etapa, api, W } from "./_comun";
 import Ficha from "./_ficha";
@@ -73,7 +73,7 @@ export default function Chats({ ctx, inicial }) {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" data-enter-libre="1" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: W.txt, fontSize: 14, fontFamily: "inherit" }} />
       </label>
       <div className="crm-scroll" style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto" }}>
-        {FILTROS.map(([k, l]) => { const on = filtro === k; return <button key={k} onClick={() => setFiltro(k)} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${on ? "transparent" : W.line}`, background: on ? "#103529" : "transparent", color: on ? "#d9fdd3" : W.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{l}{k === "sinleer" && sinLeer > 0 ? ` ${sinLeer}` : ""}</button>; })}
+        {FILTROS.map(([k, l]) => { const on = filtro === k; return <button key={k} onClick={() => setFiltro(k)} style={{ padding: "6px 12px", borderRadius: 999, border: `1px solid ${on ? "transparent" : W.line}`, background: on ? W.chip : "transparent", color: on ? W.chipTxt : W.sub, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>{l}{k === "sinleer" && sinLeer > 0 ? ` ${sinLeer}` : ""}</button>; })}
       </div>
     </div>
     <div className="crm-scroll" style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
@@ -83,12 +83,12 @@ export default function Chats({ ctx, inicial }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
               <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</span>
-              <span style={{ fontSize: 11.5, color: c.unread ? W.verde : W.mute, flexShrink: 0 }}>{cuandoLista(c.last_msg_at)}</span>
+              <span style={{ fontSize: 11.5, color: c.unread ? W.acento : W.mute, flexShrink: 0 }}>{cuandoLista(c.last_msg_at)}</span>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 3 }}>
               {c.last_direction === "out" && <Tilde doble />}
               <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: W.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.last_preview || ""}</span>
-              {c.unread > 0 ? <span style={{ minWidth: 20, height: 20, padding: "0 6px", boxSizing: "border-box", borderRadius: 999, background: W.verde, color: "#0b1410", fontSize: 11.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{c.unread}</span> : <Etapa k={c.stage} small />}
+              {c.unread > 0 ? <span style={{ minWidth: 20, height: 20, padding: "0 6px", boxSizing: "border-box", borderRadius: 999, background: W.acento, color: W.sobreAcento, fontSize: 11.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{c.unread}</span> : <Etapa k={c.stage} small />}
             </div>
           </div>
         </button>; })}
@@ -176,20 +176,23 @@ function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, fichaAbierta
       <Etapa k={c.stage} />
       <button onClick={onFicha} title={fichaAbierta ? "Cerrar la información del contacto" : "Información del contacto"} style={{ ...botonRedondo, background: fichaAbierta ? W.sel : "transparent", color: fichaAbierta ? W.txt : W.sub }}><Ico d={["M4 5h16v14H4z", "M14.5 5v14"]} /></button>
     </div>
-    <div className="crm-scroll" style={{ flex: 1, overflowY: "auto", padding: movil ? "10px 10px 6px" : "12px 5% 8px", display: "flex", flexDirection: "column", backgroundImage: "radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }}>
+    <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: `url(${LOGO})`, backgroundRepeat: "no-repeat", backgroundPosition: "center", backgroundSize: "min(46%, 420px) auto", opacity: 0.055, pointerEvents: "none" }} />
+    <div className="crm-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", padding: movil ? "10px 10px 6px" : "12px 5% 8px", display: "flex", flexDirection: "column" }}>
       {msgs === null ? <p style={{ color: W.mute, fontSize: 13, textAlign: "center", padding: 24 }}>Cargando…</p> : !visibles.length ? <p style={{ color: W.mute, fontSize: 13, textAlign: "center", padding: 24 }}>Sin mensajes guardados.</p> : visibles.map((m, i) => { const ant = visibles[i - 1]; const nuevoDia = !ant || diaDe(m.ts) !== diaDe(ant.ts); return <Burbuja key={m.id} m={m} nuevoDia={nuevoDia} primero={nuevoDia || ant.direction !== m.direction} reciente={i >= visibles.length - 30} reac={reacciones[m.wamid] || reacciones[m.id]} />; })}
       <div ref={fin} />
     </div>
+    </div>
     <div style={{ background: W.bg, padding: "8px 12px 10px", flexShrink: 0 }}>
-      {aviso && <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, color: "#f5c26b", padding: "2px 6px 8px" }}><span style={{ flex: 1 }}>{aviso.t}.</span><a href={aviso.link} target="_blank" rel="noreferrer" style={{ color: W.verde, fontWeight: 700, textDecoration: "none" }}>Mandar desde WhatsApp ↗</a></div>}
+      {aviso && <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, color: "#f5c26b", padding: "2px 6px 8px" }}><span style={{ flex: 1 }}>{aviso.t}.</span><a href={aviso.link} target="_blank" rel="noreferrer" style={{ color: W.acento, fontWeight: 700, textDecoration: "none" }}>Mandar desde WhatsApp ↗</a></div>}
       {plantillas && <Plantillas ctx={ctx} c={c} onElegir={(t) => { setTexto(t); setPlantillas(false); setTimeout(() => area.current?.focus(), 0); }} onCerrar={() => setPlantillas(false)} />}
       <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
-        <button onClick={() => setPlantillas((v) => !v)} title="Plantillas" style={{ ...botonRedondo, width: 42, height: 42, color: plantillas ? W.verde : W.sub }}><Ico s={22} d={["M12 5v14", "M5 12h14"]} /></button>
+        <button onClick={() => setPlantillas((v) => !v)} title="Plantillas" style={{ ...botonRedondo, width: 42, height: 42, color: plantillas ? W.acento : W.sub }}><Ico s={22} d={["M12 5v14", "M5 12h14"]} /></button>
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-end", background: W.caja, borderRadius: 22, padding: "0 6px 0 16px" }}>
           <textarea ref={area} value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }} placeholder="Escribe un mensaje" rows={1} data-enter-libre="1" style={{ flex: 1, minWidth: 0, resize: "none", border: "none", outline: "none", background: "transparent", color: W.txt, fontFamily: "inherit", fontSize: 15, lineHeight: 1.4, padding: "11px 0", minHeight: 42, maxHeight: 140, boxSizing: "border-box" }} onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px"; }} />
           {texto.trim() && !puedeApi && <button onClick={copiar} title="Copiar el texto" style={{ ...botonRedondo, height: 42 }}><Ico s={18} d={["M9 9h11v11H9z", "M5 15H4V4h11v1"]} /></button>}
         </div>
-        <button onClick={enviar} disabled={enviando || !texto.trim()} title={puedeApi ? "Enviar por el sistema" : "Abrir en WhatsApp con el texto"} style={{ ...botonRedondo, width: 42, height: 42, background: texto.trim() ? W.verde : W.caja, color: texto.trim() ? "#0b1410" : W.mute, cursor: texto.trim() ? "pointer" : "default" }}><Ico s={20} fill d="M3.4 20.4l17.5-7.5a1 1 0 0 0 0-1.8L3.4 3.6a1 1 0 0 0-1.4 1.2L4 11l9 1-9 1-2 6.2a1 1 0 0 0 1.4 1.2z" /></button>
+        <button onClick={enviar} disabled={enviando || !texto.trim()} title={puedeApi ? "Enviar por el sistema" : "Abrir en WhatsApp con el texto"} style={{ ...botonRedondo, width: 42, height: 42, background: texto.trim() ? W.acento : W.caja, color: texto.trim() ? W.sobreAcento : W.mute, cursor: texto.trim() ? "pointer" : "default" }}><Ico s={20} fill d="M3.4 20.4l17.5-7.5a1 1 0 0 0 0-1.8L3.4 3.6a1 1 0 0 0-1.4 1.2L4 11l9 1-9 1-2 6.2a1 1 0 0 0 1.4 1.2z" /></button>
       </div>
       <p style={{ margin: "5px 54px 0", fontSize: 11, color: W.mute }}>{envio?.enabled ? (ventana ? `Sale por el sistema · ${envio.usados} de ${envio.cap} este mes` : "Pasaron más de 24 h del último mensaje del cliente: se abre en WhatsApp") : "Enter lo abre en WhatsApp con el texto listo"}</p>
     </div>
@@ -207,7 +210,7 @@ function Burbuja({ m, nuevoDia, primero, reciente, reac }) {
     {nuevoDia && <div style={{ textAlign: "center", margin: "10px 0 8px" }}><span style={{ fontSize: 12, color: W.sub, padding: "5px 12px", borderRadius: 8, background: "#1d1f1f", textTransform: "capitalize" }}>{diaDe(m.ts)}</span></div>}
     <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginTop: primero && !nuevoDia ? 10 : 2, marginBottom: reac ? 16 : 0 }}>
       <div style={{ position: "relative", maxWidth: "min(65%, 560px)", minWidth: 76, padding: "6px 9px 7px", borderRadius: 10, borderTopRightRadius: out && primero ? 2 : 10, borderTopLeftRadius: !out && primero ? 2 : 10, background: out ? W.out : W.inn, fontSize: 14.5, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word", fontStyle: m.deleted ? "italic" : "normal", color: m.deleted ? "rgba(255,255,255,0.55)" : W.txt, boxShadow: "0 1px 0.5px rgba(0,0,0,0.25)" }}>
-        {m.referral && <div style={{ fontSize: 12, color: "#9fe3bf", fontWeight: 600, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,0.2)" }}>Vino del anuncio{m.referral.headline ? `: ${m.referral.headline}` : ""}</div>}
+        {m.referral && <div style={{ fontSize: 12, color: "#a9cdfb", fontWeight: 600, marginBottom: 4, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,0.2)" }}>Vino del anuncio{m.referral.headline ? `: ${m.referral.headline}` : ""}</div>}
         {conMedia && <Adjunto m={m} auto={m.type === "image" && reciente} out={out} />}
         {txt}{pie}
         {reac && <span style={{ position: "absolute", bottom: -17, [out ? "right" : "left"]: 8, display: "inline-flex", gap: 2, padding: "2px 6px", borderRadius: 999, background: "#1d1f1f", border: `1px solid ${W.fondo}`, fontSize: 14, lineHeight: 1.3, fontStyle: "normal" }}>{reac.join("")}</span>}
@@ -231,10 +234,10 @@ function Adjunto({ m, auto, out }) {
   const icono = <Ico s={22} c="rgba(255,255,255,0.7)" d={m.type === "document" ? ["M6 3h8l5 5v13H6z", "M14 3v5h5"] : ["M4 5h16v14H4z", "M4 15l4.5-4.5 4 4 3-3L20 16"]} />;
   if (estado === "error") return <div style={{ ...caja, color: W.sub }}>{icono}<span>{etiqueta} · Meta ya no lo tiene</span></div>;
   if (estado === "cargando") return <div style={{ ...caja, color: W.sub }}>{icono}<span>{etiqueta} · cargando…</span></div>;
-  if (estado === "cerrado") return <button onClick={cargar} style={{ ...caja, cursor: "pointer" }}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: W.verde, fontWeight: 600 }}>Ver</span></button>;
+  if (estado === "cerrado") return <button onClick={cargar} style={{ ...caja, cursor: "pointer" }}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: W.acento, fontWeight: 600 }}>Ver</span></button>;
   if (m.type === "image" || m.type === "sticker") return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 7, display: "block", marginBottom: 4 }} /></a>;
   if (m.type === "video") return <video src={url} controls style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 7, display: "block", marginBottom: 4 }} />;
-  return <a href={url} download={m.media_filename || "documento"} style={caja}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: W.verde, fontWeight: 600 }}>Descargar</span></a>;
+  return <a href={url} download={m.media_filename || "documento"} style={caja}>{icono}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{etiqueta}</span><span style={{ color: W.acento, fontWeight: 600 }}>Descargar</span></a>;
 }
 
 // Nota de voz como en WhatsApp: se ve lista para escuchar y el audio se baja recién al darle play.
@@ -254,8 +257,9 @@ function NotaDeVoz({ m, url, estado, cargar, out }) {
   const ir = (e) => { const a = audio.current; if (!a || !dur) return; const r = e.currentTarget.getBoundingClientRect(); a.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * dur; };
   const cambiarVel = () => { const n = vel === 1 ? 1.5 : vel === 1.5 ? 2 : 1; setVel(n); if (audio.current) audio.current.playbackRate = n; };
   const frac = dur ? pos / dur : 0;
-  const color = out ? "#a7d4bd" : "#9a9c9c";
-  return <div style={{ display: "flex", alignItems: "center", gap: 10, width: "min(300px, 62vw)", padding: "4px 2px 0" }}>
+  const color = out ? "#9dbbe6" : "#9a9c9c";
+  const contador = estado === "error" ? "No disponible" : sonando || pos > 0 ? mmss(pos) : dur ? mmss(dur) : "";
+  return <div style={{ display: "flex", alignItems: "center", gap: 8, width: "min(280px, 60vw)", padding: "2px 2px 0" }}>
     <audio ref={audio} preload="none" onPlay={() => setSonando(true)} onPause={() => setSonando(false)} onEnded={() => { setSonando(false); setPos(0); }} onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)} onLoadedMetadata={(e) => setDur(isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)} onDurationChange={(e) => setDur(isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)} style={{ display: "none" }} />
     <button onClick={tocar} disabled={estado === "error"} title={estado === "error" ? "Meta ya no tiene este audio" : sonando ? "Pausar" : "Escuchar"} style={{ width: 38, height: 38, borderRadius: "50%", border: "none", background: "transparent", color: estado === "error" ? W.mute : "#e9edef", cursor: estado === "error" ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
       {estado === "cargando" ? <span style={{ fontSize: 18, lineHeight: 1 }}>…</span> : sonando ? <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4.2" height="15" rx="1" /><rect x="13.8" y="4.5" width="4.2" height="15" rx="1" /></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 4.8v14.4a.8.8 0 0 0 1.2.7l11.6-7.2a.8.8 0 0 0 0-1.4L9.2 4.1A.8.8 0 0 0 8 4.8z" /></svg>}
@@ -264,9 +268,7 @@ function NotaDeVoz({ m, url, estado, cargar, out }) {
       <div onClick={ir} style={{ display: "flex", alignItems: "center", gap: 2, height: 26, cursor: dur ? "pointer" : "default" }}>
         {barras.map((h, i) => <span key={i} style={{ flex: 1, height: h, borderRadius: 2, background: i / barras.length < frac ? W.azul : color, opacity: i / barras.length < frac ? 1 : 0.75 }} />)}
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 }}>
-        <span>{estado === "error" ? "No disponible" : sonando || pos > 0 ? mmss(pos) : dur ? mmss(dur) : "Mensaje de voz"}</span>
-      </div>
+      {contador && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 }}>{contador}</div>}
     </div>
     <button onClick={cambiarVel} title="Velocidad" style={{ minWidth: 38, height: 24, borderRadius: 999, border: "none", background: "rgba(0,0,0,0.25)", color: "#e9edef", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{String(vel).replace(".", ",")}×</button>
   </div>;

@@ -21,7 +21,7 @@ const diasDesde = (f) => (f ? Math.floor((Date.now() - new Date(f).getTime()) / 
 export default function Ficha({ ctx, c, onChange, compacta, wa }) {
   const { token, admin, ir } = ctx;
   // Paleta: la del CRM, o la de WhatsApp cuando va al costado del chat.
-  const K = wa ? { panel: "transparent", line: W.line, mute: W.mute, sub: W.sub, txt: W.txt, hi: W.verde, ok: W.verde, caja: W.caja } : { panel: C.panel, line: C.line, mute: C.mute, sub: C.sub, txt: C.txt, hi: C.goldHi, ok: C.green, caja: "rgba(255,255,255,0.04)" };
+  const K = wa ? { panel: "transparent", line: W.line, mute: W.mute, sub: W.sub, txt: W.txt, hi: W.acento, ok: "#8fc0ff", caja: W.caja } : { panel: C.panel, line: C.line, mute: C.mute, sub: C.sub, txt: C.txt, hi: C.goldHi, ok: C.green, caja: "rgba(255,255,255,0.04)" };
   const [d, setD] = useState(null);
   const [notas, setNotas] = useState(c.notes || "");
   const [buscar, setBuscar] = useState("");
