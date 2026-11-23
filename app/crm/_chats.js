@@ -14,7 +14,7 @@ import Plantillas from "./_plantillas";
 
 const SEL_CONTACTO = "id,phone,name,wa_name,client_id,stage,stage_manual,stage_at,source,ad_headline,ad_name,ad_at,campaign_name,first_in_at,last_msg_at,last_in_at,last_preview,last_direction,unread,summary,summary_at,pending,next_contact_at,notes,lost_reason,created_at";
 const FILTROS = [["todos", "Todos"], ["sinleer", "No leídos"], ["leads", "Leads"], ["clientes", "Clientes"]];
-const ANCHO_LISTA = 268, ANCHO_FICHA = 330;
+const ANCHO_LISTA = 290, ANCHO_FICHA = 330;
 
 const Ico = ({ d, s = 20, c = "currentColor", fill }) => <svg width={s} height={s} viewBox="0 0 24 24" fill={fill ? c : "none"} stroke={fill ? "none" : c} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{[].concat(d).map((x, i) => <path key={i} d={x} />)}</svg>;
 const Tilde = ({ doble, leido }) => <svg width="17" height="11" viewBox="0 0 18 11" fill="none" stroke={leido ? W.azul : "rgba(255,255,255,0.55)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M1 6l3.2 3.4L11 1.6" />{doble && <path d="M7.4 9.2l.4.4L16.6 1.6" />}</svg>;
@@ -82,8 +82,8 @@ export default function Chats({ ctx, inicial }) {
           <Avatar c={c} s={42} wa />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-              <span style={{ fontSize: 15.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</span>
-              <span style={{ fontSize: 12, color: c.unread ? W.verde : W.mute, flexShrink: 0 }}>{cuandoLista(c.last_msg_at)}</span>
+              <span style={{ fontSize: 15, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</span>
+              <span style={{ fontSize: 11.5, color: c.unread ? W.verde : W.mute, flexShrink: 0 }}>{cuandoLista(c.last_msg_at)}</span>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 3 }}>
               {c.last_direction === "out" && <Tilde doble />}
