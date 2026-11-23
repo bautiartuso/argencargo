@@ -36,6 +36,9 @@ export default function Conexiones() {
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
   const [ads, setAds] = useState(null);
+  // Si la búsqueda automática no encuentra la cuenta, se puede pasar su identificador a mano
+  // (Configuración del negocio → Cuentas de mensajes).
+  const [idCuenta, setIdCuenta] = useState(""); const [pedirId, setPedirId] = useState(false);
   const datos = useRef({});
   const agregar = (t) => setLog((l) => [...l, `${hora(new Date())} · ${t}`]);
   const cargar = useCallback(async () => setSt(await api("/api/crm/conectar")), []);
@@ -96,6 +99,13 @@ export default function Conexiones() {
     } catch (e) { restaurar(); agregar(`✗ El script de Meta falló al abrir la ventana: ${e?.message || e}`); setBusy(false); }
   };
   const accion = async (body, antes) => { setBusy(true); if (antes) agregar(antes); mostrar(await api("/api/crm/conectar", body)); setBusy(false); cargar(); };
+  const buscarConectado = async () => {
+    setBusy(true); agregar("Buscando el número ya conectado en la cuenta de Meta…");
+    const id = idCuenta.replace(/\D/g, "");
+    const r = await api("/api/crm/conectar", { accion: "propia", ...(id ? { waba_id: id } : {}) });
+    mostrar(r); if (!r.ok) setPedirId(true);
+    setBusy(false); cargar();
+  };
   const probarAds = async () => { setBusy(true); const r = await api("/api/crm/conectar", { accion: "probar_ads" }); setAds(r); agregar(r.ok ? `✓ Meta Ads: cuenta "${r.nombre}" en ${r.moneda}` : `✗ Meta Ads: ${r.error}`); setBusy(false); };
   const traerGasto = async () => { setBusy(true); agregar("Trayendo los últimos 30 días de gasto…"); const r = await api("/api/cron/crm-ads", { dias: 30 }); agregar(r.ok ? `✓ ${r.filas} filas de gasto · ${r.nombrados} leads con nombre de campaña` : `✗ ${r.error || r.motivo}`); setBusy(false); };
 
@@ -108,7 +118,8 @@ export default function Conexiones() {
       <Caja title="WhatsApp" right={<div style={{ display: "flex", gap: 6 }}>
         {/* El número se conectó en el celu pero Meta no cerró el alta porque la cuenta está en el mismo
             portfolio que la app (23/11/2026): el servidor lo busca con el token permanente. */}
-        <Btn small onClick={() => accion({ accion: "propia" }, "Buscando el número ya conectado en la cuenta de Meta…")} disabled={busy}>Buscar número conectado</Btn>
+        {pedirId && <input value={idCuenta} onChange={(e) => setIdCuenta(e.target.value)} placeholder="Identificador de la cuenta" inputMode="numeric" style={{ width: 190, height: 32, padding: "0 10px", borderRadius: 8, border: `1px solid ${C.line}`, background: "rgba(0,0,0,0.25)", color: C.txt, fontFamily: MONO, fontSize: 12.5, outline: "none" }} />}
+        <Btn small onClick={buscarConectado} disabled={busy}>Buscar número conectado</Btn>
         <Btn v="gold" small onClick={conectar} disabled={busy}>{nums.length ? "Conectar otro número" : "Conectar WhatsApp"}</Btn>
       </div>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: nums.length ? 6 : 0 }}>
