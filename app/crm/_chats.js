@@ -6,7 +6,7 @@
 // dentro de las 24 h y con tope mensual (/api/crm/enviar decide y avisa por qué no).
 // Las fotos y audios no se guardan en Supabase: se piden a Meta al abrirlos (/api/crm/media).
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { dq, arr, LOGO } from "../gi/_base";
+import { dq, arr } from "../gi/_base";
 import { toast } from "../../lib/ui";
 import { fmtTel, nombreDe, horaWa, cuandoLista, diaDe, VISTA, Etapa, api, W } from "./_comun";
 import Ficha from "./_ficha";
@@ -15,6 +15,10 @@ import Plantillas from "./_plantillas";
 const SEL_CONTACTO = "id,phone,name,wa_name,client_id,stage,stage_manual,stage_at,source,ad_headline,ad_name,ad_at,campaign_name,first_in_at,last_msg_at,last_in_at,last_preview,last_direction,unread,summary,summary_at,pending,next_contact_at,notes,lost_reason,created_at";
 const FILTROS = [["todos", "Todos"], ["sinleer", "No leídos"], ["leads", "Leads"], ["clientes", "Clientes"]];
 const ANCHO_LISTA = 264, ANCHO_FICHA = 330;
+
+// Fondo del hilo (23/11/2026): el logo completo de Argencargo tal cual es, con un velo oscuro encima,
+// igual que el fondo que Bautista usa en su WhatsApp. No se le tocan los colores al logo.
+const fondoChat = (movil) => ({ background: `linear-gradient(rgba(0,0,0,0.62), rgba(0,0,0,0.62)), url(/brand/logo-completo-fondo.png) center / ${movil ? "contain" : "cover"} no-repeat #fefeff` });
 
 const Ico = ({ d, s = 20, c = "currentColor", fill }) => <svg width={s} height={s} viewBox="0 0 24 24" fill={fill ? c : "none"} stroke={fill ? "none" : c} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{[].concat(d).map((x, i) => <path key={i} d={x} />)}</svg>;
 const Tilde = ({ doble, leido }) => <svg width="17" height="11" viewBox="0 0 18 11" fill="none" stroke={leido ? W.azul : "rgba(255,255,255,0.55)"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M1 6l3.2 3.4L11 1.6" />{doble && <path d="M7.4 9.2l.4.4L16.6 1.6" />}</svg>;
@@ -136,7 +140,7 @@ export default function Chats({ ctx, inicial }) {
   return <div className="wa-chat" style={{ display: "grid", gridTemplateColumns: `${ANCHO_LISTA}px minmax(0,1fr)${fichaAlLado ? ` ${ANCHO_FICHA}px` : ""}`, background: W.bg, color: W.txt, position: "relative" }}>
     {estilos}
     {Lista}
-    {sel ? Hilo : <div style={{ height: alto, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(255,255,255,0.7)", fontSize: 14, background: W.fondo }}><Ico s={46} c="rgba(255,255,255,0.35)" d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5.1A8.4 8.4 0 1 1 21 11.5z" />Elegí un chat</div>}
+    {sel ? Hilo : <div style={{ height: alto, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(255,255,255,0.8)", fontSize: 14, ...fondoChat(false) }}><Ico s={46} c="rgba(255,255,255,0.35)" d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5.1A8.4 8.4 0 1 1 21 11.5z" />Elegí un chat</div>}
     {fichaAlLado && FichaBox}
     {fichaEncima && <div onClick={alternarFicha} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 30 }}><div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: Math.min(ANCHO_FICHA + 20, ancho - 80) }}>{FichaBox}</div></div>}
   </div>;
@@ -200,7 +204,7 @@ function Conversacion({ ctx, c, msgs, envio, setEnvio, alto, movil, fichaAbierta
       <button onClick={onFicha} title={fichaAbierta ? "Cerrar la información del contacto" : "Información del contacto"} style={{ ...botonRedondo, background: fichaAbierta ? W.sel : "transparent", color: fichaAbierta ? W.txt : W.sub }}><Ico d={["M4 5h16v14H4z", "M14.5 5v14"]} /></button>
     </div>
     <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-    <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(120deg, #081a35 20%, #0e2f5c 55%, #17467f 85%)", WebkitMaskImage: `url(${LOGO})`, maskImage: `url(${LOGO})`, WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center", WebkitMaskSize: "min(84%, 880px) auto", maskSize: "min(84%, 880px) auto", opacity: 0.88, pointerEvents: "none" }} />
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, ...fondoChat(movil), pointerEvents: "none" }} />
     <div className="crm-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", padding: movil ? "10px 10px 6px" : "12px 5% 8px", display: "flex", flexDirection: "column" }}>
       {msgs === null ? <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, textAlign: "center", padding: 24 }}>Cargando…</p> : !visibles.length ? <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, textAlign: "center", padding: 24 }}>Sin mensajes guardados.</p> : visibles.map((m, i) => { const ant = visibles[i - 1]; const nuevoDia = !ant || diaDe(m.ts) !== diaDe(ant.ts); return <Burbuja key={m.id} m={m} nuevoDia={nuevoDia} primero={nuevoDia || ant.direction !== m.direction} reciente={i >= visibles.length - 30} reac={reacciones[m.wamid] || reacciones[m.id]} />; })}
       <div ref={fin} />
