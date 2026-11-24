@@ -295,6 +295,29 @@ function Btn({children,onClick,disabled,variant="primary",small,title,fullWidth}
 const FIN_SEC={background:"rgba(0,0,0,0.16)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px 18px 6px",marginBottom:12};
 const FIN_SEC_T={fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.01em"};
 const FIN_EQ={display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,margin:"2px 0 12px",padding:"5px 11px",borderRadius:8,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",fontVariantNumeric:"tabular-nums"};
+// Escaneos originales (24/11/2026): los bultos que se borraron de la importación (reempaque, reembalaje
+// en el despacho) quedan guardados en operation_package_scans por un trigger de la base. Acá se ven
+// como llegaron al depósito: tracking, medidas, peso y la foto. Los que siguen vivos no se repiten.
+function EscaneosOriginales({token,opId,vivos}){
+  const [filas,setFilas]=useState([]);
+  const nVivos=Array.isArray(vivos)?vivos.length:0;
+  useEffect(()=>{let ok=true;(async()=>{const r=await dq("operation_package_scans",{token,filters:`?operation_id=eq.${opId}&select=*&order=package_number.asc,archived_at.asc`});if(ok)setFilas(Array.isArray(r)?r:[]);})();return()=>{ok=false;};},[token,opId,nVivos]);
+  const enUso=new Set((vivos||[]).flatMap(p=>fotosBulto(p)));
+  const ver=filas.filter(f=>(f.photo_urls||[]).some(u=>!enUso.has(u)));
+  if(!ver.length)return null;
+  return <Card v2 title="Escaneos originales" sub={`${ver.length} bulto${ver.length===1?"":"s"} como llegaron al depósito`}>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {ver.map(f=><div key={f.id} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{(f.photo_urls||[]).map(u=><a key={u} href={u} target="_blank" rel="noopener noreferrer"><img src={u} alt="" style={{width:72,height:72,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.18)",cursor:"zoom-in",display:"block"}}/></a>)}</div>
+        <div style={{flex:"1 1 220px",minWidth:0}}>
+          <p style={{margin:0,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:"#fff",overflowWrap:"anywhere"}}>{f.national_tracking||"Sin tracking"}</p>
+          <p style={{margin:"3px 0 0",fontSize:12,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{f.length_cm&&f.width_cm&&f.height_cm?`${Number(f.length_cm)}×${Number(f.width_cm)}×${Number(f.height_cm)} cm`:"sin medidas"}{Number(f.gross_weight_kg)>0?` · ${Number(f.gross_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:""}{Number(f.quantity)>1?` · ×${f.quantity}`:""}</p>
+          <p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.4)"}}>{f.registered_at?`Llegó el ${new Date(f.registered_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"})}`:""}{f.archived_at?`${f.registered_at?" · ":""}reembalado el ${new Date(f.archived_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"})}`:""}</p>
+        </div>
+      </div>)}
+    </div>
+  </Card>;
+}
 function Card({children,title,actions,accent,v2,sub}){
   // v2 (02/10/2026): tarjeta de Presupuesto y Finanzas — título en minúscula y más grande, sin
   // overflow (los desplegables no se cortan) y un fondo con algo más de profundidad.
@@ -3033,6 +3056,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20,alignItems:"baseline",flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>{op.created_by_agent_id&&<div style={{marginLeft:"auto"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:0}}>Divisor agente: <strong style={{color:"#fff"}}>÷{agentVolDiv}</strong></p></div>}</div>;})()}
       {pkgs.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay bultos.</p>}
     </Card>}
+    {tab==="packages"&&<EscaneosOriginales token={token} opId={op.id} vivos={pkgs}/>}
 
     {tab==="tracking"&&<><Card v2 title="Courier" actions={<div style={{display:"flex",gap:8}}>
         <Btn small variant="secondary" onClick={async()=>{

@@ -161,6 +161,31 @@ export async function GET(req) {
       for (const f of filas) for (const u of [...(f.fotos || []), ...(f.fotos_mercaderia || []), ...(f.factura_url ? [f.factura_url] : [])]) { const p = storagePath(u); if (p) referencias.add(p); }
       if (filas.length < 1000) break;
     }
+    // Escaneos originales de bultos que ya no existen (operation_package_scans, 24/11/2026): los guarda
+    // un trigger cuando se borra un bulto (reempaque). Viven lo mismo que las fotos de un bulto vivo:
+    // N días desde que se subieron, o M días desde que cerró la operación. Los vencidos se sacan de la
+    // tabla y su archivo cae como huérfano en esta misma corrida.
+    let escaneosVencidos = 0;
+    {
+      const filas = await todas(`/rest/v1/operation_package_scans?select=id,operation_id,photo_urls,photo_uploaded_at,archived_at&order=id.asc`, "operation_package_scans");
+      const cerradas = new Set(opIds);
+      const idsOps = [...new Set(filas.map((f) => f.operation_id).filter(Boolean))];
+      const existen = new Set();
+      for (let i = 0; i < idsOps.length; i += 200) {
+        const r = await sb(`/rest/v1/operations?id=in.(${idsOps.slice(i, i + 200).join(",")})&select=id`);
+        if (!r.ok) throw new Error("no se pudieron leer las operaciones de los escaneos: no se borra nada");
+        for (const o of await r.json()) existen.add(o.id);
+      }
+      const limite = corte(diasSubida);
+      const vencidos = [];
+      for (const f of filas) {
+        const vencio = !existen.has(f.operation_id) || cerradas.has(f.operation_id) || String(f.photo_uploaded_at || f.archived_at || "") < limite;
+        if (vencio) { vencidos.push(f.id); continue; }
+        for (const u of (f.photo_urls || [])) { const pth = storagePath(u); if (pth) referencias.add(pth); }
+      }
+      for (let i = 0; i < vencidos.length; i += 200) await sb(`/rest/v1/operation_package_scans?id=in.(${vencidos.slice(i, i + 200).join(",")})`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+      escaneosVencidos = vencidos.length;
+    }
     // Los que estamos por borrar en A/B ya no cuentan como referencia viva
     for (const p of aBorrar) referencias.delete(p);
 
@@ -217,6 +242,7 @@ export async function GET(req) {
       borrados_del_storage: borrados,
       por_antiguedad: porTabla.operation_packages.length + porTabla.unassigned_packages.length,
       huerfanos,
+      escaneos_vencidos: escaneosVencidos,
       dias_desde_subida: diasSubida,
       dias_desde_cierre: diasCierre,
       legajo_borrados: legajoBorrados,

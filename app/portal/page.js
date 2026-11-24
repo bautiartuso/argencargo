@@ -1011,6 +1011,9 @@ function OperationDetail({op:opProp,token,client,onBack,vuelo=null}){
   // Desglose de impuestos abierto/cerrado en el Resumen: el cliente quiere ver que paga por cada
   // producto (derechos, tasa estadistica, IVA) y el desaduanaje, no solo el total.
   const [impOpen,setImpOpen]=useState(false);
+  const [escOrig,setEscOrig]=useState([]);
+  // Escaneos originales (24/11/2026): bultos que ya no están (reempaque) pero cuya foto de llegada se conserva.
+  useEffect(()=>{let ok=true;dq("operation_package_scans",{token,filters:`?operation_id=eq.${op.id}&select=id,national_tracking,length_cm,width_cm,height_cm,gross_weight_kg,quantity,photo_urls,registered_at&order=package_number.asc,archived_at.asc`}).then(r=>{if(ok)setEscOrig(Array.isArray(r)?r:[]);}).catch(()=>{});return()=>{ok=false;};},[op.id,token]);
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [ccMov,setCcMov]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó t("op.waitingPackages"): ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
@@ -1409,6 +1412,20 @@ function OperationDetail({op:opProp,token,client,onBack,vuelo=null}){
             {isAer?<>{kpi("Peso bruto total",`${f2(totGW)} kg`,totGW>=totVW&&totGW>0)}{kpi(t("op.volTotal"),`${f2(totVW)} kg`,totVW>totGW)}{kpi("Facturable",`${f2(pf)} kg`,true)}{kpi("Volumen",`${totCBM.toFixed(3)} m³`)}</>:<>{kpi("Volumen total",`${totCBM.toFixed(3)} m³`,true)}{kpi("Peso bruto",`${f2(totGW)} kg`)}</>}
           </div>
         </>}
+        {(()=>{const enUso=new Set(pkgs.flatMap(p=>fotosBulto(p)));const ver=escOrig.filter(f=>(f.photo_urls||[]).some(u=>!enUso.has(u)));if(!ver.length)return null;
+          return <div style={{marginTop:18,paddingTop:16,borderTop:HAIR}}>
+            <p style={{...LBL,marginBottom:4}}>{t("op.originalScans")}</p>
+            <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:"0 0 10px",lineHeight:1.45}}>{t("op.originalScansSub")}</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:8}}>
+              {ver.map((f,i)=><button key={f.id} onClick={()=>setLightboxPhoto({urls:f.photo_urls,i:0,n:i+1,trk:f.national_tracking})} style={{display:"flex",alignItems:"center",gap:10,padding:8,borderRadius:11,border:HAIR,background:"rgba(255,255,255,0.04)",cursor:"pointer",textAlign:"left",fontFamily:"inherit",minWidth:0}}>
+                <img src={f.photo_urls[0]} alt="" loading="lazy" style={{width:56,height:56,objectFit:"cover",borderRadius:8,flexShrink:0,display:"block"}}/>
+                <span style={{minWidth:0,flex:1}}>
+                  <span style={{display:"block",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.national_tracking||"—"}</span>
+                  <span style={{display:"block",marginTop:2,fontSize:11.5,color:"rgba(255,255,255,0.6)",fontVariantNumeric:"tabular-nums"}}>{f.length_cm&&f.width_cm&&f.height_cm?`${Number(f.length_cm)}×${Number(f.width_cm)}×${Number(f.height_cm)} cm`:""}{Number(f.gross_weight_kg)>0?`${f.length_cm?" · ":""}${f2(Number(f.gross_weight_kg))} kg`:""}</span>
+                </span>
+              </button>)}
+            </div>
+          </div>;})()}
       </div>}
 
       {/* SEGUIMIENTO */}
