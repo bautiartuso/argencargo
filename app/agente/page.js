@@ -435,6 +435,7 @@ const I18N={
     cost_brand:"Mercaderías contienen marcas",
     cost_overweight:"Cargo por sobrepeso",
     cost_computed:"Costo total",
+    cost_other:"Otros cargos",
     opt_yes:"Sí",
     opt_no:"No",
     intl_tracking:"Tracking internacional",
@@ -853,6 +854,7 @@ const I18N={
     cost_brand:"货物含品牌",
     cost_overweight:"超重费",
     cost_computed:"总费用",
+    cost_other:"其他费用",
     opt_yes:"是",
     opt_no:"否",
     intl_tracking:"国际物流单号",
@@ -2373,6 +2375,23 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         <span><strong style={{color:"var(--tx)"}}>{t.courier}:</strong> {flight.international_carrier}</span>
         <span><strong style={{color:"var(--tx)"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
       </div>
+      {(()=>{
+        // Desglose de lo que cargó el agente al despachar (23/11/2026, pedido de Ethen): tarifa por kilo y
+        // cada recargo, aplique o no, como se ve mientras lo carga. Vuelos viejos sin tarifa: solo el total.
+        const kg=Number(flight.total_weight_kg||0),rate=Number(flight.cost_per_kg_usd||0),total=Number(flight.total_cost_usd||0);
+        if(!(kg>0&&rate>0))return null;
+        const base=Math.round(kg*rate*100)/100,bat=flight.cost_battery?10:0,marca=flight.cost_brand?Math.round(kg*0.70*100)/100:0,ow=Number(flight.cost_overweight_pieces||0)>0?35:0;
+        const otros=Math.round((total-base-bat-marca-ow)*100)/100;
+        const kgTxt=kg.toLocaleString("es-AR",{maximumFractionDigits:2});
+        const fila=(l,v,on=true,fuerte=false)=><div style={{display:"flex",justifyContent:"space-between",gap:14,padding:fuerte?"7px 0 0":"3px 0",marginTop:fuerte?5:0,borderTop:fuerte?"1px solid rgba(var(--ink),0.1)":"none"}}><span style={{fontSize:fuerte?12.5:12,fontWeight:fuerte?800:500,color:fuerte?"var(--tx)":"rgba(var(--ink),0.6)"}}>{l}</span><span style={{fontSize:fuerte?13.5:12,fontWeight:fuerte?800:700,color:fuerte?"#4ade80":on?"var(--tx)":"rgba(var(--ink),0.35)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
+        return <div style={{marginTop:12,maxWidth:460,padding:"10px 14px",borderRadius:10,background:"rgba(var(--ink),0.03)",border:"1px solid rgba(var(--ink),0.08)"}}>
+          {fila(`${kgTxt} kg × ${usdF(rate)}/kg`,usdF(base))}
+          {fila(`🔋 ${t.cost_battery}`,bat?`+ ${usdF(bat)}`:t.opt_no,!!bat)}
+          {fila(`⚖️ ${t.cost_overweight}`,ow?`+ ${usdF(ow)}`:t.opt_no,!!ow)}
+          {fila(`🏷️ ${t.cost_brand}${marca?` · USD 0,70/kg × ${kgTxt} kg`:""}`,marca?`+ ${usdF(marca)}`:t.opt_no,!!marca)}
+          {Math.abs(otros)>=0.01&&fila(t.cost_other,`${otros>0?"+":"−"} ${usdF(Math.abs(otros))}`)}
+          {fila(t.cost_computed,usdF(total),true,true)}
+        </div>;})()}
       {(flight.cost_battery||flight.cost_brand)&&<div style={{display:"grid",gap:8,marginTop:12}}>
         {flight.cost_battery&&<FotosPrueba flightId={flight.id} tipo="bateria" urls={fotosBat} falta onChange={u=>{setFotosBat(u);onPrueba?.("battery_photo_urls",u);}} token={token} t={t}/>}
         {flight.cost_brand&&<FotosPrueba flightId={flight.id} tipo="marca" urls={fotosMarca} falta onChange={u=>{setFotosMarca(u);onPrueba?.("brand_photo_urls",u);}} token={token} t={t}/>}
