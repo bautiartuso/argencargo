@@ -31,6 +31,37 @@ const ESTADO = { conectado: ["Conectado", "#22c55e"], desconectado: ["Desconecta
 const Dato = ({ k, v, mal }) => <div><p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em" }}>{k}</p><p style={{ margin: "3px 0 0", fontSize: 13.5, fontWeight: 700, color: mal ? C.red : C.txt }}>{v}</p></div>;
 const Fila = ({ children }) => <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", alignItems: "center", padding: "10px 0", borderTop: `1px solid ${C.line}` }}>{children}</div>;
 
+// El saludo automático de la IA a los contactos fríos (23/11/2026). Apagado por defecto: lo enciende
+// Bautista acá. Meta cobra cada saludo (va por plantilla aprobada, fuera de las 24 h), por eso el tope por día.
+const PLANTILLA = { APPROVED: ["Aprobada por Meta", "#22c55e"], PENDING: ["Meta la está revisando", "#E8D098"], REJECTED: ["Rechazada por Meta", "#f87171"], PAUSED: ["Pausada por Meta", "#f87171"], DISABLED: ["Deshabilitada por Meta", "#f87171"] };
+const TOPES = [5, 10, 15, 20, 30];
+function SeguimientoIa({ agregar }) {
+  const [ia, setIa] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api("/api/crm/ia").then(setIa); }, []);
+  const mandar = async (body, ok) => { setBusy(true); const r = await api("/api/crm/ia", body); setBusy(false); if (r.error) { agregar(`✗ IA: ${r.error}`); return; } setIa(r); agregar(`✓ ${ok}`); };
+  if (!ia) return <Caja title="Seguimiento con IA"><Cargando /></Caja>;
+  if (ia.error || !ia.conectado) return <Caja title="Seguimiento con IA"><Dato k="Estado" v={ia.error || "Primero hay que conectar el WhatsApp"} mal /></Caja>;
+  const pl = ia.plantilla ? PLANTILLA[ia.plantilla] || [ia.plantilla, C.sub] : ["Sin crear", C.sub];
+  return <Caja title="Seguimiento con IA" right={<div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+    <Pill c={ia.activa ? "#22c55e" : C.sub}>{ia.activa ? "Encendida" : "Apagada"}</Pill>
+    {!ia.plantilla && <Btn small v="gold" onClick={() => mandar({ accion: "plantilla" }, "Plantilla del saludo enviada a Meta para aprobar")} disabled={busy}>Crear plantilla en Meta</Btn>}
+    {(ia.activa || ia.plantilla === "APPROVED") && <Btn small v={ia.activa ? undefined : "gold"} onClick={() => mandar({ accion: "config", activa: !ia.activa }, ia.activa ? "La IA dejó de escribir" : "La IA empieza a escribir")} disabled={busy}>{ia.activa ? "Apagar" : "Encender"}</Btn>}
+  </div>}>
+    <p style={{ margin: "0 0 12px", padding: "10px 14px", borderRadius: 12, background: "rgba(255,255,255,0.04)", border: `1px solid ${C.line}`, fontSize: 14, color: C.txt }}>{ia.texto}</p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+      <div><p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: C.mute, textTransform: "uppercase", letterSpacing: "0.08em" }}>Plantilla</p><p style={{ margin: "3px 0 0", fontSize: 13.5, fontWeight: 700, color: pl[1] }}>{pl[0]}</p></div>
+      <Dato k="Hoy" v={`${ia.hoy} de ${ia.por_dia}`} />
+      <Dato k="En la fila" v={Number(ia.en_fila || 0).toLocaleString("es-AR")} />
+      <Dato k="Saludos · contestaron" v={`${ia.enviados} · ${ia.respondieron}`} />
+    </div>
+    <Fila>
+      <span style={{ fontSize: 13, fontWeight: 700 }}>Saludos por día</span>
+      <div style={{ display: "flex", gap: 4 }}>{TOPES.map((n) => { const on = Number(ia.por_dia) === n; return <button key={n} type="button" disabled={busy} onClick={() => !on && mandar({ accion: "config", por_dia: n }, `Tope de ${n} saludos por día`)} style={{ minWidth: 38, height: 30, padding: "0 10px", borderRadius: 999, border: `1px solid ${on ? C.goldHi : C.line}`, background: on ? "rgba(184,149,106,0.16)" : "transparent", color: on ? C.goldHi : C.sub, fontSize: 12.5, fontWeight: 800, cursor: on ? "default" : "pointer", fontFamily: "inherit" }}>{n}</button>; })}</div>
+    </Fila>
+  </Caja>;
+}
+
 export default function Conexiones() {
   const [st, setSt] = useState(null);
   const [log, setLog] = useState([]);
@@ -148,6 +179,8 @@ export default function Conexiones() {
           </Fila>
         </div>; })}
       </Caja>
+      <div style={{ height: 12 }} />
+      <SeguimientoIa agregar={agregar} />
       <div style={{ height: 12 }} />
       <Caja title="Meta Ads" right={<div style={{ display: "flex", gap: 6 }}><Btn small onClick={probarAds} disabled={busy || !st.env?.ads}>Probar</Btn><Btn small v="gold" onClick={traerGasto} disabled={busy || !st.env?.ads}>Traer últimos 30 días</Btn></div>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>

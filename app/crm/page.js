@@ -123,7 +123,7 @@ function Shell({ sesion, perfil, onLogout }) {
 
   let cuerpo;
   if (nav.p === "contactos") cuerpo = <Contactos ctx={ctx} />;
-  else if (nav.p === "seguimiento") cuerpo = <SeguimientoPanel token={token} rol={rol} movil={movil} />;
+  else if (nav.p === "seguimiento") cuerpo = <SeguimientoPanel token={token} rol={rol} ir={ir} />;
   else if (nav.p === "campanas") cuerpo = <Campanas ctx={ctx} />;
   else if (nav.p === "studio") cuerpo = <StudioPanel token={token} />;
   else if (nav.p === "historias" && admin) cuerpo = <HistoriasPanel token={token} />;

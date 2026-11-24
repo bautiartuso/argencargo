@@ -8,6 +8,7 @@ import { C, MONO, dq, arr, Btn, inp, hace } from "../gi/_base";
 import { toast, confirmDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { fmtTel, nombreDe, fechaCorta, usd, ETAPAS, etapaDe, Avatar, api, Accion, W } from "./_comun";
+import { TEMP } from "../../lib/crm-seguimiento";
 
 const ESTADO_OP = { pendiente: "Pendiente", en_deposito_origen: "En depósito de origen", en_preparacion: "En preparación", en_transito: "En tránsito", en_aduana: "En aduana", entregada: "Entregada", operacion_cerrada: "Cerrada" };
 const CANAL = { aereo_blanco: "Aéreo", aereo_negro: "Aéreo", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo" };
@@ -16,6 +17,8 @@ const FISCAL = { responsable_inscripto: "Responsable inscripto", monotributista:
 const Seccion = ({ K, t, right, children }) => <div style={{ marginTop: 16 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: K.mute, textTransform: "uppercase", letterSpacing: "0.1em" }}>{t}</p>{right}</div>{children}</div>;
 const Numero = ({ K, l, v, c: col }) => <div style={{ flex: "1 1 0", minWidth: 0, padding: "8px 10px", borderRadius: 10, background: K.caja }}><p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: col || K.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</p><p style={{ margin: "1px 0 0", fontSize: 10.5, color: K.mute, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}</p></div>;
 const Dato = ({ K, l, children }) => <div style={{ display: "flex", gap: 10, fontSize: 12.5, padding: "3px 0" }}><span style={{ color: K.mute, flexShrink: 0, width: 92 }}>{l}</span><span style={{ flex: 1, minWidth: 0, color: K.txt, overflowWrap: "anywhere" }}>{children}</span></div>;
+// Quién lleva el seguimiento: una persona o la IA (elegible a mano).
+const Quien = ({ K, v, onChange }) => <div style={{ display: "inline-flex", padding: 2, borderRadius: 999, background: K.caja, gap: 2 }}>{[["humano", "Vos"], ["ia", "IA"]].map(([k, l]) => <button key={k} type="button" onClick={() => v !== k && onChange(k)} style={{ padding: "4px 12px", borderRadius: 999, border: "none", background: v === k ? (k === "ia" ? "rgba(167,139,250,0.28)" : "rgba(184,149,106,0.28)") : "transparent", color: v === k ? K.txt : K.mute, fontSize: 11.5, fontWeight: 800, cursor: v === k ? "default" : "pointer", fontFamily: "inherit" }}>{l}</button>)}</div>;
 const diasDesde = (f) => (f ? Math.floor((Date.now() - new Date(f).getTime()) / 864e5) : null);
 
 export default function Ficha({ ctx, c, onChange, compacta, wa }) {
@@ -29,9 +32,18 @@ export default function Ficha({ ctx, c, onChange, compacta, wa }) {
   const [resumiendo, setResumiendo] = useState(false);
   const [eligiendo, setEligiendo] = useState(false);
   const [todo, setTodo] = useState(false);
+  const [an, setAn] = useState(null); // análisis de la IA (crm_analisis)
+  const [analizando, setAnalizando] = useState(false);
+  const clave = c.client_id ? `c:${c.client_id}` : `k:${c.id}`;
   useEffect(() => { setNotas(c.notes || ""); setBuscar(""); setClientes(null); setEligiendo(false); setTodo(false); setD(null); }, [c.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const cargar = useCallback(async () => { const r = await dq("rpc/crm_ficha", { token, method: "POST", body: { p_contact_id: c.id } }); setD(r && !r.code ? r : { ops: [], cots: [] }); }, [token, c.id, c.client_id]);
   useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { let vivo = true; setAn(null); dq("crm_analisis", { token, filters: `?clave=eq.${clave}&select=temperatura,lectura,siguiente,mensaje,quien,quien_manual,analizado_at,error` }).then((r) => { if (vivo) setAn(arr(r)[0] || {}); }); return () => { vivo = false; }; }, [token, clave]);
+  const analizar = async () => { setAnalizando(true); const r = await api("/api/cron/crm-analisis", { clave }); setAnalizando(false); if (r.ok) setAn((a) => ({ ...(a || {}), ...r.analisis, error: null })); else toast(r.error || "No se pudo analizar", "error"); };
+  const quienLleva = an?.quien_manual || an?.quien || c.quien_ef || "humano";
+  const pasar = async (a) => { const r = await dq("crm_analisis?on_conflict=clave", { token, method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: { clave, client_id: c.client_id || null, contact_id: c.client_id ? null : c.id, quien_manual: a, updated_at: new Date().toISOString() } }); if (Array.isArray(r)) setAn((x) => ({ ...(x || {}), quien_manual: a })); else toast("No se pudo guardar", "error"); };
+  // La fecha de próximo contacto es una sola: la de la ficha y la del seguimiento del cliente.
+  const proximo = async (v) => { await patch({ next_contact_at: v || null }); if (c.client_id) await dq("clients", { token, method: "PATCH", filters: `?id=eq.${c.client_id}`, body: { followup_next_at: v || null } }); };
 
   const patch = async (p) => { const r = await dq("crm_contacts", { token, method: "PATCH", filters: `?id=eq.${c.id}`, body: { ...p, updated_at: new Date().toISOString() } }); if (Array.isArray(r)) onChange?.(p); else toast("No se pudo guardar", "error"); };
   const etapa = async (k) => {
@@ -60,6 +72,15 @@ export default function Ficha({ ctx, c, onChange, compacta, wa }) {
         <p style={{ margin: "2px 0 0", fontSize: wa ? 13.5 : 11.5, color: K.sub, fontFamily: wa ? "inherit" : MONO }}>{fmtTel(c.phone)}{c.name && c.wa_name && c.wa_name !== c.name ? ` · ~${c.wa_name}` : ""}</p>
       </div>
     </div>
+
+    <Seccion K={K} t={`Análisis${an?.analizado_at && an?.lectura ? ` · ${hace(an.analizado_at)}` : ""}`} right={<Accion c={K.hi} onClick={analizar} disabled={analizando || an === null}>{analizando ? "Analizando…" : an?.lectura ? "Analizar de nuevo" : "Analizar"}</Accion>}>
+      {an === null ? <p style={{ margin: 0, fontSize: 12.5, color: K.mute }}>Cargando…</p> : an.lectura ? <>
+        {TEMP[an.temperatura] && <span style={{ display: "inline-block", marginBottom: 6, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 999, color: TEMP[an.temperatura].c, background: `${TEMP[an.temperatura].c}1f`, border: `1px solid ${TEMP[an.temperatura].c}55` }}>{TEMP[an.temperatura].l}</span>}
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{an.lectura}</p>
+        {an.siguiente && <p style={{ margin: "5px 0 0", fontSize: 12.5, color: K.hi }}>→ {an.siguiente}</p>}
+      </> : <p style={{ margin: 0, fontSize: 12.5, color: K.mute }}>{an.error ? "No se pudo analizar." : "Todavía sin análisis."}</p>}
+      {an !== null && <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}><span style={{ fontSize: 12, color: K.mute }}>Seguimiento</span><Quien K={K} v={quienLleva} onChange={pasar} /></div>}
+    </Seccion>
 
     {c.client_id && d && <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
       <Numero K={K} l="Importó" v={hechas.length} />
@@ -130,8 +151,8 @@ export default function Ficha({ ctx, c, onChange, compacta, wa }) {
 
     <Seccion K={K} t="Próximo contacto">
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <DatePicker value={c.next_contact_at || ""} onChange={(v) => patch({ next_contact_at: v || null })} placeholder="Sin fecha" />
-        {c.next_contact_at && <Accion c={K.mute} onClick={() => patch({ next_contact_at: null })}>Quitar</Accion>}
+        <DatePicker value={c.next_contact_at || ""} onChange={proximo} placeholder="Sin fecha" />
+        {c.next_contact_at && <Accion c={K.mute} onClick={() => proximo(null)}>Quitar</Accion>}
       </div>
     </Seccion>
 

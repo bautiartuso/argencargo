@@ -231,7 +231,7 @@ function Burbuja({ m, nuevoDia, primero, reciente, reac }) {
   const conMedia = !m.deleted && m.media_id && ["image", "video", "audio", "document", "sticker"].includes(m.type);
   const txt = m.deleted ? "Se eliminó este mensaje" : m.text || (conMedia ? "" : VISTA[m.type] || m.type || "");
   const pie = <span style={{ float: "right", display: "inline-flex", alignItems: "center", gap: 4, margin: "7px 0 -3px 12px", fontSize: 11, color: out ? "rgba(255,255,255,0.7)" : W.innSub, whiteSpace: "nowrap", position: "relative", top: 2 }}>
-    {m.via === "api" && out ? "sistema · " : ""}{horaWa(m.ts)}{out && (m.status === "failed" ? <span style={{ color: W.rojo }}>✗</span> : <Tilde doble={m.status === "delivered" || m.status === "read" || m.via === "app"} leido={m.status === "read"} />)}
+    {m.via === "ia" ? "IA · " : m.via === "api" && out ? "sistema · " : ""}{horaWa(m.ts)}{out && (m.status === "failed" ? <span style={{ color: W.rojo }}>✗</span> : <Tilde doble={m.status === "delivered" || m.status === "read" || m.via === "app"} leido={m.status === "read"} />)}
   </span>;
   return <>
     {nuevoDia && <div style={{ textAlign: "center", margin: "10px 0 8px" }}><span style={{ fontSize: 12, fontWeight: 700, color: "#ffffff", padding: "5px 14px", borderRadius: 10, background: "#15181b", textTransform: "capitalize" }}>{diaDe(m.ts)}</span></div>}
