@@ -5,7 +5,7 @@
 //
 // Body: { flight_id }  →  { bultos: [{peso_kg, largo_cm, ancho_cm, alto_cm}], total_kg }
 
-import { callClaudeVision, HAIKU_MODEL } from "../../../../lib/anthropic";
+import { callClaudeVision, HAIKU_MODEL, limpiarJson } from "../../../../lib/anthropic";
 import { payloadVerificado } from "../../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -72,7 +72,8 @@ Extraé UNA fila por bulto con: peso real en kg (实重), largo, ancho y alto en
         additionalProperties: false,
       },
     });
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    let parsed = typeof raw === "string" ? JSON.parse(limpiarJson(raw)) : raw;
+    if (Array.isArray(parsed)) parsed = { bultos: parsed }; // el respaldo a veces devuelve la lista suelta
     const bultos = (parsed?.bultos || []).filter((b) => b.peso_kg != null || b.largo_cm != null);
     if (bultos.length === 0) return Response.json({ error: "No se pudieron leer bultos de la foto" }, { status: 422 });
     const total = Math.round(bultos.reduce((a, b) => a + Number(b.peso_kg || 0), 0) * 100) / 100;

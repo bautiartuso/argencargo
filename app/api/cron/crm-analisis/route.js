@@ -13,10 +13,10 @@ export async function GET(req) {
   if (!esCronValido(req)) return Response.json({ error: "No autorizado" }, { status: 401 });
   const t0 = Date.now();
   const fila = await personasPendientes(TANDA);
-  let hechos = 0, fallas = 0, i = 0;
-  const uno = async () => { while (i < fila.length && Date.now() - t0 < TOPE_MS) { const p = fila[i++]; const r = await analizarPersona(p); if (r.error) { fallas++; console.error("[crm-analisis]", p.clave, r.error); } else hechos++; } };
+  let hechos = 0, fallas = 0, i = 0, sinSaldo = false;
+  const uno = async () => { while (!sinSaldo && i < fila.length && Date.now() - t0 < TOPE_MS) { const p = fila[i++]; const r = await analizarPersona(p); if (r.sinSaldo) { sinSaldo = true; break; } if (r.error) { fallas++; console.error("[crm-analisis]", p.clave, r.error); } else hechos++; } };
   await Promise.all(Array.from({ length: A_LA_VEZ }, uno));
-  return Response.json({ ok: true, en_fila: fila.length, analizados: hechos, fallas });
+  return Response.json({ ok: true, en_fila: fila.length, analizados: hechos, fallas, ...(sinSaldo ? { motivo: "Claude sin saldo" } : {}) });
 }
 
 export async function POST(req) {
