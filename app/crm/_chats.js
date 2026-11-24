@@ -82,6 +82,14 @@ export default function Chats({ ctx, inicial }) {
     setSel(c); setMsgs(null); setFichaMovil(false); await cargarMsgs(c);
     if (c.unread > 0) { await dq("crm_contacts", { token, method: "PATCH", filters: `?id=eq.${c.id}`, body: { unread: 0, seen_at: new Date().toISOString() } }); cargarLista(); }
   };
+  // En coexistencia Meta no avisa cuando el chat se lee en el celu: lo que se abrió allá y no se contestó
+  // queda sin leer acá. Este botón los da a todos por leídos de una.
+  const marcarLeidos = async () => {
+    const r = await dq("crm_contacts", { token, method: "PATCH", filters: "?unread=gt.0", body: { unread: 0, seen_at: new Date().toISOString() } });
+    if (!Array.isArray(r)) { toast("No se pudieron marcar", "error"); return; }
+    setLista((l) => (l || []).map((c) => (c.unread > 0 ? { ...c, unread: 0 } : c))); ctx.setSinLeer?.(0);
+    if (filtro === "sinleer") setFiltro("todos");
+  };
   const actualizarContacto = (patch) => { setSel((s) => (s ? { ...s, ...patch } : s)); setLista((l) => (l || []).map((c) => (c.id === sel?.id ? { ...c, ...patch } : c))); };
 
   const sinLeer = (lista || []).filter((c) => c.unread > 0).length;
@@ -96,7 +104,10 @@ export default function Chats({ ctx, inicial }) {
 
   const Lista = <div style={{ display: "flex", flexDirection: "column", height: alto, minWidth: 0, background: W.bg, borderRight: movil ? "none" : `1px solid ${W.line}` }}>
     <div style={{ padding: "14px 14px 8px" }}>
-      <p style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700, color: W.txt }}>Chats</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, margin: "0 0 12px" }}>
+        <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: W.txt }}>Chats</p>
+        {sinLeer > 0 && <button type="button" onClick={marcarLeidos} style={{ padding: "5px 10px", borderRadius: 999, border: `1px solid ${W.line}`, background: "transparent", color: W.acento, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>Marcar leídos</button>}
+      </div>
       <label style={{ display: "flex", alignItems: "center", gap: 10, height: 38, padding: "0 14px", borderRadius: 999, background: W.caja, color: W.mute }}>
         <Ico s={16} d={["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "M21 21l-4.3-4.3"]} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" data-enter-libre="1" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", color: W.txt, fontSize: 14, fontFamily: "inherit" }} />
