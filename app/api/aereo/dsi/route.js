@@ -138,7 +138,10 @@ async function revisarUno(p) {
 //    48 a 72 h en contestar y se pide todo junto. Solo si llegaron a Argentina hace 30 días o menos: lo que
 //    lleva meses trabado en aduana (FL-0075) no tiene DSI para pedir.
 //  · Nunca los retenidos por Aduana ni los liberados vía régimen general: no tienen DSI.
-async function vuelosPorPedir() {
+// Devuelve los vuelos llegados a los que les falta la DSI, en dos grupos (24/11/2026): los que todavía hay
+// que pedir y los que ya se pidieron y el courier no contestó (antes esos no se veían en ningún lado
+// hasta que llegaba la respuesta: FL-0175, 0187 y 0189).
+async function vuelosSinDsi() {
   const desde = new Date(Date.now() - 150 * 86400000).toISOString();
   const fl = lista(await sb(`/rest/v1/flights?status=in.(recibido,despachado)&dispatched_at=gte.${desde}&international_tracking=not.is.null&select=${CAMPOS_FORM},dispatched_at,flight_operations(operations(id,channel,service_type,status,retenida_at,liberada_rg_at,arrived_in_argentina_at))`));
   const vuelos = fl.filter((f) => !f.liberado_rg_at && !(f.status !== "recibido" && f.retenido_at))
@@ -148,17 +151,18 @@ async function vuelosPorPedir() {
   const opIds = vuelos.flatMap((f) => f.ops.map((o) => o.id));
   const [docs, peds] = await Promise.all([
     sb(`/rest/v1/legajo_docs?operation_id=in.(${opIds.join(",")})&tipo=eq.dsi&borrado_at=is.null&select=operation_id`),
-    sb(`/rest/v1/dsi_pedidos?flight_id=in.(${vuelos.map((f) => f.id).join(",")})&revisado_at=is.null&select=flight_id`),
+    sb(`/rest/v1/dsi_pedidos?flight_id=in.(${vuelos.map((f) => f.id).join(",")})&revisado_at=is.null&select=flight_id,enviado_at,respuesta_at&order=enviado_at.desc`),
   ]);
   const conDsi = new Set(lista(docs).map((d) => d.operation_id));
-  const pedidos = new Set(lista(peds).map((p) => p.flight_id));
+  const pedidos = {}; for (const p of lista(peds)) if (!pedidos[p.flight_id]) pedidos[p.flight_id] = p;
   const llego = (f) => new Date(f.received_at || f.carrier_delivered_at || f.ops.map((o) => o.arrived_in_argentina_at).filter(Boolean).sort()[0] || f.dispatched_at).getTime();
-  return vuelos.filter((f) => {
-    if (pedidos.has(f.id) || f.ops.every((o) => conDsi.has(o.id))) return false;
-    return f.ops.some((o) => !["operacion_cerrada", "cancelada"].includes(o.status)) || Date.now() - llego(f) < 14 * 86400000;
-  }).sort((x, y) => llego(y) - llego(x));
+  const sinDsi = vuelos.filter((f) => !f.ops.every((o) => conDsi.has(o.id)) && (f.ops.some((o) => !["operacion_cerrada", "cancelada"].includes(o.status)) || Date.now() - llego(f) < 14 * 86400000));
+  return {
+    porPedir: sinDsi.filter((f) => !pedidos[f.id]).sort((x, y) => llego(y) - llego(x)),
+    esperando: sinDsi.filter((f) => pedidos[f.id] && !pedidos[f.id].respuesta_at).map((f) => ({ id: f.id, desde: pedidos[f.id].enviado_at })),
+  };
 }
-const contarPorPedir = async () => (await vuelosPorPedir()).length;
+const vuelosPorPedir = async () => (await vuelosSinDsi()).porPedir;
 
 const textoPlano = (html) => String(html || "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr|li)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\n{3,}/g, "\n\n").trim();
 
@@ -171,8 +175,9 @@ export async function GET(req) {
     if (accion === "estado") {
       const cfg = await leerConfig().catch(() => null);
       if (cfg?.refresh_token) await revisar().catch(() => {});
-      const [r, porPedir] = await Promise.all([sb(`/rest/v1/dsi_pedidos?respuesta_at=not.is.null&revisado_at=is.null&select=flight_id`), contarPorPedir()]);
-      if (!r.ok) return json({ respondidos: 0, vuelos: [], porPedir, sinTabla: r.status === 404 || r.status === 400 });
+      const [r, sin] = await Promise.all([sb(`/rest/v1/dsi_pedidos?respuesta_at=not.is.null&revisado_at=is.null&select=flight_id`), vuelosSinDsi().catch(() => ({ porPedir: [], esperando: [] }))]);
+      const porPedir = sin.porPedir.length, sinPedir = sin.porPedir.map((f) => f.id), esperando = sin.esperando;
+      if (!r.ok) return json({ respondidos: 0, vuelos: [], porPedir, sinPedir, esperando, sinTabla: r.status === 404 || r.status === 400 });
       // DSI ya cargada en todas las ops del vuelo (11/11/2026): no hay nada que adjuntar, el pedido se da por
       // revisado solo y el cartel 📬 DSI desaparece (antes quedaba hasta abrir la respuesta del courier).
       let abiertos = [...new Set(lista(r).map((x) => x.flight_id).filter(Boolean))];
@@ -187,7 +192,7 @@ export async function GET(req) {
           abiertos = abiertos.filter((fid) => !listos.includes(fid));
         }
       }
-      return json({ respondidos: abiertos.length, vuelos: abiertos, porPedir });
+      return json({ respondidos: abiertos.length, vuelos: abiertos, porPedir, sinPedir, esperando });
     }
     if (accion === "vuelo") {
       const fid = u.searchParams.get("flight_id") || "";

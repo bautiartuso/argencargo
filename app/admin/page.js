@@ -9158,10 +9158,13 @@ function FinancePanel({token}){
 // /api/aereo/dsi y avisa con "ac_dsi_estado"; la campanita de Aéreos y el chip del vuelo lo leen de acá.
 // porPedir = vuelos llegados a los que falta pedirles la DSI (pelotita naranja).
 let DSI_RESPONDIDOS=new Set();let DSI_POR_PEDIR=0;
-const fijarDsiRespondidos=(ids,porPedir)=>{DSI_RESPONDIDOS=new Set(ids||[]);if(porPedir!=null)DSI_POR_PEDIR=Number(porPedir)||0;if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_dsi_estado"));};
+// Vuelos llegados sin DSI (24/11/2026): los que falta pedir y los pedidos que el courier todavía no contestó.
+let DSI_FALTAN={sinPedir:new Set(),esperando:{}};
+const fijarDsiRespondidos=(ids,porPedir,faltan)=>{DSI_RESPONDIDOS=new Set(ids||[]);if(porPedir!=null)DSI_POR_PEDIR=Number(porPedir)||0;if(faltan)DSI_FALTAN={sinPedir:new Set(faltan.sinPedir||[]),esperando:Object.fromEntries((faltan.esperando||[]).map(x=>[x.id,x.desde]))};if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_dsi_estado"));};
 function useDsiRespondidos(){const [v,setV]=useState(DSI_RESPONDIDOS);useEffect(()=>{const h=()=>setV(DSI_RESPONDIDOS);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
+function useDsiFaltan(){const [v,setV]=useState(DSI_FALTAN);useEffect(()=>{const h=()=>setV(DSI_FALTAN);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
 function useDsiPorPedir(){const [v,setV]=useState(DSI_POR_PEDIR);useEffect(()=>{const h=()=>setV(DSI_POR_PEDIR);window.addEventListener("ac_dsi_estado",h);return()=>window.removeEventListener("ac_dsi_estado",h);},[]);return v;}
-const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[],b.porPedir);}catch{}};
+const refrescarDsiEstado=async(token)=>{try{const r=await fetch("/api/aereo/dsi?accion=estado",{headers:{Authorization:`Bearer ${await ensureFreshToken(token)}`}});const b=await r.json();if(r.ok)fijarDsiRespondidos(b.vuelos||[],b.porPedir,{sinPedir:b.sinPedir,esperando:b.esperando});}catch{}};
 
 // Recibo de un cobro: el número se asigna la primera vez que se imprime (secuencia en la base).
 async function imprimirReciboPago({token,op,payment,client,payments}){
@@ -12423,7 +12426,7 @@ function AgentsPanel({token}){
   const [reenvios,setReenvios]=useState([]); // pedidos de reenvío a otro depósito (forward_requests)
   const [reenvioModal,setReenvioModal]=useState(null); // {agentId,agentName,cliente,operationId,packages}
   const [vuelosExtraidos,setVuelosExtraidos]=useState(()=>new Set());
-  const dsiRespondidos=useDsiRespondidos();
+  const dsiRespondidos=useDsiRespondidos();const dsiFaltan=useDsiFaltan();
   const [reclamosN,setReclamosN]=useState(0); // reclamos de depósito abiertos (badge de la solapa)
   // Tickets abiertos con el agente (17/11/2026): número de la solapa y del menú. Bautista: "si hay un
   // ticket abierto, tiene que estar el numerito", no solo cuando falta responder.
@@ -13675,6 +13678,8 @@ function AgentsPanel({token}){
             // Desglose del courier subido y todavía no pasado a las ops. Se apaga al extraerlos con IA o cuando el equipo
             // ya editó los bultos a mano (flights.bultos_revisados_at, 11/11/2026). El de DSI se apaga al cargar la DSI.
             if(dsiRespondidos.has(f.id))warns.push({t:"📬 DSI",c:"#60a5fa",title:"El courier respondió el pedido de DSI: abrí el vuelo para adjuntarla"});
+            else if(dsiFaltan.sinPedir.has(f.id))warns.push({t:"FALTA DSI",c:"#fbbf24",title:"Falta la DSI y todavía no se pidió"});
+            else if(dsiFaltan.esperando[f.id])warns.push({t:"⏳ DSI",c:"#94a3b8",title:`Falta la DSI: se pidió el ${new Date(dsiFaltan.esperando[f.id]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})} y el courier todavía no respondió`});
             if(f.dispatch_photo_url&&f.status!=="recibido"&&!f.bultos_revisados_at&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             const bgFila=retenido?"rgba(239,68,68,0.10)":"transparent";
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:bgFila,boxShadow:retenido?"inset 4px 0 0 #ef4444":"none"}} onMouseEnter={e=>{e.currentTarget.style.background=retenido?"rgba(239,68,68,0.16)":"rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=bgFila;}}>
