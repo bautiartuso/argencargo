@@ -53,7 +53,7 @@ function armarTira({ c, d, admin }) {
   const enCurso = (d?.ops || []).filter((o) => !o.entregada && o.code);
   if (enCurso.length) {
     const debe = admin ? enCurso.reduce((s, o) => s + Number(o.saldo || 0), 0) : 0;
-    return { items: enCurso.slice(0, 3).map((o) => ({ b: o.code, ok: ESTADO_OP[o.status] || o.status, t: o.eta ? `llega ${fechaDM(o.eta)}` : "" })), der: debe > 0.5 ? `A cobrar ${usd(debe)}` : "" };
+    return { items: enCurso.slice(0, 3).map((o) => ({ b: o.code, ok: ESTADO_OP[o.status] || o.status, t: o.eta && o.status !== "entregada" ? `llega ${fechaDM(o.eta)}` : "" })), der: debe > 0.5 ? `A cobrar ${usd(debe)}` : "" };
   }
   if (!c.client_id) return { txt: "Todavía no es cliente" };
   const q = (d?.cots || [])[0];

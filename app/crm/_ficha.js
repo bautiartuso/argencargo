@@ -97,7 +97,7 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
     {enCurso.length > 0 && <Seccion K={K} t="En curso">
       {enCurso.map((o) => <div key={o.id} style={{ padding: "7px 10px", marginBottom: 4, borderRadius: 10, background: K.caja, fontSize: 12.5 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b style={{ fontFamily: MONO }}>{o.code}</b><span style={{ color: K.hi, fontWeight: 700 }}>{ESTADO_OP[o.status] || o.status}</span></div>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, color: K.sub, marginTop: 2 }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[CANAL[o.channel], o.description].filter(Boolean).join(" · ")}</span><span style={{ flexShrink: 0 }}>{o.eta ? `llega ${fechaCorta(o.eta)}` : ""}{admin && o.saldo > 0.5 ? `${o.eta ? " · " : ""}${usd(o.saldo)}` : ""}</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, color: K.sub, marginTop: 2 }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[CANAL[o.channel], o.description].filter(Boolean).join(" · ")}</span><span style={{ flexShrink: 0 }}>{o.eta && o.status !== "entregada" ? `llega ${fechaCorta(o.eta)}` : ""}{admin && o.saldo > 0.5 ? `${o.eta && o.status !== "entregada" ? " · " : ""}${usd(o.saldo)}` : ""}</span></div>
       </div>)}
     </Seccion>}
 
