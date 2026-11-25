@@ -7,6 +7,7 @@ import { esCronValido, usuarioConRol } from "../../../../lib/auth-server";
 import { callClaudeText, HAIKU_MODEL } from "../../../../lib/anthropic";
 
 export const maxDuration = 120;
+const HORAS_SIN_LEER = 3;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const sbh = (extra = {}) => { const k = process.env.SUPABASE_SERVICE_ROLE; return { apikey: k, Authorization: `Bearer ${k}`, "Content-Type": "application/json", ...extra }; };
 const sb = (p, o = {}) => fetch(`${SB_URL}/rest/v1${p}`, { ...o, headers: sbh(o.headers || {}), cache: "no-store" });
@@ -41,13 +42,22 @@ export async function GET(req) {
   if (!esCronValido(req)) return Response.json({ error: "No autorizado" }, { status: 401 });
   let etapas = null;
   try { const r = await sb(`/rpc/crm_sync_etapas`, { method: "POST", body: "{}" }); etapas = await r.json().catch(() => null); } catch (e) { console.error("[crm-resumen] etapas", e.message); }
+  // Sin leer que se vencen solos (25/11/2026). Meta no avisa cuando Bautista lee un chat en el celu (solo
+  // cuando contesta), así que lo que leyó y no contestó quedaba para siempre como no leído. Pasadas 3 h
+  // del último mensaje del cliente se da por visto en el teléfono y se saca la marca.
+  let vencidos = 0;
+  try {
+    const corte = new Date(Date.now() - HORAS_SIN_LEER * 3600e3).toISOString();
+    const r = await sb(`/crm_contacts?unread=gt.0&last_in_at=lt.${encodeURIComponent(corte)}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ unread: 0, seen_at: new Date().toISOString() }) });
+    const d = await r.json().catch(() => []); vencidos = Array.isArray(d) ? d.length : 0;
+  } catch (e) { console.error("[crm-resumen] sin leer", e.message); }
   const quietas = new Date(Date.now() - 2 * 3600e3).toISOString();
   const pendientes = await sb(`/crm_contacts?select=id,summary_at,last_msg_at&last_msg_at=lt.${encodeURIComponent(quietas)}&or=(summary_at.is.null,summary_at.lt.last_msg_at)&order=last_msg_at.desc&limit=15`).then((r) => r.json()).catch(() => []);
   // PostgREST no compara dos columnas en el filtro: se filtra acá.
   const lista = (Array.isArray(pendientes) ? pendientes : []).filter((c) => !c.summary_at || c.summary_at < c.last_msg_at);
   let hechos = 0;
   for (const c of lista) { try { const r = await resumir(c.id); if (r.ok && !r.sin_cambios) hechos++; } catch (e) { console.error("[crm-resumen]", c.id, e.message); } }
-  return Response.json({ ok: true, etapas, candidatos: lista.length, resumidos: hechos });
+  return Response.json({ ok: true, etapas, candidatos: lista.length, resumidos: hechos, sin_leer_vencidos: vencidos });
 }
 
 export async function POST(req) {
