@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Argencargo — Admin",
+  title: { absolute: "ARGENCARGO | ADMIN" },
   manifest: "/manifest-admin.json",
   appleWebApp: {
     capable: true,

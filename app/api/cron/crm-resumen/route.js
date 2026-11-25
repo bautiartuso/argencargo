@@ -7,7 +7,7 @@ import { esCronValido, usuarioConRol } from "../../../../lib/auth-server";
 import { callClaudeText, HAIKU_MODEL } from "../../../../lib/anthropic";
 
 export const maxDuration = 120;
-const HORAS_SIN_LEER = 3;
+const HORAS_SIN_LEER = 1;
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const sbh = (extra = {}) => { const k = process.env.SUPABASE_SERVICE_ROLE; return { apikey: k, Authorization: `Bearer ${k}`, "Content-Type": "application/json", ...extra }; };
 const sb = (p, o = {}) => fetch(`${SB_URL}/rest/v1${p}`, { ...o, headers: sbh(o.headers || {}), cache: "no-store" });
@@ -43,7 +43,7 @@ export async function GET(req) {
   let etapas = null;
   try { const r = await sb(`/rpc/crm_sync_etapas`, { method: "POST", body: "{}" }); etapas = await r.json().catch(() => null); } catch (e) { console.error("[crm-resumen] etapas", e.message); }
   // Sin leer que se vencen solos (25/11/2026). Meta no avisa cuando Bautista lee un chat en el celu (solo
-  // cuando contesta), así que lo que leyó y no contestó quedaba para siempre como no leído. Pasadas 3 h
+  // cuando contesta), así que lo que leyó y no contestó quedaba para siempre como no leído. Pasada 1 h
   // del último mensaje del cliente se da por visto en el teléfono y se saca la marca.
   let vencidos = 0;
   try {

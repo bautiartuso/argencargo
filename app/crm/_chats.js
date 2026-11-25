@@ -12,6 +12,7 @@ import { fmtTel, nombreDe, horaWa, cuandoLista, diaDe, VISTA, Etapa, api, W } fr
 import Ficha from "./_ficha";
 import Plantillas from "./_plantillas";
 
+const HORAS_SIN_LEER = 1;
 const SEL_CONTACTO = "id,phone,name,wa_name,client_id,stage,stage_manual,stage_at,source,ad_headline,ad_name,ad_at,campaign_name,first_in_at,last_msg_at,last_in_at,last_preview,last_direction,unread,summary,summary_at,pending,next_contact_at,notes,lost_reason,created_at";
 const FILTROS = [["todos", "Todos"], ["sinleer", "No leídos"], ["leads", "Leads"], ["clientes", "Clientes"]];
 const ANCHO_LISTA = 264, ANCHO_FICHA = 330;
@@ -42,6 +43,11 @@ export default function Chats({ ctx, inicial }) {
   const cargarLista = useCallback(async () => {
     const r = await dq("crm_contacts", { token, filters: `?select=${SEL_CONTACTO}&last_msg_at=not.is.null&order=last_msg_at.desc&limit=400` });
     const l = arr(r);
+    // Sin leer que se vence solo (25/11/2026): pasada 1 h del último mensaje del cliente se da por visto en
+    // el celu (Meta no avisa cuando se lee ahí). Acá se saca de la vista sin tocar la base; la base la
+    // limpia el cron crm-resumen con el mismo plazo.
+    const vence = Date.now() - HORAS_SIN_LEER * 3600e3;
+    for (const c of l) if (c.unread > 0 && c.last_in_at && new Date(c.last_in_at).getTime() < vence) c.unread = 0;
     // El chat que está abierto y a la vista se da por leído apenas llega algo.
     const abierto = selRef.current && l.find((c) => c.id === selRef.current.id);
     if (abierto?.unread > 0 && document.visibilityState === "visible") { abierto.unread = 0; dq("crm_contacts", { token, method: "PATCH", filters: `?id=eq.${abierto.id}`, body: { unread: 0, seen_at: new Date().toISOString() } }); }
