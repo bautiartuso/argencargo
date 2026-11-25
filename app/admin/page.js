@@ -14743,10 +14743,12 @@ const agpUsd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDig
 const agpArs=(v)=>`$ ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const agpTc=(v)=>Number(v||0).toLocaleString("es-AR",{maximumFractionDigits:2});
 const agpTxt=(v)=>v==null||v===""?"":String(v).replace(".",",");
-// TC de referencia: el último que usó la financiera; si no hay, el blue del día.
+// TC de referencia: el blue del día (lib/dolar.js); si no responde, el último que quedó en la CC de la financiera.
+// 25/11/2026: estaba al revés y la gestión nueva arrancaba con el TC del último cobro (1690 del día
+// anterior con el blue en 1730): "¿por qué no lo está actualizando el sistema?".
 async function agpTcRef(token){
-  try{const r=await dq("cc_solfin_movements",{token,filters:"?provisional_rate=not.is.null&select=provisional_rate&order=date.desc,created_at.desc&limit=1"});const v=Number(Array.isArray(r)&&r[0]?.provisional_rate);if(v>0)return v;}catch{}
   try{const r=await fetchDolar({signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)return Number(d.venta);}}catch{}
+  try{const r=await dq("cc_solfin_movements",{token,filters:"?provisional_rate=not.is.null&select=provisional_rate&order=date.desc,created_at.desc&limit=1"});const v=Number(Array.isArray(r)&&r[0]?.provisional_rate);if(v>0)return v;}catch{}
   return 0;
 }
 async function agpSubir(file,token,prefijo){
@@ -15012,6 +15014,10 @@ function AgpForm({p,token,allClients,tcRef,cable=AGP_CABLE_DEF,onClose,onSaved})
   const [cliQ,setCliQ]=useState("");
   const [saving,setSaving]=useState(false);
   useEffect(()=>{if(!tc&&tcRef)setTc(String(tcRef));},[tcRef]);
+  // Gestión nueva: el TC se vuelve a pedir al abrir el formulario (la pestaña puede llevar días abierta)
+  // y pisa el de referencia mientras no se haya escrito uno a mano.
+  const tcTocado=useRef(false);
+  useEffect(()=>{if(p)return;let vivo=true;agpTcRef(token).then(v=>{if(vivo&&v>0&&!tcTocado.current)setTc(String(v));});return()=>{vivo=false;};},[]);
   const viejaSinCc=!!p&&!agpConCc(p);
   const m=parseMontoAr(monto),t=parseMontoAr(tc);
   const transf=forma==="transf";
@@ -15089,7 +15095,7 @@ function AgpForm({p,token,allClients,tcRef,cable=AGP_CABLE_DEF,onClose,onSaved})
       <div style={{marginBottom:14}}><label style={agpLbl}>Hay que girar (USD)</label><input type="text" inputMode="decimal" value={monto} autoFocus={!celu&&!!p} onChange={e=>agpNumOk(e.target.value)&&setMonto(e.target.value)} placeholder="0,00" style={{...agpInp(celu),height:48,fontSize:18}}/></div>
       <label style={agpLbl}>Cómo paga</label>
       {agpSeg([["efvo","Efectivo"],["transf","Transferencia"]],forma,setForma)}
-      {transf&&<div style={{marginBottom:12}}><label style={agpLbl}>Tipo de cambio</label><input type="text" inputMode="decimal" value={tc} onChange={e=>agpNumOk(e.target.value)&&setTc(e.target.value)} style={agpInp(celu)}/></div>}
+      {transf&&<div style={{marginBottom:12}}><label style={agpLbl}>Tipo de cambio</label><input type="text" inputMode="decimal" value={tc} onChange={e=>{if(agpNumOk(e.target.value)){tcTocado.current=true;setTc(e.target.value);}}} style={agpInp(celu)}/></div>}
       {!esEmpleado()&&m>0&&<p style={{margin:"2px 0 0",fontSize:12.5,color:"rgba(255,255,255,0.5)",lineHeight:1.6,fontVariantNumeric:"tabular-nums"}}>
         Sale de la CC <strong style={{color:"#fff"}}>{agpUsd(sale)}</strong> (costo SolFin {agpUsd(costoSolfin)}){transf&&t>0?<> · te quedan {agpUsd(netoUsd)} después del 2,5%</>:null} · ganás <strong style={{color:gan>=0?"#4ade80":"#f87171"}}>{agpUsd(gan)}</strong>
       </p>}
