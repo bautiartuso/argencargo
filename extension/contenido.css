@@ -1,0 +1,31 @@
+/* ARGENCARGO CRM sobre WhatsApp Web. Todo lo propio lleva el prefijo ac-. */
+html.ac-abierto #app { width: calc(100% - 340px) !important; }
+html.ac-con-tira #main header { margin-bottom: 34px !important; }
+html.ac-con-rapidas #main footer { padding-top: 42px !important; }
+
+#ac-panel, #ac-tab, #ac-tira, #ac-rapidas { box-sizing: border-box; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.3; }
+#ac-panel *, #ac-tira *, #ac-rapidas * { box-sizing: border-box; font-family: inherit; }
+
+#ac-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 340px; z-index: 120; display: none; flex-direction: column; background: #0c1829; border-left: 1px solid rgba(255,255,255,0.08); color: #f4f7fb; }
+html.ac-abierto #ac-panel { display: flex; }
+#ac-panel .ac-cab { flex: 0 0 auto; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #a3b3c8; }
+#ac-panel .ac-cab b { color: #3d9bff; font-weight: 800; }
+#ac-panel .ac-cab .ac-esp { flex: 1; }
+#ac-panel button { background: transparent; border: 0; color: #a3b3c8; cursor: pointer; padding: 6px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0; }
+#ac-panel button:hover { background: #14253f; color: #f4f7fb; }
+#ac-panel .ac-x { font-size: 16px; line-height: 1; }
+#ac-panel iframe { flex: 1 1 auto; width: 100%; border: 0; display: block; background: #0c1829; }
+
+#ac-tab { position: fixed; right: 0; top: 76px; z-index: 120; border: 0; cursor: pointer; background: #3d9bff; color: #04101f; font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; padding: 9px 10px 9px 12px; border-radius: 999px 0 0 999px; }
+html.ac-abierto #ac-tab { display: none; }
+
+#ac-tira { position: fixed; z-index: 120; height: 34px; display: none; align-items: center; gap: 14px; padding: 0 16px; overflow: hidden; white-space: nowrap; background: #0c1829; border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12.5px; color: #a3b3c8; }
+#ac-tira b { color: #f4f7fb; font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+#ac-tira .ac-ok { color: #3d9bff; font-weight: 700; }
+#ac-tira .ac-der { margin-left: auto; color: #f5c26b; font-weight: 700; }
+
+#ac-rapidas { position: fixed; z-index: 120; height: 42px; display: none; align-items: center; gap: 6px; padding: 0 14px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; }
+#ac-rapidas::-webkit-scrollbar { display: none; }
+#ac-rapidas button { flex: 0 0 auto; border: 1px solid rgba(61,155,255,0.4); background: #0c1829; color: #d3e6ff; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+#ac-rapidas button:hover { background: #173258; }
+#ac-rapidas .ac-aviso { font-size: 12.5px; color: #d3e6ff; background: #0c1829; padding: 6px 12px; border-radius: 999px; }

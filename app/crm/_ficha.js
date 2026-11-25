@@ -10,7 +10,8 @@ import DatePicker from "../components/DatePicker";
 import { fmtTel, nombreDe, fechaCorta, usd, ETAPAS, etapaDe, Avatar, api, Accion, W } from "./_comun";
 import { TEMP } from "../../lib/crm-seguimiento";
 
-const ESTADO_OP = { pendiente: "Pendiente", en_deposito_origen: "En depósito de origen", en_preparacion: "En preparación", en_transito: "En tránsito", en_aduana: "En aduana", entregada: "Entregada", operacion_cerrada: "Cerrada" };
+// "entregada" sin entrega registrada es la carga que espera al cliente: en el admin se llama LISTA PARA RETIRAR.
+export const ESTADO_OP = { pendiente: "Pendiente", en_deposito_origen: "En depósito de origen", en_preparacion: "En preparación", en_transito: "En tránsito", en_aduana: "En aduana", entregada: "Lista para retirar", operacion_cerrada: "Cerrada" };
 const CANAL = { aereo_blanco: "Aéreo", aereo_negro: "Aéreo", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo" };
 const FISCAL = { responsable_inscripto: "Responsable inscripto", monotributista: "Monotributista", ninguna: "Consumidor final" };
 // Piezas de la ficha. Van afuera del componente (si no, se remontan en cada tecla y las notas pierden el foco).
@@ -21,7 +22,8 @@ const Dato = ({ K, l, children }) => <div style={{ display: "flex", gap: 10, fon
 const Quien = ({ K, v, onChange }) => <div style={{ display: "inline-flex", padding: 2, borderRadius: 999, background: K.caja, gap: 2 }}>{[["humano", "Vos"], ["ia", "IA"]].map(([k, l]) => <button key={k} type="button" onClick={() => v !== k && onChange(k)} style={{ padding: "4px 12px", borderRadius: 999, border: "none", background: v === k ? (k === "ia" ? "rgba(167,139,250,0.28)" : "rgba(184,149,106,0.28)") : "transparent", color: v === k ? K.txt : K.mute, fontSize: 11.5, fontWeight: 800, cursor: v === k ? "default" : "pointer", fontFamily: "inherit" }}>{l}</button>)}</div>;
 const diasDesde = (f) => (f ? Math.floor((Date.now() - new Date(f).getTime()) / 864e5) : null);
 
-export default function Ficha({ ctx, c, onChange, compacta, wa }) {
+// onDatos: avisa lo que devolvió crm_ficha (lo usa /crm/panel para la tira y las respuestas rápidas de la extensión).
+export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
   const { token, admin, ir } = ctx;
   // Paleta: la del CRM, o la de WhatsApp cuando va al costado del chat.
   const K = wa ? { panel: "transparent", line: W.line, mute: W.mute, sub: W.sub, txt: W.txt, hi: W.acento, ok: "#8fc0ff", caja: W.caja } : { panel: C.panel, line: C.line, mute: C.mute, sub: C.sub, txt: C.txt, hi: C.goldHi, ok: C.green, caja: "rgba(255,255,255,0.04)" };
@@ -36,7 +38,7 @@ export default function Ficha({ ctx, c, onChange, compacta, wa }) {
   const [analizando, setAnalizando] = useState(false);
   const clave = c.client_id ? `c:${c.client_id}` : `k:${c.id}`;
   useEffect(() => { setNotas(c.notes || ""); setBuscar(""); setClientes(null); setEligiendo(false); setTodo(false); setD(null); }, [c.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const cargar = useCallback(async () => { const r = await dq("rpc/crm_ficha", { token, method: "POST", body: { p_contact_id: c.id } }); setD(r && !r.code ? r : { ops: [], cots: [] }); }, [token, c.id, c.client_id]);
+  const cargar = useCallback(async () => { const r = await dq("rpc/crm_ficha", { token, method: "POST", body: { p_contact_id: c.id } }); const v = r && !r.code ? r : { ops: [], cots: [] }; setD(v); onDatos?.(v, c.id); }, [token, c.id, c.client_id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => { let vivo = true; setAn(null); dq("crm_analisis", { token, filters: `?clave=eq.${clave}&select=temperatura,lectura,siguiente,mensaje,quien,quien_manual,analizado_at,error` }).then((r) => { if (vivo) setAn(arr(r)[0] || {}); }); return () => { vivo = false; }; }, [token, clave]);
   const analizar = async () => { setAnalizando(true); const r = await api("/api/cron/crm-analisis", { clave }); setAnalizando(false); if (r.ok) setAn((a) => ({ ...(a || {}), ...r.analisis, error: null })); else toast(r.error || "No se pudo analizar", "error"); };
