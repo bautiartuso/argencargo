@@ -5,7 +5,7 @@
 // por teléfono (o por nombre, si el chat no lo muestra) y dibuja la misma Ficha del CRM.
 //
 // Cómo se hablan:
-//   extensión → página : postMessage { ac: "chat", id, chat: { tel, lid, nombre, grupo } }   (o ?tel=&nombre= en la URL)
+//   extensión → página : postMessage { ac: "chat", id, chat: { tel, lid, nombre, grupo } }   (o #tel=…&nombre=… en la URL)
 //   página → extensión : postMessage { ac: "ficha", id, tira, rapidas } a web.whatsapp.com
 // La página nunca recibe ni guarda mensajes: solo el teléfono o el nombre del chat abierto.
 // Adentro de WhatsApp Web el navegador le da a esta página un almacenamiento aparte: la sesión se
@@ -239,9 +239,9 @@ export default function PanelPage() {
     document.addEventListener("visibilitychange", alDia); window.addEventListener("focus", alDia);
     return () => { vivo = false; clearInterval(id); document.removeEventListener("visibilitychange", alDia); window.removeEventListener("focus", alDia); };
   }, [sesion?.access_token]);
-  // El chat abierto: lo manda la extensión; sin extensión (pestaña suelta) sale de la URL.
+  // El chat abierto: lo manda la extensión; sin extensión (pestaña suelta) sale del # de la URL.
   useEffect(() => {
-    const u = new URLSearchParams(window.location.search);
+    const u = new URLSearchParams(window.location.hash.slice(1)); // en el #, que no viaja al servidor
     if (u.get("tel") || u.get("nombre")) setChat({ tel: digitos(u.get("tel")) || null, nombre: u.get("nombre") || null, lid: null });
     else if (window.parent === window) setChat({ nada: true });
     const oir = (e) => {
