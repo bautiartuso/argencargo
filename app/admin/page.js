@@ -14767,6 +14767,8 @@ const agpAplica=(c)=>c.currency==="USD"?Number(c.amount):(Number(c.exchange_rate
 // Lo que queda en dólares: neto de la comisión de SolFin y al TC dolarizado (o al del cobro, mientras tanto).
 const agpNeto=(c,tc)=>{if(c.currency==="USD")return Number(c.amount);const com=c.method==="transferencia"?Number(c.commission_pct||0)/100:0;const t=Number(tc||c.dolar_rate||c.exchange_rate||0);return t>0?agpR2(Number(c.amount)*(1-com)/t):0;};
 const agpADolarizar=(c)=>c.method==="transferencia"&&c.currency==="ARS";
+// Pesos que no entraron a SolFin (efectivo o a otra cuenta): se cobran a un TC y se dolarizan a otro, a mano.
+const agpAparte=(c)=>c.currency==="ARS"&&c.method!=="transferencia"&&Number(c.dolar_rate)>0;
 const agpFaltaDolar=(cs)=>(cs||[]).filter(c=>agpADolarizar(c)&&!c.dolar_rate);
 const agpConCc=(p)=>p.giro_payment_method==="cable"; // las nuevas: el giro está en la CC y lleva comprobante
 const agpEstado=(p,cs)=>{
@@ -15142,7 +15144,9 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
   const [pFecha,setPFecha]=useState(hoyAR());
   const [pComp,setPComp]=useState("");
   useEffect(()=>{if(!pTc&&tcG){setPTc(String(tcG));if(!pMonto)setPMonto(saldoEn(ars,tcG));}},[tcG]);
+  const [pTcD,setPTcD]=useState(""); // a cuánto dolarizó los pesos que no fueron a SolFin
   const nM=parseMontoAr(pMonto),nT=parseMontoAr(pTc);
+  const aparte=met==="efvo_ars";const nTD=aparte&&parseMontoAr(pTcD)>0?parseMontoAr(pTcD):0;
   const cambiarMet=(v)=>{const a=v!=="efvo_usd";if(a!==ars)setPMonto(saldoEn(a,nT));setMet(v);};
   const anotarPago=async()=>{
     if(!(nM>0)){toast("Cargá el monto","error");return;}
@@ -15152,6 +15156,7 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
     try{
       const transf=met==="transf";
       const c0={date:pFecha||hoyAR(),method:transf?"transferencia":"efectivo",currency:ars?"ARS":"USD",amount:nM,exchange_rate:ars?nT:null,commission_pct:transf?AGP_FIN_PCT:null};
+      if(nTD>0){c0.dolar_rate=nTD;c0.dolar_date=c0.date;}
       const body={...c0,payment_management_id:p.id,amount_usd:agpNeto(c0),commission_usd:transf?agpR2(nM*AGP_FIN_PCT/100/nT):null,receipt_url:pComp||null};
       const r=await dq("payment_management_cobros",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
       const ins=Array.isArray(r)?r[0]:r;if(!ins?.id)throw new Error(ins?.message||"No se pudo guardar el pago");
@@ -15162,7 +15167,7 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
       }
       await agpSincronizar(token,p,[...cobros,ins]);
       toast(transf?"Pago anotado · entró a la CC de SolFin":"Pago anotado","success");
-      setPComp("");setVerForm(false);await onChanged();
+      setPComp("");setPTcD("");setVerForm(false);await onChanged();
     }catch(e){toast("Error: "+e.message,"error");}
     setOcupado(false);
   };
@@ -15201,7 +15206,8 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
     catch(e){toast("Error: "+e.message,"error");setOcupado(false);}
   };
 
-  const merma=agpR2(aDolar.filter(c=>c.dolar_rate).reduce((s,c)=>s+(agpNeto(c,c.exchange_rate)-agpNeto(c,c.dolar_rate)),0));
+  const dAparte=cobros.filter(agpAparte);
+  const merma=agpR2([...aDolar.filter(c=>c.dolar_rate),...dAparte].reduce((s,c)=>s+(agpNeto(c,c.exchange_rate)-agpNeto(c,c.dolar_rate)),0));
   const ganancia=agpGanancia(p);const cerrada=agpEstado(p,cobros)==="cerrada";
   const col=(titulo,listo,children)=><div style={{minWidth:0,padding:celu?"12px 0":"0 4px"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
@@ -15218,19 +15224,20 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
         <p style={txt}>Pagó <strong style={{color:"#fff"}}>{agpUsd(pagado)}</strong> de {agpUsd(p.client_amount_usd)}{saldo>0.05?<> · <strong style={{color:"#fbbf24"}}>falta {agpUsd(saldo)}</strong></>:saldo<-0.05?<> · <strong style={{color:"#60a5fa"}}>de más {agpUsd(-saldo)}</strong></>:null}</p>
         {cobros.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:9,background:"rgba(0,0,0,0.2)",marginBottom:6,fontSize:12.5}}>
           <span style={{color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>{formatDateShort(c.date)}</span>
-          <span style={{flex:1,minWidth:0,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.currency==="ARS"?agpArs(c.amount):agpUsd(c.amount)}<span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}> · {c.method==="transferencia"?"transf.":c.method==="cripto"?"cripto":"efectivo"}{c.currency==="ARS"&&c.exchange_rate?` @ ${agpTc(c.exchange_rate)}`:""}</span></span>
+          <span style={{flex:1,minWidth:0,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.currency==="ARS"?agpArs(c.amount):agpUsd(c.amount)}<span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}> · {c.method==="transferencia"?"a SolFin":c.method==="cripto"?"cripto":c.currency==="ARS"?"sin SolFin":"efectivo"}{c.currency==="ARS"&&c.exchange_rate?` @ ${agpTc(c.exchange_rate)}`:""}{agpAparte(c)&&Math.abs(Number(c.dolar_rate)-Number(c.exchange_rate))>0.005?` → ${agpTc(c.dolar_rate)}`:""}</span></span>
           {c.receipt_url&&<a href={c.receipt_url} target="_blank" rel="noreferrer" style={{color:"#60a5fa",fontWeight:700,textDecoration:"none"}}>Ver</a>}
           <button type="button" onClick={()=>borrarPago(c)} disabled={ocupado} aria-label="Borrar pago" style={{border:"none",background:"transparent",color:"rgba(255,120,120,0.7)",fontSize:15,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
         </div>)}
         {verForm?<div style={{marginTop:cobros.length?8:0}}>
-          {agpSeg([["transf","Transf. $"],["efvo_ars","Efectivo $"],["efvo_usd","Efectivo USD"]],met,cambiarMet)}
-          <div style={{display:"grid",gridTemplateColumns:ars?"1.4fr 1fr":"1fr",gap:"0 10px"}}>
-            <div style={{marginBottom:10}}><label style={agpLbl}>{ars?"Pesos":"Dólares"}</label><input type="text" inputMode="decimal" value={pMonto} onChange={e=>agpNumOk(e.target.value)&&setPMonto(e.target.value)} style={agpInp(celu)}/></div>
-            {ars&&<div style={{marginBottom:10}}><label style={agpLbl}>TC</label><input type="text" inputMode="decimal" value={pTc} onChange={e=>agpNumOk(e.target.value)&&setPTc(e.target.value)} style={agpInp(celu)}/></div>}
+          {agpSeg([["transf","A SolFin $"],["efvo_ars","Pesos aparte"],["efvo_usd","Efectivo USD"]],met,cambiarMet)}
+          <div style={{display:"grid",gridTemplateColumns:aparte?"1fr 1fr":ars?"1.4fr 1fr":"1fr",gap:"0 10px"}}>
+            <div style={{marginBottom:10,gridColumn:aparte?"1 / -1":"auto"}}><label style={agpLbl}>{ars?"Pesos":"Dólares"}</label><input type="text" inputMode="decimal" value={pMonto} onChange={e=>agpNumOk(e.target.value)&&setPMonto(e.target.value)} style={agpInp(celu)}/></div>
+            {ars&&<div style={{marginBottom:10}}><label style={agpLbl}>{aparte?"Le cobraste a":"TC"}</label><input type="text" inputMode="decimal" value={pTc} onChange={e=>agpNumOk(e.target.value)&&setPTc(e.target.value)} style={agpInp(celu)}/></div>}
+            {aparte&&<div style={{marginBottom:10}}><label style={agpLbl}>Dolarizaste a</label><input type="text" inputMode="decimal" value={pTcD} onChange={e=>agpNumOk(e.target.value)&&setPTcD(e.target.value)} placeholder={pTc} style={agpInp(celu)}/></div>}
           </div>
           <div style={{marginBottom:10}}><label style={agpLbl}>Fecha</label><DatePicker value={pFecha} onChange={v=>setPFecha(v||hoyAR())}/></div>
           {met==="transf"&&<AgpComprobante url={pComp} onUrl={setPComp} token={token} prefijo={`${p.agp_code||"agp"}_pago`} celu={celu}/>}
-          {ars&&nM>0&&nT>0&&<p style={txt}>{met==="transf"?<>A SolFin entran {agpArs(nM*(1-AGP_FIN_PCT/100))} (−2,5%) · ≈ {agpUsd(nM*(1-AGP_FIN_PCT/100)/nT)}</>:<>≈ {agpUsd(nM/nT)}</>}</p>}
+          {ars&&nM>0&&nT>0&&<p style={txt}>{met==="transf"?<>A SolFin entran {agpArs(nM*(1-AGP_FIN_PCT/100))} (−2,5%) · ≈ {agpUsd(nM*(1-AGP_FIN_PCT/100)/nT)}</>:nTD>0?<>Le cubre {agpUsd(nM/nT)} · te quedan <strong style={{color:"#fff"}}>{agpUsd(nM/nTD)}</strong></>:<>≈ {agpUsd(nM/nT)}</>}</p>}
           <div style={{display:"flex",gap:8}}>
             {cobros.length>0&&<Btn variant="secondary" onClick={()=>setVerForm(false)} fullWidth>Cancelar</Btn>}
             <Btn variant="gold" onClick={anotarPago} disabled={ocupado} fullWidth>{ocupado?"Guardando…":"Anotar pago"}</Btn>
@@ -15242,7 +15249,7 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
         </div>}
       </>)}
 
-      {col("Dolarización",aDolar.length>0&&!agpFaltaDolar(cobros).length,aDolar.length===0
+      {col("Dolarización",(aDolar.length>0||dAparte.length>0)&&!agpFaltaDolar(cobros).length,aDolar.length===0&&dAparte.length===0
         ?<p style={txt}>{cobros.length?"No hace falta: no pagó por transferencia en pesos.":"Cuando pague por transferencia, se dolariza sola: la toma de la CC de SolFin por orden de llegada."}</p>
         :<>{aDolar.map(c=>{const f=fifo?.[c.id];const neto=f?f.neto:agpR2(Number(c.amount)*(1-Number(c.commission_pct||0)/100));
           if(c.dolar_rate){const dif=agpR2(agpNeto(c,c.exchange_rate)-Number(c.amount_usd||0));return <div key={c.id} style={{padding:"9px 11px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",marginBottom:6,fontSize:12.5}}>
@@ -15255,6 +15262,10 @@ function AgpDetalle({p,cobros,fifo,token,tcRef,onChanged,onEditar,onBorrada}){
             {!f?<p style={{margin:"3px 0 0",color:"#fbbf24"}}>No encuentro su ingreso en la CC de SolFin.</p>
               :hecho>0?<p style={{margin:"3px 0 0",color:"#fbbf24",fontWeight:700}}>Se dolarizaron {agpArs(hecho)}; faltan {agpArs(f.pendiente)}</p>
               :<p style={{margin:"3px 0 0",color:"#fbbf24",fontWeight:700}}>{f.delante>0.005?`Delante hay ${agpArs(f.delante)} que entraron antes: se dolariza cuando salgan esos y estos.`:"Es lo próximo que se dolariza en la CC."}</p>}
+          </div>;})}
+          {dAparte.map(c=>{const dif=agpR2(agpNeto(c,c.exchange_rate)-Number(c.amount_usd||0));return <div key={c.id} style={{padding:"9px 11px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",marginBottom:6,fontSize:12.5}}>
+            <p style={{margin:0,color:"rgba(255,255,255,0.6)"}}>{agpArs(c.amount)} · sin SolFin, dolarizado a <strong style={{color:"#fff"}}>{agpTc(c.dolar_rate)}</strong> <span style={{color:"rgba(255,255,255,0.4)"}}>(cobrado a {agpTc(c.exchange_rate)})</span></p>
+            <p style={{margin:"4px 0 0",fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{agpUsd(c.amount_usd)}{Math.abs(dif)>=0.01&&<span style={{fontWeight:700,color:dif>0?"#f87171":"#4ade80"}}> · {dif>0?"merma":"a favor"} {agpUsd(Math.abs(dif))}</span>}</p>
           </div>;})}</>)}
 
       {col("Comprobante de la transferencia",!agpConCc(p)||!!p.giro_receipt_url,agpConCc(p)
