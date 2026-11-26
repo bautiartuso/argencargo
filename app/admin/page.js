@@ -17111,8 +17111,81 @@ function AdminTasks({token}){
   </div>;
 }
 
+// Vista de una cotización como la ve el cliente en su portal (26/11/2026, pedido de Bautista): es lo que
+// se abre al tocar una cotización; el editor de siempre queda detrás del botón Editar. Muestra lo guardado
+// (productos, bultos y vías con su desglose), sin recalcular nada.
+const COTI_FISCAL={responsable_inscripto:["Resp. inscripto","#8fd3ff"],monotributista:["Monotributista","#E8D098"],ninguna:["Consumidor final","#b6c2d4"]};
+function CotiVista({q,cl,opCode,onEditar,onCerrar}){
+  const [abierta,setAbierta]=useState(null);
+  const SKY="#8CC8F5";const HAIR="1px solid rgba(255,255,255,0.13)";
+  const LBL={fontSize:10.5,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SKY,margin:0};
+  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fecha=d=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
+  const lista=v=>{let p=v;try{if(typeof p==="string")p=JSON.parse(p);}catch{p=[];}return Array.isArray(p)?p:[];};
+  const prods=lista(q.products),pkgs=lista(q.packages);
+  const alts=(()=>{const a=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];if(a.length)return a;return q.channel_key?[{key:q.channel_key,name:q.channel_name,info:"",totalAbonar:q.total_cost}]:[];})();
+  const elegida=q.client_selected_channel?alts.find(a=>a.key===q.client_selected_channel)||null:null;
+  const barata=alts.length?alts.reduce((x,y)=>Number(x.totalAbonar||0)<=Number(y.totalAbonar||0)?x:y):null;
+  const titulo=a=>({aereo_a_china:["Aéreo","Courier comercial"],maritimo_a_china:["Marítimo","Carga FCL/LCL"],maritimo_b:["Marítimo","Integral AC"],aereo_b_spain:["Aéreo","Integral AC"],aereo_b_usa:["Aéreo","Integral AC"]})[a.key]||[String(a.key||"").includes("aereo")?"Aéreo":"Marítimo",a.name];
+  const esImpo=!!q.operation_id;const vence=cotiVence(q);const vencida=!esImpo&&vence.getTime()<Date.now();
+  const resumen=prods.length>3?"Consolidado":(prods.map(p=>p.description||p.type).filter(Boolean).join(" · ")||"Sin productos");
+  const nPk=pkgs.reduce((s,p)=>s+(Number(String(p.qty??"1").replace(",","."))||1),0);
+  const pill=(l,c)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:c,background:`${c}22`,border:`1px solid ${c}66`,whiteSpace:"nowrap"}}>{l}</span>;
+  const btn=(label,onClick,kind="ghost")=><button onClick={onClick} style={{height:40,padding:"0 18px",fontSize:13,fontWeight:800,borderRadius:10,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",
+    ...(kind==="gold"?{border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}:kind==="sky"?{border:"1px solid rgba(140,200,245,0.7)",background:"rgba(140,200,245,0.16)",color:SKY}:{border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.09)",color:"#fff"})}}>{label}</button>;
+  const nombre=cl?[cl.first_name,cl.last_name].filter(Boolean).join(" "):(q.client_name||"");
+  const fiscal=COTI_FISCAL[cl?.tax_condition];
+  return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onCerrar}>
+    <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(4px)"}}/>
+    <div style={{position:"relative",maxWidth:1040,width:"95%",maxHeight:"92vh",overflow:"auto",background:"linear-gradient(180deg, rgba(13,24,45,0.99), rgba(8,16,32,0.99))",borderRadius:18,border:"1px solid rgba(232,208,152,0.4)",padding:"22px 26px 24px",boxShadow:"0 30px 70px rgba(0,0,0,0.55)"}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+        <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{q.origin==="USA"?"🇺🇸":q.origin==="España"?"🇪🇸":"🇨🇳"}</span>
+        <div style={{flex:1,minWidth:220}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:19,fontWeight:900,color:"#fff",letterSpacing:"0.07em",fontVariantNumeric:"tabular-nums"}}>{cotiNum(q)}</span>{esImpo?pill("Importación en curso",SKY):pill(vencida?"Vencida":"Lista para importar",vencida?"#f87171":"#4ade80")}{q.public_token&&pill("Manual · con link",GOLD_LIGHT)}</div>
+          {(nombre||q.client_code)&&<p style={{margin:"8px 0 0",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:13.5,color:"#fff",fontWeight:700}}>{nombre}{(cl?.client_code||q.client_code)&&<span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:GOLD_LIGHT}}>{cl?.client_code||q.client_code}</span>}{fiscal&&pill(fiscal[0],fiscal[1])}</p>}
+          <p style={{margin:"7px 0 0",fontSize:14.5,color:"#fff",fontWeight:700,lineHeight:1.4}}>{resumen}</p>
+          {esImpo?<p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:SKY}}>Estimado de la importación {opCode||""}</p>
+            :<p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#f87171"}}>{vencida?"Venció el":"Válida hasta el"} {fecha(vence)}</p>}
+          <p style={{margin:"5px 0 0",fontSize:12,color:SKY,fontWeight:600}}>Cotizada el {fecha(q.created_at)} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>{btn("Editar",onEditar,"gold")}<button onClick={onCerrar} style={{width:40,height:40,borderRadius:10,fontSize:17,background:"rgba(255,255,255,0.06)",border:HAIR,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button></div>
+      </div>
+      <div style={{marginTop:18,paddingTop:18,borderTop:HAIR}}>
+        <p style={{...LBL,marginBottom:8}}>Productos</p>
+        <div style={{overflowX:"auto",borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.04)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:560}}>
+          <thead><tr>{["Producto","Cant.","USD c/u","FOB","NCM","Derechos","Tasa est.","IVA"].map((h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 10px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+          <tbody>{prods.map((p,i)=>{const nc=p.ncm||{};const qty=Number(p.quantity||1);const fob=Number(p.unit_price||0)*qty;const last=i===prods.length-1;
+            return <tr key={i}>{[p.description||p.type||"—",String(qty),usd(p.unit_price),usd(fob),nc.ncm_code?(nc.ncm_code==="MANUAL"?"Estimado":nc.ncm_code):"—",nc.ncm_code?`${nc.import_duty_rate??0}%`:"—",nc.ncm_code?`${nc.statistics_rate??0}%`:"—",nc.ncm_code?`${nc.iva_rate??21}%`:"—"].map((c,ci)=>{const hot=ci===4&&nc.ncm_code;return <td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 10px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;})}</tr>;})}</tbody>
+        </table></div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>{[["FOB mercadería",usd(q.total_fob)],["Bultos",String(nPk)],["Peso bruto",Number(q.total_weight)>0?`${fmt2(q.total_weight)} kg`:"—"],["Volumen",Number(q.total_cbm)>0?`${Number(q.total_cbm).toFixed(3)} m³`:"—"]].map(([l,v])=><div key={l} style={{flex:"1 1 140px",padding:"10px 14px",borderRadius:10,border:HAIR,background:"rgba(255,255,255,0.05)"}}><p style={{...LBL,fontSize:10}}>{l}</p><p style={{margin:"4px 0 0",fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p></div>)}</div>
+
+        <p style={{...LBL,margin:"18px 0 8px"}}>Vías de importación</p>
+        {alts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>Esta cotización no tiene vías guardadas.</p>}
+        {alts.map((a,i)=>{const on=elegida?.key===a.key;const [big,small]=titulo(a);const aereo=String(a.key||"").includes("aereo");const masBarata=alts.length>1&&barata&&a.key===barata.key;const dOpen=abierta===a.key;
+          const detalle=Array.isArray(a.detail)&&a.detail.length?a.detail:[Number(a.flete)>0&&["Flete + servicio",a.flete],Number(a.seguro)>0&&["Seguro",a.seguro],Number(a.overweight)>0&&["Recargo por sobrepeso",a.overweight],Number(a.totalTax)>0&&["Impuestos y gastos de aduana",a.totalTax],Number(a.shipCost)>0&&["Envío a domicilio",a.shipCost]].filter(Boolean);
+          return <div key={a.key||i} style={{borderRadius:12,marginTop:i?8:0,border:`1px solid ${on?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(140,200,245,0.06)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 16px"}}>
+              <span style={{fontSize:20,width:36,textAlign:"center"}}>{aereo?"✈️":"🚢"}</span>
+              <div style={{flex:1,minWidth:200}}><p style={{margin:0,fontSize:15,color:"#fff"}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span>{small}{masBarata&&<span style={{marginLeft:10,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"rgba(34,197,94,0.2)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.5)"}}>Más económica</span>}</p>{a.info&&<p style={{margin:"3px 0 0",fontSize:12,color:SKY}}>Llega en {a.info}</p>}</div>
+              <span style={{fontSize:22,fontWeight:900,color:on?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",marginRight:6}}>USD</span>{fmt2(a.totalAbonar)}</span>
+              {detalle.length>0&&btn(dOpen?"Ocultar ▲":"Desglose ▼",()=>setAbierta(dOpen?null:a.key),"sky")}
+              {on&&pill("Elegida por el cliente",GOLD_LIGHT)}
+            </div>
+            {dOpen&&<div style={{margin:"0 16px 14px",padding:"6px 16px 10px",borderRadius:10,background:"rgba(11,22,40,0.85)",border:HAIR}}>
+              {detalle.map(([l,v],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:13,color:"#fff",opacity:0.92}}>{l}</span><span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</span></div>)}
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"12px 0 2px"}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Total</span><span style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(a.totalAbonar)}</span></div>
+            </div>}
+          </div>;})}
+      </div>
+    </div>
+  </div>;
+}
 function QuotesList({token,abrirId,onAbierta}){
+  // Una cotización se abre primero en la vista del cliente; el editor aparece con Editar.
+  const [editando,setEditando]=useState(false);
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
+  useEffect(()=>{setEditando(false);},[selQuote?.id]);
   const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
   const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [sub,setSub]=useState("vig");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
   const [editOrigin,setEditOrigin]=useState("China");const [editBatt,setEditBatt]=useState(false);const [openAlt,setOpenAlt]=useState(null);
@@ -17140,7 +17213,7 @@ function QuotesList({token,abrirId,onAbierta}){
     dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
     dq("calc_config",{token,filters:"?select=*"}),
     dqTodos("operations",{token,filters:"?select=id,client_id,operation_code,created_at,status,declared_value_usd"})
-  ]);setQuotes(Array.isArray(q)?q:[]);if(abrirId){const x=(Array.isArray(q)?q:[]).find(z=>z.id===abrirId);if(x)setSelQuote(x);onAbierta&&onAbierta();}setUltimaCarga(new Date());setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
+  ]);setQuotes(Array.isArray(q)?q:[]);if(abrirId){let x=(Array.isArray(q)?q:[]).find(z=>z.id===abrirId);if(!x){const u=await dq("quotes",{token,filters:`?id=eq.${abrirId}&select=*`});x=Array.isArray(u)?u[0]:null;}if(x)setSelQuote(x);onAbierta&&onAbierta();}setUltimaCarga(new Date());setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
   useEffect(()=>{
     if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
     const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];
@@ -17531,7 +17604,8 @@ function QuotesList({token,abrirId,onAbierta}){
       {!verMas.ana&&anaVis.length>60&&<button onClick={()=>setVerMas(p=>({...p,ana:true}))} style={{display:"block",margin:"10px auto 0",padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Ver los {anaVis.length-60} restantes</button>}
     </>}
     {/* Detalle de la cotización: el mismo desglose que ve el cliente en la calculadora, editable */}
-    {selQuote&&(()=>{const q=selQuote;
+    {selQuote&&!editando&&<CotiVista q={selQuote} cl={selQuote.client_id?clientsMap[selQuote.client_id]:null} opCode={selQuote.operation_id?(ops.find(o=>o.id===selQuote.operation_id)?.operation_code||""):""} onEditar={()=>setEditando(true)} onCerrar={()=>setSelQuote(null)}/>}
+    {selQuote&&editando&&(()=>{const q=selQuote;
       const SKY="#8CC8F5";const HR="1px solid rgba(255,255,255,0.12)";
       const cl=q.client_id?clientsMap[q.client_id]:null;const wa=(cl?.whatsapp||"").replace(/[^0-9]/g,"");
       const isRIq=cl?.tax_condition==="responsable_inscripto";
@@ -17609,7 +17683,7 @@ function QuotesList({token,abrirId,onAbierta}){
             {q.public_token&&<span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:IC,background:"rgba(184,149,106,0.16)",border:"1px solid rgba(184,149,106,0.45)"}}>Manual · con link</span>}
             <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>Cotizada el {fShort(q.created_at)}</span>
           </div>
-          <button onClick={()=>setSelQuote(null)} style={{width:34,height:34,borderRadius:9,fontSize:17,background:"rgba(255,255,255,0.06)",border:HR,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><button onClick={()=>setEditando(false)} style={{height:34,padding:"0 14px",borderRadius:9,fontSize:12.5,fontWeight:700,background:"rgba(255,255,255,0.06)",border:HR,color:"rgba(255,255,255,0.8)",cursor:"pointer",fontFamily:"inherit"}}>← Vista</button><button onClick={()=>setSelQuote(null)} style={{width:34,height:34,borderRadius:9,fontSize:17,background:"rgba(255,255,255,0.06)",border:HR,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button></div>
         </div>
         {/* Cliente + origen + baterías, compactos */}
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginTop:16}}>
@@ -18950,6 +19024,13 @@ function AdminDashboard({session,onLogout}){
     try{localStorage.setItem("ac_admin_nav",JSON.stringify({page,selOp,selClient}));}catch{}
   },[page,selOp,selClient]);
   const token=session.token;
+  // Link desde la ficha del CRM o la tira de WhatsApp Web (/admin?cotizacion=<id>): abre esa cotización.
+  useEffect(()=>{
+    let id=null;try{id=new URLSearchParams(window.location.search).get("cotizacion");}catch{}
+    if(!id||!/^[0-9a-f-]{36}$/i.test(id))return;
+    setAbrirCoti(id);setSelOp(null);setNewOp(false);setSelClient(null);setPage("quotes");
+    try{window.history.replaceState({},"","/admin");}catch{}
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // Link desde la ficha del CRM (/admin?client=<id>): abre ese cliente en Clientes.
   useEffect(()=>{(async()=>{
     let id=null;try{id=new URLSearchParams(window.location.search).get("client");}catch{}

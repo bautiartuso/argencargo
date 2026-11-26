@@ -59,7 +59,7 @@ function armarTira({ c, d, admin }) {
   const q = (d?.cots || [])[0];
   const hechas = (d?.ops || []).filter((o) => o.entregada).length;
   if (hechas) return { txt: `${hechas} ${hechas === 1 ? "importación" : "importaciones"} · nada en curso` };
-  if (q?.code) return { items: [{ b: q.code, ok: "Cotizó", t: fechaDM(q.created_at) }] };
+  if (q?.code) return { items: [{ b: q.code, ok: "Cotizó", t: fechaDM(q.created_at), u: q.id ? `https://www.argencargo.com.ar/admin?cotizacion=${q.id}` : "" }] };
   return { txt: "Cliente sin operaciones" };
 }
 

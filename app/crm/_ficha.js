@@ -62,7 +62,7 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
   const hechas = ops.filter((o) => o.entregada);
   const aCobrar = ops.reduce((s, o) => s + Number(o.saldo || 0), 0);
   const ultima = hechas[0]?.delivered_at || hechas[0]?.created_at || null;
-  const historial = [...hechas.map((o) => ({ k: `o${o.id}`, fecha: o.delivered_at || o.created_at, t: `${o.code || "Operación"} · ${CANAL[o.channel] || ""}`, v: admin && o.total ? usd(o.total) : "", ok: true })), ...cots.map((q) => ({ k: `q${q.id}`, fecha: q.created_at, t: `Cotización ${q.code || ""}${q.channel_name ? ` · ${q.channel_name}` : ""}`, v: admin && q.total ? usd(q.total) : "", ok: false }))].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const historial = [...hechas.map((o) => ({ k: `o${o.id}`, fecha: o.delivered_at || o.created_at, t: `${o.code || "Operación"} · ${CANAL[o.channel] || ""}`, v: admin && o.total ? usd(o.total) : "", ok: true })), ...cots.map((q) => ({ k: `q${q.id}`, href: `/admin?cotizacion=${q.id}`, fecha: q.created_at, t: `Cotización ${q.code || ""}${q.channel_name ? ` · ${q.channel_name}` : ""}`, v: admin && q.total ? usd(q.total) : "", ok: false }))].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
 
   return <div style={{ background: compacta ? "transparent" : K.panel, border: compacta || wa ? "none" : `1px solid ${K.line}`, borderRadius: 16, padding: compacta || wa ? 0 : 14, color: K.txt }}>
     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -130,7 +130,7 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
     </Seccion>
 
     {historial.length > 0 && <Seccion K={K} t="Historial" right={historial.length > 5 && <Accion c={K.hi} onClick={() => setTodo((v) => !v)}>{todo ? "Ver menos" : `Ver los ${historial.length}`}</Accion>}>
-      {historial.slice(0, todo ? 60 : 5).map((x) => <div key={x.k} style={{ display: "flex", gap: 8, fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${K.line}` }}><span style={{ color: K.mute, fontFamily: MONO, flexShrink: 0 }}>{fechaCorta(x.fecha)}</span><span style={{ flex: 1, minWidth: 0, color: x.ok ? K.ok : K.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.t}</span><span style={{ color: K.sub, fontFamily: MONO, flexShrink: 0 }}>{x.v}</span></div>)}
+      {historial.slice(0, todo ? 60 : 5).map((x) => <div key={x.k} style={{ display: "flex", gap: 8, fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${K.line}` }}><span style={{ color: K.mute, fontFamily: MONO, flexShrink: 0 }}>{fechaCorta(x.fecha)}</span>{x.href ? <a href={x.href} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 0, color: K.hi, fontWeight: 600, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.t}</a> : <span style={{ flex: 1, minWidth: 0, color: x.ok ? K.ok : K.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.t}</span>}<span style={{ color: K.sub, fontFamily: MONO, flexShrink: 0 }}>{x.v}</span></div>)}
     </Seccion>}
 
     <Seccion K={K} t="Etapa" right={!eligiendo && <Accion c={K.hi} onClick={() => setEligiendo(true)}>Cambiar</Accion>}>

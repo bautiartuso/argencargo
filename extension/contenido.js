@@ -98,7 +98,12 @@
   let hayTira = false, hayRapidas = false;
   function pintarTira(t) {
     tira.replaceChildren();
-    if (t?.items?.length) for (const it of t.items.slice(0, 4)) tira.append(crear("span", {}, [crear("b", { textContent: String(it.b || "") }), " ", crear("span", { className: "ac-ok", textContent: String(it.ok || "") }), it.t ? ` · ${it.t}` : ""]));
+    // Un ítem con enlace (la cotización) se abre en el sistema, en otra pestaña. Solo enlaces a argencargo.com.ar.
+    if (t?.items?.length) for (const it of t.items.slice(0, 4)) {
+      const hijos = [crear("b", { textContent: String(it.b || "") }), " ", crear("span", { className: "ac-ok", textContent: String(it.ok || "") }), it.t ? ` · ${it.t}` : ""];
+      const u = /^https:\/\/www\.argencargo\.com\.ar\//.test(String(it.u || "")) ? String(it.u) : "";
+      tira.append(u ? crear("a", { href: u, target: "_blank", rel: "noopener" }, hijos) : crear("span", {}, hijos));
+    }
     else if (t?.txt) tira.append(crear("span", { textContent: String(t.txt) }));
     if (t?.der) tira.append(crear("span", { className: "ac-der", textContent: String(t.der) }));
     hayTira = tira.childNodes.length > 0;
