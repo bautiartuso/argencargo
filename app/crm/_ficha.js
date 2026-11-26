@@ -22,7 +22,7 @@ const Dato = ({ K, l, children }) => <div style={{ display: "flex", gap: 10, fon
 const diasDesde = (f) => (f ? Math.floor((Date.now() - new Date(f).getTime()) / 864e5) : null);
 
 // onDatos: avisa lo que devolvió crm_ficha (lo usa /crm/panel para la tira y las respuestas rápidas de la extensión).
-export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
+export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos, sinTag }) {
   const { token, admin, ir } = ctx;
   // Paleta: la del CRM, o la de WhatsApp cuando va al costado del chat.
   const K = wa ? { panel: "transparent", line: W.line, mute: W.mute, sub: W.sub, txt: W.txt, hi: W.acento, ok: "#8fc0ff", caja: W.caja } : { panel: C.panel, line: C.line, mute: C.mute, sub: C.sub, txt: C.txt, hi: C.goldHi, ok: C.green, caja: "rgba(255,255,255,0.04)" };
@@ -69,7 +69,7 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
       <div style={{ minWidth: 0, maxWidth: "100%", flex: wa ? "none" : 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <p style={{ margin: 0, minWidth: 0, fontSize: wa ? 19 : 15, fontWeight: wa ? 600 : 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nombreDe(c)}</p>
-          {TAG_FISCAL[cl?.tax_condition] && <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", color: TAG_FISCAL[cl.tax_condition][1], background: `${TAG_FISCAL[cl.tax_condition][1]}1f`, border: `1px solid ${TAG_FISCAL[cl.tax_condition][1]}55` }}>{TAG_FISCAL[cl.tax_condition][0]}</span>}
+          {!sinTag && TAG_FISCAL[cl?.tax_condition] && <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", color: TAG_FISCAL[cl.tax_condition][1], background: `${TAG_FISCAL[cl.tax_condition][1]}1f`, border: `1px solid ${TAG_FISCAL[cl.tax_condition][1]}55` }}>{TAG_FISCAL[cl.tax_condition][0]}</span>}
         </div>
         <p style={{ margin: "2px 0 0", fontSize: wa ? 13.5 : 11.5, color: K.sub, fontFamily: wa ? "inherit" : MONO }}>{fmtTel(c.phone)}{c.name && c.wa_name && c.wa_name !== c.name ? ` · ~${c.wa_name}` : ""}</p>
       </div>

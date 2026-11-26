@@ -242,7 +242,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   let cuerpo;
   if (est.v === "cargando") cuerpo = <Linea c={W.mute}>Cargando…</Linea>;
   else if (est.v === "ficha") cuerpo = <>
-    <Ficha ctx={ctx} c={est.c} onChange={alCambiar} onDatos={alDatos} wa />
+    <Ficha ctx={ctx} c={est.c} onChange={alCambiar} onDatos={alDatos} wa sinTag />
     {est.porNombre && <button type="button" onClick={noEs} style={{ marginTop: 16, background: "transparent", border: "none", padding: 0, color: W.mute, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>No es esta persona</button>}
   </>;
   else if (est.v === "sinFicha") cuerpo = <>
