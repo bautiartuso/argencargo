@@ -7,7 +7,7 @@ import { esCronValido, usuarioConRol } from "../../../../lib/auth-server";
 import { analizarPersona, personaPorClave, personasPendientes } from "../../../../lib/crm-analisis";
 
 export const maxDuration = 300;
-const TANDA = 24, A_LA_VEZ = 4, TOPE_MS = 240e3;
+const TANDA = 60, A_LA_VEZ = 6, TOPE_MS = 240e3;
 
 export async function GET(req) {
   if (!esCronValido(req)) return Response.json({ error: "No autorizado" }, { status: 401 });

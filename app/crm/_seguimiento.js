@@ -6,15 +6,17 @@
 //  - Es una lista de trabajo (26/11/2026): cada solapa muestra solo a quién toca escribirle hoy, por
 //    prioridad; al mandar el WhatsApp o registrar, la fila se va. Los que descansan (se habló hace
 //    poco, ya se les escribió, tienen fecha) se ven aparte, con un enlace al pie.
-//  - El mensaje sugerido es el que escribió la IA con el análisis; si todavía no lo tiene, la plantilla.
+//  - El mensaje sugerido es el que escribió la IA con el análisis; si todavía no lo tiene, el armado
+//    en lib/crm-mensaje.js. Los dos con la voz de Bauti (26/11/2026), distinto según la solapa.
 import { useState, useRef, useEffect, useMemo } from "react";
 import { apodoDe } from "../../lib/apodos";
 import { toast, alertDialog, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { hoyAR } from "../../lib/fecha-ar";
+import { mensajeBase } from "../../lib/crm-mensaje";
 import { GOLD_LIGHT, GOLD_GRADIENT, dq, dqPage, useEsCelu } from "./_compat";
 import { api } from "./_comun";
-import { n, dias, diasTxt, fechaDM, fmtUsd, waNum, canalTxt, enCurso, importaciones, ultimaImp, cotizoDespues, esLead, nombreDe, enriquecer, TEMP } from "../../lib/crm-seguimiento";
+import { n, dias, diasTxt, fechaDM, fmtUsd, waNum, canalTxt, enCurso, importaciones, ultimaImp, esLead, nombreDe, enriquecer, TEMP } from "../../lib/crm-seguimiento";
 
 const POR_PAG = 40;
 const SEGS = [
@@ -32,14 +34,13 @@ const SEM_COLOR = { si: "#4ade80", espera: "#fbbf24", no: "#f87171" };
 const SEM_ORD = { si: 0, espera: 1, no: 2 };
 const generico = (s) => !s || /^(consolidado|varios|mercader[ií]a|productos varios|-+|\.+)$/i.test(String(s).trim());
 const minus = (s) => String(s || "").trim().split(/\s+/).map((w) => (/^[A-ZÁÉÍÓÚÑ0-9]{2,}$/.test(w) ? w : w.toLowerCase())).join(" ");
-const interp = (text, data) => String(text || "").replace(/\{\{(\w+)\}\}/g, (_, k) => (data[k] != null ? String(data[k]) : ""));
 
 const pill = (txt, color, extra = {}) => <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 999, color, background: `${color}1f`, border: `1px solid ${color}55`, whiteSpace: "nowrap", ...extra }}>{txt}</span>;
 const btn = (txt, on, { color = "rgba(255,255,255,0.75)", bg = "rgba(255,255,255,0.04)", border = "rgba(255,255,255,0.12)", strong, title, disabled } = {}) => <button type="button" title={title} onClick={on} disabled={disabled} style={{ height: 34, padding: "0 12px", fontSize: 12, fontWeight: 700, borderRadius: 9, border: `1px solid ${border}`, background: bg, color, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1, fontFamily: "inherit", whiteSpace: "nowrap", ...(strong ? { boxShadow: "0 6px 16px rgba(37,211,102,0.25)" } : {}) }}>{txt}</button>;
 const titulo = (t) => <p style={{ margin: "0 0 8px", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>{t}</p>;
 const caja = { padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)" };
 
-function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
+function SeguimientoPanelBase({ token, flash, ir, admin }) {
   const celu = useEsCelu();
   const [rows, setRows] = useState([]); const [lo, setLo] = useState(true); const [err, setErr] = useState("");
   const [seg, setSeg] = useState("importaron"); const [verEsperan, setVerEsperan] = useState(false); const [pag, setPag] = useState(0);
@@ -73,7 +74,8 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
   const paginas = Math.max(1, Math.ceil(lista.length / POR_PAG)); const visibles = lista.slice(pag * POR_PAG, pag * POR_PAG + POR_PAG);
   const parchar = (clave, patch) => setRows((p) => p.map((x) => (x.clave === clave ? { ...x, ...(typeof patch === "function" ? patch(x) : patch) } : x)));
 
-  // ── Mensaje: el de la IA; si no hay análisis, la plantilla con lo que trajo o cotizó ──
+  // ── Mensaje: el de la IA; si no hay análisis (el que nunca cotizó no se analiza), el armado con la
+  // voz de Bauti (lib/crm-mensaje.js) ──
   const contextoDe = async (c) => {
     if (ctxRef.current[c.clave]) return ctxRef.current[c.clave];
     const ctx = { opDesc: "", quoteDesc: "" };
@@ -91,15 +93,10 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
   const mensajeDe = async (c) => {
     if (c.mensaje) return c.mensaje;
     const pila = apodoDe(c.first_name || c.wa_name || "");
-    if (esLead(c)) return `Hola${pila ? ` ${pila}` : ""}! Cómo va? Soy Bauti, de Argencargo 👋`;
-    const key = c.seg === "cotizaron" || (c.seg === "importaron" && cotizoDespues(c) && (dias(c.ultima_quote_fecha) || 999) <= 180) ? "wa_seguimiento_cotizo" : importaciones(c) > 0 ? "wa_seguimiento_inactivo" : "wa_seguimiento_sin_ops";
-    const tpl = templates.find((t) => t.key === key);
-    const ctx = await contextoDe(c);
-    const canal = canalTxt(c.ultima_quote_canal); const nb = n(c.bultos_sin_op);
-    const data = { firstName: pila, clientCode: c.client_code || "", opCode: c.ultima_op_code || "", opDesc: ctx.opDesc, opQue: ctx.opDesc ? minus(ctx.opDesc) : "tu importación",
-      quoteNum: c.ultima_quote_num || "", quoteCanal: canal, quoteTotal: fmtUsd(c.ultima_quote_total), quoteDias: diasTxt(dias(c.ultima_quote_fecha)).replace(/^hace /, ""), quoteCuando: diasTxt(dias(c.ultima_quote_fecha)), quoteDesc: ctx.quoteDesc,
-      quoteQue: ctx.quoteDesc ? `para traer ${ctx.quoteDesc}` : canal ? `${canal}` : "con nosotros", bultos: `${nb} bulto${nb !== 1 ? "s" : ""}` };
-    return interp(tpl?.body || "Hola {{firstName}}!", data).replace(/Hola\s*!/, "Hola!").replace(/  +/g, " ").replace(/ ([,.:;!?])/g, "$1");
+    const grupo = esLead(c) ? "lead" : importaciones(c) > 0 ? "importo" : n(c.quotes_total) > 0 ? "cotizo" : "nunca";
+    const ctx = grupo === "cotizo" ? await contextoDe(c) : {};
+    const producto = String(ctx.quoteDesc || "").replace(/\s*\(entre otras cosas\)/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return mensajeBase({ clave: c.clave, grupo, pila, presentarse: !c.last_msg_at && grupo !== "importo", producto, vuelta: n(c.contactos) });
   };
 
   // ── Registrar un contacto (cliente o lead) ──
@@ -268,14 +265,12 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
   </div>;
 }
 
-// Capa de afuera: carga las plantillas y arma el flash (texto verde arriba + toast).
+// Capa de afuera: arma el flash (texto verde arriba + toast).
 export function SeguimientoPanel({ token, rol, ir }) {
-  const [templates, setTemplates] = useState([]);
   const [msg, setMsg] = useState("");
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2500); const v = /^[❌✕]|falló|error/i.test(m) ? "error" : /^⚠/.test(m) ? "warn" : "success"; toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u, ""), v); };
-  useEffect(() => { let vivo = true; (async () => { const tpl = await dq("message_templates", { token, filters: "?select=*&order=channel.asc,key.asc" }); if (vivo) setTemplates(Array.isArray(tpl) ? tpl : []); })(); return () => { vivo = false; }; }, [token]);
   return <>
     {msg && <p style={{ fontSize: 12, color: "#22c55e", fontWeight: 600, marginBottom: 12 }}>{msg}</p>}
-    <SeguimientoPanelBase token={token} templates={templates} flash={flash} ir={ir} admin={rol === "admin"} />
+    <SeguimientoPanelBase token={token} flash={flash} ir={ir} admin={rol === "admin"} />
   </>;
 }
