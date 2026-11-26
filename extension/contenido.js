@@ -64,7 +64,11 @@
   });
 
   let turno = 0, ultima = null, actual = { ac: "chat", id: 0, chat: null }, ultimoActivo = null, revisando = false, pendiente = false;
-  const enviar = () => { try { marco.contentWindow?.postMessage(actual, EXT); } catch {} };
+  // Hasta que la página puente avisa que cargó, el marco todavía es una página en blanco de WhatsApp:
+  // mandarle algo ahí deja un error en chrome://extensions (27/11/2026, al instalarla en otra compu
+  // con WhatsApp Web sin vincular). Recién se le habla cuando el puente dijo "puente".
+  let puenteListo = false;
+  const enviar = () => { if (!puenteListo) return; try { marco.contentWindow?.postMessage(actual, EXT); } catch {} };
   const revisar = async () => {
     if (revisando) { pendiente = true; return; }
     revisando = true;
@@ -219,7 +223,7 @@
   window.addEventListener("message", (e) => {
     const d = e.data;
     if (!d || typeof d !== "object") return;
-    if (e.origin === EXT && d.ac === "puente") { enviar(); return; }
+    if (e.origin === EXT && d.ac === "puente") { puenteListo = true; enviar(); return; }
     if (d.ac === "ficha" && origenes.includes(e.origin) && d.id === turno) { pintarTira(d.tira || null); pintarRapidas(d.rapidas || []); pintarTag(d.tag || null); }
   });
 
