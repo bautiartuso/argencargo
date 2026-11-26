@@ -61,10 +61,15 @@ Cómo ubicar el peso real cuando no hay encabezados:
 - Un número que aparece en una sola fila y coincide con la cantidad de filas es la cantidad de bultos: no es un peso.
 - Un número idéntico en todas las filas es un código: no es un peso.
 
-Extraé UNA fila por bulto, en el orden de la imagen, con: peso real en kg, largo, ancho y alto en cm. Ignorá totales del pie y las columnas que no pido. Si un valor no se lee, poné null.`,
+Extraé UNA fila por bulto, en el orden de la imagen, con:
+- numeros: TODOS los números de esa fila, de izquierda a derecha, tal como están escritos (sin saltear ninguno).
+- peso_kg: el peso real en kg. largo_cm, ancho_cm, alto_cm: las medidas.
+- volumetrico_kg: el peso volumétrico que figura en la fila (null si la tabla no lo trae).
+Leé cada fila por separado, dígito por dígito: los pesos tienen decimales y dos filas pueden parecerse. Ignorá los totales del pie. Si un valor no se lee, poné null.`,
+      thinking: "adaptive",
       images: [b64],
       media_type: mime,
-      max_tokens: 3000,
+      max_tokens: 9000,
       json_schema: {
         type: "object",
         properties: {
@@ -73,12 +78,14 @@ Extraé UNA fila por bulto, en el orden de la imagen, con: peso real en kg, larg
             items: {
               type: "object",
               properties: {
+                numeros: { type: "array", items: { type: "number" } },
                 peso_kg: { type: ["number", "null"] },
+                volumetrico_kg: { type: ["number", "null"] },
                 largo_cm: { type: ["number", "null"] },
                 ancho_cm: { type: ["number", "null"] },
                 alto_cm: { type: ["number", "null"] },
               },
-              required: ["peso_kg", "largo_cm", "ancho_cm", "alto_cm"],
+              required: ["numeros", "peso_kg", "volumetrico_kg", "largo_cm", "ancho_cm", "alto_cm"],
               additionalProperties: false,
             },
           },
@@ -90,6 +97,16 @@ Extraé UNA fila por bulto, en el orden de la imagen, con: peso real en kg, larg
     let parsed = typeof raw === "string" ? JSON.parse(limpiarJson(raw)) : raw;
     if (Array.isArray(parsed)) parsed = { bultos: parsed }; // el respaldo a veces devuelve la lista suelta
     const bultos = (parsed?.bultos || []).filter((b) => b.peso_kg != null || b.largo_cm != null);
+    // Resguardo de columna corrida: si en una fila el "peso" leído es justo el volumétrico (largo × ancho × alto
+    // ÷ 5000 o ÷ 6000) y en las demás filas el peso está siempre a la misma distancia del volumétrico, se toma
+    // de esa posición el número de la fila (FL-0188: una fila salía con el volumétrico como peso).
+    const cerca = (a, b) => a != null && b != null && Math.abs(Number(a) - Number(b)) <= 0.02;
+    const posVol = (b) => { const v = Number(b.largo_cm) * Number(b.ancho_cm) * Number(b.alto_cm); if (!(v > 0) || !Array.isArray(b.numeros)) return -1; return b.numeros.findIndex((n) => cerca(n, v / 5000) || cerca(n, v / 6000) || cerca(n, Math.round(v / 5) / 1000) || cerca(n, Math.round(v / 6) / 1000)); };
+    const saltos = {};
+    for (const b of bultos) { const j = posVol(b); if (j < 0 || b.peso_kg == null || cerca(b.peso_kg, b.numeros[j])) continue; const i = b.numeros.findIndex((n, k) => k !== j && cerca(n, b.peso_kg)); if (i >= 0) saltos[i - j] = (saltos[i - j] || 0) + 1; }
+    const salto = Object.entries(saltos).sort((a, b) => b[1] - a[1])[0];
+    if (salto && salto[1] >= Math.max(2, bultos.length / 2)) for (const b of bultos) { const j = posVol(b); if (j < 0 || !cerca(b.peso_kg, b.numeros[j])) continue; const n = b.numeros[j + Number(salto[0])]; if (n != null && n > 0) b.peso_kg = n; }
+    for (const b of bultos) { delete b.numeros; delete b.volumetrico_kg; }
     // Resguardo: si el único "peso" leído es igual a la cantidad de filas, era la cantidad de bultos.
     const conPeso = bultos.filter((b) => b.peso_kg != null);
     if (bultos.length > 1 && conPeso.length === 1 && Number(conPeso[0].peso_kg) === bultos.length) conPeso[0].peso_kg = null;
