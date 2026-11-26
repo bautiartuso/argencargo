@@ -250,20 +250,27 @@
   const avisar = (txt) => { const a = crear("span", { className: "ac-aviso", textContent: txt }); rapidas.prepend(a); clearTimeout(relojAviso); relojAviso = setTimeout(() => a.remove(), 3500); };
   function escribir(texto) {
     const caja = document.querySelector('#main footer [contenteditable="true"]') || document.querySelector('#main [contenteditable="true"][role="textbox"]');
-    let ok = false;
-    if (caja) {
-      const antes = caja.textContent || "";
-      caja.focus();
-      const sel = window.getSelection(), rango = document.createRange();
-      rango.selectNodeContents(caja); rango.collapse(false); sel.removeAllRanges(); sel.addRange(rango);
+    const copiar = () => navigator.clipboard?.writeText(texto).then(() => avisar("Copiado. Pegalo en el mensaje."), () => avisar("No se pudo escribir el mensaje."));
+    if (!texto) return;
+    if (!caja) { copiar(); return; }
+    const antes = caja.textContent || "";
+    const entro = () => (caja.textContent || "") !== antes;
+    const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+    caja.focus();
+    const sel = window.getSelection(), rango = document.createRange();
+    rango.selectNodeContents(caja); rango.collapse(false); sel.removeAllRanges(); sel.addRange(rango);
+    // El editor de WhatsApp aplica lo escrito un instante después. Antes se miraba en el momento,
+    // parecía que no había entrado y se escribía de nuevo: el mensaje quedaba dos veces (26/11/2026).
+    // Va primero el pegado, que respeta los renglones; lo otro solo si de verdad no entró.
+    (async () => {
+      try { const dt = new DataTransfer(); dt.setData("text/plain", texto); caja.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); } catch {}
+      await espera(250);
+      if (entro()) return;
       try { document.execCommand("insertText", false, texto); } catch {}
-      ok = (caja.textContent || "") !== antes;
-      if (!ok) {
-        try { const dt = new DataTransfer(); dt.setData("text/plain", texto); caja.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); } catch {}
-        ok = (caja.textContent || "") !== antes;
-      }
-    }
-    if (!ok) navigator.clipboard?.writeText(texto).then(() => avisar("Copiado. Pegalo en el mensaje."), () => avisar("No se pudo escribir el mensaje."));
+      await espera(250);
+      if (entro()) return;
+      copiar();
+    })();
   }
 
   // ── Mensajes del puente y del CRM ──
