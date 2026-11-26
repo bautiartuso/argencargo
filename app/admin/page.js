@@ -7103,7 +7103,16 @@ function ClaveModal({cl,token,onCerrar,onCreada}){
     </div>
   </div>;
 }
-function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
+// Cotizaciones del cliente (26/11/2026): solapa en su ficha; al tocar una se abre en Cotizaciones.
+const cotiNum=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(5,"0")}`:"—";
+const cotiVence=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+7*864e5);
+const cotiMerc=q=>{let p=q.products;try{if(typeof p==="string")p=JSON.parse(p);}catch{p=[];}const a=Array.isArray(p)?p.map(x=>x.description||x.type).filter(Boolean):[];return a.length>3?`Consolidado · ${a.length} productos`:(a.join(", ")||"—");};
+const cotiElegida=q=>{const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];return q.client_selected_channel?alts.find(a=>a.key===q.client_selected_channel):null;};
+const cotiTotal=q=>{const el=cotiElegida(q);return el&&Number(el.totalAbonar||0)>0?Number(el.totalAbonar):Number(q.total_cost||0);};
+const cotiVia=q=>{const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];const el=cotiElegida(q);if(el)return el.name||q.channel_name||"";if(alts.length>1)return `Sin elegir · ${alts.map(a=>String(a.key||"").includes("aereo")?"Aéreo":"Marítimo").join(" / ")}`;return q.channel_name||"";};
+function ClientDetail({client:initClient,token,onBack,onSelectOp,onSelectQuote,onDelete}){
+  const [cotis,setCotis]=useState([]);
+  useEffect(()=>{(async()=>{const cod=/^[A-Za-z0-9_-]+$/.test(initClient.client_code||"")?`,and(client_id.is.null,client_code.eq.${initClient.client_code})`:"";const r=await dq("quotes",{token,filters:`?or=(client_id.eq.${initClient.id}${cod})&select=id,quote_number,created_at,expires_at,products,total_fob,total_cost,channel_name,channel_alternatives,client_selected_channel,operation_id&order=created_at.desc`});setCotis(Array.isArray(r)?r:[]);})();},[initClient.id,token]);
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
   const [giPartners,setGiPartners]=useState([]);
   useEffect(()=>{(async()=>{const r=await dq("profiles",{token,filters:"?is_gi_partner=eq.true&select=id,email&order=email.asc"});setGiPartners(Array.isArray(r)?r:[]);})();},[token]);
@@ -7195,7 +7204,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       toast(`${r.client_code} eliminado`,"success");onDelete();
     }catch(e){alertDialog(e.message,{title:"No se eliminó"});}
   };
-  const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"cc",l:`Cuenta corriente${Number(cl.account_balance_usd||0)!==0?" ·":""}`},{k:"tariffs",l:"Tarifas"}];
+  const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"cotis",l:`Cotizaciones (${cotis.length})`},{k:"cc",l:`Cuenta corriente${Number(cl.account_balance_usd||0)!==0?" ·":""}`},{k:"tariffs",l:"Tarifas"}];
   return <div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,gap:12,flexWrap:"wrap"}}>
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -7245,6 +7254,20 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       </div>
     </Card>}
     {tab==="ops"&&<Card title="Operaciones">{lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",borderRadius:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</span><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:14}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{CM[op.channel]||op.channel}</span><span style={{color:GOLD_LIGHT,fontSize:12,fontWeight:600}}>→</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin operaciones</p>}</Card>}
+    {tab==="cotis"&&<Card title="Cotizaciones">{cotis.length>0?cotis.map(q=>{const dias=Math.ceil((cotiVence(q)-Date.now())/864e5);const op=q.operation_id?ops.find(o=>o.id===q.operation_id):null;const est=q.operation_id?{l:op?`Importación ${op.operation_code}`:"Importación",c:"#60a5fa"}:dias>0?{l:`Vigente · ${dias} d`,c:"#4ade80"}:{l:"Vencida",c:"#9ca3af"};const f=new Date(q.created_at);
+      return <div key={q.id} onClick={()=>onSelectQuote&&onSelectQuote(q)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px 14px",flexWrap:"wrap",padding:"12px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",borderRadius:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0,flex:"1 1 260px"}}>
+          <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",fontSize:12.5,letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{cotiNum(q)}</span>
+          <span style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:999,color:est.c,background:`${est.c}14`,border:`1px solid ${est.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"}}>{est.l}</span>
+          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cotiMerc(q)}</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{cotiVia(q)}</span>
+          <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{String(f.getDate()).padStart(2,"0")}/{String(f.getMonth()+1).padStart(2,"0")}/{String(f.getFullYear()).slice(2)}</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {cotiTotal(q).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span style={{color:GOLD_LIGHT,fontSize:12,fontWeight:600}}>→</span>
+        </div>
+      </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin cotizaciones</p>}</Card>}
     {tab==="cc"&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;const isDebt=bal<0;const MOV_LABELS={payment:"Pago a cuenta",overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste manual",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op",gpi_cobro:"Gestión pagos internacional"};const MOV_COLORS={payment:"#22c55e",overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
       // Timeline unificado: movements + cobros de ops + anticipos GI + gestión pagos
       const timeline=[
@@ -17088,7 +17111,7 @@ function AdminTasks({token}){
   </div>;
 }
 
-function QuotesList({token}){
+function QuotesList({token,abrirId,onAbierta}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
   const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
   const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [sub,setSub]=useState("vig");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
@@ -17117,7 +17140,7 @@ function QuotesList({token}){
     dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
     dq("calc_config",{token,filters:"?select=*"}),
     dqTodos("operations",{token,filters:"?select=id,client_id,operation_code,created_at,status,declared_value_usd"})
-  ]);setQuotes(Array.isArray(q)?q:[]);setUltimaCarga(new Date());setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
+  ]);setQuotes(Array.isArray(q)?q:[]);if(abrirId){const x=(Array.isArray(q)?q:[]).find(z=>z.id===abrirId);if(x)setSelQuote(x);onAbierta&&onAbierta();}setUltimaCarga(new Date());setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
   useEffect(()=>{
     if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
     const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];
@@ -18917,6 +18940,7 @@ function AdminDashboard({session,onLogout}){
   const [selOp,setSelOp]=useState(initNav.selOp||null);
   const [selOpTab,setSelOpTab]=useState(null); // solapa inicial al entrar a una op desde otro panel (ej. "Entregas")
   const [selClient,setSelClient]=useState(initNav.selClient||null);
+  const [abrirCoti,setAbrirCoti]=useState(null); // cotización a abrir al entrar a Cotizaciones desde la ficha del cliente
   const [newOp,setNewOp]=useState(false);
   const [allClients,setAllClients]=useState([]);
   const [mobOpen,setMobOpen]=useState(false);
@@ -19142,7 +19166,7 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} initial={typeof newOp==="object"?newOp:null} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
-      {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
+      {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onSelectQuote={q=>{setAbrirCoti(q.id);setPage("quotes");setSelClient(null);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
@@ -19162,7 +19186,7 @@ function AdminDashboard({session,onLogout}){
       {page==="mail"&&<MailPanel token={token}/>}
       {page==="facturas"&&<FacturasPanel token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
-      {page==="quotes"&&<QuotesList token={token}/>}
+      {page==="quotes"&&<QuotesList token={token} abrirId={abrirCoti} onAbierta={()=>setAbrirCoti(null)}/>}
       {page==="calc"&&<AdminCalculator token={token}/>}
       {page==="settings"&&<AdminSettings token={token} session={session} btnTema={btnTema} onLogout={onLogout}/>}
     </div></div>
