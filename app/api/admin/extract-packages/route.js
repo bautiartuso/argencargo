@@ -7,6 +7,7 @@
 
 import { callClaudeVision, limpiarJson } from "../../../../lib/anthropic";
 import { payloadVerificado } from "../../../../lib/auth-server";
+import { agrandarPng } from "../../../../lib/agrandar-png";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -40,7 +41,8 @@ export async function POST(req) {
   const imgRes = await fetch(flight.dispatch_photo_url);
   if (!imgRes.ok) return Response.json({ error: "No se pudo descargar la foto" }, { status: 502 });
   const mime = imgRes.headers.get("content-type") || "image/jpeg";
-  const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+  // Captura chica (planilla del agente): se agranda antes de leerla, los números de 8 px se confunden.
+  const b64 = agrandarPng(Buffer.from(await imgRes.arrayBuffer())).toString("base64");
 
   try {
     // 26/11/2026: el agente a veces manda su planilla sin encabezados en vez de la captura del courier
