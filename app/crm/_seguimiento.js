@@ -27,7 +27,7 @@ const SEGS = [
 const ESTADO = { enviado: "contactado", sin_respuesta: "contactado", respondio: "respondio", va_a_importar: "va_a_importar", mas_adelante: "mas_adelante", no_interesado: "no_interesado", no_contactar: "no_contactar", reactivar: "sin_contacto" };
 const OUTCOMES = [["respondio", "Respondió", "#4ade80"], ["sin_respuesta", "Sin respuesta", "#fbbf24"], ["va_a_importar", "Va a importar", "#8CC8F5"], ["mas_adelante", "Más adelante", "#c4b5fd"], ["no_interesado", "No le interesa", "rgba(255,255,255,0.6)"]];
 const OUT_LBL = { respondio: "Respondió", sin_respuesta: "Sin respuesta", va_a_importar: "Va a importar", mas_adelante: "Más adelante", no_interesado: "No le interesa", no_contactar: "No contactar", enviado: "Mensaje enviado", nota: "Nota" };
-const COND = { responsable_inscripto: "RI", monotributo: "Mono", monotributista: "Mono", consumidor_final: "CF" };
+const COND = { responsable_inscripto: "RI", monotributo: "Mono", monotributista: "Mono", consumidor_final: "CF", ninguna: "CF" };
 const SEM_COLOR = { si: "#4ade80", espera: "#fbbf24", no: "#f87171" };
 const SEM_ORD = { si: 0, espera: 1, no: 2 };
 const generico = (s) => !s || /^(consolidado|varios|mercader[ií]a|productos varios|-+|\.+)$/i.test(String(s).trim());
