@@ -471,7 +471,7 @@ export default function PresupuestoPage({ params }) {
                         costos hablan de "Bulto 1, 2", y sin el número se pierde la referencia. */}
                     <span>{qViaja.length > 0 ? <>{qViaja.join(" · ")}<em>Bulto #{i + 1}</em></> : `Bulto #${i + 1}`}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
-                    <span><i className="k">Medidas</i>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</span>
+                    <span><i className="k">Medidas</i>{num(p.m3) > 0 ? `${num(p.m3).toLocaleString("es-AR", { maximumFractionDigits: 4 })} m³` : <>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</>}</span>
                     <span className="u"><i className="k">Peso c/u</i>{fmtKg(kgU)}</span>
                     {volManda && <span className={kgVolU > kgU + 0.01 ? "pz-volx" : "u"}><i className="k">Peso volumétrico c/u</i>{fmtKg(kgVolU)}{kgVolU > kgU + 0.01 && <sup>*</sup>}</span>}
                     {hayMaritimo && <span><i className="k">Volumen</i>{fmtCbm(cbmDe(p) * c)}</span>}

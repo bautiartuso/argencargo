@@ -18053,6 +18053,13 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   // (no toca la tarifa general ni la del cliente, solo esta cotización).
   const [rateOverride,setRateOverride]=useState({});const [costOverride,setCostOverride]=useState({}); // costo del agente editable por cotización (USD/kg o USD/m³) // {[chKey]: string}
   const toN=(v)=>{const n=Number(String(v||"").replace(",","."));return isNaN(n)?0:n;};
+  // Un bulto se carga con sus medidas o directamente con el volumen de la fila (m³, 26/11/2026). El
+  // volumen se pasa a un cubo equivalente por bulto, así todas las cuentas de abajo (volumétrico =
+  // m³ × 200, CBM, PDF, lo que se guarda) siguen trabajando con largo × ancho × alto.
+  const pkDims=(p)=>{const l=toN(p.length),w=toN(p.width),h=toN(p.height);if(l&&w&&h)return{l,w,h,m3:0};const m=toN(p.m3);if(m>0){const lado=Math.cbrt((m/(toN(p.qty)||1))*1e6);return{l:lado,w:lado,h:lado,m3:m};}return{l,w,h,m3:0};};
+  const pkCalc=(p)=>{const d=pkDims(p);return{id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:d.l,width_cm:d.w,height_cm:d.h};};
+  // Como lo ven el PDF y lo que se guarda: con las medidas del cubo y el volumen declarado.
+  const pkFuera=(pk)=>{const d=pkDims(pk);const r2=(v)=>v?Math.round(v*100)/100:null;return {id:pk.id,qty:Number(String(pk.qty??"1").replace(",","."))||1,length:r2(d.l),width:r2(d.w),height:r2(d.h),weight:toN(pk.weight)||null,...(d.m3?{m3:d.m3}:{})};};
   // Borrador (01/10/2026): lo cargado sobrevive a cambiar de sección o recargar la página. Solo
   // "Nueva cotización" lo borra. Una vez calculada, la cotización se recalcula sola con cada cambio.
   const CALC_BORRADOR="ac_calc_borrador";
@@ -18162,7 +18169,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   // Los productos que entran en el calculo, con su indice real en products (el filtro corre los
   // indices y la asignacion a bultos se guarda por indice de producto).
   const conPrecio=products.map((p,i)=>({p,i})).filter(({p})=>toN(p.unit_price)>0);
-  const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);
+  const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),{l,w,h}=pkDims(p);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);
   const overweight=pkgs.some(p=>toN(p.weight)>45);
   const classifyOne=async(i)=>{
     const p=products[i];if(!p.description?.trim())return;
@@ -18213,7 +18220,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
     firmaCalc.current=firma;
     const pctN=(v,def)=>(v==null||String(v).trim()==="")?def:toN(v);
     const items=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),import_duty_rate:pctN(p.ncm?.import_duty_rate,0),statistics_rate:pctN(p.ncm?.statistics_rate,0),iva_rate:pctN(p.ncm?.iva_rate,21),iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
-    const pks=pkgs.map(p=>({id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
+    const pks=pkgs.map(pkCalc);
     const client={tax_condition:taxCond};
     const all=channelsForOrigin(origin).map(ch=>{
       const opLike={channel:CHANNEL_MAP[ch.key],origin,shipping_to_door:false,shipping_cost:0,has_battery:hasBattery,has_phones:false};
@@ -18281,7 +18288,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
       if(!d?.ok){setDelChat({error:d?.error||"No se pudo leer el chat"});return;}
       const txt=(v)=>v==null?"":String(v).replace(".",",");
       const prods=(d.productos||[]).map(x=>({description:x.descripcion,unit_price:txt(x.precio_usd),quantity:x.cantidad?String(x.cantidad):"1",ncm:null,classifying:true,package_ids:[]}));
-      const bultos=(d.bultos||[]).map((k,i)=>({id:i,qty:String(k.cantidad||1),length:txt(k.largo_cm),width:txt(k.ancho_cm),height:txt(k.alto_cm),weight:txt(k.peso_kg)}));
+      const bultos=(d.bultos||[]).map((k,i)=>({id:i,qty:String(k.cantidad||1),length:txt(k.largo_cm),width:txt(k.ancho_cm),height:txt(k.alto_cm),weight:txt(k.peso_kg),m3:txt(k.volumen_m3)}));
       nuevaCotizacion();
       if(d.cliente?.id){setClientId(d.cliente.id);}
       setClientName(d.cliente?.nombre||"");
@@ -18310,7 +18317,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   // PDF de cotización (18/10/2026): el mismo que exporta el cliente desde el portal (lib/cotizacion-pdf.js).
   const printPdf=(ch,eff)=>{
     const bd=eff?.bd||ch.bd||{};
-    abrirCotizacionPdf(armarDatosAdmin({ch,eff:{...eff,recargoValor:bd.isBlanco?0:recargoDe(ch).amt},products,pkgs,origin,taxCond,clientName}));
+    abrirCotizacionPdf(armarDatosAdmin({ch,eff:{...eff,recargoValor:bd.isBlanco?0:recargoDe(ch).amt},products,pkgs:pkgs.map(pkFuera),origin,taxCond,clientName}));
   };
   const addProduct=()=>setProducts(p=>[...p,{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false,package_ids:[]}]);
   const rmProduct=(i)=>setProducts(p=>p.length>1?p.filter((_,j)=>j!==i):p);
@@ -18344,7 +18351,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
     return {lines:lines.map(([l,v])=>[l,Math.round(v*100)/100]),total:Math.round(lines.reduce((a,[,v])=>a+v,0)*100)/100};
   };
   const prodVacio=(x)=>!String(x.description||"").trim()&&!String(x.unit_price||"").trim();
-  const pkVacio=(x)=>!x.length&&!x.width&&!x.height&&!x.weight;
+  const pkVacio=(x)=>!x.length&&!x.width&&!x.height&&!x.weight&&!x.m3;
   const aplicarPegado=({productos,bultos},modo)=>{
     if(productos.length){const nuevos=productos.map(x=>({description:x.description,unit_price:String(x.unit_price),quantity:String(x.quantity),ncm:null,classifying:false,package_ids:[]}));setProducts(p=>modo==="agregar"?[...p.filter(x=>!prodVacio(x)),...nuevos]:nuevos);}
     if(bultos.length){const nuevos=bultos.map(b=>({id:proxPkId.current++,qty:String(b.qty),length:String(b.length),width:String(b.width),height:String(b.height),weight:b.weight===""?"":String(b.weight)}));setPkgs(p=>modo==="agregar"?[...p.filter(x=>!pkVacio(x)),...nuevos]:nuevos);}
@@ -18356,7 +18363,9 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   // Que producto viaja en que bulto. Sirve para repartir el flete por peso: si no se marca nada
   // se reparte por FOB, que castiga al producto caro y liviano.
   const toggleBulto=(pi,pkId)=>setProducts(p=>p.map((x,j)=>{if(j!==pi)return x;const cur=Array.isArray(x.package_ids)?x.package_ids:[];return{...x,package_ids:cur.includes(pkId)?cur.filter(id=>id!==pkId):[...cur,pkId]};}));
-  const chPkg=(i,f,v)=>setPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  // Medidas y volumen se pisan entre sí: escribir una medida borra el volumen cargado a mano y al revés.
+  const chPkg=(i,f,v)=>setPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v,...(["length","width","height"].includes(f)&&v?{m3:""}:{})}:x));
+  const chPkgVol=(i,v)=>{const lim=String(v).replace(/[^\d.,]/g,"");setPkgs(p=>p.map((x,j)=>j===i?{...x,m3:lim,...(lim?{length:"",width:"",height:""}:{})}:x));};
   // Navegacion con Enter en la grilla de bultos: cant -> largo -> ancho -> alto -> peso, y al
   // final de la fila salta a la siguiente (o crea un bulto nuevo si era la ultima). Pedido de
   // Bautista para cargar medidas sin sacar las manos del teclado.
@@ -18408,7 +18417,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
     // ningun total, asi que no obliga a recalcular, y si leyeramos los de `results` el link
     // guardaria el reparto de antes de marcarlos.
     const itemsLink=products.filter(p=>toN(p.unit_price)>0).map(p=>({description:(p.description||"").trim(),unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),ncm_code:p.ncm?.ncm_code||null,package_ids:Array.isArray(p.package_ids)&&p.package_ids.length?p.package_ids:null}));
-    const pksLink=pkgs.map(p=>({id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
+    const pksLink=pkgs.map(pkCalc);
     try{
       const alts=results.channels.filter(c=>canalesLink.includes(c.key)).map(c=>{
         const bd=c.bd||{};
@@ -18469,7 +18478,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
         // rompian el editor de la cotizacion (input number no los puede mostrar -> campos
         // "borrados" y NaN en totales).
         products:products.map(pr=>({...pr,unit_price:toN(pr.unit_price)||pr.unit_price,quantity:Number(String(pr.quantity??"1").replace(",","."))||1})),
-        packages:pkgs.map(pk=>({id:pk.id,qty:Number(String(pk.qty??"1").replace(",","."))||1,length:toN(pk.length)||null,width:toN(pk.width)||null,height:toN(pk.height)||null,weight:toN(pk.weight)||null})),
+        packages:pkgs.map(pkFuera),
         total_fob:results.totalFob,total_cbm:results.totCBM,
         total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*(toN(pk.qty)||1),0)||null,
         total_cost:barata.totalAbonar,
@@ -18552,6 +18561,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
 .qc-chip b{display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qc-chip.on{background:rgba(184,149,106,0.12);border-color:rgba(184,149,106,0.35)}
 .qc-chip.on b{color:${IC}}
+.qc-m3{cursor:text}.qc-m3 input{display:block;width:100%;height:17px;padding:0;border:none;background:transparent;color:#fff;font-size:12.5px;font-weight:700;text-align:center;outline:none;font-family:inherit}.qc-m3 input::placeholder{color:rgba(255,255,255,0.75);font-weight:700}.qc-m3.on input{color:${IC}}.qc-m3:focus-within{border-color:rgba(232,208,152,0.55)}
 .qc-va{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.07)}
 .qc-va>span{font-size:10px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
 .qc-vab{display:inline-flex;align-items:center;gap:6px;max-width:220px;height:28px;padding:0 11px;font-size:12px;border-radius:20px;cursor:pointer;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.55);font-family:inherit}
@@ -18662,7 +18672,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   const ovIn=(val,isOv,onCh,onReset)=><span className="qc-ov"><input inputMode="decimal" value={val} onChange={e=>onCh(e.target.value)} className={isOv?"on":""}/>{isOv&&<button type="button" onClick={onReset} title="Volver al valor del sistema">↺</button>}</span>;
   const sinOv=(set,k)=>()=>set(p=>{const c={...p};delete c[k];return c;});
   const _gw=pkgs.reduce((s,p)=>s+toN(p.weight)*(toN(p.qty)||1),0);
-  const _pf=pkgs.reduce((s,p)=>{const q=toN(p.qty)||1,gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);
+  const _pf=pkgs.reduce((s,p)=>{const q=toN(p.qty)||1,gw=toN(p.weight),{l,w,h}=pkDims(p);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);
   return <div className="qc">
     <style>{css}</style>
     {delChat&&<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14,padding:"12px 16px",borderRadius:12,border:`1px solid ${delChat.error?"rgba(248,113,113,0.45)":"rgba(140,200,245,0.4)"}`,background:delChat.error?"rgba(248,113,113,0.08)":"rgba(140,200,245,0.08)",fontSize:13,color:"#fff"}}>
@@ -18722,7 +18732,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
       <div className="qc-sh"><span className="qc-lbl">Bultos</span><span style={{display:"flex",gap:6}}><button type="button" className="qc-add" onClick={()=>setPegarOpen(true)}>📋 Pegar lista</button><button type="button" className="qc-add" onClick={addPkg}>+ Bulto</button></span></div>
       <div className="qc-pkhead">{["Cant.","Largo cm","Ancho cm","Alto cm","Peso kg","",""].map((h,j)=><span key={j} style={{textAlign:j<5?"center":"left"}}>{h}</span>)}</div>
       {pkgs.map((pk,i)=>{
-        const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);
+        const q=toN(pk.qty)||1,gw=toN(pk.weight),{l,w,h,m3:porVol}=pkDims(pk);
         const bruto=gw*q,vol=(l&&w&&h)?((l*w*h)/5000)*q:0,cbm=(l&&w&&h)?((l*w*h)/1000000)*q:0;
         // Qué viaja en este bulto: solo con más de un bulto y más de un producto. Marcarlo
         // reparte el flete por peso real y no por FOB (cambia el costo puesto en Argentina).
@@ -18735,7 +18745,8 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
           </label>)}
           <button type="button" className="qc-x" style={{gridArea:"x",visibility:pkgs.length>1?"visible":"hidden"}} onClick={()=>rmPkg(i)} aria-label="Quitar bulto">×</button>
           <div className="qc-chips" style={{gridArea:"s"}}>
-            {[["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",bruto>0&&bruto>=vol],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",vol>0&&vol>bruto],["m³",cbm>0?cbm.toFixed(4):"—",false]].map(([lb,v,on])=><div key={lb} className={"qc-chip"+(on?" on":"")}><span>{lb}{q>1?` ×${q}`:""}</span><b>{v}</b></div>)}
+            {[["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",bruto>0&&bruto>=vol],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",vol>0&&vol>bruto]].map(([lb,v,on])=><div key={lb} className={"qc-chip"+(on?" on":"")}><span>{lb}{q>1?` ×${q}`:""}</span><b>{v}</b></div>)}
+            <label className={"qc-chip qc-m3"+(porVol?" on":"")} title="Volumen de la fila: se puede escribir en vez de las medidas"><span>m³{q>1?` ×${q}`:""}</span><input inputMode="decimal" value={pk.m3||""} placeholder={!porVol&&cbm>0?cbm.toFixed(4):"—"} onChange={e=>chPkgVol(i,e.target.value)}/></label>
           </div>
           {va&&<div className="qc-va" style={{gridArea:"v"}}>
             <span>Viaja acá</span>
