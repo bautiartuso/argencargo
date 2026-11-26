@@ -246,7 +246,8 @@ export async function GET(req) {
   // cuánto se ahorró y cuántos kilos bajó. Solo si ahorró (mínimo USD 5), una vez por reempaque
   // (repack_requests.wa_notified_at). No sale mientras el presupuesto guardado tenga el flete de
   // antes. Espera 15 min desde que quedó registrado (si se vuelve a
-  // leer el archivo del vuelo, los números cambian) y sale de lunes a sábado de 9 a 20 h.
+  // leer el archivo del vuelo, los números cambian). Sale a cualquier hora y cualquier día (26/11/2026,
+  // Bautista: "que salga todo el tiempo"; antes solo de lunes a sábado de 9 a 20 h).
   out.reempaques = [];
   try {
     const desde = new Date(Math.max(Date.parse(REEMPAQUE_DESDE), now - 30 * 86400000)).toISOString();
@@ -268,7 +269,6 @@ export async function GET(req) {
     }
     const porOp = {};
     for (const r of hechos) if (!r.wa_notified_at && r.completed_at <= hasta) (porOp[r.operation_id] = porOp[r.operation_id] || []).push(r);
-    const enHoraReemp = arNow.getUTCDay() !== 0 && arNow.getUTCHours() >= 9 && arNow.getUTCHours() < 20;
     let estadoTpl;
     for (const [opId, filas] of Object.entries(porOp)) {
       const marcar = (extra = {}) => sb(`/repack_requests?id=in.(${filas.map((f) => f.id).join(",")})`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ wa_notified_at: new Date().toISOString(), ...extra }) });
@@ -277,7 +277,7 @@ export async function GET(req) {
       const motivo = !a ? "no ahorró" : a.ahorroUsd < 5 ? `ahorro chico (USD ${a.ahorroUsd})` : a.op.sent_notifications?.silenciada ? "op silenciada" : ["cancelada", "operacion_cerrada"].includes(a.op.status) ? "op cerrada" : !waNumber(a.client.whatsapp) ? "cliente sin WhatsApp" : "";
       if (motivo) { out.reempaques.push(`${a?.op?.operation_code || opId}: sin aviso (${motivo})`); if (!dry) await marcar(); continue; }
       const params = paramsReempaque(a);
-      out.reempaques.push(`${a.op.operation_code} → reempaque_ahorro (${params.slice(2).join(" · ")})${a.presupuestoViejo ? " · frenado: el presupuesto guardado no bajó" : enHoraReemp ? "" : " · espera horario"}`);
+      out.reempaques.push(`${a.op.operation_code} → reempaque_ahorro (${params.slice(2).join(" · ")})${a.presupuestoViejo ? " · frenado: el presupuesto guardado no bajó" : ""}`);
       if (dry) continue;
       if (estadoTpl === undefined) estadoTpl = await ensureWaTemplate("reempaque_ahorro");
       // El presupuesto guardado sigue con el flete de antes: no se le dice al cliente que ahorró
@@ -290,7 +290,6 @@ export async function GET(req) {
         }
         continue;
       }
-      if (!enHoraReemp) continue;
       if (estadoTpl && estadoTpl !== "APPROVED") { out.reempaque_plantilla = `reempaque_ahorro: ${estadoTpl} en Meta — se reintenta en 5 min`; continue; }
       const w = await sendWaTemplate(a.client.whatsapp, "reempaque_ahorro", params);
       if (!w?.ok) { console.error("[bot-entregas] reempaque falló", a.op.operation_code, w?.error); out.reempaque_error = `${a.op.operation_code}: ${w?.error || "envío falló"}`; continue; }
