@@ -18000,7 +18000,7 @@ function PegarListaModal({onCerrar,onAplicar,hayCargados,token}){
     </div>
   </div>;
 }
-function AdminCalculator({token}){
+function AdminCalculator({token,desdeChat,onChatUsado}){
   const [tariffs,setTariffs]=useState([]);
   const [config,setConfig]=useState({});
   const [allClients,setAllClients]=useState([]);
@@ -18255,6 +18255,38 @@ function AdminCalculator({token}){
     },900);
     return()=>clearTimeout(t);
   },[firmaProd,restaurado]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cotización armada desde un chat (27/11/2026): el botón "Generar cotización" de la extensión de
+  // WhatsApp Web abre /admin#cotizar=<ficha>; acá se lee el chat (/api/crm/cotizar) y se cargan cliente,
+  // régimen, origen, marca, batería, productos y bultos. Queda todo a la vista para revisar y corregir.
+  const [delChat,setDelChat]=useState(null); // null | {leyendo:true} | {falta:[],mensajes:n} | {error}
+  const chatHecho=useRef(null);
+  useEffect(()=>{
+    if(!restaurado||!desdeChat||chatHecho.current===desdeChat)return;
+    chatHecho.current=desdeChat;const fichaId=desdeChat;
+    (async()=>{
+      setDelChat({leyendo:true});
+      let d=null;try{const r=await fetch("/api/crm/cotizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contact_id:fichaId})});d=await r.json();}catch{}
+      onChatUsado&&onChatUsado();
+      if(!d?.ok){setDelChat({error:d?.error||"No se pudo leer el chat"});return;}
+      const txt=(v)=>v==null?"":String(v).replace(".",",");
+      const prods=(d.productos||[]).map(x=>({description:x.descripcion,unit_price:txt(x.precio_usd),quantity:x.cantidad?String(x.cantidad):"1",ncm:null,classifying:true,package_ids:[]}));
+      const bultos=(d.bultos||[]).map((k,i)=>({id:i,qty:String(k.cantidad||1),length:txt(k.largo_cm),width:txt(k.ancho_cm),height:txt(k.alto_cm),weight:txt(k.peso_kg)}));
+      nuevaCotizacion();
+      if(d.cliente?.id){setClientId(d.cliente.id);}
+      setClientName(d.cliente?.nombre||"");
+      if(d.cliente?.regimen)setTaxCond(d.cliente.regimen);
+      setOrigin(d.origen==="USA"?"USA":"China");
+      setHasBrand(typeof d.marca==="boolean"?d.marca:null);setHasBattery(typeof d.bateria==="boolean"?d.bateria:null);
+      if(prods.length){setProducts(prods);firmaMarcas.current=prods.map(x=>String(x.description||"").trim().toLowerCase()).filter(Boolean);}
+      if(bultos.length){setPkgs(bultos);proxPkId.current=bultos.length;}
+      setAutoCalc(true);
+      setDelChat({falta:Array.isArray(d.falta)?d.falta:[],mensajes:d.mensajes||0,vacio:!prods.length});
+      // NCM de cada producto, como hace "Clasificar todos".
+      const descs=[...new Set(prods.map(x=>x.description.trim()).filter(Boolean))];
+      await Promise.all(descs.map(async(desc)=>{let ncm=null;try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:desc})});const n=await r.json();if(n?.ncm_code)ncm={ncm_code:n.ncm_code,ncm_description:n.ncm_description||desc,import_duty_rate:n.import_duty_rate??35,statistics_rate:n.statistics_rate??3,iva_rate:n.iva_rate??21,intervention:n.intervention||null,antidumping:n.antidumping||null};}catch{}
+        setProducts(arr=>arr.map(x=>String(x.description||"").trim()===desc&&x.classifying?{...x,classifying:false,ncm}:x));}));
+    })();
+  },[restaurado,desdeChat]); // eslint-disable-line react-hooks/exhaustive-deps
   // Recalcula sola con cada cambio una vez hecha la primera cuenta (antes quedaban números viejos
   // si se cambiaba un bulto y no se volvía a tocar Calcular).
   useEffect(()=>{
@@ -18622,6 +18654,10 @@ function AdminCalculator({token}){
   const _pf=pkgs.reduce((s,p)=>{const q=toN(p.qty)||1,gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);
   return <div className="qc">
     <style>{css}</style>
+    {delChat&&<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14,padding:"12px 16px",borderRadius:12,border:`1px solid ${delChat.error?"rgba(248,113,113,0.45)":"rgba(140,200,245,0.4)"}`,background:delChat.error?"rgba(248,113,113,0.08)":"rgba(140,200,245,0.08)",fontSize:13,color:"#fff"}}>
+      <span style={{flex:1,minWidth:200,lineHeight:1.5}}>{delChat.leyendo?"Leyendo el chat…":delChat.error?delChat.error:delChat.vacio?<>En el chat no encontré mercadería para cotizar.{delChat.falta?.length?` ${delChat.falta.join(" · ")}`:""}</>:<><b>Armada con el chat</b> ({delChat.mensajes} mensajes).{delChat.falta?.length?<span style={{color:"#fbbf24"}}> Falta: {delChat.falta.join(" · ")}</span>:""}</>}</span>
+      {!delChat.leyendo&&<button type="button" onClick={()=>setDelChat(null)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.6)",fontSize:16,cursor:"pointer",padding:0}}>✕</button>}
+    </div>}
 
     {/* Cliente, régimen y condiciones */}
     <div className="qc-sec">
@@ -19024,6 +19060,15 @@ function AdminDashboard({session,onLogout}){
     try{localStorage.setItem("ac_admin_nav",JSON.stringify({page,selOp,selClient}));}catch{}
   },[page,selOp,selClient]);
   const token=session.token;
+  // "Generar cotización" de la extensión de WhatsApp Web (/admin#cotizar=<ficha del CRM>): abre la
+  // calculadora y la arma con el chat. Va en el # para que no viaje en la dirección que ve el servidor.
+  const [cotizarChat,setCotizarChat]=useState(null);
+  useEffect(()=>{
+    const m=/[#&]cotizar=([0-9a-f-]{36})/i.exec(window.location.hash||"");
+    if(!m)return;
+    setCotizarChat(m[1]);setSelOp(null);setNewOp(false);setSelClient(null);setPage("calc");
+    try{window.history.replaceState({},"","/admin");}catch{}
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
   // Link desde la ficha del CRM o la tira de WhatsApp Web (/admin?cotizacion=<id>): abre esa cotización.
   useEffect(()=>{
     let id=null;try{id=new URLSearchParams(window.location.search).get("cotizacion");}catch{}
@@ -19268,7 +19313,7 @@ function AdminDashboard({session,onLogout}){
       {page==="facturas"&&<FacturasPanel token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token} abrirId={abrirCoti} onAbierta={()=>setAbrirCoti(null)}/>}
-      {page==="calc"&&<AdminCalculator token={token}/>}
+      {page==="calc"&&<AdminCalculator token={token} desdeChat={cotizarChat} onChatUsado={()=>setCotizarChat(null)}/>}
       {page==="settings"&&<AdminSettings token={token} session={session} btnTema={btnTema} onLogout={onLogout}/>}
     </div></div>
   </div>;

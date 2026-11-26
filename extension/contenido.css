@@ -35,4 +35,6 @@ html.ac-abierto #ac-tab { display: none; }
 #ac-rapidas::-webkit-scrollbar { display: none; }
 #ac-rapidas button { flex: 0 0 auto; border: 1px solid rgba(61,155,255,0.4); background: #0c1829; color: #d3e6ff; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 #ac-rapidas button:hover { background: #173258; }
+#ac-rapidas a.ac-accion { flex: 0 0 auto; border: 1px solid #3d9bff; background: #3d9bff; color: #04101f; border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 700; text-decoration: none; cursor: pointer; }
+#ac-rapidas a.ac-accion:hover { background: #5fb0ff; }
 #ac-rapidas .ac-aviso { font-size: 12.5px; color: #d3e6ff; background: #0c1829; padding: 6px 12px; border-radius: 999px; }

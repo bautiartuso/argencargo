@@ -125,7 +125,11 @@
   function pintarRapidas(lista) {
     rapidas.replaceChildren();
     for (const r of (Array.isArray(lista) ? lista : []).slice(0, 16)) {
-      if (!r?.l || !r?.t) continue;
+      if (!r?.l) continue;
+      // Con dirección en vez de texto es una acción (Generar cotización): abre el sistema en otra pestaña.
+      const u = /^https:\/\/www\.argencargo\.com\.ar\//.test(String(r.u || "")) ? String(r.u) : "";
+      if (u) { rapidas.append(crear("a", { className: "ac-accion", href: u, target: "_blank", rel: "noopener", textContent: String(r.l) })); continue; }
+      if (!r.t) continue;
       const b = crear("button", { type: "button", textContent: String(r.l) });
       b.addEventListener("click", () => escribir(String(r.t)));
       rapidas.append(b);

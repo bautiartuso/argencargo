@@ -7,6 +7,7 @@
 // Cómo se hablan:
 //   extensión → página : postMessage { ac: "chat", id, chat: { tel, lid, nombre, grupo } }   (o #tel=…&nombre=… en la URL)
 //   página → extensión : postMessage { ac: "ficha", id, tira, rapidas, tag } a web.whatsapp.com
+//   (una rápida con `u` en vez de `t` es una acción: abre esa dirección del sistema en otra pestaña)
 // La página nunca recibe ni guarda mensajes: solo el teléfono o el nombre del chat abierto.
 // Adentro de WhatsApp Web el navegador le da a esta página un almacenamiento aparte: la sesión se
 // inicia una vez acá y queda guardada (no comparte la de la pestaña del CRM).
@@ -176,7 +177,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   const avisar = useCallback((datos, nombre) => {
     ultimo.current = { datos, nombre };
     const n = primerNombre(nombre);
-    enviarAExt({ ...datos, rapidas: [...fijasRef.current.map((t) => ({ l: t.label || "Acceso", t: interpFija(t.body, n) })), ...(datos.rapidas || [])] });
+    enviarAExt({ ...datos, rapidas: [...fijasRef.current.map((t) => ({ l: t.label || "Acceso", t: interpFija(t.body, n) })), ...(datos.acciones || []), ...(datos.rapidas || [])] });
   }, [enviarAExt]);
   const avisarRef = useRef(avisar); avisarRef.current = avisar;
   const cargarFijas = useCallback(async () => {
@@ -237,7 +238,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   const crearSuelta = async () => { setCreando(true); const f = await crearFicha({ tel: chat.tel, waNombre: chat.nombre }); setCreando(false); if (f) setEst({ v: "ficha", c: f }); };
   const noEs = () => { recordar(claveChat(chat), null); setEst({ v: "elegir" }); avisar({ tira: null, rapidas: [] }, chat.nombre); };
   const alCambiar = (p) => setEst((e) => (e.v === "ficha" ? { ...e, c: { ...e.c, ...p } } : e));
-  const alDatos = (d, id) => { if (est.v === "ficha" && est.c.id === id) { const tf = TAG_FISCAL[d?.cliente?.tax_condition]; avisar({ tira: armarTira({ c: est.c, d, admin }), rapidas: armarRapidas({ c: est.c, d, admin }), tag: tf ? { txt: tf[0], c: tf[1] } : null }, d?.cliente?.nombre || est.c.name || est.c.wa_name || chat.nombre); } };
+  const alDatos = (d, id) => { if (est.v === "ficha" && est.c.id === id) { const tf = TAG_FISCAL[d?.cliente?.tax_condition]; avisar({ tira: armarTira({ c: est.c, d, admin }), rapidas: armarRapidas({ c: est.c, d, admin }), acciones: [{ l: "Generar cotización", u: `https://www.argencargo.com.ar/admin#cotizar=${est.c.id}` }], tag: tf ? { txt: tf[0], c: tf[1] } : null }, d?.cliente?.nombre || est.c.name || est.c.wa_name || chat.nombre); } };
 
   let cuerpo;
   if (est.v === "cargando") cuerpo = <Linea c={W.mute}>Cargando…</Linea>;
