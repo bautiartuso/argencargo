@@ -3,8 +3,9 @@
 // por lead de WhatsApp, con lo que importó, lo que cotizó, el chat y el análisis de la IA en la misma
 // fila. Las reglas (a quién conviene escribir, descansos, prioridad, quién lo lleva) están en
 // lib/crm-seguimiento.js y las comparte Contactos.
-//  - Cada grupo se parte en dos: lo que lleva una persona y lo que lleva la IA (los fríos sin nada
-//    puntual para retomar). Cualquiera se pasa de un lado al otro a mano.
+//  - Es una lista de trabajo (26/11/2026): cada solapa muestra solo a quién toca escribirle hoy, por
+//    prioridad; al mandar el WhatsApp o registrar, la fila se va. Los que descansan (se habló hace
+//    poco, ya se les escribió, tienen fecha) se ven aparte, con un enlace al pie.
 //  - El mensaje sugerido es el que escribió la IA con el análisis; si todavía no lo tiene, la plantilla.
 import { useState, useRef, useEffect, useMemo } from "react";
 import { apodoDe } from "../../lib/apodos";
@@ -13,7 +14,7 @@ import DatePicker from "../components/DatePicker";
 import { hoyAR } from "../../lib/fecha-ar";
 import { GOLD_LIGHT, GOLD_GRADIENT, dq, dqPage, useEsCelu } from "./_compat";
 import { api } from "./_comun";
-import { n, dias, diasTxt, fechaDM, fmtUsd, waNum, canalTxt, enCurso, importaciones, ultimaImp, cotizoDespues, esLead, nombreDe, enriquecer, estadoIa, TEMP } from "../../lib/crm-seguimiento";
+import { n, dias, diasTxt, fechaDM, fmtUsd, waNum, canalTxt, enCurso, importaciones, ultimaImp, cotizoDespues, esLead, nombreDe, enriquecer, TEMP } from "../../lib/crm-seguimiento";
 
 const POR_PAG = 40;
 const SEGS = [
@@ -41,14 +42,14 @@ const caja = { padding: "12px 14px", borderRadius: 12, background: "rgba(255,255
 function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
   const celu = useEsCelu();
   const [rows, setRows] = useState([]); const [lo, setLo] = useState(true); const [err, setErr] = useState("");
-  const [seg, setSeg] = useState("importaron"); const [quien, setQuien] = useState("humano"); const [pag, setPag] = useState(0);
+  const [seg, setSeg] = useState("importaron"); const [verEsperan, setVerEsperan] = useState(false); const [pag, setPag] = useState(0);
   const [abierto, setAbierto] = useState(null); const [hist, setHist] = useState({});
   const [reg, setReg] = useState(null); // {clave,outcome,note,next}
   const [confNc, setConfNc] = useState(null);
-  const [ia, setIa] = useState(null); // cómo está el saludo automático
   const [analizando, setAnalizando] = useState(null);
   const ctxRef = useRef({});
-  useEffect(() => { setPag(0); }, [seg, quien]);
+  useEffect(() => { setPag(0); }, [seg, verEsperan]);
+  useEffect(() => { setVerEsperan(false); }, [seg]);
 
   const cargar = async () => {
     setLo(true); setErr("");
@@ -56,20 +57,19 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
     while (true) { const r = await dqPage("rpc/crm_personas", { token, filters: "?select=*", desde, hasta: desde + 999 }); if (r.error) { setErr("No pudimos cargar el seguimiento."); break; } todo = todo.concat(r.rows); if (r.rows.length < 1000) break; desde += 1000; }
     setRows(todo); setLo(false);
   };
-  useEffect(() => { cargar(); api("/api/crm/ia").then((r) => { if (r && !r.error) setIa(r); }); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hoy = hoyAR();
   const enriquecidas = useMemo(() => rows.map((c) => enriquecer(c, hoy)), [rows, hoy]);
-  const cuenta = (k) => enriquecidas.filter((c) => c.seg === k).length;
+  // El número de cada solapa: a cuántos toca escribirles hoy.
+  const cuenta = (k) => enriquecidas.filter((c) => c.seg === k && (k === "no_contactar" || c.sem.k === "si")).length;
   const delGrupo = useMemo(() => enriquecidas.filter((c) => c.seg === seg), [enriquecidas, seg]);
   const partido = seg !== "no_contactar";
-  const nVos = delGrupo.filter((c) => c.lleva === "humano").length, nIa = delGrupo.length - nVos;
+  const nEsperan = partido ? delGrupo.filter((c) => c.sem.k !== "si").length : 0;
   const lista = useMemo(() => {
-    const l = partido ? delGrupo.filter((c) => c.lleva === quien) : [...delGrupo];
-    if (!partido) return l.sort((a, b) => new Date(b.no_contactar_at || b.ultimo_contacto_at || 0) - new Date(a.no_contactar_at || a.ultimo_contacto_at || 0));
-    if (quien === "ia") return l.sort((a, b) => (b.ia_apto ? 1 : 0) - (a.ia_apto ? 1 : 0) || new Date(b.ia_ultimo_at || 0) - new Date(a.ia_ultimo_at || 0) || new Date(b.ultima_quote_fecha || b.created_at || 0) - new Date(a.ultima_quote_fecha || a.created_at || 0));
-    return l.sort((a, b) => SEM_ORD[a.sem.k] - SEM_ORD[b.sem.k] || b.prio - a.prio || n(b.facturado_usd) - n(a.facturado_usd) || new Date(b.ultima_quote_fecha || b.last_msg_at || b.created_at || 0) - new Date(a.ultima_quote_fecha || a.last_msg_at || a.created_at || 0));
-  }, [delGrupo, quien, partido]);
+    if (!partido) return [...delGrupo].sort((a, b) => new Date(b.no_contactar_at || b.ultimo_contacto_at || 0) - new Date(a.no_contactar_at || a.ultimo_contacto_at || 0));
+    return delGrupo.filter((c) => (verEsperan ? c.sem.k !== "si" : c.sem.k === "si")).sort((a, b) => SEM_ORD[a.sem.k] - SEM_ORD[b.sem.k] || b.prio - a.prio || n(b.facturado_usd) - n(a.facturado_usd) || new Date(b.ultima_quote_fecha || b.last_msg_at || b.created_at || 0) - new Date(a.ultima_quote_fecha || a.last_msg_at || a.created_at || 0));
+  }, [delGrupo, verEsperan, partido]);
   const paginas = Math.max(1, Math.ceil(lista.length / POR_PAG)); const visibles = lista.slice(pag * POR_PAG, pag * POR_PAG + POR_PAG);
   const parchar = (clave, patch) => setRows((p) => p.map((x) => (x.clave === clave ? { ...x, ...(typeof patch === "function" ? patch(x) : patch) } : x)));
 
@@ -146,13 +146,6 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
     if (ok) { setReg(null); toast("Registrado", "success"); }
   };
 
-  // ── La IA: pasar de un lado al otro y volver a analizar ──
-  const pasar = async (c, a) => {
-    const r = await dq("crm_analisis?on_conflict=clave", { method: "POST", token, headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: { clave: c.clave, client_id: c.id || null, contact_id: c.id ? null : c.contact_id, quien_manual: a, updated_at: new Date().toISOString() } });
-    if (!Array.isArray(r)) { toast("No se pudo guardar", "error"); return; }
-    parchar(c.clave, { quien_manual: a, quien_ef: a, ia_apto: a === "ia" && c.sem.k === "si" && !c.sem.urgente });
-    toast(a === "ia" ? `${nombreDe(c)} pasa a la IA` : `${nombreDe(c)} lo llevás vos`, "success");
-  };
   const analizar = async (c) => {
     setAnalizando(c.clave);
     const r = await api("/api/cron/crm-analisis", { clave: c.clave });
@@ -163,15 +156,15 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
 
   const fila = (c) => {
     const dc = dias(c.ultimo_contacto_at || c.last_followup_at); const open = abierto === c.clave; const r = reg && reg.clave === c.clave ? reg : null;
-    const nc = c.seg === "no_contactar"; const deIa = partido && c.lleva === "ia"; const imps = importaciones(c); const T = TEMP[c.temp];
-    const col = deIa ? (c.ia_apto ? "#a78bfa" : "rgba(255,255,255,0.25)") : SEM_COLOR[c.sem.k];
-    const principal = deIa ? estadoIa(c) : (c.lectura || c.sem.t);
+    const nc = c.seg === "no_contactar"; const imps = importaciones(c); const T = TEMP[c.temp];
+    const col = SEM_COLOR[c.sem.k];
+    const principal = c.lectura || c.sem.t;
     const chat = c.last_msg_at ? `Último chat ${diasTxt(dias(c.last_msg_at))}${c.last_direction === "in" ? " · escribió él" : ""}` : "";
     const contacto = (c.ultimo_contacto_at || c.last_followup_at) ? `Último contacto ${diasTxt(dc)}${c.ultimo_outcome ? ` · ${OUT_LBL[c.ultimo_outcome] || c.ultimo_outcome}` : ""}${n(c.intentos_sin_respuesta) > 0 ? ` · ${c.intentos_sin_respuesta} sin respuesta` : ""}${c.ultimo_note ? ` · “${String(c.ultimo_note).slice(0, 80)}”` : ""}` : "";
-    const pie = nc ? "" : [!deIa && c.lectura ? c.sem.t : "", deIa && c.lectura ? c.lectura : "", chat, contacto, c.followup_next_at ? `próximo ${fechaDM(c.followup_next_at)}` : ""].filter(Boolean).join(" · ");
+    const pie = nc ? "" : [c.lectura ? c.sem.t : "", chat, contacto, c.followup_next_at ? `próximo ${fechaDM(c.followup_next_at)}` : ""].filter(Boolean).join(" · ");
     return <div key={c.clave} style={{ borderRadius: 14, border: `1px solid ${nc ? "rgba(248,113,113,0.35)" : open ? "rgba(184,149,106,0.4)" : "rgba(255,255,255,0.08)"}`, background: nc ? "linear-gradient(180deg,rgba(60,16,22,0.55),rgba(8,16,32,0.9))" : "linear-gradient(180deg,rgba(13,24,45,0.9),rgba(8,16,32,0.9))" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: celu ? "12px 12px" : "12px 16px", flexWrap: "wrap" }}>
-        <span title={deIa ? (c.ia_apto ? "En la fila de la IA" : "La IA espera") : c.sem.k === "si" ? "Conviene escribirle" : c.sem.k === "espera" ? "Mejor esperar" : "No escribirle"} style={{ width: 10, height: 10, borderRadius: "50%", background: col, boxShadow: `0 0 0 4px ${deIa ? "rgba(167,139,250,0.12)" : `${col}22`}`, flexShrink: 0 }} />
+        <span title={c.sem.k === "si" ? "Conviene escribirle" : c.sem.k === "espera" ? "Mejor esperar" : "No escribirle"} style={{ width: 10, height: 10, borderRadius: "50%", background: col, boxShadow: `0 0 0 4px ${col}22`, flexShrink: 0 }} />
         <div style={{ flex: "1 1 240px", minWidth: 0, cursor: "pointer" }} onClick={() => toggle(c)}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>{nombreDe(c) || c.phone}</span>
@@ -185,18 +178,13 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
             {n(c.mar_total) > 0 && pill("marítimo", "#60a5fa")}
             {c.unread > 0 && pill(`${c.unread} sin leer`, "#ef4444")}
           </div>
-          <p style={{ margin: "4px 0 0", fontSize: 12.5, color: nc ? "#fca5a5" : deIa ? "rgba(255,255,255,0.7)" : c.sem.k === "si" ? "#fff" : "rgba(255,255,255,0.7)", lineHeight: 1.45 }}>{principal}</p>
-          {!deIa && !nc && c.siguiente && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: GOLD_LIGHT, lineHeight: 1.4 }}>→ {c.siguiente}</p>}
+          <p style={{ margin: "4px 0 0", fontSize: 12.5, color: nc ? "#fca5a5" : c.sem.k === "si" ? "#fff" : "rgba(255,255,255,0.7)", lineHeight: 1.45 }}>{principal}</p>
+          {!nc && c.siguiente && <p style={{ margin: "3px 0 0", fontSize: 12.5, color: GOLD_LIGHT, lineHeight: 1.4 }}>→ {c.siguiente}</p>}
           {pie && <p style={{ margin: "3px 0 0", fontSize: 11.5, color: "rgba(255,255,255,0.42)", lineHeight: 1.4 }}>{pie}</p>}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginLeft: celu ? 22 : 0 }}>
           {nc ? btn("↩ Volver a contactar", () => reactivar(c), { color: "#fff", bg: "rgba(255,255,255,0.08)", border: "rgba(255,255,255,0.2)" })
-            : deIa ? <>
-              {btn("Lo llevo yo", () => pasar(c, "humano"), { color: GOLD_LIGHT, border: "rgba(184,149,106,0.45)", bg: "rgba(184,149,106,0.1)" })}
-              {confNc === c.clave
-                ? <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>{btn("Sí, no contactar más", () => noContactar(c), { color: "#fff", bg: "linear-gradient(135deg,#ef4444,#b91c1c)", border: "transparent" })}{btn("Cancelar", () => setConfNc(null), { color: "rgba(255,255,255,0.6)" })}</span>
-                : btn("🚫", () => setConfNc(c.clave), { color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.45)", title: "No contactar más" })}
-            </> : <>
+            : <>
               {btn("Mensaje", async () => alertDialog(await mensajeDe(c), { title: `Mensaje para ${apodoDe(c.first_name || c.wa_name || "") || nombreDe(c)}` }), { title: "Ver el WhatsApp que se le mandaría" })}
               {btn(r ? "✕" : "Registrar", () => setReg(r ? null : { clave: c.clave, outcome: "", note: "", next: "" }), { color: r ? "rgba(255,255,255,0.6)" : GOLD_LIGHT, border: r ? "rgba(255,255,255,0.12)" : "rgba(184,149,106,0.45)", bg: r ? "transparent" : "rgba(184,149,106,0.1)" })}
               {btn("WhatsApp", () => abrirWA(c), { color: "#fff", bg: "linear-gradient(135deg,#25D366,#128C7E)", border: "transparent", strong: c.sem.k === "si" })}
@@ -224,7 +212,6 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {c.contact_id && c.last_msg_at && ir && btn("Abrir el chat", () => ir("chats", { id: c.contact_id }))}
               {btn(analizando === c.clave ? "Analizando…" : c.lectura ? "Analizar de nuevo" : "Analizar", () => analizar(c), { disabled: analizando === c.clave })}
-              {!deIa && !c.sem.urgente && btn("Pasar a la IA", () => pasar(c, "ia"), { color: "#c4b5fd", border: "rgba(167,139,250,0.45)", bg: "rgba(167,139,250,0.08)" })}
             </div>
           </div>
           {c.lectura ? <>
@@ -255,7 +242,6 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
     </div>;
   };
 
-  const sub = (k, l, nn, c) => { const on = quien === k; return <button type="button" onClick={() => setQuien(k)} style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 36, padding: "0 14px", borderRadius: 999, border: `1px solid ${on ? c : "rgba(255,255,255,0.1)"}`, background: on ? `${c}22` : "transparent", color: on ? "#fff" : "rgba(255,255,255,0.55)", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{l}<span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums", color: on ? c : "rgba(255,255,255,0.45)" }}>{lo ? "…" : nn}</span></button>; };
 
   return <div>
     <div style={{ display: "grid", gridTemplateColumns: celu ? "1fr 1fr" : "repeat(5,minmax(0,1fr))", gap: 4, padding: 5, marginBottom: 12, borderRadius: 18, background: "rgba(0,0,0,0.28)", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -264,18 +250,14 @@ function SeguimientoPanelBase({ token, templates, flash, ir, admin }) {
         <span style={{ minWidth: 24, height: 20, padding: "0 7px", borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", background: on ? o.c : "rgba(255,255,255,0.08)", color: on ? "#0A1628" : "rgba(255,255,255,0.6)" }}>{lo ? "…" : nn}</span>
       </button>; })}
     </div>
-    {partido && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
-      {sub("humano", "Los llevás vos", nVos, GOLD_LIGHT)}
-      {sub("ia", "Los lleva la IA", nIa, "#a78bfa")}
-      {quien === "ia" && ia && <span style={{ marginLeft: celu ? 0 : "auto", fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
-        <b style={{ color: ia.activa ? "#4ade80" : "#fbbf24" }}>{ia.activa ? "Encendida" : "Apagada"}</b>{ia.activa ? ` · ${ia.hoy} de ${ia.por_dia} hoy` : ""}{ia.enviados > 0 ? ` · ${ia.enviados} saludos, ${ia.respondieron} contestaron` : ""}
-        {admin && ir && <button type="button" onClick={() => ir("conexiones")} style={{ marginLeft: 10, background: "transparent", border: "none", color: "#c4b5fd", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>Configurar</button>}
-      </span>}
+    {partido && !lo && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 2px 12px", fontSize: 12.5, color: "rgba(255,255,255,0.55)" }}>
+      <span>{verEsperan ? `${lista.length} en espera` : `${lista.length} para escribir hoy`}</span>
+      {(verEsperan || nEsperan > 0) && <button type="button" onClick={() => setVerEsperan((v) => !v)} style={{ background: "transparent", border: "none", padding: 0, color: GOLD_LIGHT, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{verEsperan ? "← Volver a los de hoy" : `Ver los ${nEsperan} en espera`}</button>}
     </div>}
     {err && <div style={{ padding: "12px 16px", marginBottom: 14, borderRadius: 10, background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171", fontSize: 13 }}>{err}</div>}
 
     {lo ? <SkeletonTable rows={8} cols={3} /> : visibles.length === 0
-      ? <EmptyState icon="users" title="Nada por acá" description="No hay nadie en este grupo." />
+      ? <EmptyState icon="users" title="Nada por acá" description={partido && !verEsperan ? "No queda nadie para escribir hoy en este grupo." : "No hay nadie en este grupo."} />
       : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{visibles.map(fila)}</div>}
 
     {paginas > 1 && <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 18 }}>

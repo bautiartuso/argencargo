@@ -91,7 +91,7 @@ export default function Contactos({ ctx }) {
                 {movil && <p style={{ margin: "3px 0 0", fontSize: 12, color: C.sub, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{lectura}</p>}
               </div>
               {movil ? <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: T.c, flexShrink: 0 }}>{T.l}</span> : <>
-                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: T.c }}>{T.l}{c.lleva === "ia" ? <span style={{ color: "#a78bfa" }}> · IA</span> : ""}</span>
+                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: T.c }}>{T.l}</span>
                 <div><Etapa k={etapaDe(c)} small /></div>
                 <span title={lectura} style={{ fontSize: 12, color: c.lectura ? C.txt : C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lectura}</span>
                 <span style={{ fontSize: 12, color: C.sub, fontFamily: MONO }}>{n(c.quotes_total)} · {importaciones(c)}</span>
