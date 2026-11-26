@@ -20,7 +20,7 @@ const SCHEMA = {
     origen: { type: "string", enum: ["China", "USA"] },
     bateria: { type: "boolean" },
     marca: { type: "boolean" },
-    regimen: { type: ["string", "null"], enum: ["responsable_inscripto", "monotributo", null] },
+    regimen: { type: "string", enum: ["responsable_inscripto", "monotributo", "no_dice"] },
     falta: { type: "array", items: { type: "string" } },
   },
 };
@@ -35,7 +35,7 @@ Devolvé:
 - origen: "USA" solo si queda claro que la mercadería sale de Estados Unidos; si no, "China".
 - bateria: true si el producto lleva batería (litio, recargable, pilas incluidas); si no lleva o no se sabe, false.
 - marca: true solo si se nombra una marca conocida o registrada (Apple, Nike, Samsung…) o dicen que lleva marca o logo; si es genérico, de fábrica, o no se dice nada, false.
-- regimen: la condición fiscal si el cliente la dice en el chat: "responsable_inscripto" (responsable inscripto, RI, tiene empresa/SRL/SA, pide factura A) o "monotributo" (monotributista, consumidor final, particular). Si no lo dice, null.
+- regimen: la condición fiscal si el cliente la dice en el chat: "responsable_inscripto" (responsable inscripto, RI, tiene empresa/SRL/SA, pide factura A) o "monotributo" (monotributista, consumidor final, particular). Si no lo dice, "no_dice".
 - falta: lista corta, en castellano, de lo que de verdad impide cotizar (por ejemplo "valor de la mercadería", "peso", "medidas o volumen"). Vacía si está todo.
 
 Reglas:
@@ -70,7 +70,7 @@ export async function POST(req) {
   try {
     const out = await callClaudeText({ system: SYSTEM, user: `Chat:\n${lineas.join("\n")}`, max_tokens: 1200, json_schema: SCHEMA, feature: "crm-cotizar" });
     d = JSON.parse(String(out).replace(/```json\s*|\s*```/g, "").trim());
-  } catch (e) { return Response.json({ error: "No se pudo leer el chat" }, { status: 502 }); }
+  } catch (e) { console.error("[crm-cotizar]", e?.message || e); return Response.json({ error: "No se pudo leer el chat" }, { status: 502 }); }
   const productos = (Array.isArray(d.productos) ? d.productos : []).map((p) => ({ descripcion: String(p.descripcion || "").trim().slice(0, 120), precio_usd: num(p.precio_usd), cantidad: num(p.cantidad) })).filter((p) => p.descripcion).slice(0, 30);
   const bultos = (Array.isArray(d.bultos) ? d.bultos : []).map((k) => ({ cantidad: Math.max(1, Math.round(num(k.cantidad) || 1)), largo_cm: num(k.largo_cm), ancho_cm: num(k.ancho_cm), alto_cm: num(k.alto_cm), peso_kg: num(k.peso_kg), volumen_m3: num(k.largo_cm) && num(k.ancho_cm) && num(k.alto_cm) ? null : num(k.volumen_m3) })).filter((k) => k.largo_cm || k.peso_kg || k.volumen_m3).slice(0, 30);
   if (!cliente.id && ["responsable_inscripto", "monotributo"].includes(d.regimen)) cliente.regimen = d.regimen;

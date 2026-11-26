@@ -41,7 +41,7 @@ const SCHEMA_VER = {
         bateria: { type: "string", enum: ["ninguna", "pila_comun", "litio", "no_se_sabe"] },
         inalambrico: { type: "boolean" }, marca: { type: "boolean" }, contacto_alimentos: { type: "boolean" }, uso_corporal: { type: "boolean" },
       } } },
-    pregunta: { type: "string" }, cantidad: { type: ["string", "null"] }, via: { type: ["string", "null"], enum: ["aereo", "maritimo", null] },
+    pregunta: { type: "string" }, cantidad: { type: ["string", "null"] }, via: { type: "string", enum: ["aereo", "maritimo", "no_dice"] },
   },
 };
 const SYSTEM_VER = `Trabajás en Argencargo, una empresa argentina que importa mercadería de China y Estados Unidos para sus clientes. Te paso los últimos mensajes de un chat de WhatsApp entre el vendedor ("Argencargo") y un cliente, y las últimas fotos que mandó el cliente. Tenés que entender qué producto quiere traer AHORA (lo último que consulta) para que después un despachante lo clasifique.
@@ -57,7 +57,7 @@ Devolvé:
   · uso_corporal: true si se aplica sobre el cuerpo o se ingiere (cosmético, suplemento, producto médico, higiene).
 - pregunta: en una frase, qué quiere saber el cliente (por ejemplo "qué certificaciones y restricciones tiene").
 - cantidad: la cantidad que quiere traer, como la dice ("unas 300 unidades"), o null.
-- via: "aereo" o "maritimo" si dijo por dónde lo quiere traer; si no, null.
+- via: "aereo" o "maritimo" si dijo por dónde lo quiere traer; si no, "no_dice".
 
 No inventes: si no hay ningún producto en consulta, devolvé productos vacío y explicalo en "pregunta". Los audios y documentos no los podés leer (aparecen como [audio], [documento]).`;
 
@@ -103,7 +103,7 @@ export async function POST(req) {
       ? await callClaudeVision({ system: SYSTEM_VER, prompt: pedido, images: fotos, max_tokens: 1200, json_schema: SCHEMA_VER, feature: "crm-producto" })
       : await callClaudeText({ system: SYSTEM_VER, user: pedido, max_tokens: 1200, json_schema: SCHEMA_VER, feature: "crm-producto" });
     v = JSON.parse(String(out).replace(/```json\s*|\s*```/g, "").trim());
-  } catch (e) { return Response.json({ error: "No se pudo leer el chat" }, { status: 502 }); }
+  } catch (e) { console.error("[crm-producto]", e?.message || e); return Response.json({ error: "No se pudo leer el chat" }, { status: 502 }); }
   const vistos = (Array.isArray(v.productos) ? v.productos : []).filter((p) => String(p.descripcion || "").trim()).slice(0, 4);
   if (!vistos.length) return Response.json({ ok: true, productos: [], pregunta: String(v.pregunta || "").slice(0, 300), fotos: fotos.length, mensajes: msgs.length });
 
@@ -131,7 +131,7 @@ export async function POST(req) {
   ].join("\n")).join("\n\n");
   let respuesta = "";
   try {
-    respuesta = String(await callClaudeText({ system: SYSTEM_RESP, user: `Lo que preguntó el cliente: ${v.pregunta || "qué necesita para traerlo"}${v.cantidad ? `\nCantidad: ${v.cantidad}` : ""}${v.via ? `\nLo quiere traer por: ${v.via}` : ""}\n\n${datos}`, max_tokens: 500, feature: "crm-producto" })).trim().replace(/^["“]|["”]$/g, "");
-  } catch {}
-  return Response.json({ ok: true, productos, pregunta: String(v.pregunta || "").slice(0, 300), cantidad: v.cantidad || null, via: v.via || null, respuesta, fotos: fotos.length, mensajes: msgs.length });
+    respuesta = String(await callClaudeText({ system: SYSTEM_RESP, user: `Lo que preguntó el cliente: ${v.pregunta || "qué necesita para traerlo"}${v.cantidad ? `\nCantidad: ${v.cantidad}` : ""}${v.via && v.via !== "no_dice" ? `\nLo quiere traer por: ${v.via}` : ""}\n\n${datos}`, max_tokens: 500, feature: "crm-producto" })).trim().replace(/^["“]|["”]$/g, "");
+  } catch (e) { console.error("[crm-producto] respuesta", e?.message || e); }
+  return Response.json({ ok: true, productos, pregunta: String(v.pregunta || "").slice(0, 300), cantidad: v.cantidad || null, via: v.via && v.via !== "no_dice" ? v.via : null, respuesta, fotos: fotos.length, mensajes: msgs.length });
 }
