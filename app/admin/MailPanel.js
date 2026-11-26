@@ -80,9 +80,12 @@ export default function MailPanel({ token }) {
   const cargarCarpetas = useCallback(async () => { try { const d = await api({ accion: "carpetas" }); setCarpetas(d.carpetas || []); setNoLeidos(d.noLeidosBandeja || 0); setNoLeidosTotal(d.noLeidosTotal ?? null); } catch {} }, [api]);
   // El globo del menú (Email) suma la bandeja y las carpetas de DHL, FedEx y UPS (23/10/2026).
   useEffect(() => { if (noLeidosTotal == null) return; try { window.dispatchEvent(new CustomEvent("ac_mail_noleidos", { detail: noLeidosTotal })); } catch {} }, [noLeidosTotal]);
+  // Marca de la casilla en la última carga (26/11/2026): el refresco del minuto la manda y, si no cambió
+  // nada, Gmail contesta con una consulta mínima en vez de releer toda la carpeta (cupo de Gmail).
+  const marca = useRef({});
   const cargarLista = useCallback(async (mas) => {
     setCargando(true);
-    try { const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}) }); setLista((p) => mas ? [...p, ...d.mensajes.filter((m) => !m.hilo || !p.some((x) => x.hilo === m.hilo))] : d.mensajes); setSig(d.siguiente); }
+    try { const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}) }); setLista((p) => mas ? [...p, ...d.mensajes.filter((m) => !m.hilo || !p.some((x) => x.hilo === m.hilo))] : d.mensajes); setSig(d.siguiente); if (!mas) marca.current = busq ? {} : { carpeta, valor: d.marca || "" }; }
     catch (e) { toast(e.message, "error"); }
     setCargando(false);
   }, [api, carpeta, busq, sig]);
@@ -104,8 +107,11 @@ export default function MailPanel({ token }) {
       if (document.hidden || ocupado || v.busq || v.carpeta === "borradores") return;
       ocupado = true;
       try {
-        const d = await v.api({ accion: "lista", carpeta: v.carpeta });
-        if (enVivo.current.carpeta === v.carpeta && !enVivo.current.busq && Array.isArray(d.mensajes)) {
+        const mk = marca.current;
+        const d = await v.api({ accion: "lista", carpeta: v.carpeta, ...(mk.carpeta === v.carpeta && mk.valor ? { desde: mk.valor } : {}) });
+        if (d.igual) { if (d.marca && marca.current.carpeta === v.carpeta) marca.current = { carpeta: v.carpeta, valor: d.marca }; }
+        else if (enVivo.current.carpeta === v.carpeta && !enVivo.current.busq && Array.isArray(d.mensajes)) {
+          marca.current = { carpeta: v.carpeta, valor: d.marca || "" };
           const nuevos = new Set(d.mensajes.map((m) => m.hilo));
           const piso = d.mensajes.reduce((a, m) => Math.min(a, m.fecha || a), Infinity);
           // Lo de páginas siguientes ("Ver más") se conserva; la primera página se reemplaza entera.

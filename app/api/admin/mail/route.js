@@ -92,6 +92,14 @@ const direccion = (s) => (String(s).match(/<([^>]+)>/)?.[1] || String(s)).trim()
 // que no se le pierda nada; el 16/11/2026 se probó separarlos como Gmail y lo rechazó). Papelera aparte.
 const CONSULTA = { bandeja: `{in:inbox in:spam} ${SIN_AUTO}`, enviados: "in:sent", destacados: "is:starred", papelera: "in:trash" };
 
+// Conversaciones ya leídas de Gmail (26/11/2026). Google cobra 40 unidades por conversación y da 6.000
+// por minuto: traer las 55 de una carpeta en cada carga (y en cada refresco del minuto) se comía más de
+// un tercio del cupo y saltaba "Quota exceeded". Se guardan en memoria con su marca de cambio (historyId):
+// la lista de conversaciones (10 unidades) dice cuáles cambiaron y solo esas se vuelven a pedir.
+const HILOS = new Map(); // id → { hid, t }
+const guardarHilo = (t) => { if (HILOS.size > 3000) HILOS.clear(); HILOS.set(t.id, { hid: String(t.historyId || ""), t }); };
+const fallo = (e) => json({ error: e.message, limite: !!e.limite }, e.limite ? 429 : 500);
+
 export async function GET(req) {
   const u = new URL(req.url);
   const accion = u.searchParams.get("accion") || "estado";
@@ -161,7 +169,16 @@ export async function GET(req) {
       // Orden por mensaje (16/11/2026): la lista de conversaciones de Gmail no viene ordenada por el último
       // mail (una cadena larga con respuesta de hoy caía en la segunda página y parecía que el mail no había
       // llegado). Se piden los últimos mensajes, que sí vienen por fecha, y de ahí salen las conversaciones.
-      const d = await gm(`/messages?${params}`);
+      // Refresco del minuto: si la casilla no cambió desde la última carga (2 unidades), no se pide nada más.
+      const desde = u.searchParams.get("desde") || "";
+      if (desde && !pagina && !q) {
+        const hst = await gm(`/history?startHistoryId=${encodeURIComponent(desde)}&maxResults=1`).catch((e) => { if (e.limite) throw e; return null; });
+        if (hst && !(hst.history || []).length) return json({ igual: true, marca: String(hst.historyId || desde) });
+      }
+      const marca = String((await gm("/profile").catch((e) => { if (e.limite) throw e; return {}; })).historyId || "");
+      const pt = new URLSearchParams(params); pt.set("maxResults", pagina ? "500" : "100"); pt.delete("pageToken");
+      const [d, dt] = await Promise.all([gm(`/messages?${params}`), gm(`/threads?${pt}`).catch(() => ({}))]);
+      const hid = {}; (dt.threads || []).forEach((t) => { hid[t.id] = String(t.historyId || ""); });
       // Sin leer siempre a la vista (11/11/2026): Gmail ordena cada cadena por su último mensaje que entra en la
       // carpeta, así que una cadena con un mensaje viejo sin leer quedaba varias páginas abajo y el globo marcaba
       // un mail que no se encontraba. En la primera página (sin búsqueda) se traen aparte las cadenas sin leer y
@@ -171,9 +188,15 @@ export async function GET(req) {
         const pu = new URLSearchParams({ maxResults: "15", includeSpamTrash: "true" });
         if (base) pu.set("q", `${base} is:unread`); else { pu.append("labelIds", carpeta); pu.set("q", "is:unread"); }
         const du = await gm(`/threads?${pu}`).catch(() => ({}));
-        (du.threads || []).forEach((t) => { if (!ids.includes(t.id)) ids.push(t.id); });
+        (du.threads || []).forEach((t) => { hid[t.id] = String(t.historyId || ""); if (!ids.includes(t.id)) ids.push(t.id); });
       }
-      const hilos = await Promise.all(ids.map((id) => gm(`/threads/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`).catch(() => null)));
+      let traidos = 0;
+      const hilos = await Promise.all(ids.map(async (id) => {
+        const c = HILOS.get(id);
+        if (c && hid[id] && c.hid === hid[id]) return c.t;
+        try { const t = await gm(`/threads/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`); guardarHilo(t); traidos++; return t; }
+        catch (e) { if (e.limite) { if (c) return c.t; throw e; } return null; }
+      }));
       const tiene = (m, l) => (m.labelIds || []).includes(l);
       const mensajes = hilos.filter(Boolean).map((t) => {
         const msgs = (t.messages || []).filter((m) => !tiene(m, "DRAFT") && (carpeta === "papelera" ? tiene(m, "TRASH") : !tiene(m, "TRASH"))).sort((a, b) => Number(a.internalDate) - Number(b.internalDate));
@@ -181,7 +204,7 @@ export async function GET(req) {
         const r = resumen(msgs[msgs.length - 1]);
         return { ...r, hilo: t.id, n: msgs.length, nNoLeidos: msgs.filter((m) => tiene(m, "UNREAD")).length, noLeido: msgs.some((m) => tiene(m, "UNREAD")), spam: msgs.some((m) => tiene(m, "SPAM")), adjuntos: msgs.some((m) => /multipart\/mixed/i.test(hdr(m.payload?.headers, "Content-Type"))), remitentes: [...new Set(msgs.map((m) => hdr(m.payload?.headers, "From")))] };
       }).filter(Boolean).sort((a, b) => (!pagina && !q ? Number(b.noLeido) - Number(a.noLeido) : 0) || b.fecha - a.fecha);
-      return json({ mensajes, siguiente: d.nextPageToken || null });
+      return json({ mensajes, siguiente: d.nextPageToken || null, marca, traidos });
     }
     if (accion === "mensaje") {
       const id = u.searchParams.get("id");
@@ -223,7 +246,7 @@ export async function GET(req) {
     return json({ error: "accion_desconocida" }, 400);
   } catch (e) {
     if (e.message === "no_conectado") return json({ error: "no_conectado" }, 409);
-    return json({ error: e.message }, 500);
+    return fallo(e);
   }
 }
 
@@ -359,6 +382,6 @@ export async function POST(req) {
     return json({ error: "accion_desconocida" }, 400);
   } catch (e) {
     if (e.message === "no_conectado") return json({ error: "no_conectado" }, 409);
-    return json({ error: e.message }, 500);
+    return fallo(e);
   }
 }
