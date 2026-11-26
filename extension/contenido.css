@@ -1,6 +1,7 @@
 /* ARGENCARGO CRM sobre WhatsApp Web. Todo lo propio lleva el prefijo ac-. */
 html.ac-abierto #app { width: calc(100% - 340px) !important; }
 html.ac-con-tira #main header { margin-bottom: 34px !important; }
+#main header [data-ac-oculto] { display: none !important; }
 html.ac-con-rapidas #main footer { padding-top: 42px !important; }
 
 #ac-panel, #ac-tab, #ac-tira, #ac-rapidas, #ac-tag { box-sizing: border-box; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.3; }

@@ -6,7 +6,7 @@
 //
 // Cómo se hablan:
 //   extensión → página : postMessage { ac: "chat", id, chat: { tel, lid, nombre, grupo } }   (o #tel=…&nombre=… en la URL)
-//   página → extensión : postMessage { ac: "ficha", id, tira, rapidas } a web.whatsapp.com
+//   página → extensión : postMessage { ac: "ficha", id, tira, rapidas, tag } a web.whatsapp.com
 // La página nunca recibe ni guarda mensajes: solo el teléfono o el nombre del chat abierto.
 // Adentro de WhatsApp Web el navegador le da a esta página un almacenamiento aparte: la sesión se
 // inicia una vez acá y queda guardada (no comparte la de la pestaña del CRM).
@@ -46,7 +46,6 @@ function armarRapidas({ c, d, admin }) {
     else if (FRASE[o.status]) out.push({ l: `Estado de ${o.code}`, t: `${hola}tu carga ${o.code} ${FRASE[o.status]}${o.eta ? ` y llega aproximadamente el ${fechaDM(o.eta)}` : ""}.` });
   }
   if (admin) { const o = enCurso.find((x) => Number(x.saldo) > 0.5); if (o) out.push({ l: "Saldo", t: `${hola}te queda un saldo de ${usd(o.saldo)} de la ${o.code}.` }); }
-  if (!c.client_id) out.push({ l: "Pedir datos para cotizar", t: `${hola}para cotizarte necesito saber qué producto es, el peso y las medidas de los bultos.` });
   return out;
 }
 function armarTira({ c, d, admin }) {
@@ -119,6 +118,49 @@ function Buscador({ token, inicial = "", soloClientes, placeholder, onElegir }) 
   </div>;
 }
 
+// Accesos rápidos propios (27/11/2026): los textos que Bautista usa seguido ("qué necesito para cotizar",
+// direcciones…). Son las plantillas crm_* de message_templates; aparecen arriba de la caja de WhatsApp
+// para cualquier chat y se arman y corrigen acá, al pie del panel. {{firstName}} pone el nombre de pila.
+const interpFija = (t, n) => String(t || "").replace(/\{\{firstName\}\}/g, n || "").replace(/\{\{\w+\}\}/g, "").replace(/Hola\s+([,!])/g, "Hola$1");
+const slugFija = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+const btnTxt = { background: "transparent", border: "none", padding: 0, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
+function Accesos({ token, lista, onCambio }) {
+  const [edit, setEdit] = useState(null); // { id?, label, body }
+  const [busy, setBusy] = useState(false);
+  const guardar = async () => {
+    if (!edit.label.trim() || !edit.body.trim()) return;
+    setBusy(true);
+    const body = { label: edit.label.trim(), body: edit.body, updated_at: new Date().toISOString() };
+    const r = edit.id ? await dq("message_templates", { token, method: "PATCH", filters: `?id=eq.${edit.id}`, body })
+      : await dq("message_templates", { token, method: "POST", body: { ...body, key: `crm_${slugFija(edit.label) || "acceso"}_${Date.now().toString(36)}`, channel: "whatsapp" } });
+    setBusy(false);
+    if (!Array.isArray(r)) { toast("No se pudo guardar", "error"); return; }
+    setEdit(null); onCambio();
+  };
+  const borrar = async () => { setBusy(true); const r = await dq("message_templates", { token, method: "DELETE", filters: `?id=eq.${edit.id}`, headers: { Prefer: "return=representation" } }); setBusy(false); if (!Array.isArray(r)) { toast("No se pudo borrar", "error"); return; } setEdit(null); onCambio(); };
+  return <div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "22px 0 7px" }}>
+      <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: W.mute, textTransform: "uppercase", letterSpacing: "0.1em" }}>Accesos rápidos</p>
+      {!edit && <button type="button" onClick={() => setEdit({ label: "", body: "" })} style={{ ...btnTxt, color: W.acento }}>Nuevo</button>}
+    </div>
+    {edit ? <div>
+      <input value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} placeholder="Nombre del botón" data-enter-libre="1" autoFocus style={{ ...campo, marginBottom: 6 }} />
+      <textarea value={edit.body} onChange={(e) => setEdit({ ...edit, body: e.target.value })} placeholder="Texto del mensaje" data-enter-libre="1" rows={6} style={{ ...campo, resize: "vertical", lineHeight: 1.45, marginBottom: 8 }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <BtnP onClick={guardar} disabled={busy}>Guardar</BtnP>
+        <button type="button" onClick={() => setEdit(null)} style={{ ...btnTxt, color: W.sub }}>Cancelar</button>
+        {edit.id && <button type="button" onClick={borrar} disabled={busy} style={{ ...btnTxt, color: W.rojo, marginLeft: "auto" }}>Borrar</button>}
+      </div>
+    </div> : lista === null ? <Linea c={W.mute}>Cargando…</Linea> : !lista.length ? <Linea c={W.mute}>Todavía no hay ninguno.</Linea> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {lista.map((t) => <button key={t.id} type="button" onClick={() => setEdit({ id: t.id, label: t.label || "", body: t.body || "" })} style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, border: `1px solid ${W.line}`, background: W.caja, color: W.txt, cursor: "pointer", fontFamily: "inherit", minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.label || t.key}</span>
+          <span style={{ display: "block", marginTop: 2, fontSize: 12, color: W.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(t.body || "").replace(/\s+/g, " ")}</span>
+        </button>)}
+      </div>}
+  </div>;
+}
+
 function Panel({ sesion, perfil, chat, turno, onSalir }) {
   const token = sesion.access_token;
   const admin = perfil.role === "admin";
@@ -127,7 +169,22 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   const [est, setEst] = useState({ v: "cargando" });
   const [creando, setCreando] = useState(false);
   const vivo = useRef(0);
-  const avisar = useCallback((datos) => { if (typeof window !== "undefined" && window.top !== window) { try { window.top.postMessage({ ac: "ficha", id: turno, ...datos }, WA_WEB); } catch {} } }, [turno]);
+  const enviarAExt = useCallback((datos) => { if (typeof window !== "undefined" && window.top !== window) { try { window.top.postMessage({ ac: "ficha", id: turno, ...datos }, WA_WEB); } catch {} } }, [turno]);
+  // Los accesos rápidos propios van primero en cada aviso; después, los del estado de las cargas.
+  const [fijas, setFijas] = useState(null);
+  const fijasRef = useRef([]); const ultimo = useRef(null);
+  const avisar = useCallback((datos, nombre) => {
+    ultimo.current = { datos, nombre };
+    const n = primerNombre(nombre);
+    enviarAExt({ ...datos, rapidas: [...fijasRef.current.map((t) => ({ l: t.label || "Acceso", t: interpFija(t.body, n) })), ...(datos.rapidas || [])] });
+  }, [enviarAExt]);
+  const avisarRef = useRef(avisar); avisarRef.current = avisar;
+  const cargarFijas = useCallback(async () => {
+    const l = arr(await dq("message_templates", { token, filters: "?channel=eq.whatsapp&key=like.crm_*&select=id,key,label,body&order=label.asc" }));
+    fijasRef.current = l; setFijas(l);
+    if (ultimo.current) avisarRef.current(ultimo.current.datos, ultimo.current.nombre);
+  }, [token]);
+  useEffect(() => { cargarFijas(); }, [cargarFijas]);
 
   const crearFicha = useCallback(async ({ tel, cl, waNombre }) => {
     const phone = normTel(tel || cl?.whatsapp);
@@ -143,7 +200,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
 
   useEffect(() => {
     const mio = ++vivo.current; const sigue = () => mio === vivo.current;
-    setEst({ v: "cargando" }); avisar({ tira: null, rapidas: [] });
+    setEst({ v: "cargando" }); avisar({ tira: null, rapidas: [] }, chat.nombre);
     (async () => {
       const u = ult10(chat.tel);
       if (u.length === 10) {
@@ -153,7 +210,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
         const cl = arr(await dq("clients", { token, filters: `?whatsapp_digitos=like.*${u}&select=${SEL_CLIENTE}&limit=2` }));
         if (!sigue()) return;
         if (cl.length === 1) { const f = await crearFicha({ tel: chat.tel, cl: cl[0], waNombre: chat.nombre }); if (!sigue()) return; if (f) { setEst({ v: "ficha", c: f }); return; } }
-        setEst({ v: "sinFicha" }); avisar({ tira: { txt: "Todavía no es cliente" }, rapidas: armarRapidas({ c: { name: chat.nombre }, d: null, admin }) });
+        setEst({ v: "sinFicha" }); avisar({ tira: { txt: "Todavía no es cliente" }, rapidas: armarRapidas({ c: { name: chat.nombre }, d: null, admin }) }, chat.nombre);
         return;
       }
       // Sin teléfono: lo elegido antes para este chat, o una ficha con ese nombre exacto.
@@ -178,9 +235,9 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
     setEst({ v: "ficha", c: f, porNombre: !chat.tel });
   };
   const crearSuelta = async () => { setCreando(true); const f = await crearFicha({ tel: chat.tel, waNombre: chat.nombre }); setCreando(false); if (f) setEst({ v: "ficha", c: f }); };
-  const noEs = () => { recordar(claveChat(chat), null); setEst({ v: "elegir" }); avisar({ tira: null, rapidas: [] }); };
+  const noEs = () => { recordar(claveChat(chat), null); setEst({ v: "elegir" }); avisar({ tira: null, rapidas: [] }, chat.nombre); };
   const alCambiar = (p) => setEst((e) => (e.v === "ficha" ? { ...e, c: { ...e.c, ...p } } : e));
-  const alDatos = (d, id) => { if (est.v === "ficha" && est.c.id === id) { const tf = TAG_FISCAL[d?.cliente?.tax_condition]; avisar({ tira: armarTira({ c: est.c, d, admin }), rapidas: armarRapidas({ c: est.c, d, admin }), tag: tf ? { txt: tf[0], c: tf[1] } : null }); } };
+  const alDatos = (d, id) => { if (est.v === "ficha" && est.c.id === id) { const tf = TAG_FISCAL[d?.cliente?.tax_condition]; avisar({ tira: armarTira({ c: est.c, d, admin }), rapidas: armarRapidas({ c: est.c, d, admin }), tag: tf ? { txt: tf[0], c: tf[1] } : null }, d?.cliente?.nombre || est.c.name || est.c.wa_name || chat.nombre); } };
 
   let cuerpo;
   if (est.v === "cargando") cuerpo = <Linea c={W.mute}>Cargando…</Linea>;
@@ -205,6 +262,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
 
   return <div style={{ padding: "16px 16px 22px" }}>
     {cuerpo}
+    <Accesos token={token} lista={fijas} onCambio={cargarFijas} />
     <p style={{ margin: "26px 0 0", fontSize: 11.5, color: W.mute, display: "flex", justifyContent: "space-between", gap: 8 }}>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{perfil.email}</span>
       <button type="button" onClick={onSalir} style={{ background: "transparent", border: "none", padding: 0, color: W.mute, fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Cerrar sesión</button>

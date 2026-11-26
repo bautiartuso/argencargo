@@ -120,7 +120,7 @@
   }
   function pintarRapidas(lista) {
     rapidas.replaceChildren();
-    for (const r of (Array.isArray(lista) ? lista : []).slice(0, 8)) {
+    for (const r of (Array.isArray(lista) ? lista : []).slice(0, 16)) {
       if (!r?.l || !r?.t) continue;
       const b = crear("button", { type: "button", textContent: String(r.l) });
       b.addEventListener("click", () => escribir(String(r.t)));
@@ -129,9 +129,32 @@
     hayRapidas = rapidas.childNodes.length > 0;
     ubicar();
   }
+  // "Añadir a la lista" (WhatsApp Business) ocupa el lugar de la etiqueta: se esconde. Se busca por el
+  // texto y se sube hasta la pastilla entera (el botón más su flechita), sin llegar a los otros botones.
+  const RE_LISTA = /^(añadir a la lista|agregar a la lista|add to list)$/i;
+  const botones = (el) => el.querySelectorAll('button, [role="button"]');
+  function esconderLista(cab) {
+    if (cab.querySelector("[data-ac-oculto]")) return;
+    for (const el of cab.querySelectorAll("span, div, button")) {
+      if (el.children.length > 2) continue;
+      const txt = (el.textContent || "").trim();
+      if (!RE_LISTA.test(txt)) continue;
+      let n = el;
+      for (let p = n.parentElement; p && p !== cab; p = n.parentElement) {
+        if ((p.textContent || "").trim() !== txt) break;
+        const anchoN = n.getBoundingClientRect().width, anchoP = p.getBoundingClientRect().width;
+        const extra = botones(p).length - botones(n).length - (n.matches('button, [role="button"]') ? 1 : 0);
+        if (extra > 1 || anchoP > anchoN + 70 || anchoP > 340) break;
+        n = p;
+      }
+      n.setAttribute("data-ac-oculto", "1");
+      return;
+    }
+  }
   function ubicar() {
     const main = document.querySelector("#main");
     const cab = main?.querySelector("header"), pie = main?.querySelector("footer");
+    if (cab) esconderLista(cab);
     // Con una foto, un video o un archivo abierto, WhatsApp tapa el chat con su visor: ahí no se dibuja nada
     // encima (27/11/2026: la tira quedaba flotando sobre el PDF). Se miran dos puntos del encabezado para
     // no confundir el visor con un menú chico que se abre arriba.
@@ -149,18 +172,23 @@
     tira.style.display = conTira ? "flex" : "none";
     rapidas.style.display = conRapidas ? "flex" : "none";
     if (conTira) { const r = cab.getBoundingClientRect(); Object.assign(tira.style, { left: `${r.left}px`, top: `${r.bottom}px`, width: `${r.width}px` }); }
-    // La etiqueta va pegada al final del nombre (se mide el texto, no su caja) y no pisa los botones de la derecha.
+    // La etiqueta va pegada al final del nombre (se mide el texto, no su caja) y solo si entra antes del
+    // primer botón que haya a su derecha: si no entra, no se muestra.
     let conTag = false;
     if (hayTag && cab && !visor) {
       const t = cab.querySelector('span[dir="auto"]') || cab.querySelector("[title]");
       if (t) {
         const rango = document.createRange(); rango.selectNodeContents(t);
-        const rt = rango.getBoundingClientRect(), rc = cab.getBoundingClientRect(), caja = t.getBoundingClientRect();
+        const rt = rango.getBoundingClientRect(), caja = t.getBoundingClientRect();
         const izq = Math.min(rt.right, caja.right) + 10;
-        if (rt.width > 0 && izq + 150 < rc.left + rc.width * 0.62) { conTag = true; Object.assign(tag.style, { left: `${izq}px`, top: `${rt.top + rt.height / 2}px` }); }
+        Object.assign(tag.style, { display: "block", visibility: "hidden" });
+        const ancho = tag.offsetWidth;
+        let tope = cab.getBoundingClientRect().right;
+        for (const b of botones(cab)) { if (b.contains(t)) continue; const r = b.getBoundingClientRect(); if (r.width > 0 && r.left >= rt.right - 1 && r.left < tope) tope = r.left; }
+        if (rt.width > 0 && izq + ancho + 8 <= tope) { conTag = true; Object.assign(tag.style, { left: `${izq}px`, top: `${rt.top + rt.height / 2}px` }); }
       }
     }
-    tag.style.display = conTag ? "block" : "none";
+    Object.assign(tag.style, { display: conTag ? "block" : "none", visibility: conTag ? "visible" : "hidden" });
     if (conRapidas) { const r = pie.getBoundingClientRect(); Object.assign(rapidas.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` }); }
   }
   setInterval(ubicar, 300);
