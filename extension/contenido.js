@@ -170,6 +170,9 @@
       return !libre(0.25) && !libre(0.6);
     };
     const visor = tapado(cab);
+    // El visor de WhatsApp se acomoda al ancho de toda la ventana: con el panel al costado el archivo
+    // quedaba cortado (27/11/2026). Mientras está abierto, el panel se corre y vuelve solo al cerrarlo.
+    html.classList.toggle("ac-visor", visor);
     const conTira = !!(hayTira && cab && !visor), conRapidas = !!(hayRapidas && pie && !visor);
     html.classList.toggle("ac-con-tira", conTira);
     html.classList.toggle("ac-con-rapidas", conRapidas);
