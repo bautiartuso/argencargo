@@ -15,7 +15,7 @@
   const btnDiag = crear("button", { type: "button", textContent: "Diagnóstico", hidden: true });
   const btnCerrar = crear("button", { type: "button", className: "ac-x", textContent: "✕" });
   btnCerrar.setAttribute("aria-label", "Cerrar el panel del CRM");
-  const panel = crear("div", { id: "ac-panel" }, [crear("div", { className: "ac-cab" }, [crear("span", {}, [crear("b", { textContent: "ARGENCARGO" }), " · CRM"]), crear("span", { className: "ac-esp" }), btnDiag, btnCerrar]), marco]);
+  const panel = crear("div", { id: "ac-panel" }, [crear("div", { className: "ac-cab" }, [crear("span", {}, [crear("b", { textContent: "ARGENCARGO" }), " · CRM"]), crear("span", { className: "ac-ver", textContent: chrome.runtime.getManifest().version }), crear("span", { className: "ac-esp" }), btnDiag, btnCerrar]), marco]);
   const tab = crear("button", { id: "ac-tab", type: "button", textContent: "CRM" });
   const tira = crear("div", { id: "ac-tira" });
   const rapidas = crear("div", { id: "ac-rapidas" });
@@ -201,9 +201,49 @@
     }
     Object.assign(tag.style, { display: conTag ? "block" : "none", visibility: conTag ? "visible" : "hidden" });
     if (conRapidas) { const r = pie.getBoundingClientRect(); Object.assign(rapidas.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` }); }
+    // El botón para reabrir el panel va justo debajo del encabezado (o de la tira): antes quedaba detrás de la tira.
+    tab.style.top = cab ? `${Math.round(cab.getBoundingClientRect().bottom + (conTira ? 34 : 0) + 10)}px` : "";
   }
   setInterval(ubicar, 300);
   window.addEventListener("resize", ubicar);
+
+  // ── Menús de WhatsApp que se abren hacia el panel ──
+  // WhatsApp ubica sus menús (la flechita del mensaje, las reacciones) según el ancho de la ventana, así
+  // que con el panel abierto quedaban cortados debajo. Se mira el borde derecho del chat: lo que sea chico,
+  // esté quieto y se pase del borde, se corre hacia adentro. Se usa `translate`, que no pisa el `transform`
+  // con el que WhatsApp los anima. Lo que todavía se está moviendo (un panel que entra deslizando) no se toca.
+  const vistos = new WeakMap(), corridos = new Map();
+  let menusHasta = 0;
+  function acomodarMenus() {
+    for (const [el, c] of corridos) if (!el.isConnected || el.style.left !== c.left || el.style.top !== c.top) { if (el.isConnected) el.style.translate = ""; corridos.delete(el); }
+    if (Date.now() > menusHasta || !html.classList.contains("ac-abierto") || html.classList.contains("ac-visor")) return;
+    const app = document.querySelector("#app");
+    if (!app) return;
+    const tope = app.getBoundingClientRect().right, alto = window.innerHeight;
+    if (tope >= window.innerWidth - 4) return;
+    // Candidatos: lo que asoma por el borde del chat y, por si quedó entero debajo del panel, los menús por su rol.
+    const puntas = new Set(app.querySelectorAll('[role="application"], [role="menu"], [role="listbox"], [role="dialog"]'));
+    for (let y = 10; y < alto; y += 26) { const el = document.elementFromPoint(tope - 3, y); if (el && app.contains(el)) puntas.add(el); }
+    const mirados = new Set();
+    for (const punta of puntas) {
+      let elegido = null;
+      for (let el = punta; el && el !== app; el = el.parentElement) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.right > tope + 2 && r.left < window.innerWidth && r.width <= 480 && r.height <= alto * 0.85) elegido = el;
+      }
+      if (!elegido || mirados.has(elegido)) continue;
+      mirados.add(elegido);
+      const r = elegido.getBoundingClientRect(), v = vistos.get(elegido);
+      vistos.set(elegido, { i: r.left, d: r.right });
+      if (!v || Math.abs(v.i - r.left) > 0.5 || Math.abs(v.d - r.right) > 0.5) continue;
+      const x = (corridos.get(elegido)?.x || 0) - (r.right - (tope - 8));
+      elegido.style.translate = `${Math.round(x)}px 0`;
+      corridos.set(elegido, { x, left: elegido.style.left, top: elegido.style.top });
+      vistos.delete(elegido);
+    }
+  }
+  setInterval(acomodarMenus, 110);
+  new MutationObserver(() => { menusHasta = Date.now() + 1500; }).observe(document.body, { childList: true, subtree: true });
 
   // Escribe el texto en la caja de WhatsApp (no lo envía). Si no se puede, lo deja copiado.
   let relojAviso = null;

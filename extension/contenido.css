@@ -14,12 +14,13 @@ html.ac-abierto #ac-panel { display: flex; }
 #ac-panel .ac-cab { flex: 0 0 auto; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #a3b3c8; }
 #ac-panel .ac-cab b { color: #3d9bff; font-weight: 800; }
 #ac-panel .ac-cab .ac-esp { flex: 1; }
+#ac-panel .ac-cab .ac-ver { font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: #5b6f8c; }
 #ac-panel button { background: transparent; border: 0; color: #a3b3c8; cursor: pointer; padding: 6px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0; }
 #ac-panel button:hover { background: #14253f; color: #f4f7fb; }
 #ac-panel .ac-x { font-size: 16px; line-height: 1; }
 #ac-panel iframe { flex: 1 1 auto; width: 100%; border: 0; display: block; background: #0c1829; }
 
-#ac-tab { position: fixed; right: 0; top: 76px; z-index: 120; border: 0; cursor: pointer; background: #3d9bff; color: #04101f; font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; padding: 9px 10px 9px 12px; border-radius: 999px 0 0 999px; }
+#ac-tab { position: fixed; right: 0; top: 76px; z-index: 121; border: 0; cursor: pointer; background: #3d9bff; color: #04101f; font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; padding: 9px 10px 9px 12px; border-radius: 999px 0 0 999px; }
 html.ac-abierto #ac-tab { display: none; }
 
 #ac-tira { position: fixed; z-index: 120; height: 34px; display: none; align-items: center; gap: 14px; padding: 0 16px; overflow: hidden; white-space: nowrap; background: #0c1829; border-top: 1px solid rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12.5px; color: #a3b3c8; }
