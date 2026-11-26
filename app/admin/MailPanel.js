@@ -83,9 +83,22 @@ export default function MailPanel({ token }) {
   // Marca de la casilla en la última carga (26/11/2026): el refresco del minuto la manda y, si no cambió
   // nada, Gmail contesta con una consulta mínima en vez de releer toda la carpeta (cupo de Gmail).
   const marcaGmail = useRef({});
+  // Conversaciones ya traídas, por carpeta (26/11/2026): quedan en el navegador con su marca de cambio y al
+  // pedir la lista se le avisa al servidor cuáles ya están, así Gmail solo cobra las que cambiaron.
+  const filas = useRef(null);
+  const leerFilas = () => { if (!filas.current) { let m = new Map(); try { m = new Map(JSON.parse(localStorage.getItem("ac_mail_filas") || "[]")); } catch {} filas.current = m; } return filas.current; };
+  const conocidos = (carp) => [...leerFilas()].filter(([k, f]) => k.startsWith(`${carp}:`) && f?.hid).sort((a, b) => (b[1].fecha || 0) - (a[1].fecha || 0)).slice(0, 80).map(([, f]) => `${f.hilo}:${f.hid}`).join(",");
+  const completar = (carp, d, sinLeerArriba) => {
+    const m = leerFilas();
+    (d.mensajes || []).forEach((f) => { if (f.hilo && f.hid) { m.delete(`${carp}:${f.hilo}`); m.set(`${carp}:${f.hilo}`, f); } });
+    const todo = [...(d.mensajes || []), ...(d.iguales || []).map((id) => m.get(`${carp}:${id}`)).filter(Boolean)];
+    try { localStorage.setItem("ac_mail_filas", JSON.stringify([...m].slice(-600))); } catch {}
+    return todo.sort((a, b) => (sinLeerArriba ? Number(b.noLeido) - Number(a.noLeido) : 0) || b.fecha - a.fecha);
+  };
+  const olvidarFila = (carp, hilo) => { try { leerFilas().delete(`${carp}:${hilo}`); } catch {} };
   const cargarLista = useCallback(async (mas) => {
     setCargando(true);
-    try { const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}) }); setLista((p) => mas ? [...p, ...d.mensajes.filter((m) => !m.hilo || !p.some((x) => x.hilo === m.hilo))] : d.mensajes); setSig(d.siguiente); if (!mas) marcaGmail.current = busq ? {} : { carpeta, valor: d.marca || "" }; }
+    try { const c = busq || carpeta === "borradores" ? "" : conocidos(carpeta); const d = await api({ accion: "lista", carpeta, q: busq, ...(mas && sig ? { pagina: sig } : {}), ...(c ? { c } : {}) }); if (c || d.iguales) d.mensajes = completar(carpeta, d, !mas && !busq); setLista((p) => mas ? [...p, ...d.mensajes.filter((m) => !m.hilo || !p.some((x) => x.hilo === m.hilo))] : d.mensajes); setSig(d.siguiente); if (!mas) marcaGmail.current = busq ? {} : { carpeta, valor: d.marca || "" }; }
     catch (e) { toast(e.message, "error"); }
     setCargando(false);
   }, [api, carpeta, busq, sig]);
@@ -108,7 +121,9 @@ export default function MailPanel({ token }) {
       ocupado = true;
       try {
         const mk = marcaGmail.current;
-        const d = await v.api({ accion: "lista", carpeta: v.carpeta, ...(mk.carpeta === v.carpeta && mk.valor ? { desde: mk.valor } : {}) });
+        const c = conocidos(v.carpeta);
+        const d = await v.api({ accion: "lista", carpeta: v.carpeta, ...(mk.carpeta === v.carpeta && mk.valor ? { desde: mk.valor } : {}), ...(c ? { c } : {}) });
+        if (!d.igual && Array.isArray(d.mensajes)) d.mensajes = completar(v.carpeta, d, true);
         if (d.igual) { if (d.marca && marcaGmail.current.carpeta === v.carpeta) marcaGmail.current = { carpeta: v.carpeta, valor: d.marca }; }
         else if (enVivo.current.carpeta === v.carpeta && !enVivo.current.busq && Array.isArray(d.mensajes)) {
           marcaGmail.current = { carpeta: v.carpeta, valor: d.marca || "" };
@@ -135,7 +150,7 @@ export default function MailPanel({ token }) {
       // Reenviar) y abajo vienen los anteriores. Abrirla la deja leída completa.
       const d = await api({ accion: "hilo", id: m.hilo || m.id, carpeta, leer: "1" });
       const msgs = d.mensajes?.length ? d.mensajes : [];
-      setAbierto({ ...m, ...(msgs[0] || {}), mensajes: msgs, cargando: false }); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: false, nNoLeidos: 0 } : x));
+      setAbierto({ ...m, ...(msgs[0] || {}), mensajes: msgs, cargando: false }); olvidarFila(carpeta, m.hilo || m.id); setLista((p) => p.map((x) => x.id === m.id ? { ...x, noLeido: false, nNoLeidos: 0 } : x));
       if (m.noLeido) {
         const k = m.nNoLeidos || 1;
         const baja = (n) => Math.max(0, n - k);

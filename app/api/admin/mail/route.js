@@ -190,8 +190,12 @@ export async function GET(req) {
         const du = await gm(`/threads?${pu}`).catch(() => ({}));
         (du.threads || []).forEach((t) => { hid[t.id] = String(t.historyId || ""); if (!ids.includes(t.id)) ids.push(t.id); });
       }
+      // Lo que el navegador ya tiene (c=hilo:marca,…): si la marca no cambió, no se vuelve a pedir ni a mandar.
+      // La memoria de acá arriba no alcanza sola: Vercel reparte los pedidos entre varias instancias.
+      const conocidos = {}; (u.searchParams.get("c") || "").split(",").forEach((x) => { const [i, h] = x.split(":"); if (i && h) conocidos[i] = h; });
+      const iguales = ids.filter((id) => hid[id] && conocidos[id] === hid[id]);
       let traidos = 0;
-      const hilos = await Promise.all(ids.map(async (id) => {
+      const hilos = await Promise.all(ids.filter((id) => !iguales.includes(id)).map(async (id) => {
         const c = HILOS.get(id);
         if (c && hid[id] && c.hid === hid[id]) return c.t;
         try { const t = await gm(`/threads/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Content-Type`); guardarHilo(t); traidos++; return t; }
@@ -202,9 +206,9 @@ export async function GET(req) {
         const msgs = (t.messages || []).filter((m) => !tiene(m, "DRAFT") && (carpeta === "papelera" ? tiene(m, "TRASH") : !tiene(m, "TRASH"))).sort((a, b) => Number(a.internalDate) - Number(b.internalDate));
         if (!msgs.length) return null;
         const r = resumen(msgs[msgs.length - 1]);
-        return { ...r, hilo: t.id, n: msgs.length, nNoLeidos: msgs.filter((m) => tiene(m, "UNREAD")).length, noLeido: msgs.some((m) => tiene(m, "UNREAD")), spam: msgs.some((m) => tiene(m, "SPAM")), adjuntos: msgs.some((m) => /multipart\/mixed/i.test(hdr(m.payload?.headers, "Content-Type"))), remitentes: [...new Set(msgs.map((m) => hdr(m.payload?.headers, "From")))] };
+        return { ...r, hilo: t.id, hid: String(t.historyId || ""), n: msgs.length, nNoLeidos: msgs.filter((m) => tiene(m, "UNREAD")).length, noLeido: msgs.some((m) => tiene(m, "UNREAD")), spam: msgs.some((m) => tiene(m, "SPAM")), adjuntos: msgs.some((m) => /multipart\/mixed/i.test(hdr(m.payload?.headers, "Content-Type"))), remitentes: [...new Set(msgs.map((m) => hdr(m.payload?.headers, "From")))] };
       }).filter(Boolean).sort((a, b) => (!pagina && !q ? Number(b.noLeido) - Number(a.noLeido) : 0) || b.fecha - a.fecha);
-      return json({ mensajes, siguiente: d.nextPageToken || null, marca, traidos });
+      return json({ mensajes, iguales, siguiente: d.nextPageToken || null, marca, traidos });
     }
     if (accion === "mensaje") {
       const id = u.searchParams.get("id");
