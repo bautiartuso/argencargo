@@ -5,7 +5,7 @@
 //
 // Body: { flight_id }  →  { bultos: [{peso_kg, largo_cm, ancho_cm, alto_cm}], total_kg }
 
-import { callClaudeVision, HAIKU_MODEL, limpiarJson } from "../../../../lib/anthropic";
+import { callClaudeVision, limpiarJson } from "../../../../lib/anthropic";
 import { payloadVerificado } from "../../../../lib/auth-server";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -43,10 +43,25 @@ export async function POST(req) {
   const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
 
   try {
-    const raw = await callClaudeVision({ model: HAIKU_MODEL,
-      system: "Extraés datos de capturas de sistemas de couriers chinos (tablas de bultos). Devolvés SOLO el JSON pedido, sin comentarios.",
-      prompt: `La imagen es una tabla de bultos de un sistema de courier (columnas típicas en chino: 序号=nro, 实重=peso real kg, 长/宽/高=largo/ancho/alto cm, 材重=peso volumétrico, 收费重=peso facturable, 体积=volumen).
-Extraé UNA fila por bulto con: peso real en kg (实重), largo, ancho y alto en cm (长, 宽, 高). Ignorá totales del pie y columnas que no pido. Si un valor no se lee, poné null.`,
+    // 26/11/2026: el agente a veces manda su planilla sin encabezados en vez de la captura del courier
+    // (FL-0188): nº, destino, cantidad de bultos solo en la primera fila, largo, ancho, alto, peso bruto,
+    // volumétrico y un código repetido. La lectura tomaba la cantidad (14) como peso del primer bulto y
+    // dejaba el resto vacío. Va con el modelo principal: sin encabezados hay que razonar qué columna es cuál.
+    const raw = await callClaudeVision({
+      system: "Extraés datos de tablas de bultos de couriers y agentes de carga chinos. Devolvés SOLO el JSON pedido, sin comentarios.",
+      prompt: `La imagen es el desglose de bultos de un envío. Puede venir de dos formas:
+
+A) Captura del sistema del courier, con encabezados en chino: 序号=nro, 实重=peso real kg, 长/宽/高=largo/ancho/alto cm, 材重=peso volumétrico, 收费重=peso facturable, 体积=volumen.
+
+B) Planilla SIN encabezados. Las columnas suelen ser, en este orden: número de fila; destino (por ejemplo 阿根廷); a veces una columna con la CANTIDAD total de bultos escrita solo en la primera fila; largo, ancho y alto en cm (tres números enteros seguidos); el peso real (bruto) en kg; el peso volumétrico; y un código que se repite igual en todas las filas.
+
+Cómo ubicar el peso real cuando no hay encabezados:
+- El peso volumétrico es largo × ancho × alto ÷ 5000 (o ÷ 6000). Comprobalo con una fila: la columna que coincide con esa cuenta es el volumétrico y NO es lo que pido.
+- El peso real es la otra columna con decimales, la que está al lado del volumétrico. Cambia en cada fila.
+- Un número que aparece en una sola fila y coincide con la cantidad de filas es la cantidad de bultos: no es un peso.
+- Un número idéntico en todas las filas es un código: no es un peso.
+
+Extraé UNA fila por bulto, en el orden de la imagen, con: peso real en kg, largo, ancho y alto en cm. Ignorá totales del pie y las columnas que no pido. Si un valor no se lee, poné null.`,
       images: [b64],
       media_type: mime,
       max_tokens: 3000,
@@ -75,6 +90,9 @@ Extraé UNA fila por bulto con: peso real en kg (实重), largo, ancho y alto en
     let parsed = typeof raw === "string" ? JSON.parse(limpiarJson(raw)) : raw;
     if (Array.isArray(parsed)) parsed = { bultos: parsed }; // el respaldo a veces devuelve la lista suelta
     const bultos = (parsed?.bultos || []).filter((b) => b.peso_kg != null || b.largo_cm != null);
+    // Resguardo: si el único "peso" leído es igual a la cantidad de filas, era la cantidad de bultos.
+    const conPeso = bultos.filter((b) => b.peso_kg != null);
+    if (bultos.length > 1 && conPeso.length === 1 && Number(conPeso[0].peso_kg) === bultos.length) conPeso[0].peso_kg = null;
     if (bultos.length === 0) return Response.json({ error: "No se pudieron leer bultos de la foto" }, { status: 422 });
     const total = Math.round(bultos.reduce((a, b) => a + Number(b.peso_kg || 0), 0) * 100) / 100;
     return Response.json({ ok: true, bultos, total_kg: total, flight_code: flight.flight_code });
