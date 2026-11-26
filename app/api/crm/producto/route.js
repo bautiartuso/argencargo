@@ -71,7 +71,8 @@ Reglas de esta respuesta:
 - Si no lleva intervención: decilo simple ("no lleva ninguna certificacion, se puede traer sin problema").
 - Si lleva intervención: nombrá el organismo, decí que se puede traer pero hay que hacer el trámite, y que le pasás los costos. No pongas montos.
 - Si tiene antidumping: avisale que esa mercadería paga un derecho extra.
-- Batería de litio: avisale que por la batería va con un recargo en el aéreo. Pila común: no hace falta aclarar nada.
+- Batería de litio: avisale que por la batería va con un recargo en el aéreo. Pila común o sin batería: no digas nada de la pila.
+- No aclares lo que no cambia nada (que no tiene marca, que no tiene antidumping, que la pila es común).
 - Marca registrada o personaje con licencia: avisale que con marca no se puede traer por el canal formal.
 - No des el código de la posición arancelaria ni los porcentajes salvo que los haya pedido.
 - Cerrá, si queda natural, pidiendo lo que falta para cotizar o con "cualquier cosa avisame".`;
