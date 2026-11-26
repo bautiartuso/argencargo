@@ -22,7 +22,9 @@ const Dato = ({ K, l, children }) => <div style={{ display: "flex", gap: 10, fon
 const diasDesde = (f) => (f ? Math.floor((Date.now() - new Date(f).getTime()) / 864e5) : null);
 
 // onDatos: avisa lo que devolvió crm_ficha (lo usa /crm/panel para la tira y las respuestas rápidas de la extensión).
-export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos, sinTag }) {
+// onProducto: avisa la respuesta sugerida del analizador de productos (el panel de WhatsApp la deja
+// como acceso rápido arriba de la caja de mensaje).
+export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos, sinTag, onProducto }) {
   const { token, admin, ir } = ctx;
   // Paleta: la del CRM, o la de WhatsApp cuando va al costado del chat.
   const K = wa ? { panel: "transparent", line: W.line, mute: W.mute, sub: W.sub, txt: W.txt, hi: W.acento, ok: "#8fc0ff", caja: W.caja } : { panel: C.panel, line: C.line, mute: C.mute, sub: C.sub, txt: C.txt, hi: C.goldHi, ok: C.green, caja: "rgba(255,255,255,0.04)" };
@@ -35,11 +37,14 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos, sinTag 
   const [todo, setTodo] = useState(false);
   const [an, setAn] = useState(null); // análisis de la IA (crm_analisis)
   const [analizando, setAnalizando] = useState(false);
+  const [prod, setProd] = useState(null); // analizador de productos: null | { leyendo } | { error } | resultado
   const clave = c.client_id ? `c:${c.client_id}` : `k:${c.id}`;
   useEffect(() => { setNotas(c.notes || ""); setBuscar(""); setClientes(null); setEligiendo(false); setTodo(false); setD(null); }, [c.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const cargar = useCallback(async () => { const r = await dq("rpc/crm_ficha", { token, method: "POST", body: { p_contact_id: c.id } }); const v = r && !r.code ? r : { ops: [], cots: [] }; setD(v); onDatos?.(v, c.id); }, [token, c.id, c.client_id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => { let vivo = true; setAn(null); dq("crm_analisis", { token, filters: `?clave=eq.${clave}&select=temperatura,lectura,siguiente,mensaje,quien,quien_manual,analizado_at,error` }).then((r) => { if (vivo) setAn(arr(r)[0] || {}); }); return () => { vivo = false; }; }, [token, clave]);
+  useEffect(() => { setProd(null); onProducto?.(null, c.id); }, [c.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const analizarProducto = async () => { setProd({ leyendo: true }); const r = await api("/api/crm/producto", { contact_id: c.id }); if (r.ok) { setProd(r); onProducto?.(r.respuesta || null, c.id); } else setProd({ error: r.error || "No se pudo analizar" }); };
   const analizar = async () => { setAnalizando(true); const r = await api("/api/cron/crm-analisis", { clave }); setAnalizando(false); if (r.ok) setAn((a) => ({ ...(a || {}), ...r.analisis, error: null })); else toast(r.error || "No se pudo analizar", "error"); };
   // La fecha de próximo contacto es una sola: la de la ficha y la del seguimiento del cliente.
   const proximo = async (v) => { await patch({ next_contact_at: v || null }); if (c.client_id) await dq("clients", { token, method: "PATCH", filters: `?id=eq.${c.client_id}`, body: { followup_next_at: v || null } }); };
@@ -99,6 +104,34 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos, sinTag 
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, color: K.sub, marginTop: 2 }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[CANAL[o.channel], o.description].filter(Boolean).join(" · ")}</span><span style={{ flexShrink: 0 }}>{o.eta && o.status !== "entregada" ? `llega ${fechaCorta(o.eta)}` : ""}{admin && o.saldo > 0.5 ? `${o.eta && o.status !== "entregada" ? " · " : ""}${usd(o.saldo)}` : ""}</span></div>
       </div>)}
     </Seccion>}
+
+    <Seccion K={K} t="Producto" right={<Accion c={K.hi} onClick={analizarProducto} disabled={!!prod?.leyendo}>{prod?.leyendo ? "Analizando…" : prod?.productos ? "Analizar de nuevo" : "Analizar"}</Accion>}>
+      {!prod ? <p style={{ margin: 0, fontSize: 12.5, color: K.mute }}>Lee lo último que mandó (texto y fotos) y dice si lleva intervención.</p>
+        : prod.leyendo ? <p style={{ margin: 0, fontSize: 12.5, color: K.mute }}>Leyendo el chat…</p>
+        : prod.error ? <p style={{ margin: 0, fontSize: 12.5, color: "#f87171" }}>{prod.error}</p>
+        : !prod.productos.length ? <p style={{ margin: 0, fontSize: 12.5, color: K.mute }}>No encontré un producto en lo último que se habló.</p>
+        : <>
+          {prod.productos.map((p, i) => { const pide = p.intervencion; return <div key={i} style={{ marginTop: i ? 10 : 0, padding: "10px 12px", borderRadius: 10, background: K.caja, border: `1px solid ${pide || p.antidumping ? "rgba(248,113,113,0.45)" : K.line}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nombre}</p>
+              <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 999, color: pide ? "#fca5a5" : "#86efac", background: pide ? "rgba(248,113,113,0.14)" : "rgba(34,197,94,0.12)", border: `1px solid ${pide ? "rgba(248,113,113,0.45)" : "rgba(34,197,94,0.35)"}` }}>{pide ? (pide.tipos.join(" · ") || "Intervención") : "Sin intervención"}</span>
+            </div>
+            <p style={{ margin: "5px 0 0", fontSize: 12, color: K.sub, lineHeight: 1.45 }}>{p.descripcion}</p>
+            {pide?.motivo && <p style={{ margin: "5px 0 0", fontSize: 12, color: "#fca5a5", lineHeight: 1.45 }}>{pide.motivo}</p>}
+            {p.antidumping && <p style={{ margin: "5px 0 0", fontSize: 12, color: "#fca5a5", lineHeight: 1.45 }}>Antidumping: {p.antidumping}</p>}
+            <p style={{ margin: "6px 0 0", fontSize: 11.5, color: K.mute, fontFamily: MONO }}>{p.ncm ? `${p.ncm} · DIE ${p.die ?? "?"} · TE ${p.te ?? "?"} · IVA ${p.iva ?? "?"}` : "Sin posición"}</p>
+            <p style={{ margin: "3px 0 0", fontSize: 11.5, color: K.mute }}>{[p.bateria === "litio" ? "Batería de litio" : p.bateria === "pila_comun" ? "Pila común" : p.bateria === "ninguna" ? "Sin batería" : "Batería: no se sabe", p.marca ? "Con marca" : "Sin marca", p.inalambrico ? "Inalámbrico" : null].filter(Boolean).join(" · ")}</p>
+          </div>; })}
+          {prod.respuesta && <div style={{ marginTop: 10, padding: "9px 12px", borderRadius: 10, background: "rgba(37,211,102,0.07)", border: "1px solid rgba(37,211,102,0.2)" }}>
+            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{prod.respuesta}</p>
+            <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: K.mute }}>{wa ? "También quedó como botón arriba de la caja de mensaje" : ""}</span>
+              <Accion c={K.hi} onClick={async () => { try { await navigator.clipboard.writeText(prod.respuesta); toast("Respuesta copiada", "success"); } catch { toast("No se pudo copiar", "error"); } }}>Copiar</Accion>
+            </div>
+          </div>}
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: K.mute }}>Leyó {prod.mensajes} mensaje{prod.mensajes === 1 ? "" : "s"}{prod.fotos ? ` y ${prod.fotos} foto${prod.fotos === 1 ? "" : "s"}` : ", sin fotos"}</p>
+        </>}
+    </Seccion>
 
     <Seccion K={K} t="Qué hablaron" right={<Accion c={K.hi} onClick={resumir} disabled={resumiendo}>{resumiendo ? "Resumiendo…" : c.summary ? "Actualizar" : "Resumir"}</Accion>}>
       {c.summary ? <>

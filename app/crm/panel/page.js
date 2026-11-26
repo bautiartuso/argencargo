@@ -174,11 +174,14 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   // Los accesos rápidos propios van primero en cada aviso; después, los del estado de las cargas.
   const [fijas, setFijas] = useState(null);
   const fijasRef = useRef([]); const ultimo = useRef(null);
+  // La respuesta del analizador de productos va primera, mientras dure el chat abierto.
+  const respProd = useRef(null);
   const avisar = useCallback((datos, nombre) => {
     ultimo.current = { datos, nombre };
     const n = primerNombre(nombre);
-    enviarAExt({ ...datos, rapidas: [...fijasRef.current.map((t) => ({ l: t.label || "Acceso", t: interpFija(t.body, n) })), ...(datos.acciones || []), ...(datos.rapidas || [])] });
+    enviarAExt({ ...datos, rapidas: [...(respProd.current ? [{ l: "Respuesta del producto", t: respProd.current }] : []), ...fijasRef.current.map((t) => ({ l: t.label || "Acceso", t: interpFija(t.body, n) })), ...(datos.acciones || []), ...(datos.rapidas || [])] });
   }, [enviarAExt]);
+  const alProducto = (txt) => { respProd.current = txt || null; if (ultimo.current) avisarRef.current(ultimo.current.datos, ultimo.current.nombre); };
   const avisarRef = useRef(avisar); avisarRef.current = avisar;
   const cargarFijas = useCallback(async () => {
     const l = arr(await dq("message_templates", { token, filters: "?channel=eq.whatsapp&key=like.crm_*&select=id,key,label,body&order=label.asc" }));
@@ -201,6 +204,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
 
   useEffect(() => {
     const mio = ++vivo.current; const sigue = () => mio === vivo.current;
+    respProd.current = null;
     setEst({ v: "cargando" }); avisar({ tira: null, rapidas: [] }, chat.nombre);
     (async () => {
       const u = ult10(chat.tel);
@@ -243,7 +247,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   let cuerpo;
   if (est.v === "cargando") cuerpo = <Linea c={W.mute}>Cargando…</Linea>;
   else if (est.v === "ficha") cuerpo = <>
-    <Ficha ctx={ctx} c={est.c} onChange={alCambiar} onDatos={alDatos} wa sinTag />
+    <Ficha ctx={ctx} c={est.c} onChange={alCambiar} onDatos={alDatos} onProducto={alProducto} wa sinTag />
     {est.porNombre && <button type="button" onClick={noEs} style={{ marginTop: 16, background: "transparent", border: "none", padding: 0, color: W.mute, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>No es esta persona</button>}
   </>;
   else if (est.v === "sinFicha") cuerpo = <>
