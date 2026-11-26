@@ -14,8 +14,7 @@ import { TEMP } from "../../lib/crm-seguimiento";
 export const ESTADO_OP = { pendiente: "Pendiente", en_deposito_origen: "En depósito de origen", en_preparacion: "En preparación", en_transito: "En tránsito", en_aduana: "En aduana", entregada: "Lista para retirar", operacion_cerrada: "Cerrada" };
 const CANAL = { aereo_blanco: "Aéreo", aereo_negro: "Aéreo", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo" };
 // La condición fiscal como etiqueta al lado del nombre (26/11/2026).
-const TAG_FISCAL = { responsable_inscripto: ["Resp. inscripto", "#8fd3ff"], monotributista: ["Monotributista", "#E8D098"], ninguna: ["Consumidor final", "#b6c2d4"] };
-const FISCAL = { responsable_inscripto: "Responsable inscripto", monotributista: "Monotributista", ninguna: "Consumidor final" };
+export const TAG_FISCAL = { responsable_inscripto: ["Resp. inscripto", "#8fd3ff"], monotributista: ["Monotributista", "#E8D098"], ninguna: ["Consumidor final", "#b6c2d4"] };
 // Piezas de la ficha. Van afuera del componente (si no, se remontan en cada tecla y las notas pierden el foco).
 const Seccion = ({ K, t, right, children }) => <div style={{ marginTop: 16 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, color: K.mute, textTransform: "uppercase", letterSpacing: "0.1em" }}>{t}</p>{right}</div>{children}</div>;
 const Numero = ({ K, l, v, c: col }) => <div style={{ flex: "1 1 0", minWidth: 0, padding: "8px 10px", borderRadius: 10, background: K.caja }}><p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: col || K.txt, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</p><p style={{ margin: "1px 0 0", fontSize: 10.5, color: K.mute, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}</p></div>;
@@ -113,7 +112,7 @@ export default function Ficha({ ctx, c, onChange, compacta, wa, onDatos }) {
       {cl ? <div>
         <Dato K={K} l="Nombre">{cl.nombre || cl.company_name || "—"}{cl.client_code ? <span style={{ color: K.hi, fontFamily: MONO, marginLeft: 6 }}>{cl.client_code}</span> : null}</Dato>
         {cl.company_name && cl.nombre && <Dato K={K} l="Razón social">{cl.company_name}</Dato>}
-        <Dato K={K} l="Condición">{FISCAL[cl.tax_condition] || "—"}{cl.cuit ? ` · ${cl.cuit}` : ""}</Dato>
+        {cl.cuit && <Dato K={K} l="CUIT">{cl.cuit}</Dato>}
         {(cl.city || cl.province) && <Dato K={K} l="Localidad">{[cl.city, cl.province].filter(Boolean).join(", ")}</Dato>}
         {cl.email && <Dato K={K} l="Mail">{cl.email}</Dato>}
         <Dato K={K} l="Cliente desde">{fechaCorta(cl.created_at)}</Dato>

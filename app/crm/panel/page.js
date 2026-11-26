@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ToastStack, DialogHost, toast } from "../../../lib/ui";
 import { dq, arr, ac, sesionInicial, saveSession, clearSession, usarSesionPropia, ensureFresh, inp } from "../../gi/_base";
-import Ficha, { ESTADO_OP } from "../_ficha";
+import Ficha, { ESTADO_OP, TAG_FISCAL } from "../_ficha";
 import { W, fmtTel, usd } from "../_comun";
 import { fechaDM } from "../../../lib/crm-seguimiento";
 
@@ -180,7 +180,7 @@ function Panel({ sesion, perfil, chat, turno, onSalir }) {
   const crearSuelta = async () => { setCreando(true); const f = await crearFicha({ tel: chat.tel, waNombre: chat.nombre }); setCreando(false); if (f) setEst({ v: "ficha", c: f }); };
   const noEs = () => { recordar(claveChat(chat), null); setEst({ v: "elegir" }); avisar({ tira: null, rapidas: [] }); };
   const alCambiar = (p) => setEst((e) => (e.v === "ficha" ? { ...e, c: { ...e.c, ...p } } : e));
-  const alDatos = (d, id) => { if (est.v === "ficha" && est.c.id === id) avisar({ tira: armarTira({ c: est.c, d, admin }), rapidas: armarRapidas({ c: est.c, d, admin }) }); };
+  const alDatos = (d, id) => { if (est.v === "ficha" && est.c.id === id) { const tf = TAG_FISCAL[d?.cliente?.tax_condition]; avisar({ tira: armarTira({ c: est.c, d, admin }), rapidas: armarRapidas({ c: est.c, d, admin }), tag: tf ? { txt: tf[0], c: tf[1] } : null }); } };
 
   let cuerpo;
   if (est.v === "cargando") cuerpo = <Linea c={W.mute}>Cargando…</Linea>;

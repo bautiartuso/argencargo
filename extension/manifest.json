@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ARGENCARGO CRM",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Muestra la ficha del CRM de Argencargo al costado del chat abierto en WhatsApp Web. No envía mensajes.",
   "icons": { "48": "icono48.png", "128": "icono128.png" },
   "permissions": ["storage"],

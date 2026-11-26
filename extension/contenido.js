@@ -19,7 +19,9 @@
   const tab = crear("button", { id: "ac-tab", type: "button", textContent: "CRM" });
   const tira = crear("div", { id: "ac-tira" });
   const rapidas = crear("div", { id: "ac-rapidas" });
-  document.body.append(panel, tab, tira, rapidas);
+  // Etiqueta al lado del nombre del chat (condición fiscal del cliente).
+  const tag = crear("div", { id: "ac-tag" });
+  document.body.append(panel, tab, tira, rapidas, tag);
 
   let origenes = [CRM];
   const abrir = (si) => { html.classList.toggle("ac-abierto", si); try { chrome.storage.local.set({ abierto: si }); } catch {} ubicar(); };
@@ -83,7 +85,7 @@
       const clave = chat ? JSON.stringify([chat.tel, chat.lid, chat.nombre, chat.grupo]) : "";
       if (clave !== ultima) {
         ultima = clave; turno += 1; actual = { ac: "chat", id: turno, chat };
-        pintarTira(null); pintarRapidas([]);
+        pintarTira(null); pintarRapidas([]); pintarTag(null);
         btnDiag.hidden = !(chat && !chat.grupo && !chat.tel);
         enviar();
       }
@@ -95,7 +97,14 @@
   setInterval(revisar, 2000);
 
   // ── Tira y respuestas rápidas ──
-  let hayTira = false, hayRapidas = false;
+  let hayTira = false, hayRapidas = false, hayTag = false;
+  function pintarTag(t) {
+    hayTag = !!(t && t.txt);
+    tag.textContent = hayTag ? String(t.txt).slice(0, 30) : "";
+    const c = hayTag && /^#[0-9a-fA-F]{6}$/.test(String(t.c || "")) ? t.c : "#b6c2d4";
+    Object.assign(tag.style, { color: c, borderColor: `${c}88`, background: `${c}22` });
+    ubicar();
+  }
   function pintarTira(t) {
     tira.replaceChildren();
     // Un ítem con enlace (la cotización) se abre en el sistema, en otra pestaña. Solo enlaces a argencargo.com.ar.
@@ -129,6 +138,18 @@
     tira.style.display = conTira ? "flex" : "none";
     rapidas.style.display = conRapidas ? "flex" : "none";
     if (conTira) { const r = cab.getBoundingClientRect(); Object.assign(tira.style, { left: `${r.left}px`, top: `${r.bottom}px`, width: `${r.width}px` }); }
+    // La etiqueta va pegada al final del nombre (se mide el texto, no su caja) y no pisa los botones de la derecha.
+    let conTag = false;
+    if (hayTag && cab) {
+      const t = cab.querySelector('span[dir="auto"]') || cab.querySelector("[title]");
+      if (t) {
+        const rango = document.createRange(); rango.selectNodeContents(t);
+        const rt = rango.getBoundingClientRect(), rc = cab.getBoundingClientRect(), caja = t.getBoundingClientRect();
+        const izq = Math.min(rt.right, caja.right) + 10;
+        if (rt.width > 0 && izq + 150 < rc.left + rc.width * 0.62) { conTag = true; Object.assign(tag.style, { left: `${izq}px`, top: `${rt.top + rt.height / 2}px` }); }
+      }
+    }
+    tag.style.display = conTag ? "block" : "none";
     if (conRapidas) { const r = pie.getBoundingClientRect(); Object.assign(rapidas.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` }); }
   }
   setInterval(ubicar, 300);
@@ -160,7 +181,7 @@
     const d = e.data;
     if (!d || typeof d !== "object") return;
     if (e.origin === EXT && d.ac === "puente") { enviar(); return; }
-    if (d.ac === "ficha" && origenes.includes(e.origin) && d.id === turno) { pintarTira(d.tira || null); pintarRapidas(d.rapidas || []); }
+    if (d.ac === "ficha" && origenes.includes(e.origin) && d.id === turno) { pintarTira(d.tira || null); pintarRapidas(d.rapidas || []); pintarTag(d.tag || null); }
   });
 
   // ── Diagnóstico: estructura de la pantalla, sin nombres, teléfonos ni mensajes ──
