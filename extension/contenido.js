@@ -132,7 +132,18 @@
   function ubicar() {
     const main = document.querySelector("#main");
     const cab = main?.querySelector("header"), pie = main?.querySelector("footer");
-    const conTira = !!(hayTira && cab), conRapidas = !!(hayRapidas && pie);
+    // Con una foto, un video o un archivo abierto, WhatsApp tapa el chat con su visor: ahí no se dibuja nada
+    // encima (27/11/2026: la tira quedaba flotando sobre el PDF). Se miran dos puntos del encabezado para
+    // no confundir el visor con un menú chico que se abre arriba.
+    const tapado = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return true;
+      const libre = (fx) => { const en = document.elementFromPoint(r.left + r.width * fx, r.top + r.height / 2); return !en || el.contains(en); };
+      return !libre(0.25) && !libre(0.6);
+    };
+    const visor = tapado(cab);
+    const conTira = !!(hayTira && cab && !visor), conRapidas = !!(hayRapidas && pie && !visor);
     html.classList.toggle("ac-con-tira", conTira);
     html.classList.toggle("ac-con-rapidas", conRapidas);
     tira.style.display = conTira ? "flex" : "none";
@@ -140,7 +151,7 @@
     if (conTira) { const r = cab.getBoundingClientRect(); Object.assign(tira.style, { left: `${r.left}px`, top: `${r.bottom}px`, width: `${r.width}px` }); }
     // La etiqueta va pegada al final del nombre (se mide el texto, no su caja) y no pisa los botones de la derecha.
     let conTag = false;
-    if (hayTag && cab) {
+    if (hayTag && cab && !visor) {
       const t = cab.querySelector('span[dir="auto"]') || cab.querySelector("[title]");
       if (t) {
         const rango = document.createRange(); rango.selectNodeContents(t);
