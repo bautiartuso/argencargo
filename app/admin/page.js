@@ -18057,7 +18057,7 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   // volumen se pasa a un cubo equivalente por bulto, así todas las cuentas de abajo (volumétrico =
   // m³ × 200, CBM, PDF, lo que se guarda) siguen trabajando con largo × ancho × alto.
   const pkDims=(p)=>{const l=toN(p.length),w=toN(p.width),h=toN(p.height);if(l&&w&&h)return{l,w,h,m3:0};const m=toN(p.m3);if(m>0){const lado=Math.cbrt((m/(toN(p.qty)||1))*1e6);return{l:lado,w:lado,h:lado,m3:m};}return{l,w,h,m3:0};};
-  const pkCalc=(p)=>{const d=pkDims(p);return{id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:d.l,width_cm:d.w,height_cm:d.h};};
+  const pkCalc=(p)=>{const d=pkDims(p);return{id:p.id,quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:d.l,width_cm:d.w,height_cm:d.h,...(d.m3?{por_volumen:true}:{})};};
   // Como lo ven el PDF y lo que se guarda: con las medidas del cubo y el volumen declarado.
   const pkFuera=(pk)=>{const d=pkDims(pk);const r2=(v)=>v?Math.round(v*100)/100:null;return {id:pk.id,qty:Number(String(pk.qty??"1").replace(",","."))||1,length:r2(d.l),width:r2(d.w),height:r2(d.h),weight:toN(pk.weight)||null,...(d.m3?{m3:d.m3}:{})};};
   // Borrador (01/10/2026): lo cargado sobrevive a cambiar de sección o recargar la página. Solo
