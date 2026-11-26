@@ -7158,6 +7158,13 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onSelectQuote,o
       const activeOps=Array.isArray(opsRes)?opsRes:[];
       const overridesFresh=Array.isArray(ovRes)?ovRes:[];
       const clientFresh=Array.isArray(clRes)?clRes[0]:null;
+      // Pasa a RI (26/11/2026): lo que ya viajó o se cerró se hizo cobrándole los impuestos. El sistema
+      // decide eso mirando la condición de HOY del cliente, así que esas ops quedan marcadas "impuestos
+      // cobrados por Argencargo": si no, Finanzas, la factura y el portal las tratarían como de un RI que
+      // le pagó los impuestos al courier. Las cerradas además quedan en manual (antes no se tocaban y el
+      // recálculo al abrirlas las podía mover).
+      const pasaARI=porCambioFiscal&&clientFresh?.tax_condition==="responsable_inscripto";
+      if(porCambioFiscal)await dq("operations",{method:"PATCH",token,filters:`?client_id=eq.${cl.id}&status=eq.operacion_cerrada`,body:{budget_mode:"manual",...(pasaARI?{ri_argencargo_collects_taxes:true}:{})}});
       for(const o of activeOps){
         // Presupuesto en manual: el admin fijó los números a mano (ej. reparto de un canal
         // rojo) — el re-sync del cliente NO los pisa. Mismo criterio que autoSyncBudget.
@@ -7165,7 +7172,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onSelectQuote,o
         // Entrega ya coordinada: el cliente vio y aceptó ese total (mismo criterio que autoSyncBudget).
         if(o.delivery_confirmed_at)continue;
         if(porCambioFiscal&&!["pendiente","en_deposito_origen","en_preparacion"].includes(o.status)){
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_mode:"manual"}});
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_mode:"manual",...(pasaARI?{ri_argencargo_collects_taxes:true}:{})}});
           continue;
         }
         try{
