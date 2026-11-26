@@ -13666,8 +13666,12 @@ function AgentsPanel({token}){
             const pesoFact=ops.reduce((s,fo)=>s+Number(fo.weight_kg||0),0); // lo que suma el sistema (facturable de las ops)
             const kgVuelo=Number(f.total_weight_kg||0);                  // lo que declaró el agente al despachar
             // Peso sistema vs kg del agente: si el agente declara MÁS de lo que se factura, se pierde plata.
-            const pierdo=kgVuelo>0&&pesoFact>0&&kgVuelo>pesoFact+0.01;
-            const gano=kgVuelo>0&&pesoFact>kgVuelo+0.01;
+            // Rojo o verde solo con más de 1 kg de diferencia (26/11/2026): el courier redondea al kilo y por
+            // medio kilo todo salía en rojo. Hasta 1 kg, un amarillo apagado; igual, gris.
+            const difKg=kgVuelo>0&&pesoFact>0?kgVuelo-pesoFact:0;
+            const pierdo=difKg>1;
+            const gano=difKg<-1;
+            const casiIgual=!pierdo&&!gano&&Math.abs(difKg)>0.01;
             const finR=f.payment_method==="cuenta_corriente"?finRateOf(f.agent_id):0;
             const costoEf=Number(f.total_cost_usd||0)*(1+finR);
             const costoKg=Number(f.total_cost_usd||0)>0&&(kgVuelo>0||pesoFact>0)?costoEf/(kgVuelo||pesoFact):null;
@@ -13710,7 +13714,7 @@ function AgentsPanel({token}){
             if(dsiRespondidos.has(f.id))warns.push({t:"📬 DSI",c:"#60a5fa",title:"El courier respondió el pedido de DSI: abrí el vuelo para adjuntarla"});
             else if(dsiFaltan.sinPedir.has(f.id))warns.push({t:"FALTA DSI",c:"#fbbf24",title:"Falta la DSI y todavía no se pidió"});
             else if(dsiFaltan.esperando[f.id])warns.push({t:"⏳ DSI",c:"#94a3b8",title:`Falta la DSI: se pidió el ${new Date(dsiFaltan.esperando[f.id]).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})} y el courier todavía no respondió`});
-            if(f.dispatch_photo_url&&f.status!=="recibido"&&!f.bultos_revisados_at&&!vuelosExtraidos.has(f.flight_code))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
+            if(f.dispatch_photo_url&&f.status!=="recibido"&&!f.bultos_revisados_at&&!vuelosExtraidos.has(f.flight_code)&&(!(kgVuelo>0&&pesoFact>0)||Math.abs(difKg)>1))warns.push({t:"BULTOS",c:"#fb923c",title:"Falta extraer los bultos del desglose del courier (abrí el vuelo → Extraer bultos con IA)"});
             const bgFila=retenido?"rgba(239,68,68,0.10)":"transparent";
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:bgFila,boxShadow:retenido?"inset 4px 0 0 #ef4444":"none"}} onMouseEnter={e=>{e.currentTarget.style.background=retenido?"rgba(239,68,68,0.16)":"rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=bgFila;}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}{!f.agent_id&&<span title="Lo despachamos nosotros directo con el courier (sin agente)" style={{display:"block",marginTop:3,fontSize:9,fontWeight:800,letterSpacing:"0.08em",color:"#5eead4",fontFamily:"inherit"}}>DIRECTO</span>}</td>
@@ -13722,7 +13726,7 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",fontFamily:"monospace",letterSpacing:"0.02em",textAlign:"center"}} title={clientCodes.join(" / ")}>{clientCodes.length>0?clientCodes.join(" / "):"—"}</td>
             <td title={[f.dest_name,f.dest_tax_id].filter(Boolean).join(" · ")} style={{padding:"10px 8px",fontSize:12,color:f.dest_name?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.3)",textAlign:"center",maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.dest_name||"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
-            <td style={{padding:"10px 8px",color:pierdo?"#ff5252":gano?"#4ade80":"rgba(255,255,255,0.6)",fontWeight:(pierdo||gano)?800:400,textShadow:pierdo?"0 0 10px rgba(255,82,82,0.55)":"none",whiteSpace:"nowrap",textAlign:"center"}} title={pierdo?`El agente declaró ${kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:2})} kg y el sistema factura ${pesoFact.toLocaleString("es-AR",{maximumFractionDigits:2})} kg — estás pagando más kg de los que cobrás`:gano?"El facturable supera el kg declarado por el agente":""}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+            <td style={{padding:"10px 8px",color:pierdo?"#ff5252":gano?"#4ade80":casiIgual?"rgba(251,191,36,0.62)":"rgba(255,255,255,0.6)",fontWeight:(pierdo||gano)?800:400,textShadow:pierdo?"0 0 10px rgba(255,82,82,0.55)":"none",whiteSpace:"nowrap",textAlign:"center"}} title={pierdo?`El agente declaró ${kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:2})} kg y el sistema factura ${pesoFact.toLocaleString("es-AR",{maximumFractionDigits:2})} kg — estás pagando más kg de los que cobrás`:gano?"El facturable supera el kg declarado por el agente":casiIgual?"Menos de 1 kg de diferencia con el kg del vuelo":""}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={esEmpleado()?"":f.total_cost_usd?(finR>0?`Costo agente ${usd(f.total_cost_usd)} + comisión financiera ${(finR*100).toFixed(2).replace(".",",")}% (${usd(costoEf-Number(f.total_cost_usd))}) = ${usd(costoEf)} efectivo`:`Costo total: ${usd(f.total_cost_usd)}`):""}>{esEmpleado()?"—":costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>

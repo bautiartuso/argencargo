@@ -111,7 +111,9 @@ function consultaPedido(p, { sinMios = false } = {}) {
   const de = direccionesDe(p.para);
   const form = esPorFormulario(p.para) ? FORMULARIOS[claveCarrier(p.carrier)] || FORMULARIOS.fedex : null;
   const porRemitente = form ? ` (from:${form.dominio} "${p.guia}")` : de.length ? ` (from:(${de.join(" OR ")}) "${p.guia}")` : "";
-  return `{subject:"${asuntoDe(p.guia)}"${porRemitente}} after:${desde}${sinMios ? " -from:me" : ""}`;
+  // El aviso de pago de FedEx ("Pago de derechos e impuestos - Guía …", trae la factura) nombra la guía y viene
+  // de @fedex.com, pero no es la respuesta del pedido: sin excluirlo el vuelo figuraba "respondió" (FL-0188, 26/11/2026).
+  return `{subject:"${asuntoDe(p.guia)}"${porRemitente}} -subject:"Pago de derechos e impuestos" after:${desde}${sinMios ? " -from:me" : ""}`;
 }
 
 async function revisar(forzar = false) {
