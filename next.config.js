@@ -22,6 +22,18 @@ const nextConfig = {
   async redirects() {
     return [{ source: '/cinabrio', destination: '/kairo', permanent: true }];
   },
+  // El panel del CRM se incrusta dentro de WhatsApp Web (extensión de Chrome). WhatsApp Web corre
+  // con Cross-Origin-Embedder-Policy: require-corp, y Chrome bloquea cualquier marco que no declare
+  // lo mismo. Solo esta página: el resto del sitio no se puede incrustar en ningún lado.
+  async headers() {
+    return [{
+      source: '/crm/panel',
+      headers: [
+        { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+        { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+      ],
+    }];
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'nhfslvixhlbiyfmedmbr.supabase.co' },
