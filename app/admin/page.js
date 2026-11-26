@@ -5328,22 +5328,25 @@ async function entregarYCerrar(op,token,{yaEntregada}={}){
   if(!gi){try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"cerrada"})});}catch(e){console.error("notify cerrada",e);}}
   return !gi;
 }
-function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onClose,onSaved}){
+// `previo` (27/11/2026): en una visita con varias operaciones pagadas con un solo pago, el medio de pago y
+// el comprobante del cobro anterior vienen cargados; solo cambia el importe de cada operación.
+function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,previo,onClose,onSaved}){
   const celu=useEsCelu();
   const hoy=hoyAR();
   const metodoIni=(Array.isArray(op.payment_split)&&op.payment_split[0]?.method)||op.payment_method_chosen||"efectivo";
   const efIni=Array.isArray(op.payment_split)?op.payment_split.find(p=>p.method==="efectivo"):null;
-  const [metodo,setMetodo]=useState(metodoIni);
-  const [moneda,setMoneda]=useState(efIni?.currency==="ARS"?"ARS":"USD"); // moneda del efectivo
+  const [metodo,setMetodo]=useState(previo?.metodo||metodoIni);
+  const [moneda,setMoneda]=useState(previo?.moneda||(efIni?.currency==="ARS"?"ARS":"USD")); // moneda del efectivo
   const [monto,setMonto]=useState(""); // vacio: el boton "saldo exacto" lo llena en la moneda que corresponda
   const [tc,setTc]=useState("");
-  const [comision,setComision]=useState("2.5");
-  const [destino,setDestino]=useState("financiera");
-  const [receipt,setReceipt]=useState({url:"",name:"",kb:0});
+  const [comision,setComision]=useState(previo?.comision||"2.5");
+  const [destino,setDestino]=useState(previo?.destino||"financiera");
+  const [receipt,setReceipt]=useState(previo?.receipt?.url?previo.receipt:{url:"",name:"",kb:0});
   const [subiendo,setSubiendo]=useState(false);
   const [guardando,setGuardando]=useState(false);
   const [err,setErr]=useState("");
   const [soloEntregar,setSoloEntregar]=useState(false);
+  const paraLaSiguiente=()=>({metodo,moneda,comision,destino,receipt});
   // TC del dia precargado (best effort)
   useEffect(()=>{(async()=>{try{const r=await fetchDolar({signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(String(d.venta));}}catch{}})();},[]);
   // Si el cliente mandó el comprobante por WhatsApp (nota del bot), se precarga acá:
@@ -5445,10 +5448,10 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
         }
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
         // Cobró todo: si además se entrega (o ya estaba entregada), la operación se cierra ya.
-        if(upd.is_collected&&(!soloCobro||op.delivery_completed_at)){await entregarYCerrar(op,token,{yaEntregada:soloCobro});onSaved();return;}
+        if(upd.is_collected&&(!soloCobro||op.delivery_completed_at)){await entregarYCerrar(op,token,{yaEntregada:soloCobro});onSaved(soloEntregar?null:paraLaSiguiente());return;}
       }
       if(!soloCobro){const ahoraE=new Date().toISOString();await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:ahoraE,...(EN_CAMINO.includes(op.status)?{status:"entregada",delivered_at:op.delivered_at||ahoraE}:{})}});}
-      onSaved();
+      onSaved(soloEntregar?null:paraLaSiguiente());
     }catch(e){setErr("Error: "+e.message);setGuardando(false);return;}
   };
   // Rediseño 22/10/2026: misma familia que el Presupuesto (cajas oscuras, segmentados, total grande).
@@ -5689,6 +5692,13 @@ function EntregasPanel({token,onOpenOp,vista}){
     if(ok.length)toast(`✓ Entregada${ok.length>1?"s":""} ${ok.join(" y ")}`,"success");
     if(deben.length){setColaCobro(deben.slice(1));setCobroModal({op:deben[0]});}
     load();
+  };
+  // Cobrar una visita sin entregarla (27/11/2026): el cliente pagó por adelantado varias operaciones con un
+  // solo pago. Va una tras otra por el cobro, cada una con su saldo, y el medio y el comprobante se arrastran.
+  const cobrarVisita=(grupo)=>{
+    const deben=grupo.filter(o=>!o.is_collected&&(sinMontos||saldoFor(o)>0.005));
+    if(!deben.length){toast("Esas operaciones ya están pagas","success");return;}
+    setColaCobro(deben.slice(1));setCobroModal({op:deben[0],soloCobro:true});
   };
   const markDelivered=async(o)=>{
     const now=new Date().toISOString();
@@ -6261,7 +6271,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:9}}>{diaBadge(o)}</div>
         {envio&&o.delivery_address&&<p style={{fontSize:12.5,color:"rgba(147,197,253,0.95)",margin:"8px 0 0",lineHeight:1.4}}>📍 {o.delivery_address}</p>}
-        <div style={{display:"flex",gap:7,marginTop:12}}>{[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",editar),mb("✓ Entregar",()=>entregarVisita(grupo),true)]}</div>
+        <div style={{display:"flex",gap:7,marginTop:12}}>{[mb("💬 WA",()=>waSimple(o)),mb("🖊 Editar",editar),...(pagada?[]:[mb("💰 Cobrar",()=>cobrarVisita(grupo))]),mb("✓ Entregar",()=>entregarVisita(grupo),true)]}</div>
       </div>;
     }
     const printBtn=(l,fn,title)=><button onClick={fn} title={title} style={{padding:"5px 9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>;
@@ -6283,6 +6293,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         {printBtn(`🧾 Recibo${todas("recibo_printed_at")?" ✓":""}`,()=>imprimirRecibos(grupo),"Un solo comprobante de entrega + recibo para todas")}
         <Btn small variant="secondary" onClick={()=>waSimple(o)}>WA</Btn>
         <Btn small variant="secondary" onClick={editar}>🖊</Btn>
+        {!pagada&&<Btn small variant="secondary" onClick={()=>cobrarVisita(grupo)}>💰 Cobrar</Btn>}
         <Btn small onClick={()=>entregarVisita(grupo)}>✓ Entregar</Btn>
       </div>
     </div>;
@@ -6488,7 +6499,7 @@ function EntregasPanel({token,onOpenOp,vista}){
         :hechasFiltradas.map(o=><CardOp key={o.id} o={o} contexto="hecha"/>)}
     </Bloque>}
 
-    {cobroModal&&<CobroEntregaModal op={cobroModal.op||cobroModal} saldo={saldoFor(cobroModal.op||cobroModal)} cobradoPrevio={Number(cobrosByOp[(cobroModal.op||cobroModal).id]||0)} token={token} sinMontos={sinMontos} soloCobro={!!cobroModal.soloCobro} onClose={()=>{setCobroModal(null);setColaCobro([]);}} onSaved={()=>{const [sig,...resto]=colaCobro;setColaCobro(resto);setCobroModal(sig?{op:sig}:null);load();toast("✓ Registrado","success");}}/>}
+    {cobroModal&&<CobroEntregaModal op={cobroModal.op||cobroModal} saldo={saldoFor(cobroModal.op||cobroModal)} cobradoPrevio={Number(cobrosByOp[(cobroModal.op||cobroModal).id]||0)} token={token} sinMontos={sinMontos} soloCobro={!!cobroModal.soloCobro} previo={cobroModal.previo||null} key={(cobroModal.op||cobroModal).id} onClose={()=>{setCobroModal(null);setColaCobro([]);}} onSaved={(dat)=>{const [sig,...resto]=colaCobro;setColaCobro(resto);setCobroModal(sig?{op:sig,soloCobro:!!cobroModal.soloCobro,previo:dat||cobroModal.previo||null}:null);load();toast(sig?`✓ Registrado · falta ${sig.operation_code}`:"✓ Registrado","success");}}/>}
     {coordinarModal&&<CoordinarModal key={coordinarModal.id} op={coordinarModal} otras={coordinarModal._otras||[]} token={token} onClose={()=>setCoordinarModal(null)} onEntregada={()=>{const o=coordinarModal;setCoordinarModal(null);o._otras?.length?entregarVisita([o,...o._otras]):entregar(o);}} onSaved={()=>{setCoordinarModal(null);load();toast("✓ Entrega coordinada","success");}}/>}
   </div>;
 }
