@@ -18,7 +18,7 @@ const BULTOS = { type: "array", items: { type: "object", additionalProperties: f
 const SCHEMA = {
   type: "object", additionalProperties: false, required: ["opciones", "origen", "bateria", "marca", "regimen", "falta"],
   properties: {
-    opciones: { type: "array", items: { type: "object", additionalProperties: false, required: ["nombre", "productos", "bultos"], properties: { nombre: { type: "string" }, productos: PRODUCTOS, bultos: BULTOS } } },
+    opciones: { type: "array", items: { type: "object", additionalProperties: false, required: ["nombre", "total_usd", "productos", "bultos"], properties: { nombre: { type: "string" }, total_usd: NUM, productos: PRODUCTOS, bultos: BULTOS } } },
     origen: { type: "string", enum: ["China", "USA"] },
     bateria: { type: "boolean" },
     marca: { type: "boolean" },
@@ -30,8 +30,9 @@ const SYSTEM = `Sos el asistente de cotizaciones de Argencargo, una empresa arge
 Te paso los últimos mensajes de un chat de WhatsApp entre el vendedor ("Argencargo") y una persona que quiere importar ("Cliente"). Sacá los datos para armar la cotización de lo que quiere traer AHORA (lo último que se está hablando).
 
 Devolvé:
-- opciones: normalmente UNA sola, con "nombre" vacío. Si el cliente pide cotizar varias alternativas del mismo pedido para comparar (por ejemplo "Opción 1 / Opción 2 / Opción 3" con distintas cantidades, o "cotizame 100 y 500 unidades"), devolvé una opción por cada alternativa, en el orden en que las pasó, con el "nombre" que les puso ("Opción 1", "500 unidades"). Cada opción lleva sus propios productos y bultos, completos.
-- productos (de cada opción): uno por cada producto distinto. Si un mismo producto viene en variantes con precio distinto (350 estampados a 3,50 y 250 lisos a 2,50), va una línea por variante. "descripcion": la mercadería y nada más, en castellano, corta y sin adjetivos ("Cortinas", "Auriculares inalámbricos", "Camperas y prendas de ropa"). No pongas "muestras de", "lote de", "pedido de" ni para qué es. "precio_usd": el precio por unidad en dólares que le pasó su proveedor. "cantidad": el total de unidades que quiere traer.
+- opciones: normalmente UNA sola, con "nombre" vacío. Si el cliente pide cotizar varias alternativas del mismo pedido para comparar (por ejemplo "Opción 1 / Opción 2 / Opción 3" con distintas cantidades, o "cotizame 100 y 500 unidades"), devolvé una opción por cada alternativa, en el orden en que las pasó, con el "nombre" que les puso ("Opción 1", "500 unidades"). Cada opción lleva sus propios productos y bultos, completos, y en "total_usd" el valor total de la mercadería de esa opción si el cliente lo dice ("Total: USD 7.325"); si no lo dice, null.
+- productos (de cada opción): uno por cada producto distinto. Si un mismo producto viene en variantes con precio distinto (350 estampados a 3,50 y 250 lisos a 2,50), va una línea por variante.
+  Variantes sin precio propio: si de un producto dan el total y la cantidad de cada variante pero no el precio de cada una ("1.500 u. – USD 4.700 (950 estampados + 550 lisos)"), usá los precios por variante que el cliente haya dado en otra parte del chat si con ellos la cuenta da ese total (950 × 3,50 + 550 × 2,50 = 4.700). Si no los dio o la cuenta no cierra, no separes: una sola línea con la cantidad total y precio_usd = total ÷ cantidad. Nunca dejes precio_usd en null cuando el chat da un total para esa línea. "descripcion": la mercadería y nada más, en castellano, corta y sin adjetivos ("Cortinas", "Auriculares inalámbricos", "Camperas y prendas de ropa"). No pongas "muestras de", "lote de", "pedido de" ni para qué es. "precio_usd": el precio por unidad en dólares que le pasó su proveedor. "cantidad": el total de unidades que quiere traer.
   Si dan el total de una línea y su cantidad pero no el precio por unidad ("1.500 u. – USD 4.700"): precio_usd = total ÷ cantidad, con hasta 4 decimales, y cantidad = esa cantidad.
   Si solo dan el valor total de la mercadería (valor FOB, valor comercial, "son USD 1.500 en total") sin cantidad: precio_usd = ese total y cantidad = 1. Eso alcanza para cotizar: no lo anotes en "falta".
 - bultos (de cada opción): las cajas. "cantidad" de cajas iguales, medidas en centímetros y "peso_kg" bruto de UNA caja. Si dicen cuántas unidades entran por caja, calculá cuántas cajas hacen falta para la cantidad pedida (40 unidades a 20 por caja = 2 cajas). "peso_kg" es SIEMPRE el de una sola caja; si lo que dan es el peso de todas juntas, no lo pongas ahí: ponelo en "peso_total_kg" y dejá "peso_kg" en null (la división la hace el sistema). Si las medidas vienen en otra unidad, pasalas a centímetros. "volumen_m3" va en null cuando hay medidas.
@@ -77,8 +78,23 @@ export async function POST(req) {
   } catch (e) { console.error("[crm-cotizar]", e?.message || e); return Response.json({ error: "No se pudo leer el chat" }, { status: 502 }); }
   const prodDe = (l) => (Array.isArray(l) ? l : []).map((p) => ({ descripcion: String(p.descripcion || "").trim().slice(0, 120), precio_usd: num(p.precio_usd), cantidad: num(p.cantidad) })).filter((p) => p.descripcion).slice(0, 30);
   const bultoDe = (l) => (Array.isArray(l) ? l : []).map((k) => ({ cantidad: Math.max(1, Math.round(num(k.cantidad) || 1)), largo_cm: num(k.largo_cm), ancho_cm: num(k.ancho_cm), alto_cm: num(k.alto_cm), peso_kg: num(k.peso_kg) || (num(k.peso_total_kg) ? Math.round((num(k.peso_total_kg) / Math.max(1, Math.round(num(k.cantidad) || 1))) * 100) / 100 : null), volumen_m3: num(k.largo_cm) && num(k.ancho_cm) && num(k.alto_cm) ? null : num(k.volumen_m3) })).filter((k) => k.largo_cm || k.peso_kg || k.volumen_m3).slice(0, 30);
-  const opciones = (Array.isArray(d.opciones) ? d.opciones : []).map((o, i) => ({ nombre: String(o.nombre || "").trim().slice(0, 40) || `Opción ${i + 1}`, productos: prodDe(o.productos), bultos: bultoDe(o.bultos) })).filter((o) => o.productos.length).slice(0, 6);
+  // Red de seguridad: si una línea quedó sin precio y se conoce el total de la opción, lo que falta
+  // del total se reparte parejo entre las unidades sin precio. El valor de la mercadería queda bien,
+  // que es lo que mueve la cotización; el aviso va en "falta" para que se sepa que es un promedio.
+  const promediados = [];
+  const completar = (nombre, productos, total) => {
+    const sin = productos.filter((p) => !p.precio_usd && p.cantidad);
+    if (!sin.length || !num(total)) return productos;
+    const resto = num(total) - productos.reduce((t, p) => t + (p.precio_usd ? p.precio_usd * (p.cantidad || 1) : 0), 0);
+    const unidades = sin.reduce((t, p) => t + p.cantidad, 0);
+    if (!(resto > 0) || !(unidades > 0)) return productos;
+    const unit = Math.round((resto / unidades) * 10000) / 10000;
+    promediados.push(nombre);
+    return productos.map((p) => (!p.precio_usd && p.cantidad ? { ...p, precio_usd: unit } : p));
+  };
+  const opciones = (Array.isArray(d.opciones) ? d.opciones : []).map((o, i) => { const nombre = String(o.nombre || "").trim().slice(0, 40) || `Opción ${i + 1}`; return { nombre, productos: completar(nombre, prodDe(o.productos), o.total_usd), bultos: bultoDe(o.bultos) }; }).filter((o) => o.productos.length).slice(0, 6);
+  const sinPrecio = opciones.some((o) => o.productos.some((p) => !p.precio_usd));
   const { productos, bultos } = opciones[0] || { productos: [], bultos: [] };
   if (!cliente.id && ["responsable_inscripto", "monotributo"].includes(d.regimen)) cliente.regimen = d.regimen;
-  return Response.json({ ok: true, cliente, origen: d.origen === "USA" ? "USA" : "China", bateria: d.bateria === true, marca: d.marca === true, productos, bultos, opciones, falta: (Array.isArray(d.falta) ? d.falta : []).map((x) => String(x).slice(0, 120)).slice(0, 8), mensajes: msgs.length });
+  return Response.json({ ok: true, cliente, origen: d.origen === "USA" ? "USA" : "China", bateria: d.bateria === true, marca: d.marca === true, productos, bultos, opciones, falta: [...(Array.isArray(d.falta) ? d.falta : []).map((x) => String(x).slice(0, 120)).filter((x) => sinPrecio || !/precio/i.test(x)), ...(promediados.length ? [`precio por variante en ${promediados.join(" y ")} (puse el promedio para que cierre el total)`] : [])].slice(0, 8), mensajes: msgs.length });
 }
