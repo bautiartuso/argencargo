@@ -95,7 +95,7 @@ export async function POST(req) {
   const token = numeros[0] ? await tokenVigente(numeros[0]) : null;
   const idsFoto = msgs.filter((m) => m.direction === "in" && m.type === "image" && /^\d+$/.test(String(m.media_id || ""))).slice(0, 3).map((m) => m.media_id).reverse();
   const fotos = token ? (await Promise.all(idsFoto.map((id) => fotoDe(id, token)))).filter(Boolean) : [];
-  const lineas = [...msgs].reverse().map((m) => `[${diaHora(m.ts)}] ${m.direction === "out" ? "Argencargo" : "Cliente"}: ${String(m.text || VISTA[m.type] || `[${m.type}]`).slice(0, 700)}`);
+  const lineas = [...msgs].reverse().map((m) => `[${diaHora(m.ts)}] ${m.direction === "out" ? "Argencargo" : "Cliente"}: ${String(m.text || VISTA[m.type] || `[${m.type}]`).slice(0, 3000)}`);
   const pedido = `Chat:\n${lineas.join("\n")}\n\n${fotos.length ? `Van ${fotos.length} foto(s) del cliente, de la más vieja a la más nueva.` : "No hay fotos para ver."}`;
 
   let v;
