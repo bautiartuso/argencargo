@@ -18289,6 +18289,32 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   // régimen, origen, marca, batería, productos y bultos. Queda todo a la vista para revisar y corregir.
   const [delChat,setDelChat]=useState(null); // null | {leyendo:true} | {falta:[],mensajes:n} | {error}
   const chatHecho=useRef(null);
+  // Lo que devolvió la lectura del chat. Si el cliente pidió varias alternativas ("Opción 1 / 2 / 3")
+  // vienen todas: la calculadora muestra una por vez y el cartel de arriba deja pasar de una a otra;
+  // cada una se genera como una cotización aparte (27/11/2026).
+  const chatDatos=useRef(null);const ncmChat=useRef({});
+  const cargarOpcionChat=async(k)=>{
+    const d=chatDatos.current;const op=d?.opciones?.[k];if(!d||!op)return;
+    const txt=(v)=>v==null?"":String(v).replace(".",",");
+    const ya=(desc)=>ncmChat.current[String(desc||"").trim()];
+    const prods=(op.productos||[]).map(x=>({description:x.descripcion,unit_price:txt(x.precio_usd),quantity:x.cantidad?String(x.cantidad):"1",ncm:ya(x.descripcion)||null,classifying:!ya(x.descripcion),package_ids:[]}));
+    const bultos=(op.bultos||[]).map((b,i)=>({id:i,qty:String(b.cantidad||1),length:txt(b.largo_cm),width:txt(b.ancho_cm),height:txt(b.alto_cm),weight:txt(b.peso_kg),m3:txt(b.volumen_m3)}));
+    nuevaCotizacion();
+    if(d.cliente?.id){setClientId(d.cliente.id);}
+    setClientName(d.cliente?.nombre||"");
+    if(d.cliente?.regimen)setTaxCond(d.cliente.regimen);
+    setOrigin(d.origen==="USA"?"USA":"China");
+    setHasBrand(typeof d.marca==="boolean"?d.marca:null);setHasBattery(typeof d.bateria==="boolean"?d.bateria:null);
+    if(prods.length){setProducts(prods);firmaMarcas.current=prods.map(x=>String(x.description||"").trim().toLowerCase()).filter(Boolean);}
+    if(bultos.length){setPkgs(bultos);proxPkId.current=bultos.length;}
+    setAutoCalc(true);
+    setDelChat({falta:Array.isArray(d.falta)?d.falta:[],mensajes:d.mensajes||0,vacio:!prods.length,opciones:d.opciones.length>1?d.opciones.map(o=>o.nombre):null,sel:k});
+    // NCM de cada producto, como hace "Clasificar todos" (lo ya clasificado en otra opción no se vuelve a pedir).
+    const descs=[...new Set(prods.filter(x=>x.classifying).map(x=>x.description.trim()).filter(Boolean))];
+    await Promise.all(descs.map(async(desc)=>{let ncm=null;try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:desc})});const n=await r.json();if(n?.ncm_code)ncm={ncm_code:n.ncm_code,ncm_description:n.ncm_description||desc,import_duty_rate:n.import_duty_rate??35,statistics_rate:n.statistics_rate??3,iva_rate:n.iva_rate??21,intervention:n.intervention||null,antidumping:n.antidumping||null};}catch{}
+      if(ncm)ncmChat.current[desc]=ncm;
+      setProducts(arr=>arr.map(x=>String(x.description||"").trim()===desc&&x.classifying?{...x,classifying:false,ncm}:x));}));
+  };
   useEffect(()=>{
     if(!restaurado||!desdeChat||chatHecho.current===desdeChat)return;
     chatHecho.current=desdeChat;const fichaId=desdeChat;
@@ -18297,23 +18323,9 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
       let d=null;try{const r=await fetch("/api/crm/cotizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contact_id:fichaId})});d=await r.json();}catch{}
       onChatUsado&&onChatUsado();
       if(!d?.ok){setDelChat({error:d?.error||"No se pudo leer el chat"});return;}
-      const txt=(v)=>v==null?"":String(v).replace(".",",");
-      const prods=(d.productos||[]).map(x=>({description:x.descripcion,unit_price:txt(x.precio_usd),quantity:x.cantidad?String(x.cantidad):"1",ncm:null,classifying:true,package_ids:[]}));
-      const bultos=(d.bultos||[]).map((k,i)=>({id:i,qty:String(k.cantidad||1),length:txt(k.largo_cm),width:txt(k.ancho_cm),height:txt(k.alto_cm),weight:txt(k.peso_kg),m3:txt(k.volumen_m3)}));
-      nuevaCotizacion();
-      if(d.cliente?.id){setClientId(d.cliente.id);}
-      setClientName(d.cliente?.nombre||"");
-      if(d.cliente?.regimen)setTaxCond(d.cliente.regimen);
-      setOrigin(d.origen==="USA"?"USA":"China");
-      setHasBrand(typeof d.marca==="boolean"?d.marca:null);setHasBattery(typeof d.bateria==="boolean"?d.bateria:null);
-      if(prods.length){setProducts(prods);firmaMarcas.current=prods.map(x=>String(x.description||"").trim().toLowerCase()).filter(Boolean);}
-      if(bultos.length){setPkgs(bultos);proxPkId.current=bultos.length;}
-      setAutoCalc(true);
-      setDelChat({falta:Array.isArray(d.falta)?d.falta:[],mensajes:d.mensajes||0,vacio:!prods.length});
-      // NCM de cada producto, como hace "Clasificar todos".
-      const descs=[...new Set(prods.map(x=>x.description.trim()).filter(Boolean))];
-      await Promise.all(descs.map(async(desc)=>{let ncm=null;try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:desc})});const n=await r.json();if(n?.ncm_code)ncm={ncm_code:n.ncm_code,ncm_description:n.ncm_description||desc,import_duty_rate:n.import_duty_rate??35,statistics_rate:n.statistics_rate??3,iva_rate:n.iva_rate??21,intervention:n.intervention||null,antidumping:n.antidumping||null};}catch{}
-        setProducts(arr=>arr.map(x=>String(x.description||"").trim()===desc&&x.classifying?{...x,classifying:false,ncm}:x));}));
+      const opciones=Array.isArray(d.opciones)&&d.opciones.length?d.opciones:[{nombre:"",productos:d.productos||[],bultos:d.bultos||[]}];
+      chatDatos.current={...d,opciones};
+      await cargarOpcionChat(0);
     })();
   },[restaurado,desdeChat]); // eslint-disable-line react-hooks/exhaustive-deps
   // Recalcula sola con cada cambio una vez hecha la primera cuenta (antes quedaban números viejos
@@ -18687,7 +18699,8 @@ function AdminCalculator({token,desdeChat,onChatUsado}){
   return <div className="qc">
     <style>{css}</style>
     {delChat&&<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14,padding:"12px 16px",borderRadius:12,border:`1px solid ${delChat.error?"rgba(248,113,113,0.45)":"rgba(140,200,245,0.4)"}`,background:delChat.error?"rgba(248,113,113,0.08)":"rgba(140,200,245,0.08)",fontSize:13,color:"#fff"}}>
-      <span style={{flex:1,minWidth:200,lineHeight:1.5}}>{delChat.leyendo?"Leyendo el chat…":delChat.error?delChat.error:delChat.vacio?<>En el chat no encontré mercadería para cotizar.{delChat.falta?.length?` ${delChat.falta.join(" · ")}`:""}</>:<><b>Armada con el chat</b> ({delChat.mensajes} mensajes).{delChat.falta?.length?<span style={{color:"#fbbf24"}}> Falta: {delChat.falta.join(" · ")}</span>:""}</>}</span>
+      <span style={{flex:1,minWidth:200,lineHeight:1.5}}>{delChat.leyendo?"Leyendo el chat…":delChat.error?delChat.error:delChat.vacio?<>En el chat no encontré mercadería para cotizar.{delChat.falta?.length?` ${delChat.falta.join(" · ")}`:""}</>:<><b>Armada con el chat</b> ({delChat.mensajes} mensajes).{delChat.opciones?` Pidió ${delChat.opciones.length} alternativas: estás viendo ${delChat.opciones[delChat.sel]}.`:""}{delChat.falta?.length?<span style={{color:"#fbbf24"}}> Falta: {delChat.falta.join(" · ")}</span>:""}</>}</span>
+      {delChat.opciones&&<span style={{display:"flex",gap:6,flexWrap:"wrap"}}>{delChat.opciones.map((nm,k)=>{const on=delChat.sel===k;return <button key={k} type="button" onClick={()=>cargarOpcionChat(k)} style={{height:30,padding:"0 13px",borderRadius:999,border:`1px solid ${on?"rgba(140,200,245,0.9)":"rgba(255,255,255,0.18)"}`,background:on?"rgba(140,200,245,0.22)":"transparent",color:on?"#fff":"rgba(255,255,255,0.7)",fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{nm}</button>;})}</span>}
       {!delChat.leyendo&&<button type="button" onClick={()=>setDelChat(null)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.6)",fontSize:16,cursor:"pointer",padding:0}}>✕</button>}
     </div>}
 
