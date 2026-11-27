@@ -15,7 +15,7 @@
   const btnDiag = crear("button", { type: "button", textContent: "Diagnóstico", hidden: true });
   const btnCerrar = crear("button", { type: "button", className: "ac-x", textContent: "✕" });
   btnCerrar.setAttribute("aria-label", "Cerrar el panel del CRM");
-  const panel = crear("div", { id: "ac-panel" }, [crear("div", { className: "ac-cab" }, [crear("span", {}, [crear("b", { textContent: "ARGENCARGO" }), " · CRM"]), crear("span", { className: "ac-ver", textContent: chrome.runtime.getManifest().version }), crear("span", { className: "ac-esp" }), btnDiag, btnCerrar]), marco]);
+  const panel = crear("div", { id: "ac-panel" }, [crear("div", { className: "ac-cab" }, [crear("span", { className: "ac-marca" }, [crear("img", { className: "ac-iso", src: chrome.runtime.getURL("logo-iso.png"), alt: "" }), crear("img", { className: "ac-txt", src: chrome.runtime.getURL("logo-texto.png"), alt: "ARGENCARGO" }), crear("span", { className: "ac-crm", textContent: "CRM" })]), crear("span", { className: "ac-ver", textContent: chrome.runtime.getManifest().version }), crear("span", { className: "ac-esp" }), btnDiag, btnCerrar]), marco]);
   const tab = crear("button", { id: "ac-tab", type: "button", textContent: "CRM" });
   const tira = crear("div", { id: "ac-tira" });
   const rapidas = crear("div", { id: "ac-rapidas" });
@@ -159,24 +159,52 @@
       return;
     }
   }
+  // ¿Algo de WhatsApp está tapando este elemento? Se miran dos puntos para no confundir el visor con un
+  // menú chico que se abre arriba.
+  const tapado = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return true;
+    const libre = (fx) => { const en = document.elementFromPoint(r.left + r.width * fx, r.top + r.height / 2); return !en || el.contains(en); };
+    return !libre(0.25) && !libre(0.6);
+  };
+  // El visor de fotos y archivos de WhatsApp se arma con el ancho de toda la ventana, así que con el panel
+  // abierto el archivo quedaba cortado. Primero se probó esconder el panel mientras tanto; Bautista lo quiere
+  // siempre a la vista (26/11/2026). Entonces se busca la capa del visor y se la achica en proporción para
+  // que entre en el ancho que deja el panel. Se usa `scale`, que no pisa el `transform` de WhatsApp.
+  let raizVisor = null;
+  const PROPS_VISOR = ["scale", "transform-origin", "height", "max-height", "bottom"];
+  const soltarVisor = () => { if (raizVisor?.isConnected) for (const p of PROPS_VISOR) raizVisor.style.removeProperty(p); raizVisor = null; };
+  function encajarVisor(cab) {
+    if (!html.classList.contains("ac-abierto")) return soltarVisor();
+    const libre = window.innerWidth - 340, alto = window.innerHeight;
+    if (raizVisor && !raizVisor.isConnected) raizVisor = null;
+    if (!raizVisor) {
+      const main = document.querySelector("#main"), app = document.querySelector("#app");
+      const r = cab.getBoundingClientRect();
+      let elegido = null;
+      for (let el = document.elementFromPoint(r.left + r.width * 0.25, r.top + r.height / 2); el && el !== html && el !== document.body && el !== app && !(main && el.contains(main)); el = el.parentElement) {
+        if (el.offsetWidth > libre + 2 && el.offsetHeight > alto * 0.6) elegido = el;
+      }
+      if (!elegido) return;
+      raizVisor = elegido;
+      raizVisor.dataset.acAlto = Math.abs(elegido.offsetHeight - alto) <= 2 ? "1" : "";
+    }
+    const k = libre / raizVisor.offsetWidth;
+    if (!(k > 0.3 && k < 0.999)) return soltarVisor();
+    const pon = (p, v) => raizVisor.style.setProperty(p, v, "important");
+    pon("transform-origin", "0 0"); pon("scale", k.toFixed(4));
+    if (raizVisor.dataset.acAlto) { pon("height", `${Math.ceil(alto / k)}px`); pon("max-height", "none"); pon("bottom", "auto"); }
+  }
   function ubicar() {
     const main = document.querySelector("#main");
     const cab = main?.querySelector("header"), pie = main?.querySelector("footer");
     if (cab) esconderLista(cab);
     // Con una foto, un video o un archivo abierto, WhatsApp tapa el chat con su visor: ahí no se dibuja nada
-    // encima (27/11/2026: la tira quedaba flotando sobre el PDF). Se miran dos puntos del encabezado para
-    // no confundir el visor con un menú chico que se abre arriba.
-    const tapado = (el) => {
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return true;
-      const libre = (fx) => { const en = document.elementFromPoint(r.left + r.width * fx, r.top + r.height / 2); return !en || el.contains(en); };
-      return !libre(0.25) && !libre(0.6);
-    };
+    // encima (la tira quedaba flotando sobre el PDF) y el visor se acomoda al lado del panel.
     const visor = tapado(cab);
-    // El visor de WhatsApp se acomoda al ancho de toda la ventana: con el panel al costado el archivo
-    // quedaba cortado (27/11/2026). Mientras está abierto, el panel se corre y vuelve solo al cerrarlo.
     html.classList.toggle("ac-visor", visor);
+    if (visor) encajarVisor(cab); else soltarVisor();
     const conTira = !!(hayTira && cab && !visor), conRapidas = !!(hayRapidas && pie && !visor);
     html.classList.toggle("ac-con-tira", conTira);
     html.classList.toggle("ac-con-rapidas", conRapidas);
@@ -216,7 +244,7 @@
   let menusHasta = 0;
   function acomodarMenus() {
     for (const [el, c] of corridos) if (!el.isConnected || el.style.left !== c.left || el.style.top !== c.top) { if (el.isConnected) el.style.translate = ""; corridos.delete(el); }
-    if (Date.now() > menusHasta || !html.classList.contains("ac-abierto") || html.classList.contains("ac-visor")) return;
+    if (Date.now() > menusHasta || !html.classList.contains("ac-abierto") || html.classList.contains("ac-visor") || tapado(document.querySelector("#main header"))) return;
     const app = document.querySelector("#app");
     if (!app) return;
     const tope = app.getBoundingClientRect().right, alto = window.innerHeight;

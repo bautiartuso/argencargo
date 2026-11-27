@@ -2,8 +2,7 @@
 html.ac-abierto #app { width: calc(100% - 340px) !important; }
 html.ac-con-tira #main header { margin-bottom: 34px !important; }
 #main header [data-ac-oculto] { display: none !important; }
-html.ac-visor.ac-abierto #app { width: 100% !important; }
-html.ac-visor #ac-panel, html.ac-visor #ac-tab { display: none !important; }
+html.ac-visor #ac-tab { display: none !important; }
 html.ac-con-rapidas #main footer { padding-top: 42px !important; }
 
 #ac-panel, #ac-tab, #ac-tira, #ac-rapidas, #ac-tag { box-sizing: border-box; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.3; }
@@ -11,8 +10,11 @@ html.ac-con-rapidas #main footer { padding-top: 42px !important; }
 
 #ac-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 340px; z-index: 120; display: none; flex-direction: column; background: #0c1829; border-left: 1px solid rgba(255,255,255,0.08); color: #f4f7fb; }
 html.ac-abierto #ac-panel { display: flex; }
-#ac-panel .ac-cab { flex: 0 0 auto; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #a3b3c8; }
-#ac-panel .ac-cab b { color: #3d9bff; font-weight: 800; }
+#ac-panel .ac-cab { flex: 0 0 auto; height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #a3b3c8; }
+#ac-panel .ac-marca { display: flex; align-items: center; gap: 9px; }
+#ac-panel .ac-iso { height: 17px; width: auto; display: block; }
+#ac-panel .ac-txt { height: 9px; width: auto; display: block; opacity: 0.96; }
+#ac-panel .ac-crm { margin-left: 2px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.16); color: #3d9bff; font-size: 11px; font-weight: 800; letter-spacing: 0.16em; line-height: 14px; }
 #ac-panel .ac-cab .ac-esp { flex: 1; }
 #ac-panel .ac-cab .ac-ver { font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: #5b6f8c; }
 #ac-panel button { background: transparent; border: 0; color: #a3b3c8; cursor: pointer; padding: 6px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0; }

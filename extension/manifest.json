@@ -1,15 +1,58 @@
 {
   "manifest_version": 3,
   "name": "ARGENCARGO CRM",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Muestra la ficha del CRM de Argencargo al costado del chat abierto en WhatsApp Web. No envía mensajes.",
-  "icons": { "48": "icono48.png", "128": "icono128.png" },
-  "permissions": ["storage"],
+  "icons": {
+    "16": "icono16.png",
+    "32": "icono32.png",
+    "48": "icono48.png",
+    "128": "icono128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
   "content_scripts": [
-    { "matches": ["https://web.whatsapp.com/*"], "js": ["contenido.js"], "css": ["contenido.css"], "run_at": "document_idle" },
-    { "matches": ["https://web.whatsapp.com/*"], "js": ["pagina.js"], "world": "MAIN", "run_at": "document_idle" }
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "contenido.js"
+      ],
+      "css": [
+        "contenido.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "pagina.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    }
   ],
   "web_accessible_resources": [
-    { "resources": ["panel.html"], "matches": ["https://web.whatsapp.com/*"] }
-  ]
+    {
+      "resources": [
+        "panel.html",
+        "logo-iso.png",
+        "logo-texto.png"
+      ],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icono16.png",
+      "32": "icono32.png"
+    },
+    "default_title": "ARGENCARGO CRM"
+  }
 }
